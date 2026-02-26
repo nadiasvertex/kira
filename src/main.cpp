@@ -1,17 +1,13 @@
+#include <argparse/argparse.hpp>
 #include <expected>
 #include <print>
 #include <string>
 #include <string_view>
 #include <vector>
 
-// A simple demonstration of C++26/23 features:
-//   - std::print / std::println  (C++23, widely available in Clang 17)
-//   - std::expected              (C++23)
-//   - std::string_view literals
-
 struct Config {
     std::string_view program_name;
-    std::vector<std::string> args;
+    std::vector<std::string> sources;
 };
 
 [[nodiscard]] std::expected<Config, std::string>
@@ -20,13 +16,30 @@ parse_args(int argc, char* argv[]) {
         return std::unexpected{"argc must be at least 1"};
     }
 
+    argparse::ArgumentParser program(argv[0]);
+
+    program.add_description("Kira - A compiler and language processing tool");
+
+    program.add_argument("sources")
+        .help("source input file(s) to process")
+        .remaining();
+
+    try {
+        program.parse_args(argc, argv);
+    } catch (const std::exception& err) {
+        return std::unexpected{err.what()};
+    }
+
     Config cfg{
         .program_name = argv[0],
-        .args         = {},
+        .sources      = {},
     };
 
-    for (int i = 1; i < argc; ++i) {
-        cfg.args.emplace_back(argv[i]);
+    try {
+        auto sources = program.get<std::vector<std::string>>("sources");
+        cfg.sources = sources;
+    } catch (const std::logic_error& err) {
+        // No sources provided, which is allowed
     }
 
     return cfg;
@@ -45,12 +58,12 @@ int main(int argc, char* argv[]) {
     std::println("Welcome to Kira!");
     std::println("Invoked as: {}", cfg.program_name);
 
-    if (cfg.args.empty()) {
-        std::println("No arguments provided.");
+    if (cfg.sources.empty()) {
+        std::println("No source files provided.");
     } else {
-        std::println("Arguments ({}):", cfg.args.size());
-        for (std::size_t i = 0; i < cfg.args.size(); ++i) {
-            std::println("  [{}] {}", i, cfg.args[i]);
+        std::println("Source file(s) ({}):", cfg.sources.size());
+        for (std::size_t i = 0; i < cfg.sources.size(); ++i) {
+            std::println("  [{}] {}", i, cfg.sources[i]);
         }
     }
 

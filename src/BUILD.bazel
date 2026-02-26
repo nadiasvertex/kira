@@ -3,5 +3,6 @@ load("@rules_cc//cc:defs.bzl", "cc_binary")
 cc_binary(
     name = "kira",
     srcs = ["main.cpp"],
+    deps = ["@argparse"],
     visibility = ["//visibility:public"],
 )
