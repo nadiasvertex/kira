@@ -1,0 +1,35 @@
+# Enable bzlmod (Bazel module system)
+common --enable_bzlmod
+
+# Use C++26 standard
+build --cxxopt=-std=c++26
+build --host_cxxopt=-std=c++26
+
+# Use clang as the compiler
+build --action_env=CC=clang
+build --action_env=CXX=clang++
+
+# Enable useful warnings
+build --cxxopt=-Wall
+build --cxxopt=-Wextra
+build --cxxopt=-Wpedantic
+build --cxxopt=-Wshadow
+build --cxxopt=-Wconversion
+build --host_cxxopt=-Wall
+build --host_cxxopt=-Wextra
+
+# Optimize for local development (faster builds)
+build:debug --compilation_mode=dbg
+build:debug --cxxopt=-O0
+build:debug --cxxopt=-g
+
+# Release configuration
+build:release --compilation_mode=opt
+build:release --cxxopt=-O3
+build:release --cxxopt=-DNDEBUG
+
+# Default to debug
+build --config=debug
+
+# Show test output on failure
+test --test_output=errors

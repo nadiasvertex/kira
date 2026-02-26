@@ -1,0 +1,864 @@
+(* ================================================================= *)
+(*  Kira Language — Formal EBNF Grammar                              *)
+(*                                                                   *)
+(*  Notation                                                         *)
+(*    rule = body ;          definition                              *)
+(*    a b                    concatenation                           *)
+(*    a | b                  alternation                             *)
+(*    [ a ]                  optional (zero or one)                  *)
+(*    { a }                  repetition (zero or more)              *)
+(*    ( a )                  grouping                                *)
+(*    "text"                 literal terminal                        *)
+(*    UPPER                  lexical terminal defined below          *)
+(*    (* comment *)          comment                                 *)
+(*                                                                   *)
+(*  Indentation                                                      *)
+(*    Kira uses significant indentation. The terminals INDENT,       *)
+(*    DEDENT, and NEWLINE are emitted by the lexer and represent     *)
+(*    the increase, decrease, and continuation of indentation        *)
+(*    levels respectively. A NEWLINE that is followed by an INDENT   *)
+(*    begins a block; a DEDENT closes it. Blank lines and lines      *)
+(*    containing only comments do not emit NEWLINE.                  *)
+(*                                                                   *)
+(*  Inline vs block forms                                            *)
+(*    Several constructs (function bodies, match arms, if/else,      *)
+(*    for, while, crew, par, race) accept either a single inline     *)
+(*    expression after ":" on the same line, or a block introduced   *)
+(*    by NEWLINE INDENT.                                             *)
+(* ================================================================= *)
+
+
+(* ----------------------------------------------------------------- *)
+(*  Top-level structure                                               *)
+(* ----------------------------------------------------------------- *)
+
+file = module_decl
+       [ "no_prelude" NEWLINE ]
+       { top_level_item } ;
+
+module_decl = "module" module_path NEWLINE ;
+
+top_level_item
+    = use_decl
+    | static_decl
+    | type_decl
+    | trait_decl
+    | impl_decl
+    | concept_decl
+    | func_decl
+    | sub_module_decl
+    | dep_decl
+    | splice_stmt
+    | NEWLINE
+    ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Module and import system                                          *)
+(* ----------------------------------------------------------------- *)
+
+module_path = IDENT { "." IDENT } ;
+
+sub_module_decl
+    = [ visibility ] "module" IDENT NEWLINE
+    | [ visibility ] "module" IDENT ":" NEWLINE INDENT { top_level_item } DEDENT
+    ;
+
+use_decl = [ visibility ] "use" use_path NEWLINE ;
+
+use_path
+    = module_path "." use_selector
+    | module_path
+    ;
+
+use_selector
+    = IDENT [ "as" IDENT ]
+    | "{" use_item { "," use_item } [ "," ] "}"
+    | "*"
+    ;
+
+use_item = IDENT [ "as" IDENT ] ;
+
+dep_decl = "dep" IDENT ":" NEWLINE INDENT dep_field { dep_field } DEDENT ;
+
+dep_field = IDENT "=" STRING_LIT NEWLINE ;
+
+visibility = "pub" | "internal" | "super" | "priv" ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Type declarations                                                 *)
+(* ----------------------------------------------------------------- *)
+
+type_decl
+    = [ visibility ] "type" IDENT [ type_params ] "=" type_def
+      [ "deriving" deriving_list ] NEWLINE
+    | [ visibility ] "type" IDENT [ type_params ] "=" type_def
+      NEWLINE INDENT
+          [ deriving_clause ]
+          [ invariant_clause ]
+      DEDENT
+    ;
+
+type_def
+    = struct_body
+    | sum_body
+    | type_expr
+    | refinement_type
+    ;
+
+struct_body = "{" struct_field { "," struct_field } [ "," ] "}" ;
+
+struct_field = [ visibility ] IDENT ":" type_expr ;
+
+sum_body = "|" sum_variant { "|" sum_variant } ;
+
+sum_variant
+    = IDENT
+    | IDENT "(" type_expr { "," type_expr } ")"
+    ;
+
+deriving_clause  = "deriving" deriving_list NEWLINE ;
+deriving_list    = IDENT { "," IDENT } ;
+
+invariant_clause = "invariant" expr NEWLINE ;
+
+refinement_type  = type_expr "where" expr ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Type expressions                                                  *)
+(* ----------------------------------------------------------------- *)
+
+type_expr
+    = prim_type_expr { "|" prim_type_expr }    (* union in error positions *)
+    ;
+
+prim_type_expr
+    = named_type
+    | tuple_type
+    | slice_type
+    | array_type
+    | ref_type
+    | ptr_type
+    | fn_type
+    | quote_type
+    | "(" type_expr ")"
+    ;
+
+named_type   = module_path [ "[" type_arg_list "]" ] ;
+
+type_arg_list = type_arg { "," type_arg } ;
+
+type_arg
+    = type_expr
+    | expr            (* value argument for dependent types *)
+    | IDENT ":" type_expr    (* named value argument *)
+    ;
+
+tuple_type   = "(" type_expr "," type_expr { "," type_expr } [ "," ] ")" ;
+
+slice_type   = "[" type_expr "]" ;
+
+array_type   = "array" "[" type_expr "," expr "]" ;
+
+ref_type
+    = "&" type_expr
+    | "&" "mut" type_expr
+    ;
+
+ptr_type
+    = "*" type_expr
+    | "*" "mut" type_expr
+    ;
+
+fn_type = "fn" "(" [ fn_type_params ] ")" [ "->" type_expr ] ;
+
+fn_type_params = type_expr { "," type_expr } ;
+
+quote_type = "expr" | "stmt" | "def_expr" | "type_expr" ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Type parameters and bounds                                        *)
+(* ----------------------------------------------------------------- *)
+
+type_params = "[" type_param { "," type_param } "]" ;
+
+type_param
+    = IDENT [ ":" bound ]          (* type parameter with optional bound *)
+    | IDENT ":" type_expr          (* value parameter with type          *)
+    ;
+
+bound = bound_term { "+" bound_term } ;
+
+bound_term
+    = module_path [ "[" type_arg_list "]" ]    (* trait or concept bound *)
+    | "fn" "(" [ fn_type_params ] ")" [ "->" type_expr ]
+    ;
+
+where_clause = "where" where_constraint { "," where_constraint } ;
+
+where_constraint
+    = type_expr ":" bound
+    | type_expr ":" type_expr          (* associated type equality *)
+    ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Trait declarations                                                *)
+(* ----------------------------------------------------------------- *)
+
+trait_decl
+    = [ visibility ] "trait" IDENT [ type_params ]
+      [ "requires" bound ]
+      ":" NEWLINE INDENT
+          { trait_item }
+      DEDENT
+    ;
+
+trait_item
+    = func_decl
+    | static_decl
+    | associated_type_decl
+    | NEWLINE
+    ;
+
+associated_type_decl
+    = [ visibility ] "type" IDENT [ "=" type_expr ] NEWLINE
+    | [ visibility ] "static" IDENT ":" type_expr [ "=" expr ] NEWLINE
+    ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Concept declarations                                              *)
+(* ----------------------------------------------------------------- *)
+
+concept_decl
+    = [ visibility ] "concept" IDENT "[" concept_params "]" ":"
+      NEWLINE INDENT { concept_constraint } DEDENT
+    ;
+
+concept_params = concept_param { "," concept_param } ;
+
+concept_param
+    = IDENT                         (* type parameter           *)
+    | IDENT "[" "_" "]"             (* higher-kinded parameter  *)
+    ;
+
+concept_constraint
+    = type_expr ":" bound NEWLINE
+    | expr NEWLINE                  (* compile-time value constraint *)
+    ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Impl declarations                                                 *)
+(* ----------------------------------------------------------------- *)
+
+impl_decl
+    = "impl" [ type_params ] named_type "for" type_expr
+      ":" NEWLINE INDENT { impl_item } DEDENT
+    | "impl" [ type_params ] named_type "for" type_expr
+      [ where_clause ] ":" NEWLINE INDENT { impl_item } DEDENT
+    ;
+
+impl_item
+    = func_decl
+    | static_decl
+    | associated_type_def
+    | NEWLINE
+    ;
+
+associated_type_def
+    = "type" IDENT "=" type_expr NEWLINE
+    | "static" IDENT [ ":" type_expr ] "=" expr NEWLINE
+    ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Function declarations                                             *)
+(* ----------------------------------------------------------------- *)
+
+func_decl
+    = [ visibility ] func_prefix "def" IDENT
+      [ type_params ]
+      "(" [ param_list ] ")"
+      [ "->" type_expr ]
+      [ where_clause ]
+      { contract_clause }
+      func_body
+    ;
+
+func_prefix
+    = { func_modifier }
+    ;
+
+func_modifier
+    = "pure"
+    | "async" [ "[" async_context "]" ]
+    | "machine"
+    | "static"
+    ;
+
+(* modifiers may appear in any order but semantics constrain combinations:
+   - "static" before "pure" before "async" before "machine" is canonical
+   - "machine" may not appear with "async" unless explicitly combined     *)
+
+async_context
+    = type_expr
+    | IDENT ":" bound
+    ;
+
+param_list = param { "," param } ;
+
+param
+    = pattern [ ":" type_expr ] [ "=" expr ]    (* positional or default *)
+    | IDENT ":" type_expr "=" expr              (* named with default    *)
+    ;
+
+contract_clause
+    = "pre"  expr [ "," STRING_LIT ] NEWLINE
+    | "post" expr [ "," STRING_LIT ] NEWLINE
+    ;
+
+func_body
+    = ":" inline_body
+    | ":" NEWLINE INDENT { stmt } DEDENT
+    ;
+
+inline_body = expr NEWLINE ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Statements                                                        *)
+(* ----------------------------------------------------------------- *)
+
+stmt
+    = let_stmt
+    | var_stmt
+    | assign_stmt
+    | expr_stmt
+    | return_stmt
+    | use_decl
+    | type_decl
+    | func_decl
+    | static_decl
+    | if_stmt
+    | while_stmt
+    | for_stmt
+    | match_stmt
+    | crew_stmt
+    | asm_stmt
+    | splice_stmt
+    | NEWLINE
+    ;
+
+let_stmt
+    = "let" pattern [ ":" type_expr ] "=" expr NEWLINE
+    | "let" pattern [ ":" type_expr ] "=" expr "else" ":" NEWLINE INDENT { stmt } DEDENT
+    ;
+
+var_stmt = "var" IDENT [ ":" type_expr ] "=" expr NEWLINE ;
+
+assign_stmt = assign_target assign_op expr NEWLINE ;
+
+assign_target
+    = IDENT
+    | expr "." IDENT
+    | expr "[" expr "]"
+    | "*" expr
+    ;
+
+assign_op
+    = "=" | "+=" | "-=" | "*=" | "/=" | "%="
+    | "&=" | "|=" | "^=" | "<<=" | ">>="
+    | "+%=" | "-%=" | "*%="        (* wrapping, machine only *)
+    | "+|=" | "-|=" | "*|="        (* saturating, machine only *)
+    ;
+
+expr_stmt = expr NEWLINE ;
+
+return_stmt = "return" [ expr ] NEWLINE ;
+
+static_decl
+    = [ visibility ] "static" [ "if" expr ":" NEWLINE INDENT { top_level_item } DEDENT
+                                  [ "else" ":" NEWLINE INDENT { top_level_item } DEDENT ] ]
+    | [ visibility ] "static" IDENT [ ":" type_expr ] "=" expr NEWLINE
+    | "static" "assert" expr [ "," STRING_LIT ] NEWLINE
+    | "static" "for" for_vars "in" expr [ "if" expr ] "=>" expr NEWLINE
+    | "static" "for" for_vars "in" expr [ "if" expr ] ":" NEWLINE INDENT { stmt } DEDENT
+    ;
+
+if_stmt
+    = "if" expr ":" block
+      { "elif" expr ":" block }
+      [ "else" ":" block ]
+    ;
+
+while_stmt
+    = "while" expr ":" block
+    | "while" "let" pattern "=" expr ":" block
+    ;
+
+for_stmt
+    = "for" for_vars "in" expr [ "if" expr ] ":" block
+    ;
+
+for_vars
+    = pattern { "," pattern }
+    ;
+
+match_stmt = "match" match_subject ":" NEWLINE INDENT { match_arm } DEDENT ;
+
+match_subject
+    = expr
+    | type_expr    (* compile-time type match *)
+    ;
+
+crew_stmt
+    = "crew" IDENT [ "(" crew_options ")" ] ":" block
+    ;
+
+crew_options = crew_option { "," crew_option } ;
+
+crew_option  = IDENT ":" IDENT ;
+
+asm_stmt = "asm" "{" ASM_CONTENT "}" NEWLINE ;
+
+splice_stmt = "~" expr NEWLINE ;
+
+block
+    = inline_body
+    | NEWLINE INDENT { stmt } DEDENT
+    ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Expressions                                                       *)
+(* ----------------------------------------------------------------- *)
+
+expr = pipe_expr ;
+
+pipe_expr
+    = or_expr { "|" or_expr }
+    ;
+
+or_expr
+    = and_expr { "or" and_expr }
+    ;
+
+and_expr
+    = not_expr { "and" not_expr }
+    ;
+
+not_expr
+    = "not" not_expr
+    | cmp_expr
+    ;
+
+cmp_expr
+    = add_expr { cmp_op add_expr }
+    ;
+
+cmp_op = "==" | "!=" | "<" | "<=" | ">" | ">=" | "in" | "not" "in" ;
+
+add_expr
+    = mul_expr { add_op mul_expr }
+    ;
+
+add_op
+    = "+" | "-" | "+%" | "-%" | "+|" | "-|"
+    ;
+
+mul_expr
+    = unary_expr { mul_op unary_expr }
+    ;
+
+mul_op
+    = "*" | "/" | "%" | "*%" | "*|"
+    ;
+
+unary_expr
+    = unary_op unary_expr
+    | postfix_expr
+    ;
+
+unary_op
+    = "-" | "~" | "*" | "&" | "&" "mut"
+    ;
+
+postfix_expr
+    = primary_expr { postfix_suffix }
+    ;
+
+postfix_suffix
+    = "." IDENT                                    (* field access         *)
+    | "." IDENT "[" type_arg_list "]"             (* generic method       *)
+    | "." "(" ")"                                  (* field via parens     *)
+    | "[" expr "]"                                 (* index                *)
+    | "(" [ call_arg_list ] ")"                    (* call                 *)
+    | "?" postfix_suffix                           (* try-propagate then   *)
+    | "?"                                          (* try-propagate        *)
+    | "as" type_expr                               (* cast                 *)
+    ;
+
+call_arg_list = call_arg { "," call_arg } [ "," ] ;
+
+call_arg
+    = IDENT ":" expr     (* named argument *)
+    | expr               (* positional     *)
+    ;
+
+primary_expr
+    = literal
+    | IDENT
+    | module_path
+    | tuple_expr
+    | array_expr
+    | struct_expr
+    | lambda_expr
+    | match_expr
+    | if_expr
+    | for_expr
+    | await_expr
+    | par_expr
+    | race_expr
+    | on_expr
+    | block_expr
+    | quote_expr
+    | splice_expr
+    | static_expr
+    | "(" expr ")"
+    ;
+
+tuple_expr  = "(" expr "," expr { "," expr } [ "," ] ")" ;
+
+array_expr
+    = "[" expr { "," expr } [ "," ] "]"             (* array literal         *)
+    | "[" expr ";" expr "]"                          (* fill: [val; count]    *)
+    ;
+
+struct_expr = "{" struct_field_init { "," struct_field_init } [ "," ] "}" ;
+
+struct_field_init
+    = IDENT ":" expr
+    | IDENT              (* field shorthand: {x} means {x: x} *)
+    ;
+
+lambda_expr
+    = lambda_prefix lambda_params [ "->" type_expr ] "=>" expr
+    | lambda_prefix lambda_params [ "->" type_expr ] "=>" ":" NEWLINE INDENT { stmt } DEDENT
+    ;
+
+lambda_prefix
+    = [ "pure" ] [ "move" ]
+    ;
+
+lambda_params
+    = IDENT
+    | "(" [ lambda_param_list ] ")"
+    ;
+
+lambda_param_list = lambda_param { "," lambda_param } ;
+
+lambda_param = pattern [ ":" type_expr ] ;
+
+match_expr
+    = "match" match_subject ":" NEWLINE INDENT { match_arm } DEDENT
+    ;
+
+match_arm
+    = pattern [ "if" expr ] "=>" expr NEWLINE
+    | pattern [ "if" expr ] "=>" ":" NEWLINE INDENT { stmt } DEDENT
+    ;
+
+if_expr
+    = "if" expr ":" block_expr
+      { "elif" expr ":" block_expr }
+      "else" ":" block_expr
+    ;
+
+for_expr
+    = "for" for_vars "in" expr { "," for_vars "in" expr }
+      [ "if" expr ]
+      "=>" expr
+    ;
+
+await_expr
+    = "await" expr
+    | "await" "yield"
+    ;
+
+par_expr  = "par"  ":" NEWLINE INDENT { expr NEWLINE } DEDENT ;
+
+race_expr = "race" ":" NEWLINE INDENT { expr NEWLINE } DEDENT ;
+
+on_expr
+    = "on" "(" type_expr ")" ":" block_expr
+    | "on" "(" type_expr "," expr ")" (* on(ctx, sender_expr) *)
+    ;
+
+block_expr = ":" NEWLINE INDENT { stmt } DEDENT ;
+
+quote_expr  = "`" "(" quoted_content ")" "`"
+            | "`" quoted_content "`"
+            ;
+
+quoted_content = (* any sequence of Kira tokens, with balanced brackets,
+                    may itself contain splice_expr for interpolation     *) ;
+
+splice_expr = "~" "(" expr ")" | "~" IDENT ;
+
+static_expr = "static" expr ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Patterns                                                          *)
+(* ----------------------------------------------------------------- *)
+
+pattern
+    = or_pattern [ "as" IDENT ]
+    ;
+
+or_pattern
+    = atomic_pattern { "|" atomic_pattern }
+    ;
+
+atomic_pattern
+    = "_"                                               (* wildcard           *)
+    | literal                                           (* literal            *)
+    | IDENT                                             (* binding            *)
+    | IDENT "(" [ pattern_list ] ")"                   (* constructor        *)
+    | "(" pattern_list ")"                             (* tuple              *)
+    | "{" field_pattern { "," field_pattern } [ "," ] "}"  (* struct        *)
+    | "[" [ pattern { "," pattern } ] "]"              (* array / slice      *)
+    | range_pattern
+    | "some" "(" pattern ")"                           (* option shorthand   *)
+    | "ok"  "(" pattern ")"                            (* result shorthand   *)
+    | "err" "(" pattern ")"
+    | "&" pattern                                      (* reference pattern  *)
+    | "(" pattern ")"
+    ;
+
+pattern_list = pattern { "," pattern } ;
+
+field_pattern
+    = IDENT ":" pattern
+    | IDENT                   (* shorthand: field name binds to same name *)
+    | ".."                    (* ignore remaining fields                  *)
+    ;
+
+range_pattern
+    = expr ".." expr
+    | expr "..=" expr
+    | expr ".."
+    | ".." expr
+    ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Literals                                                          *)
+(* ----------------------------------------------------------------- *)
+
+literal
+    = INT_LIT
+    | FLOAT_LIT
+    | STRING_LIT
+    | CHAR_LIT
+    | BOOL_LIT
+    | "unit"
+    ;
+
+BOOL_LIT = "true" | "false" ;
+
+
+(* ----------------------------------------------------------------- *)
+(*  Lexical terminals                                                 *)
+(* ----------------------------------------------------------------- *)
+
+IDENT
+    = ( LETTER | "_" ) { LETTER | DIGIT | "_" }
+    (* excluding all reserved keywords listed below *)
+    ;
+
+INT_LIT
+    = DEC_DIGITS
+    | "0x" HEX_DIGITS
+    | "0o" OCT_DIGITS
+    | "0b" BIN_DIGITS
+    ;
+
+DEC_DIGITS  = DIGIT { DIGIT | "_" } ;
+HEX_DIGITS  = HEX_DIGIT { HEX_DIGIT | "_" } ;
+OCT_DIGITS  = OCT_DIGIT { OCT_DIGIT | "_" } ;
+BIN_DIGITS  = ( "0" | "1" ) { "0" | "1" | "_" } ;
+
+FLOAT_LIT
+    = DEC_DIGITS "." DEC_DIGITS [ EXPONENT ]
+    | DEC_DIGITS EXPONENT
+    ;
+
+EXPONENT = ( "e" | "E" ) [ "+" | "-" ] DEC_DIGITS ;
+
+STRING_LIT
+    = '"' { STRING_CHAR | INTERP_EXPR } '"'
+    ;
+
+STRING_CHAR
+    = (* any Unicode character except '"', '\', and '{' *)
+    | ESCAPE_SEQ
+    ;
+
+INTERP_EXPR = "{" expr "}" ;    (* string interpolation *)
+
+ESCAPE_SEQ
+    = "\\" ( "n" | "t" | "r" | '"' | "'" | "\\" | "{" | "}" )
+    | "\\u{" HEX_DIGIT { HEX_DIGIT } "}"
+    ;
+
+CHAR_LIT = "'" ( CHAR_CHAR | ESCAPE_SEQ ) "'" ;
+
+CHAR_CHAR = (* any Unicode scalar value except "'" and "\\" *) ;
+
+DIGIT     = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+HEX_DIGIT = DIGIT | "a".."f" | "A".."F" ;
+OCT_DIGIT = "0".."7" ;
+LETTER    = "a".."z" | "A".."Z" ;
+
+ASM_CONTENT = (* raw text content of inline assembly block,
+                 platform-defined syntax, balanced braces      *) ;
+
+(* Indentation tokens emitted by the lexer *)
+NEWLINE = (* logical end of statement line, after stripping trailing
+             whitespace and comments; not emitted inside brackets  *) ;
+INDENT  = (* increase in indentation level                         *) ;
+DEDENT  = (* decrease in indentation level                         *) ;
+
+COMMENT = "#" { (* any character except newline *) } NEWLINE ;
+(* Comments are stripped by the lexer and do not appear in the grammar *)
+
+
+(* ----------------------------------------------------------------- *)
+(*  Reserved keywords                                                 *)
+(*  These identifiers may not be used as IDENT.                      *)
+(* ----------------------------------------------------------------- *)
+
+(* Declaration keywords *)
+(* module  type  trait  impl  concept  def  let  var  static  use  dep *)
+
+(* Function modifiers *)
+(* pure  async  machine *)
+
+(* Visibility *)
+(* pub  internal  super  priv *)
+
+(* Control flow *)
+(* if  elif  else  for  while  match  return  in  as *)
+
+(* Pattern keywords *)
+(* _  some  ok  err *)
+
+(* Expression keywords *)
+(* and  or  not  await  par  race  on  crew  asm *)
+
+(* Contract keywords *)
+(* pre  post  invariant *)
+
+(* Compile-time keywords *)
+(* where  requires  deriving  no_prelude *)
+
+(* Capture and ownership *)
+(* move  shared *)
+
+(* Value literals *)
+(* true  false  unit *)
+
+(* Built-in types (in prelude, not reserved, but conventional) *)
+(* int8  int16  int32  int64  int128                           *)
+(* uint8  uint16  uint32  uint64  uint128                      *)
+(* isize  usize                                                *)
+(* float32  float64  float128                                  *)
+(* int  float  bool  char  byte  str  never                    *)
+(* array  option  result                                       *)
+
+
+(* ----------------------------------------------------------------- *)
+(*  Operator precedence summary (high to low)                        *)
+(*  Encoded structurally in the expression grammar above.            *)
+(* ----------------------------------------------------------------- *)
+
+(*
+    Level   Operators                           Associativity
+    ------  --------------------------------    -------------
+    13      postfix: . [] () ? as              left
+    12      unary:   - ~ * & &mut              right
+    11      * / % *% *|                        left
+    10      + - +% -% +| -|                   left
+    9       == != < <= > >= in not in          left (non-associative)
+    8       not                                right
+    7       and                                left
+    6       or                                 left
+    5       | (pipe)                           left
+    4       => (lambda body)                   right
+    3       = += -= etc (assignment stmts)     right  [statement only]
+*)
+
+
+(* ----------------------------------------------------------------- *)
+(*  Disambiguation notes                                              *)
+(* ----------------------------------------------------------------- *)
+
+(*
+  1.  "|" is overloaded: it appears in sum type declarations,
+      or-patterns, and the pipe operator in expressions. The parser
+      disambiguates by context:
+        - Inside a "type" RHS at statement level: sum body variant.
+        - Inside a "match" arm LHS: or-pattern.
+        - Inside an expression: pipe operator.
+
+  2.  "[" is overloaded: it begins a type argument list (named_type),
+      an array literal (array_expr), a slice type (slice_type), and
+      an index expression (postfix_suffix). Disambiguated by position.
+
+  3.  "static" begins static declarations, static-if, static-assert,
+      static-for, and the static_expr form inside expressions. The
+      token following "static" determines which production applies.
+
+  4.  Backtick quote regions may contain any Kira tokens including
+      nested quotes and splice expressions. The parser maintains a
+      quote depth counter; a "~" at depth > 0 is a splice, at depth
+      0 it is a unary operator.
+
+  5.  NEWLINE suppression: NEWLINE tokens are suppressed inside any
+      balanced bracket pair ( ), [ ], { }, or a backtick quote
+      region. This allows multi-line expressions without explicit
+      line continuation.
+
+  6.  func_modifier ordering: the canonical order is
+        [static] [pure] [async[...]] [machine]
+      The parser accepts any order and the semantic checker enforces
+      valid combinations. Invalid combinations (e.g. static machine)
+      are a semantic error, not a parse error.
+
+  7.  "~" unary operator vs splice: at expression-level depth 0,
+      "~" followed by "(" is a splice_expr; "~" followed by anything
+      else is a bitwise-complement unary operator. Inside a quote
+      region, "~" always begins a splice.
+
+  8.  The "module_path" in a named_type may be a single IDENT,
+      making it identical to an expression IDENT reference. The
+      parser treats it uniformly; the type-checker resolves whether
+      it names a type or a value.
+
+  9.  "type_expr" in match_subject (compile-time type match) is only
+      valid when the match is in a static context or the subject is
+      a type parameter. The parser accepts it; semantic analysis
+      rejects it outside static context.
+
+  10. The for_expr (expression form) uses "=>" to denote the yield
+      expression. This is distinct from the for_stmt (statement
+      form) which uses ":". The lexer sees the same token stream;
+      the parser disambiguates by whether "=>" or ":" follows the
+      optional "if" guard.
+*)

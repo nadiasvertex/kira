@@ -1,0 +1,2 @@
+# Root build file — marks the workspace root for Bazel.
+# Source targets live under src/.
