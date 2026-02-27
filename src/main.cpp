@@ -1,5 +1,6 @@
 #include <argparse/argparse.hpp>
 #include <expected>
+#include <iostream>
 #include <print>
 #include <string>
 #include <string_view>
@@ -19,6 +20,12 @@ struct Config {
   argparse::ArgumentParser program(argv[0]);
 
   program.add_description("Kira - A compiler and language processing tool");
+
+  program.add_argument("-h", "--help")
+      .help("show this help message and exit")
+      .action([&](const auto &) { std::cout << program << std::endl; exit(0); })
+      .append()
+      .nargs(0);
 
   program.add_argument("sources")
       .help("source input file(s) to process")
