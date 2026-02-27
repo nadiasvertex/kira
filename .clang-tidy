@@ -1,0 +1,53 @@
+# clang-tidy configuration enforcing safety → readability → performance
+# Place this file at the repository root.
+
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  cppcoreguidelines-avoid-do-while,
+  cppcoreguidelines-interfaces-global-init,
+  cppcoreguidelines-narrowing-conversions,
+  cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  cppcoreguidelines-pro-bounds-constant-array-index,
+  cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  cppcoreguidelines-pro-type-const-cast,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-pro-type-reinterpret-cast,
+  cppcoreguidelines-pro-type-static-cast-downcast,
+  cppcoreguidelines-slicing,
+  modernize-*,
+  performance-*,
+  readability-identifier-naming,
+  readability-braces-around-statements,
+  readability-implicit-bool-conversion,
+  readability-inconsistent-declaration-parameter-name,
+  readability-make-unique,
+  readability-use-anyofallof
+
+WarningsAsErrors: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  cppcoreguidelines-narrowing-conversions,
+  readability-identifier-naming
+
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: true
+FormatStyle:  file
+
+CheckOptions:
+  - key: readability-identifier-naming.FunctionCase
+    value: snake_case
+  - key: readability-identifier-naming.ClassCase
+    value: snake_case
+  - key: readability-identifier-naming.StructCase
+    value: snake_case
+  - key: readability-identifier-naming.EnumCase
+    value: snake_case
+  - key: readability-identifier-naming.TypeAliasCase
+    value: snake_case
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.IgnoreMainLikeFunctions
+    value: '1'
