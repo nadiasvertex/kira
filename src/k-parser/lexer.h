@@ -38,7 +38,7 @@ class Lexer {
   /// Construct a lexer for the given source text. `file_id` is the
   /// identifier for the source file, used in diagnostics. `diag` is the
   /// diagnostic bag to emit errors into.
-  Lexer(std::string_view source, FileId file_id, DiagnosticBag& diag)
+  Lexer(std::string_view source, FileId file_id, diagnostic_bag& diag)
       : source_(source),
         file_id_(file_id),
         diag_(diag),
@@ -64,9 +64,9 @@ class Lexer {
 
     // Always end with EOF.
     tokens_.push_back(Token{
-        .kind = TokenKind::Eof,
-        .span = Span{static_cast<ByteOffset>(source_.size()),
-                     static_cast<ByteOffset>(source_.size())},
+        .kind = token_kind::eof,
+        .span = Span{static_cast<byte_offset>(source_.size()),
+                     static_cast<byte_offset>(source_.size())},
         .text = {},
         .error_message = {},
     });
@@ -107,12 +107,12 @@ class Lexer {
     return false;
   }
 
-  [[nodiscard]] std::string_view text_from(ByteOffset start) const noexcept {
+  [[nodiscard]] std::string_view text_from(byte_offset start) const noexcept {
     return source_.substr(start, pos_ - start);
   }
 
-  [[nodiscard]] Span span_from(ByteOffset start) const noexcept {
-    return Span{start, static_cast<ByteOffset>(pos_)};
+  [[nodiscard]] Span span_from(byte_offset start) const noexcept {
+    return Span{start, static_cast<byte_offset>(pos_)};
   }
 
   [[nodiscard]] static bool is_alpha(char c) noexcept {
@@ -151,7 +151,7 @@ class Lexer {
   //  Token emission helpers
   // ==========================================================================
 
-  void emit(TokenKind kind, ByteOffset start) {
+  void emit(token_kind kind, byte_offset start) {
     tokens_.push_back(Token{
         .kind = kind,
         .span = span_from(start),
@@ -160,7 +160,7 @@ class Lexer {
     });
   }
 
-  void emit_synthetic(TokenKind kind, Span span, std::string_view text = {}) {
+  void emit_synthetic(token_kind kind, Span span, std::string_view text = {}) {
     tokens_.push_back(Token{
         .kind = kind,
         .span = span,
@@ -169,10 +169,10 @@ class Lexer {
     });
   }
 
-  void emit_error(ByteOffset start, std::string_view message) {
+  void emit_error(byte_offset start, std::string_view message) {
     auto sp = span_from(start);
     tokens_.push_back(Token{
-        .kind = TokenKind::Error,
+        .kind = token_kind::error,
         .span = sp,
         .text = text_from(start),
         .error_message = message,
@@ -184,10 +184,10 @@ class Lexer {
   }
 
   void emit_pending_dedents() {
-    auto eof_pos = static_cast<ByteOffset>(source_.size());
+    auto eof_pos = static_cast<byte_offset>(source_.size());
     while (indent_stack_.size() > 1) {
       indent_stack_.pop_back();
-      emit_synthetic(TokenKind::Dedent,
+      emit_synthetic(token_kind::dedent,
                      Span{eof_pos, eof_pos});
     }
   }
@@ -207,7 +207,7 @@ class Lexer {
     skip_horizontal_whitespace();
     if (at_end()) return;
 
-    ByteOffset start = static_cast<ByteOffset>(pos_);
+    byte_offset start = static_cast<byte_offset>(pos_);
     char c = advance();
 
     switch (c) {
@@ -226,78 +226,78 @@ class Lexer {
       // ---- Single-character punctuation ----
       case '(':
         ++bracket_depth_;
-        emit(TokenKind::LParen, start);
+        emit(token_kind::lparen, start);
         return;
       case ')':
         if (bracket_depth_ > 0) --bracket_depth_;
-        emit(TokenKind::RParen, start);
+        emit(token_kind::rparen, start);
         return;
       case '[':
         ++bracket_depth_;
-        emit(TokenKind::LBracket, start);
+        emit(token_kind::lbracket, start);
         return;
       case ']':
         if (bracket_depth_ > 0) --bracket_depth_;
-        emit(TokenKind::RBracket, start);
+        emit(token_kind::rbracket, start);
         return;
       case '{':
         ++bracket_depth_;
-        emit(TokenKind::LBrace, start);
+        emit(token_kind::lbrace, start);
         return;
       case '}':
         if (bracket_depth_ > 0) --bracket_depth_;
-        emit(TokenKind::RBrace, start);
+        emit(token_kind::rbrace, start);
         return;
       case ',':
-        emit(TokenKind::Comma, start);
+        emit(token_kind::comma, start);
         return;
       case ';':
-        emit(TokenKind::Semicolon, start);
+        emit(token_kind::semicolon, start);
         return;
       case '@':
-        emit(TokenKind::At, start);
+        emit(token_kind::at, start);
         return;
       case '?':
-        emit(TokenKind::Question, start);
+        emit(token_kind::question, start);
         return;
       case '`':
         // Backtick — quote region delimiter. We treat open/close the same
         // and let the parser track nesting.
-        emit(TokenKind::Backtick, start);
+        emit(token_kind::backtick, start);
         return;
 
       // ---- Colon ----
       case ':':
-        emit(TokenKind::Colon, start);
+        emit(token_kind::colon, start);
         return;
 
       // ---- Dot ----
       case '.':
         if (match('.')) {
           if (match('=')) {
-            emit(TokenKind::DotDotEq, start);
+            emit(token_kind::dot_dot_eq, start);
           } else {
-            emit(TokenKind::DotDot, start);
+            emit(token_kind::dot_dot, start);
           }
         } else {
-          emit(TokenKind::Dot, start);
+          emit(token_kind::dot, start);
         }
         return;
 
       // ---- Operators ----
       case '=':
         if (match('=')) {
-          emit(TokenKind::EqEq, start);
+          emit(token_kind::eq_eq, start);
         } else if (match('>')) {
-          emit(TokenKind::FatArrow, start);
+          emit(token_kind::fat_arrow, start);
         } else {
-          emit(TokenKind::Eq, start);
+          emit(token_kind::eq, start);
         }
         return;
 
       case '!':
         if (match('=')) {
-          emit(TokenKind::BangEq, start);
+          emit(token_kind::bang_eq, start);
         } else {
           // Bare '!' is not a Kira operator. Give a helpful message.
           emit_error(start,
@@ -309,134 +309,134 @@ class Lexer {
       case '+':
         if (match('%')) {
           if (match('=')) {
-            emit(TokenKind::PlusPercentEq, start);
+            emit(token_kind::plus_percent_eq, start);
           } else {
-            emit(TokenKind::PlusPercent, start);
+            emit(token_kind::plus_percent, start);
           }
         } else if (match('|')) {
           if (match('=')) {
-            emit(TokenKind::PlusPipeEq, start);
+            emit(token_kind::plus_pipe_eq, start);
           } else {
-            emit(TokenKind::PlusPipe, start);
+            emit(token_kind::plus_pipe, start);
           }
         } else if (match('=')) {
-          emit(TokenKind::PlusEq, start);
+          emit(token_kind::plus_eq, start);
         } else {
-          emit(TokenKind::Plus, start);
+          emit(token_kind::plus, start);
         }
         return;
 
       case '-':
         if (match('>')) {
-          emit(TokenKind::Arrow, start);
+          emit(token_kind::arrow, start);
         } else if (match('%')) {
           if (match('=')) {
-            emit(TokenKind::MinusPercentEq, start);
+            emit(token_kind::minus_percent_eq, start);
           } else {
-            emit(TokenKind::MinusPercent, start);
+            emit(token_kind::minus_percent, start);
           }
         } else if (match('|')) {
           if (match('=')) {
-            emit(TokenKind::MinusPipeEq, start);
+            emit(token_kind::minus_pipe_eq, start);
           } else {
-            emit(TokenKind::MinusPipe, start);
+            emit(token_kind::minus_pipe, start);
           }
         } else if (match('=')) {
-          emit(TokenKind::MinusEq, start);
+          emit(token_kind::minus_eq, start);
         } else {
-          emit(TokenKind::Minus, start);
+          emit(token_kind::minus, start);
         }
         return;
 
       case '*':
         if (match('%')) {
           if (match('=')) {
-            emit(TokenKind::StarPercentEq, start);
+            emit(token_kind::star_percent_eq, start);
           } else {
-            emit(TokenKind::StarPercent, start);
+            emit(token_kind::star_percent, start);
           }
         } else if (match('|')) {
           if (match('=')) {
-            emit(TokenKind::StarPipeEq, start);
+            emit(token_kind::star_pipe_eq, start);
           } else {
-            emit(TokenKind::StarPipe, start);
+            emit(token_kind::star_pipe, start);
           }
         } else if (match('=')) {
-          emit(TokenKind::StarEq, start);
+          emit(token_kind::star_eq, start);
         } else {
-          emit(TokenKind::Star, start);
+          emit(token_kind::star, start);
         }
         return;
 
       case '/':
         if (match('=')) {
-          emit(TokenKind::SlashEq, start);
+          emit(token_kind::slash_eq, start);
         } else {
-          emit(TokenKind::Slash, start);
+          emit(token_kind::slash, start);
         }
         return;
 
       case '%':
         if (match('=')) {
-          emit(TokenKind::PercentEq, start);
+          emit(token_kind::percent_eq, start);
         } else {
-          emit(TokenKind::Percent, start);
+          emit(token_kind::percent, start);
         }
         return;
 
       case '&':
         if (match('=')) {
-          emit(TokenKind::AmpEq, start);
+          emit(token_kind::amp_eq, start);
         } else {
-          emit(TokenKind::Amp, start);
+          emit(token_kind::amp, start);
         }
         return;
 
       case '|':
         if (match('=')) {
-          emit(TokenKind::PipeEq, start);
+          emit(token_kind::pipe_eq, start);
         } else {
-          emit(TokenKind::Pipe, start);
+          emit(token_kind::pipe, start);
         }
         return;
 
       case '^':
         if (match('=')) {
-          emit(TokenKind::CaretEq, start);
+          emit(token_kind::caret_eq, start);
         } else {
-          emit(TokenKind::Caret, start);
+          emit(token_kind::caret, start);
         }
         return;
 
       case '~':
-        emit(TokenKind::Tilde, start);
+        emit(token_kind::tilde, start);
         return;
 
       case '<':
         if (match('<')) {
           if (match('=')) {
-            emit(TokenKind::LtLtEq, start);
+            emit(token_kind::lt_lt_eq, start);
           } else {
-            emit(TokenKind::LtLt, start);
+            emit(token_kind::lt_lt, start);
           }
         } else if (match('=')) {
-          emit(TokenKind::LtEq, start);
+          emit(token_kind::lt_eq, start);
         } else {
-          emit(TokenKind::Lt, start);
+          emit(token_kind::lt, start);
         }
         return;
 
       case '>':
         if (match('>')) {
           if (match('=')) {
-            emit(TokenKind::GtGtEq, start);
+            emit(token_kind::gt_gt_eq, start);
           } else {
-            emit(TokenKind::GtGt, start);
+            emit(token_kind::gt_gt, start);
           }
         } else if (match('=')) {
-          emit(TokenKind::GtEq, start);
+          emit(token_kind::gt_eq, start);
         } else {
-          emit(TokenKind::Gt, start);
+          emit(token_kind::gt, start);
         }
         return;
 
@@ -492,7 +492,7 @@ class Lexer {
   void handle_line_start() {
     // Measure leading whitespace.
     uint32_t indent = 0;
-    ByteOffset line_begin = static_cast<ByteOffset>(pos_);
+    byte_offset line_begin = static_cast<byte_offset>(pos_);
 
     while (!at_end()) {
       char c = peek();
@@ -533,21 +533,21 @@ class Lexer {
     if (indent > current_indent) {
       // Increased indentation — emit INDENT.
       indent_stack_.push_back(indent);
-      emit_synthetic(TokenKind::Indent,
-                     Span{line_begin, static_cast<ByteOffset>(pos_)});
+      emit_synthetic(token_kind::indent,
+                     Span{line_begin, static_cast<byte_offset>(pos_)});
     } else if (indent < current_indent) {
       // Decreased indentation — emit one or more DEDENT tokens.
       while (indent_stack_.size() > 1 && indent < indent_stack_.back()) {
         indent_stack_.pop_back();
-        emit_synthetic(TokenKind::Dedent,
-                       Span{line_begin, static_cast<ByteOffset>(pos_)});
+        emit_synthetic(token_kind::dedent,
+                       Span{line_begin, static_cast<byte_offset>(pos_)});
       }
 
       // Check that the dedent lands on a known indent level.
       if (!indent_stack_.empty() && indent != indent_stack_.back()) {
-        auto sp = Span{line_begin, static_cast<ByteOffset>(pos_)};
+        auto sp = Span{line_begin, static_cast<byte_offset>(pos_)};
         diag_.emit(
-            Diagnostic(DiagnosticLevel::Error,
+            diagnostic(diagnostic_level::error,
                        "inconsistent indentation — this line's indentation "
                        "doesn't match any previous indentation level",
                        file_id_)
@@ -563,7 +563,7 @@ class Lexer {
     // If indent == current_indent, no token needed — same level.
   }
 
-  void handle_newline(ByteOffset start) {
+  void handle_newline(byte_offset start) {
     // Inside brackets, newlines are suppressed.
     if (bracket_depth_ > 0) {
       // Don't emit anything — just continue.
@@ -572,7 +572,7 @@ class Lexer {
     }
 
     // Emit a NEWLINE token and mark that the next thing is a line start.
-    emit(TokenKind::Newline, start);
+    emit(token_kind::newline, start);
     at_line_start_ = true;
   }
 
@@ -594,7 +594,7 @@ class Lexer {
   //  Identifier / keyword scanning
   // ==========================================================================
 
-  void scan_identifier(ByteOffset start) {
+  void scan_identifier(byte_offset start) {
     while (!at_end() && is_ident_continue(peek())) {
       advance();
     }
@@ -613,7 +613,7 @@ class Lexer {
   //  Number scanning
   // ==========================================================================
 
-  void scan_number(ByteOffset start) {
+  void scan_number(byte_offset start) {
     // We've already consumed the first digit.
     char first = source_[start];
 
@@ -622,19 +622,19 @@ class Lexer {
       if (next == 'x' || next == 'X') {
         advance();  // consume 'x'
         scan_hex_digits(start);
-        emit(TokenKind::IntLit, start);
+        emit(token_kind::int_lit, start);
         return;
       }
       if (next == 'o' || next == 'O') {
         advance();  // consume 'o'
         scan_oct_digits(start);
-        emit(TokenKind::IntLit, start);
+        emit(token_kind::int_lit, start);
         return;
       }
       if (next == 'b' || next == 'B') {
         advance();  // consume 'b'
         scan_bin_digits(start);
-        emit(TokenKind::IntLit, start);
+        emit(token_kind::int_lit, start);
         return;
       }
     }
@@ -648,17 +648,17 @@ class Lexer {
       advance();  // consume '.'
       scan_dec_digits();
       scan_optional_exponent();
-      emit(TokenKind::FloatLit, start);
+      emit(token_kind::float_lit, start);
       return;
     }
 
     if (!at_end() && (peek() == 'e' || peek() == 'E')) {
       scan_optional_exponent();
-      emit(TokenKind::FloatLit, start);
+      emit(token_kind::float_lit, start);
       return;
     }
 
-    emit(TokenKind::IntLit, start);
+    emit(token_kind::int_lit, start);
   }
 
   void scan_dec_digits() {
@@ -667,7 +667,7 @@ class Lexer {
     }
   }
 
-  void scan_hex_digits(ByteOffset start) {
+  void scan_hex_digits(byte_offset start) {
     if (at_end() || !is_hex_digit(peek())) {
       emit_error(start,
           "expected hexadecimal digits after `0x` — for example, `0xFF` or "
@@ -679,7 +679,7 @@ class Lexer {
     }
   }
 
-  void scan_oct_digits(ByteOffset start) {
+  void scan_oct_digits(byte_offset start) {
     if (at_end() || !is_oct_digit(peek())) {
       emit_error(start,
           "expected octal digits (0-7) after `0o` — for example, `0o777`");
@@ -688,11 +688,11 @@ class Lexer {
     while (!at_end() && (is_oct_digit(peek()) || peek() == '_')) {
       // Check for invalid digits in octal.
       if (is_digit(peek()) && !is_oct_digit(peek()) && peek() != '_') {
-        auto bad_start = static_cast<ByteOffset>(pos_);
+        auto bad_start = static_cast<byte_offset>(pos_);
         advance();
-        auto sp = Span{bad_start, static_cast<ByteOffset>(pos_)};
+        auto sp = Span{bad_start, static_cast<byte_offset>(pos_)};
         diag_.emit(
-            Diagnostic(DiagnosticLevel::Error,
+            diagnostic(diagnostic_level::error,
                        std::format("the digit `{}` is not valid in an octal "
                                    "literal — octal digits are 0 through 7",
                                    source_[bad_start]),
@@ -705,7 +705,7 @@ class Lexer {
     }
   }
 
-  void scan_bin_digits(ByteOffset start) {
+  void scan_bin_digits(byte_offset start) {
     if (at_end() || !is_bin_digit(peek())) {
       emit_error(start,
           "expected binary digits (0 or 1) after `0b` — for example, "
@@ -714,11 +714,11 @@ class Lexer {
     }
     while (!at_end() && (is_bin_digit(peek()) || peek() == '_')) {
       if (is_digit(peek()) && !is_bin_digit(peek()) && peek() != '_') {
-        auto bad_start = static_cast<ByteOffset>(pos_);
+        auto bad_start = static_cast<byte_offset>(pos_);
         advance();
-        auto sp = Span{bad_start, static_cast<ByteOffset>(pos_)};
+        auto sp = Span{bad_start, static_cast<byte_offset>(pos_)};
         diag_.emit(
-            Diagnostic(DiagnosticLevel::Error,
+            diagnostic(diagnostic_level::error,
                        std::format("the digit `{}` is not valid in a binary "
                                    "literal — only `0` and `1` are allowed",
                                    source_[bad_start]),
@@ -738,9 +738,9 @@ class Lexer {
       advance();
     }
     if (at_end() || !is_digit(peek())) {
-      auto pos = static_cast<ByteOffset>(pos_);
+      auto pos = static_cast<byte_offset>(pos_);
       diag_.emit(
-          Diagnostic(DiagnosticLevel::Error,
+          diagnostic(diagnostic_level::error,
                      "expected digits after the exponent `e` in a float "
                      "literal — for example, `1.5e10` or `2.0e-3`",
                      file_id_)
@@ -754,38 +754,38 @@ class Lexer {
   //  String literal scanning
   // ==========================================================================
 
-  void scan_string(ByteOffset start) {
+  void scan_string(byte_offset start) {
     // We've already consumed the opening `"`.
     // Track the opening quote position for error messages.
-    ByteOffset open_quote = start;
+    byte_offset open_quote = start;
 
     while (!at_end()) {
       char c = peek();
 
       if (c == '"') {
         advance();  // consume closing quote
-        emit(TokenKind::StringLit, start);
+        emit(token_kind::string_lit, start);
         return;
       }
 
       if (c == '\n') {
         // Unterminated string at end of line.
           diag_.emit(
-            Diagnostic(DiagnosticLevel::Error,
+            diagnostic(diagnostic_level::error,
                        "unterminated string literal — the string started here "
                        "but the line ended before a closing `\"` was found",
                        file_id_)
                 .with_label(Span{open_quote, open_quote + 1},
                             "string starts here")
-                .with_label(Span{static_cast<ByteOffset>(pos_),
-                                 static_cast<ByteOffset>(pos_) + 1},
+                .with_label(Span{static_cast<byte_offset>(pos_),
+                                 static_cast<byte_offset>(pos_) + 1},
                             "expected a closing `\"` before end of line")
                 .with_help("Add a closing `\"` to end the string, or if you "
                            "need a multi-line string, use string "
                            "concatenation."));
         // Recovery: emit what we have as a string token and let the
         // parser continue.
-        emit(TokenKind::StringLit, start);
+        emit(token_kind::string_lit, start);
         return;
       }
 
@@ -817,7 +817,7 @@ class Lexer {
         }
         if (depth > 0) {
           diag_.emit(
-              Diagnostic(DiagnosticLevel::Error,
+              diagnostic(diagnostic_level::error,
                          "unterminated string interpolation — the `{` inside "
                          "this string was never closed with a matching `}`",
                          file_id_)
@@ -835,25 +835,25 @@ class Lexer {
 
     // Reached EOF without closing quote.
     diag_.emit(
-        Diagnostic(DiagnosticLevel::Error,
+        diagnostic(diagnostic_level::error,
                    "unterminated string literal — reached end of file without "
                    "finding a closing `\"`",
                    file_id_)
             .with_label(Span{open_quote, open_quote + 1},
                         "string starts here")
             .with_help("Add a closing `\"` to end this string."));
-    emit(TokenKind::StringLit, start);
+    emit(token_kind::string_lit, start);
   }
 
-  void scan_escape_sequence([[maybe_unused]] ByteOffset string_start) {
+  void scan_escape_sequence([[maybe_unused]] byte_offset string_start) {
     if (at_end()) {
       diag_.emit(
-          Diagnostic(DiagnosticLevel::Error,
+          diagnostic(diagnostic_level::error,
                      "incomplete escape sequence at end of file — a `\\` was "
                      "found but nothing follows it",
                      file_id_)
-              .with_label(Span{static_cast<ByteOffset>(pos_ - 1),
-                               static_cast<ByteOffset>(pos_)},
+              .with_label(Span{static_cast<byte_offset>(pos_ - 1),
+                               static_cast<byte_offset>(pos_)},
                           "this backslash needs something after it")
               .with_help("Valid escape sequences include: \\n (newline), "
                          "\\t (tab), \\r (carriage return), \\\" (quote), "
@@ -872,12 +872,12 @@ class Lexer {
         // Unicode escape: \u{XXXX}
         if (!match('{')) {
           diag_.emit(
-              Diagnostic(DiagnosticLevel::Error,
+              diagnostic(diagnostic_level::error,
                          "expected `{` after `\\u` in Unicode escape — the "
                          "correct syntax is `\\u{XXXX}` where XXXX are hex digits",
                          file_id_)
-                  .with_label(Span{static_cast<ByteOffset>(pos_ - 2),
-                                   static_cast<ByteOffset>(pos_)},
+                  .with_label(Span{static_cast<byte_offset>(pos_ - 2),
+                                   static_cast<byte_offset>(pos_)},
                               "here")
                   .with_help("Unicode escapes use the format `\\u{1F600}` — "
                              "hex digits inside curly braces."));
@@ -885,11 +885,11 @@ class Lexer {
         }
         if (at_end() || !is_hex_digit(peek())) {
           diag_.emit(
-              Diagnostic(DiagnosticLevel::Error,
+              diagnostic(diagnostic_level::error,
                          "expected hex digits inside `\\u{...}` Unicode escape",
                          file_id_)
-                  .with_label(Span{static_cast<ByteOffset>(pos_ - 3),
-                                   static_cast<ByteOffset>(pos_)},
+                  .with_label(Span{static_cast<byte_offset>(pos_ - 3),
+                                   static_cast<byte_offset>(pos_)},
                               "here")
                   .with_help("Put one to six hexadecimal digits inside the "
                              "braces, like `\\u{41}` for 'A' or `\\u{1F600}` "
@@ -903,11 +903,11 @@ class Lexer {
         }
         if (!match('}')) {
           diag_.emit(
-              Diagnostic(DiagnosticLevel::Error,
+              diagnostic(diagnostic_level::error,
                          "expected closing `}` for Unicode escape `\\u{...}`",
                          file_id_)
-                  .with_label(Span{static_cast<ByteOffset>(pos_ - hex_count - 3),
-                                   static_cast<ByteOffset>(pos_)},
+                  .with_label(Span{static_cast<byte_offset>(pos_ - hex_count - 3),
+                                   static_cast<byte_offset>(pos_)},
                               "this Unicode escape is missing its closing `}`")
                   .with_help("Make sure the escape is written as "
                              "`\\u{digits}` with a closing brace."));
@@ -917,13 +917,13 @@ class Lexer {
 
       default: {
         // Unknown escape sequence — give a helpful error.
-        auto esc_span = Span{static_cast<ByteOffset>(pos_ - 2),
-                             static_cast<ByteOffset>(pos_)};
+        auto esc_span = Span{static_cast<byte_offset>(pos_ - 2),
+                             static_cast<byte_offset>(pos_)};
         std::string msg = "unknown escape sequence `\\";
         msg += c;
         msg += "`";
 
-        auto diag = Diagnostic(DiagnosticLevel::Error, msg, file_id_)
+        auto diag = diagnostic(diagnostic_level::error, msg, file_id_)
             .with_label(esc_span, "not a recognized escape");
 
         // Suggest common mistakes.
@@ -956,19 +956,19 @@ class Lexer {
   //  Character literal scanning
   // ==========================================================================
 
-  void scan_char(ByteOffset start) {
+  void scan_char(byte_offset start) {
     // We've already consumed the opening `'`.
     if (at_end()) {
       diag_.emit(
-          Diagnostic(DiagnosticLevel::Error,
+          diagnostic(diagnostic_level::error,
                      "unterminated character literal — expected a character "
                      "and closing `'`",
                      file_id_)
-              .with_label(Span{start, static_cast<ByteOffset>(pos_)},
+              .with_label(Span{start, static_cast<byte_offset>(pos_)},
                           "this `'` starts a character literal")
               .with_help("Character literals contain exactly one character: "
                          "`'a'`, `'\\n'`, `'\\u{1F600}'`."));
-      emit(TokenKind::CharLit, start);
+      emit(token_kind::char_lit, start);
       return;
     }
 
@@ -976,14 +976,14 @@ class Lexer {
       // Empty character literal.
       advance();
       diag_.emit(
-          Diagnostic(DiagnosticLevel::Error,
+          diagnostic(diagnostic_level::error,
                      "empty character literal — character literals must "
                      "contain exactly one character",
                      file_id_)
               .with_label(span_from(start), "this is empty")
               .with_help("Did you mean `' '` (a space), or perhaps a "
                          "string `\"\"`?"));
-      emit(TokenKind::CharLit, start);
+      emit(token_kind::char_lit, start);
       return;
     }
 
@@ -992,14 +992,14 @@ class Lexer {
       scan_escape_sequence(start);
     } else if (peek() == '\n') {
       diag_.emit(
-          Diagnostic(DiagnosticLevel::Error,
+          diagnostic(diagnostic_level::error,
                      "unterminated character literal — the line ended before "
                      "the closing `'` was found",
                      file_id_)
-              .with_label(Span{start, static_cast<ByteOffset>(pos_)},
+              .with_label(Span{start, static_cast<byte_offset>(pos_)},
                           "character literal starts here")
               .with_help("Add a closing `'` after the character."));
-      emit(TokenKind::CharLit, start);
+      emit(token_kind::char_lit, start);
       return;
     } else {
       advance();  // consume the character
@@ -1027,29 +1027,29 @@ class Lexer {
         if (has_close) advance();
 
         diag_.emit(
-            Diagnostic(DiagnosticLevel::Error,
+            diagnostic(diagnostic_level::error,
                        "character literal contains more than one character",
                        file_id_)
                 .with_label(span_from(start), "this is too long for a `char`")
                 .with_help("Character literals hold exactly one character. "
                            "If you need multiple characters, use a string "
                            "with double quotes: `\"...\"`."));
-        emit(TokenKind::CharLit, start);
+        emit(token_kind::char_lit, start);
         return;
       }
 
       diag_.emit(
-          Diagnostic(DiagnosticLevel::Error,
+          diagnostic(diagnostic_level::error,
                      "unterminated character literal — expected a closing `'`",
                      file_id_)
-              .with_label(Span{start, static_cast<ByteOffset>(pos_)},
+              .with_label(Span{start, static_cast<byte_offset>(pos_)},
                           "character literal starts here"));
-      emit(TokenKind::CharLit, start);
+      emit(token_kind::char_lit, start);
       return;
     }
 
     advance();  // consume closing quote
-    emit(TokenKind::CharLit, start);
+    emit(token_kind::char_lit, start);
   }
 
   // ==========================================================================
@@ -1058,7 +1058,7 @@ class Lexer {
 
   std::string_view source_;
   FileId file_id_;
-  DiagnosticBag& diag_;
+  diagnostic_bag& diag_;
 
   size_t pos_;
   std::vector<Token> tokens_;

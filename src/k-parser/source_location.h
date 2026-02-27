@@ -11,7 +11,7 @@ namespace kira {
 /// We use a raw offset rather than line/column so that all position
 /// arithmetic is O(1). Line and column are computed lazily when needed
 /// for diagnostics.
-using ByteOffset = uint32_t;
+using byte_offset = uint32_t;
 
 /// @brief A half-open range [start, end) of byte offsets in a source file.
 ///
@@ -20,8 +20,8 @@ using ByteOffset = uint32_t;
 /// point the user back to exactly the piece of source code we're talking
 /// about.
 struct Span {
-  ByteOffset start = 0;
-  ByteOffset end = 0;
+  byte_offset start = 0;
+  byte_offset end = 0;
 
   /// Returns true if this span is empty (zero-length).
   [[nodiscard]] constexpr bool empty() const noexcept {
@@ -73,21 +73,21 @@ using FileId = uint16_t;
 /// This is what diagnostics use to point at source code. It carries
 /// enough information to produce a full error message with file name,
 /// line number, column, and the underlined source snippet.
-struct SourceLocation {
+struct source_location {
   FileId file_id = 0;
   Span span;
 
-  [[nodiscard]] static constexpr SourceLocation dummy() noexcept {
-    return SourceLocation{0, Span::dummy()};
+  [[nodiscard]] static constexpr source_location dummy() noexcept {
+    return source_location{0, Span::dummy()};
   }
 
-  [[nodiscard]] constexpr SourceLocation merge(SourceLocation other) const noexcept {
+  [[nodiscard]] constexpr source_location merge(source_location other) const noexcept {
     // Only merge locations from the same file; if they differ, prefer `this`.
     if (file_id != other.file_id) return *this;
-    return SourceLocation{file_id, span.merge(other.span)};
+    return source_location{file_id, span.merge(other.span)};
   }
 
-  constexpr bool operator==(const SourceLocation&) const noexcept = default;
+  constexpr bool operator==(const source_location&) const noexcept = default;
 };
 
 /// @brief Resolved line and column information for display.
@@ -95,7 +95,7 @@ struct SourceLocation {
 /// This is computed on-demand from a Span + source text. We don't store
 /// this in every AST node because it's expensive to compute and rarely
 /// needed — only when formatting diagnostics.
-struct LineColumn {
+struct line_column {
   uint32_t line = 1;    ///< 1-based line number
   uint32_t column = 1;  ///< 1-based column number (in bytes, not graphemes)
 };
@@ -103,11 +103,11 @@ struct LineColumn {
 /// @brief A read-only view of a source file's contents, along with
 /// precomputed line-start offsets for efficient line/column lookup.
 ///
-/// The SourceFile does NOT own the source text — it borrows it. Make sure
-/// the backing storage outlives the SourceFile.
-class SourceFile {
+/// The source_file does NOT own the source text — it borrows it. Make sure
+/// the backing storage outlives the source_file.
+class source_file {
  public:
-  SourceFile(FileId id, std::string name, std::string source)
+  source_file(FileId id, std::string name, std::string source)
       : id_(id),
         name_(std::move(name)),
         source_(std::move(source)) {
@@ -119,7 +119,7 @@ class SourceFile {
   [[nodiscard]] std::string_view source() const noexcept { return source_; }
 
   /// Resolve a byte offset to a 1-based line and column.
-  [[nodiscard]] LineColumn resolve(ByteOffset offset) const noexcept {
+  [[nodiscard]] line_column resolve(byte_offset offset) const noexcept {
     if (line_starts_.empty()) {
       return {1, 1};
     }
@@ -137,7 +137,7 @@ class SourceFile {
       }
     }
 
-    return LineColumn{
+    return line_column{
         .line = lo + 1,
         .column = static_cast<uint32_t>(offset - line_starts_[lo]) + 1,
     };
@@ -148,23 +148,23 @@ class SourceFile {
     if (span.start >= source_.size()) return {};
     auto actual_end = span.end <= source_.size()
                           ? span.end
-                          : static_cast<ByteOffset>(source_.size());
+                          : static_cast<byte_offset>(source_.size());
     return std::string_view(source_).substr(span.start, actual_end - span.start);
   }
 
   /// Extract the full source line that contains the given byte offset.
   /// Used to display the source context in diagnostic messages.
-  [[nodiscard]] std::string_view line_at(ByteOffset offset) const noexcept {
+  [[nodiscard]] std::string_view line_at(byte_offset offset) const noexcept {
     auto lc = resolve(offset);
     uint32_t line_idx = lc.line - 1;
     if (line_idx >= line_starts_.size()) return {};
 
-    ByteOffset line_start = line_starts_[line_idx];
-    ByteOffset line_end;
+    byte_offset line_start = line_starts_[line_idx];
+    byte_offset line_end;
     if (line_idx + 1 < line_starts_.size()) {
       line_end = line_starts_[line_idx + 1];
     } else {
-      line_end = static_cast<ByteOffset>(source_.size());
+      line_end = static_cast<byte_offset>(source_.size());
     }
 
     // Strip trailing newline from the returned view.
@@ -186,7 +186,7 @@ class SourceFile {
     line_starts_.clear();
     line_starts_.push_back(0);  // Line 1 starts at offset 0.
 
-    for (ByteOffset i = 0; i < static_cast<ByteOffset>(source_.size()); ++i) {
+    for (byte_offset i = 0; i < static_cast<byte_offset>(source_.size()); ++i) {
       if (source_[i] == '\n') {
         line_starts_.push_back(i + 1);
       }
@@ -196,7 +196,7 @@ class SourceFile {
   FileId id_;
   std::string name_;
   std::string source_;
-  std::vector<ByteOffset> line_starts_;
+  std::vector<byte_offset> line_starts_;
 };
 
 }  // namespace kira

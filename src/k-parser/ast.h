@@ -19,116 +19,116 @@ namespace kira::ast {
 // ==========================================================================
 
 // Top-level
-struct File;
-struct ModuleDecl;
+struct file;
+struct module_decl;
 
 // Items
-struct UseDecl;
-struct TypeDecl;
-struct TraitDecl;
-struct ImplDecl;
-struct ConceptDecl;
-struct FuncDecl;
-struct SubModuleDecl;
-struct DepDecl;
-struct StaticDecl;
-struct SpliceStmt;
+struct use_decl;
+struct type_decl;
+struct trait_decl;
+struct impl_decl;
+struct concept_decl;
+struct func_decl;
+struct sub_module_decl;
+struct dep_decl;
+struct static_decl;
+struct splice_stmt;
 
 // Type system
-struct NamedType;
-struct TupleType;
-struct SliceType;
-struct ArrayType;
-struct RefType;
-struct PtrType;
-struct FnType;
-struct QuoteType;
-struct UnionType;
-struct RefinementType;
+struct named_type;
+struct tuple_type;
+struct slice_type;
+struct array_type;
+struct ref_type;
+struct ptr_type;
+struct fn_type;
+struct quote_type;
+struct union_type;
+struct refinement_type;
 
 // Type params & bounds
-struct TypeParam;
-struct TypeArg;
-struct BoundTerm;
-struct WhereConstraint;
+struct type_param;
+struct type_arg;
+struct bound_term;
+struct where_constraint;
 
 // Struct / sum
-struct StructField;
-struct StructBody;
-struct SumVariant;
-struct SumBody;
+struct struct_field;
+struct struct_body;
+struct sum_variant;
+struct sum_body;
 
 // Trait / impl internals
-struct AssociatedTypeDecl;
-struct AssociatedTypeDef;
+struct associated_type_decl;
+struct associated_type_def;
 
 // Concept internals
-struct ConceptParam;
-struct ConceptConstraint;
+struct concept_param;
+struct concept_constraint;
 
 // Function-related
 struct Param;
-struct ContractClause;
+struct contract_clause;
 
 // Statements
-struct LetStmt;
-struct VarStmt;
-struct AssignStmt;
-struct ExprStmt;
-struct ReturnStmt;
-struct IfStmt;
-struct WhileStmt;
-struct ForStmt;
-struct MatchStmt;
-struct CrewStmt;
-struct AsmStmt;
+struct let_stmt;
+struct var_stmt;
+struct assign_stmt;
+struct expr_stmt;
+struct return_stmt;
+struct if_stmt;
+struct while_stmt;
+struct for_stmt;
+struct match_stmt;
+struct crew_stmt;
+struct asm_stmt;
 
 // Expressions
-struct IdentExpr;
-struct LiteralExpr;
-struct BinaryExpr;
-struct UnaryExpr;
+struct ident_expr;
+struct literal_expr;
+struct binary_expr;
+struct unary_expr;
 struct PostfixExpr;
-struct CallExpr;
-struct IndexExpr;
-struct FieldExpr;
-struct CastExpr;
-struct TryExpr;
-struct TupleExpr;
-struct ArrayExpr;
-struct StructExpr;
-struct LambdaExpr;
-struct MatchExpr;
-struct IfExpr;
-struct ForExpr;
-struct AwaitExpr;
-struct ParExpr;
-struct RaceExpr;
-struct OnExpr;
-struct BlockExpr;
-struct QuoteExpr;
-struct SpliceExpr;
-struct StaticExpr;
-struct ModulePathExpr;
-struct GroupExpr;
+struct call_expr;
+struct index_expr;
+struct field_expr;
+struct cast_expr;
+struct try_expr;
+struct tuple_expr;
+struct array_expr;
+struct struct_expr;
+struct lambda_expr;
+struct match_expr;
+struct if_expr;
+struct for_expr;
+struct await_expr;
+struct par_expr;
+struct race_expr;
+struct on_expr;
+struct block_expr;
+struct quote_expr;
+struct splice_expr;
+struct static_expr;
+struct module_path_expr;
+struct group_expr;
 
 // Patterns
-struct WildcardPattern;
-struct LiteralPattern;
-struct BindingPattern;
-struct ConstructorPattern;
-struct TuplePattern;
-struct StructPattern;
-struct ArrayPattern;
-struct RangePattern;
-struct OptionPattern;
-struct ResultPattern;
-struct RefPattern;
-struct OrPattern;
-struct GroupPattern;
+struct wildcard_pattern;
+struct literal_pattern;
+struct binding_pattern;
+struct constructor_pattern;
+struct tuple_pattern;
+struct struct_pattern;
+struct array_pattern;
+struct range_pattern;
+struct option_pattern;
+struct result_pattern;
+struct ref_pattern;
+struct or_pattern;
+struct group_pattern;
 
 // Match arms
-struct MatchArm;
+struct match_arm;
 
 // ==========================================================================
 //  Smart pointer aliases — every AST node is heap-allocated and owned
@@ -136,14 +136,14 @@ struct MatchArm;
 // ==========================================================================
 
 template <typename T>
-using Ptr = std::unique_ptr<T>;
+using ptr = std::unique_ptr<T>;
 
 template <typename T>
-using PtrVec = std::vector<Ptr<T>>;
+using ptr_vec = std::vector<ptr<T>>;
 
-/// Helper to create an AST node. Usage: `auto n = make<IdentExpr>(...);`
+/// Helper to create an AST node. Usage: `auto n = make<ident_expr>(...);`
 template <typename T, typename... Args>
-[[nodiscard]] Ptr<T> make(Args&&... args) {
+[[nodiscard]] ptr<T> make(Args&&... args) {
   return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
@@ -154,96 +154,96 @@ template <typename T, typename... Args>
 
 enum class NodeKind : uint8_t {
   // Sentinel
-  ErrorNode,
+  error_node,
 
   // Top-level
   File,
-  ModuleDecl,
+  module_decl,
 
   // Items
-  UseDecl,
-  TypeDecl,
-  TraitDecl,
-  ImplDecl,
-  ConceptDecl,
-  FuncDecl,
-  SubModuleDecl,
-  DepDecl,
-  StaticDecl,
-  SpliceStmt,
+  use_decl,
+  type_decl,
+  trait_decl,
+  impl_decl,
+  concept_decl,
+  func_decl,
+  sub_module_decl,
+  dep_decl,
+  static_decl,
+  splice_stmt,
 
   // Types
-  NamedType,
-  TupleType,
-  SliceType,
-  ArrayType,
-  RefType,
-  PtrType,
-  FnType,
-  QuoteType,
-  UnionType,
-  RefinementType,
+  named_type,
+  tuple_type,
+  slice_type,
+  array_type,
+  ref_type,
+  ptr_type,
+  fn_type,
+  quote_type,
+  union_type,
+  refinement_type,
 
   // Statements
-  LetStmt,
-  VarStmt,
-  AssignStmt,
-  ExprStmt,
-  ReturnStmt,
-  IfStmt,
-  WhileStmt,
-  ForStmt,
-  MatchStmt,
-  CrewStmt,
-  AsmStmt,
+  let_stmt,
+  var_stmt,
+  assign_stmt,
+  expr_stmt,
+  return_stmt,
+  if_stmt,
+  while_stmt,
+  for_stmt,
+  match_stmt,
+  crew_stmt,
+  asm_stmt,
 
   // Expressions
-  IdentExpr,
-  LiteralExpr,
-  BinaryExpr,
-  UnaryExpr,
+  ident_expr,
+  literal_expr,
+  binary_expr,
+  unary_expr,
   PostfixExpr,
-  CallExpr,
-  IndexExpr,
-  FieldExpr,
-  CastExpr,
-  TryExpr,
-  TupleExpr,
-  ArrayExpr,
-  StructExpr,
-  LambdaExpr,
-  MatchExpr,
-  IfExpr,
-  ForExpr,
-  AwaitExpr,
-  ParExpr,
-  RaceExpr,
-  OnExpr,
-  BlockExpr,
-  QuoteExpr,
-  SpliceExpr,
-  StaticExpr,
-  ModulePathExpr,
-  GroupExpr,
+  call_expr,
+  index_expr,
+  field_expr,
+  cast_expr,
+  try_expr,
+  tuple_expr,
+  array_expr,
+  struct_expr,
+  lambda_expr,
+  match_expr,
+  if_expr,
+  for_expr,
+  await_expr,
+  par_expr,
+  race_expr,
+  on_expr,
+  block_expr,
+  quote_expr,
+  splice_expr,
+  static_expr,
+  module_path_expr,
+  group_expr,
 
   // Patterns
-  WildcardPattern,
-  LiteralPattern,
-  BindingPattern,
-  ConstructorPattern,
-  TuplePattern,
-  StructPattern,
-  ArrayPattern,
-  RangePattern,
-  OptionPattern,
-  ResultPattern,
-  RefPattern,
-  OrPattern,
-  GroupPattern,
+  wildcard_pattern,
+  literal_pattern,
+  binding_pattern,
+  constructor_pattern,
+  tuple_pattern,
+  struct_pattern,
+  array_pattern,
+  range_pattern,
+  option_pattern,
+  result_pattern,
+  ref_pattern,
+  or_pattern,
+  group_pattern,
 };
 
 // ==========================================================================
-//  Base classes — Node, TypeExpr, Stmt, Expr, Pattern
+//  Base classes — Node, type_expr, Stmt, Expr, Pattern
 //
 //  All AST nodes inherit from Node which carries a span and an error flag.
 //  The error flag (`has_error`) is set when the parser used error recovery
@@ -251,29 +251,29 @@ enum class NodeKind : uint8_t {
 //  analysis of broken subtrees — this prevents cascading errors.
 // ==========================================================================
 
-struct Node {
+struct node {
   NodeKind kind;
   Span span;
   bool has_error = false;
 
-  explicit Node(NodeKind k, Span s = Span::dummy()) : kind(k), span(s) {}
-  virtual ~Node() = default;
+  explicit node(NodeKind k, Span s = Span::dummy()) : kind(k), span(s) {}
+  virtual ~node() = default;
 
   // Non-copyable, movable.
-  Node(const Node&) = delete;
-  Node& operator=(const Node&) = delete;
-  Node(Node&&) = default;
-  Node& operator=(Node&&) = default;
+  node(const node&) = delete;
+  node& operator=(const node&) = delete;
+  node(node&&) = default;
+  node& operator=(node&&) = default;
 };
 
 /// An AST node that was synthesized during error recovery. It stands in
 /// for whatever the parser couldn't understand. This lets the rest of the
 /// tree remain well-formed so downstream phases can keep going.
-struct ErrorNode : Node {
+struct error_node : node {
   std::string description;  ///< What we tried and failed to parse.
 
-  explicit ErrorNode(Span s = Span::dummy(), std::string desc = "")
-      : Node(NodeKind::ErrorNode, s), description(std::move(desc)) {
+  explicit error_node(Span s = Span::dummy(), std::string desc = "")
+      : node(NodeKind::error_node, s), description(std::move(desc)) {
     has_error = true;
   }
 };
@@ -282,7 +282,7 @@ struct ErrorNode : Node {
 //  Visibility
 // --------------------------------------------------------------------------
 
-enum class Visibility : uint8_t {
+enum class visibility : uint8_t {
   Default,   ///< No explicit visibility keyword
   Pub,       ///< `pub`
   Internal,  ///< `internal`
@@ -290,13 +290,13 @@ enum class Visibility : uint8_t {
   Priv,      ///< `priv`
 };
 
-[[nodiscard]] inline Visibility token_to_visibility(TokenKind kind) noexcept {
+[[nodiscard]] inline visibility token_to_visibility(token_kind kind) noexcept {
   switch (kind) {
-    case TokenKind::KwPub:      return Visibility::Pub;
-    case TokenKind::KwInternal: return Visibility::Internal;
-    case TokenKind::KwSuper:    return Visibility::Super;
-    case TokenKind::KwPriv:     return Visibility::Priv;
-    default:                    return Visibility::Default;
+    case token_kind::kw_pub:      return visibility::Pub;
+    case token_kind::kw_internal: return visibility::Internal;
+    case token_kind::kw_super:    return visibility::Super;
+    case token_kind::kw_priv:     return visibility::Priv;
+    default:                    return visibility::Default;
   }
 }
 
@@ -304,183 +304,183 @@ enum class Visibility : uint8_t {
 //  Type expression nodes
 // ==========================================================================
 
-struct TypeExpr : Node {
-  using Node::Node;
+struct type_expr : node {
+  using node::node;
 };
 
 /// A type expression that the parser couldn't understand. Stands in for
 /// the real thing so the tree remains structurally valid.
-struct ErrorTypeExpr : TypeExpr {
-  explicit ErrorTypeExpr(Span s = Span::dummy())
-      : TypeExpr(NodeKind::NamedType, s) {  // reuse kind; has_error flag distinguishes
+struct error_type_expr : type_expr {
+  explicit error_type_expr(Span s = Span::dummy())
+      : type_expr(NodeKind::named_type, s) {  // reuse kind; has_error flag distinguishes
     has_error = true;
   }
 };
 
-struct NamedType : TypeExpr {
+struct named_type : type_expr {
   std::vector<std::string> path;        ///< e.g., ["std", "collections", "Map"]
-  std::vector<Ptr<TypeExpr>> type_args;  ///< Generic arguments, if any.
-  // TypeArg can also carry value-level expressions; we handle that in
+  std::vector<ptr<type_expr>> type_args;  ///< Generic arguments, if any.
+  // type_arg can also carry value-level expressions; we handle that in
   // a wrapper node below.
 
-  NamedType() : TypeExpr(NodeKind::NamedType) {}
+  named_type() : type_expr(NodeKind::named_type) {}
 };
 
-struct TupleType : TypeExpr {
-  std::vector<Ptr<TypeExpr>> elements;
+struct tuple_type : type_expr {
+  std::vector<ptr<type_expr>> elements;
 
-  TupleType() : TypeExpr(NodeKind::TupleType) {}
+  tuple_type() : type_expr(NodeKind::tuple_type) {}
 };
 
-struct SliceType : TypeExpr {
-  Ptr<TypeExpr> element;
+struct slice_type : type_expr {
+  ptr<type_expr> element;
 
-  SliceType() : TypeExpr(NodeKind::SliceType) {}
+  slice_type() : type_expr(NodeKind::slice_type) {}
 };
 
-struct ArrayType : TypeExpr {
-  Ptr<TypeExpr> element;
-  Ptr<Node> size;  ///< An expression giving the array length.
+struct array_type : type_expr {
+  ptr<type_expr> element;
+  ptr<node> size;  ///< An expression giving the array length.
 
-  ArrayType() : TypeExpr(NodeKind::ArrayType) {}
+  array_type() : type_expr(NodeKind::array_type) {}
 };
 
-struct RefType : TypeExpr {
-  Ptr<TypeExpr> inner;
+struct ref_type : type_expr {
+  ptr<type_expr> inner;
   bool is_mut = false;
 
-  RefType() : TypeExpr(NodeKind::RefType) {}
+  ref_type() : type_expr(NodeKind::ref_type) {}
 };
 
-struct PtrType : TypeExpr {
-  Ptr<TypeExpr> inner;
+struct ptr_type : type_expr {
+  ptr<type_expr> inner;
   bool is_mut = false;
 
-  PtrType() : TypeExpr(NodeKind::PtrType) {}
+  ptr_type() : type_expr(NodeKind::ptr_type) {}
 };
 
-struct FnType : TypeExpr {
-  std::vector<Ptr<TypeExpr>> param_types;
-  Ptr<TypeExpr> return_type;  ///< nullptr if no return type.
+struct fn_type : type_expr {
+  std::vector<ptr<type_expr>> param_types;
+  ptr<type_expr> return_type;  ///< nullptr if no return type.
 
-  FnType() : TypeExpr(NodeKind::FnType) {}
+  fn_type() : type_expr(NodeKind::fn_type) {}
 };
 
-struct QuoteType : TypeExpr {
-  TokenKind quote_kind;  ///< KwExpr, KwStmt, KwDefExpr, or KwTypeExpr
+struct quote_type : type_expr {
+  token_kind quote_kind;  ///< KwExpr, KwStmt, KwDefExpr, or KwTypeExpr
 
-  explicit QuoteType(TokenKind qk = TokenKind::KwExpr)
-      : TypeExpr(NodeKind::QuoteType), quote_kind(qk) {}
+  explicit quote_type(token_kind qk = token_kind::kw_expr)
+      : type_expr(NodeKind::quote_type), quote_kind(qk) {}
 };
 
-struct UnionType : TypeExpr {
-  std::vector<Ptr<TypeExpr>> alternatives;
+struct union_type : type_expr {
+  std::vector<ptr<type_expr>> alternatives;
 
-  UnionType() : TypeExpr(NodeKind::UnionType) {}
+  union_type() : type_expr(NodeKind::union_type) {}
 };
 
-struct RefinementType : TypeExpr {
-  Ptr<TypeExpr> base;
-  Ptr<Node> predicate;  ///< The `where expr` part.
+struct refinement_type : type_expr {
+  ptr<type_expr> base;
+  ptr<node> predicate;  ///< The `where expr` part.
 
-  RefinementType() : TypeExpr(NodeKind::RefinementType) {}
+  refinement_type() : type_expr(NodeKind::refinement_type) {}
 };
 
 // ==========================================================================
 //  Type parameters and bounds
 // ==========================================================================
 
-struct TypeParam {
+struct type_param {
   Span span;
   std::string name;
   /// For type params: an optional trait/concept bound.
   /// For value params: the type of the value.
-  Ptr<TypeExpr> bound_or_type;
+  ptr<type_expr> bound_or_type;
   bool is_value_param = false;  ///< True if this is `name : type` (value param).
 };
 
-struct TypeArg {
+struct type_arg {
   Span span;
   /// A type argument is either a type expression or a value expression.
   /// We store both as Node* and disambiguate later in semantic analysis.
-  Ptr<Node> value;
+  ptr<node> value;
   std::optional<std::string> name;  ///< Named argument: `name: type`
 };
 
-struct BoundTerm {
+struct bound_term {
   Span span;
   /// A trait bound like `Trait[Args]` or a function type bound.
-  Ptr<TypeExpr> type;
+  ptr<type_expr> type;
 };
 
 struct Bound {
   Span span;
-  std::vector<BoundTerm> terms;  ///< Connected by `+`.
+  std::vector<bound_term> terms;  ///< Connected by `+`.
 };
 
-struct WhereConstraint {
+struct where_constraint {
   Span span;
-  Ptr<TypeExpr> subject;
+  ptr<type_expr> subject;
   /// Either a trait bound or an associated type equality constraint.
-  Ptr<TypeExpr> bound_or_type;
+  ptr<type_expr> bound_or_type;
 };
 
 // ==========================================================================
 //  Struct and sum type bodies
 // ==========================================================================
 
-struct StructField {
+struct struct_field {
   Span span;
-  Visibility visibility = Visibility::Default;
+  visibility visibility = visibility::Default;
   std::string name;
-  Ptr<TypeExpr> type;
+  ptr<type_expr> type;
 };
 
-struct StructBody {
+struct struct_body {
   Span span;
-  std::vector<StructField> fields;
+  std::vector<struct_field> fields;
 };
 
-struct SumVariant {
+struct sum_variant {
   Span span;
   std::string name;
-  std::vector<Ptr<TypeExpr>> payload_types;  ///< Empty for unit variants.
+  std::vector<ptr<type_expr>> payload_types;  ///< Empty for unit variants.
 };
 
-struct SumBody {
+struct sum_body {
   Span span;
-  std::vector<SumVariant> variants;
+  std::vector<sum_variant> variants;
 };
 
 // ==========================================================================
 //  Expression nodes
 // ==========================================================================
 
-struct Expr : Node {
-  using Node::Node;
+struct Expr : node {
+  using node::node;
 };
 
 /// A placeholder expression for error recovery.
-struct ErrorExpr : Expr {
+struct error_expr : Expr {
   std::string description;
 
-  explicit ErrorExpr(Span s = Span::dummy(), std::string desc = "")
-      : Expr(NodeKind::IdentExpr, s), description(std::move(desc)) {
+  explicit error_expr(Span s = Span::dummy(), std::string desc = "")
+      : Expr(NodeKind::ident_expr, s), description(std::move(desc)) {
     has_error = true;
   }
 };
 
-struct IdentExpr : Expr {
+struct ident_expr : Expr {
   std::string name;
 
-  IdentExpr() : Expr(NodeKind::IdentExpr) {}
+  ident_expr() : Expr(NodeKind::ident_expr) {}
 };
 
-struct LiteralExpr : Expr {
-  TokenKind lit_kind;    ///< IntLit, FloatLit, StringLit, CharLit, KwTrue, KwFalse, KwUnit
+struct literal_expr : Expr {
+  token_kind lit_kind;    ///< IntLit, FloatLit, StringLit, CharLit, KwTrue, KwFalse, KwUnit
   std::string value;     ///< The raw text of the literal.
 
-  LiteralExpr() : Expr(NodeKind::LiteralExpr) {}
+  literal_expr() : Expr(NodeKind::literal_expr) {}
 };
 
 enum class BinaryOp : uint8_t {
@@ -539,12 +539,12 @@ enum class BinaryOp : uint8_t {
   return "<?>";
 }
 
-struct BinaryExpr : Expr {
+struct binary_expr : Expr {
   BinaryOp op;
-  Ptr<Expr> lhs;
-  Ptr<Expr> rhs;
+  ptr<Expr> lhs;
+  ptr<Expr> rhs;
 
-  BinaryExpr() : Expr(NodeKind::BinaryExpr) {}
+  binary_expr() : Expr(NodeKind::binary_expr) {}
 };
 
 enum class UnaryOp : uint8_t {
@@ -568,379 +568,379 @@ enum class UnaryOp : uint8_t {
   return "<?>";
 }
 
-struct UnaryExpr : Expr {
+struct unary_expr : Expr {
   UnaryOp op;
-  Ptr<Expr> operand;
+  ptr<Expr> operand;
 
-  UnaryExpr() : Expr(NodeKind::UnaryExpr) {}
+  unary_expr() : Expr(NodeKind::unary_expr) {}
 };
 
 /// Field access: `expr.name`
-struct FieldExpr : Expr {
-  Ptr<Expr> object;
+struct field_expr : Expr {
+  ptr<Expr> object;
   std::string field_name;
-  std::vector<Ptr<TypeExpr>> generic_args;  ///< For `expr.method[T]`
+  std::vector<ptr<type_expr>> generic_args;  ///< For `expr.method[T]`
 
-  FieldExpr() : Expr(NodeKind::FieldExpr) {}
+  field_expr() : Expr(NodeKind::field_expr) {}
 };
 
 /// Index: `expr[index]`
-struct IndexExpr : Expr {
-  Ptr<Expr> object;
-  Ptr<Expr> index;
+struct index_expr : Expr {
+  ptr<Expr> object;
+  ptr<Expr> index;
 
-  IndexExpr() : Expr(NodeKind::IndexExpr) {}
+  index_expr() : Expr(NodeKind::index_expr) {}
 };
 
 /// Function/method call: `expr(args...)`
-struct CallArg {
+struct call_arg {
   Span span;
   std::optional<std::string> name;  ///< Named arg: `name: value`
-  Ptr<Expr> value;
+  ptr<Expr> value;
 };
 
-struct CallExpr : Expr {
-  Ptr<Expr> callee;
-  std::vector<CallArg> args;
+struct call_expr : Expr {
+  ptr<Expr> callee;
+  std::vector<call_arg> args;
 
-  CallExpr() : Expr(NodeKind::CallExpr) {}
+  call_expr() : Expr(NodeKind::call_expr) {}
 };
 
 /// Type cast: `expr as Type`
-struct CastExpr : Expr {
-  Ptr<Expr> operand;
-  Ptr<TypeExpr> target_type;
+struct cast_expr : Expr {
+  ptr<Expr> operand;
+  ptr<type_expr> target_type;
 
-  CastExpr() : Expr(NodeKind::CastExpr) {}
+  cast_expr() : Expr(NodeKind::cast_expr) {}
 };
 
 /// Try propagation: `expr?` or `expr?.field`
-struct TryExpr : Expr {
-  Ptr<Expr> operand;
+struct try_expr : Expr {
+  ptr<Expr> operand;
 
-  TryExpr() : Expr(NodeKind::TryExpr) {}
+  try_expr() : Expr(NodeKind::try_expr) {}
 };
 
 /// Tuple literal: `(a, b, c)`
-struct TupleExpr : Expr {
-  std::vector<Ptr<Expr>> elements;
+struct tuple_expr : Expr {
+  std::vector<ptr<Expr>> elements;
 
-  TupleExpr() : Expr(NodeKind::TupleExpr) {}
+  tuple_expr() : Expr(NodeKind::tuple_expr) {}
 };
 
 /// Array literal: `[a, b, c]` or fill: `[val; count]`
-struct ArrayExpr : Expr {
-  std::vector<Ptr<Expr>> elements;
-  Ptr<Expr> fill_value;  ///< Non-null for `[val; count]` form.
-  Ptr<Expr> fill_count;
+struct array_expr : Expr {
+  std::vector<ptr<Expr>> elements;
+  ptr<Expr> fill_value;  ///< Non-null for `[val; count]` form.
+  ptr<Expr> fill_count;
 
-  ArrayExpr() : Expr(NodeKind::ArrayExpr) {}
+  array_expr() : Expr(NodeKind::array_expr) {}
 };
 
 /// Struct literal field: `name: expr` or shorthand `name`
-struct StructFieldInit {
+struct struct_field_init {
   Span span;
   std::string name;
-  Ptr<Expr> value;        ///< nullptr for shorthand `{x}` (means `{x: x}`)
+  ptr<Expr> value;        ///< nullptr for shorthand `{x}` (means `{x: x}`)
 };
 
 /// Struct literal: `{a: 1, b: 2}`
-struct StructExpr : Expr {
-  std::vector<StructFieldInit> fields;
+struct struct_expr : Expr {
+  std::vector<struct_field_init> fields;
 
-  StructExpr() : Expr(NodeKind::StructExpr) {}
+  struct_expr() : Expr(NodeKind::struct_expr) {}
 };
 
 /// Lambda / closure: `x => x + 1` or `(a, b) -> int => a + b`
-struct LambdaParam {
+struct lambda_param {
   Span span;
-  Ptr<Node> pattern;               ///< The parameter pattern.
-  Ptr<TypeExpr> type_annotation;   ///< Optional type annotation.
+  ptr<node> pattern;               ///< The parameter pattern.
+  ptr<type_expr> type_annotation;   ///< Optional type annotation.
 };
 
-struct LambdaExpr : Expr {
+struct lambda_expr : Expr {
   bool is_pure = false;
   bool is_move = false;
-  std::vector<LambdaParam> params;
-  Ptr<TypeExpr> return_type;        ///< Optional return type annotation.
+  std::vector<lambda_param> params;
+  ptr<type_expr> return_type;        ///< Optional return type annotation.
   /// Body is either a single expression or a block (vector of statements).
-  Ptr<Expr> body_expr;
-  std::vector<Ptr<Node>> body_stmts;
+  ptr<Expr> body_expr;
+  std::vector<ptr<node>> body_stmts;
 
-  LambdaExpr() : Expr(NodeKind::LambdaExpr) {}
+  lambda_expr() : Expr(NodeKind::lambda_expr) {}
 };
 
 /// Module path expression: `a.b.c`
-struct ModulePathExpr : Expr {
+struct module_path_expr : Expr {
   std::vector<std::string> segments;
 
-  ModulePathExpr() : Expr(NodeKind::ModulePathExpr) {}
+  module_path_expr() : Expr(NodeKind::module_path_expr) {}
 };
 
 /// Parenthesized expression: `(expr)`
-struct GroupExpr : Expr {
-  Ptr<Expr> inner;
+struct group_expr : Expr {
+  ptr<Expr> inner;
 
-  GroupExpr() : Expr(NodeKind::GroupExpr) {}
+  group_expr() : Expr(NodeKind::group_expr) {}
 };
 
 /// `if expr: ... elif ...: ... else: ...` (expression form)
-struct IfBranch {
+struct if_branch {
   Span span;
-  Ptr<Expr> condition;
-  std::vector<Ptr<Node>> body;  ///< Block of statements/exprs.
+  ptr<Expr> condition;
+  std::vector<ptr<node>> body;  ///< Block of statements/exprs.
 };
 
-struct IfExpr : Expr {
-  std::vector<IfBranch> branches;  ///< `if` + zero or more `elif`
-  std::vector<Ptr<Node>> else_body;
+struct if_expr : Expr {
+  std::vector<if_branch> branches;  ///< `if` + zero or more `elif`
+  std::vector<ptr<node>> else_body;
 
-  IfExpr() : Expr(NodeKind::IfExpr) {}
+  if_expr() : Expr(NodeKind::if_expr) {}
 };
 
 /// `match subject: ...`
-struct MatchArm {
+struct match_arm {
   Span span;
-  Ptr<Node> pattern;
-  Ptr<Expr> guard;  ///< Optional `if expr` guard.
+  ptr<node> pattern;
+  ptr<Expr> guard;  ///< Optional `if expr` guard.
   /// Body: inline expression or block.
-  Ptr<Expr> body_expr;
-  std::vector<Ptr<Node>> body_stmts;
+  ptr<Expr> body_expr;
+  std::vector<ptr<node>> body_stmts;
   bool has_error = false;
 };
 
-struct MatchExpr : Expr {
-  Ptr<Expr> subject;
-  std::vector<MatchArm> arms;
+struct match_expr : Expr {
+  ptr<Expr> subject;
+  std::vector<match_arm> arms;
 
-  MatchExpr() : Expr(NodeKind::MatchExpr) {}
+  match_expr() : Expr(NodeKind::match_expr) {}
 };
 
 /// `for vars in iter [if guard] => yield_expr`
-struct ForExpr : Expr {
+struct for_expr : Expr {
   struct IterClause {
-    std::vector<Ptr<Node>> patterns;
-    Ptr<Expr> iterable;
+    std::vector<ptr<node>> patterns;
+    ptr<Expr> iterable;
   };
   std::vector<IterClause> clauses;
-  Ptr<Expr> guard;         ///< Optional `if` filter.
-  Ptr<Expr> yield_expr;    ///< The `=> expr` part.
+  ptr<Expr> guard;         ///< Optional `if` filter.
+  ptr<Expr> yield_expr;    ///< The `=> expr` part.
 
-  ForExpr() : Expr(NodeKind::ForExpr) {}
+  for_expr() : Expr(NodeKind::for_expr) {}
 };
 
 /// `await expr` or `await yield`
-struct AwaitExpr : Expr {
-  Ptr<Expr> operand;  ///< nullptr for `await yield`.
+struct await_expr : Expr {
+  ptr<Expr> operand;  ///< nullptr for `await yield`.
   bool is_yield = false;
 
-  AwaitExpr() : Expr(NodeKind::AwaitExpr) {}
+  await_expr() : Expr(NodeKind::await_expr) {}
 };
 
 /// `par: ...`
-struct ParExpr : Expr {
-  std::vector<Ptr<Expr>> branches;
+struct par_expr : Expr {
+  std::vector<ptr<Expr>> branches;
 
-  ParExpr() : Expr(NodeKind::ParExpr) {}
+  par_expr() : Expr(NodeKind::par_expr) {}
 };
 
 /// `race: ...`
-struct RaceExpr : Expr {
-  std::vector<Ptr<Expr>> branches;
+struct race_expr : Expr {
+  std::vector<ptr<Expr>> branches;
 
-  RaceExpr() : Expr(NodeKind::RaceExpr) {}
+  race_expr() : Expr(NodeKind::race_expr) {}
 };
 
 /// `on(Type): block` or `on(Type, sender)`
-struct OnExpr : Expr {
-  Ptr<TypeExpr> context_type;
-  Ptr<Expr> sender;         ///< Optional second argument.
-  std::vector<Ptr<Node>> body;
+struct on_expr : Expr {
+  ptr<type_expr> context_type;
+  ptr<Expr> sender;         ///< Optional second argument.
+  std::vector<ptr<node>> body;
 
-  OnExpr() : Expr(NodeKind::OnExpr) {}
+  on_expr() : Expr(NodeKind::on_expr) {}
 };
 
 /// `block_expr` — `INDENT stmts DEDENT`
-struct BlockExpr : Expr {
-  std::vector<Ptr<Node>> stmts;
+struct block_expr : Expr {
+  std::vector<ptr<node>> stmts;
 
-  BlockExpr() : Expr(NodeKind::BlockExpr) {}
+  block_expr() : Expr(NodeKind::block_expr) {}
 };
 
 /// Quasi-quote: `` `(content)` `` or `` `content` ``
-struct QuoteExpr : Expr {
+struct quote_expr : Expr {
   std::vector<Token> tokens;  ///< Raw tokens inside the quote.
 
-  QuoteExpr() : Expr(NodeKind::QuoteExpr) {}
+  quote_expr() : Expr(NodeKind::quote_expr) {}
 };
 
 /// Splice: `~(expr)` or `~ident`
-struct SpliceExpr : Expr {
-  Ptr<Expr> operand;
+struct splice_expr : Expr {
+  ptr<Expr> operand;
 
-  SpliceExpr() : Expr(NodeKind::SpliceExpr) {}
+  splice_expr() : Expr(NodeKind::splice_expr) {}
 };
 
 /// `static expr`
-struct StaticExpr : Expr {
-  Ptr<Expr> operand;
+struct static_expr : Expr {
+  ptr<Expr> operand;
 
-  StaticExpr() : Expr(NodeKind::StaticExpr) {}
+  static_expr() : Expr(NodeKind::static_expr) {}
 };
 
 // ==========================================================================
 //  Pattern nodes
 // ==========================================================================
 
-struct Pattern : Node {
-  using Node::Node;
+struct Pattern : node {
+  using node::node;
 };
 
-struct ErrorPattern : Pattern {
-  explicit ErrorPattern(Span s = Span::dummy())
-      : Pattern(NodeKind::WildcardPattern, s) {
+struct error_pattern : Pattern {
+  explicit error_pattern(Span s = Span::dummy())
+      : Pattern(NodeKind::wildcard_pattern, s) {
     has_error = true;
   }
 };
 
 /// `_`
-struct WildcardPattern : Pattern {
-  WildcardPattern() : Pattern(NodeKind::WildcardPattern) {}
+struct wildcard_pattern : Pattern {
+  wildcard_pattern() : Pattern(NodeKind::wildcard_pattern) {}
 };
 
 /// Literal in pattern position: `42`, `"hello"`, `true`
-struct LiteralPattern : Pattern {
-  TokenKind lit_kind;
+struct literal_pattern : Pattern {
+  token_kind lit_kind;
   std::string value;
 
-  LiteralPattern() : Pattern(NodeKind::LiteralPattern) {}
+  literal_pattern() : Pattern(NodeKind::literal_pattern) {}
 };
 
 /// Simple name binding: `x`
-struct BindingPattern : Pattern {
+struct binding_pattern : Pattern {
   std::string name;
 
-  BindingPattern() : Pattern(NodeKind::BindingPattern) {}
+  binding_pattern() : Pattern(NodeKind::binding_pattern) {}
 };
 
 /// Constructor: `Some(x)`, `Point(a, b)`
-struct ConstructorPattern : Pattern {
+struct constructor_pattern : Pattern {
   std::string name;
-  std::vector<Ptr<Pattern>> args;
+  std::vector<ptr<Pattern>> args;
 
-  ConstructorPattern() : Pattern(NodeKind::ConstructorPattern) {}
+  constructor_pattern() : Pattern(NodeKind::constructor_pattern) {}
 };
 
 /// Tuple: `(a, b, c)`
-struct TuplePattern : Pattern {
-  std::vector<Ptr<Pattern>> elements;
+struct tuple_pattern : Pattern {
+  std::vector<ptr<Pattern>> elements;
 
-  TuplePattern() : Pattern(NodeKind::TuplePattern) {}
+  tuple_pattern() : Pattern(NodeKind::tuple_pattern) {}
 };
 
 /// Struct pattern field: `name: pattern`, `name`, or `..`
-struct FieldPattern {
+struct field_pattern {
   Span span;
   std::string name;         ///< Empty for `..` (rest).
-  Ptr<Pattern> pattern;     ///< nullptr for shorthand `{name}`.
+  ptr<Pattern> pattern;     ///< nullptr for shorthand `{name}`.
   bool is_rest = false;     ///< True for `..`.
 };
 
 /// Struct pattern: `{x: a, y: b, ..}`
-struct StructPattern : Pattern {
-  std::vector<FieldPattern> fields;
+struct struct_pattern : Pattern {
+  std::vector<field_pattern> fields;
 
-  StructPattern() : Pattern(NodeKind::StructPattern) {}
+  struct_pattern() : Pattern(NodeKind::struct_pattern) {}
 };
 
 /// Array/slice pattern: `[a, b, c]`
-struct ArrayPattern : Pattern {
-  std::vector<Ptr<Pattern>> elements;
+struct array_pattern : Pattern {
+  std::vector<ptr<Pattern>> elements;
 
-  ArrayPattern() : Pattern(NodeKind::ArrayPattern) {}
+  array_pattern() : Pattern(NodeKind::array_pattern) {}
 };
 
 /// Range: `1..10`, `1..=10`, `1..`, `..10`
-struct RangePattern : Pattern {
-  Ptr<Expr> start;  ///< nullptr for `..end`
-  Ptr<Expr> end;    ///< nullptr for `start..`
+struct range_pattern : Pattern {
+  ptr<Expr> start;  ///< nullptr for `..end`
+  ptr<Expr> end;    ///< nullptr for `start..`
   bool inclusive = false;  ///< True for `..=`
 
-  RangePattern() : Pattern(NodeKind::RangePattern) {}
+  range_pattern() : Pattern(NodeKind::range_pattern) {}
 };
 
 /// `some(pattern)`, `ok(pattern)`, `err(pattern)`
 enum class OptionResultKind : uint8_t { Some, Ok, Err };
 
-struct OptionPattern : Pattern {
+struct option_pattern : Pattern {
   OptionResultKind option_kind;
-  Ptr<Pattern> inner;
+  ptr<Pattern> inner;
 
-  OptionPattern() : Pattern(NodeKind::OptionPattern) {}
+  option_pattern() : Pattern(NodeKind::option_pattern) {}
 };
 
-/// Result pattern — reuses OptionPattern but with different kind.
-struct ResultPattern : Pattern {
+/// Result pattern — reuses option_pattern but with different kind.
+struct result_pattern : Pattern {
   OptionResultKind result_kind;  ///< Ok or Err
-  Ptr<Pattern> inner;
+  ptr<Pattern> inner;
 
-  ResultPattern() : Pattern(NodeKind::ResultPattern) {}
+  result_pattern() : Pattern(NodeKind::result_pattern) {}
 };
 
 /// `&pattern`
-struct RefPattern : Pattern {
-  Ptr<Pattern> inner;
+struct ref_pattern : Pattern {
+  ptr<Pattern> inner;
 
-  RefPattern() : Pattern(NodeKind::RefPattern) {}
+  ref_pattern() : Pattern(NodeKind::ref_pattern) {}
 };
 
 /// `a | b | c`
-struct OrPattern : Pattern {
-  std::vector<Ptr<Pattern>> alternatives;
+struct or_pattern : Pattern {
+  std::vector<ptr<Pattern>> alternatives;
 
-  OrPattern() : Pattern(NodeKind::OrPattern) {}
+  or_pattern() : Pattern(NodeKind::or_pattern) {}
 };
 
 /// `(pattern)` — parenthesized pattern for grouping.
-struct GroupPattern : Pattern {
-  Ptr<Pattern> inner;
+struct group_pattern : Pattern {
+  ptr<Pattern> inner;
 
-  GroupPattern() : Pattern(NodeKind::GroupPattern) {}
+  group_pattern() : Pattern(NodeKind::group_pattern) {}
 };
 
 // ==========================================================================
 //  Statement nodes
 // ==========================================================================
 
-struct Stmt : Node {
-  using Node::Node;
+struct Stmt : node {
+  using node::node;
 };
 
-struct ErrorStmt : Stmt {
-  explicit ErrorStmt(Span s = Span::dummy())
-      : Stmt(NodeKind::ExprStmt, s) {
+struct error_stmt : Stmt {
+  explicit error_stmt(Span s = Span::dummy())
+      : Stmt(NodeKind::expr_stmt, s) {
     has_error = true;
   }
 };
 
 /// `let pattern [: type] = expr`
 /// `let pattern [: type] = expr else: block`
-struct LetStmt : Stmt {
-  Ptr<Pattern> pattern;
-  Ptr<TypeExpr> type_annotation;  ///< Optional.
-  Ptr<Expr> initializer;
-  std::vector<Ptr<Node>> else_body;  ///< Non-empty for `let ... else:` form.
+struct let_stmt : Stmt {
+  ptr<Pattern> pattern;
+  ptr<type_expr> type_annotation;  ///< Optional.
+  ptr<Expr> initializer;
+  std::vector<ptr<node>> else_body;  ///< Non-empty for `let ... else:` form.
 
-  LetStmt() : Stmt(NodeKind::LetStmt) {}
+  let_stmt() : Stmt(NodeKind::let_stmt) {}
 };
 
 /// `var name [: type] = expr`
-struct VarStmt : Stmt {
+struct var_stmt : Stmt {
   std::string name;
-  Ptr<TypeExpr> type_annotation;  ///< Optional.
-  Ptr<Expr> initializer;
+  ptr<type_expr> type_annotation;  ///< Optional.
+  ptr<Expr> initializer;
 
-  VarStmt() : Stmt(NodeKind::VarStmt) {}
+  var_stmt() : Stmt(NodeKind::var_stmt) {}
 };
 
 /// Assignment operators.
@@ -964,92 +964,92 @@ enum class AssignOp : uint8_t {
   MulSatAssign,   // *|=
 };
 
-struct AssignStmt : Stmt {
-  Ptr<Expr> target;
+struct assign_stmt : Stmt {
+  ptr<Expr> target;
   AssignOp op;
-  Ptr<Expr> value;
+  ptr<Expr> value;
 
-  AssignStmt() : Stmt(NodeKind::AssignStmt) {}
+  assign_stmt() : Stmt(NodeKind::assign_stmt) {}
 };
 
 /// Expression used as a statement.
-struct ExprStmt : Stmt {
-  Ptr<Expr> expr;
+struct expr_stmt : Stmt {
+  ptr<Expr> expr;
 
-  ExprStmt() : Stmt(NodeKind::ExprStmt) {}
+  expr_stmt() : Stmt(NodeKind::expr_stmt) {}
 };
 
 /// `return [expr]`
-struct ReturnStmt : Stmt {
-  Ptr<Expr> value;  ///< nullptr if bare `return`.
+struct return_stmt : Stmt {
+  ptr<Expr> value;  ///< nullptr if bare `return`.
 
-  ReturnStmt() : Stmt(NodeKind::ReturnStmt) {}
+  return_stmt() : Stmt(NodeKind::return_stmt) {}
 };
 
 /// `if expr: block { elif expr: block } [else: block]`
-struct IfStmt : Stmt {
-  std::vector<IfBranch> branches;
-  std::vector<Ptr<Node>> else_body;
+struct if_stmt : Stmt {
+  std::vector<if_branch> branches;
+  std::vector<ptr<node>> else_body;
 
-  IfStmt() : Stmt(NodeKind::IfStmt) {}
+  if_stmt() : Stmt(NodeKind::if_stmt) {}
 };
 
 /// `while expr: block` or `while let pattern = expr: block`
-struct WhileStmt : Stmt {
-  Ptr<Expr> condition;      ///< nullptr for `while let` form.
-  Ptr<Pattern> let_pattern; ///< Non-null for `while let` form.
-  Ptr<Expr> let_expr;       ///< The expr in `while let pat = expr`.
-  std::vector<Ptr<Node>> body;
+struct while_stmt : Stmt {
+  ptr<Expr> condition;      ///< nullptr for `while let` form.
+  ptr<Pattern> let_pattern; ///< Non-null for `while let` form.
+  ptr<Expr> let_expr;       ///< The expr in `while let pat = expr`.
+  std::vector<ptr<node>> body;
 
-  WhileStmt() : Stmt(NodeKind::WhileStmt) {}
+  while_stmt() : Stmt(NodeKind::while_stmt) {}
 };
 
 /// `for vars in expr [if guard]: block`
-struct ForStmt : Stmt {
-  std::vector<Ptr<Pattern>> patterns;
-  Ptr<Expr> iterable;
-  Ptr<Expr> guard;  ///< Optional `if` filter.
-  std::vector<Ptr<Node>> body;
+struct for_stmt : Stmt {
+  std::vector<ptr<Pattern>> patterns;
+  ptr<Expr> iterable;
+  ptr<Expr> guard;  ///< Optional `if` filter.
+  std::vector<ptr<node>> body;
 
-  ForStmt() : Stmt(NodeKind::ForStmt) {}
+  for_stmt() : Stmt(NodeKind::for_stmt) {}
 };
 
 /// `match subject: ...`
-struct MatchStmt : Stmt {
-  Ptr<Expr> subject;
-  std::vector<MatchArm> arms;
+struct match_stmt : Stmt {
+  ptr<Expr> subject;
+  std::vector<match_arm> arms;
 
-  MatchStmt() : Stmt(NodeKind::MatchStmt) {}
+  match_stmt() : Stmt(NodeKind::match_stmt) {}
 };
 
 /// Crew option: `name: value`
-struct CrewOption {
+struct crew_option {
   Span span;
   std::string name;
   std::string value;
 };
 
 /// `crew name(options): block`
-struct CrewStmt : Stmt {
+struct crew_stmt : Stmt {
   std::string name;
-  std::vector<CrewOption> options;
-  std::vector<Ptr<Node>> body;
+  std::vector<crew_option> options;
+  std::vector<ptr<node>> body;
 
-  CrewStmt() : Stmt(NodeKind::CrewStmt) {}
+  crew_stmt() : Stmt(NodeKind::crew_stmt) {}
 };
 
 /// `asm { content }`
-struct AsmStmt : Stmt {
+struct asm_stmt : Stmt {
   std::string content;
 
-  AsmStmt() : Stmt(NodeKind::AsmStmt) {}
+  asm_stmt() : Stmt(NodeKind::asm_stmt) {}
 };
 
 /// `~expr`
-struct SpliceStmt : Stmt {
-  Ptr<Expr> expr;
+struct splice_stmt : Stmt {
+  ptr<Expr> expr;
 
-  SpliceStmt() : Stmt(NodeKind::SpliceStmt) {}
+  splice_stmt() : Stmt(NodeKind::splice_stmt) {}
 };
 
 // ==========================================================================
@@ -1057,7 +1057,7 @@ struct SpliceStmt : Stmt {
 // ==========================================================================
 
 /// `use` path handling.
-struct UseItem {
+struct use_item {
   Span span;
   std::string name;
   std::optional<std::string> alias;  ///< `as` alias.
@@ -1069,155 +1069,155 @@ enum class UseSelectorKind : uint8_t {
   Wildcard,  ///< `use a.b.*`
 };
 
-struct UseSelector {
+struct use_selector {
   Span span;
   UseSelectorKind kind;
-  std::vector<UseItem> items;  ///< For group selector; single has one item.
+  std::vector<use_item> items;  ///< For group selector; single has one item.
 };
 
-struct UseDecl : Node {
-  Visibility visibility = Visibility::Default;
+struct use_decl : node {
+  visibility visibility = visibility::Default;
   std::vector<std::string> path;
-  std::optional<UseSelector> selector;
+  std::optional<use_selector> selector;
 
-  UseDecl() : Node(NodeKind::UseDecl) {}
+  use_decl() : node(NodeKind::use_decl) {}
 };
 
 /// `type Name[Params] = TypeDef`
-struct TypeDecl : Node {
-  Visibility visibility = Visibility::Default;
+struct type_decl : node {
+  visibility visibility = visibility::Default;
   std::string name;
-  std::vector<TypeParam> type_params;
-  /// The type definition body — one of: StructBody, SumBody, TypeExpr, RefinementType.
-  Ptr<Node> definition;
+  std::vector<type_param> type_params;
+  /// The type definition body — one of: struct_body, sum_body, type_expr, refinement_type.
+  ptr<node> definition;
   std::vector<std::string> deriving;
-  Ptr<Expr> invariant;
+  ptr<Expr> invariant;
 
-  TypeDecl() : Node(NodeKind::TypeDecl) {}
+  type_decl() : node(NodeKind::type_decl) {}
 };
 
 /// Associated type in a trait: `type Name [= Default]`
-struct AssociatedTypeDecl {
+struct associated_type_decl {
   Span span;
-  Visibility visibility = Visibility::Default;
+  visibility visibility = visibility::Default;
   std::string name;
-  Ptr<TypeExpr> default_type;
+  ptr<type_expr> default_type;
 };
 
 /// Associated type in an impl: `type Name = ConcreteType`
-struct AssociatedTypeDef {
+struct associated_type_def {
   Span span;
   std::string name;
-  Ptr<TypeExpr> type;
+  ptr<type_expr> type;
 };
 
 /// Trait declaration.
-struct TraitDecl : Node {
-  Visibility visibility = Visibility::Default;
+struct trait_decl : node {
+  visibility visibility = visibility::Default;
   std::string name;
-  std::vector<TypeParam> type_params;
+  std::vector<type_param> type_params;
   std::optional<Bound> requires_bound;
-  std::vector<Ptr<Node>> items;  ///< FuncDecl, StaticDecl, AssociatedTypeDecl nodes.
+  std::vector<ptr<node>> items;  ///< func_decl, static_decl, associated_type_decl nodes.
 
-  TraitDecl() : Node(NodeKind::TraitDecl) {}
+  trait_decl() : node(NodeKind::trait_decl) {}
 };
 
 /// Concept declaration.
-struct ConceptParam {
+struct concept_param {
   Span span;
   std::string name;
   bool is_higher_kinded = false;  ///< `Name[_]`
 };
 
-struct ConceptConstraint {
+struct concept_constraint {
   Span span;
-  Ptr<TypeExpr> subject;    ///< Non-null for `type : bound` constraints.
-  Ptr<Node> bound_or_expr;  ///< Bound for type constraints, Expr for value constraints.
+  ptr<type_expr> subject;    ///< Non-null for `type : bound` constraints.
+  ptr<node> bound_or_expr;  ///< Bound for type constraints, Expr for value constraints.
 };
 
-struct ConceptDecl : Node {
-  Visibility visibility = Visibility::Default;
+struct concept_decl : node {
+  visibility visibility = visibility::Default;
   std::string name;
-  std::vector<ConceptParam> params;
-  std::vector<ConceptConstraint> constraints;
+  std::vector<concept_param> params;
+  std::vector<concept_constraint> constraints;
 
-  ConceptDecl() : Node(NodeKind::ConceptDecl) {}
+  concept_decl() : node(NodeKind::concept_decl) {}
 };
 
 /// Impl declaration.
-struct ImplDecl : Node {
-  std::vector<TypeParam> type_params;
-  Ptr<TypeExpr> trait_type;
-  Ptr<TypeExpr> for_type;
-  std::vector<WhereConstraint> where_constraints;
-  std::vector<Ptr<Node>> items;  ///< FuncDecl, StaticDecl, AssociatedTypeDef.
+struct impl_decl : node {
+  std::vector<type_param> type_params;
+  ptr<type_expr> trait_type;
+  ptr<type_expr> for_type;
+  std::vector<where_constraint> where_constraints;
+  std::vector<ptr<node>> items;  ///< func_decl, static_decl, associated_type_def.
 
-  ImplDecl() : Node(NodeKind::ImplDecl) {}
+  impl_decl() : node(NodeKind::impl_decl) {}
 };
 
 /// Function modifier flags.
-struct FuncModifiers {
+struct func_modifiers {
   bool is_pure = false;
   bool is_async = false;
   bool is_machine = false;
   bool is_static = false;
-  Ptr<TypeExpr> async_context;  ///< Optional async context type.
+  ptr<type_expr> async_context;  ///< Optional async context type.
 };
 
 /// Contract clause: `pre expr [, message]` or `post expr [, message]`
-struct ContractClause {
+struct contract_clause {
   Span span;
   bool is_pre;  ///< true = `pre`, false = `post`
-  Ptr<Expr> condition;
+  ptr<Expr> condition;
   std::optional<std::string> message;
 };
 
 /// Parameter in a function signature.
 struct Param {
   Span span;
-  Ptr<Pattern> pattern;
-  Ptr<TypeExpr> type_annotation;  ///< Optional.
-  Ptr<Expr> default_value;        ///< Optional.
+  ptr<Pattern> pattern;
+  ptr<type_expr> type_annotation;  ///< Optional.
+  ptr<Expr> default_value;        ///< Optional.
 };
 
 /// Function declaration.
-struct FuncDecl : Node {
-  Visibility visibility = Visibility::Default;
-  FuncModifiers modifiers;
+struct func_decl : node {
+  visibility visibility = visibility::Default;
+  func_modifiers modifiers;
   std::string name;
-  std::vector<TypeParam> type_params;
+  std::vector<type_param> type_params;
   std::vector<Param> params;
-  Ptr<TypeExpr> return_type;  ///< Optional.
-  std::vector<WhereConstraint> where_constraints;
-  std::vector<ContractClause> contracts;
+  ptr<type_expr> return_type;  ///< Optional.
+  std::vector<where_constraint> where_constraints;
+  std::vector<contract_clause> contracts;
   /// Body: either an inline expression or a block of statements.
-  Ptr<Expr> body_expr;
-  std::vector<Ptr<Node>> body_stmts;
+  ptr<Expr> body_expr;
+  std::vector<ptr<node>> body_stmts;
 
-  FuncDecl() : Node(NodeKind::FuncDecl) {}
+  func_decl() : node(NodeKind::func_decl) {}
 };
 
 /// Sub-module: `module Name` or `module Name: ...`
-struct SubModuleDecl : Node {
-  Visibility visibility = Visibility::Default;
+struct sub_module_decl : node {
+  visibility visibility = visibility::Default;
   std::string name;
-  std::vector<Ptr<Node>> items;  ///< Empty for forward declarations.
+  std::vector<ptr<node>> items;  ///< Empty for forward declarations.
 
-  SubModuleDecl() : Node(NodeKind::SubModuleDecl) {}
+  sub_module_decl() : node(NodeKind::sub_module_decl) {}
 };
 
 /// Dependency declaration: `dep Name: ...`
-struct DepField {
+struct dep_field {
   Span span;
   std::string key;
   std::string value;
 };
 
-struct DepDecl : Node {
+struct dep_decl : node {
   std::string name;
-  std::vector<DepField> fields;
+  std::vector<dep_field> fields;
 
-  DepDecl() : Node(NodeKind::DepDecl) {}
+  dep_decl() : node(NodeKind::dep_decl) {}
 };
 
 /// Static declarations — multiple forms:
@@ -1234,58 +1234,58 @@ enum class StaticDeclKind : uint8_t {
   ForBlock,                ///< `static for ... : block`
 };
 
-struct StaticDecl : Node {
-  Visibility visibility = Visibility::Default;
+struct static_decl : node {
+  visibility visibility = visibility::Default;
   StaticDeclKind decl_kind;
 
   // For Binding:
   std::string name;
-  Ptr<TypeExpr> type_annotation;
-  Ptr<Expr> initializer;
+  ptr<type_expr> type_annotation;
+  ptr<Expr> initializer;
 
   // For Assert:
-  Ptr<Expr> assert_condition;
+  ptr<Expr> assert_condition;
   std::optional<std::string> assert_message;
 
   // For ConditionalCompilation:
-  Ptr<Expr> if_condition;
-  std::vector<Ptr<Node>> if_body;
-  std::vector<Ptr<Node>> else_body;
+  ptr<Expr> if_condition;
+  std::vector<ptr<node>> if_body;
+  std::vector<ptr<node>> else_body;
 
   // For ForInline / ForBlock:
-  std::vector<Ptr<Pattern>> for_patterns;
-  Ptr<Expr> for_iterable;
-  Ptr<Expr> for_guard;
-  Ptr<Expr> for_yield;  ///< For ForInline.
-  std::vector<Ptr<Node>> for_body;  ///< For ForBlock.
+  std::vector<ptr<Pattern>> for_patterns;
+  ptr<Expr> for_iterable;
+  ptr<Expr> for_guard;
+  ptr<Expr> for_yield;  ///< For ForInline.
+  std::vector<ptr<node>> for_body;  ///< For ForBlock.
 
-  StaticDecl() : Node(NodeKind::StaticDecl), decl_kind(StaticDeclKind::Binding) {}
+  static_decl() : node(NodeKind::static_decl), decl_kind(StaticDeclKind::Binding) {}
 };
 
 // ==========================================================================
 //  Module declaration and file root
 // ==========================================================================
 
-struct ModuleDecl : Node {
+struct module_decl : node {
   std::vector<std::string> path;
 
-  ModuleDecl() : Node(NodeKind::ModuleDecl) {}
+  module_decl() : node(NodeKind::module_decl) {}
 };
 
-struct File : Node {
-  Ptr<ModuleDecl> module_decl;
+struct file : node {
+  ptr<module_decl> module_decl;
   bool no_prelude = false;
-  std::vector<Ptr<Node>> items;
+  std::vector<ptr<node>> items;
 
-  File() : Node(NodeKind::File) {}
+  file() : node(NodeKind::File) {}
 };
 
 // ==========================================================================
 //  Pattern alias wrapper — for `pattern as name`
 // ==========================================================================
 
-struct AliasedPattern {
-  Ptr<Pattern> pattern;
+struct aliased_pattern {
+  ptr<Pattern> pattern;
   std::optional<std::string> alias;
   Span span;
 };

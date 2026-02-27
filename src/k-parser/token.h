@@ -9,7 +9,7 @@
 namespace kira {
 
 // ==========================================================================
-//  TokenKind — every distinct lexical element in the Kira language.
+//  token_kind — every distinct lexical element in the Kira language.
 //
 //  Naming conventions:
 //    Kw*      — keywords
@@ -17,7 +17,7 @@ namespace kira {
 //    Punct*   — punctuation / operators
 //    Special* — synthetic tokens produced by the lexer (INDENT, etc.)
 // ==========================================================================
-enum class TokenKind : uint16_t {
+enum class token_kind : uint16_t {
   // ------------------------------------------------------------------
   //  Sentinel / special
   // ------------------------------------------------------------------
@@ -233,7 +233,7 @@ enum class TokenKind : uint16_t {
 //  Token — a single lexical token with its kind, location, and text.
 // ==========================================================================
 struct Token {
-  TokenKind kind = TokenKind::eof;
+  token_kind kind = token_kind::eof;
   Span span;
 
   /// The raw source text of this token. For most tokens this is a view into
@@ -248,11 +248,11 @@ struct Token {
 
   // Convenience predicates ------------------------------------------------
 
-  [[nodiscard]] constexpr bool is(TokenKind k) const noexcept {
+  [[nodiscard]] constexpr bool is(token_kind k) const noexcept {
     return kind == k;
   }
 
-  [[nodiscard]] constexpr bool is_not(TokenKind k) const noexcept {
+  [[nodiscard]] constexpr bool is_not(token_kind k) const noexcept {
     return kind != k;
   }
 
@@ -262,130 +262,130 @@ struct Token {
   }
 
   [[nodiscard]] constexpr bool is_eof() const noexcept {
-    return kind == TokenKind::eof;
+    return kind == token_kind::eof;
   }
 
   [[nodiscard]] constexpr bool is_error() const noexcept {
-    return kind == TokenKind::error;
+    return kind == token_kind::error;
   }
 
   [[nodiscard]] constexpr bool is_newline() const noexcept {
-    return kind == TokenKind::newline;
+    return kind == token_kind::newline;
   }
 
   [[nodiscard]] constexpr bool is_keyword() const noexcept {
-    return kind >= TokenKind::kw_module && kind <= TokenKind::kw_assert;
+    return kind >= token_kind::kw_module && kind <= token_kind::kw_assert;
   }
 
   [[nodiscard]] constexpr bool is_literal() const noexcept {
-    return kind >= TokenKind::int_lit && kind <= TokenKind::char_lit;
+    return kind >= token_kind::int_lit && kind <= token_kind::char_lit;
   }
 
   [[nodiscard]] constexpr bool is_literal_keyword() const noexcept {
-    return kind == TokenKind::kw_true ||
-           kind == TokenKind::kw_false ||
-           kind == TokenKind::kw_unit;
+    return kind == token_kind::kw_true ||
+           kind == token_kind::kw_false ||
+           kind == token_kind::kw_unit;
   }
 
   [[nodiscard]] constexpr bool is_visibility() const noexcept {
-    return kind == TokenKind::kw_pub ||
-           kind == TokenKind::kw_internal ||
-           kind == TokenKind::kw_super ||
-           kind == TokenKind::kw_priv;
+    return kind == token_kind::kw_pub ||
+           kind == token_kind::kw_internal ||
+           kind == token_kind::kw_super ||
+           kind == token_kind::kw_priv;
   }
 
   [[nodiscard]] constexpr bool is_func_modifier() const noexcept {
-    return kind == TokenKind::kw_pure ||
-           kind == TokenKind::kw_async ||
-           kind == TokenKind::kw_machine ||
-           kind == TokenKind::kw_static;
+    return kind == token_kind::kw_pure ||
+           kind == token_kind::kw_async ||
+           kind == token_kind::kw_machine ||
+           kind == token_kind::kw_static;
   }
 
   [[nodiscard]] constexpr bool is_assign_op() const noexcept {
-    return kind == TokenKind::eq ||
-           kind == TokenKind::plus_eq ||
-           kind == TokenKind::minus_eq ||
-           kind == TokenKind::star_eq ||
-           kind == TokenKind::slash_eq ||
-           kind == TokenKind::percent_eq ||
-           kind == TokenKind::amp_eq ||
-           kind == TokenKind::pipe_eq ||
-           kind == TokenKind::caret_eq ||
-           kind == TokenKind::lt_lt_eq ||
-           kind == TokenKind::gt_gt_eq ||
-           kind == TokenKind::plus_percent_eq ||
-           kind == TokenKind::minus_percent_eq ||
-           kind == TokenKind::star_percent_eq ||
-           kind == TokenKind::plus_pipe_eq ||
-           kind == TokenKind::minus_pipe_eq ||
-           kind == TokenKind::star_pipe_eq;
+    return kind == token_kind::eq ||
+           kind == token_kind::plus_eq ||
+           kind == token_kind::minus_eq ||
+           kind == token_kind::star_eq ||
+           kind == token_kind::slash_eq ||
+           kind == token_kind::percent_eq ||
+           kind == token_kind::amp_eq ||
+           kind == token_kind::pipe_eq ||
+           kind == token_kind::caret_eq ||
+           kind == token_kind::lt_lt_eq ||
+           kind == token_kind::gt_gt_eq ||
+           kind == token_kind::plus_percent_eq ||
+           kind == token_kind::minus_percent_eq ||
+           kind == token_kind::star_percent_eq ||
+           kind == token_kind::plus_pipe_eq ||
+           kind == token_kind::minus_pipe_eq ||
+           kind == token_kind::star_pipe_eq;
   }
 
   [[nodiscard]] constexpr bool is_cmp_op() const noexcept {
-    return kind == TokenKind::eq_eq ||
-           kind == TokenKind::bang_eq ||
-           kind == TokenKind::lt ||
-           kind == TokenKind::lt_eq ||
-           kind == TokenKind::gt ||
-           kind == TokenKind::gt_eq ||
-           kind == TokenKind::kw_in ||
-           kind == TokenKind::kw_not;  // `not in`
+    return kind == token_kind::eq_eq ||
+           kind == token_kind::bang_eq ||
+           kind == token_kind::lt ||
+           kind == token_kind::lt_eq ||
+           kind == token_kind::gt ||
+           kind == token_kind::gt_eq ||
+           kind == token_kind::kw_in ||
+           kind == token_kind::kw_not;  // `not in`
   }
 
   [[nodiscard]] constexpr bool is_add_op() const noexcept {
-    return kind == TokenKind::plus ||
-           kind == TokenKind::minus ||
-           kind == TokenKind::plus_percent ||
-           kind == TokenKind::minus_percent ||
-           kind == TokenKind::plus_pipe ||
-           kind == TokenKind::minus_pipe;
+    return kind == token_kind::plus ||
+           kind == token_kind::minus ||
+           kind == token_kind::plus_percent ||
+           kind == token_kind::minus_percent ||
+           kind == token_kind::plus_pipe ||
+           kind == token_kind::minus_pipe;
   }
 
   [[nodiscard]] constexpr bool is_mul_op() const noexcept {
-    return kind == TokenKind::star ||
-           kind == TokenKind::slash ||
-           kind == TokenKind::percent ||
-           kind == TokenKind::star_percent ||
-           kind == TokenKind::star_pipe;
+    return kind == token_kind::star ||
+           kind == token_kind::slash ||
+           kind == token_kind::percent ||
+           kind == token_kind::star_percent ||
+           kind == token_kind::star_pipe;
   }
 
   [[nodiscard]] constexpr bool is_unary_op() const noexcept {
-    return kind == TokenKind::minus ||
-           kind == TokenKind::tilde ||
-           kind == TokenKind::star ||
-           kind == TokenKind::amp;
+    return kind == token_kind::minus ||
+           kind == token_kind::tilde ||
+           kind == token_kind::star ||
+           kind == token_kind::amp;
   }
 
   /// Returns true if this token can start an expression.
   [[nodiscard]] constexpr bool can_start_expr() const noexcept {
     switch (kind) {
-      case TokenKind::ident:
-      case TokenKind::int_lit:
-      case TokenKind::float_lit:
-      case TokenKind::string_lit:
-      case TokenKind::char_lit:
-      case TokenKind::kw_true:
-      case TokenKind::kw_false:
-      case TokenKind::kw_unit:
-      case TokenKind::lparen:
-      case TokenKind::lbracket:
-      case TokenKind::lbrace:
-      case TokenKind::minus:
-      case TokenKind::tilde:
-      case TokenKind::star:
-      case TokenKind::amp:
-      case TokenKind::kw_not:
-      case TokenKind::kw_if:
-      case TokenKind::kw_match:
-      case TokenKind::kw_for:
-      case TokenKind::kw_await:
-      case TokenKind::kw_par:
-      case TokenKind::kw_race:
-      case TokenKind::kw_on:
-      case TokenKind::kw_pure:
-      case TokenKind::kw_move:
-      case TokenKind::kw_static:
-      case TokenKind::backtick:
+      case token_kind::ident:
+      case token_kind::int_lit:
+      case token_kind::float_lit:
+      case token_kind::string_lit:
+      case token_kind::char_lit:
+      case token_kind::kw_true:
+      case token_kind::kw_false:
+      case token_kind::kw_unit:
+      case token_kind::lparen:
+      case token_kind::lbracket:
+      case token_kind::lbrace:
+      case token_kind::minus:
+      case token_kind::tilde:
+      case token_kind::star:
+      case token_kind::amp:
+      case token_kind::kw_not:
+      case token_kind::kw_if:
+      case token_kind::kw_match:
+      case token_kind::kw_for:
+      case token_kind::kw_await:
+      case token_kind::kw_par:
+      case token_kind::kw_race:
+      case token_kind::kw_on:
+      case token_kind::kw_pure:
+      case token_kind::kw_move:
+      case token_kind::kw_static:
+      case token_kind::backtick:
         return true;
       default:
         return false;
@@ -395,28 +395,28 @@ struct Token {
   /// Returns true if this token can start a statement.
   [[nodiscard]] constexpr bool can_start_stmt() const noexcept {
     switch (kind) {
-      case TokenKind::kw_let:
-      case TokenKind::kw_var:
-      case TokenKind::kw_return:
-      case TokenKind::kw_if:
-      case TokenKind::kw_while:
-      case TokenKind::kw_for:
-      case TokenKind::kw_match:
-      case TokenKind::kw_crew:
-      case TokenKind::kw_asm:
-      case TokenKind::kw_use:
-      case TokenKind::kw_type:
-      case TokenKind::kw_def:
-      case TokenKind::kw_static:
-      case TokenKind::kw_pub:
-      case TokenKind::kw_internal:
-      case TokenKind::kw_super:
-      case TokenKind::kw_priv:
-      case TokenKind::kw_pure:
-      case TokenKind::kw_async:
-      case TokenKind::kw_machine:
-      case TokenKind::tilde:
-      case TokenKind::newline:
+      case token_kind::kw_let:
+      case token_kind::kw_var:
+      case token_kind::kw_return:
+      case token_kind::kw_if:
+      case token_kind::kw_while:
+      case token_kind::kw_for:
+      case token_kind::kw_match:
+      case token_kind::kw_crew:
+      case token_kind::kw_asm:
+      case token_kind::kw_use:
+      case token_kind::kw_type:
+      case token_kind::kw_def:
+      case token_kind::kw_static:
+      case token_kind::kw_pub:
+      case token_kind::kw_internal:
+      case token_kind::kw_super:
+      case token_kind::kw_priv:
+      case token_kind::kw_pure:
+      case token_kind::kw_async:
+      case token_kind::kw_machine:
+      case token_kind::tilde:
+      case token_kind::newline:
         return true;
       default:
         return can_start_expr();
@@ -426,24 +426,24 @@ struct Token {
   /// Returns true if this token can start a top-level item.
   [[nodiscard]] constexpr bool can_start_top_level() const noexcept {
     switch (kind) {
-      case TokenKind::kw_use:
-      case TokenKind::kw_type:
-      case TokenKind::kw_trait:
-      case TokenKind::kw_impl:
-      case TokenKind::kw_concept:
-      case TokenKind::kw_def:
-      case TokenKind::kw_static:
-      case TokenKind::kw_module:
-      case TokenKind::kw_dep:
-      case TokenKind::kw_pub:
-      case TokenKind::kw_internal:
-      case TokenKind::kw_super:
-      case TokenKind::kw_priv:
-      case TokenKind::kw_pure:
-      case TokenKind::kw_async:
-      case TokenKind::kw_machine:
-      case TokenKind::tilde:
-      case TokenKind::newline:
+      case token_kind::kw_use:
+      case token_kind::kw_type:
+      case token_kind::kw_trait:
+      case token_kind::kw_impl:
+      case token_kind::kw_concept:
+      case token_kind::kw_def:
+      case token_kind::kw_static:
+      case token_kind::kw_module:
+      case token_kind::kw_dep:
+      case token_kind::kw_pub:
+      case token_kind::kw_internal:
+      case token_kind::kw_super:
+      case token_kind::kw_priv:
+      case token_kind::kw_pure:
+      case token_kind::kw_async:
+      case token_kind::kw_machine:
+      case token_kind::tilde:
+      case token_kind::newline:
         return true;
       default:
         return false;
@@ -452,114 +452,114 @@ struct Token {
 };
 
 // ==========================================================================
-//  Keyword lookup — maps identifier text to keyword TokenKind, or
-//  returns TokenKind::Ident if the string is not a keyword.
+//  Keyword lookup — maps identifier text to keyword token_kind, or
+//  returns token_kind::ident if the string is not a keyword.
 // ==========================================================================
-[[nodiscard]] inline TokenKind classify_ident(std::string_view text) noexcept {
+[[nodiscard]] inline token_kind classify_ident(std::string_view text) noexcept {
   // We use a simple if-chain. For ~50 keywords this is perfectly fine and
   // avoids pulling in a hash map dependency. The compiler will likely
   // optimize this into a switch on the first character anyway.
 
   // Sort by frequency of occurrence in typical Kira code to get early-out
   // on the most common identifiers, which are NOT keywords.
-  if (text.empty()) return TokenKind::ident;
+  if (text.empty()) return token_kind::ident;
 
   switch (text[0]) {
     case 'a':
-      if (text == "and")       return TokenKind::kw_and;
-      if (text == "as")        return TokenKind::kw_as;
-      if (text == "async")     return TokenKind::kw_async;
-      if (text == "await")     return TokenKind::kw_await;
-      if (text == "asm")       return TokenKind::kw_asm;
-      if (text == "array")     return TokenKind::kw_array;
-      if (text == "assert")    return TokenKind::kw_assert;
+      if (text == "and")       return token_kind::kw_and;
+      if (text == "as")        return token_kind::kw_as;
+      if (text == "async")     return token_kind::kw_async;
+      if (text == "await")     return token_kind::kw_await;
+      if (text == "asm")       return token_kind::kw_asm;
+      if (text == "array")     return token_kind::kw_array;
+      if (text == "assert")    return token_kind::kw_assert;
       break;
     case 'c':
-      if (text == "concept")   return TokenKind::kw_concept;
-      if (text == "crew")      return TokenKind::kw_crew;
+      if (text == "concept")   return token_kind::kw_concept;
+      if (text == "crew")      return token_kind::kw_crew;
       break;
     case 'd':
-      if (text == "def")       return TokenKind::kw_def;
-      if (text == "dep")       return TokenKind::kw_dep;
-      if (text == "deriving")  return TokenKind::kw_deriving;
-      if (text == "def_expr")  return TokenKind::kw_def_expr;
+      if (text == "def")       return token_kind::kw_def;
+      if (text == "dep")       return token_kind::kw_dep;
+      if (text == "deriving")  return token_kind::kw_deriving;
+      if (text == "def_expr")  return token_kind::kw_def_expr;
       break;
     case 'e':
-      if (text == "else")      return TokenKind::kw_else;
-      if (text == "elif")      return TokenKind::kw_elif;
-      if (text == "err")       return TokenKind::kw_err;
-      if (text == "expr")      return TokenKind::kw_expr;
+      if (text == "else")      return token_kind::kw_else;
+      if (text == "elif")      return token_kind::kw_elif;
+      if (text == "err")       return token_kind::kw_err;
+      if (text == "expr")      return token_kind::kw_expr;
       break;
     case 'f':
-      if (text == "for")       return TokenKind::kw_for;
-      if (text == "false")     return TokenKind::kw_false;
-      if (text == "fn")        return TokenKind::kw_fn;
+      if (text == "for")       return token_kind::kw_for;
+      if (text == "false")     return token_kind::kw_false;
+      if (text == "fn")        return token_kind::kw_fn;
       break;
     case 'i':
-      if (text == "if")        return TokenKind::kw_if;
-      if (text == "in")        return TokenKind::kw_in;
-      if (text == "impl")      return TokenKind::kw_impl;
-      if (text == "internal")  return TokenKind::kw_internal;
-      if (text == "invariant") return TokenKind::kw_invariant;
+      if (text == "if")        return token_kind::kw_if;
+      if (text == "in")        return token_kind::kw_in;
+      if (text == "impl")      return token_kind::kw_impl;
+      if (text == "internal")  return token_kind::kw_internal;
+      if (text == "invariant") return token_kind::kw_invariant;
       break;
     case 'l':
-      if (text == "let")       return TokenKind::kw_let;
+      if (text == "let")       return token_kind::kw_let;
       break;
     case 'm':
-      if (text == "match")     return TokenKind::kw_match;
-      if (text == "module")    return TokenKind::kw_module;
-      if (text == "mut")       return TokenKind::kw_mut;
-      if (text == "move")      return TokenKind::kw_move;
-      if (text == "machine")   return TokenKind::kw_machine;
+      if (text == "match")     return token_kind::kw_match;
+      if (text == "module")    return token_kind::kw_module;
+      if (text == "mut")       return token_kind::kw_mut;
+      if (text == "move")      return token_kind::kw_move;
+      if (text == "machine")   return token_kind::kw_machine;
       break;
     case 'n':
-      if (text == "not")       return TokenKind::kw_not;
-      if (text == "no_prelude") return TokenKind::kw_no_prelude;
+      if (text == "not")       return token_kind::kw_not;
+      if (text == "no_prelude") return token_kind::kw_no_prelude;
       break;
     case 'o':
-      if (text == "or")        return TokenKind::kw_or;
-      if (text == "ok")        return TokenKind::kw_ok;
-      if (text == "on")        return TokenKind::kw_on;
+      if (text == "or")        return token_kind::kw_or;
+      if (text == "ok")        return token_kind::kw_ok;
+      if (text == "on")        return token_kind::kw_on;
       break;
     case 'p':
-      if (text == "pub")       return TokenKind::kw_pub;
-      if (text == "pure")      return TokenKind::kw_pure;
-      if (text == "par")       return TokenKind::kw_par;
-      if (text == "pre")       return TokenKind::kw_pre;
-      if (text == "post")      return TokenKind::kw_post;
-      if (text == "priv")      return TokenKind::kw_priv;
+      if (text == "pub")       return token_kind::kw_pub;
+      if (text == "pure")      return token_kind::kw_pure;
+      if (text == "par")       return token_kind::kw_par;
+      if (text == "pre")       return token_kind::kw_pre;
+      if (text == "post")      return token_kind::kw_post;
+      if (text == "priv")      return token_kind::kw_priv;
       break;
     case 'r':
-      if (text == "return")    return TokenKind::kw_return;
-      if (text == "race")      return TokenKind::kw_race;
-      if (text == "requires")  return TokenKind::kw_requires;
+      if (text == "return")    return token_kind::kw_return;
+      if (text == "race")      return token_kind::kw_race;
+      if (text == "requires")  return token_kind::kw_requires;
       break;
     case 's':
-      if (text == "static")    return TokenKind::kw_static;
-      if (text == "some")      return TokenKind::kw_some;
-      if (text == "super")     return TokenKind::kw_super;
-      if (text == "shared")    return TokenKind::kw_shared;
-      if (text == "stmt")      return TokenKind::kw_stmt;
+      if (text == "static")    return token_kind::kw_static;
+      if (text == "some")      return token_kind::kw_some;
+      if (text == "super")     return token_kind::kw_super;
+      if (text == "shared")    return token_kind::kw_shared;
+      if (text == "stmt")      return token_kind::kw_stmt;
       break;
     case 't':
-      if (text == "type")      return TokenKind::kw_type;
-      if (text == "trait")     return TokenKind::kw_trait;
-      if (text == "true")      return TokenKind::kw_true;
-      if (text == "type_expr") return TokenKind::kw_type_expr;
+      if (text == "type")      return token_kind::kw_type;
+      if (text == "trait")     return token_kind::kw_trait;
+      if (text == "true")      return token_kind::kw_true;
+      if (text == "type_expr") return token_kind::kw_type_expr;
       break;
     case 'u':
-      if (text == "use")       return TokenKind::kw_use;
-      if (text == "unit")      return TokenKind::kw_unit;
+      if (text == "use")       return token_kind::kw_use;
+      if (text == "unit")      return token_kind::kw_unit;
       break;
     case 'v':
-      if (text == "var")       return TokenKind::kw_var;
+      if (text == "var")       return token_kind::kw_var;
       break;
     case 'w':
-      if (text == "while")     return TokenKind::kw_while;
-      if (text == "where")     return TokenKind::kw_where;
+      if (text == "while")     return token_kind::kw_while;
+      if (text == "where")     return token_kind::kw_where;
       break;
     case 'y':
-      if (text == "yield")     return TokenKind::kw_yield;
+      if (text == "yield")     return token_kind::kw_yield;
       break;
     default:
       break;
@@ -567,170 +567,170 @@ struct Token {
 
   // `_` is a special keyword (wildcard pattern) but only when it's exactly
   // a lone underscore. Identifiers like `_foo` are normal identifiers.
-  if (text == "_") return TokenKind::kw_underscore;
+  if (text == "_") return token_kind::kw_underscore;
 
-  return TokenKind::ident;
+  return token_kind::ident;
 }
 
 // ==========================================================================
-//  token_kind_name — returns a human-readable name for a TokenKind.
+//  token_kind_name — returns a human-readable name for a token_kind.
 //
 //  This is used in diagnostic messages. The names are chosen to be
 //  understandable to someone learning Kira — not compiler-internals jargon.
 // ==========================================================================
-[[nodiscard]] constexpr std::string_view token_kind_name(TokenKind kind) noexcept {
+[[nodiscard]] constexpr std::string_view token_kind_name(token_kind kind) noexcept {
   switch (kind) {
-    case TokenKind::eof:              return "end of file";
-    case TokenKind::error:            return "error";
-    case TokenKind::newline:          return "newline";
-    case TokenKind::indent:           return "indent";
-    case TokenKind::dedent:           return "dedent";
-    case TokenKind::placeholder:      return "<placeholder>";
+    case token_kind::eof:              return "end of file";
+    case token_kind::error:            return "error";
+    case token_kind::newline:          return "newline";
+    case token_kind::indent:           return "indent";
+    case token_kind::dedent:           return "dedent";
+    case token_kind::placeholder:      return "<placeholder>";
 
-    case TokenKind::ident:            return "identifier";
-    case TokenKind::int_lit:          return "integer literal";
-    case TokenKind::float_lit:        return "float literal";
-    case TokenKind::string_lit:       return "string literal";
-    case TokenKind::char_lit:         return "character literal";
-    case TokenKind::asm_content:      return "assembly content";
+    case token_kind::ident:            return "identifier";
+    case token_kind::int_lit:          return "integer literal";
+    case token_kind::float_lit:        return "float literal";
+    case token_kind::string_lit:       return "string literal";
+    case token_kind::char_lit:         return "character literal";
+    case token_kind::asm_content:      return "assembly content";
 
-    case TokenKind::kw_module:        return "`module`";
-    case TokenKind::kw_type:          return "`type`";
-    case TokenKind::kw_trait:         return "`trait`";
-    case TokenKind::kw_impl:          return "`impl`";
-    case TokenKind::kw_concept:       return "`concept`";
-    case TokenKind::kw_def:           return "`def`";
-    case TokenKind::kw_let:           return "`let`";
-    case TokenKind::kw_var:           return "`var`";
-    case TokenKind::kw_static:        return "`static`";
-    case TokenKind::kw_use:           return "`use`";
-    case TokenKind::kw_dep:           return "`dep`";
+    case token_kind::kw_module:        return "`module`";
+    case token_kind::kw_type:          return "`type`";
+    case token_kind::kw_trait:         return "`trait`";
+    case token_kind::kw_impl:          return "`impl`";
+    case token_kind::kw_concept:       return "`concept`";
+    case token_kind::kw_def:           return "`def`";
+    case token_kind::kw_let:           return "`let`";
+    case token_kind::kw_var:           return "`var`";
+    case token_kind::kw_static:        return "`static`";
+    case token_kind::kw_use:           return "`use`";
+    case token_kind::kw_dep:           return "`dep`";
 
-    case TokenKind::kw_pure:          return "`pure`";
-    case TokenKind::kw_async:         return "`async`";
-    case TokenKind::kw_machine:       return "`machine`";
+    case token_kind::kw_pure:          return "`pure`";
+    case token_kind::kw_async:         return "`async`";
+    case token_kind::kw_machine:       return "`machine`";
 
-    case TokenKind::kw_pub:           return "`pub`";
-    case TokenKind::kw_internal:      return "`internal`";
-    case TokenKind::kw_super:         return "`super`";
-    case TokenKind::kw_priv:          return "`priv`";
+    case token_kind::kw_pub:           return "`pub`";
+    case token_kind::kw_internal:      return "`internal`";
+    case token_kind::kw_super:         return "`super`";
+    case token_kind::kw_priv:          return "`priv`";
 
-    case TokenKind::kw_if:            return "`if`";
-    case TokenKind::kw_elif:          return "`elif`";
-    case TokenKind::kw_else:          return "`else`";
-    case TokenKind::kw_for:           return "`for`";
-    case TokenKind::kw_while:         return "`while`";
-    case TokenKind::kw_match:         return "`match`";
-    case TokenKind::kw_return:        return "`return`";
-    case TokenKind::kw_in:            return "`in`";
-    case TokenKind::kw_as:            return "`as`";
+    case token_kind::kw_if:            return "`if`";
+    case token_kind::kw_elif:          return "`elif`";
+    case token_kind::kw_else:          return "`else`";
+    case token_kind::kw_for:           return "`for`";
+    case token_kind::kw_while:         return "`while`";
+    case token_kind::kw_match:         return "`match`";
+    case token_kind::kw_return:        return "`return`";
+    case token_kind::kw_in:            return "`in`";
+    case token_kind::kw_as:            return "`as`";
 
-    case TokenKind::kw_underscore:    return "`_`";
-    case TokenKind::kw_some:          return "`some`";
-    case TokenKind::kw_ok:            return "`ok`";
-    case TokenKind::kw_err:           return "`err`";
+    case token_kind::kw_underscore:    return "`_`";
+    case token_kind::kw_some:          return "`some`";
+    case token_kind::kw_ok:            return "`ok`";
+    case token_kind::kw_err:           return "`err`";
 
-    case TokenKind::kw_and:           return "`and`";
-    case TokenKind::kw_or:            return "`or`";
-    case TokenKind::kw_not:           return "`not`";
-    case TokenKind::kw_await:         return "`await`";
-    case TokenKind::kw_yield:         return "`yield`";
-    case TokenKind::kw_par:           return "`par`";
-    case TokenKind::kw_race:          return "`race`";
-    case TokenKind::kw_on:            return "`on`";
-    case TokenKind::kw_crew:          return "`crew`";
-    case TokenKind::kw_asm:           return "`asm`";
+    case token_kind::kw_and:           return "`and`";
+    case token_kind::kw_or:            return "`or`";
+    case token_kind::kw_not:           return "`not`";
+    case token_kind::kw_await:         return "`await`";
+    case token_kind::kw_yield:         return "`yield`";
+    case token_kind::kw_par:           return "`par`";
+    case token_kind::kw_race:          return "`race`";
+    case token_kind::kw_on:            return "`on`";
+    case token_kind::kw_crew:          return "`crew`";
+    case token_kind::kw_asm:           return "`asm`";
 
-    case TokenKind::kw_pre:           return "`pre`";
-    case TokenKind::kw_post:          return "`post`";
-    case TokenKind::kw_invariant:     return "`invariant`";
+    case token_kind::kw_pre:           return "`pre`";
+    case token_kind::kw_post:          return "`post`";
+    case token_kind::kw_invariant:     return "`invariant`";
 
-    case TokenKind::kw_where:         return "`where`";
-    case TokenKind::kw_requires:      return "`requires`";
-    case TokenKind::kw_deriving:      return "`deriving`";
-    case TokenKind::kw_no_prelude:    return "`no_prelude`";
+    case token_kind::kw_where:         return "`where`";
+    case token_kind::kw_requires:      return "`requires`";
+    case token_kind::kw_deriving:      return "`deriving`";
+    case token_kind::kw_no_prelude:    return "`no_prelude`";
 
-    case TokenKind::kw_move:          return "`move`";
-    case TokenKind::kw_shared:        return "`shared`";
-    case TokenKind::kw_mut:           return "`mut`";
+    case token_kind::kw_move:          return "`move`";
+    case token_kind::kw_shared:        return "`shared`";
+    case token_kind::kw_mut:           return "`mut`";
 
-    case TokenKind::kw_true:          return "`true`";
-    case TokenKind::kw_false:         return "`false`";
-    case TokenKind::kw_unit:          return "`unit`";
+    case token_kind::kw_true:          return "`true`";
+    case token_kind::kw_false:         return "`false`";
+    case token_kind::kw_unit:          return "`unit`";
 
-    case TokenKind::kw_array:         return "`array`";
-    case TokenKind::kw_fn:            return "`fn`";
-    case TokenKind::kw_expr:          return "`expr`";
-    case TokenKind::kw_stmt:          return "`stmt`";
-    case TokenKind::kw_def_expr:      return "`def_expr`";
-    case TokenKind::kw_type_expr:     return "`type_expr`";
-    case TokenKind::kw_assert:        return "`assert`";
+    case token_kind::kw_array:         return "`array`";
+    case token_kind::kw_fn:            return "`fn`";
+    case token_kind::kw_expr:          return "`expr`";
+    case token_kind::kw_stmt:          return "`stmt`";
+    case token_kind::kw_def_expr:      return "`def_expr`";
+    case token_kind::kw_type_expr:     return "`type_expr`";
+    case token_kind::kw_assert:        return "`assert`";
 
-    case TokenKind::lparen:           return "`(`";
-    case TokenKind::rparen:           return "`)`";
-    case TokenKind::lbracket:         return "`[`";
-    case TokenKind::rbracket:         return "`]`";
-    case TokenKind::lbrace:           return "`{`";
-    case TokenKind::rbrace:           return "`}`";
-    case TokenKind::colon:            return "`:`";
-    case TokenKind::comma:            return "`,`";
-    case TokenKind::dot:              return "`.`";
-    case TokenKind::semicolon:        return "`;`";
-    case TokenKind::hash:             return "`#`";
-    case TokenKind::at:               return "`@`";
-    case TokenKind::backtick:         return "`` ` ``";
-    case TokenKind::question:         return "`?`";
+    case token_kind::lparen:           return "`(`";
+    case token_kind::rparen:           return "`)`";
+    case token_kind::lbracket:         return "`[`";
+    case token_kind::rbracket:         return "`]`";
+    case token_kind::lbrace:           return "`{`";
+    case token_kind::rbrace:           return "`}`";
+    case token_kind::colon:            return "`:`";
+    case token_kind::comma:            return "`,`";
+    case token_kind::dot:              return "`.`";
+    case token_kind::semicolon:        return "`;`";
+    case token_kind::hash:             return "`#`";
+    case token_kind::at:               return "`@`";
+    case token_kind::backtick:         return "`` ` ``";
+    case token_kind::question:         return "`?`";
 
-    case TokenKind::eq:               return "`=`";
-    case TokenKind::plus:             return "`+`";
-    case TokenKind::minus:            return "`-`";
-    case TokenKind::star:             return "`*`";
-    case TokenKind::slash:            return "`/`";
-    case TokenKind::percent:          return "`%`";
-    case TokenKind::amp:              return "`&`";
-    case TokenKind::pipe:             return "`|`";
-    case TokenKind::caret:            return "`^`";
-    case TokenKind::tilde:            return "`~`";
-    case TokenKind::lt:               return "`<`";
-    case TokenKind::gt:               return "`>`";
+    case token_kind::eq:               return "`=`";
+    case token_kind::plus:             return "`+`";
+    case token_kind::minus:            return "`-`";
+    case token_kind::star:             return "`*`";
+    case token_kind::slash:            return "`/`";
+    case token_kind::percent:          return "`%`";
+    case token_kind::amp:              return "`&`";
+    case token_kind::pipe:             return "`|`";
+    case token_kind::caret:            return "`^`";
+    case token_kind::tilde:            return "`~`";
+    case token_kind::lt:               return "`<`";
+    case token_kind::gt:               return "`>`";
 
-    case TokenKind::eq_eq:            return "`==`";
-    case TokenKind::bang_eq:          return "`!=`";
-    case TokenKind::lt_eq:            return "`<=`";
-    case TokenKind::gt_eq:            return "`>=`";
-    case TokenKind::arrow:            return "`->`";
-    case TokenKind::fat_arrow:        return "`=>`";
-    case TokenKind::dot_dot:          return "`..`";
-    case TokenKind::dot_dot_eq:       return "`..=`";
-    case TokenKind::lt_lt:            return "`<<`";
-    case TokenKind::gt_gt:            return "`>>`";
+    case token_kind::eq_eq:            return "`==`";
+    case token_kind::bang_eq:          return "`!=`";
+    case token_kind::lt_eq:            return "`<=`";
+    case token_kind::gt_eq:            return "`>=`";
+    case token_kind::arrow:            return "`->`";
+    case token_kind::fat_arrow:        return "`=>`";
+    case token_kind::dot_dot:          return "`..`";
+    case token_kind::dot_dot_eq:       return "`..=`";
+    case token_kind::lt_lt:            return "`<<`";
+    case token_kind::gt_gt:            return "`>>`";
 
-    case TokenKind::plus_eq:          return "`+=`";
-    case TokenKind::minus_eq:         return "`-=`";
-    case TokenKind::star_eq:          return "`*=`";
-    case TokenKind::slash_eq:         return "`/=`";
-    case TokenKind::percent_eq:       return "`%=`";
-    case TokenKind::amp_eq:           return "`&=`";
-    case TokenKind::pipe_eq:          return "`|=`";
-    case TokenKind::caret_eq:         return "`^=`";
-    case TokenKind::lt_lt_eq:         return "`<<=`";
-    case TokenKind::gt_gt_eq:         return "`>>=`";
+    case token_kind::plus_eq:          return "`+=`";
+    case token_kind::minus_eq:         return "`-=`";
+    case token_kind::star_eq:          return "`*=`";
+    case token_kind::slash_eq:         return "`/=`";
+    case token_kind::percent_eq:       return "`%=`";
+    case token_kind::amp_eq:           return "`&=`";
+    case token_kind::pipe_eq:          return "`|=`";
+    case token_kind::caret_eq:         return "`^=`";
+    case token_kind::lt_lt_eq:         return "`<<=`";
+    case token_kind::gt_gt_eq:         return "`>>=`";
 
-    case TokenKind::plus_percent:     return "`+%`";
-    case TokenKind::minus_percent:    return "`-%`";
-    case TokenKind::star_percent:     return "`*%`";
-    case TokenKind::plus_percent_eq:  return "`+%=`";
-    case TokenKind::minus_percent_eq: return "`-%=`";
-    case TokenKind::star_percent_eq:  return "`*%=`";
+    case token_kind::plus_percent:     return "`+%`";
+    case token_kind::minus_percent:    return "`-%`";
+    case token_kind::star_percent:     return "`*%`";
+    case token_kind::plus_percent_eq:  return "`+%=`";
+    case token_kind::minus_percent_eq: return "`-%=`";
+    case token_kind::star_percent_eq:  return "`*%=`";
 
-    case TokenKind::plus_pipe:        return "`+|`";
-    case TokenKind::minus_pipe:       return "`-|`";
-    case TokenKind::star_pipe:        return "`*|`";
-    case TokenKind::plus_pipe_eq:     return "`+|=`";
-    case TokenKind::minus_pipe_eq:    return "`-|=`";
-    case TokenKind::star_pipe_eq:     return "`*|=`";
+    case token_kind::plus_pipe:        return "`+|`";
+    case token_kind::minus_pipe:       return "`-|`";
+    case token_kind::star_pipe:        return "`*|`";
+    case token_kind::plus_pipe_eq:     return "`+|=`";
+    case token_kind::minus_pipe_eq:    return "`-|=`";
+    case token_kind::star_pipe_eq:     return "`*|=`";
 
-    case TokenKind::_count:           return "<invalid>";
+    case token_kind::_count:           return "<invalid>";
   }
   return "<unknown>";
 }
@@ -738,17 +738,17 @@ struct Token {
 /// Returns a short, user-friendly description of what token was expected.
 /// For punctuation and keywords, returns the literal text. For categories
 /// like Ident, returns a prose description.
-[[nodiscard]] constexpr std::string_view token_kind_description(TokenKind kind) noexcept {
+[[nodiscard]] constexpr std::string_view token_kind_description(token_kind kind) noexcept {
   switch (kind) {
-    case TokenKind::ident:     return "a name";
-    case TokenKind::int_lit:   return "a number";
-    case TokenKind::float_lit: return "a number";
-    case TokenKind::string_lit: return "a string";
-    case TokenKind::char_lit:  return "a character";
-    case TokenKind::newline:   return "end of line";
-    case TokenKind::indent:    return "an indented block";
-    case TokenKind::dedent:    return "end of block";
-    case TokenKind::eof:       return "end of file";
+    case token_kind::ident:     return "a name";
+    case token_kind::int_lit:   return "a number";
+    case token_kind::float_lit: return "a number";
+    case token_kind::string_lit: return "a string";
+    case token_kind::char_lit:  return "a character";
+    case token_kind::newline:   return "end of line";
+    case token_kind::indent:    return "an indented block";
+    case token_kind::dedent:    return "end of block";
+    case token_kind::eof:       return "end of file";
     default:                   return token_kind_name(kind);
   }
 }

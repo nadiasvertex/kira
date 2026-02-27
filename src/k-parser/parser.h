@@ -18,8 +18,8 @@
 //       `type`, or a DEDENT/NEWLINE). This prevents one error from
 //       cascading into dozens of follow-up errors.
 //
-//    2. **Error nodes**: When a production fails, we insert an ErrorNode
-//       (ErrorExpr, ErrorPattern, ErrorStmt) into the AST. This keeps the
+//    2. **Error nodes**: When a production fails, we insert an error_node
+//       (error_expr, error_pattern, error_stmt) into the AST. This keeps the
 //       tree structurally valid so downstream phases can still analyze the
 //       parts that parsed correctly.
 //
@@ -74,10 +74,10 @@ namespace kira {
 // ==========================================================================
 template <typename T>
 struct ParseResult {
-  ast::Ptr<T> node;
+  ast::ptr<T> node;
 
   ParseResult() = default;
-  explicit ParseResult(ast::Ptr<T> n) : node(std::move(n)) {}
+  explicit ParseResult(ast::ptr<T> n) : node(std::move(n)) {}
   ParseResult(std::nullptr_t) : node(nullptr) {}
 
   [[nodiscard]] bool ok() const noexcept {
@@ -99,38 +99,38 @@ struct ParseResult {
   T& operator*() { return *node; }
   const T& operator*() const { return *node; }
 
-  ast::Ptr<T> take() { return std::move(node); }
+  ast::ptr<T> take() { return std::move(node); }
 };
 
 // ==========================================================================
 //  Parser — recursive descent parser for the Kira language.
 //
 //  Usage:
-//    SourceFile file(0, "example.kira", source_text);
-//    DiagnosticBag diag;
+//    source_file file(0, "example.kira", source_text);
+//    diagnostic_bag diag;
 //    Lexer lexer(source_text, 0, diag);
 //    auto tokens = lexer.tokenize();
 //    Parser parser(tokens, 0, diag);
 //    auto ast = parser.parse_file();
 //
 //  The parser consumes the token stream produced by the Lexer and builds
-//  an AST. It reports diagnostics to a DiagnosticBag and uses error
+//  an AST. It reports diagnostics to a diagnostic_bag and uses error
 //  recovery to keep going after syntax errors.
 // ==========================================================================
 class Parser {
  public:
   /// Construct a parser over a token stream.
   ///
-  /// @param tokens   The token stream (must end with TokenKind::Eof).
+  /// @param tokens   The token stream (must end with token_kind::eof).
   /// @param file_id  The source file identifier for diagnostics.
   /// @param diag     The diagnostic bag to report errors into.
-  Parser(std::vector<Token> tokens, FileId file_id, DiagnosticBag& diag)
+  Parser(std::vector<Token> tokens, FileId file_id, diagnostic_bag& diag)
       : tokens_(std::move(tokens)),
         file_id_(file_id),
         diag_(diag),
         pos_(0) {
     assert(!tokens_.empty() && "token stream must contain at least Eof");
-    assert(tokens_.back().kind == TokenKind::Eof &&
+    assert(tokens_.back().kind == token_kind::eof &&
            "token stream must end with Eof");
   }
 
@@ -139,7 +139,7 @@ class Parser {
   // ========================================================================
 
   /// Parse a complete Kira source file.
-  [[nodiscard]] ast::Ptr<ast::File> parse_file();
+  [[nodiscard]] ast::ptr<ast::file> parse_file();
 
   // ========================================================================
   //  Accessors
@@ -178,12 +178,12 @@ class Parser {
   }
 
   /// Returns the kind of the current token.
-  [[nodiscard]] TokenKind current() const noexcept {
+  [[nodiscard]] token_kind current() const noexcept {
     return peek().kind;
   }
 
   /// Returns true if the current token has the given kind.
-  [[nodiscard]] bool at(TokenKind kind) const noexcept {
+  [[nodiscard]] bool at(token_kind kind) const noexcept {
     return current() == kind;
   }
 
@@ -195,7 +195,7 @@ class Parser {
 
   /// Returns true if the current token is EOF.
   [[nodiscard]] bool at_eof() const noexcept {
-    return at(TokenKind::Eof);
+    return at(token_kind::eof);
   }
 
   /// Consume the current token and return it.
@@ -207,7 +207,7 @@ class Parser {
 
   /// Consume the current token if it matches `kind`, and return true.
   /// Otherwise return false without consuming.
-  bool match(TokenKind kind) noexcept {
+  bool match(token_kind kind) noexcept {
     if (at(kind)) {
       advance();
       return true;
@@ -217,7 +217,7 @@ class Parser {
 
   /// If the current token matches, consume it and return it.
   /// Otherwise return std::nullopt.
-  std::optional<Token> try_consume(TokenKind kind) noexcept {
+  std::optional<Token> try_consume(token_kind kind) noexcept {
     if (at(kind)) {
       return advance();
     }
@@ -246,7 +246,7 @@ class Parser {
 
   /// Skip zero or more NEWLINE tokens.
   void skip_newlines() noexcept {
-    while (at(TokenKind::Newline)) advance();
+    while (at(token_kind::newline)) advance();
   }
 
   /// Expect and consume a NEWLINE. If missing, emit a diagnostic but
@@ -268,12 +268,12 @@ class Parser {
   ///   3. If not, consume the unexpected token.
   /// Returns the consumed token (or a synthetic placeholder if we
   /// inserted one during recovery).
-  Token expect(TokenKind expected);
+  Token expect(token_kind expected);
 
   /// Like expect(), but also provides a custom message for the diagnostic.
   /// The message explains *why* the token is expected, giving the user
   /// more context about what construct we're in the middle of parsing.
-  Token expect_with_context(TokenKind expected, std::string_view context);
+  Token expect_with_context(token_kind expected, std::string_view context);
 
   /// Emit a diagnostic for an unexpected token. This is the main
   /// "something went wrong" entry point. The message is constructed
@@ -281,16 +281,16 @@ class Parser {
   void emit_unexpected(std::string_view expected_description);
 
   /// Emit a full diagnostic object.
-  void emit(Diagnostic diag) { diag_.emit(std::move(diag)); }
+  void emit(diagnostic diag) { diag_.emit(std::move(diag)); }
 
   /// Build a diagnostic for the current position.
-  [[nodiscard]] Diagnostic make_error(std::string message) const {
-    return Diagnostic(DiagnosticLevel::Error, std::move(message), file_id_);
+  [[nodiscard]] diagnostic make_error(std::string message) const {
+    return diagnostic(diagnostic_level::error, std::move(message), file_id_);
   }
 
   /// Build a diagnostic for a specific span.
-  [[nodiscard]] Diagnostic make_error_at(Span span, std::string message) const {
-    return Diagnostic(DiagnosticLevel::Error, std::move(message), file_id_)
+  [[nodiscard]] diagnostic make_error_at(Span span, std::string message) const {
+    return diagnostic(diagnostic_level::error, std::move(message), file_id_)
         .with_label(span, "here");
   }
 
@@ -343,16 +343,16 @@ class Parser {
   /// The `parse_item` callback is invoked for each item in the block.
   /// Returns the list of parsed items.
   template <typename T>
-  std::vector<ast::Ptr<T>> parse_block(
+  std::vector<ast::ptr<T>> parse_block(
       std::string_view construct_name,
-      std::function<ast::Ptr<T>()> parse_item);
+      std::function<ast::ptr<T>()> parse_item);
 
   /// Parse either an inline body (`:` expr NEWLINE) or a block body
   /// (`:` NEWLINE INDENT stmts DEDENT). Returns the body as a vector
-  /// of statement nodes. For inline form, wraps the expr in an ExprStmt.
+  /// of statement nodes. For inline form, wraps the expr in an expr_stmt.
   struct BodyResult {
-    ast::Ptr<ast::Expr> inline_expr;
-    std::vector<ast::Ptr<ast::Node>> stmts;
+    ast::ptr<ast::Expr> inline_expr;
+    std::vector<ast::ptr<ast::node>> stmts;
     bool is_block = false;
   };
   BodyResult parse_body(std::string_view construct_name);
@@ -366,7 +366,7 @@ class Parser {
   /// and unclosed delimiters.
   template <typename T>
   std::vector<T> parse_delimited_list(
-      TokenKind open, TokenKind close,
+      token_kind open, token_kind close,
       std::string_view construct_name,
       std::function<std::optional<T>()> parse_element);
 
@@ -383,7 +383,7 @@ class Parser {
 
   /// If the current token is a visibility keyword, consume it and return
   /// the visibility. Otherwise return Default.
-  [[nodiscard]] ast::Visibility parse_optional_visibility();
+  [[nodiscard]] ast::visibility parse_optional_visibility();
 
   // ========================================================================
   //  Module paths — `a.b.c`
@@ -397,88 +397,88 @@ class Parser {
   // ========================================================================
 
   /// Parse a single top-level item (use, type, trait, impl, func, etc.).
-  [[nodiscard]] ast::Ptr<ast::Node> parse_top_level_item();
+  [[nodiscard]] ast::ptr<ast::node> parse_top_level_item();
 
   // ---- Module / use / dep ----
 
-  [[nodiscard]] ast::Ptr<ast::ModuleDecl> parse_module_decl();
-  [[nodiscard]] ast::Ptr<ast::UseDecl> parse_use_decl(ast::Visibility vis);
-  [[nodiscard]] ast::Ptr<ast::SubModuleDecl> parse_sub_module_decl(
-      ast::Visibility vis);
-  [[nodiscard]] ast::Ptr<ast::DepDecl> parse_dep_decl();
+  [[nodiscard]] ast::ptr<ast::module_decl> parse_module_decl();
+  [[nodiscard]] ast::ptr<ast::use_decl> parse_use_decl(ast::visibility vis);
+  [[nodiscard]] ast::ptr<ast::sub_module_decl> parse_sub_module_decl(
+      ast::visibility vis);
+  [[nodiscard]] ast::ptr<ast::dep_decl> parse_dep_decl();
 
   // ---- Type declarations ----
 
-  [[nodiscard]] ast::Ptr<ast::TypeDecl> parse_type_decl(ast::Visibility vis);
-  [[nodiscard]] ast::Ptr<ast::Node> parse_type_def();
-  [[nodiscard]] ast::StructBody parse_struct_body();
-  [[nodiscard]] ast::SumBody parse_sum_body();
-  [[nodiscard]] ast::StructField parse_struct_field();
-  [[nodiscard]] ast::SumVariant parse_sum_variant();
+  [[nodiscard]] ast::ptr<ast::type_decl> parse_type_decl(ast::visibility vis);
+  [[nodiscard]] ast::ptr<ast::node> parse_type_def();
+  [[nodiscard]] ast::struct_body parse_struct_body();
+  [[nodiscard]] ast::sum_body parse_sum_body();
+  [[nodiscard]] ast::struct_field parse_struct_field();
+  [[nodiscard]] ast::sum_variant parse_sum_variant();
 
   // ---- Type expressions ----
 
-  [[nodiscard]] ast::Ptr<ast::TypeExpr> parse_type_expr();
-  [[nodiscard]] ast::Ptr<ast::TypeExpr> parse_prim_type_expr();
-  [[nodiscard]] ast::Ptr<ast::NamedType> parse_named_type();
-  [[nodiscard]] ast::Ptr<ast::TupleType> parse_tuple_type();
-  [[nodiscard]] ast::Ptr<ast::SliceType> parse_slice_type();
-  [[nodiscard]] ast::Ptr<ast::ArrayType> parse_array_type();
-  [[nodiscard]] ast::Ptr<ast::RefType> parse_ref_type();
-  [[nodiscard]] ast::Ptr<ast::PtrType> parse_ptr_type();
-  [[nodiscard]] ast::Ptr<ast::FnType> parse_fn_type();
+  [[nodiscard]] ast::ptr<ast::type_expr> parse_type_expr();
+  [[nodiscard]] ast::ptr<ast::type_expr> parse_prim_type_expr();
+  [[nodiscard]] ast::ptr<ast::named_type> parse_named_type();
+  [[nodiscard]] ast::ptr<ast::tuple_type> parse_tuple_type();
+  [[nodiscard]] ast::ptr<ast::slice_type> parse_slice_type();
+  [[nodiscard]] ast::ptr<ast::array_type> parse_array_type();
+  [[nodiscard]] ast::ptr<ast::ref_type> parse_ref_type();
+  [[nodiscard]] ast::ptr<ast::ptr_type> parse_ptr_type();
+  [[nodiscard]] ast::ptr<ast::fn_type> parse_fn_type();
 
   // ---- Type parameters and bounds ----
 
-  [[nodiscard]] std::vector<ast::TypeParam> parse_type_params();
-  [[nodiscard]] ast::TypeParam parse_type_param();
+  [[nodiscard]] std::vector<ast::type_param> parse_type_params();
+  [[nodiscard]] ast::type_param parse_type_param();
   [[nodiscard]] ast::Bound parse_bound();
-  [[nodiscard]] ast::BoundTerm parse_bound_term();
-  [[nodiscard]] std::vector<ast::WhereConstraint> parse_where_clause();
+  [[nodiscard]] ast::bound_term parse_bound_term();
+  [[nodiscard]] std::vector<ast::where_constraint> parse_where_clause();
 
   // ---- Trait / concept / impl declarations ----
 
-  [[nodiscard]] ast::Ptr<ast::TraitDecl> parse_trait_decl(
-      ast::Visibility vis);
-  [[nodiscard]] ast::Ptr<ast::ConceptDecl> parse_concept_decl(
-      ast::Visibility vis);
-  [[nodiscard]] ast::Ptr<ast::ImplDecl> parse_impl_decl();
+  [[nodiscard]] ast::ptr<ast::trait_decl> parse_trait_decl(
+      ast::visibility vis);
+  [[nodiscard]] ast::ptr<ast::concept_decl> parse_concept_decl(
+      ast::visibility vis);
+  [[nodiscard]] ast::ptr<ast::impl_decl> parse_impl_decl();
 
   // ---- Function declarations ----
 
-  [[nodiscard]] ast::Ptr<ast::FuncDecl> parse_func_decl(
-      ast::Visibility vis, ast::FuncModifiers mods);
-  [[nodiscard]] ast::FuncModifiers parse_func_modifiers();
+  [[nodiscard]] ast::ptr<ast::func_decl> parse_func_decl(
+      ast::visibility vis, ast::func_modifiers mods);
+  [[nodiscard]] ast::func_modifiers parse_func_modifiers();
   [[nodiscard]] std::vector<ast::Param> parse_param_list();
   [[nodiscard]] ast::Param parse_param();
-  [[nodiscard]] std::vector<ast::ContractClause> parse_contract_clauses();
-  [[nodiscard]] ast::ContractClause parse_contract_clause();
+  [[nodiscard]] std::vector<ast::contract_clause> parse_contract_clauses();
+  [[nodiscard]] ast::contract_clause parse_contract_clause();
 
   // ---- Static declarations ----
 
-  [[nodiscard]] ast::Ptr<ast::StaticDecl> parse_static_decl(
-      ast::Visibility vis);
+  [[nodiscard]] ast::ptr<ast::static_decl> parse_static_decl(
+      ast::visibility vis);
 
   // ========================================================================
   //  Statements
   // ========================================================================
 
-  [[nodiscard]] ast::Ptr<ast::Node> parse_stmt();
-  [[nodiscard]] ast::Ptr<ast::LetStmt> parse_let_stmt();
-  [[nodiscard]] ast::Ptr<ast::VarStmt> parse_var_stmt();
-  [[nodiscard]] ast::Ptr<ast::ReturnStmt> parse_return_stmt();
-  [[nodiscard]] ast::Ptr<ast::IfStmt> parse_if_stmt();
-  [[nodiscard]] ast::Ptr<ast::WhileStmt> parse_while_stmt();
-  [[nodiscard]] ast::Ptr<ast::ForStmt> parse_for_stmt();
-  [[nodiscard]] ast::Ptr<ast::MatchStmt> parse_match_stmt();
-  [[nodiscard]] ast::Ptr<ast::CrewStmt> parse_crew_stmt();
-  [[nodiscard]] ast::Ptr<ast::AsmStmt> parse_asm_stmt();
-  [[nodiscard]] ast::Ptr<ast::SpliceStmt> parse_splice_stmt();
+  [[nodiscard]] ast::ptr<ast::node> parse_stmt();
+  [[nodiscard]] ast::ptr<ast::let_stmt> parse_let_stmt();
+  [[nodiscard]] ast::ptr<ast::var_stmt> parse_var_stmt();
+  [[nodiscard]] ast::ptr<ast::return_stmt> parse_return_stmt();
+  [[nodiscard]] ast::ptr<ast::if_stmt> parse_if_stmt();
+  [[nodiscard]] ast::ptr<ast::while_stmt> parse_while_stmt();
+  [[nodiscard]] ast::ptr<ast::for_stmt> parse_for_stmt();
+  [[nodiscard]] ast::ptr<ast::match_stmt> parse_match_stmt();
+  [[nodiscard]] ast::ptr<ast::crew_stmt> parse_crew_stmt();
+  [[nodiscard]] ast::ptr<ast::asm_stmt> parse_asm_stmt();
+  [[nodiscard]] ast::ptr<ast::splice_stmt> parse_splice_stmt();
 
   /// Parse an expression statement or assignment statement.
   /// We parse the LHS as an expression, then check if it's followed
   /// by an assignment operator.
-  [[nodiscard]] ast::Ptr<ast::Node> parse_expr_or_assign_stmt();
+  [[nodiscard]] ast::ptr<ast::node> parse_expr_or_assign_stmt();
 
   // ========================================================================
   //  Expressions
@@ -496,86 +496,86 @@ class Parser {
   //    primary_expr    →  literal | ident | (...) | [...] | {...} | ...
   // ========================================================================
 
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_pipe_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_or_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_and_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_not_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_cmp_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_add_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_mul_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_unary_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_postfix_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_primary_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_pipe_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_or_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_and_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_not_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_cmp_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_add_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_mul_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_unary_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_postfix_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_primary_expr();
 
   // ---- Primary expression sub-parsers ----
 
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_literal_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_ident_or_path_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_paren_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_bracket_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_brace_expr();
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_lambda_expr();
-  [[nodiscard]] ast::Ptr<ast::MatchExpr> parse_match_expr();
-  [[nodiscard]] ast::Ptr<ast::IfExpr> parse_if_expr();
-  [[nodiscard]] ast::Ptr<ast::ForExpr> parse_for_expr();
-  [[nodiscard]] ast::Ptr<ast::AwaitExpr> parse_await_expr();
-  [[nodiscard]] ast::Ptr<ast::ParExpr> parse_par_expr();
-  [[nodiscard]] ast::Ptr<ast::RaceExpr> parse_race_expr();
-  [[nodiscard]] ast::Ptr<ast::OnExpr> parse_on_expr();
-  [[nodiscard]] ast::Ptr<ast::BlockExpr> parse_block_expr();
-  [[nodiscard]] ast::Ptr<ast::QuoteExpr> parse_quote_expr();
-  [[nodiscard]] ast::Ptr<ast::SpliceExpr> parse_splice_expr_inner();
-  [[nodiscard]] ast::Ptr<ast::StaticExpr> parse_static_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_literal_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_ident_or_path_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_paren_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_bracket_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_brace_expr();
+  [[nodiscard]] ast::ptr<ast::Expr> parse_lambda_expr();
+  [[nodiscard]] ast::ptr<ast::match_expr> parse_match_expr();
+  [[nodiscard]] ast::ptr<ast::if_expr> parse_if_expr();
+  [[nodiscard]] ast::ptr<ast::for_expr> parse_for_expr();
+  [[nodiscard]] ast::ptr<ast::await_expr> parse_await_expr();
+  [[nodiscard]] ast::ptr<ast::par_expr> parse_par_expr();
+  [[nodiscard]] ast::ptr<ast::race_expr> parse_race_expr();
+  [[nodiscard]] ast::ptr<ast::on_expr> parse_on_expr();
+  [[nodiscard]] ast::ptr<ast::block_expr> parse_block_expr();
+  [[nodiscard]] ast::ptr<ast::quote_expr> parse_quote_expr();
+  [[nodiscard]] ast::ptr<ast::splice_expr> parse_splice_expr_inner();
+  [[nodiscard]] ast::ptr<ast::static_expr> parse_static_expr();
 
   // ---- Postfix suffixes ----
 
   /// Try to parse a postfix suffix (`.field`, `[index]`, `(args)`,
   /// `?`, `as Type`). Returns nullptr if the current token doesn't
   /// start a postfix suffix.
-  [[nodiscard]] ast::Ptr<ast::Expr> parse_postfix_suffix(
-      ast::Ptr<ast::Expr> base);
+  [[nodiscard]] ast::ptr<ast::Expr> parse_postfix_suffix(
+      ast::ptr<ast::Expr> base);
 
   // ---- Call arguments ----
 
-  [[nodiscard]] std::vector<ast::CallArg> parse_call_args();
+  [[nodiscard]] std::vector<ast::call_arg> parse_call_args();
 
   // ---- Match arms ----
 
-  [[nodiscard]] ast::MatchArm parse_match_arm();
+  [[nodiscard]] ast::match_arm parse_match_arm();
 
   // ========================================================================
   //  Patterns
   // ========================================================================
 
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_pattern();
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_or_pattern();
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_atomic_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_or_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_atomic_pattern();
   [[nodiscard]] std::optional<std::string> parse_pattern_alias();
 
   // ---- Pattern sub-parsers ----
 
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_wildcard_pattern();
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_literal_pattern();
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_ident_or_constructor_pattern();
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_paren_pattern();
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_brace_pattern();
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_bracket_pattern();
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_option_result_pattern();
-  [[nodiscard]] ast::Ptr<ast::Pattern> parse_ref_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_wildcard_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_literal_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_ident_or_constructor_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_paren_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_brace_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_bracket_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_option_result_pattern();
+  [[nodiscard]] ast::ptr<ast::Pattern> parse_ref_pattern();
 
   // ========================================================================
   //  For-loop variable parsing (shared by for-stmt and for-expr)
   // ========================================================================
 
-  [[nodiscard]] std::vector<ast::Ptr<ast::Pattern>> parse_for_vars();
+  [[nodiscard]] std::vector<ast::ptr<ast::Pattern>> parse_for_vars();
 
   // ========================================================================
   //  Helper: convert an assign-op token to the AssignOp enum.
   // ========================================================================
 
   [[nodiscard]] static std::optional<ast::AssignOp> token_to_assign_op(
-      TokenKind kind) noexcept;
+      token_kind kind) noexcept;
 
   // ========================================================================
   //  Helper: convert comparison token to BinaryOp.
@@ -583,9 +583,9 @@ class Parser {
 
   [[nodiscard]] std::optional<ast::BinaryOp> token_to_cmp_op();
   [[nodiscard]] static std::optional<ast::BinaryOp> token_to_add_op(
-      TokenKind kind) noexcept;
+      token_kind kind) noexcept;
   [[nodiscard]] static std::optional<ast::BinaryOp> token_to_mul_op(
-      TokenKind kind) noexcept;
+      token_kind kind) noexcept;
 
   // ========================================================================
   //  Member variables
@@ -598,7 +598,7 @@ class Parser {
   FileId file_id_;
 
   /// The diagnostic bag we report errors to.
-  DiagnosticBag& diag_;
+  diagnostic_bag& diag_;
 
   /// Current position in the token stream.
   uint32_t pos_;

@@ -13,14 +13,14 @@
 namespace kira {
 
 // ==========================================================================
-//  Diagnostic severity levels.
+//  diagnostic severity levels.
 //
 //  We deliberately include "Help" and "Note" as first-class levels because
 //  Kira's philosophy is that the compiler is a teacher. Errors should always
 //  be accompanied by context that helps the user understand *why* something
 //  is wrong and *how* to fix it.
 // ==========================================================================
-enum class DiagnosticLevel : uint8_t {
+enum class diagnostic_level : uint8_t {
   /// A fatal error that prevents further analysis of the current construct.
   /// The parser will attempt error recovery, but the AST node will be
   /// marked as containing errors.
@@ -45,12 +45,12 @@ enum class DiagnosticLevel : uint8_t {
 /// Returns a human-readable label for a diagnostic level, suitable for
 /// rendering in a terminal with ANSI colors.
 [[nodiscard]] constexpr std::string_view diagnostic_level_name(
-    DiagnosticLevel level) noexcept {
+    diagnostic_level level) noexcept {
   switch (level) {
-    case DiagnosticLevel::Error:   return "error";
-    case DiagnosticLevel::Warning: return "warning";
-    case DiagnosticLevel::Note:    return "note";
-    case DiagnosticLevel::Help:    return "help";
+    case diagnostic_level::error:   return "error";
+    case diagnostic_level::warning: return "warning";
+    case diagnostic_level::note:    return "note";
+    case diagnostic_level::help:    return "help";
   }
   return "unknown";
 }
@@ -75,12 +75,12 @@ namespace ansi {
 
 /// Returns the ANSI color for a diagnostic level.
 [[nodiscard]] constexpr std::string_view diagnostic_level_color(
-    DiagnosticLevel level) noexcept {
+    diagnostic_level level) noexcept {
   switch (level) {
-    case DiagnosticLevel::Error:   return ansi::BoldRed;
-    case DiagnosticLevel::Warning: return ansi::BoldYellow;
-    case DiagnosticLevel::Note:    return ansi::BoldBlue;
-    case DiagnosticLevel::Help:    return ansi::BoldGreen;
+    case diagnostic_level::error:   return ansi::BoldRed;
+    case diagnostic_level::warning: return ansi::BoldYellow;
+    case diagnostic_level::note:    return ansi::BoldBlue;
+    case diagnostic_level::help:    return ansi::BoldGreen;
   }
   return ansi::Reset;
 }
@@ -90,13 +90,13 @@ namespace ansi {
 //  Diagnostics may carry multiple labels to highlight different parts
 //  of the source that are relevant to the problem.
 // ==========================================================================
-struct DiagnosticLabel {
+struct diagnostic_label {
   Span span;
   std::string message;
-  DiagnosticLevel level;  ///< Controls the underline color/style
+  diagnostic_level level;  ///< Controls the underline color/style
 
-  DiagnosticLabel(Span s, std::string msg,
-                  DiagnosticLevel lvl = DiagnosticLevel::Error)
+  diagnostic_label(Span s, std::string msg,
+                  diagnostic_level lvl = diagnostic_level::error)
       : span(s), message(std::move(msg)), level(lvl) {}
 };
 
@@ -104,14 +104,14 @@ struct DiagnosticLabel {
 //  A suggested edit — a concrete replacement the user can apply.
 //  When we know how to fix the problem, we show it.
 // ==========================================================================
-struct SuggestedFix {
+struct suggested_fix {
   std::string description;  ///< e.g., "add a colon here"
   Span span;                ///< The span to replace (may be empty for insertions)
   std::string replacement;  ///< The text to insert/replace with
 };
 
 // ==========================================================================
-//  Diagnostic — a single error, warning, note, or help message.
+//  diagnostic — a single error, warning, note, or help message.
 //
 //  Diagnostics are designed to be *helpful*. Every error should ideally:
 //    1. Say what went wrong in plain language (the message)
@@ -123,117 +123,117 @@ struct SuggestedFix {
 //  "syntax error" — we say what we expected, what we found, and what
 //  the user probably meant to write.
 // ==========================================================================
-struct Diagnostic {
-  DiagnosticLevel level;
+struct diagnostic {
+  diagnostic_level level;
   std::string message;
   FileId file_id = 0;
 
   /// Primary and secondary labels pointing at source code.
-  std::vector<DiagnosticLabel> labels;
+  std::vector<diagnostic_label> labels;
 
   /// Child diagnostics — notes and help messages attached to this one.
-  std::vector<Diagnostic> children;
+  std::vector<diagnostic> children;
 
   /// Suggested fixes that tools/editors can auto-apply.
-  std::vector<SuggestedFix> fixes;
+  std::vector<suggested_fix> fixes;
 
   // -- Builder-pattern methods for ergonomic construction --
 
-  Diagnostic(DiagnosticLevel lvl, std::string msg, FileId fid = 0)
+  diagnostic(diagnostic_level lvl, std::string msg, FileId fid = 0)
       : level(lvl), message(std::move(msg)), file_id(fid) {}
 
   /// Add a primary label (points at the main error site).
-  Diagnostic& with_label(Span span, std::string msg) & {
+  diagnostic& with_label(Span span, std::string msg) & {
     labels.emplace_back(span, std::move(msg), level);
     return *this;
   }
 
-  Diagnostic&& with_label(Span span, std::string msg) && {
+  diagnostic&& with_label(Span span, std::string msg) && {
     labels.emplace_back(span, std::move(msg), level);
     return std::move(*this);
   }
 
   /// Add a secondary label (points at related code).
-  Diagnostic& with_secondary_label(Span span, std::string msg) & {
-    labels.emplace_back(span, std::move(msg), DiagnosticLevel::Note);
+  diagnostic& with_secondary_label(Span span, std::string msg) & {
+    labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return *this;
   }
 
-  Diagnostic&& with_secondary_label(Span span, std::string msg) && {
-    labels.emplace_back(span, std::move(msg), DiagnosticLevel::Note);
+  diagnostic&& with_secondary_label(Span span, std::string msg) && {
+    labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return std::move(*this);
   }
 
   /// Add a note — extra context about why this is an error.
-  Diagnostic& with_note(std::string msg) & {
-    children.emplace_back(DiagnosticLevel::Note, std::move(msg), file_id);
+  diagnostic& with_note(std::string msg) & {
+    children.emplace_back(diagnostic_level::note, std::move(msg), file_id);
     return *this;
   }
 
-  Diagnostic&& with_note(std::string msg) && {
-    children.emplace_back(DiagnosticLevel::Note, std::move(msg), file_id);
+  diagnostic&& with_note(std::string msg) && {
+    children.emplace_back(diagnostic_level::note, std::move(msg), file_id);
     return std::move(*this);
   }
 
   /// Add a help message — a suggestion for how to fix the problem.
-  Diagnostic& with_help(std::string msg) & {
-    children.emplace_back(DiagnosticLevel::Help, std::move(msg), file_id);
+  diagnostic& with_help(std::string msg) & {
+    children.emplace_back(diagnostic_level::help, std::move(msg), file_id);
     return *this;
   }
 
-  Diagnostic&& with_help(std::string msg) && {
-    children.emplace_back(DiagnosticLevel::Help, std::move(msg), file_id);
+  diagnostic&& with_help(std::string msg) && {
+    children.emplace_back(diagnostic_level::help, std::move(msg), file_id);
     return std::move(*this);
   }
 
   /// Add a suggested fix (machine-applicable).
-  Diagnostic& with_fix(std::string desc, Span span,
+  diagnostic& with_fix(std::string desc, Span span,
                         std::string replacement) & {
     fixes.push_back(
-        SuggestedFix{std::move(desc), span, std::move(replacement)});
+        suggested_fix{std::move(desc), span, std::move(replacement)});
     return *this;
   }
 
-  Diagnostic&& with_fix(std::string desc, Span span,
+  diagnostic&& with_fix(std::string desc, Span span,
                          std::string replacement) && {
     fixes.push_back(
-        SuggestedFix{std::move(desc), span, std::move(replacement)});
+        suggested_fix{std::move(desc), span, std::move(replacement)});
     return std::move(*this);
   }
 
   [[nodiscard]] bool is_error() const noexcept {
-    return level == DiagnosticLevel::Error;
+    return level == diagnostic_level::error;
   }
 
   [[nodiscard]] bool is_warning() const noexcept {
-    return level == DiagnosticLevel::Warning;
+    return level == diagnostic_level::warning;
   }
 };
 
 // ==========================================================================
-//  DiagnosticBag — collects diagnostics during a compilation phase.
+//  diagnostic_bag — collects diagnostics during a compilation phase.
 //
 //  This is the primary interface that the parser (and later phases) use
 //  to report problems. It tracks error/warning counts and provides a
 //  limit to prevent cascading error floods that confuse rather than help.
 // ==========================================================================
-class DiagnosticBag {
+class diagnostic_bag {
  public:
   static constexpr uint32_t kDefaultMaxErrors = 50;
 
-  explicit DiagnosticBag(uint32_t max_errors = kDefaultMaxErrors)
+  explicit diagnostic_bag(uint32_t max_errors = kDefaultMaxErrors)
       : max_errors_(max_errors) {}
 
   // -- Reporting --
 
   /// Add a diagnostic to the bag.
-  void emit(Diagnostic diag) {
+  void emit(diagnostic diag) {
     if (diag.is_error()) {
       ++error_count_;
       if (error_count_ > max_errors_ && !cascade_reported_) {
         cascade_reported_ = true;
-        diagnostics_.push_back(Diagnostic(
-            DiagnosticLevel::Error,
+        diagnostics_.push_back(diagnostic(
+            diagnostic_level::error,
             std::format("too many errors ({}); stopping here to avoid "
                         "overwhelming you — fix the issues above first "
                         "and the rest will likely resolve",
@@ -254,7 +254,7 @@ class DiagnosticBag {
   /// Convenience: emit an error.
   void error(FileId file_id, std::string message, Span span,
              std::string label_msg = "") {
-    auto diag = Diagnostic(DiagnosticLevel::Error, std::move(message), file_id);
+    auto diag = diagnostic(diagnostic_level::error, std::move(message), file_id);
     if (!label_msg.empty()) {
       diag.with_label(span, std::move(label_msg));
     } else {
@@ -267,7 +267,7 @@ class DiagnosticBag {
   void warning(FileId file_id, std::string message, Span span,
                std::string label_msg = "") {
     auto diag =
-        Diagnostic(DiagnosticLevel::Warning, std::move(message), file_id);
+        diagnostic(diagnostic_level::warning, std::move(message), file_id);
     if (!label_msg.empty()) {
       diag.with_label(span, std::move(label_msg));
     } else {
@@ -290,16 +290,16 @@ class DiagnosticBag {
     return error_count_ > max_errors_;
   }
 
-  [[nodiscard]] const std::vector<Diagnostic>& diagnostics() const noexcept {
+  [[nodiscard]] const std::vector<diagnostic>& diagnostics() const noexcept {
     return diagnostics_;
   }
 
-  [[nodiscard]] std::vector<Diagnostic>& diagnostics() noexcept {
+  [[nodiscard]] std::vector<diagnostic>& diagnostics() noexcept {
     return diagnostics_;
   }
 
   /// Take ownership of all diagnostics (empties this bag).
-  [[nodiscard]] std::vector<Diagnostic> take() {
+  [[nodiscard]] std::vector<diagnostic> take() {
     auto result = std::move(diagnostics_);
     diagnostics_.clear();
     error_count_ = 0;
@@ -317,7 +317,7 @@ class DiagnosticBag {
   }
 
  private:
-  std::vector<Diagnostic> diagnostics_;
+  std::vector<diagnostic> diagnostics_;
   uint32_t error_count_ = 0;
   uint32_t warning_count_ = 0;
   uint32_t max_errors_;
@@ -325,7 +325,7 @@ class DiagnosticBag {
 };
 
 // ==========================================================================
-//  DiagnosticRenderer — formats diagnostics as pretty-printed terminal
+//  diagnostic_renderer — formats diagnostics as pretty-printed terminal
 //  output with source context, underlines, and ANSI colors.
 //
 //  The output style is inspired by Rust's error messages: clear, helpful,
@@ -333,20 +333,20 @@ class DiagnosticBag {
 //  parts. The philosophy: if the user has to read an error message more
 //  than once to understand it, the error message has failed.
 // ==========================================================================
-class DiagnosticRenderer {
+class diagnostic_renderer {
  public:
-  explicit DiagnosticRenderer(const SourceFile& file, bool use_color = true)
+  explicit diagnostic_renderer(const source_file& file, bool use_color = true)
       : file_(file), use_color_(use_color) {}
 
   /// Render a single diagnostic to a string.
-  [[nodiscard]] std::string render(const Diagnostic& diag) const {
+  [[nodiscard]] std::string render(const diagnostic& diag) const {
     std::string out;
     render_diagnostic(out, diag, /*indent=*/0);
     return out;
   }
 
   /// Render all diagnostics in a bag.
-  [[nodiscard]] std::string render_all(const DiagnosticBag& bag) const {
+  [[nodiscard]] std::string render_all(const diagnostic_bag& bag) const {
     std::string out;
     for (const auto& diag : bag.diagnostics()) {
       render_diagnostic(out, diag, /*indent=*/0);
@@ -356,7 +356,7 @@ class DiagnosticRenderer {
   }
 
  private:
-  void render_diagnostic(std::string& out, const Diagnostic& diag,
+  void render_diagnostic(std::string& out, const diagnostic& diag,
                           int indent) const {
     // Header line: "error: message"
     std::string prefix(static_cast<size_t>(indent * 2), ' ');
@@ -395,7 +395,7 @@ class DiagnosticRenderer {
     }
   }
 
-  void render_label(std::string& out, const DiagnosticLabel& label,
+  void render_label(std::string& out, const diagnostic_label& label,
                     const std::string& prefix) const {
     if (label.span.empty() && label.span.start == 0) {
       return;  // Dummy span — nothing to render.
@@ -541,7 +541,7 @@ class DiagnosticRenderer {
     }
   }
 
-  void render_fix(std::string& out, const SuggestedFix& fix,
+  void render_fix(std::string& out, const suggested_fix& fix,
                   const std::string& prefix) const {
     std::string help_color =
         use_color_ ? std::string(ansi::BoldGreen) : "";
@@ -616,7 +616,7 @@ class DiagnosticRenderer {
     return digits;
   }
 
-  const SourceFile& file_;
+  const source_file& file_;
   bool use_color_;
 };
 
