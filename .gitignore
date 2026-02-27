@@ -2,3 +2,4 @@ bazel-bin
 bazel-kira
 bazel-out
 bazel-testlogs
+compile_commands.json
