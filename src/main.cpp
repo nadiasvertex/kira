@@ -6,13 +6,36 @@
 #include <string_view>
 #include <vector>
 
+/// @struct Config
+/// @brief Configuration structure for the Kira compiler.
+///
+/// Stores the program name and list of source files to be processed
+/// by the Kira compiler.
 struct Config {
-  std::string_view program_name;
-  std::vector<std::string> sources;
+  std::string_view program_name;  ///< The name of the program executable
+  std::vector<std::string> sources;  ///< List of source file paths to process
 };
 
-[[nodiscard]] std::expected<Config, std::string> parse_args(int argc,
-                                                            char *argv[]) {
+/// @brief Parses command-line arguments for the Kira compiler.
+///
+/// Processes command-line arguments and constructs a Config structure
+/// containing the program name and source files to be compiled.
+///
+/// @param argc The argument count from main()
+/// @param argv The argument vector from main()
+///
+/// @return std::expected<Config, std::string>
+///         - On success: a Config structure with parsed arguments
+///         - On failure: an error message string describing what went wrong
+///
+/// @note The function handles:
+///       - Help flag (-h, --help) which exits after printing help
+///       - Source files passed as remaining arguments
+///       - Missing source files (allowed, results in empty sources vector)
+///
+/// @nodiscard Callers should not ignore the return value without checking for errors
+[[nodiscard]] auto parse_args(int argc, char *argv[])
+    ->std::expected<Config, std::string> {
   if (argc < 1) {
     return std::unexpected{"argc must be at least 1"};
   }
@@ -23,7 +46,10 @@ struct Config {
 
   program.add_argument("-h", "--help")
       .help("show this help message and exit")
-      .action([&](const auto &) { std::cout << program << std::endl; exit(0); })
+      .action([&](const auto &) {
+        std::cout << program << std::endl;
+        exit(0);
+      })
       .append()
       .nargs(0);
 
@@ -52,6 +78,19 @@ struct Config {
   return cfg;
 }
 
+/// @brief Main entry point for the Kira compiler.
+///
+/// Initializes the Kira compiler, parses command-line arguments,
+/// and displays information about the invocation and source files.
+///
+/// @param argc The number of command-line arguments
+/// @param argv The command-line arguments array
+///
+/// @return Exit code:
+///         - 0 on successful execution
+///         - 1 if argument parsing fails
+///
+/// @note Prints welcome message and lists provided source files
 int main(int argc, char *argv[]) {
   auto result = parse_args(argc, argv);
 
@@ -61,9 +100,6 @@ int main(int argc, char *argv[]) {
   }
 
   const auto &cfg = *result;
-
-  std::println("Welcome to Kira!");
-  std::println("Invoked as: {}", cfg.program_name);
 
   if (cfg.sources.empty()) {
     std::println("No source files provided.");
