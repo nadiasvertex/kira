@@ -3,6 +3,13 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 cc_library(
     name = "k-parser",
     srcs = ["parser.cpp"],
-    hdrs = ["parser.h"],
+    hdrs = [
+        "ast.h",
+        "diagnostic.h",
+        "lexer.h",
+        "parser.h",
+        "source_location.h",
+        "token.h",
+    ],
     visibility = ["//visibility:public"],
 )
