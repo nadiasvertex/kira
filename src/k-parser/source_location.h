@@ -19,7 +19,7 @@ using byte_offset = uint32_t;
 /// node, every token, and every diagnostic carries a Span so we can always
 /// point the user back to exactly the piece of source code we're talking
 /// about.
-struct span {
+struct source_span {
   byte_offset start = 0;
   byte_offset end = 0;
 
@@ -32,26 +32,26 @@ struct span {
   /// Returns a dummy/invalid span. Used as a sentinel for synthesized nodes
   /// that don't correspond to any real source text (e.g., error recovery
   /// insertions).
-  [[nodiscard]] static constexpr span dummy() noexcept { return span{0, 0}; }
+  [[nodiscard]] static constexpr source_span dummy() noexcept { return source_span{0, 0}; }
 
   /// Merge two spans into one that covers both. The result spans from
   /// the earliest start to the latest end. This is used when building
   /// AST nodes that cover multiple tokens.
-  [[nodiscard]] constexpr span merge(span other) const noexcept {
+  [[nodiscard]] constexpr source_span merge(source_span other) const noexcept {
     if (empty())
       return other;
     if (other.empty())
       return *this;
-    return span{
+    return source_span{
         start < other.start ? start : other.start,
         end > other.end ? end : other.end,
     };
   }
 
   /// Extend this span to cover `other` as well (mutating version).
-  constexpr void extend_to(span other) noexcept { *this = merge(other); }
+  constexpr void extend_to(source_span other) noexcept { *this = merge(other); }
 
-  constexpr bool operator==(const span &) const noexcept = default;
+  constexpr bool operator==(const source_span &) const noexcept = default;
   constexpr auto operator<=>(const Span &) const noexcept = default;
 };
 
@@ -69,10 +69,10 @@ using FileId = uint16_t;
 /// line number, column, and the underlined source snippet.
 struct source_location {
   FileId file_id = 0;
-  span span;
+  source_span span;
 
   [[nodiscard]] static constexpr source_location dummy() noexcept {
-    return source_location{0, span::dummy()};
+    return source_location{0, source_span::dummy()};
   }
 
   [[nodiscard]] constexpr source_location
@@ -138,7 +138,7 @@ public:
   }
 
   /// Extract the source text for a given span.
-  [[nodiscard]] std::string_view text_at(span span) const noexcept {
+  [[nodiscard]] std::string_view text_at(source_span span) const noexcept {
     if (span.start >= source_.size())
       return {};
     auto actual_end = span.end <= source_.size()

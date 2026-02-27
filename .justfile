@@ -4,6 +4,10 @@
 build:
     bazelisk build //src:kira
 
+# Run the kira binary
+run:
+    bazelisk run //src:kira
+
 # Generate compile_commands.json and run clang-tidy (apply fixes) using it
 format:
     # Generate a compilation database that clang-tidy can use
