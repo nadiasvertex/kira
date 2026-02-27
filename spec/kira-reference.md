@@ -72,8 +72,8 @@ All built-in types are lowercase. The types you will use most are:
 
 ```kira
 bool          # true or false
-int32         # 32-bit signed integer (the default integer type)
-float64       # 64-bit floating point (the default float type)
+int           # 32-bit signed integer (the default integer type)
+float         # 64-bit floating point (the default float type)
 str           # UTF-8 text
 char          # a single Unicode character
 unit          # the "no value" type, like void in other languages
@@ -95,7 +95,7 @@ float32  float64  float128
 byte    # alias for uint8
 ```
 
-> **Advanced types** — `isize`, `usize`, `int`, `float`, and `never` exist but are not needed until later layers. The compiler will introduce them when relevant.
+> **Advanced types** — `isize`, `usize`, and `never` exist but are not needed until later layers. The compiler will introduce them when relevant.
 
 Numeric literals adapt to context. The literal `42` becomes an `int32`, `int64`, or whatever the surrounding code requires. If no context exists, `int32` is the default for integers and `float64` for decimals. A literal that does not fit its context is a compile error.
 

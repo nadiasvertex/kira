@@ -4,6 +4,11 @@
 build:
     bazelisk build //src:kira
 
-# Format all C++ files in src/ tree with clang-format
+# Generate compile_commands.json and run clang-tidy (apply fixes) using it
 format:
-    find src -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" -o -name "*.cc" -o -name "*.cxx" \) -exec clang-format -i {} +
+    # Generate a compilation database that clang-tidy can use
+    ./tools/gen_compile_commands.sh
+    # If compile_commands.json wasn't produced, warn but continue (clang-tidy will fail without it)
+    if [ ! -f compile_commands.json ]; then echo "Warning: compile_commands.json not found; clang-tidy may fail"; fi
+    # Run clang-tidy over C/C++ sources using the compilation database at repo root (-p=.)
+    find src -type f \( -name "*.cpp" -o -name "*.cxx" -o -name "*.cc" -o -name "*.hpp" -o -name "*.h" \) -print0 | xargs -0 clang-tidy -p=. --fix
