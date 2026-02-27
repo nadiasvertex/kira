@@ -151,68 +151,68 @@ struct diagnostic {
       : level(lvl), message(std::move(msg)), file_id(fid) {}
 
   /// Add a primary label (points at the main error site).
-  diagnostic &with_label(span span, std::string msg) & {
+  auto with_label(span span, std::string msg) & -> diagnostic & {
     labels.emplace_back(span, std::move(msg), level);
     return *this;
   }
 
-  diagnostic &&with_label(span span, std::string msg) && {
+  auto with_label(span span, std::string msg) && -> diagnostic && {
     labels.emplace_back(span, std::move(msg), level);
     return std::move(*this);
   }
 
   /// Add a secondary label (points at related code).
-  diagnostic &with_secondary_label(span span, std::string msg) & {
+  auto with_secondary_label(span span, std::string msg) & -> diagnostic & {
     labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return *this;
   }
 
-  diagnostic &&with_secondary_label(span span, std::string msg) && {
+  auto with_secondary_label(span span, std::string msg) && -> diagnostic && {
     labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return std::move(*this);
   }
 
   /// Add a note — extra context about why this is an error.
-  diagnostic &with_note(std::string msg) & {
+  auto with_note(std::string msg) & -> diagnostic & {
     children.emplace_back(diagnostic_level::note, std::move(msg), file_id);
     return *this;
   }
 
-  diagnostic &&with_note(std::string msg) && {
+  auto with_note(std::string msg) && -> diagnostic && {
     children.emplace_back(diagnostic_level::note, std::move(msg), file_id);
     return std::move(*this);
   }
 
   /// Add a help message — a suggestion for how to fix the problem.
-  diagnostic &with_help(std::string msg) & {
+  auto with_help(std::string msg) & -> diagnostic & {
     children.emplace_back(diagnostic_level::help, std::move(msg), file_id);
     return *this;
   }
 
-  diagnostic &&with_help(std::string msg) && {
+  auto with_help(std::string msg) && -> diagnostic && {
     children.emplace_back(diagnostic_level::help, std::move(msg), file_id);
     return std::move(*this);
   }
 
   /// Add a suggested fix (machine-applicable).
-  diagnostic &with_fix(std::string desc, span span, std::string replacement) & {
+  auto with_fix(std::string desc, span span, std::string replacement) & -> diagnostic & {
     fixes.push_back(
         suggested_fix{std::move(desc), span, std::move(replacement)});
     return *this;
   }
 
-  diagnostic &&with_fix(std::string desc, span span,
-                        std::string replacement) && {
+  auto with_fix(std::string desc, span span,
+                        std::string replacement) && -> diagnostic && {
     fixes.push_back(
         suggested_fix{std::move(desc), span, std::move(replacement)});
     return std::move(*this);
   }
 
-  [[nodiscard]] bool is_error() const noexcept {
+  [[nodiscard]] auto is_error() const noexcept -> bool {
     return level == diagnostic_level::error;
   }
 
-  [[nodiscard]] bool is_warning() const noexcept {
+  [[nodiscard]] auto is_warning() const noexcept -> bool {
     return level == diagnostic_level::warning;
   }
 };
@@ -286,7 +286,7 @@ public:
 
   // -- Queries --
 
-  [[nodiscard]] bool has_errors() const noexcept { return error_count_ > 0; }
+  [[nodiscard]] auto has_errors() const noexcept -> bool { return error_count_ > 0; }
 
   [[nodiscard]] uint32_t error_count() const noexcept { return error_count_; }
 
@@ -294,15 +294,15 @@ public:
     return warning_count_;
   }
 
-  [[nodiscard]] bool at_error_limit() const noexcept {
+  [[nodiscard]] auto at_error_limit() const noexcept -> bool {
     return error_count_ > max_errors_;
   }
 
-  [[nodiscard]] const std::vector<diagnostic> &diagnostics() const noexcept {
+  [[nodiscard]] const std::vector<diagnostic> auto diagnostics() const noexcept -> & {
     return diagnostics_;
   }
 
-  [[nodiscard]] std::vector<diagnostic> &diagnostics() noexcept {
+  [[nodiscard]] std::vector<diagnostic> auto diagnostics() noexcept -> & {
     return diagnostics_;
   }
 
@@ -458,8 +458,9 @@ private:
       // Underline.
       uint32_t caret_start = start_lc.column - 1;
       uint32_t caret_len = label.span.len();
-      if (caret_len == 0)
+      if (caret_len == 0) {
         caret_len = 1;
+}
 
       // Clamp to line length.
       if (caret_start > source_line.size()) {
@@ -467,8 +468,9 @@ private:
       }
       if (caret_start + caret_len > source_line.size()) {
         caret_len = static_cast<uint32_t>(source_line.size()) - caret_start;
-        if (caret_len == 0)
+        if (caret_len == 0) {
           caret_len = 1;
+}
       }
 
       out += prefix;
@@ -606,14 +608,16 @@ private:
   }
 
   [[nodiscard]] static std::string pad_left(std::string s, uint32_t width) {
-    if (s.size() >= width)
+    if (s.size() >= width) {
       return s;
+}
     return std::string(width - s.size(), ' ') + s;
   }
 
   [[nodiscard]] static uint32_t count_digits(uint32_t n) {
-    if (n == 0)
+    if (n == 0) {
       return 1;
+}
     uint32_t digits = 0;
     while (n > 0) {
       ++digits;

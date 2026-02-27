@@ -259,9 +259,9 @@ struct node {
 
   // Non-copyable, movable.
   node(const node &) = delete;
-  node &operator=(const node &) = delete;
+  auto operator=(const node &) -> node & = delete;
   node(node &&) = default;
-  node &operator=(node &&) = default;
+  auto operator=(node &&) -> node & = default;
 };
 
 /// An AST node that was synthesized during error recovery. It stands in
@@ -288,7 +288,7 @@ enum class visibility : uint8_t {
   priv,     ///< `priv`
 };
 
-[[nodiscard]] inline visibility token_to_visibility(token_kind kind) noexcept {
+[[nodiscard]] inline auto token_to_visibility(token_kind kind) noexcept -> visibility {
   switch (kind) {
   case token_kind::kw_pub:
     return visibility::pub;
@@ -1299,7 +1299,7 @@ enum class static_decl_kind : uint8_t {
 
 struct static_decl : node {
   visibility visibility = visibility::def;
-  static_decl_kind decl_kind;
+  static_decl_kind decl_kind{static_decl_kind::binding};
 
   // For Binding:
   std::string name;
@@ -1323,7 +1323,7 @@ struct static_decl : node {
   std::vector<ptr<node>> for_body; ///< For ForBlock.
 
   static_decl()
-      : node(node_kind::static_decl), decl_kind(static_decl_kind::binding) {}
+      : node(node_kind::static_decl) {}
 };
 
 // ==========================================================================

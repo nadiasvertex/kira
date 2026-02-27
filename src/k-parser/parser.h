@@ -79,22 +79,22 @@ template <typename T> struct ParseResult {
   explicit ParseResult(ast::ptr<T> n) : node(std::move(n)) {}
   ParseResult(std::nullptr_t) : node(nullptr) {}
 
-  [[nodiscard]] bool ok() const noexcept {
+  [[nodiscard]] auto ok() const noexcept -> bool {
     return node != nullptr && !node->has_error;
   }
 
-  [[nodiscard]] bool has_value() const noexcept { return node != nullptr; }
+  [[nodiscard]] auto has_value() const noexcept -> bool { return node != nullptr; }
 
-  [[nodiscard]] bool has_error() const noexcept {
+  [[nodiscard]] auto has_error() const noexcept -> bool {
     return node == nullptr || node->has_error;
   }
 
   explicit operator bool() const noexcept { return has_value(); }
 
-  T *operator->() { return node.get(); }
-  const T *operator->() const { return node.get(); }
-  T &operator*() { return *node; }
-  const T &operator*() const { return *node; }
+  auto operator->() -> T * { return node.get(); }
+  auto operator->() const -> const T * { return node.get(); }
+  auto operator*() -> T & { return *node; }
+  auto operator*() const -> const T & { return *node; }
 
   ast::ptr<T> take() { return std::move(node); }
 };
@@ -140,7 +140,7 @@ public:
   // ========================================================================
 
   /// Returns true if any errors were encountered during parsing.
-  [[nodiscard]] bool has_errors() const noexcept { return diag_.has_errors(); }
+  [[nodiscard]] auto has_errors() const noexcept -> bool { return diag_.has_errors(); }
 
   /// Returns the number of errors encountered.
   [[nodiscard]] uint32_t error_count() const noexcept {
@@ -158,10 +158,10 @@ private:
   // ========================================================================
 
   /// Returns the current token without consuming it.
-  [[nodiscard]] const Token &peek() const noexcept { return tokens_[pos_]; }
+  [[nodiscard]] auto peek() const noexcept -> const Token & { return tokens_[pos_]; }
 
   /// Returns the token `offset` positions ahead without consuming.
-  [[nodiscard]] const Token &peek_at(uint32_t offset) const noexcept {
+  [[nodiscard]] auto peek_at(uint32_t offset) const noexcept -> const Token & {
     auto idx = static_cast<size_t>(pos_) + offset;
     if (idx >= tokens_.size())
       idx = tokens_.size() - 1; // clamp to Eof
@@ -169,24 +169,24 @@ private:
   }
 
   /// Returns the kind of the current token.
-  [[nodiscard]] token_kind current() const noexcept { return peek().kind; }
+  [[nodiscard]] auto current() const noexcept -> token_kind { return peek().kind; }
 
   /// Returns true if the current token has the given kind.
-  [[nodiscard]] bool at(token_kind kind) const noexcept {
+  [[nodiscard]] auto at(token_kind kind) const noexcept -> bool {
     return current() == kind;
   }
 
   /// Returns true if the current token is one of the given kinds.
   template <typename... Kinds>
-  [[nodiscard]] bool at_any(Kinds... kinds) const noexcept {
+  [[nodiscard]] auto at_any(Kinds... kinds) const noexcept -> bool {
     return ((current() == kinds) || ...);
   }
 
   /// Returns true if the current token is EOF.
-  [[nodiscard]] bool at_eof() const noexcept { return at(token_kind::eof); }
+  [[nodiscard]] auto at_eof() const noexcept -> bool { return at(token_kind::eof); }
 
   /// Consume the current token and return it.
-  Token advance() noexcept {
+  auto advance() noexcept -> Token {
     Token tok = tokens_[pos_];
     if (pos_ < tokens_.size() - 1)
       ++pos_;
@@ -195,7 +195,7 @@ private:
 
   /// Consume the current token if it matches `kind`, and return true.
   /// Otherwise return false without consuming.
-  bool match(token_kind kind) noexcept {
+  auto match(token_kind kind) noexcept -> bool {
     if (at(kind)) {
       advance();
       return true;
@@ -221,7 +221,7 @@ private:
   }
 
   /// Return the previous token.
-  [[nodiscard]] const Token &previous() const noexcept {
+  [[nodiscard]] auto previous() const noexcept -> const Token & {
     if (pos_ == 0)
       return tokens_[0];
     return tokens_[pos_ - 1];
@@ -236,13 +236,14 @@ private:
 
   /// Skip zero or more NEWLINE tokens.
   void skip_newlines() noexcept {
-    while (at(token_kind::newline))
+    while (at(token_kind::newline)) {
       advance();
+}
   }
 
   /// Expect and consume a NEWLINE. If missing, emit a diagnostic but
   /// continue — the user probably just forgot it.
-  bool expect_newline();
+  auto expect_newline() -> bool;
 
   // ========================================================================
   //  Error recovery infrastructure
@@ -259,12 +260,12 @@ private:
   ///   3. If not, consume the unexpected token.
   /// Returns the consumed token (or a synthetic placeholder if we
   /// inserted one during recovery).
-  Token expect(token_kind expected);
+  auto expect(token_kind expected) -> Token;
 
   /// Like expect(), but also provides a custom message for the diagnostic.
   /// The message explains *why* the token is expected, giving the user
   /// more context about what construct we're in the middle of parsing.
-  Token expect_with_context(token_kind expected, std::string_view context);
+  auto expect_with_context(token_kind expected, std::string_view context) -> Token;
 
   /// Emit a diagnostic for an unexpected token. This is the main
   /// "something went wrong" entry point. The message is constructed
@@ -275,12 +276,12 @@ private:
   void emit(diagnostic diag) { diag_.emit(std::move(diag)); }
 
   /// Build a diagnostic for the current position.
-  [[nodiscard]] diagnostic make_error(std::string message) const {
+  [[nodiscard]] auto make_error(std::string message) const -> diagnostic {
     return diagnostic(diagnostic_level::error, std::move(message), file_id_);
   }
 
   /// Build a diagnostic for a specific span.
-  [[nodiscard]] diagnostic make_error_at(span span, std::string message) const {
+  [[nodiscard]] auto make_error_at(span span, std::string message) const -> diagnostic {
     return diagnostic(diagnostic_level::error, std::move(message), file_id_)
         .with_label(span, "here");
   }
@@ -308,7 +309,7 @@ private:
   /// Returns true if the current token looks like it starts a new
   /// statement or declaration. Used during recovery to decide whether
   /// to insert a missing token or skip forward.
-  [[nodiscard]] bool at_recovery_point() const noexcept;
+  [[nodiscard]] auto at_recovery_point() const noexcept -> bool;
 
   // ========================================================================
   //  Block parsing helpers
@@ -323,11 +324,11 @@ private:
 
   /// Expect `:` NEWLINE INDENT, reporting friendly errors if any part
   /// is missing. Returns true if we successfully entered a block.
-  bool expect_block_start(std::string_view construct_name);
+  auto expect_block_start(std::string_view construct_name) -> bool;
 
   /// Expect DEDENT at the end of a block. Handles missing DEDENT
   /// gracefully.
-  bool expect_block_end(std::string_view construct_name);
+  auto expect_block_end(std::string_view construct_name) -> bool;
 
   /// Parse a block body: a sequence of statements between INDENT/DEDENT.
   /// The `parse_item` callback is invoked for each item in the block.
@@ -344,7 +345,7 @@ private:
     std::vector<ast::ptr<ast::node>> stmts;
     bool is_block = false;
   };
-  BodyResult parse_body(std::string_view construct_name);
+  auto parse_body(std::string_view construct_name) -> BodyResult;
 
   // ========================================================================
   //  Comma-separated list helper
@@ -372,7 +373,7 @@ private:
 
   /// If the current token is a visibility keyword, consume it and return
   /// the visibility. Otherwise return Default.
-  [[nodiscard]] ast::visibility parse_optional_visibility();
+  [[nodiscard]] auto parse_optional_visibility() -> ast::visibility;
 
   // ========================================================================
   //  Module paths — `a.b.c`
@@ -400,10 +401,10 @@ private:
 
   [[nodiscard]] ast::ptr<ast::type_decl> parse_type_decl(ast::visibility vis);
   [[nodiscard]] ast::ptr<ast::node> parse_type_def();
-  [[nodiscard]] ast::struct_body parse_struct_body();
-  [[nodiscard]] ast::sum_body parse_sum_body();
-  [[nodiscard]] ast::struct_field parse_struct_field();
-  [[nodiscard]] ast::sum_variant parse_sum_variant();
+  [[nodiscard]] auto parse_struct_body() -> ast::struct_body;
+  [[nodiscard]] auto parse_sum_body() -> ast::sum_body;
+  [[nodiscard]] auto parse_struct_field() -> ast::struct_field;
+  [[nodiscard]] auto parse_sum_variant() -> ast::sum_variant;
 
   // ---- Type expressions ----
 
@@ -420,9 +421,9 @@ private:
   // ---- Type parameters and bounds ----
 
   [[nodiscard]] std::vector<ast::type_param> parse_type_params();
-  [[nodiscard]] ast::type_param parse_type_param();
-  [[nodiscard]] ast::Bound parse_bound();
-  [[nodiscard]] ast::bound_term parse_bound_term();
+  [[nodiscard]] auto parse_type_param() -> ast::type_param;
+  [[nodiscard]] auto parse_bound() -> ast::Bound;
+  [[nodiscard]] auto parse_bound_term() -> ast::bound_term;
   [[nodiscard]] std::vector<ast::where_constraint> parse_where_clause();
 
   // ---- Trait / concept / impl declarations ----
@@ -436,11 +437,11 @@ private:
 
   [[nodiscard]] ast::ptr<ast::func_decl>
   parse_func_decl(ast::visibility vis, ast::func_modifiers mods);
-  [[nodiscard]] ast::func_modifiers parse_func_modifiers();
+  [[nodiscard]] auto parse_func_modifiers() -> ast::func_modifiers;
   [[nodiscard]] std::vector<ast::Param> parse_param_list();
-  [[nodiscard]] ast::Param parse_param();
+  [[nodiscard]] auto parse_param() -> ast::Param;
   [[nodiscard]] std::vector<ast::contract_clause> parse_contract_clauses();
-  [[nodiscard]] ast::contract_clause parse_contract_clause();
+  [[nodiscard]] auto parse_contract_clause() -> ast::contract_clause;
 
   // ---- Static declarations ----
 
@@ -530,7 +531,7 @@ private:
 
   // ---- Match arms ----
 
-  [[nodiscard]] ast::match_arm parse_match_arm();
+  [[nodiscard]] auto parse_match_arm() -> ast::match_arm;
 
   // ========================================================================
   //  Patterns

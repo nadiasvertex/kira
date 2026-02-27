@@ -47,7 +47,7 @@ struct Config {
 
   program.add_argument("-h", "--help")
       .help("show this help message and exit")
-      .action([&](const auto &) {
+      .action([&](const auto &) -> auto {
         std::cout << program << std::endl;
         exit(0);
       })
@@ -92,7 +92,7 @@ struct Config {
 ///         - 1 if argument parsing fails
 ///
 /// @note Prints welcome message and lists provided source files
-int main(int argc, char *argv[]) {
+auto main(int argc, char *argv[]) -> int {
   auto result = parse_args(argc, argv);
 
   if (!result) {

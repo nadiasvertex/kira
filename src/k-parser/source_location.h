@@ -24,7 +24,7 @@ struct source_span {
   byte_offset end = 0;
 
   /// Returns true if this span is empty (zero-length).
-  [[nodiscard]] constexpr bool empty() const noexcept { return start == end; }
+  [[nodiscard]] constexpr auto empty() const noexcept -> bool { return start == end; }
 
   /// Returns the length of this span in bytes.
   [[nodiscard]] constexpr uint32_t len() const noexcept { return end - start; }
@@ -32,16 +32,18 @@ struct source_span {
   /// Returns a dummy/invalid span. Used as a sentinel for synthesized nodes
   /// that don't correspond to any real source text (e.g., error recovery
   /// insertions).
-  [[nodiscard]] static constexpr source_span dummy() noexcept { return source_span{0, 0}; }
+  [[nodiscard]] static constexpr auto dummy() noexcept -> source_span { return source_span{0, 0}; }
 
   /// Merge two spans into one that covers both. The result spans from
   /// the earliest start to the latest end. This is used when building
   /// AST nodes that cover multiple tokens.
-  [[nodiscard]] constexpr source_span merge(source_span other) const noexcept {
-    if (empty())
+  [[nodiscard]] constexpr auto merge(source_span other) const noexcept -> source_span {
+    if (empty()) {
       return other;
-    if (other.empty())
+}
+    if (other.empty()) {
       return *this;
+}
     return source_span{
         start < other.start ? start : other.start,
         end > other.end ? end : other.end,
@@ -51,7 +53,7 @@ struct source_span {
   /// Extend this span to cover `other` as well (mutating version).
   constexpr void extend_to(source_span other) noexcept { *this = merge(other); }
 
-  constexpr bool operator==(const source_span &) const noexcept = default;
+  constexpr auto operator==(const source_span &) const noexcept -> bool = default;
   constexpr auto operator<=>(const Span &) const noexcept = default;
 };
 
@@ -71,19 +73,20 @@ struct source_location {
   FileId file_id = 0;
   source_span span;
 
-  [[nodiscard]] static constexpr source_location dummy() noexcept {
+  [[nodiscard]] static constexpr auto dummy() noexcept -> source_location {
     return source_location{0, source_span::dummy()};
   }
 
-  [[nodiscard]] constexpr source_location
-  merge(source_location other) const noexcept {
+  [[nodiscard]] constexpr auto
+  merge(source_location other) const noexcept -> source_location {
     // Only merge locations from the same file; if they differ, prefer `this`.
-    if (file_id != other.file_id)
+    if (file_id != other.file_id) {
       return *this;
+}
     return source_location{file_id, span.merge(other.span)};
   }
 
-  constexpr bool operator==(const source_location &) const noexcept = default;
+  constexpr auto operator==(const source_location &) const noexcept -> bool = default;
 };
 
 /// @brief Resolved line and column information for display.
@@ -113,7 +116,7 @@ public:
   [[nodiscard]] std::string_view source() const noexcept { return source_; }
 
   /// Resolve a byte offset to a 1-based line and column.
-  [[nodiscard]] line_column resolve(byte_offset offset) const noexcept {
+  [[nodiscard]] auto resolve(byte_offset offset) const noexcept -> line_column {
     if (line_starts_.empty()) {
       return {1, 1};
     }
@@ -139,8 +142,9 @@ public:
 
   /// Extract the source text for a given span.
   [[nodiscard]] std::string_view text_at(source_span span) const noexcept {
-    if (span.start >= source_.size())
+    if (span.start >= source_.size()) {
       return {};
+}
     auto actual_end = span.end <= source_.size()
                           ? span.end
                           : static_cast<byte_offset>(source_.size());
@@ -153,8 +157,9 @@ public:
   [[nodiscard]] std::string_view line_at(byte_offset offset) const noexcept {
     auto lc = resolve(offset);
     uint32_t line_idx = lc.line - 1;
-    if (line_idx >= line_starts_.size())
+    if (line_idx >= line_starts_.size()) {
       return {};
+}
 
     byte_offset line_start = line_starts_[line_idx];
     byte_offset line_end;

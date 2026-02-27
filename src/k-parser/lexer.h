@@ -76,28 +76,31 @@ private:
   //  Character inspection helpers
   // ==========================================================================
 
-  [[nodiscard]] char peek() const noexcept {
-    if (pos_ >= source_.size())
+  [[nodiscard]] auto peek() const noexcept -> char {
+    if (pos_ >= source_.size()) {
       return '\0';
+}
     return source_[pos_];
   }
 
-  [[nodiscard]] char peek_at(uint32_t offset) const noexcept {
+  [[nodiscard]] auto peek_at(uint32_t offset) const noexcept -> char {
     auto idx = pos_ + offset;
-    if (idx >= source_.size())
+    if (idx >= source_.size()) {
       return '\0';
+}
     return source_[idx];
   }
 
-  [[nodiscard]] bool at_end() const noexcept { return pos_ >= source_.size(); }
+  [[nodiscard]] auto at_end() const noexcept -> bool { return pos_ >= source_.size(); }
 
-  char advance() noexcept {
-    if (pos_ >= source_.size())
+  auto advance() noexcept -> char {
+    if (pos_ >= source_.size()) {
       return '\0';
+}
     return source_[pos_++];
   }
 
-  bool match(char expected) noexcept {
+  auto match(char expected) noexcept -> bool {
     if (pos_ < source_.size() && source_[pos_] == expected) {
       ++pos_;
       return true;
@@ -113,35 +116,35 @@ private:
     return span{start, static_cast<byte_offset>(pos_)};
   }
 
-  [[nodiscard]] static bool is_alpha(char c) noexcept {
+  [[nodiscard]] static auto is_alpha(char c) noexcept -> bool {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
   }
 
-  [[nodiscard]] static bool is_digit(char c) noexcept {
+  [[nodiscard]] static auto is_digit(char c) noexcept -> bool {
     return c >= '0' && c <= '9';
   }
 
-  [[nodiscard]] static bool is_hex_digit(char c) noexcept {
+  [[nodiscard]] static auto is_hex_digit(char c) noexcept -> bool {
     return is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
   }
 
-  [[nodiscard]] static bool is_oct_digit(char c) noexcept {
+  [[nodiscard]] static auto is_oct_digit(char c) noexcept -> bool {
     return c >= '0' && c <= '7';
   }
 
-  [[nodiscard]] static bool is_bin_digit(char c) noexcept {
+  [[nodiscard]] static auto is_bin_digit(char c) noexcept -> bool {
     return c == '0' || c == '1';
   }
 
-  [[nodiscard]] static bool is_ident_start(char c) noexcept {
+  [[nodiscard]] static auto is_ident_start(char c) noexcept -> bool {
     return is_alpha(c) || c == '_';
   }
 
-  [[nodiscard]] static bool is_ident_continue(char c) noexcept {
+  [[nodiscard]] static auto is_ident_continue(char c) noexcept -> bool {
     return is_alpha(c) || is_digit(c) || c == '_';
   }
 
-  [[nodiscard]] static bool is_whitespace_not_newline(char c) noexcept {
+  [[nodiscard]] static auto is_whitespace_not_newline(char c) noexcept -> bool {
     return c == ' ' || c == '\t' || c == '\r';
   }
 
@@ -202,8 +205,9 @@ private:
 
     // Skip horizontal whitespace within a line.
     skip_horizontal_whitespace();
-    if (at_end())
+    if (at_end()) {
       return;
+}
 
     byte_offset start = static_cast<byte_offset>(pos_);
     char c = advance();
@@ -227,8 +231,9 @@ private:
       emit(token_kind::lparen, start);
       return;
     case ')':
-      if (bracket_depth_ > 0)
+      if (bracket_depth_ > 0) {
         --bracket_depth_;
+}
       emit(token_kind::rparen, start);
       return;
     case '[':
@@ -236,8 +241,9 @@ private:
       emit(token_kind::lbracket, start);
       return;
     case ']':
-      if (bracket_depth_ > 0)
+      if (bracket_depth_ > 0) {
         --bracket_depth_;
+}
       emit(token_kind::rbracket, start);
       return;
     case '{':
@@ -245,8 +251,9 @@ private:
       emit(token_kind::lbrace, start);
       return;
     case '}':
-      if (bracket_depth_ > 0)
+      if (bracket_depth_ > 0) {
         --bracket_depth_;
+}
       emit(token_kind::rbrace, start);
       return;
     case ',':
@@ -518,8 +525,9 @@ private:
 
     // Blank line or comment-only line: skip entirely (no NEWLINE emitted).
     if (at_end() || peek() == '\n') {
-      if (!at_end())
+      if (!at_end()) {
         advance(); // consume the newline
+}
       // Stay at_line_start_ = true for the next line.
       return;
     }
@@ -743,8 +751,9 @@ private:
   }
 
   void scan_optional_exponent() {
-    if (at_end() || (peek() != 'e' && peek() != 'E'))
+    if (at_end() || (peek() != 'e' && peek() != 'E')) {
       return;
+}
     advance(); // consume 'e' or 'E'
     if (!at_end() && (peek() == '+' || peek() == '-')) {
       advance();
@@ -814,20 +823,22 @@ private:
         int depth = 1;
         while (!at_end() && depth > 0) {
           char ic = advance();
-          if (ic == '{')
+          if (ic == '{') {
             ++depth;
-          else if (ic == '}')
+          } else if (ic == '}') {
             --depth;
-          else if (ic == '"') {
+          } else if (ic == '"') {
             // Nested string inside interpolation — scan recursively.
             // For simplicity, just skip balanced quotes.
             while (!at_end() && peek() != '"') {
-              if (peek() == '\\')
+              if (peek() == '\\') {
                 advance();
+}
               advance();
             }
-            if (!at_end())
+            if (!at_end()) {
               advance(); // consume closing quote
+}
           }
         }
         if (depth > 0) {
@@ -1027,12 +1038,13 @@ private:
       // Handle multi-byte UTF-8: consume continuation bytes.
       unsigned char first_byte = static_cast<unsigned char>(source_[pos_ - 1]);
       int extra_bytes = 0;
-      if ((first_byte & 0xE0) == 0xC0)
+      if ((first_byte & 0xE0) == 0xC0) {
         extra_bytes = 1;
-      else if ((first_byte & 0xF0) == 0xE0)
+      } else if ((first_byte & 0xF0) == 0xE0) {
         extra_bytes = 2;
-      else if ((first_byte & 0xF8) == 0xF0)
+      } else if ((first_byte & 0xF8) == 0xF0) {
         extra_bytes = 3;
+}
       for (int i = 0; i < extra_bytes && !at_end(); ++i) {
         advance();
       }
@@ -1047,8 +1059,9 @@ private:
           advance();
         }
         bool has_close = !at_end() && peek() == '\'';
-        if (has_close)
+        if (has_close) {
           advance();
+}
 
         diag_.emit(
             diagnostic(diagnostic_level::error,
