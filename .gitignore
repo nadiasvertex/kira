@@ -3,3 +3,5 @@ bazel-kira
 bazel-out
 bazel-testlogs
 compile_commands.json
+external
+.cache

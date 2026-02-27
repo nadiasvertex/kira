@@ -32,7 +32,8 @@ WarningsAsErrors: >
   cppcoreguidelines-narrowing-conversions,
   readability-identifier-naming
 
-HeaderFilterRegex: '.*'
+# Only run clang-tidy on project sources (exclude third_party)
+HeaderFilterRegex: '^src/.*'
 
 CheckOptions:
   - key: readability-identifier-naming.FunctionCase
