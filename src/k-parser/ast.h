@@ -135,15 +135,13 @@ struct match_arm;
 //  via unique_ptr. This keeps node sizes small and allows recursive types.
 // ==========================================================================
 
-template <typename T>
-using ptr = std::unique_ptr<T>;
+template <typename T> using ptr = std::unique_ptr<T>;
 
-template <typename T>
-using ptr_vec = std::vector<ptr<T>>;
+template <typename T> using ptr_vec = std::vector<ptr<T>>;
 
 /// Helper to create an AST node. Usage: `auto n = make<ident_expr>(...);`
 template <typename T, typename... Args>
-[[nodiscard]] ptr<T> make(Args&&... args) {
+[[nodiscard]] ptr<T> make(Args &&...args) {
   return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
@@ -253,26 +251,26 @@ enum class NodeKind : uint8_t {
 
 struct node {
   NodeKind kind;
-  Span span;
+  span span;
   bool has_error = false;
 
-  explicit node(NodeKind k, Span s = Span::dummy()) : kind(k), span(s) {}
+  explicit node(NodeKind k, span s = span::dummy()) : kind(k), span(s) {}
   virtual ~node() = default;
 
   // Non-copyable, movable.
-  node(const node&) = delete;
-  node& operator=(const node&) = delete;
-  node(node&&) = default;
-  node& operator=(node&&) = default;
+  node(const node &) = delete;
+  node &operator=(const node &) = delete;
+  node(node &&) = default;
+  node &operator=(node &&) = default;
 };
 
 /// An AST node that was synthesized during error recovery. It stands in
 /// for whatever the parser couldn't understand. This lets the rest of the
 /// tree remain well-formed so downstream phases can keep going.
 struct error_node : node {
-  std::string description;  ///< What we tried and failed to parse.
+  std::string description; ///< What we tried and failed to parse.
 
-  explicit error_node(Span s = Span::dummy(), std::string desc = "")
+  explicit error_node(span s = span::dummy(), std::string desc = "")
       : node(NodeKind::error_node, s), description(std::move(desc)) {
     has_error = true;
   }
@@ -283,20 +281,25 @@ struct error_node : node {
 // --------------------------------------------------------------------------
 
 enum class visibility : uint8_t {
-  Default,   ///< No explicit visibility keyword
-  Pub,       ///< `pub`
-  Internal,  ///< `internal`
-  Super,     ///< `super`
-  Priv,      ///< `priv`
+  def,      ///< No explicit visibility keyword
+  pub,      ///< `pub`
+  internal, ///< `internal`
+  super,    ///< `super`
+  priv,     ///< `priv`
 };
 
 [[nodiscard]] inline visibility token_to_visibility(token_kind kind) noexcept {
   switch (kind) {
-    case token_kind::kw_pub:      return visibility::Pub;
-    case token_kind::kw_internal: return visibility::Internal;
-    case token_kind::kw_super:    return visibility::Super;
-    case token_kind::kw_priv:     return visibility::Priv;
-    default:                    return visibility::Default;
+  case token_kind::kw_pub:
+    return visibility::pub;
+  case token_kind::kw_internal:
+    return visibility::internal;
+  case token_kind::kw_super:
+    return visibility::super;
+  case token_kind::kw_priv:
+    return visibility::priv;
+  default:
+    return visibility::def;
   }
 }
 
@@ -311,15 +314,16 @@ struct type_expr : node {
 /// A type expression that the parser couldn't understand. Stands in for
 /// the real thing so the tree remains structurally valid.
 struct error_type_expr : type_expr {
-  explicit error_type_expr(Span s = Span::dummy())
-      : type_expr(NodeKind::named_type, s) {  // reuse kind; has_error flag distinguishes
+  explicit error_type_expr(span s = span::dummy())
+      : type_expr(NodeKind::named_type,
+                  s) { // reuse kind; has_error flag distinguishes
     has_error = true;
   }
 };
 
 struct named_type : type_expr {
-  std::vector<std::string> path;        ///< e.g., ["std", "collections", "Map"]
-  std::vector<ptr<type_expr>> type_args;  ///< Generic arguments, if any.
+  std::vector<std::string> path; ///< e.g., ["std", "collections", "Map"]
+  std::vector<ptr<type_expr>> type_args; ///< Generic arguments, if any.
   // type_arg can also carry value-level expressions; we handle that in
   // a wrapper node below.
 
@@ -340,7 +344,7 @@ struct slice_type : type_expr {
 
 struct array_type : type_expr {
   ptr<type_expr> element;
-  ptr<node> size;  ///< An expression giving the array length.
+  ptr<node> size; ///< An expression giving the array length.
 
   array_type() : type_expr(NodeKind::array_type) {}
 };
@@ -361,13 +365,13 @@ struct ptr_type : type_expr {
 
 struct fn_type : type_expr {
   std::vector<ptr<type_expr>> param_types;
-  ptr<type_expr> return_type;  ///< nullptr if no return type.
+  ptr<type_expr> return_type; ///< nullptr if no return type.
 
   fn_type() : type_expr(NodeKind::fn_type) {}
 };
 
 struct quote_type : type_expr {
-  token_kind quote_kind;  ///< KwExpr, KwStmt, KwDefExpr, or KwTypeExpr
+  token_kind quote_kind; ///< KwExpr, KwStmt, KwDefExpr, or KwTypeExpr
 
   explicit quote_type(token_kind qk = token_kind::kw_expr)
       : type_expr(NodeKind::quote_type), quote_kind(qk) {}
@@ -381,7 +385,7 @@ struct union_type : type_expr {
 
 struct refinement_type : type_expr {
   ptr<type_expr> base;
-  ptr<node> predicate;  ///< The `where expr` part.
+  ptr<node> predicate; ///< The `where expr` part.
 
   refinement_type() : type_expr(NodeKind::refinement_type) {}
 };
@@ -391,35 +395,35 @@ struct refinement_type : type_expr {
 // ==========================================================================
 
 struct type_param {
-  Span span;
+  span span;
   std::string name;
   /// For type params: an optional trait/concept bound.
   /// For value params: the type of the value.
   ptr<type_expr> bound_or_type;
-  bool is_value_param = false;  ///< True if this is `name : type` (value param).
+  bool is_value_param = false; ///< True if this is `name : type` (value param).
 };
 
 struct type_arg {
-  Span span;
+  span span;
   /// A type argument is either a type expression or a value expression.
   /// We store both as Node* and disambiguate later in semantic analysis.
   ptr<node> value;
-  std::optional<std::string> name;  ///< Named argument: `name: type`
+  std::optional<std::string> name; ///< Named argument: `name: type`
 };
 
 struct bound_term {
-  Span span;
+  span span;
   /// A trait bound like `Trait[Args]` or a function type bound.
   ptr<type_expr> type;
 };
 
 struct Bound {
-  Span span;
-  std::vector<bound_term> terms;  ///< Connected by `+`.
+  span span;
+  std::vector<bound_term> terms; ///< Connected by `+`.
 };
 
 struct where_constraint {
-  Span span;
+  span span;
   ptr<type_expr> subject;
   /// Either a trait bound or an associated type equality constraint.
   ptr<type_expr> bound_or_type;
@@ -430,25 +434,25 @@ struct where_constraint {
 // ==========================================================================
 
 struct struct_field {
-  Span span;
-  visibility visibility = visibility::Default;
+  span span;
+  visibility visibility = visibility::def;
   std::string name;
   ptr<type_expr> type;
 };
 
 struct struct_body {
-  Span span;
+  span span;
   std::vector<struct_field> fields;
 };
 
 struct sum_variant {
-  Span span;
+  span span;
   std::string name;
-  std::vector<ptr<type_expr>> payload_types;  ///< Empty for unit variants.
+  std::vector<ptr<type_expr>> payload_types; ///< Empty for unit variants.
 };
 
 struct sum_body {
-  Span span;
+  span span;
   std::vector<sum_variant> variants;
 };
 
@@ -464,7 +468,7 @@ struct Expr : node {
 struct error_expr : Expr {
   std::string description;
 
-  explicit error_expr(Span s = Span::dummy(), std::string desc = "")
+  explicit error_expr(span s = span::dummy(), std::string desc = "")
       : Expr(NodeKind::ident_expr, s), description(std::move(desc)) {
     has_error = true;
   }
@@ -477,8 +481,9 @@ struct ident_expr : Expr {
 };
 
 struct literal_expr : Expr {
-  token_kind lit_kind;    ///< IntLit, FloatLit, StringLit, CharLit, KwTrue, KwFalse, KwUnit
-  std::string value;     ///< The raw text of the literal.
+  token_kind lit_kind; ///< IntLit, FloatLit, StringLit, CharLit, KwTrue,
+                       ///< KwFalse, KwUnit
+  std::string value;   ///< The raw text of the literal.
 
   literal_expr() : Expr(NodeKind::literal_expr) {}
 };
@@ -487,54 +492,103 @@ enum class BinaryOp : uint8_t {
   // Pipe
   Pipe,
   // Logical
-  Or, And,
+  Or,
+  And,
   // Comparison
-  EqEq, BangEq, Lt, LtEq, Gt, GtEq, In, NotIn,
+  EqEq,
+  BangEq,
+  Lt,
+  LtEq,
+  Gt,
+  GtEq,
+  In,
+  NotIn,
   // Arithmetic
-  Add, Sub, Mul, Div, Mod,
+  Add,
+  Sub,
+  Mul,
+  Div,
+  Mod,
   // Wrapping
-  AddWrap, SubWrap, MulWrap,
+  AddWrap,
+  SubWrap,
+  MulWrap,
   // Saturating
-  AddSat, SubSat, MulSat,
+  AddSat,
+  SubSat,
+  MulSat,
   // Shifts
-  Shl, Shr,
+  Shl,
+  Shr,
   // Bitwise
-  BitAnd, BitOr, BitXor,
+  BitAnd,
+  BitOr,
+  BitXor,
   // Range (used in patterns)
-  Range, RangeInclusive,
+  Range,
+  RangeInclusive,
 };
 
 [[nodiscard]] inline std::string_view binary_op_name(BinaryOp op) noexcept {
   switch (op) {
-    case BinaryOp::Pipe:           return "|";
-    case BinaryOp::Or:             return "or";
-    case BinaryOp::And:            return "and";
-    case BinaryOp::EqEq:          return "==";
-    case BinaryOp::BangEq:        return "!=";
-    case BinaryOp::Lt:            return "<";
-    case BinaryOp::LtEq:          return "<=";
-    case BinaryOp::Gt:            return ">";
-    case BinaryOp::GtEq:          return ">=";
-    case BinaryOp::In:            return "in";
-    case BinaryOp::NotIn:         return "not in";
-    case BinaryOp::Add:           return "+";
-    case BinaryOp::Sub:           return "-";
-    case BinaryOp::Mul:           return "*";
-    case BinaryOp::Div:           return "/";
-    case BinaryOp::Mod:           return "%";
-    case BinaryOp::AddWrap:       return "+%";
-    case BinaryOp::SubWrap:       return "-%";
-    case BinaryOp::MulWrap:       return "*%";
-    case BinaryOp::AddSat:        return "+|";
-    case BinaryOp::SubSat:        return "-|";
-    case BinaryOp::MulSat:        return "*|";
-    case BinaryOp::Shl:           return "<<";
-    case BinaryOp::Shr:           return ">>";
-    case BinaryOp::BitAnd:        return "&";
-    case BinaryOp::BitOr:         return "|";
-    case BinaryOp::BitXor:        return "^";
-    case BinaryOp::Range:         return "..";
-    case BinaryOp::RangeInclusive: return "..=";
+  case BinaryOp::Pipe:
+    return "|";
+  case BinaryOp::Or:
+    return "or";
+  case BinaryOp::And:
+    return "and";
+  case BinaryOp::EqEq:
+    return "==";
+  case BinaryOp::BangEq:
+    return "!=";
+  case BinaryOp::Lt:
+    return "<";
+  case BinaryOp::LtEq:
+    return "<=";
+  case BinaryOp::Gt:
+    return ">";
+  case BinaryOp::GtEq:
+    return ">=";
+  case BinaryOp::In:
+    return "in";
+  case BinaryOp::NotIn:
+    return "not in";
+  case BinaryOp::Add:
+    return "+";
+  case BinaryOp::Sub:
+    return "-";
+  case BinaryOp::Mul:
+    return "*";
+  case BinaryOp::Div:
+    return "/";
+  case BinaryOp::Mod:
+    return "%";
+  case BinaryOp::AddWrap:
+    return "+%";
+  case BinaryOp::SubWrap:
+    return "-%";
+  case BinaryOp::MulWrap:
+    return "*%";
+  case BinaryOp::AddSat:
+    return "+|";
+  case BinaryOp::SubSat:
+    return "-|";
+  case BinaryOp::MulSat:
+    return "*|";
+  case BinaryOp::Shl:
+    return "<<";
+  case BinaryOp::Shr:
+    return ">>";
+  case BinaryOp::BitAnd:
+    return "&";
+  case BinaryOp::BitOr:
+    return "|";
+  case BinaryOp::BitXor:
+    return "^";
+  case BinaryOp::Range:
+    return "..";
+  case BinaryOp::RangeInclusive:
+    return "..=";
   }
   return "<?>";
 }
@@ -558,12 +612,18 @@ enum class UnaryOp : uint8_t {
 
 [[nodiscard]] inline std::string_view unary_op_name(UnaryOp op) noexcept {
   switch (op) {
-    case UnaryOp::Neg:       return "-";
-    case UnaryOp::BitNot:    return "~";
-    case UnaryOp::Deref:     return "*";
-    case UnaryOp::AddrOf:    return "&";
-    case UnaryOp::AddrOfMut: return "&mut";
-    case UnaryOp::Not:       return "not";
+  case UnaryOp::Neg:
+    return "-";
+  case UnaryOp::BitNot:
+    return "~";
+  case UnaryOp::Deref:
+    return "*";
+  case UnaryOp::AddrOf:
+    return "&";
+  case UnaryOp::AddrOfMut:
+    return "&mut";
+  case UnaryOp::Not:
+    return "not";
   }
   return "<?>";
 }
@@ -579,7 +639,7 @@ struct unary_expr : Expr {
 struct field_expr : Expr {
   ptr<Expr> object;
   std::string field_name;
-  std::vector<ptr<type_expr>> generic_args;  ///< For `expr.method[T]`
+  std::vector<ptr<type_expr>> generic_args; ///< For `expr.method[T]`
 
   field_expr() : Expr(NodeKind::field_expr) {}
 };
@@ -594,8 +654,8 @@ struct index_expr : Expr {
 
 /// Function/method call: `expr(args...)`
 struct call_arg {
-  Span span;
-  std::optional<std::string> name;  ///< Named arg: `name: value`
+  span span;
+  std::optional<std::string> name; ///< Named arg: `name: value`
   ptr<Expr> value;
 };
 
@@ -631,7 +691,7 @@ struct tuple_expr : Expr {
 /// Array literal: `[a, b, c]` or fill: `[val; count]`
 struct array_expr : Expr {
   std::vector<ptr<Expr>> elements;
-  ptr<Expr> fill_value;  ///< Non-null for `[val; count]` form.
+  ptr<Expr> fill_value; ///< Non-null for `[val; count]` form.
   ptr<Expr> fill_count;
 
   array_expr() : Expr(NodeKind::array_expr) {}
@@ -639,9 +699,9 @@ struct array_expr : Expr {
 
 /// Struct literal field: `name: expr` or shorthand `name`
 struct struct_field_init {
-  Span span;
+  span span;
   std::string name;
-  ptr<Expr> value;        ///< nullptr for shorthand `{x}` (means `{x: x}`)
+  ptr<Expr> value; ///< nullptr for shorthand `{x}` (means `{x: x}`)
 };
 
 /// Struct literal: `{a: 1, b: 2}`
@@ -653,16 +713,16 @@ struct struct_expr : Expr {
 
 /// Lambda / closure: `x => x + 1` or `(a, b) -> int => a + b`
 struct lambda_param {
-  Span span;
-  ptr<node> pattern;               ///< The parameter pattern.
-  ptr<type_expr> type_annotation;   ///< Optional type annotation.
+  span span;
+  ptr<node> pattern;              ///< The parameter pattern.
+  ptr<type_expr> type_annotation; ///< Optional type annotation.
 };
 
 struct lambda_expr : Expr {
   bool is_pure = false;
   bool is_move = false;
   std::vector<lambda_param> params;
-  ptr<type_expr> return_type;        ///< Optional return type annotation.
+  ptr<type_expr> return_type; ///< Optional return type annotation.
   /// Body is either a single expression or a block (vector of statements).
   ptr<Expr> body_expr;
   std::vector<ptr<node>> body_stmts;
@@ -686,13 +746,13 @@ struct group_expr : Expr {
 
 /// `if expr: ... elif ...: ... else: ...` (expression form)
 struct if_branch {
-  Span span;
+  span span;
   ptr<Expr> condition;
-  std::vector<ptr<node>> body;  ///< Block of statements/exprs.
+  std::vector<ptr<node>> body; ///< Block of statements/exprs.
 };
 
 struct if_expr : Expr {
-  std::vector<if_branch> branches;  ///< `if` + zero or more `elif`
+  std::vector<if_branch> branches; ///< `if` + zero or more `elif`
   std::vector<ptr<node>> else_body;
 
   if_expr() : Expr(NodeKind::if_expr) {}
@@ -700,9 +760,9 @@ struct if_expr : Expr {
 
 /// `match subject: ...`
 struct match_arm {
-  Span span;
+  span span;
   ptr<node> pattern;
-  ptr<Expr> guard;  ///< Optional `if expr` guard.
+  ptr<Expr> guard; ///< Optional `if expr` guard.
   /// Body: inline expression or block.
   ptr<Expr> body_expr;
   std::vector<ptr<node>> body_stmts;
@@ -723,15 +783,15 @@ struct for_expr : Expr {
     ptr<Expr> iterable;
   };
   std::vector<IterClause> clauses;
-  ptr<Expr> guard;         ///< Optional `if` filter.
-  ptr<Expr> yield_expr;    ///< The `=> expr` part.
+  ptr<Expr> guard;      ///< Optional `if` filter.
+  ptr<Expr> yield_expr; ///< The `=> expr` part.
 
   for_expr() : Expr(NodeKind::for_expr) {}
 };
 
 /// `await expr` or `await yield`
 struct await_expr : Expr {
-  ptr<Expr> operand;  ///< nullptr for `await yield`.
+  ptr<Expr> operand; ///< nullptr for `await yield`.
   bool is_yield = false;
 
   await_expr() : Expr(NodeKind::await_expr) {}
@@ -754,7 +814,7 @@ struct race_expr : Expr {
 /// `on(Type): block` or `on(Type, sender)`
 struct on_expr : Expr {
   ptr<type_expr> context_type;
-  ptr<Expr> sender;         ///< Optional second argument.
+  ptr<Expr> sender; ///< Optional second argument.
   std::vector<ptr<node>> body;
 
   on_expr() : Expr(NodeKind::on_expr) {}
@@ -769,7 +829,7 @@ struct block_expr : Expr {
 
 /// Quasi-quote: `` `(content)` `` or `` `content` ``
 struct quote_expr : Expr {
-  std::vector<Token> tokens;  ///< Raw tokens inside the quote.
+  std::vector<Token> tokens; ///< Raw tokens inside the quote.
 
   quote_expr() : Expr(NodeKind::quote_expr) {}
 };
@@ -797,7 +857,7 @@ struct Pattern : node {
 };
 
 struct error_pattern : Pattern {
-  explicit error_pattern(Span s = Span::dummy())
+  explicit error_pattern(span s = span::dummy())
       : Pattern(NodeKind::wildcard_pattern, s) {
     has_error = true;
   }
@@ -840,10 +900,10 @@ struct tuple_pattern : Pattern {
 
 /// Struct pattern field: `name: pattern`, `name`, or `..`
 struct field_pattern {
-  Span span;
-  std::string name;         ///< Empty for `..` (rest).
-  ptr<Pattern> pattern;     ///< nullptr for shorthand `{name}`.
-  bool is_rest = false;     ///< True for `..`.
+  span span;
+  std::string name;     ///< Empty for `..` (rest).
+  ptr<Pattern> pattern; ///< nullptr for shorthand `{name}`.
+  bool is_rest = false; ///< True for `..`.
 };
 
 /// Struct pattern: `{x: a, y: b, ..}`
@@ -862,9 +922,9 @@ struct array_pattern : Pattern {
 
 /// Range: `1..10`, `1..=10`, `1..`, `..10`
 struct range_pattern : Pattern {
-  ptr<Expr> start;  ///< nullptr for `..end`
-  ptr<Expr> end;    ///< nullptr for `start..`
-  bool inclusive = false;  ///< True for `..=`
+  ptr<Expr> start;        ///< nullptr for `..end`
+  ptr<Expr> end;          ///< nullptr for `start..`
+  bool inclusive = false; ///< True for `..=`
 
   range_pattern() : Pattern(NodeKind::range_pattern) {}
 };
@@ -881,7 +941,7 @@ struct option_pattern : Pattern {
 
 /// Result pattern — reuses option_pattern but with different kind.
 struct result_pattern : Pattern {
-  OptionResultKind result_kind;  ///< Ok or Err
+  OptionResultKind result_kind; ///< Ok or Err
   ptr<Pattern> inner;
 
   result_pattern() : Pattern(NodeKind::result_pattern) {}
@@ -917,8 +977,7 @@ struct Stmt : node {
 };
 
 struct error_stmt : Stmt {
-  explicit error_stmt(Span s = Span::dummy())
-      : Stmt(NodeKind::expr_stmt, s) {
+  explicit error_stmt(span s = span::dummy()) : Stmt(NodeKind::expr_stmt, s) {
     has_error = true;
   }
 };
@@ -927,9 +986,9 @@ struct error_stmt : Stmt {
 /// `let pattern [: type] = expr else: block`
 struct let_stmt : Stmt {
   ptr<Pattern> pattern;
-  ptr<type_expr> type_annotation;  ///< Optional.
+  ptr<type_expr> type_annotation; ///< Optional.
   ptr<Expr> initializer;
-  std::vector<ptr<node>> else_body;  ///< Non-empty for `let ... else:` form.
+  std::vector<ptr<node>> else_body; ///< Non-empty for `let ... else:` form.
 
   let_stmt() : Stmt(NodeKind::let_stmt) {}
 };
@@ -937,7 +996,7 @@ struct let_stmt : Stmt {
 /// `var name [: type] = expr`
 struct var_stmt : Stmt {
   std::string name;
-  ptr<type_expr> type_annotation;  ///< Optional.
+  ptr<type_expr> type_annotation; ///< Optional.
   ptr<Expr> initializer;
 
   var_stmt() : Stmt(NodeKind::var_stmt) {}
@@ -945,23 +1004,23 @@ struct var_stmt : Stmt {
 
 /// Assignment operators.
 enum class AssignOp : uint8_t {
-  Assign,     // =
-  AddAssign,  // +=
-  SubAssign,  // -=
-  MulAssign,  // *=
-  DivAssign,  // /=
-  ModAssign,  // %=
-  AndAssign,  // &=
-  OrAssign,   // |=
-  XorAssign,  // ^=
-  ShlAssign,  // <<=
-  ShrAssign,  // >>=
-  AddWrapAssign,  // +%=
-  SubWrapAssign,  // -%=
-  MulWrapAssign,  // *%=
-  AddSatAssign,   // +|=
-  SubSatAssign,   // -|=
-  MulSatAssign,   // *|=
+  Assign,        // =
+  AddAssign,     // +=
+  SubAssign,     // -=
+  MulAssign,     // *=
+  DivAssign,     // /=
+  ModAssign,     // %=
+  AndAssign,     // &=
+  OrAssign,      // |=
+  XorAssign,     // ^=
+  ShlAssign,     // <<=
+  ShrAssign,     // >>=
+  AddWrapAssign, // +%=
+  SubWrapAssign, // -%=
+  MulWrapAssign, // *%=
+  AddSatAssign,  // +|=
+  SubSatAssign,  // -|=
+  MulSatAssign,  // *|=
 };
 
 struct assign_stmt : Stmt {
@@ -981,7 +1040,7 @@ struct expr_stmt : Stmt {
 
 /// `return [expr]`
 struct return_stmt : Stmt {
-  ptr<Expr> value;  ///< nullptr if bare `return`.
+  ptr<Expr> value; ///< nullptr if bare `return`.
 
   return_stmt() : Stmt(NodeKind::return_stmt) {}
 };
@@ -1008,7 +1067,7 @@ struct while_stmt : Stmt {
 struct for_stmt : Stmt {
   std::vector<ptr<Pattern>> patterns;
   ptr<Expr> iterable;
-  ptr<Expr> guard;  ///< Optional `if` filter.
+  ptr<Expr> guard; ///< Optional `if` filter.
   std::vector<ptr<node>> body;
 
   for_stmt() : Stmt(NodeKind::for_stmt) {}
@@ -1024,7 +1083,7 @@ struct match_stmt : Stmt {
 
 /// Crew option: `name: value`
 struct crew_option {
-  Span span;
+  span span;
   std::string name;
   std::string value;
 };
@@ -1058,25 +1117,25 @@ struct splice_stmt : Stmt {
 
 /// `use` path handling.
 struct use_item {
-  Span span;
+  span span;
   std::string name;
-  std::optional<std::string> alias;  ///< `as` alias.
+  std::optional<std::string> alias; ///< `as` alias.
 };
 
 enum class UseSelectorKind : uint8_t {
-  Single,    ///< `use a.b.Foo` or `use a.b.Foo as Bar`
-  Group,     ///< `use a.b.{Foo, Bar}`
-  Wildcard,  ///< `use a.b.*`
+  Single,   ///< `use a.b.Foo` or `use a.b.Foo as Bar`
+  Group,    ///< `use a.b.{Foo, Bar}`
+  Wildcard, ///< `use a.b.*`
 };
 
 struct use_selector {
-  Span span;
+  span span;
   UseSelectorKind kind;
-  std::vector<use_item> items;  ///< For group selector; single has one item.
+  std::vector<use_item> items; ///< For group selector; single has one item.
 };
 
 struct use_decl : node {
-  visibility visibility = visibility::Default;
+  visibility visibility = visibility::def;
   std::vector<std::string> path;
   std::optional<use_selector> selector;
 
@@ -1085,10 +1144,11 @@ struct use_decl : node {
 
 /// `type Name[Params] = TypeDef`
 struct type_decl : node {
-  visibility visibility = visibility::Default;
+  visibility visibility = visibility::def;
   std::string name;
   std::vector<type_param> type_params;
-  /// The type definition body — one of: struct_body, sum_body, type_expr, refinement_type.
+  /// The type definition body — one of: struct_body, sum_body, type_expr,
+  /// refinement_type.
   ptr<node> definition;
   std::vector<std::string> deriving;
   ptr<Expr> invariant;
@@ -1098,45 +1158,47 @@ struct type_decl : node {
 
 /// Associated type in a trait: `type Name [= Default]`
 struct associated_type_decl {
-  Span span;
-  visibility visibility = visibility::Default;
+  span span;
+  visibility visibility = visibility::def;
   std::string name;
   ptr<type_expr> default_type;
 };
 
 /// Associated type in an impl: `type Name = ConcreteType`
 struct associated_type_def {
-  Span span;
+  span span;
   std::string name;
   ptr<type_expr> type;
 };
 
 /// Trait declaration.
 struct trait_decl : node {
-  visibility visibility = visibility::Default;
+  visibility visibility = visibility::def;
   std::string name;
   std::vector<type_param> type_params;
   std::optional<Bound> requires_bound;
-  std::vector<ptr<node>> items;  ///< func_decl, static_decl, associated_type_decl nodes.
+  std::vector<ptr<node>>
+      items; ///< func_decl, static_decl, associated_type_decl nodes.
 
   trait_decl() : node(NodeKind::trait_decl) {}
 };
 
 /// Concept declaration.
 struct concept_param {
-  Span span;
+  span span;
   std::string name;
-  bool is_higher_kinded = false;  ///< `Name[_]`
+  bool is_higher_kinded = false; ///< `Name[_]`
 };
 
 struct concept_constraint {
-  Span span;
-  ptr<type_expr> subject;    ///< Non-null for `type : bound` constraints.
-  ptr<node> bound_or_expr;  ///< Bound for type constraints, Expr for value constraints.
+  span span;
+  ptr<type_expr> subject;  ///< Non-null for `type : bound` constraints.
+  ptr<node> bound_or_expr; ///< Bound for type constraints, Expr for value
+                           ///< constraints.
 };
 
 struct concept_decl : node {
-  visibility visibility = visibility::Default;
+  visibility visibility = visibility::def;
   std::string name;
   std::vector<concept_param> params;
   std::vector<concept_constraint> constraints;
@@ -1150,7 +1212,8 @@ struct impl_decl : node {
   ptr<type_expr> trait_type;
   ptr<type_expr> for_type;
   std::vector<where_constraint> where_constraints;
-  std::vector<ptr<node>> items;  ///< func_decl, static_decl, associated_type_def.
+  std::vector<ptr<node>>
+      items; ///< func_decl, static_decl, associated_type_def.
 
   impl_decl() : node(NodeKind::impl_decl) {}
 };
@@ -1161,33 +1224,33 @@ struct func_modifiers {
   bool is_async = false;
   bool is_machine = false;
   bool is_static = false;
-  ptr<type_expr> async_context;  ///< Optional async context type.
+  ptr<type_expr> async_context; ///< Optional async context type.
 };
 
 /// Contract clause: `pre expr [, message]` or `post expr [, message]`
 struct contract_clause {
-  Span span;
-  bool is_pre;  ///< true = `pre`, false = `post`
+  span span;
+  bool is_pre; ///< true = `pre`, false = `post`
   ptr<Expr> condition;
   std::optional<std::string> message;
 };
 
 /// Parameter in a function signature.
 struct Param {
-  Span span;
+  span span;
   ptr<Pattern> pattern;
-  ptr<type_expr> type_annotation;  ///< Optional.
+  ptr<type_expr> type_annotation; ///< Optional.
   ptr<Expr> default_value;        ///< Optional.
 };
 
 /// Function declaration.
 struct func_decl : node {
-  visibility visibility = visibility::Default;
+  visibility visibility = visibility::def;
   func_modifiers modifiers;
   std::string name;
   std::vector<type_param> type_params;
   std::vector<Param> params;
-  ptr<type_expr> return_type;  ///< Optional.
+  ptr<type_expr> return_type; ///< Optional.
   std::vector<where_constraint> where_constraints;
   std::vector<contract_clause> contracts;
   /// Body: either an inline expression or a block of statements.
@@ -1199,16 +1262,16 @@ struct func_decl : node {
 
 /// Sub-module: `module Name` or `module Name: ...`
 struct sub_module_decl : node {
-  visibility visibility = visibility::Default;
+  visibility visibility = visibility::def;
   std::string name;
-  std::vector<ptr<node>> items;  ///< Empty for forward declarations.
+  std::vector<ptr<node>> items; ///< Empty for forward declarations.
 
   sub_module_decl() : node(NodeKind::sub_module_decl) {}
 };
 
 /// Dependency declaration: `dep Name: ...`
 struct dep_field {
-  Span span;
+  span span;
   std::string key;
   std::string value;
 };
@@ -1227,15 +1290,15 @@ struct dep_decl : node {
 ///   - `static for vars in expr [if guard] => expr`
 ///   - `static for vars in expr [if guard]: block`
 enum class StaticDeclKind : uint8_t {
-  ConditionalCompilation,  ///< `static if`
-  Binding,                 ///< `static Name = expr`
-  Assert,                  ///< `static assert expr`
-  ForInline,               ///< `static for ... => expr`
-  ForBlock,                ///< `static for ... : block`
+  ConditionalCompilation, ///< `static if`
+  Binding,                ///< `static Name = expr`
+  Assert,                 ///< `static assert expr`
+  ForInline,              ///< `static for ... => expr`
+  ForBlock,               ///< `static for ... : block`
 };
 
 struct static_decl : node {
-  visibility visibility = visibility::Default;
+  visibility visibility = visibility::def;
   StaticDeclKind decl_kind;
 
   // For Binding:
@@ -1256,10 +1319,11 @@ struct static_decl : node {
   std::vector<ptr<Pattern>> for_patterns;
   ptr<Expr> for_iterable;
   ptr<Expr> for_guard;
-  ptr<Expr> for_yield;  ///< For ForInline.
-  std::vector<ptr<node>> for_body;  ///< For ForBlock.
+  ptr<Expr> for_yield;             ///< For ForInline.
+  std::vector<ptr<node>> for_body; ///< For ForBlock.
 
-  static_decl() : node(NodeKind::static_decl), decl_kind(StaticDeclKind::Binding) {}
+  static_decl()
+      : node(NodeKind::static_decl), decl_kind(StaticDeclKind::Binding) {}
 };
 
 // ==========================================================================
@@ -1287,7 +1351,7 @@ struct file : node {
 struct aliased_pattern {
   ptr<Pattern> pattern;
   std::optional<std::string> alias;
-  Span span;
+  span span;
 };
 
-}  // namespace kira::ast
+} // namespace kira::ast

@@ -72,8 +72,7 @@ namespace kira {
 //  holes. The has_error flag on each node lets later phases skip broken
 //  subtrees.
 // ==========================================================================
-template <typename T>
-struct ParseResult {
+template <typename T> struct ParseResult {
   ast::ptr<T> node;
 
   ParseResult() = default;
@@ -84,9 +83,7 @@ struct ParseResult {
     return node != nullptr && !node->has_error;
   }
 
-  [[nodiscard]] bool has_value() const noexcept {
-    return node != nullptr;
-  }
+  [[nodiscard]] bool has_value() const noexcept { return node != nullptr; }
 
   [[nodiscard]] bool has_error() const noexcept {
     return node == nullptr || node->has_error;
@@ -94,10 +91,10 @@ struct ParseResult {
 
   explicit operator bool() const noexcept { return has_value(); }
 
-  T* operator->() { return node.get(); }
-  const T* operator->() const { return node.get(); }
-  T& operator*() { return *node; }
-  const T& operator*() const { return *node; }
+  T *operator->() { return node.get(); }
+  const T *operator->() const { return node.get(); }
+  T &operator*() { return *node; }
+  const T &operator*() const { return *node; }
 
   ast::ptr<T> take() { return std::move(node); }
 };
@@ -118,17 +115,14 @@ struct ParseResult {
 //  recovery to keep going after syntax errors.
 // ==========================================================================
 class Parser {
- public:
+public:
   /// Construct a parser over a token stream.
   ///
   /// @param tokens   The token stream (must end with token_kind::eof).
   /// @param file_id  The source file identifier for diagnostics.
   /// @param diag     The diagnostic bag to report errors into.
-  Parser(std::vector<Token> tokens, FileId file_id, diagnostic_bag& diag)
-      : tokens_(std::move(tokens)),
-        file_id_(file_id),
-        diag_(diag),
-        pos_(0) {
+  Parser(std::vector<Token> tokens, FileId file_id, diagnostic_bag &diag)
+      : tokens_(std::move(tokens)), file_id_(file_id), diag_(diag), pos_(0) {
     assert(!tokens_.empty() && "token stream must contain at least Eof");
     assert(tokens_.back().kind == token_kind::eof &&
            "token stream must end with Eof");
@@ -146,16 +140,14 @@ class Parser {
   // ========================================================================
 
   /// Returns true if any errors were encountered during parsing.
-  [[nodiscard]] bool has_errors() const noexcept {
-    return diag_.has_errors();
-  }
+  [[nodiscard]] bool has_errors() const noexcept { return diag_.has_errors(); }
 
   /// Returns the number of errors encountered.
   [[nodiscard]] uint32_t error_count() const noexcept {
     return diag_.error_count();
   }
 
- private:
+private:
   // ========================================================================
   //  Token stream navigation
   //
@@ -166,21 +158,18 @@ class Parser {
   // ========================================================================
 
   /// Returns the current token without consuming it.
-  [[nodiscard]] const Token& peek() const noexcept {
-    return tokens_[pos_];
-  }
+  [[nodiscard]] const Token &peek() const noexcept { return tokens_[pos_]; }
 
   /// Returns the token `offset` positions ahead without consuming.
-  [[nodiscard]] const Token& peek_at(uint32_t offset) const noexcept {
+  [[nodiscard]] const Token &peek_at(uint32_t offset) const noexcept {
     auto idx = static_cast<size_t>(pos_) + offset;
-    if (idx >= tokens_.size()) idx = tokens_.size() - 1;  // clamp to Eof
+    if (idx >= tokens_.size())
+      idx = tokens_.size() - 1; // clamp to Eof
     return tokens_[idx];
   }
 
   /// Returns the kind of the current token.
-  [[nodiscard]] token_kind current() const noexcept {
-    return peek().kind;
-  }
+  [[nodiscard]] token_kind current() const noexcept { return peek().kind; }
 
   /// Returns true if the current token has the given kind.
   [[nodiscard]] bool at(token_kind kind) const noexcept {
@@ -194,14 +183,13 @@ class Parser {
   }
 
   /// Returns true if the current token is EOF.
-  [[nodiscard]] bool at_eof() const noexcept {
-    return at(token_kind::eof);
-  }
+  [[nodiscard]] bool at_eof() const noexcept { return at(token_kind::eof); }
 
   /// Consume the current token and return it.
   Token advance() noexcept {
     Token tok = tokens_[pos_];
-    if (pos_ < tokens_.size() - 1) ++pos_;
+    if (pos_ < tokens_.size() - 1)
+      ++pos_;
     return tok;
   }
 
@@ -226,14 +214,16 @@ class Parser {
 
   /// Return the span of the previous token. Used for building spans
   /// that end "just after" the last consumed token.
-  [[nodiscard]] Span previous_span() const noexcept {
-    if (pos_ == 0) return Span::dummy();
+  [[nodiscard]] span previous_span() const noexcept {
+    if (pos_ == 0)
+      return span::dummy();
     return tokens_[pos_ - 1].span;
   }
 
   /// Return the previous token.
-  [[nodiscard]] const Token& previous() const noexcept {
-    if (pos_ == 0) return tokens_[0];
+  [[nodiscard]] const Token &previous() const noexcept {
+    if (pos_ == 0)
+      return tokens_[0];
     return tokens_[pos_ - 1];
   }
 
@@ -246,7 +236,8 @@ class Parser {
 
   /// Skip zero or more NEWLINE tokens.
   void skip_newlines() noexcept {
-    while (at(token_kind::newline)) advance();
+    while (at(token_kind::newline))
+      advance();
   }
 
   /// Expect and consume a NEWLINE. If missing, emit a diagnostic but
@@ -289,7 +280,7 @@ class Parser {
   }
 
   /// Build a diagnostic for a specific span.
-  [[nodiscard]] diagnostic make_error_at(Span span, std::string message) const {
+  [[nodiscard]] diagnostic make_error_at(span span, std::string message) const {
     return diagnostic(diagnostic_level::error, std::move(message), file_id_)
         .with_label(span, "here");
   }
@@ -305,8 +296,7 @@ class Parser {
   void synchronize_to_newline();
 
   /// Synchronize to a set of specific token kinds.
-  template <typename... Kinds>
-  void synchronize_to(Kinds... kinds) {
+  template <typename... Kinds> void synchronize_to(Kinds... kinds) {
     while (!at_eof() && !((at(kinds)) || ...)) {
       advance();
     }
@@ -343,9 +333,8 @@ class Parser {
   /// The `parse_item` callback is invoked for each item in the block.
   /// Returns the list of parsed items.
   template <typename T>
-  std::vector<ast::ptr<T>> parse_block(
-      std::string_view construct_name,
-      std::function<ast::ptr<T>()> parse_item);
+  std::vector<ast::ptr<T>> parse_block(std::string_view construct_name,
+                                       std::function<ast::ptr<T>()> parse_item);
 
   /// Parse either an inline body (`:` expr NEWLINE) or a block body
   /// (`:` NEWLINE INDENT stmts DEDENT). Returns the body as a vector
@@ -365,17 +354,17 @@ class Parser {
   /// Handles trailing commas, missing commas (with helpful diagnostics),
   /// and unclosed delimiters.
   template <typename T>
-  std::vector<T> parse_delimited_list(
-      token_kind open, token_kind close,
-      std::string_view construct_name,
-      std::function<std::optional<T>()> parse_element);
+  std::vector<T>
+  parse_delimited_list(token_kind open, token_kind close,
+                       std::string_view construct_name,
+                       std::function<std::optional<T>()> parse_element);
 
   /// Parse a comma-separated list without surrounding delimiters.
   /// Stops when the current token can't start a new element.
   template <typename T>
-  std::vector<T> parse_comma_list(
-      std::function<std::optional<T>()> parse_element,
-      std::function<bool()> at_end);
+  std::vector<T>
+  parse_comma_list(std::function<std::optional<T>()> parse_element,
+                   std::function<bool()> at_end);
 
   // ========================================================================
   //  Visibility
@@ -403,8 +392,8 @@ class Parser {
 
   [[nodiscard]] ast::ptr<ast::module_decl> parse_module_decl();
   [[nodiscard]] ast::ptr<ast::use_decl> parse_use_decl(ast::visibility vis);
-  [[nodiscard]] ast::ptr<ast::sub_module_decl> parse_sub_module_decl(
-      ast::visibility vis);
+  [[nodiscard]] ast::ptr<ast::sub_module_decl>
+  parse_sub_module_decl(ast::visibility vis);
   [[nodiscard]] ast::ptr<ast::dep_decl> parse_dep_decl();
 
   // ---- Type declarations ----
@@ -438,16 +427,15 @@ class Parser {
 
   // ---- Trait / concept / impl declarations ----
 
-  [[nodiscard]] ast::ptr<ast::trait_decl> parse_trait_decl(
-      ast::visibility vis);
-  [[nodiscard]] ast::ptr<ast::concept_decl> parse_concept_decl(
-      ast::visibility vis);
+  [[nodiscard]] ast::ptr<ast::trait_decl> parse_trait_decl(ast::visibility vis);
+  [[nodiscard]] ast::ptr<ast::concept_decl>
+  parse_concept_decl(ast::visibility vis);
   [[nodiscard]] ast::ptr<ast::impl_decl> parse_impl_decl();
 
   // ---- Function declarations ----
 
-  [[nodiscard]] ast::ptr<ast::func_decl> parse_func_decl(
-      ast::visibility vis, ast::func_modifiers mods);
+  [[nodiscard]] ast::ptr<ast::func_decl>
+  parse_func_decl(ast::visibility vis, ast::func_modifiers mods);
   [[nodiscard]] ast::func_modifiers parse_func_modifiers();
   [[nodiscard]] std::vector<ast::Param> parse_param_list();
   [[nodiscard]] ast::Param parse_param();
@@ -456,8 +444,8 @@ class Parser {
 
   // ---- Static declarations ----
 
-  [[nodiscard]] ast::ptr<ast::static_decl> parse_static_decl(
-      ast::visibility vis);
+  [[nodiscard]] ast::ptr<ast::static_decl>
+  parse_static_decl(ast::visibility vis);
 
   // ========================================================================
   //  Statements
@@ -533,8 +521,8 @@ class Parser {
   /// Try to parse a postfix suffix (`.field`, `[index]`, `(args)`,
   /// `?`, `as Type`). Returns nullptr if the current token doesn't
   /// start a postfix suffix.
-  [[nodiscard]] ast::ptr<ast::Expr> parse_postfix_suffix(
-      ast::ptr<ast::Expr> base);
+  [[nodiscard]] ast::ptr<ast::Expr>
+  parse_postfix_suffix(ast::ptr<ast::Expr> base);
 
   // ---- Call arguments ----
 
@@ -574,18 +562,18 @@ class Parser {
   //  Helper: convert an assign-op token to the AssignOp enum.
   // ========================================================================
 
-  [[nodiscard]] static std::optional<ast::AssignOp> token_to_assign_op(
-      token_kind kind) noexcept;
+  [[nodiscard]] static std::optional<ast::AssignOp>
+  token_to_assign_op(token_kind kind) noexcept;
 
   // ========================================================================
   //  Helper: convert comparison token to BinaryOp.
   // ========================================================================
 
   [[nodiscard]] std::optional<ast::BinaryOp> token_to_cmp_op();
-  [[nodiscard]] static std::optional<ast::BinaryOp> token_to_add_op(
-      token_kind kind) noexcept;
-  [[nodiscard]] static std::optional<ast::BinaryOp> token_to_mul_op(
-      token_kind kind) noexcept;
+  [[nodiscard]] static std::optional<ast::BinaryOp>
+  token_to_add_op(token_kind kind) noexcept;
+  [[nodiscard]] static std::optional<ast::BinaryOp>
+  token_to_mul_op(token_kind kind) noexcept;
 
   // ========================================================================
   //  Member variables
@@ -598,10 +586,10 @@ class Parser {
   FileId file_id_;
 
   /// The diagnostic bag we report errors to.
-  diagnostic_bag& diag_;
+  diagnostic_bag &diag_;
 
   /// Current position in the token stream.
   uint32_t pos_;
 };
 
-}  // namespace kira
+} // namespace kira

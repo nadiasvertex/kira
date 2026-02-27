@@ -12,8 +12,8 @@
 /// Stores the program name and list of source files to be processed
 /// by the Kira compiler.
 struct Config {
-  std::string_view program_name;  ///< The name of the program executable
-  std::vector<std::string> sources;  ///< List of source file paths to process
+  std::string_view program_name;    ///< The name of the program executable
+  std::vector<std::string> sources; ///< List of source file paths to process
 };
 
 /// @brief Parses command-line arguments for the Kira compiler.
@@ -33,9 +33,10 @@ struct Config {
 ///       - Source files passed as remaining arguments
 ///       - Missing source files (allowed, results in empty sources vector)
 ///
-/// @nodiscard Callers should not ignore the return value without checking for errors
+/// @nodiscard Callers should not ignore the return value without checking for
+/// errors
 [[nodiscard]] auto parse_args(int argc, char *argv[])
-    ->std::expected<Config, std::string> {
+    -> std::expected<Config, std::string> {
   if (argc < 1) {
     return std::unexpected{"argc must be at least 1"};
   }

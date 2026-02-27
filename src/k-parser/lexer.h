@@ -6,9 +6,9 @@
 #include <string_view>
 #include <vector>
 
+#include "diagnostic.h"
 #include "source_location.h"
 #include "token.h"
-#include "diagnostic.h"
 
 namespace kira {
 
@@ -34,15 +34,12 @@ namespace kira {
 //      the Lexer and all tokens it produces.
 // ==========================================================================
 class Lexer {
- public:
+public:
   /// Construct a lexer for the given source text. `file_id` is the
   /// identifier for the source file, used in diagnostics. `diag` is the
   /// diagnostic bag to emit errors into.
-  Lexer(std::string_view source, FileId file_id, diagnostic_bag& diag)
-      : source_(source),
-        file_id_(file_id),
-        diag_(diag),
-        pos_(0),
+  Lexer(std::string_view source, FileId file_id, diagnostic_bag &diag)
+      : source_(source), file_id_(file_id), diag_(diag), pos_(0),
         indent_stack_{0} {}
 
   /// Tokenize the entire source and return the token stream.
@@ -65,7 +62,7 @@ class Lexer {
     // Always end with EOF.
     tokens_.push_back(Token{
         .kind = token_kind::eof,
-        .span = Span{static_cast<byte_offset>(source_.size()),
+        .span = span{static_cast<byte_offset>(source_.size()),
                      static_cast<byte_offset>(source_.size())},
         .text = {},
         .error_message = {},
@@ -74,28 +71,29 @@ class Lexer {
     return std::move(tokens_);
   }
 
- private:
+private:
   // ==========================================================================
   //  Character inspection helpers
   // ==========================================================================
 
   [[nodiscard]] char peek() const noexcept {
-    if (pos_ >= source_.size()) return '\0';
+    if (pos_ >= source_.size())
+      return '\0';
     return source_[pos_];
   }
 
   [[nodiscard]] char peek_at(uint32_t offset) const noexcept {
     auto idx = pos_ + offset;
-    if (idx >= source_.size()) return '\0';
+    if (idx >= source_.size())
+      return '\0';
     return source_[idx];
   }
 
-  [[nodiscard]] bool at_end() const noexcept {
-    return pos_ >= source_.size();
-  }
+  [[nodiscard]] bool at_end() const noexcept { return pos_ >= source_.size(); }
 
   char advance() noexcept {
-    if (pos_ >= source_.size()) return '\0';
+    if (pos_ >= source_.size())
+      return '\0';
     return source_[pos_++];
   }
 
@@ -111,8 +109,8 @@ class Lexer {
     return source_.substr(start, pos_ - start);
   }
 
-  [[nodiscard]] Span span_from(byte_offset start) const noexcept {
-    return Span{start, static_cast<byte_offset>(pos_)};
+  [[nodiscard]] span span_from(byte_offset start) const noexcept {
+    return span{start, static_cast<byte_offset>(pos_)};
   }
 
   [[nodiscard]] static bool is_alpha(char c) noexcept {
@@ -160,7 +158,7 @@ class Lexer {
     });
   }
 
-  void emit_synthetic(token_kind kind, Span span, std::string_view text = {}) {
+  void emit_synthetic(token_kind kind, span span, std::string_view text = {}) {
     tokens_.push_back(Token{
         .kind = kind,
         .span = span,
@@ -187,8 +185,7 @@ class Lexer {
     auto eof_pos = static_cast<byte_offset>(source_.size());
     while (indent_stack_.size() > 1) {
       indent_stack_.pop_back();
-      emit_synthetic(token_kind::dedent,
-                     Span{eof_pos, eof_pos});
+      emit_synthetic(token_kind::dedent, span{eof_pos, eof_pos});
     }
   }
 
@@ -205,279 +202,290 @@ class Lexer {
 
     // Skip horizontal whitespace within a line.
     skip_horizontal_whitespace();
-    if (at_end()) return;
+    if (at_end())
+      return;
 
     byte_offset start = static_cast<byte_offset>(pos_);
     char c = advance();
 
     switch (c) {
-      // ---- Newlines ----
-      case '\n':
-        handle_newline(start);
-        return;
+    // ---- Newlines ----
+    case '\n':
+      handle_newline(start);
+      return;
 
-      // ---- Comments ----
-      case '#':
-        skip_comment();
-        // After a comment, we've consumed up to (but not including) the
-        // newline. The newline itself will be handled next iteration.
-        return;
+    // ---- Comments ----
+    case '#':
+      skip_comment();
+      // After a comment, we've consumed up to (but not including) the
+      // newline. The newline itself will be handled next iteration.
+      return;
 
-      // ---- Single-character punctuation ----
-      case '(':
-        ++bracket_depth_;
-        emit(token_kind::lparen, start);
-        return;
-      case ')':
-        if (bracket_depth_ > 0) --bracket_depth_;
-        emit(token_kind::rparen, start);
-        return;
-      case '[':
-        ++bracket_depth_;
-        emit(token_kind::lbracket, start);
-        return;
-      case ']':
-        if (bracket_depth_ > 0) --bracket_depth_;
-        emit(token_kind::rbracket, start);
-        return;
-      case '{':
-        ++bracket_depth_;
-        emit(token_kind::lbrace, start);
-        return;
-      case '}':
-        if (bracket_depth_ > 0) --bracket_depth_;
-        emit(token_kind::rbrace, start);
-        return;
-      case ',':
-        emit(token_kind::comma, start);
-        return;
-      case ';':
-        emit(token_kind::semicolon, start);
-        return;
-      case '@':
-        emit(token_kind::at, start);
-        return;
-      case '?':
-        emit(token_kind::question, start);
-        return;
-      case '`':
-        // Backtick — quote region delimiter. We treat open/close the same
-        // and let the parser track nesting.
-        emit(token_kind::backtick, start);
-        return;
+    // ---- Single-character punctuation ----
+    case '(':
+      ++bracket_depth_;
+      emit(token_kind::lparen, start);
+      return;
+    case ')':
+      if (bracket_depth_ > 0)
+        --bracket_depth_;
+      emit(token_kind::rparen, start);
+      return;
+    case '[':
+      ++bracket_depth_;
+      emit(token_kind::lbracket, start);
+      return;
+    case ']':
+      if (bracket_depth_ > 0)
+        --bracket_depth_;
+      emit(token_kind::rbracket, start);
+      return;
+    case '{':
+      ++bracket_depth_;
+      emit(token_kind::lbrace, start);
+      return;
+    case '}':
+      if (bracket_depth_ > 0)
+        --bracket_depth_;
+      emit(token_kind::rbrace, start);
+      return;
+    case ',':
+      emit(token_kind::comma, start);
+      return;
+    case ';':
+      emit(token_kind::semicolon, start);
+      return;
+    case '@':
+      emit(token_kind::at, start);
+      return;
+    case '?':
+      emit(token_kind::question, start);
+      return;
+    case '`':
+      // Backtick — quote region delimiter. We treat open/close the same
+      // and let the parser track nesting.
+      emit(token_kind::backtick, start);
+      return;
 
-      // ---- Colon ----
-      case ':':
-        emit(token_kind::colon, start);
-        return;
+    // ---- Colon ----
+    case ':':
+      emit(token_kind::colon, start);
+      return;
 
-      // ---- Dot ----
-      case '.':
-        if (match('.')) {
-          if (match('=')) {
-            emit(token_kind::dot_dot_eq, start);
-          } else {
-            emit(token_kind::dot_dot, start);
-          }
-        } else {
-          emit(token_kind::dot, start);
-        }
-        return;
-
-      // ---- Operators ----
-      case '=':
+    // ---- Dot ----
+    case '.':
+      if (match('.')) {
         if (match('=')) {
-          emit(token_kind::eq_eq, start);
-        } else if (match('>')) {
-          emit(token_kind::fat_arrow, start);
+          emit(token_kind::dot_dot_eq, start);
         } else {
-          emit(token_kind::eq, start);
+          emit(token_kind::dot_dot, start);
         }
-        return;
+      } else {
+        emit(token_kind::dot, start);
+      }
+      return;
 
-      case '!':
+    // ---- Operators ----
+    case '=':
+      if (match('=')) {
+        emit(token_kind::eq_eq, start);
+      } else if (match('>')) {
+        emit(token_kind::fat_arrow, start);
+      } else {
+        emit(token_kind::eq, start);
+      }
+      return;
+
+    case '!':
+      if (match('=')) {
+        emit(token_kind::bang_eq, start);
+      } else {
+        // Bare '!' is not a Kira operator. Give a helpful message.
+        emit_error(start,
+                   "unexpected `!` — Kira uses `not` for logical negation, "
+                   "not `!`");
+      }
+      return;
+
+    case '+':
+      if (match('%')) {
         if (match('=')) {
-          emit(token_kind::bang_eq, start);
+          emit(token_kind::plus_percent_eq, start);
         } else {
-          // Bare '!' is not a Kira operator. Give a helpful message.
-          emit_error(start,
-              "unexpected `!` — Kira uses `not` for logical negation, "
-              "not `!`");
+          emit(token_kind::plus_percent, start);
         }
-        return;
-
-      case '+':
-        if (match('%')) {
-          if (match('=')) {
-            emit(token_kind::plus_percent_eq, start);
-          } else {
-            emit(token_kind::plus_percent, start);
-          }
-        } else if (match('|')) {
-          if (match('=')) {
-            emit(token_kind::plus_pipe_eq, start);
-          } else {
-            emit(token_kind::plus_pipe, start);
-          }
-        } else if (match('=')) {
-          emit(token_kind::plus_eq, start);
-        } else {
-          emit(token_kind::plus, start);
-        }
-        return;
-
-      case '-':
-        if (match('>')) {
-          emit(token_kind::arrow, start);
-        } else if (match('%')) {
-          if (match('=')) {
-            emit(token_kind::minus_percent_eq, start);
-          } else {
-            emit(token_kind::minus_percent, start);
-          }
-        } else if (match('|')) {
-          if (match('=')) {
-            emit(token_kind::minus_pipe_eq, start);
-          } else {
-            emit(token_kind::minus_pipe, start);
-          }
-        } else if (match('=')) {
-          emit(token_kind::minus_eq, start);
-        } else {
-          emit(token_kind::minus, start);
-        }
-        return;
-
-      case '*':
-        if (match('%')) {
-          if (match('=')) {
-            emit(token_kind::star_percent_eq, start);
-          } else {
-            emit(token_kind::star_percent, start);
-          }
-        } else if (match('|')) {
-          if (match('=')) {
-            emit(token_kind::star_pipe_eq, start);
-          } else {
-            emit(token_kind::star_pipe, start);
-          }
-        } else if (match('=')) {
-          emit(token_kind::star_eq, start);
-        } else {
-          emit(token_kind::star, start);
-        }
-        return;
-
-      case '/':
+      } else if (match('|')) {
         if (match('=')) {
-          emit(token_kind::slash_eq, start);
+          emit(token_kind::plus_pipe_eq, start);
         } else {
-          emit(token_kind::slash, start);
+          emit(token_kind::plus_pipe, start);
         }
-        return;
+      } else if (match('=')) {
+        emit(token_kind::plus_eq, start);
+      } else {
+        emit(token_kind::plus, start);
+      }
+      return;
 
-      case '%':
+    case '-':
+      if (match('>')) {
+        emit(token_kind::arrow, start);
+      } else if (match('%')) {
         if (match('=')) {
-          emit(token_kind::percent_eq, start);
+          emit(token_kind::minus_percent_eq, start);
         } else {
-          emit(token_kind::percent, start);
+          emit(token_kind::minus_percent, start);
         }
-        return;
-
-      case '&':
+      } else if (match('|')) {
         if (match('=')) {
-          emit(token_kind::amp_eq, start);
+          emit(token_kind::minus_pipe_eq, start);
         } else {
-          emit(token_kind::amp, start);
+          emit(token_kind::minus_pipe, start);
         }
-        return;
+      } else if (match('=')) {
+        emit(token_kind::minus_eq, start);
+      } else {
+        emit(token_kind::minus, start);
+      }
+      return;
 
-      case '|':
+    case '*':
+      if (match('%')) {
         if (match('=')) {
-          emit(token_kind::pipe_eq, start);
+          emit(token_kind::star_percent_eq, start);
         } else {
-          emit(token_kind::pipe, start);
+          emit(token_kind::star_percent, start);
         }
-        return;
-
-      case '^':
+      } else if (match('|')) {
         if (match('=')) {
-          emit(token_kind::caret_eq, start);
+          emit(token_kind::star_pipe_eq, start);
         } else {
-          emit(token_kind::caret, start);
+          emit(token_kind::star_pipe, start);
         }
-        return;
+      } else if (match('=')) {
+        emit(token_kind::star_eq, start);
+      } else {
+        emit(token_kind::star, start);
+      }
+      return;
 
-      case '~':
-        emit(token_kind::tilde, start);
-        return;
+    case '/':
+      if (match('=')) {
+        emit(token_kind::slash_eq, start);
+      } else {
+        emit(token_kind::slash, start);
+      }
+      return;
 
-      case '<':
-        if (match('<')) {
-          if (match('=')) {
-            emit(token_kind::lt_lt_eq, start);
-          } else {
-            emit(token_kind::lt_lt, start);
-          }
-        } else if (match('=')) {
-          emit(token_kind::lt_eq, start);
+    case '%':
+      if (match('=')) {
+        emit(token_kind::percent_eq, start);
+      } else {
+        emit(token_kind::percent, start);
+      }
+      return;
+
+    case '&':
+      if (match('=')) {
+        emit(token_kind::amp_eq, start);
+      } else {
+        emit(token_kind::amp, start);
+      }
+      return;
+
+    case '|':
+      if (match('=')) {
+        emit(token_kind::pipe_eq, start);
+      } else {
+        emit(token_kind::pipe, start);
+      }
+      return;
+
+    case '^':
+      if (match('=')) {
+        emit(token_kind::caret_eq, start);
+      } else {
+        emit(token_kind::caret, start);
+      }
+      return;
+
+    case '~':
+      emit(token_kind::tilde, start);
+      return;
+
+    case '<':
+      if (match('<')) {
+        if (match('=')) {
+          emit(token_kind::lt_lt_eq, start);
         } else {
-          emit(token_kind::lt, start);
+          emit(token_kind::lt_lt, start);
         }
-        return;
+      } else if (match('=')) {
+        emit(token_kind::lt_eq, start);
+      } else {
+        emit(token_kind::lt, start);
+      }
+      return;
 
-      case '>':
-        if (match('>')) {
-          if (match('=')) {
-            emit(token_kind::gt_gt_eq, start);
-          } else {
-            emit(token_kind::gt_gt, start);
-          }
-        } else if (match('=')) {
-          emit(token_kind::gt_eq, start);
+    case '>':
+      if (match('>')) {
+        if (match('=')) {
+          emit(token_kind::gt_gt_eq, start);
         } else {
-          emit(token_kind::gt, start);
+          emit(token_kind::gt_gt, start);
         }
-        return;
+      } else if (match('=')) {
+        emit(token_kind::gt_eq, start);
+      } else {
+        emit(token_kind::gt, start);
+      }
+      return;
 
-      // ---- String literals ----
-      case '"':
-        scan_string(start);
-        return;
+    // ---- String literals ----
+    case '"':
+      scan_string(start);
+      return;
 
-      // ---- Character literals ----
-      case '\'':
-        scan_char(start);
-        return;
+    // ---- Character literals ----
+    case '\'':
+      scan_char(start);
+      return;
 
-      // ---- Numbers ----
-      case '0':
-      case '1': case '2': case '3': case '4':
-      case '5': case '6': case '7': case '8': case '9':
-        scan_number(start);
-        return;
+    // ---- Numbers ----
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+    case '7':
+    case '8':
+    case '9':
+      scan_number(start);
+      return;
 
-      default:
-        // ---- Identifiers and keywords ----
-        if (is_ident_start(c)) {
-          scan_identifier(start);
-          return;
-        }
-
-        // If we reach here, it's a character we truly don't understand.
-        // Give a helpful error based on what it looks like.
-        if (static_cast<unsigned char>(c) > 127) {
-          emit_error(start,
-              "unexpected non-ASCII character — Kira source files must "
-              "be UTF-8, and this byte doesn't appear to be the start "
-              "of a valid token");
-        } else {
-          std::string msg = "unexpected character `";
-          msg += c;
-          msg += "` — this isn't recognized as part of Kira's syntax";
-          emit_error(start, msg);
-        }
+    default:
+      // ---- Identifiers and keywords ----
+      if (is_ident_start(c)) {
+        scan_identifier(start);
         return;
+      }
+
+      // If we reach here, it's a character we truly don't understand.
+      // Give a helpful error based on what it looks like.
+      if (static_cast<unsigned char>(c) > 127) {
+        emit_error(start,
+                   "unexpected non-ASCII character — Kira source files must "
+                   "be UTF-8, and this byte doesn't appear to be the start "
+                   "of a valid token");
+      } else {
+        std::string msg = "unexpected character `";
+        msg += c;
+        msg += "` — this isn't recognized as part of Kira's syntax";
+        emit_error(start, msg);
+      }
+      return;
     }
   }
 
@@ -510,7 +518,8 @@ class Lexer {
 
     // Blank line or comment-only line: skip entirely (no NEWLINE emitted).
     if (at_end() || peek() == '\n') {
-      if (!at_end()) advance();  // consume the newline
+      if (!at_end())
+        advance(); // consume the newline
       // Stay at_line_start_ = true for the next line.
       return;
     }
@@ -534,18 +543,18 @@ class Lexer {
       // Increased indentation — emit INDENT.
       indent_stack_.push_back(indent);
       emit_synthetic(token_kind::indent,
-                     Span{line_begin, static_cast<byte_offset>(pos_)});
+                     span{line_begin, static_cast<byte_offset>(pos_)});
     } else if (indent < current_indent) {
       // Decreased indentation — emit one or more DEDENT tokens.
       while (indent_stack_.size() > 1 && indent < indent_stack_.back()) {
         indent_stack_.pop_back();
         emit_synthetic(token_kind::dedent,
-                       Span{line_begin, static_cast<byte_offset>(pos_)});
+                       span{line_begin, static_cast<byte_offset>(pos_)});
       }
 
       // Check that the dedent lands on a known indent level.
       if (!indent_stack_.empty() && indent != indent_stack_.back()) {
-        auto sp = Span{line_begin, static_cast<byte_offset>(pos_)};
+        auto sp = span{line_begin, static_cast<byte_offset>(pos_)};
         diag_.emit(
             diagnostic(diagnostic_level::error,
                        "inconsistent indentation — this line's indentation "
@@ -620,19 +629,19 @@ class Lexer {
     if (first == '0' && !at_end()) {
       char next = peek();
       if (next == 'x' || next == 'X') {
-        advance();  // consume 'x'
+        advance(); // consume 'x'
         scan_hex_digits(start);
         emit(token_kind::int_lit, start);
         return;
       }
       if (next == 'o' || next == 'O') {
-        advance();  // consume 'o'
+        advance(); // consume 'o'
         scan_oct_digits(start);
         emit(token_kind::int_lit, start);
         return;
       }
       if (next == 'b' || next == 'B') {
-        advance();  // consume 'b'
+        advance(); // consume 'b'
         scan_bin_digits(start);
         emit(token_kind::int_lit, start);
         return;
@@ -645,7 +654,7 @@ class Lexer {
     // Check for float: either '.' followed by digit, or 'e'/'E'.
     if (!at_end() && peek() == '.' && peek_at(1) != '.' &&
         is_digit(peek_at(1))) {
-      advance();  // consume '.'
+      advance(); // consume '.'
       scan_dec_digits();
       scan_optional_exponent();
       emit(token_kind::float_lit, start);
@@ -669,7 +678,8 @@ class Lexer {
 
   void scan_hex_digits(byte_offset start) {
     if (at_end() || !is_hex_digit(peek())) {
-      emit_error(start,
+      emit_error(
+          start,
           "expected hexadecimal digits after `0x` — for example, `0xFF` or "
           "`0x1A2B`");
       return;
@@ -681,7 +691,8 @@ class Lexer {
 
   void scan_oct_digits(byte_offset start) {
     if (at_end() || !is_oct_digit(peek())) {
-      emit_error(start,
+      emit_error(
+          start,
           "expected octal digits (0-7) after `0o` — for example, `0o777`");
       return;
     }
@@ -690,7 +701,7 @@ class Lexer {
       if (is_digit(peek()) && !is_oct_digit(peek()) && peek() != '_') {
         auto bad_start = static_cast<byte_offset>(pos_);
         advance();
-        auto sp = Span{bad_start, static_cast<byte_offset>(pos_)};
+        auto sp = span{bad_start, static_cast<byte_offset>(pos_)};
         diag_.emit(
             diagnostic(diagnostic_level::error,
                        std::format("the digit `{}` is not valid in an octal "
@@ -708,15 +719,15 @@ class Lexer {
   void scan_bin_digits(byte_offset start) {
     if (at_end() || !is_bin_digit(peek())) {
       emit_error(start,
-          "expected binary digits (0 or 1) after `0b` — for example, "
-          "`0b1010`");
+                 "expected binary digits (0 or 1) after `0b` — for example, "
+                 "`0b1010`");
       return;
     }
     while (!at_end() && (is_bin_digit(peek()) || peek() == '_')) {
       if (is_digit(peek()) && !is_bin_digit(peek()) && peek() != '_') {
         auto bad_start = static_cast<byte_offset>(pos_);
         advance();
-        auto sp = Span{bad_start, static_cast<byte_offset>(pos_)};
+        auto sp = span{bad_start, static_cast<byte_offset>(pos_)};
         diag_.emit(
             diagnostic(diagnostic_level::error,
                        std::format("the digit `{}` is not valid in a binary "
@@ -732,19 +743,19 @@ class Lexer {
   }
 
   void scan_optional_exponent() {
-    if (at_end() || (peek() != 'e' && peek() != 'E')) return;
-    advance();  // consume 'e' or 'E'
+    if (at_end() || (peek() != 'e' && peek() != 'E'))
+      return;
+    advance(); // consume 'e' or 'E'
     if (!at_end() && (peek() == '+' || peek() == '-')) {
       advance();
     }
     if (at_end() || !is_digit(peek())) {
       auto pos = static_cast<byte_offset>(pos_);
-      diag_.emit(
-          diagnostic(diagnostic_level::error,
-                     "expected digits after the exponent `e` in a float "
-                     "literal — for example, `1.5e10` or `2.0e-3`",
-                     file_id_)
-              .with_label(Span{pos, pos + 1}, "expected a digit here"));
+      diag_.emit(diagnostic(diagnostic_level::error,
+                            "expected digits after the exponent `e` in a float "
+                            "literal — for example, `1.5e10` or `2.0e-3`",
+                            file_id_)
+                     .with_label(span{pos, pos + 1}, "expected a digit here"));
       return;
     }
     scan_dec_digits();
@@ -763,21 +774,21 @@ class Lexer {
       char c = peek();
 
       if (c == '"') {
-        advance();  // consume closing quote
+        advance(); // consume closing quote
         emit(token_kind::string_lit, start);
         return;
       }
 
       if (c == '\n') {
         // Unterminated string at end of line.
-          diag_.emit(
+        diag_.emit(
             diagnostic(diagnostic_level::error,
                        "unterminated string literal — the string started here "
                        "but the line ended before a closing `\"` was found",
                        file_id_)
-                .with_label(Span{open_quote, open_quote + 1},
+                .with_label(span{open_quote, open_quote + 1},
                             "string starts here")
-                .with_label(Span{static_cast<byte_offset>(pos_),
+                .with_label(span{static_cast<byte_offset>(pos_),
                                  static_cast<byte_offset>(pos_) + 1},
                             "expected a closing `\"` before end of line")
                 .with_help("Add a closing `\"` to end the string, or if you "
@@ -790,7 +801,7 @@ class Lexer {
       }
 
       if (c == '\\') {
-        advance();  // consume backslash
+        advance(); // consume backslash
         scan_escape_sequence(open_quote);
         continue;
       }
@@ -799,20 +810,24 @@ class Lexer {
         // String interpolation — we emit the whole string as one token.
         // The parser will handle splitting interpolation expressions.
         // For now, find the matching '}'.
-        advance();  // consume '{'
+        advance(); // consume '{'
         int depth = 1;
         while (!at_end() && depth > 0) {
           char ic = advance();
-          if (ic == '{') ++depth;
-          else if (ic == '}') --depth;
+          if (ic == '{')
+            ++depth;
+          else if (ic == '}')
+            --depth;
           else if (ic == '"') {
             // Nested string inside interpolation — scan recursively.
             // For simplicity, just skip balanced quotes.
             while (!at_end() && peek() != '"') {
-              if (peek() == '\\') advance();
+              if (peek() == '\\')
+                advance();
               advance();
             }
-            if (!at_end()) advance();  // consume closing quote
+            if (!at_end())
+              advance(); // consume closing quote
           }
         }
         if (depth > 0) {
@@ -821,7 +836,7 @@ class Lexer {
                          "unterminated string interpolation — the `{` inside "
                          "this string was never closed with a matching `}`",
                          file_id_)
-                  .with_label(Span{open_quote, open_quote + 1},
+                  .with_label(span{open_quote, open_quote + 1},
                               "in this string")
                   .with_help("Make sure every `{` inside a string has a "
                              "matching `}`. If you want a literal `{`, "
@@ -830,7 +845,7 @@ class Lexer {
         continue;
       }
 
-      advance();  // normal character
+      advance(); // normal character
     }
 
     // Reached EOF without closing quote.
@@ -839,8 +854,7 @@ class Lexer {
                    "unterminated string literal — reached end of file without "
                    "finding a closing `\"`",
                    file_id_)
-            .with_label(Span{open_quote, open_quote + 1},
-                        "string starts here")
+            .with_label(span{open_quote, open_quote + 1}, "string starts here")
             .with_help("Add a closing `\"` to end this string."));
     emit(token_kind::string_lit, start);
   }
@@ -852,7 +866,7 @@ class Lexer {
                      "incomplete escape sequence at end of file — a `\\` was "
                      "found but nothing follows it",
                      file_id_)
-              .with_label(Span{static_cast<byte_offset>(pos_ - 1),
+              .with_label(span{static_cast<byte_offset>(pos_ - 1),
                                static_cast<byte_offset>(pos_)},
                           "this backslash needs something after it")
               .with_help("Valid escape sequences include: \\n (newline), "
@@ -864,91 +878,98 @@ class Lexer {
 
     char c = advance();
     switch (c) {
-      case 'n': case 't': case 'r': case '"': case '\'':
-      case '\\': case '{': case '}':
-        return;  // Valid simple escape.
+    case 'n':
+    case 't':
+    case 'r':
+    case '"':
+    case '\'':
+    case '\\':
+    case '{':
+    case '}':
+      return; // Valid simple escape.
 
-      case 'u': {
-        // Unicode escape: \u{XXXX}
-        if (!match('{')) {
-          diag_.emit(
-              diagnostic(diagnostic_level::error,
-                         "expected `{` after `\\u` in Unicode escape — the "
-                         "correct syntax is `\\u{XXXX}` where XXXX are hex digits",
-                         file_id_)
-                  .with_label(Span{static_cast<byte_offset>(pos_ - 2),
-                                   static_cast<byte_offset>(pos_)},
-                              "here")
-                  .with_help("Unicode escapes use the format `\\u{1F600}` — "
-                             "hex digits inside curly braces."));
-          return;
-        }
-        if (at_end() || !is_hex_digit(peek())) {
-          diag_.emit(
-              diagnostic(diagnostic_level::error,
-                         "expected hex digits inside `\\u{...}` Unicode escape",
-                         file_id_)
-                  .with_label(Span{static_cast<byte_offset>(pos_ - 3),
-                                   static_cast<byte_offset>(pos_)},
-                              "here")
-                  .with_help("Put one to six hexadecimal digits inside the "
-                             "braces, like `\\u{41}` for 'A' or `\\u{1F600}` "
-                             "for a smiley emoji."));
-          return;
-        }
-        uint32_t hex_count = 0;
-        while (!at_end() && is_hex_digit(peek()) && hex_count < 6) {
-          advance();
-          ++hex_count;
-        }
-        if (!match('}')) {
-          diag_.emit(
-              diagnostic(diagnostic_level::error,
-                         "expected closing `}` for Unicode escape `\\u{...}`",
-                         file_id_)
-                  .with_label(Span{static_cast<byte_offset>(pos_ - hex_count - 3),
-                                   static_cast<byte_offset>(pos_)},
-                              "this Unicode escape is missing its closing `}`")
-                  .with_help("Make sure the escape is written as "
-                             "`\\u{digits}` with a closing brace."));
-        }
+    case 'u': {
+      // Unicode escape: \u{XXXX}
+      if (!match('{')) {
+        diag_.emit(
+            diagnostic(
+                diagnostic_level::error,
+                "expected `{` after `\\u` in Unicode escape — the "
+                "correct syntax is `\\u{XXXX}` where XXXX are hex digits",
+                file_id_)
+                .with_label(span{static_cast<byte_offset>(pos_ - 2),
+                                 static_cast<byte_offset>(pos_)},
+                            "here")
+                .with_help("Unicode escapes use the format `\\u{1F600}` — "
+                           "hex digits inside curly braces."));
         return;
       }
-
-      default: {
-        // Unknown escape sequence — give a helpful error.
-        auto esc_span = Span{static_cast<byte_offset>(pos_ - 2),
-                             static_cast<byte_offset>(pos_)};
-        std::string msg = "unknown escape sequence `\\";
-        msg += c;
-        msg += "`";
-
-        auto diag = diagnostic(diagnostic_level::error, msg, file_id_)
-            .with_label(esc_span, "not a recognized escape");
-
-        // Suggest common mistakes.
-        if (c == '0') {
-          diag.with_help(
-              "Kira doesn't have a `\\0` escape for null. If you need a "
-              "null byte, use `\\u{0}` instead.");
-        } else if (c == 'x') {
-          diag.with_help(
-              "Kira doesn't have `\\xNN` hex escapes. Use `\\u{NN}` for "
-              "Unicode code points instead.");
-        } else if (c == 'a' || c == 'b' || c == 'f' || c == 'v') {
-          diag.with_help(
-              "The recognized escape sequences are: \\n \\t \\r \\\" \\' "
-              "\\\\ \\{ \\} and \\u{XXXX} for Unicode.");
-        } else {
-          diag.with_help(
-              "Valid escape sequences: \\n (newline), \\t (tab), "
-              "\\r (carriage return), \\\" (quote), \\' (single quote), "
-              "\\\\ (backslash), \\{ \\} (braces), \\u{XXXX} (Unicode).");
-        }
-
-        diag_.emit(std::move(diag));
+      if (at_end() || !is_hex_digit(peek())) {
+        diag_.emit(
+            diagnostic(diagnostic_level::error,
+                       "expected hex digits inside `\\u{...}` Unicode escape",
+                       file_id_)
+                .with_label(span{static_cast<byte_offset>(pos_ - 3),
+                                 static_cast<byte_offset>(pos_)},
+                            "here")
+                .with_help("Put one to six hexadecimal digits inside the "
+                           "braces, like `\\u{41}` for 'A' or `\\u{1F600}` "
+                           "for a smiley emoji."));
         return;
       }
+      uint32_t hex_count = 0;
+      while (!at_end() && is_hex_digit(peek()) && hex_count < 6) {
+        advance();
+        ++hex_count;
+      }
+      if (!match('}')) {
+        diag_.emit(
+            diagnostic(diagnostic_level::error,
+                       "expected closing `}` for Unicode escape `\\u{...}`",
+                       file_id_)
+                .with_label(span{static_cast<byte_offset>(pos_ - hex_count - 3),
+                                 static_cast<byte_offset>(pos_)},
+                            "this Unicode escape is missing its closing `}`")
+                .with_help("Make sure the escape is written as "
+                           "`\\u{digits}` with a closing brace."));
+      }
+      return;
+    }
+
+    default: {
+      // Unknown escape sequence — give a helpful error.
+      auto esc_span = span{static_cast<byte_offset>(pos_ - 2),
+                           static_cast<byte_offset>(pos_)};
+      std::string msg = "unknown escape sequence `\\";
+      msg += c;
+      msg += "`";
+
+      auto diag = diagnostic(diagnostic_level::error, msg, file_id_)
+                      .with_label(esc_span, "not a recognized escape");
+
+      // Suggest common mistakes.
+      if (c == '0') {
+        diag.with_help(
+            "Kira doesn't have a `\\0` escape for null. If you need a "
+            "null byte, use `\\u{0}` instead.");
+      } else if (c == 'x') {
+        diag.with_help(
+            "Kira doesn't have `\\xNN` hex escapes. Use `\\u{NN}` for "
+            "Unicode code points instead.");
+      } else if (c == 'a' || c == 'b' || c == 'f' || c == 'v') {
+        diag.with_help(
+            "The recognized escape sequences are: \\n \\t \\r \\\" \\' "
+            "\\\\ \\{ \\} and \\u{XXXX} for Unicode.");
+      } else {
+        diag.with_help(
+            "Valid escape sequences: \\n (newline), \\t (tab), "
+            "\\r (carriage return), \\\" (quote), \\' (single quote), "
+            "\\\\ (backslash), \\{ \\} (braces), \\u{XXXX} (Unicode).");
+      }
+
+      diag_.emit(std::move(diag));
+      return;
+    }
     }
   }
 
@@ -964,7 +985,7 @@ class Lexer {
                      "unterminated character literal — expected a character "
                      "and closing `'`",
                      file_id_)
-              .with_label(Span{start, static_cast<byte_offset>(pos_)},
+              .with_label(span{start, static_cast<byte_offset>(pos_)},
                           "this `'` starts a character literal")
               .with_help("Character literals contain exactly one character: "
                          "`'a'`, `'\\n'`, `'\\u{1F600}'`."));
@@ -975,20 +996,19 @@ class Lexer {
     if (peek() == '\'') {
       // Empty character literal.
       advance();
-      diag_.emit(
-          diagnostic(diagnostic_level::error,
-                     "empty character literal — character literals must "
-                     "contain exactly one character",
-                     file_id_)
-              .with_label(span_from(start), "this is empty")
-              .with_help("Did you mean `' '` (a space), or perhaps a "
-                         "string `\"\"`?"));
+      diag_.emit(diagnostic(diagnostic_level::error,
+                            "empty character literal — character literals must "
+                            "contain exactly one character",
+                            file_id_)
+                     .with_label(span_from(start), "this is empty")
+                     .with_help("Did you mean `' '` (a space), or perhaps a "
+                                "string `\"\"`?"));
       emit(token_kind::char_lit, start);
       return;
     }
 
     if (peek() == '\\') {
-      advance();  // consume backslash
+      advance(); // consume backslash
       scan_escape_sequence(start);
     } else if (peek() == '\n') {
       diag_.emit(
@@ -996,20 +1016,23 @@ class Lexer {
                      "unterminated character literal — the line ended before "
                      "the closing `'` was found",
                      file_id_)
-              .with_label(Span{start, static_cast<byte_offset>(pos_)},
+              .with_label(span{start, static_cast<byte_offset>(pos_)},
                           "character literal starts here")
               .with_help("Add a closing `'` after the character."));
       emit(token_kind::char_lit, start);
       return;
     } else {
-      advance();  // consume the character
+      advance(); // consume the character
 
       // Handle multi-byte UTF-8: consume continuation bytes.
       unsigned char first_byte = static_cast<unsigned char>(source_[pos_ - 1]);
       int extra_bytes = 0;
-      if ((first_byte & 0xE0) == 0xC0) extra_bytes = 1;
-      else if ((first_byte & 0xF0) == 0xE0) extra_bytes = 2;
-      else if ((first_byte & 0xF8) == 0xF0) extra_bytes = 3;
+      if ((first_byte & 0xE0) == 0xC0)
+        extra_bytes = 1;
+      else if ((first_byte & 0xF0) == 0xE0)
+        extra_bytes = 2;
+      else if ((first_byte & 0xF8) == 0xF0)
+        extra_bytes = 3;
       for (int i = 0; i < extra_bytes && !at_end(); ++i) {
         advance();
       }
@@ -1020,11 +1043,12 @@ class Lexer {
       // Check if there are more characters — maybe they meant a string?
       if (!at_end() && peek() != '\n' && peek() != '\'') {
         // Multiple characters in char literal.
-          while (!at_end() && peek() != '\'' && peek() != '\n') {
+        while (!at_end() && peek() != '\'' && peek() != '\n') {
           advance();
         }
         bool has_close = !at_end() && peek() == '\'';
-        if (has_close) advance();
+        if (has_close)
+          advance();
 
         diag_.emit(
             diagnostic(diagnostic_level::error,
@@ -1042,13 +1066,13 @@ class Lexer {
           diagnostic(diagnostic_level::error,
                      "unterminated character literal — expected a closing `'`",
                      file_id_)
-              .with_label(Span{start, static_cast<byte_offset>(pos_)},
+              .with_label(span{start, static_cast<byte_offset>(pos_)},
                           "character literal starts here"));
       emit(token_kind::char_lit, start);
       return;
     }
 
-    advance();  // consume closing quote
+    advance(); // consume closing quote
     emit(token_kind::char_lit, start);
   }
 
@@ -1058,7 +1082,7 @@ class Lexer {
 
   std::string_view source_;
   FileId file_id_;
-  diagnostic_bag& diag_;
+  diagnostic_bag &diag_;
 
   size_t pos_;
   std::vector<Token> tokens_;
@@ -1077,4 +1101,4 @@ class Lexer {
   bool at_line_start_ = true;
 };
 
-}  // namespace kira
+} // namespace kira

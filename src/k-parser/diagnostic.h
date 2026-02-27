@@ -44,43 +44,51 @@ enum class diagnostic_level : uint8_t {
 
 /// Returns a human-readable label for a diagnostic level, suitable for
 /// rendering in a terminal with ANSI colors.
-[[nodiscard]] constexpr std::string_view diagnostic_level_name(
-    diagnostic_level level) noexcept {
+[[nodiscard]] constexpr std::string_view
+diagnostic_level_name(diagnostic_level level) noexcept {
   switch (level) {
-    case diagnostic_level::error:   return "error";
-    case diagnostic_level::warning: return "warning";
-    case diagnostic_level::note:    return "note";
-    case diagnostic_level::help:    return "help";
+  case diagnostic_level::error:
+    return "error";
+  case diagnostic_level::warning:
+    return "warning";
+  case diagnostic_level::note:
+    return "note";
+  case diagnostic_level::help:
+    return "help";
   }
   return "unknown";
 }
 
 /// ANSI color codes for pretty-printing diagnostics.
 namespace ansi {
-  constexpr std::string_view Reset    = "\033[0m";
-  constexpr std::string_view Bold     = "\033[1m";
-  constexpr std::string_view Dim      = "\033[2m";
-  constexpr std::string_view Red      = "\033[31m";
-  constexpr std::string_view Yellow   = "\033[33m";
-  constexpr std::string_view Blue     = "\033[34m";
-  constexpr std::string_view Magenta  = "\033[35m";
-  constexpr std::string_view Cyan     = "\033[36m";
-  constexpr std::string_view BoldRed     = "\033[1;31m";
-  constexpr std::string_view BoldYellow  = "\033[1;33m";
-  constexpr std::string_view BoldBlue    = "\033[1;34m";
-  constexpr std::string_view BoldMagenta = "\033[1;35m";
-  constexpr std::string_view BoldCyan    = "\033[1;36m";
-  constexpr std::string_view BoldGreen   = "\033[1;32m";
-}  // namespace ansi
+constexpr std::string_view Reset = "\033[0m";
+constexpr std::string_view Bold = "\033[1m";
+constexpr std::string_view Dim = "\033[2m";
+constexpr std::string_view Red = "\033[31m";
+constexpr std::string_view Yellow = "\033[33m";
+constexpr std::string_view Blue = "\033[34m";
+constexpr std::string_view Magenta = "\033[35m";
+constexpr std::string_view Cyan = "\033[36m";
+constexpr std::string_view BoldRed = "\033[1;31m";
+constexpr std::string_view BoldYellow = "\033[1;33m";
+constexpr std::string_view BoldBlue = "\033[1;34m";
+constexpr std::string_view BoldMagenta = "\033[1;35m";
+constexpr std::string_view BoldCyan = "\033[1;36m";
+constexpr std::string_view BoldGreen = "\033[1;32m";
+} // namespace ansi
 
 /// Returns the ANSI color for a diagnostic level.
-[[nodiscard]] constexpr std::string_view diagnostic_level_color(
-    diagnostic_level level) noexcept {
+[[nodiscard]] constexpr std::string_view
+diagnostic_level_color(diagnostic_level level) noexcept {
   switch (level) {
-    case diagnostic_level::error:   return ansi::BoldRed;
-    case diagnostic_level::warning: return ansi::BoldYellow;
-    case diagnostic_level::note:    return ansi::BoldBlue;
-    case diagnostic_level::help:    return ansi::BoldGreen;
+  case diagnostic_level::error:
+    return ansi::BoldRed;
+  case diagnostic_level::warning:
+    return ansi::BoldYellow;
+  case diagnostic_level::note:
+    return ansi::BoldBlue;
+  case diagnostic_level::help:
+    return ansi::BoldGreen;
   }
   return ansi::Reset;
 }
@@ -91,12 +99,12 @@ namespace ansi {
 //  of the source that are relevant to the problem.
 // ==========================================================================
 struct diagnostic_label {
-  Span span;
+  span span;
   std::string message;
-  diagnostic_level level;  ///< Controls the underline color/style
+  diagnostic_level level; ///< Controls the underline color/style
 
-  diagnostic_label(Span s, std::string msg,
-                  diagnostic_level lvl = diagnostic_level::error)
+  diagnostic_label(span s, std::string msg,
+                   diagnostic_level lvl = diagnostic_level::error)
       : span(s), message(std::move(msg)), level(lvl) {}
 };
 
@@ -105,9 +113,9 @@ struct diagnostic_label {
 //  When we know how to fix the problem, we show it.
 // ==========================================================================
 struct suggested_fix {
-  std::string description;  ///< e.g., "add a colon here"
-  Span span;                ///< The span to replace (may be empty for insertions)
-  std::string replacement;  ///< The text to insert/replace with
+  std::string description; ///< e.g., "add a colon here"
+  span span; ///< The span to replace (may be empty for insertions)
+  std::string replacement; ///< The text to insert/replace with
 };
 
 // ==========================================================================
@@ -143,59 +151,58 @@ struct diagnostic {
       : level(lvl), message(std::move(msg)), file_id(fid) {}
 
   /// Add a primary label (points at the main error site).
-  diagnostic& with_label(Span span, std::string msg) & {
+  diagnostic &with_label(span span, std::string msg) & {
     labels.emplace_back(span, std::move(msg), level);
     return *this;
   }
 
-  diagnostic&& with_label(Span span, std::string msg) && {
+  diagnostic &&with_label(span span, std::string msg) && {
     labels.emplace_back(span, std::move(msg), level);
     return std::move(*this);
   }
 
   /// Add a secondary label (points at related code).
-  diagnostic& with_secondary_label(Span span, std::string msg) & {
+  diagnostic &with_secondary_label(span span, std::string msg) & {
     labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return *this;
   }
 
-  diagnostic&& with_secondary_label(Span span, std::string msg) && {
+  diagnostic &&with_secondary_label(span span, std::string msg) && {
     labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return std::move(*this);
   }
 
   /// Add a note — extra context about why this is an error.
-  diagnostic& with_note(std::string msg) & {
+  diagnostic &with_note(std::string msg) & {
     children.emplace_back(diagnostic_level::note, std::move(msg), file_id);
     return *this;
   }
 
-  diagnostic&& with_note(std::string msg) && {
+  diagnostic &&with_note(std::string msg) && {
     children.emplace_back(diagnostic_level::note, std::move(msg), file_id);
     return std::move(*this);
   }
 
   /// Add a help message — a suggestion for how to fix the problem.
-  diagnostic& with_help(std::string msg) & {
+  diagnostic &with_help(std::string msg) & {
     children.emplace_back(diagnostic_level::help, std::move(msg), file_id);
     return *this;
   }
 
-  diagnostic&& with_help(std::string msg) && {
+  diagnostic &&with_help(std::string msg) && {
     children.emplace_back(diagnostic_level::help, std::move(msg), file_id);
     return std::move(*this);
   }
 
   /// Add a suggested fix (machine-applicable).
-  diagnostic& with_fix(std::string desc, Span span,
-                        std::string replacement) & {
+  diagnostic &with_fix(std::string desc, span span, std::string replacement) & {
     fixes.push_back(
         suggested_fix{std::move(desc), span, std::move(replacement)});
     return *this;
   }
 
-  diagnostic&& with_fix(std::string desc, Span span,
-                         std::string replacement) && {
+  diagnostic &&with_fix(std::string desc, span span,
+                        std::string replacement) && {
     fixes.push_back(
         suggested_fix{std::move(desc), span, std::move(replacement)});
     return std::move(*this);
@@ -218,7 +225,7 @@ struct diagnostic {
 //  limit to prevent cascading error floods that confuse rather than help.
 // ==========================================================================
 class diagnostic_bag {
- public:
+public:
   static constexpr uint32_t kDefaultMaxErrors = 50;
 
   explicit diagnostic_bag(uint32_t max_errors = kDefaultMaxErrors)
@@ -242,7 +249,7 @@ class diagnostic_bag {
         return;
       }
       if (error_count_ > max_errors_) {
-        return;  // Silently drop — we already told the user.
+        return; // Silently drop — we already told the user.
       }
     }
     if (diag.is_warning()) {
@@ -252,9 +259,10 @@ class diagnostic_bag {
   }
 
   /// Convenience: emit an error.
-  void error(FileId file_id, std::string message, Span span,
+  void error(FileId file_id, std::string message, span span,
              std::string label_msg = "") {
-    auto diag = diagnostic(diagnostic_level::error, std::move(message), file_id);
+    auto diag =
+        diagnostic(diagnostic_level::error, std::move(message), file_id);
     if (!label_msg.empty()) {
       diag.with_label(span, std::move(label_msg));
     } else {
@@ -264,7 +272,7 @@ class diagnostic_bag {
   }
 
   /// Convenience: emit a warning.
-  void warning(FileId file_id, std::string message, Span span,
+  void warning(FileId file_id, std::string message, span span,
                std::string label_msg = "") {
     auto diag =
         diagnostic(diagnostic_level::warning, std::move(message), file_id);
@@ -290,11 +298,11 @@ class diagnostic_bag {
     return error_count_ > max_errors_;
   }
 
-  [[nodiscard]] const std::vector<diagnostic>& diagnostics() const noexcept {
+  [[nodiscard]] const std::vector<diagnostic> &diagnostics() const noexcept {
     return diagnostics_;
   }
 
-  [[nodiscard]] std::vector<diagnostic>& diagnostics() noexcept {
+  [[nodiscard]] std::vector<diagnostic> &diagnostics() noexcept {
     return diagnostics_;
   }
 
@@ -316,7 +324,7 @@ class diagnostic_bag {
     cascade_reported_ = false;
   }
 
- private:
+private:
   std::vector<diagnostic> diagnostics_;
   uint32_t error_count_ = 0;
   uint32_t warning_count_ = 0;
@@ -334,30 +342,30 @@ class diagnostic_bag {
 //  than once to understand it, the error message has failed.
 // ==========================================================================
 class diagnostic_renderer {
- public:
-  explicit diagnostic_renderer(const source_file& file, bool use_color = true)
+public:
+  explicit diagnostic_renderer(const source_file &file, bool use_color = true)
       : file_(file), use_color_(use_color) {}
 
   /// Render a single diagnostic to a string.
-  [[nodiscard]] std::string render(const diagnostic& diag) const {
+  [[nodiscard]] std::string render(const diagnostic &diag) const {
     std::string out;
     render_diagnostic(out, diag, /*indent=*/0);
     return out;
   }
 
   /// Render all diagnostics in a bag.
-  [[nodiscard]] std::string render_all(const diagnostic_bag& bag) const {
+  [[nodiscard]] std::string render_all(const diagnostic_bag &bag) const {
     std::string out;
-    for (const auto& diag : bag.diagnostics()) {
+    for (const auto &diag : bag.diagnostics()) {
       render_diagnostic(out, diag, /*indent=*/0);
       out += '\n';
     }
     return out;
   }
 
- private:
-  void render_diagnostic(std::string& out, const diagnostic& diag,
-                          int indent) const {
+private:
+  void render_diagnostic(std::string &out, const diagnostic &diag,
+                         int indent) const {
     // Header line: "error: message"
     std::string prefix(static_cast<size_t>(indent * 2), ' ');
 
@@ -380,35 +388,34 @@ class diagnostic_renderer {
     }
 
     // Render labels with source context.
-    for (const auto& label : diag.labels) {
+    for (const auto &label : diag.labels) {
       render_label(out, label, prefix);
     }
 
     // Render suggested fixes.
-    for (const auto& fix : diag.fixes) {
+    for (const auto &fix : diag.fixes) {
       render_fix(out, fix, prefix);
     }
 
     // Render child diagnostics (notes, help).
-    for (const auto& child : diag.children) {
+    for (const auto &child : diag.children) {
       render_diagnostic(out, child, indent + 1);
     }
   }
 
-  void render_label(std::string& out, const diagnostic_label& label,
-                    const std::string& prefix) const {
+  void render_label(std::string &out, const diagnostic_label &label,
+                    const std::string &prefix) const {
     if (label.span.empty() && label.span.start == 0) {
-      return;  // Dummy span — nothing to render.
+      return; // Dummy span — nothing to render.
     }
 
     auto start_lc = file_.resolve(label.span.start);
-    auto end_lc = file_.resolve(
-        label.span.end > label.span.start ? label.span.end - 1
-                                          : label.span.start);
+    auto end_lc =
+        file_.resolve(label.span.end > label.span.start ? label.span.end - 1
+                                                        : label.span.start);
 
     // Location line: "  --> file.kira:10:5"
-    std::string arrow_color =
-        use_color_ ? std::string(ansi::BoldBlue) : "";
+    std::string arrow_color = use_color_ ? std::string(ansi::BoldBlue) : "";
     std::string reset = use_color_ ? std::string(ansi::Reset) : "";
 
     out += prefix;
@@ -427,14 +434,12 @@ class diagnostic_renderer {
     // Source line(s) with underline.
     // For simplicity we render single-line labels with a caret underline.
     // Multi-line labels get a vertical bar in the margin.
-    std::string line_color =
-        use_color_ ? std::string(ansi::BoldBlue) : "";
+    std::string line_color = use_color_ ? std::string(ansi::BoldBlue) : "";
     std::string underline_color =
         use_color_ ? std::string(diagnostic_level_color(label.level)) : "";
 
-    uint32_t gutter_width = count_digits(
-        std::max(start_lc.line, end_lc.line));
-    gutter_width = std::max(gutter_width, 3u);  // Minimum gutter width.
+    uint32_t gutter_width = count_digits(std::max(start_lc.line, end_lc.line));
+    gutter_width = std::max(gutter_width, 3u); // Minimum gutter width.
 
     if (start_lc.line == end_lc.line) {
       // Single-line label.
@@ -453,16 +458,17 @@ class diagnostic_renderer {
       // Underline.
       uint32_t caret_start = start_lc.column - 1;
       uint32_t caret_len = label.span.len();
-      if (caret_len == 0) caret_len = 1;
+      if (caret_len == 0)
+        caret_len = 1;
 
       // Clamp to line length.
       if (caret_start > source_line.size()) {
         caret_start = static_cast<uint32_t>(source_line.size());
       }
       if (caret_start + caret_len > source_line.size()) {
-        caret_len =
-            static_cast<uint32_t>(source_line.size()) - caret_start;
-        if (caret_len == 0) caret_len = 1;
+        caret_len = static_cast<uint32_t>(source_line.size()) - caret_start;
+        if (caret_len == 0)
+          caret_len = 1;
       }
 
       out += prefix;
@@ -483,8 +489,8 @@ class diagnostic_renderer {
       // Multi-line span — show first and last lines with a vertical
       // connector in between.
       auto first_line = file_.line_at(label.span.start);
-      auto last_line = file_.line_at(
-          label.span.end > 0 ? label.span.end - 1 : label.span.end);
+      auto last_line = file_.line_at(label.span.end > 0 ? label.span.end - 1
+                                                        : label.span.end);
 
       // First line.
       out += prefix;
@@ -541,10 +547,9 @@ class diagnostic_renderer {
     }
   }
 
-  void render_fix(std::string& out, const suggested_fix& fix,
-                  const std::string& prefix) const {
-    std::string help_color =
-        use_color_ ? std::string(ansi::BoldGreen) : "";
+  void render_fix(std::string &out, const suggested_fix &fix,
+                  const std::string &prefix) const {
+    std::string help_color = use_color_ ? std::string(ansi::BoldGreen) : "";
     std::string reset = use_color_ ? std::string(ansi::Reset) : "";
 
     out += prefix;
@@ -569,8 +574,7 @@ class diagnostic_renderer {
 
         // Reconstruct the line with the fix applied.
         auto source_line = file_.line_at(fix.span.start);
-        auto line_start_offset =
-            fix.span.start - (lc.column - 1);
+        auto line_start_offset = fix.span.start - (lc.column - 1);
 
         // Characters before the replacement.
         uint32_t pre_len = fix.span.start - line_start_offset;
@@ -602,12 +606,14 @@ class diagnostic_renderer {
   }
 
   [[nodiscard]] static std::string pad_left(std::string s, uint32_t width) {
-    if (s.size() >= width) return s;
+    if (s.size() >= width)
+      return s;
     return std::string(width - s.size(), ' ') + s;
   }
 
   [[nodiscard]] static uint32_t count_digits(uint32_t n) {
-    if (n == 0) return 1;
+    if (n == 0)
+      return 1;
     uint32_t digits = 0;
     while (n > 0) {
       ++digits;
@@ -616,8 +622,8 @@ class diagnostic_renderer {
     return digits;
   }
 
-  const source_file& file_;
+  const source_file &file_;
   bool use_color_;
 };
 
-}  // namespace kira
+} // namespace kira

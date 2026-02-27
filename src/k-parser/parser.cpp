@@ -12,16 +12,16 @@ namespace kira {
 // ==========================================================================
 //  Helper: make an error expression for recovery.
 // ==========================================================================
-static ast::ptr<ast::Expr> make_error_expr(Span span, std::string desc = "") {
+static ast::ptr<ast::Expr> make_error_expr(span span, std::string desc = "") {
   auto node = ast::make<ast::error_expr>(span, std::move(desc));
   return node;
 }
 
-static ast::ptr<ast::Pattern> make_error_pattern(Span span) {
+static ast::ptr<ast::Pattern> make_error_pattern(span span) {
   return ast::make<ast::error_pattern>(span);
 }
 
-static ast::ptr<ast::node> make_error_node(Span span, std::string desc = "") {
+static ast::ptr<ast::node> make_error_node(span span, std::string desc = "") {
   return ast::make<ast::error_node>(span, std::move(desc));
 }
 
@@ -30,15 +30,16 @@ static ast::ptr<ast::node> make_error_node(Span span, std::string desc = "") {
 // ==========================================================================
 
 bool Parser::expect_newline() {
-  if (match(token_kind::newline)) return true;
+  if (match(token_kind::newline))
+    return true;
 
   // At EOF or DEDENT, a newline is implicitly present.
-  if (at_any(token_kind::eof, token_kind::dedent)) return true;
+  if (at_any(token_kind::eof, token_kind::dedent))
+    return true;
 
   // Missing newline — emit a helpful diagnostic.
   auto span = previous_span();
-  emit(diagnostic(diagnostic_level::error,
-                  "expected end of line after this",
+  emit(diagnostic(diagnostic_level::error, "expected end of line after this",
                   file_id_)
            .with_label(span, "this should be followed by a new line")
            .with_help("Each statement in Kira goes on its own line. "
@@ -67,20 +68,21 @@ Token Parser::expect(token_kind expected) {
   if (found.is_eof()) {
     message = std::format("expected {} but reached end of file", expected_desc);
   } else {
-    message = std::format("expected {} but found {}",
-                          expected_desc,
+    message = std::format("expected {} but found {}", expected_desc,
                           token_kind_name(found.kind));
   }
 
   auto diag = diagnostic(diagnostic_level::error, message, file_id_)
-      .with_label(found.span, std::format("expected {} here", expected_desc));
+                  .with_label(found.span,
+                              std::format("expected {} here", expected_desc));
 
   // Context-specific help for common mistakes.
   if (expected == token_kind::rparen && found.is(token_kind::newline)) {
     diag.with_help("It looks like a closing `)` is missing. Check that "
                    "every `(` has a matching `)` on the same line or "
                    "within the same indented block.");
-  } else if (expected == token_kind::rbracket && found.is(token_kind::newline)) {
+  } else if (expected == token_kind::rbracket &&
+             found.is(token_kind::newline)) {
     diag.with_help("It looks like a closing `]` is missing.");
   } else if (expected == token_kind::rbrace && found.is(token_kind::newline)) {
     diag.with_help("It looks like a closing `}` is missing.");
@@ -117,7 +119,8 @@ Token Parser::expect(token_kind expected) {
   };
 }
 
-Token Parser::expect_with_context(token_kind expected, std::string_view context) {
+Token Parser::expect_with_context(token_kind expected,
+                                  std::string_view context) {
   if (at(expected)) {
     return advance();
   }
@@ -125,13 +128,13 @@ Token Parser::expect_with_context(token_kind expected, std::string_view context)
   auto expected_desc = token_kind_description(expected);
   auto found = peek();
 
-  std::string message = std::format("expected {} {} but found {}",
-                                    expected_desc,
-                                    context,
-                                    token_kind_name(found.kind));
+  std::string message =
+      std::format("expected {} {} but found {}", expected_desc, context,
+                  token_kind_name(found.kind));
 
   auto diag = diagnostic(diagnostic_level::error, message, file_id_)
-      .with_label(found.span, std::format("expected {} here", expected_desc));
+                  .with_label(found.span,
+                              std::format("expected {} here", expected_desc));
 
   emit(std::move(diag));
 
@@ -159,8 +162,7 @@ void Parser::emit_unexpected(std::string_view expected_description) {
     // Lexer already reported this — don't double-report.
     return;
   } else {
-    message = std::format("expected {} but found {}",
-                          expected_description,
+    message = std::format("expected {} but found {}", expected_description,
                           token_kind_name(found.kind));
   }
 
@@ -220,12 +222,15 @@ void Parser::synchronize_to_newline() {
 void Parser::skip_block() {
   // Skip a NEWLINE INDENT ... DEDENT sequence.
   skip_newlines();
-  if (!match(token_kind::indent)) return;
+  if (!match(token_kind::indent))
+    return;
 
   int depth = 1;
   while (!at_eof() && depth > 0) {
-    if (at(token_kind::indent)) ++depth;
-    else if (at(token_kind::dedent)) --depth;
+    if (at(token_kind::indent))
+      ++depth;
+    else if (at(token_kind::dedent))
+      --depth;
     advance();
   }
 }
@@ -249,14 +254,13 @@ bool Parser::expect_block_start(std::string_view construct_name) {
                  construct_name))
              .with_fix("add `:`", Span{span.end, span.end}, ":"));
     // Recovery: if NEWLINE+INDENT follows, proceed as if `:` was there.
-    if (at(token_kind::newline) &&
-        peek_at(1).is(token_kind::indent)) {
+    if (at(token_kind::newline) && peek_at(1).is(token_kind::indent)) {
       // Proceed — the block is clearly intended.
     } else {
       return false;
     }
   } else {
-    advance();  // consume `:`
+    advance(); // consume `:`
   }
 
   // Now expect NEWLINE INDENT for block form.
@@ -271,12 +275,14 @@ bool Parser::expect_block_start(std::string_view construct_name) {
 }
 
 bool Parser::expect_block_end(std::string_view construct_name) {
-  if (match(token_kind::dedent)) return true;
+  if (match(token_kind::dedent))
+    return true;
 
   // Missing DEDENT — emit diagnostic.
-  emit(diagnostic(diagnostic_level::error,
-                  std::format("expected end of {} block (dedent)", construct_name),
-                  file_id_)
+  emit(diagnostic(
+           diagnostic_level::error,
+           std::format("expected end of {} block (dedent)", construct_name),
+           file_id_)
            .with_label(peek().span, "expected the block to end here")
            .with_note("This usually means the indentation is inconsistent. "
                       "Check that all lines in this block are indented "
@@ -285,14 +291,15 @@ bool Parser::expect_block_end(std::string_view construct_name) {
 }
 
 template <typename T>
-std::vector<ast::ptr<T>> Parser::parse_block(
-    std::string_view construct_name,
-    std::function<ast::ptr<T>()> parse_item) {
+std::vector<ast::ptr<T>>
+Parser::parse_block(std::string_view construct_name,
+                    std::function<ast::ptr<T>()> parse_item) {
   std::vector<ast::ptr<T>> items;
 
   while (!at_any(token_kind::dedent, token_kind::eof)) {
     skip_newlines();
-    if (at_any(token_kind::dedent, token_kind::eof)) break;
+    if (at_any(token_kind::dedent, token_kind::eof))
+      break;
 
     auto item = parse_item();
     if (item) {
@@ -308,8 +315,9 @@ std::vector<ast::ptr<T>> Parser::parse_block(
 }
 
 // Explicit template instantiation for common types.
-template std::vector<ast::Ptr<ast::Node>> Parser::parse_block<ast::Node>(
-    std::string_view, std::function<ast::Ptr<ast::Node>()>);
+template std::vector<ast::Ptr<ast::Node>>
+    Parser::parse_block<ast::Node>(std::string_view,
+                                   std::function<ast::Ptr<ast::Node>()>);
 
 Parser::BodyResult Parser::parse_body(std::string_view construct_name) {
   BodyResult result;
@@ -321,26 +329,27 @@ Parser::BodyResult Parser::parse_body(std::string_view construct_name) {
                                 construct_name),
                     file_id_)
              .with_label(span, "expected `:` after this")
-             .with_help(std::format(
-                 "In Kira, the body of a {} is introduced by `:`. "
-                 "For a single expression: `{}: expr`. "
-                 "For a block of statements: `{}:` followed by an "
-                 "indented block on the next line.",
-                 construct_name, construct_name, construct_name)));
+             .with_help(
+                 std::format("In Kira, the body of a {} is introduced by `:`. "
+                             "For a single expression: `{}: expr`. "
+                             "For a block of statements: `{}:` followed by an "
+                             "indented block on the next line.",
+                             construct_name, construct_name, construct_name)));
     return result;
   }
-  advance();  // consume `:`
+  advance(); // consume `:`
 
   // Check for block form: NEWLINE INDENT ...
   if (at(token_kind::newline)) {
     skip_newlines();
     if (at(token_kind::indent)) {
-      advance();  // consume INDENT
+      advance(); // consume INDENT
       result.is_block = true;
 
       while (!at_any(token_kind::dedent, token_kind::eof)) {
         skip_newlines();
-        if (at_any(token_kind::dedent, token_kind::eof)) break;
+        if (at_any(token_kind::dedent, token_kind::eof))
+          break;
 
         auto stmt = parse_stmt();
         if (stmt) {
@@ -355,15 +364,15 @@ Parser::BodyResult Parser::parse_body(std::string_view construct_name) {
     }
 
     // `:` followed by newline but no indent — error.
-    emit(diagnostic(diagnostic_level::error,
-                    std::format("expected an indented block after `:` for this {}",
-                                construct_name),
-                    file_id_)
+    emit(diagnostic(
+             diagnostic_level::error,
+             std::format("expected an indented block after `:` for this {}",
+                         construct_name),
+             file_id_)
              .with_label(previous_span(), "the `:` is here")
-             .with_help(
-                 "After `:` and a new line, the next line should be "
-                 "indented to start a block. If you want a single "
-                 "expression, put it on the same line as the `:`."));
+             .with_help("After `:` and a new line, the next line should be "
+                        "indented to start a block. If you want a single "
+                        "expression, put it on the same line as the `:`."));
     return result;
   }
 
@@ -378,10 +387,10 @@ Parser::BodyResult Parser::parse_body(std::string_view construct_name) {
 // ==========================================================================
 
 template <typename T>
-std::vector<T> Parser::parse_delimited_list(
-    token_kind open, token_kind close,
-    std::string_view construct_name,
-    std::function<std::optional<T>()> parse_element) {
+std::vector<T>
+Parser::parse_delimited_list(token_kind open, token_kind close,
+                             std::string_view construct_name,
+                             std::function<std::optional<T>()> parse_element) {
   std::vector<T> items;
 
   auto open_tok = expect(open);
@@ -390,7 +399,8 @@ std::vector<T> Parser::parse_delimited_list(
   while (!at(close) && !at_eof()) {
     skip_newlines();
 
-    if (at(close)) break;
+    if (at(close))
+      break;
 
     auto elem = parse_element();
     if (elem) {
@@ -398,7 +408,8 @@ std::vector<T> Parser::parse_delimited_list(
     } else {
       // Skip to the next comma or closing delimiter.
       while (!at_any(token_kind::comma, token_kind::eof) && !at(close)) {
-        if (at_any(token_kind::newline, token_kind::dedent)) break;
+        if (at_any(token_kind::newline, token_kind::dedent))
+          break;
         advance();
       }
     }
@@ -406,9 +417,11 @@ std::vector<T> Parser::parse_delimited_list(
     skip_newlines();
 
     // Expect comma or closing delimiter.
-    if (at(close)) break;
+    if (at(close))
+      break;
     if (!match(token_kind::comma)) {
-      if (at(close)) break;  // trailing item without comma is ok before close
+      if (at(close))
+        break; // trailing item without comma is ok before close
 
       // Missing comma — try to give a helpful error.
       auto span = previous_span();
@@ -423,30 +436,30 @@ std::vector<T> Parser::parse_delimited_list(
   }
 
   if (!at(close)) {
-    emit(diagnostic(diagnostic_level::error,
-                    std::format("unclosed {} — expected {} to match the {} at line",
-                                construct_name,
-                                token_kind_name(close),
-                                token_kind_name(open)),
-                    file_id_)
+    emit(diagnostic(
+             diagnostic_level::error,
+             std::format("unclosed {} — expected {} to match the {} at line",
+                         construct_name, token_kind_name(close),
+                         token_kind_name(open)),
+             file_id_)
              .with_label(peek().span,
                          std::format("expected {}", token_kind_name(close)))
-             .with_secondary_label(open_span,
-                                   std::format("this {} was opened here",
-                                               token_kind_name(open)))
+             .with_secondary_label(
+                 open_span,
+                 std::format("this {} was opened here", token_kind_name(open)))
              .with_help("Make sure every opening delimiter has a matching "
                         "closing delimiter."));
   } else {
-    advance();  // consume close
+    advance(); // consume close
   }
 
   return items;
 }
 
 template <typename T>
-std::vector<T> Parser::parse_comma_list(
-    std::function<std::optional<T>()> parse_element,
-    std::function<bool()> at_end_fn) {
+std::vector<T>
+Parser::parse_comma_list(std::function<std::optional<T>()> parse_element,
+                         std::function<bool()> at_end_fn) {
   std::vector<T> items;
 
   while (!at_end_fn() && !at_eof()) {
@@ -474,7 +487,7 @@ ast::visibility Parser::parse_optional_visibility() {
     auto tok = advance();
     return ast::token_to_visibility(tok.kind);
   }
-  return ast::visibility::Default;
+  return ast::visibility::def;
 }
 
 // ==========================================================================
@@ -488,8 +501,8 @@ std::vector<std::string> Parser::parse_module_path() {
   segments.emplace_back(ident.text);
 
   while (at(token_kind::dot) && peek_at(1).is(token_kind::ident)) {
-    advance();  // consume `.`
-    auto seg = advance();  // consume ident
+    advance();            // consume `.`
+    auto seg = advance(); // consume ident
     segments.emplace_back(seg.text);
   }
 
@@ -510,12 +523,14 @@ ast::Ptr<ast::File> Parser::parse_file() {
   if (at(token_kind::kw_module)) {
     file->module_decl = parse_module_decl();
   } else {
-    emit(diagnostic(diagnostic_level::error,
-                    "every Kira source file must start with a `module` declaration",
-                    file_id_)
+    emit(diagnostic(
+             diagnostic_level::error,
+             "every Kira source file must start with a `module` declaration",
+             file_id_)
              .with_label(peek().span, "expected `module` here")
-             .with_help("Add a module declaration at the top of the file, like:\n"
-                        "  module my_project.my_module"));
+             .with_help(
+                 "Add a module declaration at the top of the file, like:\n"
+                 "  module my_project.my_module"));
     file->module_decl = ast::make<ast::module_decl>();
     file->module_decl->has_error = true;
   }
@@ -533,7 +548,8 @@ ast::Ptr<ast::File> Parser::parse_file() {
   // Parse top-level items.
   while (!at_eof()) {
     skip_newlines();
-    if (at_eof()) break;
+    if (at_eof())
+      break;
 
     auto item = parse_top_level_item();
     if (item) {
@@ -570,98 +586,102 @@ ast::Ptr<ast::module_decl> Parser::parse_module_decl() {
 
 ast::Ptr<ast::Node> Parser::parse_top_level_item() {
   skip_newlines();
-  if (at_eof()) return nullptr;
+  if (at_eof())
+    return nullptr;
 
   // Parse optional visibility modifier.
   auto vis = parse_optional_visibility();
 
   // Dispatch on the current token.
   switch (current()) {
-    case token_kind::kw_use:
-      return parse_use_decl(vis);
+  case token_kind::kw_use:
+    return parse_use_decl(vis);
 
-    case token_kind::kw_type:
-      return parse_type_decl(vis);
+  case token_kind::kw_type:
+    return parse_type_decl(vis);
 
-    case token_kind::kw_trait:
-      return parse_trait_decl(vis);
+  case token_kind::kw_trait:
+    return parse_trait_decl(vis);
 
-    case token_kind::kw_impl:
-      if (vis != ast::visibility::Default) {
-        emit(diagnostic(diagnostic_level::warning,
-                        "visibility modifiers are not meaningful on `impl` blocks",
-                        file_id_)
-                 .with_label(peek().span, "this `impl`")
-                 .with_help("Remove the visibility modifier — `impl` blocks "
-                            "inherit visibility from the trait they implement."));
-      }
-      return parse_impl_decl();
-
-    case token_kind::kw_concept:
-      return parse_concept_decl(vis);
-
-    case token_kind::kw_def:
-      return parse_func_decl(vis, ast::func_modifiers{});
-
-    case token_kind::kw_pure:
-    case token_kind::kw_async:
-    case token_kind::kw_machine: {
-      auto mods = parse_func_modifiers();
-      if (at(token_kind::kw_def)) {
-        return parse_func_decl(vis, std::move(mods));
-      }
-      emit_unexpected("`def` after function modifiers");
-      synchronize_to_newline();
-      return make_error_node(peek().span, "expected function declaration");
+  case token_kind::kw_impl:
+    if (vis != ast::visibility::def) {
+      emit(
+          diagnostic(diagnostic_level::warning,
+                     "visibility modifiers are not meaningful on `impl` blocks",
+                     file_id_)
+              .with_label(peek().span, "this `impl`")
+              .with_help("Remove the visibility modifier — `impl` blocks "
+                         "inherit visibility from the trait they implement."));
     }
+    return parse_impl_decl();
 
-    case token_kind::kw_static:
-      return parse_static_decl(vis);
+  case token_kind::kw_concept:
+    return parse_concept_decl(vis);
 
-    case token_kind::kw_module:
-      return parse_sub_module_decl(vis);
+  case token_kind::kw_def:
+    return parse_func_decl(vis, ast::func_modifiers{});
 
-    case token_kind::kw_dep:
-      if (vis != ast::visibility::Default) {
-        emit(diagnostic(diagnostic_level::warning,
-                        "visibility modifiers are not meaningful on `dep` declarations",
-                        file_id_)
-                 .with_label(peek().span, "here"));
-      }
-      return parse_dep_decl();
+  case token_kind::kw_pure:
+  case token_kind::kw_async:
+  case token_kind::kw_machine: {
+    auto mods = parse_func_modifiers();
+    if (at(token_kind::kw_def)) {
+      return parse_func_decl(vis, std::move(mods));
+    }
+    emit_unexpected("`def` after function modifiers");
+    synchronize_to_newline();
+    return make_error_node(peek().span, "expected function declaration");
+  }
 
-    case token_kind::tilde:
-      return parse_splice_stmt();
+  case token_kind::kw_static:
+    return parse_static_decl(vis);
 
-    case token_kind::newline:
-      advance();
-      return parse_top_level_item();  // Skip blank lines.
+  case token_kind::kw_module:
+    return parse_sub_module_decl(vis);
 
-    default:
-      if (vis != ast::visibility::Default) {
-        emit(diagnostic(diagnostic_level::error,
-                        std::format("expected a declaration after visibility modifier, "
-                                    "but found {}",
-                                    token_kind_name(current())),
-                        file_id_)
-                 .with_label(peek().span, "expected a declaration here")
-                 .with_help("Visibility modifiers (`pub`, `priv`, etc.) can "
-                            "only appear before declarations like `def`, "
-                            "`type`, `trait`, `use`, etc."));
-        synchronize_to_newline();
-        return make_error_node(peek().span);
-      }
+  case token_kind::kw_dep:
+    if (vis != ast::visibility::def) {
+      emit(diagnostic(
+               diagnostic_level::warning,
+               "visibility modifiers are not meaningful on `dep` declarations",
+               file_id_)
+               .with_label(peek().span, "here"));
+    }
+    return parse_dep_decl();
 
-      emit(diagnostic(diagnostic_level::error,
-                      std::format("unexpected {} at the top level of the file",
-                                  token_kind_name(current())),
-                      file_id_)
-               .with_label(peek().span, "this can't appear here")
-               .with_help("At the top level, only declarations are allowed: "
-                          "`use`, `type`, `trait`, `impl`, `concept`, `def`, "
-                          "`static`, `module`, `dep`."));
+  case token_kind::tilde:
+    return parse_splice_stmt();
+
+  case token_kind::newline:
+    advance();
+    return parse_top_level_item(); // Skip blank lines.
+
+  default:
+    if (vis != ast::visibility::def) {
+      emit(diagnostic(
+               diagnostic_level::error,
+               std::format("expected a declaration after visibility modifier, "
+                           "but found {}",
+                           token_kind_name(current())),
+               file_id_)
+               .with_label(peek().span, "expected a declaration here")
+               .with_help("Visibility modifiers (`pub`, `priv`, etc.) can "
+                          "only appear before declarations like `def`, "
+                          "`type`, `trait`, `use`, etc."));
       synchronize_to_newline();
       return make_error_node(peek().span);
+    }
+
+    emit(diagnostic(diagnostic_level::error,
+                    std::format("unexpected {} at the top level of the file",
+                                token_kind_name(current())),
+                    file_id_)
+             .with_label(peek().span, "this can't appear here")
+             .with_help("At the top level, only declarations are allowed: "
+                        "`use`, `type`, `trait`, `impl`, `concept`, `def`, "
+                        "`static`, `module`, `dep`."));
+    synchronize_to_newline();
+    return make_error_node(peek().span);
   }
 }
 
@@ -685,8 +705,8 @@ ast::Ptr<ast::use_decl> Parser::parse_use_decl(ast::visibility vis) {
     auto after_dot = peek_at(1);
 
     if (after_dot.is(token_kind::lbrace)) {
-      advance();  // consume `.`
-      advance();  // consume `{`
+      advance(); // consume `.`
+      advance(); // consume `{`
 
       ast::use_selector sel;
       sel.span = after_dot.span;
@@ -694,7 +714,8 @@ ast::Ptr<ast::use_decl> Parser::parse_use_decl(ast::visibility vis) {
 
       while (!at(token_kind::rbrace) && !at_eof()) {
         skip_newlines();
-        if (at(token_kind::rbrace)) break;
+        if (at(token_kind::rbrace))
+          break;
 
         ast::use_item item;
         auto item_tok = expect(token_kind::ident);
@@ -718,8 +739,8 @@ ast::Ptr<ast::use_decl> Parser::parse_use_decl(ast::visibility vis) {
       expect(token_kind::rbrace);
       decl->selector = std::move(sel);
     } else if (after_dot.is(token_kind::star)) {
-      advance();  // consume `.`
-      advance();  // consume `*`
+      advance(); // consume `.`
+      advance(); // consume `*`
 
       ast::use_selector sel;
       sel.span = after_dot.span;
@@ -738,7 +759,8 @@ ast::Ptr<ast::use_decl> Parser::parse_use_decl(ast::visibility vis) {
 //  Sub-module declarations
 // ==========================================================================
 
-ast::Ptr<ast::sub_module_decl> Parser::parse_sub_module_decl(ast::visibility vis) {
+ast::Ptr<ast::sub_module_decl>
+Parser::parse_sub_module_decl(ast::visibility vis) {
   auto decl = ast::make<ast::sub_module_decl>();
   auto start = peek().span;
   decl->visibility = vis;
@@ -748,13 +770,14 @@ ast::Ptr<ast::sub_module_decl> Parser::parse_sub_module_decl(ast::visibility vis
   decl->name = std::string(name_tok.text);
 
   if (at(token_kind::colon)) {
-    advance();  // consume `:`
+    advance(); // consume `:`
     skip_newlines();
 
     if (match(token_kind::indent)) {
       while (!at_any(token_kind::dedent, token_kind::eof)) {
         skip_newlines();
-        if (at_any(token_kind::dedent, token_kind::eof)) break;
+        if (at_any(token_kind::dedent, token_kind::eof))
+          break;
 
         auto item = parse_top_level_item();
         if (item) {
@@ -791,7 +814,8 @@ ast::Ptr<ast::dep_decl> Parser::parse_dep_decl() {
   if (match(token_kind::indent)) {
     while (!at_any(token_kind::dedent, token_kind::eof)) {
       skip_newlines();
-      if (at_any(token_kind::dedent, token_kind::eof)) break;
+      if (at_any(token_kind::dedent, token_kind::eof))
+        break;
 
       ast::dep_field field;
       field.span = peek().span;
@@ -846,7 +870,8 @@ ast::Ptr<ast::type_decl> Parser::parse_type_decl(ast::visibility vis) {
     }
   }
 
-  // If there's a newline followed by an indent, check for deriving/invariant clauses.
+  // If there's a newline followed by an indent, check for deriving/invariant
+  // clauses.
   if (at(token_kind::newline)) {
     auto saved_pos = pos_;
     advance();
@@ -857,7 +882,8 @@ ast::Ptr<ast::type_decl> Parser::parse_type_decl(ast::visibility vis) {
       // Look for deriving and invariant clauses.
       while (!at_any(token_kind::dedent, token_kind::eof)) {
         skip_newlines();
-        if (at_any(token_kind::dedent, token_kind::eof)) break;
+        if (at_any(token_kind::dedent, token_kind::eof))
+          break;
 
         if (at(token_kind::kw_deriving)) {
           advance();
@@ -942,7 +968,8 @@ ast::struct_body Parser::parse_struct_body() {
 
   while (!at(token_kind::rbrace) && !at_eof()) {
     skip_newlines();
-    if (at(token_kind::rbrace)) break;
+    if (at(token_kind::rbrace))
+      break;
 
     body.fields.push_back(parse_struct_field());
 
@@ -1001,7 +1028,8 @@ ast::sum_variant Parser::parse_sum_variant() {
       if (type) {
         variant.payload_types.push_back(std::move(type));
       }
-      if (!match(token_kind::comma)) break;
+      if (!match(token_kind::comma))
+        break;
     }
     expect(token_kind::rparen);
   }
@@ -1016,7 +1044,8 @@ ast::sum_variant Parser::parse_sum_variant() {
 
 ast::Ptr<ast::type_expr> Parser::parse_type_expr() {
   auto first = parse_prim_type_expr();
-  if (!first) return nullptr;
+  if (!first)
+    return nullptr;
 
   // Union type: `type | type | ...`
   if (at(token_kind::pipe)) {
@@ -1040,71 +1069,73 @@ ast::Ptr<ast::type_expr> Parser::parse_type_expr() {
 
 ast::Ptr<ast::type_expr> Parser::parse_prim_type_expr() {
   switch (current()) {
-    case token_kind::ident:
-      return parse_named_type();
+  case token_kind::ident:
+    return parse_named_type();
 
-    case token_kind::lparen: {
-      // Could be tuple type or grouped type.
-      auto start = peek().span;
-      advance();  // consume `(`
+  case token_kind::lparen: {
+    // Could be tuple type or grouped type.
+    auto start = peek().span;
+    advance(); // consume `(`
 
-      auto first = parse_type_expr();
-      if (!first) {
-        expect(token_kind::rparen);
-        auto err = ast::make<ast::error_type_expr>(start.merge(previous_span()));
-        return err;
-      }
-
-      if (at(token_kind::comma)) {
-        // Tuple type.
-        auto tuple = ast::make<ast::tuple_type>();
-        tuple->span = start;
-        tuple->elements.push_back(std::move(first));
-
-        while (match(token_kind::comma)) {
-          if (at(token_kind::rparen)) break;  // trailing comma
-          auto elem = parse_type_expr();
-          if (elem) tuple->elements.push_back(std::move(elem));
-        }
-
-        expect(token_kind::rparen);
-        tuple->span.extend_to(previous_span());
-        return tuple;
-      }
-
-      // Parenthesized type expr.
+    auto first = parse_type_expr();
+    if (!first) {
       expect(token_kind::rparen);
-      first->span = start.merge(previous_span());
-      return first;
+      auto err = ast::make<ast::error_type_expr>(start.merge(previous_span()));
+      return err;
     }
 
-    case token_kind::lbracket:
-      return parse_slice_type();
+    if (at(token_kind::comma)) {
+      // Tuple type.
+      auto tuple = ast::make<ast::tuple_type>();
+      tuple->span = start;
+      tuple->elements.push_back(std::move(first));
 
-    case token_kind::kw_array:
-      return parse_array_type();
+      while (match(token_kind::comma)) {
+        if (at(token_kind::rparen))
+          break; // trailing comma
+        auto elem = parse_type_expr();
+        if (elem)
+          tuple->elements.push_back(std::move(elem));
+      }
 
-    case token_kind::amp:
-      return parse_ref_type();
-
-    case token_kind::star:
-      return parse_ptr_type();
-
-    case token_kind::kw_fn:
-      return parse_fn_type();
-
-    case token_kind::kw_expr:
-    case token_kind::kw_stmt:
-    case token_kind::kw_def_expr:
-    case token_kind::kw_type_expr: {
-      auto tok = advance();
-      auto qt = ast::make<ast::quote_type>(tok.kind);
-      qt->span = tok.span;
-      return qt;
+      expect(token_kind::rparen);
+      tuple->span.extend_to(previous_span());
+      return tuple;
     }
 
-    default:
-      return nullptr;
+    // Parenthesized type expr.
+    expect(token_kind::rparen);
+    first->span = start.merge(previous_span());
+    return first;
+  }
+
+  case token_kind::lbracket:
+    return parse_slice_type();
+
+  case token_kind::kw_array:
+    return parse_array_type();
+
+  case token_kind::amp:
+    return parse_ref_type();
+
+  case token_kind::star:
+    return parse_ptr_type();
+
+  case token_kind::kw_fn:
+    return parse_fn_type();
+
+  case token_kind::kw_expr:
+  case token_kind::kw_stmt:
+  case token_kind::kw_def_expr:
+  case token_kind::kw_type_expr: {
+    auto tok = advance();
+    auto qt = ast::make<ast::quote_type>(tok.kind);
+    qt->span = tok.span;
+    return qt;
+  }
+
+  default:
+    return nullptr;
   }
 }
 
@@ -1116,17 +1147,19 @@ ast::Ptr<ast::named_type> Parser::parse_named_type() {
 
   // Optional type arguments: `[T, U, ...]`
   if (at(token_kind::lbracket)) {
-    advance();  // consume `[`
+    advance(); // consume `[`
     while (!at(token_kind::rbracket) && !at_eof()) {
       skip_newlines();
-      if (at(token_kind::rbracket)) break;
+      if (at(token_kind::rbracket))
+        break;
 
       auto type_arg = parse_type_expr();
       if (type_arg) {
         named->type_args.push_back(std::move(type_arg));
       }
 
-      if (!match(token_kind::comma)) break;
+      if (!match(token_kind::comma))
+        break;
       skip_newlines();
     }
     expect(token_kind::rbracket);
@@ -1145,8 +1178,10 @@ ast::Ptr<ast::tuple_type> Parser::parse_tuple_type() {
   expect(token_kind::lparen);
   while (!at(token_kind::rparen) && !at_eof()) {
     auto elem = parse_type_expr();
-    if (elem) tuple->elements.push_back(std::move(elem));
-    if (!match(token_kind::comma)) break;
+    if (elem)
+      tuple->elements.push_back(std::move(elem));
+    if (!match(token_kind::comma))
+      break;
   }
   expect(token_kind::rparen);
 
@@ -1214,8 +1249,10 @@ ast::Ptr<ast::fn_type> Parser::parse_fn_type() {
 
   while (!at(token_kind::rparen) && !at_eof()) {
     auto param = parse_type_expr();
-    if (param) fn->param_types.push_back(std::move(param));
-    if (!match(token_kind::comma)) break;
+    if (param)
+      fn->param_types.push_back(std::move(param));
+    if (!match(token_kind::comma))
+      break;
   }
 
   expect(token_kind::rparen);
@@ -1239,11 +1276,13 @@ std::vector<ast::type_param> Parser::parse_type_params() {
 
   while (!at(token_kind::rbracket) && !at_eof()) {
     skip_newlines();
-    if (at(token_kind::rbracket)) break;
+    if (at(token_kind::rbracket))
+      break;
 
     params.push_back(parse_type_param());
 
-    if (!match(token_kind::comma)) break;
+    if (!match(token_kind::comma))
+      break;
     skip_newlines();
   }
 
@@ -1343,7 +1382,8 @@ ast::Ptr<ast::trait_decl> Parser::parse_trait_decl(ast::visibility vis) {
   if (match(token_kind::indent)) {
     while (!at_any(token_kind::dedent, token_kind::eof)) {
       skip_newlines();
-      if (at_any(token_kind::dedent, token_kind::eof)) break;
+      if (at_any(token_kind::dedent, token_kind::eof))
+        break;
 
       // Parse trait items: func_decl, static_decl, associated_type_decl.
       auto item_vis = parse_optional_visibility();
@@ -1360,7 +1400,7 @@ ast::Ptr<ast::trait_decl> Parser::parse_trait_decl(ast::visibility vis) {
         decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_type)) {
         // Associated type declaration.
-        advance();  // consume `type`
+        advance(); // consume `type`
         [[maybe_unused]] auto aname_tok = expect(token_kind::ident);
         // TODO: build associated_type_decl node properly
         // For now, skip to newline.
@@ -1410,7 +1450,8 @@ ast::Ptr<ast::concept_decl> Parser::parse_concept_decl(ast::visibility vis) {
     }
 
     decl->params.push_back(std::move(param));
-    if (!match(token_kind::comma)) break;
+    if (!match(token_kind::comma))
+      break;
   }
   expect(token_kind::rbracket);
 
@@ -1420,7 +1461,8 @@ ast::Ptr<ast::concept_decl> Parser::parse_concept_decl(ast::visibility vis) {
   if (match(token_kind::indent)) {
     while (!at_any(token_kind::dedent, token_kind::eof)) {
       skip_newlines();
-      if (at_any(token_kind::dedent, token_kind::eof)) break;
+      if (at_any(token_kind::dedent, token_kind::eof))
+        break;
 
       // Parse concept constraints.
       ast::concept_constraint constraint;
@@ -1476,7 +1518,8 @@ ast::Ptr<ast::impl_decl> Parser::parse_impl_decl() {
   if (match(token_kind::indent)) {
     while (!at_any(token_kind::dedent, token_kind::eof)) {
       skip_newlines();
-      if (at_any(token_kind::dedent, token_kind::eof)) break;
+      if (at_any(token_kind::dedent, token_kind::eof))
+        break;
 
       auto item_vis = parse_optional_visibility();
 
@@ -1492,7 +1535,7 @@ ast::Ptr<ast::impl_decl> Parser::parse_impl_decl() {
         decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_type)) {
         // Associated type definition.
-        advance();  // consume `type`
+        advance(); // consume `type`
         [[maybe_unused]] auto assoc_name_tok = expect(token_kind::ident);
         expect(token_kind::eq);
         [[maybe_unused]] auto assoc_type = parse_type_expr();
@@ -1524,63 +1567,61 @@ ast::func_modifiers Parser::parse_func_modifiers() {
   bool keep_going = true;
   while (keep_going) {
     switch (current()) {
-      case token_kind::kw_pure:
-        if (mods.is_pure) {
-          emit(diagnostic(diagnostic_level::warning,
-                          "duplicate `pure` modifier — you only need it once",
-                          file_id_)
-                   .with_label(peek().span, "this `pure` is redundant"));
-        }
-        mods.is_pure = true;
+    case token_kind::kw_pure:
+      if (mods.is_pure) {
+        emit(diagnostic(diagnostic_level::warning,
+                        "duplicate `pure` modifier — you only need it once",
+                        file_id_)
+                 .with_label(peek().span, "this `pure` is redundant"));
+      }
+      mods.is_pure = true;
+      advance();
+      break;
+    case token_kind::kw_async:
+      if (mods.is_async) {
+        emit(diagnostic(diagnostic_level::warning,
+                        "duplicate `async` modifier — you only need it once",
+                        file_id_)
+                 .with_label(peek().span, "this `async` is redundant"));
+      }
+      mods.is_async = true;
+      advance();
+      // Optional async context: `async[ContextType]`
+      if (at(token_kind::lbracket)) {
         advance();
-        break;
-      case token_kind::kw_async:
-        if (mods.is_async) {
-          emit(diagnostic(diagnostic_level::warning,
-                          "duplicate `async` modifier — you only need it once",
-                          file_id_)
-                   .with_label(peek().span, "this `async` is redundant"));
-        }
-        mods.is_async = true;
-        advance();
-        // Optional async context: `async[ContextType]`
-        if (at(token_kind::lbracket)) {
-          advance();
-          mods.async_context = parse_type_expr();
-          expect(token_kind::rbracket);
-        }
-        break;
-      case token_kind::kw_machine:
-        if (mods.is_machine) {
-          emit(diagnostic(diagnostic_level::warning,
-                          "duplicate `machine` modifier",
-                          file_id_)
-                   .with_label(peek().span, "redundant"));
-        }
-        mods.is_machine = true;
-        advance();
-        break;
-      case token_kind::kw_static:
-        if (mods.is_static) {
-          emit(diagnostic(diagnostic_level::warning,
-                          "duplicate `static` modifier",
-                          file_id_)
-                   .with_label(peek().span, "redundant"));
-        }
-        mods.is_static = true;
-        advance();
-        break;
-      default:
-        keep_going = false;
-        break;
+        mods.async_context = parse_type_expr();
+        expect(token_kind::rbracket);
+      }
+      break;
+    case token_kind::kw_machine:
+      if (mods.is_machine) {
+        emit(diagnostic(diagnostic_level::warning,
+                        "duplicate `machine` modifier", file_id_)
+                 .with_label(peek().span, "redundant"));
+      }
+      mods.is_machine = true;
+      advance();
+      break;
+    case token_kind::kw_static:
+      if (mods.is_static) {
+        emit(diagnostic(diagnostic_level::warning,
+                        "duplicate `static` modifier", file_id_)
+                 .with_label(peek().span, "redundant"));
+      }
+      mods.is_static = true;
+      advance();
+      break;
+    default:
+      keep_going = false;
+      break;
     }
   }
 
   return mods;
 }
 
-ast::Ptr<ast::func_decl> Parser::parse_func_decl(
-    ast::visibility vis, ast::func_modifiers mods) {
+ast::Ptr<ast::func_decl> Parser::parse_func_decl(ast::visibility vis,
+                                                 ast::func_modifiers mods) {
   auto decl = ast::make<ast::func_decl>();
   auto start = peek().span;
   decl->visibility = vis;
@@ -1628,7 +1669,8 @@ std::vector<ast::Param> Parser::parse_param_list() {
   std::vector<ast::Param> params;
 
   do {
-    if (at(token_kind::rparen)) break;
+    if (at(token_kind::rparen))
+      break;
     params.push_back(parse_param());
   } while (match(token_kind::comma));
 
@@ -1703,7 +1745,7 @@ ast::Ptr<ast::static_decl> Parser::parse_static_decl(ast::visibility vis) {
   if (at(token_kind::kw_if)) {
     // static if expr: block [else: block]
     decl->decl_kind = ast::StaticDeclKind::ConditionalCompilation;
-    advance();  // consume `if`
+    advance(); // consume `if`
     decl->if_condition = parse_expr();
     expect(token_kind::colon);
     skip_newlines();
@@ -1711,10 +1753,13 @@ ast::Ptr<ast::static_decl> Parser::parse_static_decl(ast::visibility vis) {
     if (match(token_kind::indent)) {
       while (!at_any(token_kind::dedent, token_kind::eof)) {
         skip_newlines();
-        if (at_any(token_kind::dedent, token_kind::eof)) break;
+        if (at_any(token_kind::dedent, token_kind::eof))
+          break;
         auto item = parse_top_level_item();
-        if (item) decl->if_body.push_back(std::move(item));
-        else synchronize();
+        if (item)
+          decl->if_body.push_back(std::move(item));
+        else
+          synchronize();
       }
       expect_block_end("static if");
     }
@@ -1727,10 +1772,13 @@ ast::Ptr<ast::static_decl> Parser::parse_static_decl(ast::visibility vis) {
       if (match(token_kind::indent)) {
         while (!at_any(token_kind::dedent, token_kind::eof)) {
           skip_newlines();
-          if (at_any(token_kind::dedent, token_kind::eof)) break;
+          if (at_any(token_kind::dedent, token_kind::eof))
+            break;
           auto item = parse_top_level_item();
-          if (item) decl->else_body.push_back(std::move(item));
-          else synchronize();
+          if (item)
+            decl->else_body.push_back(std::move(item));
+          else
+            synchronize();
         }
         expect_block_end("static else");
       }
@@ -1738,7 +1786,7 @@ ast::Ptr<ast::static_decl> Parser::parse_static_decl(ast::visibility vis) {
   } else if (at(token_kind::kw_assert)) {
     // static assert expr [, message]
     decl->decl_kind = ast::StaticDeclKind::Assert;
-    advance();  // consume `assert`
+    advance(); // consume `assert`
     decl->assert_condition = parse_expr();
     if (match(token_kind::comma)) {
       auto msg_tok = expect(token_kind::string_lit);
@@ -1748,7 +1796,7 @@ ast::Ptr<ast::static_decl> Parser::parse_static_decl(ast::visibility vis) {
   } else if (at(token_kind::kw_for)) {
     // static for vars in expr [if guard] => expr   OR
     // static for vars in expr [if guard]: block
-    advance();  // consume `for`
+    advance(); // consume `for`
     decl->for_patterns = parse_for_vars();
     expect_with_context(token_kind::kw_in, "in `static for ... in ...`");
     decl->for_iterable = parse_expr();
@@ -1771,10 +1819,13 @@ ast::Ptr<ast::static_decl> Parser::parse_static_decl(ast::visibility vis) {
       if (match(token_kind::indent)) {
         while (!at_any(token_kind::dedent, token_kind::eof)) {
           skip_newlines();
-          if (at_any(token_kind::dedent, token_kind::eof)) break;
+          if (at_any(token_kind::dedent, token_kind::eof))
+            break;
           auto stmt = parse_stmt();
-          if (stmt) decl->for_body.push_back(std::move(stmt));
-          else synchronize();
+          if (stmt)
+            decl->for_body.push_back(std::move(stmt));
+          else
+            synchronize();
         }
         expect_block_end("static for");
       }
@@ -1805,75 +1856,79 @@ ast::Ptr<ast::static_decl> Parser::parse_static_decl(ast::visibility vis) {
 ast::Ptr<ast::Node> Parser::parse_stmt() {
   skip_newlines();
 
-  if (at_eof() || at(token_kind::dedent)) return nullptr;
+  if (at_eof() || at(token_kind::dedent))
+    return nullptr;
 
   // Check for statements that start with a keyword.
   switch (current()) {
-    case token_kind::kw_let:
-      return parse_let_stmt();
-    case token_kind::kw_var:
-      return parse_var_stmt();
-    case token_kind::kw_return:
-      return parse_return_stmt();
-    case token_kind::kw_if:
-      return parse_if_stmt();
-    case token_kind::kw_while:
-      return parse_while_stmt();
-    case token_kind::kw_for:
-      return parse_for_stmt();
-    case token_kind::kw_match:
-      return parse_match_stmt();
-    case token_kind::kw_crew:
-      return parse_crew_stmt();
-    case token_kind::kw_asm:
-      return parse_asm_stmt();
-    case token_kind::tilde:
-      return parse_splice_stmt();
+  case token_kind::kw_let:
+    return parse_let_stmt();
+  case token_kind::kw_var:
+    return parse_var_stmt();
+  case token_kind::kw_return:
+    return parse_return_stmt();
+  case token_kind::kw_if:
+    return parse_if_stmt();
+  case token_kind::kw_while:
+    return parse_while_stmt();
+  case token_kind::kw_for:
+    return parse_for_stmt();
+  case token_kind::kw_match:
+    return parse_match_stmt();
+  case token_kind::kw_crew:
+    return parse_crew_stmt();
+  case token_kind::kw_asm:
+    return parse_asm_stmt();
+  case token_kind::tilde:
+    return parse_splice_stmt();
 
-    case token_kind::kw_use:
-      return parse_use_decl(ast::Visibility::Default);
-    case token_kind::kw_type:
-      return parse_type_decl(ast::Visibility::Default);
-    case token_kind::kw_static:
-      return parse_static_decl(ast::Visibility::Default);
+  case token_kind::kw_use:
+    return parse_use_decl(ast::Visibility::Default);
+  case token_kind::kw_type:
+    return parse_type_decl(ast::Visibility::Default);
+  case token_kind::kw_static:
+    return parse_static_decl(ast::Visibility::Default);
 
-    case token_kind::kw_pub:
-    case token_kind::kw_internal:
-    case token_kind::kw_super:
-    case token_kind::kw_priv: {
-      auto vis = parse_optional_visibility();
-      if (at(token_kind::kw_def) || peek().is_func_modifier()) {
-        auto mods = parse_func_modifiers();
-        if (at(token_kind::kw_def)) {
-          return parse_func_decl(vis, std::move(mods));
-        }
-      }
-      if (at(token_kind::kw_type)) return parse_type_decl(vis);
-      if (at(token_kind::kw_static)) return parse_static_decl(vis);
-      if (at(token_kind::kw_use)) return parse_use_decl(vis);
-      emit_unexpected("a declaration after visibility modifier");
-      synchronize_to_newline();
-      return make_error_node(peek().span);
-    }
-
-    case token_kind::kw_def:
-      return parse_func_decl(ast::Visibility::Default, ast::func_modifiers{});
-
-    case token_kind::kw_pure:
-    case token_kind::kw_async:
-    case token_kind::kw_machine: {
+  case token_kind::kw_pub:
+  case token_kind::kw_internal:
+  case token_kind::kw_super:
+  case token_kind::kw_priv: {
+    auto vis = parse_optional_visibility();
+    if (at(token_kind::kw_def) || peek().is_func_modifier()) {
       auto mods = parse_func_modifiers();
       if (at(token_kind::kw_def)) {
-        return parse_func_decl(ast::Visibility::Default, std::move(mods));
+        return parse_func_decl(vis, std::move(mods));
       }
-      emit_unexpected("`def` after function modifiers");
-      synchronize_to_newline();
-      return make_error_node(peek().span);
     }
+    if (at(token_kind::kw_type))
+      return parse_type_decl(vis);
+    if (at(token_kind::kw_static))
+      return parse_static_decl(vis);
+    if (at(token_kind::kw_use))
+      return parse_use_decl(vis);
+    emit_unexpected("a declaration after visibility modifier");
+    synchronize_to_newline();
+    return make_error_node(peek().span);
+  }
 
-    default:
-      // Expression or assignment statement.
-      return parse_expr_or_assign_stmt();
+  case token_kind::kw_def:
+    return parse_func_decl(ast::Visibility::Default, ast::func_modifiers{});
+
+  case token_kind::kw_pure:
+  case token_kind::kw_async:
+  case token_kind::kw_machine: {
+    auto mods = parse_func_modifiers();
+    if (at(token_kind::kw_def)) {
+      return parse_func_decl(ast::Visibility::Default, std::move(mods));
+    }
+    emit_unexpected("`def` after function modifiers");
+    synchronize_to_newline();
+    return make_error_node(peek().span);
+  }
+
+  default:
+    // Expression or assignment statement.
+    return parse_expr_or_assign_stmt();
   }
 }
 
@@ -1900,10 +1955,13 @@ ast::Ptr<ast::let_stmt> Parser::parse_let_stmt() {
     if (match(token_kind::indent)) {
       while (!at_any(token_kind::dedent, token_kind::eof)) {
         skip_newlines();
-        if (at_any(token_kind::dedent, token_kind::eof)) break;
+        if (at_any(token_kind::dedent, token_kind::eof))
+          break;
         auto s = parse_stmt();
-        if (s) stmt->else_body.push_back(std::move(s));
-        else synchronize();
+        if (s)
+          stmt->else_body.push_back(std::move(s));
+        else
+          synchronize();
       }
       expect_block_end("let-else");
     }
@@ -2076,7 +2134,8 @@ ast::Ptr<ast::match_stmt> Parser::parse_match_stmt() {
   if (match(token_kind::indent)) {
     while (!at_any(token_kind::dedent, token_kind::eof)) {
       skip_newlines();
-      if (at_any(token_kind::dedent, token_kind::eof)) break;
+      if (at_any(token_kind::dedent, token_kind::eof))
+        break;
       stmt->arms.push_back(parse_match_arm());
     }
     expect_block_end("match");
@@ -2104,7 +2163,8 @@ ast::Ptr<ast::crew_stmt> Parser::parse_crew_stmt() {
       auto val_tok = expect(token_kind::ident);
       opt.value = std::string(val_tok.text);
       stmt->options.push_back(std::move(opt));
-      if (!match(token_kind::comma)) break;
+      if (!match(token_kind::comma))
+        break;
     }
     expect(token_kind::rparen);
   }
@@ -2132,9 +2192,12 @@ ast::Ptr<ast::asm_stmt> Parser::parse_asm_stmt() {
   // Consume everything until matching `}`.
   int depth = 1;
   while (!at_eof() && depth > 0) {
-    if (at(token_kind::lbrace)) ++depth;
-    else if (at(token_kind::rbrace)) --depth;
-    if (depth > 0) advance();
+    if (at(token_kind::lbrace))
+      ++depth;
+    else if (at(token_kind::rbrace))
+      --depth;
+    if (depth > 0)
+      advance();
   }
 
   // Collect the text between the braces.
@@ -2172,7 +2235,7 @@ ast::Ptr<ast::Node> Parser::parse_expr_or_assign_stmt() {
   // Check for assignment operator.
   auto assign_op = token_to_assign_op(current());
   if (assign_op) {
-    advance();  // consume the assign op
+    advance(); // consume the assign op
 
     auto assign = ast::make<ast::assign_stmt>();
     assign->target = std::move(expr);
@@ -2195,13 +2258,12 @@ ast::Ptr<ast::Node> Parser::parse_expr_or_assign_stmt() {
 //  Expressions
 // ==========================================================================
 
-ast::Ptr<ast::Expr> Parser::parse_expr() {
-  return parse_pipe_expr();
-}
+ast::Ptr<ast::Expr> Parser::parse_expr() { return parse_pipe_expr(); }
 
 ast::Ptr<ast::Expr> Parser::parse_pipe_expr() {
   auto lhs = parse_or_expr();
-  if (!lhs) return nullptr;
+  if (!lhs)
+    return nullptr;
 
   // The `|` token is overloaded (pipe vs union type vs or-pattern).
   // In expression context, `|` after an expression is the pipe operator.
@@ -2226,7 +2288,8 @@ ast::Ptr<ast::Expr> Parser::parse_pipe_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_or_expr() {
   auto lhs = parse_and_expr();
-  if (!lhs) return nullptr;
+  if (!lhs)
+    return nullptr;
 
   while (at(token_kind::kw_or)) {
     advance();
@@ -2249,7 +2312,8 @@ ast::Ptr<ast::Expr> Parser::parse_or_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_and_expr() {
   auto lhs = parse_not_expr();
-  if (!lhs) return nullptr;
+  if (!lhs)
+    return nullptr;
 
   while (at(token_kind::kw_and)) {
     advance();
@@ -2291,7 +2355,8 @@ ast::Ptr<ast::Expr> Parser::parse_not_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_cmp_expr() {
   auto lhs = parse_add_expr();
-  if (!lhs) return nullptr;
+  if (!lhs)
+    return nullptr;
 
   auto maybe_op = token_to_cmp_op();
   if (maybe_op) {
@@ -2301,7 +2366,7 @@ ast::Ptr<ast::Expr> Parser::parse_cmp_expr() {
     // Handle `not in` (two-token operator).
     if (op_tok.kind == token_kind::kw_not) {
       if (at(token_kind::kw_in)) {
-        advance();  // consume `in`
+        advance(); // consume `in`
         op = ast::BinaryOp::NotIn;
       } else {
         // Just `not` in comparison position — this is odd.
@@ -2337,11 +2402,13 @@ ast::Ptr<ast::Expr> Parser::parse_cmp_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_add_expr() {
   auto lhs = parse_mul_expr();
-  if (!lhs) return nullptr;
+  if (!lhs)
+    return nullptr;
 
   while (true) {
     auto maybe_op = token_to_add_op(current());
-    if (!maybe_op) break;
+    if (!maybe_op)
+      break;
 
     advance();
     auto op = *maybe_op;
@@ -2365,11 +2432,13 @@ ast::Ptr<ast::Expr> Parser::parse_add_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_mul_expr() {
   auto lhs = parse_unary_expr();
-  if (!lhs) return nullptr;
+  if (!lhs)
+    return nullptr;
 
   while (true) {
     auto maybe_op = token_to_mul_op(current());
-    if (!maybe_op) break;
+    if (!maybe_op)
+      break;
 
     advance();
     auto op = *maybe_op;
@@ -2393,80 +2462,81 @@ ast::Ptr<ast::Expr> Parser::parse_mul_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_unary_expr() {
   switch (current()) {
-    case token_kind::minus: {
-      auto op_tok = advance();
-      auto operand = parse_unary_expr();
-      if (!operand) {
-        emit_unexpected("an expression after `-`");
-        operand = make_error_expr(op_tok.span);
-      }
-      auto unary = ast::make<ast::unary_expr>();
-      unary->span = op_tok.span.merge(operand->span);
-      unary->op = ast::UnaryOp::Neg;
-      unary->operand = std::move(operand);
-      return unary;
+  case token_kind::minus: {
+    auto op_tok = advance();
+    auto operand = parse_unary_expr();
+    if (!operand) {
+      emit_unexpected("an expression after `-`");
+      operand = make_error_expr(op_tok.span);
     }
+    auto unary = ast::make<ast::unary_expr>();
+    unary->span = op_tok.span.merge(operand->span);
+    unary->op = ast::UnaryOp::Neg;
+    unary->operand = std::move(operand);
+    return unary;
+  }
 
-    case token_kind::tilde: {
-      // At expression depth 0, `~(expr)` is a splice, `~anything_else`
-      // is bitwise complement. We check for `(` to disambiguate.
-      if (peek_at(1).is(token_kind::lparen)) {
-        return parse_splice_expr_inner();
-      }
-      if (peek_at(1).is(token_kind::ident)) {
-        // Could also be a splice: `~name`
-        return parse_splice_expr_inner();
-      }
-      auto op_tok = advance();
-      auto operand = parse_unary_expr();
-      if (!operand) {
-        emit_unexpected("an expression after `~`");
-        operand = make_error_expr(op_tok.span);
-      }
-      auto unary = ast::make<ast::unary_expr>();
-      unary->span = op_tok.span.merge(operand->span);
-      unary->op = ast::UnaryOp::BitNot;
-      unary->operand = std::move(operand);
-      return unary;
+  case token_kind::tilde: {
+    // At expression depth 0, `~(expr)` is a splice, `~anything_else`
+    // is bitwise complement. We check for `(` to disambiguate.
+    if (peek_at(1).is(token_kind::lparen)) {
+      return parse_splice_expr_inner();
     }
-
-    case token_kind::star: {
-      auto op_tok = advance();
-      auto operand = parse_unary_expr();
-      if (!operand) {
-        emit_unexpected("an expression after `*`");
-        operand = make_error_expr(op_tok.span);
-      }
-      auto unary = ast::make<ast::unary_expr>();
-      unary->span = op_tok.span.merge(operand->span);
-      unary->op = ast::UnaryOp::Deref;
-      unary->operand = std::move(operand);
-      return unary;
+    if (peek_at(1).is(token_kind::ident)) {
+      // Could also be a splice: `~name`
+      return parse_splice_expr_inner();
     }
-
-    case token_kind::amp: {
-      auto op_tok = advance();
-      bool is_mut = match(token_kind::kw_mut);
-      auto operand = parse_unary_expr();
-      if (!operand) {
-        emit_unexpected("an expression after `&`");
-        operand = make_error_expr(op_tok.span);
-      }
-      auto unary = ast::make<ast::unary_expr>();
-      unary->span = op_tok.span.merge(operand->span);
-      unary->op = is_mut ? ast::UnaryOp::AddrOfMut : ast::UnaryOp::AddrOf;
-      unary->operand = std::move(operand);
-      return unary;
+    auto op_tok = advance();
+    auto operand = parse_unary_expr();
+    if (!operand) {
+      emit_unexpected("an expression after `~`");
+      operand = make_error_expr(op_tok.span);
     }
+    auto unary = ast::make<ast::unary_expr>();
+    unary->span = op_tok.span.merge(operand->span);
+    unary->op = ast::UnaryOp::BitNot;
+    unary->operand = std::move(operand);
+    return unary;
+  }
 
-    default:
-      return parse_postfix_expr();
+  case token_kind::star: {
+    auto op_tok = advance();
+    auto operand = parse_unary_expr();
+    if (!operand) {
+      emit_unexpected("an expression after `*`");
+      operand = make_error_expr(op_tok.span);
+    }
+    auto unary = ast::make<ast::unary_expr>();
+    unary->span = op_tok.span.merge(operand->span);
+    unary->op = ast::UnaryOp::Deref;
+    unary->operand = std::move(operand);
+    return unary;
+  }
+
+  case token_kind::amp: {
+    auto op_tok = advance();
+    bool is_mut = match(token_kind::kw_mut);
+    auto operand = parse_unary_expr();
+    if (!operand) {
+      emit_unexpected("an expression after `&`");
+      operand = make_error_expr(op_tok.span);
+    }
+    auto unary = ast::make<ast::unary_expr>();
+    unary->span = op_tok.span.merge(operand->span);
+    unary->op = is_mut ? ast::UnaryOp::AddrOfMut : ast::UnaryOp::AddrOf;
+    unary->operand = std::move(operand);
+    return unary;
+  }
+
+  default:
+    return parse_postfix_expr();
   }
 }
 
 ast::Ptr<ast::Expr> Parser::parse_postfix_expr() {
   auto base = parse_primary_expr();
-  if (!base) return nullptr;
+  if (!base)
+    return nullptr;
 
   while (true) {
     // Check if the current token can start a postfix suffix before
@@ -2490,164 +2560,166 @@ ast::Ptr<ast::Expr> Parser::parse_postfix_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_postfix_suffix(ast::Ptr<ast::Expr> base) {
   switch (current()) {
-    case token_kind::dot: {
-      advance();  // consume `.`
-      if (at(token_kind::ident)) {
-        auto field_tok = advance();
-        auto field = ast::make<ast::field_expr>();
-        field->span = base->span.merge(field_tok.span);
-        field->object = std::move(base);
-        field->field_name = std::string(field_tok.text);
+  case token_kind::dot: {
+    advance(); // consume `.`
+    if (at(token_kind::ident)) {
+      auto field_tok = advance();
+      auto field = ast::make<ast::field_expr>();
+      field->span = base->span.merge(field_tok.span);
+      field->object = std::move(base);
+      field->field_name = std::string(field_tok.text);
 
-        // Check for generic method: `.method[T, U]`
-        if (at(token_kind::lbracket)) {
-          advance();
-          while (!at(token_kind::rbracket) && !at_eof()) {
-            auto arg = parse_type_expr();
-            if (arg) field->generic_args.push_back(std::move(arg));
-            if (!match(token_kind::comma)) break;
-          }
-          expect(token_kind::rbracket);
-          field->span.extend_to(previous_span());
-        }
-
-        return field;
-      } else if (at(token_kind::lparen)) {
-        // `.()` — field via parens (unusual but grammatical).
+      // Check for generic method: `.method[T, U]`
+      if (at(token_kind::lbracket)) {
         advance();
-        expect(token_kind::rparen);
-        auto field = ast::make<ast::field_expr>();
-        field->span = base->span.merge(previous_span());
-        field->object = std::move(base);
-        return field;
-      } else {
-        emit_unexpected("a field name after `.`");
-        return base;
+        while (!at(token_kind::rbracket) && !at_eof()) {
+          auto arg = parse_type_expr();
+          if (arg)
+            field->generic_args.push_back(std::move(arg));
+          if (!match(token_kind::comma))
+            break;
+        }
+        expect(token_kind::rbracket);
+        field->span.extend_to(previous_span());
       }
-    }
 
-    case token_kind::lbracket: {
-      advance();  // consume `[`
-      auto index = parse_expr();
-      expect(token_kind::rbracket);
-
-      auto idx = ast::make<ast::index_expr>();
-      idx->span = base->span.merge(previous_span());
-      idx->object = std::move(base);
-      idx->index = std::move(index);
-      return idx;
-    }
-
-    case token_kind::lparen: {
-      auto call = ast::make<ast::call_expr>();
-      call->span = base->span;
-      call->callee = std::move(base);
-
-      advance();  // consume `(`
-      if (!at(token_kind::rparen)) {
-        call->args = parse_call_args();
-      }
-      expect(token_kind::rparen);
-
-      call->span.extend_to(previous_span());
-      return call;
-    }
-
-    case token_kind::question: {
-      auto q_tok = advance();
-      auto try_expr = ast::make<ast::try_expr>();
-      try_expr->span = base->span.merge(q_tok.span);
-      try_expr->operand = std::move(base);
-      return try_expr;
-    }
-
-    case token_kind::kw_as: {
+      return field;
+    } else if (at(token_kind::lparen)) {
+      // `.()` — field via parens (unusual but grammatical).
       advance();
-      auto target_type = parse_type_expr();
-      auto cast = ast::make<ast::cast_expr>();
-      cast->span = base->span.merge(previous_span());
-      cast->operand = std::move(base);
-      cast->target_type = std::move(target_type);
-      return cast;
+      expect(token_kind::rparen);
+      auto field = ast::make<ast::field_expr>();
+      field->span = base->span.merge(previous_span());
+      field->object = std::move(base);
+      return field;
+    } else {
+      emit_unexpected("a field name after `.`");
+      return base;
     }
+  }
 
-    default:
-      // No postfix suffix — return nullptr to signal "done".
-      return nullptr;
+  case token_kind::lbracket: {
+    advance(); // consume `[`
+    auto index = parse_expr();
+    expect(token_kind::rbracket);
+
+    auto idx = ast::make<ast::index_expr>();
+    idx->span = base->span.merge(previous_span());
+    idx->object = std::move(base);
+    idx->index = std::move(index);
+    return idx;
+  }
+
+  case token_kind::lparen: {
+    auto call = ast::make<ast::call_expr>();
+    call->span = base->span;
+    call->callee = std::move(base);
+
+    advance(); // consume `(`
+    if (!at(token_kind::rparen)) {
+      call->args = parse_call_args();
+    }
+    expect(token_kind::rparen);
+
+    call->span.extend_to(previous_span());
+    return call;
+  }
+
+  case token_kind::question: {
+    auto q_tok = advance();
+    auto try_expr = ast::make<ast::try_expr>();
+    try_expr->span = base->span.merge(q_tok.span);
+    try_expr->operand = std::move(base);
+    return try_expr;
+  }
+
+  case token_kind::kw_as: {
+    advance();
+    auto target_type = parse_type_expr();
+    auto cast = ast::make<ast::cast_expr>();
+    cast->span = base->span.merge(previous_span());
+    cast->operand = std::move(base);
+    cast->target_type = std::move(target_type);
+    return cast;
+  }
+
+  default:
+    // No postfix suffix — return nullptr to signal "done".
+    return nullptr;
   }
 }
 
 ast::Ptr<ast::Expr> Parser::parse_primary_expr() {
   switch (current()) {
-    // Literals.
-    case token_kind::int_lit:
-    case token_kind::float_lit:
-    case token_kind::string_lit:
-    case token_kind::char_lit:
-    case token_kind::kw_true:
-    case token_kind::kw_false:
-    case token_kind::kw_unit:
-      return parse_literal_expr();
+  // Literals.
+  case token_kind::int_lit:
+  case token_kind::float_lit:
+  case token_kind::string_lit:
+  case token_kind::char_lit:
+  case token_kind::kw_true:
+  case token_kind::kw_false:
+  case token_kind::kw_unit:
+    return parse_literal_expr();
 
-    // Identifiers and module paths.
-    case token_kind::ident:
-      return parse_ident_or_path_expr();
+  // Identifiers and module paths.
+  case token_kind::ident:
+    return parse_ident_or_path_expr();
 
-    // Parenthesized expr, tuple, or grouped.
-    case token_kind::lparen:
-      return parse_paren_expr();
+  // Parenthesized expr, tuple, or grouped.
+  case token_kind::lparen:
+    return parse_paren_expr();
 
-    // Array literal or fill.
-    case token_kind::lbracket:
-      return parse_bracket_expr();
+  // Array literal or fill.
+  case token_kind::lbracket:
+    return parse_bracket_expr();
 
-    // Struct literal.
-    case token_kind::lbrace:
-      return parse_brace_expr();
+  // Struct literal.
+  case token_kind::lbrace:
+    return parse_brace_expr();
 
-    // Lambda expressions.
-    case token_kind::kw_pure:
-    case token_kind::kw_move:
-      return parse_lambda_expr();
+  // Lambda expressions.
+  case token_kind::kw_pure:
+  case token_kind::kw_move:
+    return parse_lambda_expr();
 
-    // Match expression.
-    case token_kind::kw_match:
-      return parse_match_expr();
+  // Match expression.
+  case token_kind::kw_match:
+    return parse_match_expr();
 
-    // If expression.
-    case token_kind::kw_if:
-      return parse_if_expr();
+  // If expression.
+  case token_kind::kw_if:
+    return parse_if_expr();
 
-    // For comprehension.
-    case token_kind::kw_for:
-      return parse_for_expr();
+  // For comprehension.
+  case token_kind::kw_for:
+    return parse_for_expr();
 
-    // Await expression.
-    case token_kind::kw_await:
-      return parse_await_expr();
+  // Await expression.
+  case token_kind::kw_await:
+    return parse_await_expr();
 
-    // Par expression.
-    case token_kind::kw_par:
-      return parse_par_expr();
+  // Par expression.
+  case token_kind::kw_par:
+    return parse_par_expr();
 
-    // Race expression.
-    case token_kind::kw_race:
-      return parse_race_expr();
+  // Race expression.
+  case token_kind::kw_race:
+    return parse_race_expr();
 
-    // On expression.
-    case token_kind::kw_on:
-      return parse_on_expr();
+  // On expression.
+  case token_kind::kw_on:
+    return parse_on_expr();
 
-    // Quote expression.
-    case token_kind::backtick:
-      return parse_quote_expr();
+  // Quote expression.
+  case token_kind::backtick:
+    return parse_quote_expr();
 
-    // Static expression.
-    case token_kind::kw_static:
-      return parse_static_expr();
+  // Static expression.
+  case token_kind::kw_static:
+    return parse_static_expr();
 
-    default:
-      return nullptr;
+  default:
+    return nullptr;
   }
 }
 
@@ -2685,7 +2757,7 @@ ast::Ptr<ast::Expr> Parser::parse_ident_or_path_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_paren_expr() {
   auto start = peek().span;
-  advance();  // consume `(`
+  advance(); // consume `(`
 
   // Empty parens: `()` — unit literal.
   if (at(token_kind::rparen)) {
@@ -2710,7 +2782,8 @@ ast::Ptr<ast::Expr> Parser::parse_paren_expr() {
     tuple->elements.push_back(std::move(first));
 
     while (match(token_kind::comma)) {
-      if (at(token_kind::rparen)) break;  // trailing comma
+      if (at(token_kind::rparen))
+        break; // trailing comma
       auto elem = parse_expr();
       if (elem) {
         tuple->elements.push_back(std::move(elem));
@@ -2734,7 +2807,7 @@ ast::Ptr<ast::Expr> Parser::parse_paren_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_bracket_expr() {
   auto start = peek().span;
-  advance();  // consume `[`
+  advance(); // consume `[`
 
   // Empty array: `[]`
   if (at(token_kind::rbracket)) {
@@ -2769,7 +2842,8 @@ ast::Ptr<ast::Expr> Parser::parse_bracket_expr() {
   arr->elements.push_back(std::move(first));
 
   while (match(token_kind::comma)) {
-    if (at(token_kind::rbracket)) break;  // trailing comma
+    if (at(token_kind::rbracket))
+      break; // trailing comma
     auto elem = parse_expr();
     if (elem) {
       arr->elements.push_back(std::move(elem));
@@ -2785,7 +2859,7 @@ ast::Ptr<ast::Expr> Parser::parse_bracket_expr() {
 
 ast::Ptr<ast::Expr> Parser::parse_brace_expr() {
   auto start = peek().span;
-  advance();  // consume `{`
+  advance(); // consume `{`
 
   // Empty struct literal: `{}`
   if (at(token_kind::rbrace)) {
@@ -2800,7 +2874,8 @@ ast::Ptr<ast::Expr> Parser::parse_brace_expr() {
 
   while (!at(token_kind::rbrace) && !at_eof()) {
     skip_newlines();
-    if (at(token_kind::rbrace)) break;
+    if (at(token_kind::rbrace))
+      break;
 
     ast::struct_field_init field;
     field.span = peek().span;
@@ -2848,7 +2923,7 @@ ast::Ptr<ast::Expr> Parser::parse_lambda_expr() {
     param.pattern = std::move(binding);
     lambda->params.push_back(std::move(param));
   } else if (at(token_kind::lparen)) {
-    advance();  // consume `(`
+    advance(); // consume `(`
     while (!at(token_kind::rparen) && !at_eof()) {
       ast::lambda_param param;
       param.span = peek().span;
@@ -2858,7 +2933,8 @@ ast::Ptr<ast::Expr> Parser::parse_lambda_expr() {
       }
       param.span.extend_to(previous_span());
       lambda->params.push_back(std::move(param));
-      if (!match(token_kind::comma)) break;
+      if (!match(token_kind::comma))
+        break;
     }
     expect(token_kind::rparen);
   } else if (at(token_kind::ident)) {
@@ -2881,28 +2957,30 @@ ast::Ptr<ast::Expr> Parser::parse_lambda_expr() {
   // `=>` introduces the body.
   if (!at(token_kind::fat_arrow)) {
     emit(diagnostic(diagnostic_level::error,
-                    "expected `=>` to start the lambda body",
-                    file_id_)
+                    "expected `=>` to start the lambda body", file_id_)
              .with_label(peek().span, "expected `=>` here")
              .with_help("Lambda expressions use `=>` between the parameters "
                         "and the body. For example: `x => x + 1` or "
                         "`(a, b) => a + b`."));
   } else {
-    advance();  // consume `=>`
+    advance(); // consume `=>`
   }
 
   // Body: inline expr or block.
   if (at(token_kind::colon) && peek_at(1).is(token_kind::newline)) {
     // Block body: `=> : NEWLINE INDENT stmts DEDENT`
-    advance();  // consume `:`
+    advance(); // consume `:`
     skip_newlines();
     if (match(token_kind::indent)) {
       while (!at_any(token_kind::dedent, token_kind::eof)) {
         skip_newlines();
-        if (at_any(token_kind::dedent, token_kind::eof)) break;
+        if (at_any(token_kind::dedent, token_kind::eof))
+          break;
         auto stmt = parse_stmt();
-        if (stmt) lambda->body_stmts.push_back(std::move(stmt));
-        else synchronize();
+        if (stmt)
+          lambda->body_stmts.push_back(std::move(stmt));
+        else
+          synchronize();
       }
       expect_block_end("lambda");
     }
@@ -2926,7 +3004,8 @@ ast::Ptr<ast::match_expr> Parser::parse_match_expr() {
   if (match(token_kind::indent)) {
     while (!at_any(token_kind::dedent, token_kind::eof)) {
       skip_newlines();
-      if (at_any(token_kind::dedent, token_kind::eof)) break;
+      if (at_any(token_kind::dedent, token_kind::eof))
+        break;
       mexpr->arms.push_back(parse_match_arm());
     }
     expect_block_end("match");
@@ -2950,8 +3029,7 @@ ast::match_arm Parser::parse_match_arm() {
   // `=>` introduces the arm body.
   if (!match(token_kind::fat_arrow)) {
     emit(diagnostic(diagnostic_level::error,
-                    "expected `=>` after match pattern",
-                    file_id_)
+                    "expected `=>` after match pattern", file_id_)
              .with_label(peek().span, "expected `=>` here")
              .with_help("Each match arm uses `=>` between the pattern and "
                         "the result. For example:\n"
@@ -2963,15 +3041,18 @@ ast::match_arm Parser::parse_match_arm() {
 
   // Body: inline expr or block.
   if (at(token_kind::colon) && peek_at(1).is(token_kind::newline)) {
-    advance();  // consume `:`
+    advance(); // consume `:`
     skip_newlines();
     if (match(token_kind::indent)) {
       while (!at_any(token_kind::dedent, token_kind::eof)) {
         skip_newlines();
-        if (at_any(token_kind::dedent, token_kind::eof)) break;
+        if (at_any(token_kind::dedent, token_kind::eof))
+          break;
         auto stmt = parse_stmt();
-        if (stmt) arm.body_stmts.push_back(std::move(stmt));
-        else synchronize();
+        if (stmt)
+          arm.body_stmts.push_back(std::move(stmt));
+        else
+          synchronize();
       }
       expect_block_end("match arm");
     }
@@ -3052,7 +3133,7 @@ ast::Ptr<ast::for_expr> Parser::parse_for_expr() {
   do {
     ast::for_expr::IterClause clause;
     auto pats = parse_for_vars();
-    for (auto& p : pats) {
+    for (auto &p : pats) {
       clause.patterns.push_back(std::move(p));
     }
     expect_with_context(token_kind::kw_in, "in `for ... in ...`");
@@ -3099,9 +3180,11 @@ ast::Ptr<ast::par_expr> Parser::parse_par_expr() {
   if (match(token_kind::indent)) {
     while (!at_any(token_kind::dedent, token_kind::eof)) {
       skip_newlines();
-      if (at_any(token_kind::dedent, token_kind::eof)) break;
+      if (at_any(token_kind::dedent, token_kind::eof))
+        break;
       auto expr = parse_expr();
-      if (expr) pexpr->branches.push_back(std::move(expr));
+      if (expr)
+        pexpr->branches.push_back(std::move(expr));
       expect_newline();
     }
     expect_block_end("par");
@@ -3122,9 +3205,11 @@ ast::Ptr<ast::race_expr> Parser::parse_race_expr() {
   if (match(token_kind::indent)) {
     while (!at_any(token_kind::dedent, token_kind::eof)) {
       skip_newlines();
-      if (at_any(token_kind::dedent, token_kind::eof)) break;
+      if (at_any(token_kind::dedent, token_kind::eof))
+        break;
       auto expr = parse_expr();
-      if (expr) rexpr->branches.push_back(std::move(expr));
+      if (expr)
+        rexpr->branches.push_back(std::move(expr));
       expect_newline();
     }
     expect_block_end("race");
@@ -3172,10 +3257,13 @@ ast::Ptr<ast::block_expr> Parser::parse_block_expr() {
   if (match(token_kind::indent)) {
     while (!at_any(token_kind::dedent, token_kind::eof)) {
       skip_newlines();
-      if (at_any(token_kind::dedent, token_kind::eof)) break;
+      if (at_any(token_kind::dedent, token_kind::eof))
+        break;
       auto stmt = parse_stmt();
-      if (stmt) bexpr->stmts.push_back(std::move(stmt));
-      else synchronize();
+      if (stmt)
+        bexpr->stmts.push_back(std::move(stmt));
+      else
+        synchronize();
     }
     expect_block_end("block");
   }
@@ -3203,11 +3291,12 @@ ast::Ptr<ast::quote_expr> Parser::parse_quote_expr() {
         ++depth;
       } else {
         --depth;
-        if (depth == 0) break;
+        if (depth == 0)
+          break;
         qexpr->tokens.push_back(advance());
       }
     } else if (at(token_kind::rparen) && has_paren && depth == 1) {
-      advance();  // consume `)`
+      advance(); // consume `)`
       has_paren = false;
     } else {
       qexpr->tokens.push_back(advance());
@@ -3215,7 +3304,7 @@ ast::Ptr<ast::quote_expr> Parser::parse_quote_expr() {
   }
 
   if (at(token_kind::backtick)) {
-    advance();  // consume closing backtick
+    advance(); // consume closing backtick
   } else {
     emit(diagnostic(diagnostic_level::error,
                     "unterminated quote expression — expected closing `` ` ``",
@@ -3236,7 +3325,7 @@ ast::Ptr<ast::splice_expr> Parser::parse_splice_expr_inner() {
   expect(token_kind::tilde);
 
   if (at(token_kind::lparen)) {
-    advance();  // consume `(`
+    advance(); // consume `(`
     sexpr->operand = parse_expr();
     expect(token_kind::rparen);
   } else if (at(token_kind::ident)) {
@@ -3274,7 +3363,8 @@ std::vector<ast::call_arg> Parser::parse_call_args() {
 
   do {
     skip_newlines();
-    if (at(token_kind::rparen)) break;
+    if (at(token_kind::rparen))
+      break;
 
     ast::call_arg arg;
     arg.span = peek().span;
@@ -3282,7 +3372,7 @@ std::vector<ast::call_arg> Parser::parse_call_args() {
     // Check for named argument: `name: expr`
     if (at(token_kind::ident) && peek_at(1).is(token_kind::colon)) {
       auto name_tok = advance();
-      advance();  // consume `:`
+      advance(); // consume `:`
       arg.name = std::string(name_tok.text);
       arg.value = parse_expr();
     } else {
@@ -3304,7 +3394,8 @@ std::vector<ast::call_arg> Parser::parse_call_args() {
 
 ast::Ptr<ast::Pattern> Parser::parse_pattern() {
   auto pat = parse_or_pattern();
-  if (!pat) return make_error_pattern(peek().span);
+  if (!pat)
+    return make_error_pattern(peek().span);
 
   // Optional alias: `pattern as name`
   if (at(token_kind::kw_as)) {
@@ -3324,9 +3415,11 @@ ast::Ptr<ast::Pattern> Parser::parse_pattern() {
 
 ast::Ptr<ast::Pattern> Parser::parse_or_pattern() {
   auto first = parse_atomic_pattern();
-  if (!first) return nullptr;
+  if (!first)
+    return nullptr;
 
-  if (!at(token_kind::pipe)) return first;
+  if (!at(token_kind::pipe))
+    return first;
 
   auto or_pat = ast::make<ast::or_pattern>();
   or_pat->span = first->span;
@@ -3349,52 +3442,52 @@ ast::Ptr<ast::Pattern> Parser::parse_or_pattern() {
 
 ast::Ptr<ast::Pattern> Parser::parse_atomic_pattern() {
   switch (current()) {
-    case token_kind::kw_underscore:
-      return parse_wildcard_pattern();
+  case token_kind::kw_underscore:
+    return parse_wildcard_pattern();
 
-    case token_kind::int_lit:
-    case token_kind::float_lit:
-    case token_kind::string_lit:
-    case token_kind::char_lit:
-    case token_kind::kw_true:
-    case token_kind::kw_false:
-    case token_kind::kw_unit:
-      return parse_literal_pattern();
+  case token_kind::int_lit:
+  case token_kind::float_lit:
+  case token_kind::string_lit:
+  case token_kind::char_lit:
+  case token_kind::kw_true:
+  case token_kind::kw_false:
+  case token_kind::kw_unit:
+    return parse_literal_pattern();
 
-    case token_kind::ident:
-      return parse_ident_or_constructor_pattern();
+  case token_kind::ident:
+    return parse_ident_or_constructor_pattern();
 
-    case token_kind::lparen:
-      return parse_paren_pattern();
+  case token_kind::lparen:
+    return parse_paren_pattern();
 
-    case token_kind::lbrace:
-      return parse_brace_pattern();
+  case token_kind::lbrace:
+    return parse_brace_pattern();
 
-    case token_kind::lbracket:
-      return parse_bracket_pattern();
+  case token_kind::lbracket:
+    return parse_bracket_pattern();
 
-    case token_kind::kw_some:
-    case token_kind::kw_ok:
-    case token_kind::kw_err:
-      return parse_option_result_pattern();
+  case token_kind::kw_some:
+  case token_kind::kw_ok:
+  case token_kind::kw_err:
+    return parse_option_result_pattern();
 
-    case token_kind::amp:
-      return parse_ref_pattern();
+  case token_kind::amp:
+    return parse_ref_pattern();
 
-    case token_kind::dot_dot: {
-      // Range pattern with no start: `..end`
-      advance();
-      auto range = ast::make<ast::range_pattern>();
-      range->span = previous_span();
-      if (at_any(token_kind::int_lit, token_kind::float_lit, token_kind::ident)) {
-        range->end = parse_expr();
-        range->span.extend_to(previous_span());
-      }
-      return range;
+  case token_kind::dot_dot: {
+    // Range pattern with no start: `..end`
+    advance();
+    auto range = ast::make<ast::range_pattern>();
+    range->span = previous_span();
+    if (at_any(token_kind::int_lit, token_kind::float_lit, token_kind::ident)) {
+      range->end = parse_expr();
+      range->span.extend_to(previous_span());
     }
+    return range;
+  }
 
-    default:
-      return nullptr;
+  default:
+    return nullptr;
   }
 }
 
@@ -3445,15 +3538,17 @@ ast::Ptr<ast::Pattern> Parser::parse_ident_or_constructor_pattern() {
 
   // Constructor: `Name(patterns...)`
   if (at(token_kind::lparen)) {
-    advance();  // consume `(`
+    advance(); // consume `(`
     auto ctor = ast::make<ast::constructor_pattern>();
     ctor->span = start;
     ctor->name = std::string(tok.text);
 
     while (!at(token_kind::rparen) && !at_eof()) {
       auto pat = parse_pattern();
-      if (pat) ctor->args.push_back(std::move(pat));
-      if (!match(token_kind::comma)) break;
+      if (pat)
+        ctor->args.push_back(std::move(pat));
+      if (!match(token_kind::comma))
+        break;
     }
     expect(token_kind::rparen);
     ctor->span.extend_to(previous_span());
@@ -3490,7 +3585,7 @@ ast::Ptr<ast::Pattern> Parser::parse_ident_or_constructor_pattern() {
 
 ast::Ptr<ast::Pattern> Parser::parse_paren_pattern() {
   auto start = peek().span;
-  advance();  // consume `(`
+  advance(); // consume `(`
 
   // Empty tuple pattern.
   if (at(token_kind::rparen)) {
@@ -3513,10 +3608,13 @@ ast::Ptr<ast::Pattern> Parser::parse_paren_pattern() {
     tuple->elements.push_back(std::move(first));
 
     while (match(token_kind::comma)) {
-      if (at(token_kind::rparen)) break;
+      if (at(token_kind::rparen))
+        break;
       auto elem = parse_pattern();
-      if (elem) tuple->elements.push_back(std::move(elem));
-      else break;
+      if (elem)
+        tuple->elements.push_back(std::move(elem));
+      else
+        break;
     }
 
     expect(token_kind::rparen);
@@ -3534,14 +3632,15 @@ ast::Ptr<ast::Pattern> Parser::parse_paren_pattern() {
 
 ast::Ptr<ast::Pattern> Parser::parse_brace_pattern() {
   auto start = peek().span;
-  advance();  // consume `{`
+  advance(); // consume `{`
 
   auto spat = ast::make<ast::struct_pattern>();
   spat->span = start;
 
   while (!at(token_kind::rbrace) && !at_eof()) {
     skip_newlines();
-    if (at(token_kind::rbrace)) break;
+    if (at(token_kind::rbrace))
+      break;
 
     ast::field_pattern fp;
     fp.span = peek().span;
@@ -3550,7 +3649,7 @@ ast::Ptr<ast::Pattern> Parser::parse_brace_pattern() {
       advance();
       fp.is_rest = true;
       spat->fields.push_back(std::move(fp));
-      break;  // `..` must be last
+      break; // `..` must be last
     }
 
     auto name_tok = expect(token_kind::ident);
@@ -3578,15 +3677,17 @@ ast::Ptr<ast::Pattern> Parser::parse_brace_pattern() {
 
 ast::Ptr<ast::Pattern> Parser::parse_bracket_pattern() {
   auto start = peek().span;
-  advance();  // consume `[`
+  advance(); // consume `[`
 
   auto apat = ast::make<ast::array_pattern>();
   apat->span = start;
 
   while (!at(token_kind::rbracket) && !at_eof()) {
     auto elem = parse_pattern();
-    if (elem) apat->elements.push_back(std::move(elem));
-    if (!match(token_kind::comma)) break;
+    if (elem)
+      apat->elements.push_back(std::move(elem));
+    if (!match(token_kind::comma))
+      break;
   }
 
   expect(token_kind::rbracket);
@@ -3600,7 +3701,8 @@ ast::Ptr<ast::Pattern> Parser::parse_option_result_pattern() {
 
   expect(token_kind::lparen);
   auto inner = parse_pattern();
-  if (!inner) inner = make_error_pattern(peek().span);
+  if (!inner)
+    inner = make_error_pattern(peek().span);
   expect(token_kind::rparen);
 
   if (kw.kind == token_kind::kw_some) {
@@ -3622,7 +3724,7 @@ ast::Ptr<ast::Pattern> Parser::parse_option_result_pattern() {
 
 ast::Ptr<ast::Pattern> Parser::parse_ref_pattern() {
   auto start = peek().span;
-  advance();  // consume `&`
+  advance(); // consume `&`
 
   auto inner = parse_pattern();
   if (!inner) {
@@ -3648,7 +3750,8 @@ std::vector<ast::Ptr<ast::Pattern>> Parser::parse_for_vars() {
   while (match(token_kind::comma)) {
     // Check if the next thing is `in` — if so, the comma was part of
     // the for syntax, not another variable.
-    if (at(token_kind::kw_in)) break;
+    if (at(token_kind::kw_in))
+      break;
     patterns.push_back(parse_pattern());
   }
 
@@ -3659,72 +3762,109 @@ std::vector<ast::Ptr<ast::Pattern>> Parser::parse_for_vars() {
 //  Operator conversion helpers
 // ==========================================================================
 
-std::optional<ast::AssignOp> Parser::token_to_assign_op(
-    token_kind kind) noexcept {
+std::optional<ast::AssignOp>
+Parser::token_to_assign_op(token_kind kind) noexcept {
   switch (kind) {
-    case token_kind::eq:             return ast::AssignOp::Assign;
-    case token_kind::plus_eq:         return ast::AssignOp::AddAssign;
-    case token_kind::minus_eq:        return ast::AssignOp::SubAssign;
-    case token_kind::star_eq:         return ast::AssignOp::MulAssign;
-    case token_kind::slash_eq:        return ast::AssignOp::DivAssign;
-    case token_kind::percent_eq:      return ast::AssignOp::ModAssign;
-    case token_kind::amp_eq:          return ast::AssignOp::AndAssign;
-    case token_kind::pipe_eq:         return ast::AssignOp::OrAssign;
-    case token_kind::caret_eq:        return ast::AssignOp::XorAssign;
-    case token_kind::lt_lt_eq:         return ast::AssignOp::ShlAssign;
-    case token_kind::gt_gt_eq:         return ast::AssignOp::ShrAssign;
-    case token_kind::plus_percent_eq:  return ast::AssignOp::AddWrapAssign;
-    case token_kind::minus_percent_eq: return ast::AssignOp::SubWrapAssign;
-    case token_kind::star_percent_eq:  return ast::AssignOp::MulWrapAssign;
-    case token_kind::plus_pipe_eq:     return ast::AssignOp::AddSatAssign;
-    case token_kind::minus_pipe_eq:    return ast::AssignOp::SubSatAssign;
-    case token_kind::star_pipe_eq:     return ast::AssignOp::MulSatAssign;
-    default:                        return std::nullopt;
+  case token_kind::eq:
+    return ast::AssignOp::Assign;
+  case token_kind::plus_eq:
+    return ast::AssignOp::AddAssign;
+  case token_kind::minus_eq:
+    return ast::AssignOp::SubAssign;
+  case token_kind::star_eq:
+    return ast::AssignOp::MulAssign;
+  case token_kind::slash_eq:
+    return ast::AssignOp::DivAssign;
+  case token_kind::percent_eq:
+    return ast::AssignOp::ModAssign;
+  case token_kind::amp_eq:
+    return ast::AssignOp::AndAssign;
+  case token_kind::pipe_eq:
+    return ast::AssignOp::OrAssign;
+  case token_kind::caret_eq:
+    return ast::AssignOp::XorAssign;
+  case token_kind::lt_lt_eq:
+    return ast::AssignOp::ShlAssign;
+  case token_kind::gt_gt_eq:
+    return ast::AssignOp::ShrAssign;
+  case token_kind::plus_percent_eq:
+    return ast::AssignOp::AddWrapAssign;
+  case token_kind::minus_percent_eq:
+    return ast::AssignOp::SubWrapAssign;
+  case token_kind::star_percent_eq:
+    return ast::AssignOp::MulWrapAssign;
+  case token_kind::plus_pipe_eq:
+    return ast::AssignOp::AddSatAssign;
+  case token_kind::minus_pipe_eq:
+    return ast::AssignOp::SubSatAssign;
+  case token_kind::star_pipe_eq:
+    return ast::AssignOp::MulSatAssign;
+  default:
+    return std::nullopt;
   }
 }
 
 std::optional<ast::BinaryOp> Parser::token_to_cmp_op() {
   switch (current()) {
-    case token_kind::eq_eq:    return ast::BinaryOp::EqEq;
-    case token_kind::bang_eq:  return ast::BinaryOp::BangEq;
-    case token_kind::lt:      return ast::BinaryOp::Lt;
-    case token_kind::lt_eq:    return ast::BinaryOp::LtEq;
-    case token_kind::gt:      return ast::BinaryOp::Gt;
-    case token_kind::gt_eq:    return ast::BinaryOp::GtEq;
-    case token_kind::kw_in:    return ast::BinaryOp::In;
-    case token_kind::kw_not:
-      // `not in` — peek ahead.
-      if (peek_at(1).is(token_kind::kw_in)) {
-        return ast::BinaryOp::NotIn;
-      }
-      return std::nullopt;
-    default:                 return std::nullopt;
+  case token_kind::eq_eq:
+    return ast::BinaryOp::EqEq;
+  case token_kind::bang_eq:
+    return ast::BinaryOp::BangEq;
+  case token_kind::lt:
+    return ast::BinaryOp::Lt;
+  case token_kind::lt_eq:
+    return ast::BinaryOp::LtEq;
+  case token_kind::gt:
+    return ast::BinaryOp::Gt;
+  case token_kind::gt_eq:
+    return ast::BinaryOp::GtEq;
+  case token_kind::kw_in:
+    return ast::BinaryOp::In;
+  case token_kind::kw_not:
+    // `not in` — peek ahead.
+    if (peek_at(1).is(token_kind::kw_in)) {
+      return ast::BinaryOp::NotIn;
+    }
+    return std::nullopt;
+  default:
+    return std::nullopt;
   }
 }
 
-std::optional<ast::BinaryOp> Parser::token_to_add_op(
-    token_kind kind) noexcept {
+std::optional<ast::BinaryOp> Parser::token_to_add_op(token_kind kind) noexcept {
   switch (kind) {
-    case token_kind::plus:          return ast::BinaryOp::Add;
-    case token_kind::minus:         return ast::BinaryOp::Sub;
-    case token_kind::plus_percent:   return ast::BinaryOp::AddWrap;
-    case token_kind::minus_percent:  return ast::BinaryOp::SubWrap;
-    case token_kind::plus_pipe:      return ast::BinaryOp::AddSat;
-    case token_kind::minus_pipe:     return ast::BinaryOp::SubSat;
-    default:                       return std::nullopt;
+  case token_kind::plus:
+    return ast::BinaryOp::Add;
+  case token_kind::minus:
+    return ast::BinaryOp::Sub;
+  case token_kind::plus_percent:
+    return ast::BinaryOp::AddWrap;
+  case token_kind::minus_percent:
+    return ast::BinaryOp::SubWrap;
+  case token_kind::plus_pipe:
+    return ast::BinaryOp::AddSat;
+  case token_kind::minus_pipe:
+    return ast::BinaryOp::SubSat;
+  default:
+    return std::nullopt;
   }
 }
 
-std::optional<ast::BinaryOp> Parser::token_to_mul_op(
-    token_kind kind) noexcept {
+std::optional<ast::BinaryOp> Parser::token_to_mul_op(token_kind kind) noexcept {
   switch (kind) {
-    case token_kind::star:          return ast::BinaryOp::Mul;
-    case token_kind::slash:         return ast::BinaryOp::Div;
-    case token_kind::percent:       return ast::BinaryOp::Mod;
-    case token_kind::star_percent:   return ast::BinaryOp::MulWrap;
-    case token_kind::star_pipe:      return ast::BinaryOp::MulSat;
-    default:                       return std::nullopt;
+  case token_kind::star:
+    return ast::BinaryOp::Mul;
+  case token_kind::slash:
+    return ast::BinaryOp::Div;
+  case token_kind::percent:
+    return ast::BinaryOp::Mod;
+  case token_kind::star_percent:
+    return ast::BinaryOp::MulWrap;
+  case token_kind::star_pipe:
+    return ast::BinaryOp::MulSat;
+  default:
+    return std::nullopt;
   }
 }
 
-}  // namespace kira
+} // namespace kira

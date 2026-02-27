@@ -19,46 +19,40 @@ using byte_offset = uint32_t;
 /// node, every token, and every diagnostic carries a Span so we can always
 /// point the user back to exactly the piece of source code we're talking
 /// about.
-struct Span {
+struct span {
   byte_offset start = 0;
   byte_offset end = 0;
 
   /// Returns true if this span is empty (zero-length).
-  [[nodiscard]] constexpr bool empty() const noexcept {
-    return start == end;
-  }
+  [[nodiscard]] constexpr bool empty() const noexcept { return start == end; }
 
   /// Returns the length of this span in bytes.
-  [[nodiscard]] constexpr uint32_t len() const noexcept {
-    return end - start;
-  }
+  [[nodiscard]] constexpr uint32_t len() const noexcept { return end - start; }
 
   /// Returns a dummy/invalid span. Used as a sentinel for synthesized nodes
   /// that don't correspond to any real source text (e.g., error recovery
   /// insertions).
-  [[nodiscard]] static constexpr Span dummy() noexcept {
-    return Span{0, 0};
-  }
+  [[nodiscard]] static constexpr span dummy() noexcept { return span{0, 0}; }
 
   /// Merge two spans into one that covers both. The result spans from
   /// the earliest start to the latest end. This is used when building
   /// AST nodes that cover multiple tokens.
-  [[nodiscard]] constexpr Span merge(Span other) const noexcept {
-    if (empty()) return other;
-    if (other.empty()) return *this;
-    return Span{
+  [[nodiscard]] constexpr span merge(span other) const noexcept {
+    if (empty())
+      return other;
+    if (other.empty())
+      return *this;
+    return span{
         start < other.start ? start : other.start,
         end > other.end ? end : other.end,
     };
   }
 
   /// Extend this span to cover `other` as well (mutating version).
-  constexpr void extend_to(Span other) noexcept {
-    *this = merge(other);
-  }
+  constexpr void extend_to(span other) noexcept { *this = merge(other); }
 
-  constexpr bool operator==(const Span&) const noexcept = default;
-  constexpr auto operator<=>(const Span&) const noexcept = default;
+  constexpr bool operator==(const span &) const noexcept = default;
+  constexpr auto operator<=>(const Span &) const noexcept = default;
 };
 
 /// @brief Identifier for a source file within a compilation session.
@@ -75,19 +69,21 @@ using FileId = uint16_t;
 /// line number, column, and the underlined source snippet.
 struct source_location {
   FileId file_id = 0;
-  Span span;
+  span span;
 
   [[nodiscard]] static constexpr source_location dummy() noexcept {
-    return source_location{0, Span::dummy()};
+    return source_location{0, span::dummy()};
   }
 
-  [[nodiscard]] constexpr source_location merge(source_location other) const noexcept {
+  [[nodiscard]] constexpr source_location
+  merge(source_location other) const noexcept {
     // Only merge locations from the same file; if they differ, prefer `this`.
-    if (file_id != other.file_id) return *this;
+    if (file_id != other.file_id)
+      return *this;
     return source_location{file_id, span.merge(other.span)};
   }
 
-  constexpr bool operator==(const source_location&) const noexcept = default;
+  constexpr bool operator==(const source_location &) const noexcept = default;
 };
 
 /// @brief Resolved line and column information for display.
@@ -96,8 +92,8 @@ struct source_location {
 /// this in every AST node because it's expensive to compute and rarely
 /// needed — only when formatting diagnostics.
 struct line_column {
-  uint32_t line = 1;    ///< 1-based line number
-  uint32_t column = 1;  ///< 1-based column number (in bytes, not graphemes)
+  uint32_t line = 1;   ///< 1-based line number
+  uint32_t column = 1; ///< 1-based column number (in bytes, not graphemes)
 };
 
 /// @brief A read-only view of a source file's contents, along with
@@ -106,11 +102,9 @@ struct line_column {
 /// The source_file does NOT own the source text — it borrows it. Make sure
 /// the backing storage outlives the source_file.
 class source_file {
- public:
+public:
   source_file(FileId id, std::string name, std::string source)
-      : id_(id),
-        name_(std::move(name)),
-        source_(std::move(source)) {
+      : id_(id), name_(std::move(name)), source_(std::move(source)) {
     build_line_index();
   }
 
@@ -144,12 +138,14 @@ class source_file {
   }
 
   /// Extract the source text for a given span.
-  [[nodiscard]] std::string_view text_at(Span span) const noexcept {
-    if (span.start >= source_.size()) return {};
+  [[nodiscard]] std::string_view text_at(span span) const noexcept {
+    if (span.start >= source_.size())
+      return {};
     auto actual_end = span.end <= source_.size()
                           ? span.end
                           : static_cast<byte_offset>(source_.size());
-    return std::string_view(source_).substr(span.start, actual_end - span.start);
+    return std::string_view(source_).substr(span.start,
+                                            actual_end - span.start);
   }
 
   /// Extract the full source line that contains the given byte offset.
@@ -157,7 +153,8 @@ class source_file {
   [[nodiscard]] std::string_view line_at(byte_offset offset) const noexcept {
     auto lc = resolve(offset);
     uint32_t line_idx = lc.line - 1;
-    if (line_idx >= line_starts_.size()) return {};
+    if (line_idx >= line_starts_.size())
+      return {};
 
     byte_offset line_start = line_starts_[line_idx];
     byte_offset line_end;
@@ -181,10 +178,10 @@ class source_file {
     return static_cast<uint32_t>(line_starts_.size());
   }
 
- private:
+private:
   void build_line_index() {
     line_starts_.clear();
-    line_starts_.push_back(0);  // Line 1 starts at offset 0.
+    line_starts_.push_back(0); // Line 1 starts at offset 0.
 
     for (byte_offset i = 0; i < static_cast<byte_offset>(source_.size()); ++i) {
       if (source_[i] == '\n') {
@@ -199,4 +196,4 @@ class source_file {
   std::vector<byte_offset> line_starts_;
 };
 
-}  // namespace kira
+} // namespace kira
