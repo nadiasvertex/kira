@@ -103,11 +103,11 @@ diagnostic_level_color(diagnostic_level level) noexcept -> std::string_view {
 //  of the source that are relevant to the problem.
 // ==========================================================================
 struct diagnostic_label {
-  span span;
+  source_span span;
   std::string message;
   diagnostic_level level; ///< Controls the underline color/style
 
-  diagnostic_label(span s, std::string msg,
+  diagnostic_label(source_span s, std::string msg,
                    diagnostic_level lvl = diagnostic_level::error)
       : span(s), message(std::move(msg)), level(lvl) {}
 };
@@ -118,7 +118,7 @@ struct diagnostic_label {
 // ==========================================================================
 struct suggested_fix {
   std::string description; ///< e.g., "add a colon here"
-  span span; ///< The span to replace (may be empty for insertions)
+  source_span span; ///< The span to replace (may be empty for insertions)
   std::string replacement; ///< The text to insert/replace with
 };
 
@@ -155,23 +155,23 @@ struct diagnostic {
       : level(lvl), message(std::move(msg)), file_id(fid) {}
 
   /// Add a primary label (points at the main error site).
-  auto with_label(span span, std::string msg) & -> diagnostic & {
+  auto with_label(source_span span, std::string msg) & -> diagnostic & {
     labels.emplace_back(span, std::move(msg), level);
     return *this;
   }
 
-  auto with_label(span span, std::string msg) && -> diagnostic && {
+  auto with_label(source_span span, std::string msg) && -> diagnostic && {
     labels.emplace_back(span, std::move(msg), level);
     return std::move(*this);
   }
 
   /// Add a secondary label (points at related code).
-  auto with_secondary_label(span span, std::string msg) & -> diagnostic & {
+  auto with_secondary_label(source_span span, std::string msg) & -> diagnostic & {
     labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return *this;
   }
 
-  auto with_secondary_label(span span, std::string msg) && -> diagnostic && {
+  auto with_secondary_label(source_span span, std::string msg) && -> diagnostic && {
     labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return std::move(*this);
   }
@@ -199,13 +199,13 @@ struct diagnostic {
   }
 
   /// Add a suggested fix (machine-applicable).
-  auto with_fix(std::string desc, span span, std::string replacement) & -> diagnostic & {
+  auto with_fix(std::string desc, source_span span, std::string replacement) & -> diagnostic & {
     fixes.push_back(
         suggested_fix{std::move(desc), span, std::move(replacement)});
     return *this;
   }
 
-  auto with_fix(std::string desc, span span,
+  auto with_fix(std::string desc, source_span span,
                         std::string replacement) && -> diagnostic && {
     fixes.push_back(
         suggested_fix{std::move(desc), span, std::move(replacement)});
@@ -263,7 +263,7 @@ public:
   }
 
   /// Convenience: emit an error.
-  void error(file_id_type file_id, std::string message, span span,
+  void error(file_id_type file_id, std::string message, source_span span,
              std::string label_msg = "") {
     auto diag =
         diagnostic(diagnostic_level::error, std::move(message), file_id);
@@ -276,7 +276,7 @@ public:
   }
 
   /// Convenience: emit a warning.
-  void warning(file_id_type file_id, std::string message, span span,
+  void warning(file_id_type file_id, std::string message, source_span span,
                std::string label_msg = "") {
     auto diag =
         diagnostic(diagnostic_level::warning, std::move(message), file_id);

@@ -854,28 +854,25 @@ struct static_expr : expr {
   static_expr() : expr(node_kind::static_expr) {}
 };
 
-/// A single binding in a `where` clause: `name = expr`.
+/// A single binding inside a `where` clause: `name = expr`
 struct where_binding {
   source_span span;
-  std::string name;
-  ptr<expr> value;
+  std::string name;  ///< The bound identifier.
+  ptr<expr> value;   ///< The right-hand side expression.
 };
 
-/// A `where`-expression: `expr where: name = expr ...`
+/// `expr where: INDENT name = expr ... DEDENT`
 ///
-/// The `where` clause introduces locally-scoped immutable bindings that
-/// are in scope only within `inner`. Bindings are evaluated in order and
-/// may not refer to one another (they are not mutually recursive). This
-/// mirrors Haskell's `where` clause but with Kira's value-binding semantics.
+/// Attaches locally-scoped immutable bindings to any expression.
+/// The bindings are evaluated in order and are not mutually recursive.
 ///
-/// Example:
-///   do_something(a, b, c(y)) where:
-///       a = find_a_thing(v1, v2)
-///       b = substr(v2, 5)
-///       c = compute_a_thing(v, 10)
+///   let x = do_something(a, b, c) where:
+///               a = find_a_thing(v1, v2)
+///               b = substr(v2, 5)
+///               c = compute_a_thing(v, 10)
 struct where_expr : expr {
-  ptr<expr> inner;                       ///< The expression that uses the bindings.
-  std::vector<where_binding> bindings;   ///< The name = value bindings.
+  ptr<expr> inner;                       ///< The wrapped expression.
+  std::vector<where_binding> bindings;   ///< The where bindings, in order.
 
   where_expr() : expr(node_kind::where_expr) {}
 };

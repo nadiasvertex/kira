@@ -3456,41 +3456,51 @@ ast::ptr<ast::static_expr> parser::parse_static_expr() {
   return sexpr;
 }
 
-// ==========================================================================
-//  Where-expression
-// ==========================================================================
-
-/// Parse a `where:` clause attached to an already-parsed inner expression.
+/// parse_where_expr — called when a `where` keyword follows an expression.
 ///
-/// Called from parse_expr() when `kw_where` is seen after the main expression.
+/// Grammar:
+///   where_clause_expr = "where" ":" NEWLINE INDENT { where_binding } DEDENT
+///   where_binding     = IDENT "=" expr NEWLINE
 ///
-/// Syntax:
-///   where_expr    = inner_expr "where" ":" NEWLINE INDENT
-///                       { where_binding }
-///                   DEDENT
-///   where_binding = IDENT "=" expr NEWLINE
-///
-/// Each binding introduces an immutable name visible only within `inner`.
-/// Bindings are evaluated in textual order and are not mutually recursive.
+/// The `inner` argument is the already-parsed leading expression that the
+/// where clause is being attached to.
 ast::ptr<ast::where_expr> parser::parse_where_expr(ast::ptr<ast::expr> inner) {
   auto wexpr = ast::make<ast::where_expr>();
-  auto start  = inner->span;
-
+  wexpr->span = inner->span;
   wexpr->inner = std::move(inner);
 
-  // Consume `where`.
   expect(token_kind::kw_where);
 
-  // Expect `:` followed by NEWLINE + INDENT to open the binding block.
-  if (!expect_block_start("where clause")) {
-    // Recovery: return what we have so far with the error flag set.
+  // Expect the `:` that opens the where block.
+  if (!at(token_kind::colon)) {
+    emit(diagnostic(diagnostic_level::Error,
+                    "expected `:` after `where`",
+                    file_id_)
+             .with_label(previous_span(), "expected `:` after this `where`")
+             .with_help("A `where` clause must be followed by `:` and an "
+                        "indented block of `name = expr` bindings."));
     wexpr->has_error = true;
-    wexpr->span = start.merge(previous_span());
+    wexpr->span.extend_to(previous_span());
+    return wexpr;
+  }
+  advance(); // consume `:`
+
+  // Expect NEWLINE then INDENT to open the block.
+  skip_newlines();
+  if (!match(token_kind::indent)) {
+    emit(diagnostic(diagnostic_level::Error,
+                    "expected an indented block of bindings after `where:`",
+                    file_id_)
+             .with_label(previous_span(),
+                         "expected an indented block to follow here")
+             .with_help("Each binding should be on its own indented line: "
+                        "`name = expr`"));
+    wexpr->has_error = true;
+    wexpr->span.extend_to(previous_span());
     return wexpr;
   }
 
-  // Parse one or more `name = expr` bindings.
-  bool parsed_any = false;
+  // Parse one or more `name = expr NEWLINE` bindings.
   while (!at_any(token_kind::dedent, token_kind::eof)) {
     skip_newlines();
     if (at_any(token_kind::dedent, token_kind::eof)) {
@@ -3500,50 +3510,58 @@ ast::ptr<ast::where_expr> parser::parse_where_expr(ast::ptr<ast::expr> inner) {
     ast::where_binding binding;
     binding.span = peek().span;
 
-    // Expect an identifier for the binding name.
+    // Expect an identifier as the binding name.
     if (!at(token_kind::ident)) {
-      emit_unexpected("a binding name (identifier) in `where` clause");
-      synchronize_to_newline();
+      emit_unexpected("an identifier for the `where` binding name");
       wexpr->has_error = true;
+      synchronize_to_newline();
       continue;
     }
     auto name_tok = advance();
     binding.name = std::string(name_tok.text);
 
     // Expect `=`.
-    expect(token_kind::eq);
+    if (!at(token_kind::eq)) {
+      emit(diagnostic(diagnostic_level::Error,
+                      std::format("expected `=` after `{}` in `where` binding",
+                                  binding.name),
+                      file_id_)
+               .with_label(previous_span(),
+                           "expected `=` after this name")
+               .with_help("Each `where` binding has the form `name = expr`."));
+      wexpr->has_error = true;
+      synchronize_to_newline();
+      continue;
+    }
+    advance(); // consume `=`
 
-    // Parse the value expression.
+    // Parse the right-hand side expression.
     binding.value = parse_expr();
     if (!binding.value) {
       emit_unexpected("an expression after `=` in `where` binding");
-      binding.value = make_error_expr(previous_span());
       wexpr->has_error = true;
+      binding.value = make_error_expr(previous_span());
     }
 
     binding.span.extend_to(previous_span());
     wexpr->bindings.push_back(std::move(binding));
-    parsed_any = true;
 
     expect_newline();
   }
 
-  if (!parsed_any) {
+  if (wexpr->bindings.empty() && !wexpr->has_error) {
     emit(diagnostic(diagnostic_level::Error,
-                    "expected at least one binding in `where` clause",
+                    "a `where` clause must have at least one binding",
                     file_id_)
-             .with_label(previous_span(),
-                         "the `where` clause starts here but contains no bindings")
-             .with_help("A `where` clause must contain at least one `name = expr` binding. "
-                        "For example:\n"
-                        "    result where:\n"
-                        "        x = compute(a, b)"));
+             .with_label(previous_span(), "empty `where` block")
+             .with_help("Add at least one `name = expr` binding, or remove "
+                        "the `where` clause entirely."));
     wexpr->has_error = true;
   }
 
-  expect_block_end("where clause");
+  expect_block_end("where");
 
-  wexpr->span = start.merge(previous_span());
+  wexpr->span.extend_to(previous_span());
   return wexpr;
 }
 
