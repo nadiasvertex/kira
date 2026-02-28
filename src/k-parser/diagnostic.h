@@ -25,21 +25,25 @@ enum class diagnostic_level : uint8_t {
   /// The parser will attempt error recovery, but the AST node will be
   /// marked as containing errors.
   Error,
+  error = Error, ///< Lowercase alias for ergonomic use in switch/init.
 
   /// A problem that doesn't prevent parsing from continuing but indicates
   /// something that will fail in a later compilation phase. For example,
   /// using a modifier in the wrong position.
   Warning,
+  warning = Warning, ///< Lowercase alias.
 
   /// Additional context attached to a preceding Error or Warning.
   /// Notes point at related locations ("this `{` was opened here",
   /// "previous definition was here", etc.).
   Note,
+  note = Note, ///< Lowercase alias.
 
   /// A concrete suggestion for how to fix the problem. This is the
   /// cooperative part — we don't just complain, we show the user what
   /// to do. Help messages may include suggested replacement text.
   Help,
+  help = Help, ///< Lowercase alias.
 };
 
 /// Returns a human-readable label for a diagnostic level, suitable for
@@ -259,7 +263,7 @@ public:
   }
 
   /// Convenience: emit an error.
-  void error(FileId file_id, std::string message, span span,
+  void error(file_id_type file_id, std::string message, span span,
              std::string label_msg = "") {
     auto diag =
         diagnostic(diagnostic_level::error, std::move(message), file_id);
@@ -272,7 +276,7 @@ public:
   }
 
   /// Convenience: emit a warning.
-  void warning(FileId file_id, std::string message, span span,
+  void warning(file_id_type file_id, std::string message, span span,
                std::string label_msg = "") {
     auto diag =
         diagnostic(diagnostic_level::warning, std::move(message), file_id);
@@ -298,11 +302,11 @@ public:
     return error_count_ > max_errors_;
   }
 
-  [[nodiscard]] const std::vector<diagnostic> auto diagnostics() const noexcept -> & {
+  [[nodiscard]] auto diagnostics() const noexcept -> const std::vector<diagnostic> & {
     return diagnostics_;
   }
 
-  [[nodiscard]] std::vector<diagnostic> auto diagnostics() noexcept -> & {
+  [[nodiscard]] auto diagnostics() noexcept -> std::vector<diagnostic> & {
     return diagnostics_;
   }
 

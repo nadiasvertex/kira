@@ -111,6 +111,7 @@ struct splice_expr;
 struct static_expr;
 struct module_path_expr;
 struct group_expr;
+struct where_expr;
 
 // Patterns
 struct wildcard_pattern;
@@ -136,6 +137,7 @@ struct match_arm;
 // ==========================================================================
 
 template <typename T> using ptr = std::unique_ptr<T>;
+template <typename T> using Ptr = std::unique_ptr<T>; ///< Alias for ptr<T>; used in parser.
 
 template <typename T> using ptr_vec = std::vector<ptr<T>>;
 
@@ -155,7 +157,7 @@ enum class node_kind : uint8_t {
   error_node,
 
   // Top-level
-  File,
+  file_node,
   module_decl,
 
   // Items
@@ -223,6 +225,7 @@ enum class node_kind : uint8_t {
   static_expr,
   module_path_expr,
   group_expr,
+  where_expr,
 
   // Patterns
   wildcard_pattern,
@@ -417,7 +420,7 @@ struct bound_term {
   ptr<type_expr> type;
 };
 
-struct Bound {
+struct bound {
   source_span span;
   std::vector<bound_term> terms; ///< Connected by `+`.
 };
@@ -463,6 +466,10 @@ struct sum_body {
 struct expr : node {
   using node::node;
 };
+
+/// Uppercase alias — lets parser.cpp use `ast::Expr` interchangeably with
+/// `ast::expr`. Both refer to the same base class.
+using Expr = expr;
 
 /// A placeholder expression for error recovery.
 struct error_expr : expr {
@@ -844,8 +851,33 @@ struct splice_expr : expr {
 /// `static expr`
 struct static_expr : expr {
   ptr<expr> operand;
-
   static_expr() : expr(node_kind::static_expr) {}
+};
+
+/// A single binding in a `where` clause: `name = expr`.
+struct where_binding {
+  source_span span;
+  std::string name;
+  ptr<expr> value;
+};
+
+/// A `where`-expression: `expr where: name = expr ...`
+///
+/// The `where` clause introduces locally-scoped immutable bindings that
+/// are in scope only within `inner`. Bindings are evaluated in order and
+/// may not refer to one another (they are not mutually recursive). This
+/// mirrors Haskell's `where` clause but with Kira's value-binding semantics.
+///
+/// Example:
+///   do_something(a, b, c(y)) where:
+///       a = find_a_thing(v1, v2)
+///       b = substr(v2, 5)
+///       c = compute_a_thing(v, 10)
+struct where_expr : expr {
+  ptr<expr> inner;                       ///< The expression that uses the bindings.
+  std::vector<where_binding> bindings;   ///< The name = value bindings.
+
+  where_expr() : expr(node_kind::where_expr) {}
 };
 
 // ==========================================================================
@@ -855,6 +887,10 @@ struct static_expr : expr {
 struct pattern : node {
   using node::node;
 };
+
+/// Uppercase alias — lets parser.cpp use `ast::Pattern` interchangeably with
+/// `ast::pattern`.
+using Pattern = pattern;
 
 struct error_pattern : pattern {
   explicit error_pattern(source_span s = source_span::dummy())
@@ -1176,7 +1212,7 @@ struct trait_decl : node {
   visibility visibility = visibility::def;
   std::string name;
   std::vector<type_param> type_params;
-  std::optional<Bound> requires_bound;
+  std::optional<bound> requires_bound;
   std::vector<ptr<node>>
       items; ///< func_decl, static_decl, associated_type_decl nodes.
 
@@ -1341,7 +1377,7 @@ struct file : node {
   bool no_prelude = false;
   std::vector<ptr<node>> items;
 
-  file() : node(node_kind::File) {}
+  file() : node(node_kind::file_node) {}
 };
 
 // ==========================================================================

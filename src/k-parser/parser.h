@@ -215,9 +215,9 @@ private:
 
   /// Return the span of the previous token. Used for building spans
   /// that end "just after" the last consumed token.
-  [[nodiscard]] span previous_span() const noexcept {
+  [[nodiscard]] source_span previous_span() const noexcept {
     if (pos_ == 0)
-      return span::dummy();
+      return source_span::dummy();
     return tokens_[pos_ - 1].span;
   }
 
@@ -282,7 +282,7 @@ private:
   }
 
   /// Build a diagnostic for a specific span.
-  [[nodiscard]] auto make_error_at(span span, std::string message) const -> diagnostic {
+  [[nodiscard]] auto make_error_at(source_span span, std::string message) const -> diagnostic {
     return diagnostic(diagnostic_level::error, std::move(message), file_id_)
         .with_label(span, "here");
   }
@@ -423,7 +423,7 @@ private:
 
   [[nodiscard]] std::vector<ast::type_param> parse_type_params();
   [[nodiscard]] auto parse_type_param() -> ast::type_param;
-  [[nodiscard]] auto parse_bound() -> ast::Bound;
+  [[nodiscard]] auto parse_bound() -> ast::bound;
   [[nodiscard]] auto parse_bound_term() -> ast::bound_term;
   [[nodiscard]] std::vector<ast::where_constraint> parse_where_clause();
 
@@ -517,6 +517,7 @@ private:
   [[nodiscard]] ast::ptr<ast::quote_expr> parse_quote_expr();
   [[nodiscard]] ast::ptr<ast::splice_expr> parse_splice_expr_inner();
   [[nodiscard]] ast::ptr<ast::static_expr> parse_static_expr();
+  [[nodiscard]] ast::ptr<ast::where_expr> parse_where_expr(ast::ptr<ast::expr> inner);
 
   // ---- Postfix suffixes ----
 

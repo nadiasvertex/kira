@@ -12,16 +12,16 @@ namespace kira {
 // ==========================================================================
 //  Helper: make an error expression for recovery.
 // ==========================================================================
-static ast::ptr<ast::Expr> make_error_expr(span span, std::string desc = "") {
+static ast::ptr<ast::expr> make_error_expr(source_span span, std::string desc = "") {
   auto node = ast::make<ast::error_expr>(span, std::move(desc));
   return node;
 }
 
-static ast::ptr<ast::Pattern> make_error_pattern(span span) {
+static ast::ptr<ast::pattern> make_error_pattern(source_span span) {
   return ast::make<ast::error_pattern>(span);
 }
 
-static ast::ptr<ast::node> make_error_node(span span, std::string desc = "") {
+static ast::ptr<ast::node> make_error_node(source_span span, std::string desc = "") {
   return ast::make<ast::error_node>(span, std::move(desc));
 }
 
@@ -321,7 +321,7 @@ parser::parse_block(std::string_view construct_name,
 
 // Explicit template instantiation for common types.
 template std::vector<ast::ptr<ast::node>>
-    Parser::parse_block<ast::node>(std::string_view,
+    parser::parse_block<ast::node>(std::string_view,
                                    std::function<ast::ptr<ast::node>()>);
 
 auto parser::parse_body(std::string_view construct_name) -> parser::BodyResult {
@@ -967,10 +967,20 @@ ast::ptr<ast::node> parser::parse_type_def() {
   }
 
   // Check for refinement: `type_expr where expr`
+  // e.g. `type positive = int32 where self > 0`
   if (at(token_kind::kw_where)) {
-    // This is actually a `where` clause on the type, not a refinement.
-    // Refinement uses `where` after the type expr directly.
-    // For now, return the type expr — semantic analysis will handle it.
+    advance(); // consume `where`
+    auto refinement = ast::make<ast::refinement_type>();
+    refinement->span = type->span;
+    refinement->base = std::move(type);
+    refinement->predicate = parse_expr();
+    if (!refinement->predicate) {
+      emit_unexpected("a predicate expression after `where` in refinement type");
+      refinement->predicate = make_error_node(previous_span(), "expected refinement predicate");
+      refinement->has_error = true;
+    }
+    refinement->span.extend_to(previous_span());
+    return refinement;
   }
 
   return type;
@@ -1337,8 +1347,8 @@ auto parser::parse_type_param() -> ast::type_param {
   return param;
 }
 
-auto parser::parse_bound() -> ast::Bound {
-  ast::Bound bound;
+auto parser::parse_bound() -> ast::bound {
+  ast::bound bound;
   bound.span = peek().span;
 
   bound.terms.push_back(parse_bound_term());
@@ -1968,7 +1978,7 @@ ast::ptr<ast::node> parser::parse_stmt() {
   }
 
   default:
-    // Expression or assignment statement.
+    // expression or assignment statement.
     return parse_expr_or_assign_stmt();
   }
 }
@@ -2305,7 +2315,27 @@ ast::ptr<ast::node> parser::parse_expr_or_assign_stmt() {
 //  Expressions
 // ==========================================================================
 
-ast::Ptr<ast::Expr> Parser::parse_expr() { return parse_pipe_expr(); }
+/// parse_expr is the top-level expression entry point. It parses a
+/// pipe_expr and then checks whether a `where:` clause follows. If it
+/// does, the expression is wrapped in a where_expr node whose bindings
+/// bring locally-scoped immutable names into scope for the inner expression.
+///
+/// Grammar:
+///   expr = pipe_expr [ "where" ":" NEWLINE INDENT { where_binding } DEDENT ]
+///   where_binding = IDENT "=" expr NEWLINE
+ast::ptr<ast::expr> parser::parse_expr() {
+  auto inner = parse_pipe_expr();
+  if (!inner) {
+    return nullptr;
+  }
+
+  // Optional trailing `where:` clause.
+  if (at(token_kind::kw_where)) {
+    return parse_where_expr(std::move(inner));
+  }
+
+  return inner;
+}
 
 ast::ptr<ast::expr> parser::parse_pipe_expr() {
   auto lhs = parse_or_expr();
@@ -3427,6 +3457,97 @@ ast::ptr<ast::static_expr> parser::parse_static_expr() {
 }
 
 // ==========================================================================
+//  Where-expression
+// ==========================================================================
+
+/// Parse a `where:` clause attached to an already-parsed inner expression.
+///
+/// Called from parse_expr() when `kw_where` is seen after the main expression.
+///
+/// Syntax:
+///   where_expr    = inner_expr "where" ":" NEWLINE INDENT
+///                       { where_binding }
+///                   DEDENT
+///   where_binding = IDENT "=" expr NEWLINE
+///
+/// Each binding introduces an immutable name visible only within `inner`.
+/// Bindings are evaluated in textual order and are not mutually recursive.
+ast::ptr<ast::where_expr> parser::parse_where_expr(ast::ptr<ast::expr> inner) {
+  auto wexpr = ast::make<ast::where_expr>();
+  auto start  = inner->span;
+
+  wexpr->inner = std::move(inner);
+
+  // Consume `where`.
+  expect(token_kind::kw_where);
+
+  // Expect `:` followed by NEWLINE + INDENT to open the binding block.
+  if (!expect_block_start("where clause")) {
+    // Recovery: return what we have so far with the error flag set.
+    wexpr->has_error = true;
+    wexpr->span = start.merge(previous_span());
+    return wexpr;
+  }
+
+  // Parse one or more `name = expr` bindings.
+  bool parsed_any = false;
+  while (!at_any(token_kind::dedent, token_kind::eof)) {
+    skip_newlines();
+    if (at_any(token_kind::dedent, token_kind::eof)) {
+      break;
+    }
+
+    ast::where_binding binding;
+    binding.span = peek().span;
+
+    // Expect an identifier for the binding name.
+    if (!at(token_kind::ident)) {
+      emit_unexpected("a binding name (identifier) in `where` clause");
+      synchronize_to_newline();
+      wexpr->has_error = true;
+      continue;
+    }
+    auto name_tok = advance();
+    binding.name = std::string(name_tok.text);
+
+    // Expect `=`.
+    expect(token_kind::eq);
+
+    // Parse the value expression.
+    binding.value = parse_expr();
+    if (!binding.value) {
+      emit_unexpected("an expression after `=` in `where` binding");
+      binding.value = make_error_expr(previous_span());
+      wexpr->has_error = true;
+    }
+
+    binding.span.extend_to(previous_span());
+    wexpr->bindings.push_back(std::move(binding));
+    parsed_any = true;
+
+    expect_newline();
+  }
+
+  if (!parsed_any) {
+    emit(diagnostic(diagnostic_level::Error,
+                    "expected at least one binding in `where` clause",
+                    file_id_)
+             .with_label(previous_span(),
+                         "the `where` clause starts here but contains no bindings")
+             .with_help("A `where` clause must contain at least one `name = expr` binding. "
+                        "For example:\n"
+                        "    result where:\n"
+                        "        x = compute(a, b)"));
+    wexpr->has_error = true;
+  }
+
+  expect_block_end("where clause");
+
+  wexpr->span = start.merge(previous_span());
+  return wexpr;
+}
+
+// ==========================================================================
 //  Call arguments
 // ==========================================================================
 
@@ -3462,7 +3583,7 @@ std::vector<ast::call_arg> parser::parse_call_args() {
 }
 
 // ==========================================================================
-//  Patterns
+//  patterns
 // ==========================================================================
 
 ast::ptr<ast::pattern> parser::parse_pattern() {

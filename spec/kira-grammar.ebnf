@@ -438,7 +438,23 @@ block
 (*  Expressions                                                       *)
 (* ----------------------------------------------------------------- *)
 
-expr = pipe_expr ;
+expr = pipe_expr [ where_clause_expr ] ;
+
+(* A where-expression attaches locally-scoped immutable bindings to any  *)
+(* expression. The bindings are evaluated in order and are visible only   *)
+(* within the leading expression. They are not mutually recursive.        *)
+(*                                                                         *)
+(* Example:                                                                *)
+(*   let x = do_something(a, b, c) where:                                 *)
+(*               a = find_a_thing(v1, v2)                                 *)
+(*               b = substr(v2, 5)                                        *)
+(*               c = compute_a_thing(v, 10)                               *)
+
+where_clause_expr
+    = "where" ":" NEWLINE INDENT { where_binding } DEDENT
+    ;
+
+where_binding = IDENT "=" expr NEWLINE ;
 
 pipe_expr
     = or_expr { "|" or_expr }
