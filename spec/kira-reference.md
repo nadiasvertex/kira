@@ -277,7 +277,7 @@ else:
 `if` is also an expression:
 
 ```kira
-let label = if score > 90: "pass" else: "fail"
+let label = "pass" if score > 90 else "fail"
 ```
 
 ### `while`
@@ -304,7 +304,7 @@ for name in names:
 `for` is also an expression that collects results:
 
 ```kira
-let squares = for x in 1..=5 => x * x     # [1, 4, 9, 16, 25]
+let squares = for x in 1..5 => x * x     # [1, 4, 9, 16, 25]
 let evens   = for x in 0..20 if x % 2 == 0 => x
 let pairs   = for x in 0..3, y in 0..3 => (x, y)
 ```

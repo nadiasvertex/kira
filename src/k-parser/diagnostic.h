@@ -44,8 +44,8 @@ enum class diagnostic_level : uint8_t {
 
 /// Returns a human-readable label for a diagnostic level, suitable for
 /// rendering in a terminal with ANSI colors.
-[[nodiscard]] constexpr std::string_view
-diagnostic_level_name(diagnostic_level level) noexcept {
+[[nodiscard]] constexpr auto
+diagnostic_level_name(diagnostic_level level) noexcept -> std::string_view {
   switch (level) {
   case diagnostic_level::error:
     return "error";
@@ -78,8 +78,8 @@ constexpr std::string_view BoldGreen = "\033[1;32m";
 } // namespace ansi
 
 /// Returns the ANSI color for a diagnostic level.
-[[nodiscard]] constexpr std::string_view
-diagnostic_level_color(diagnostic_level level) noexcept {
+[[nodiscard]] constexpr auto
+diagnostic_level_color(diagnostic_level level) noexcept -> std::string_view {
   switch (level) {
   case diagnostic_level::error:
     return ansi::BoldRed;
@@ -134,7 +134,7 @@ struct suggested_fix {
 struct diagnostic {
   diagnostic_level level;
   std::string message;
-  FileId file_id = 0;
+  file_id_type file_id = 0;
 
   /// Primary and secondary labels pointing at source code.
   std::vector<diagnostic_label> labels;
@@ -147,7 +147,7 @@ struct diagnostic {
 
   // -- Builder-pattern methods for ergonomic construction --
 
-  diagnostic(diagnostic_level lvl, std::string msg, FileId fid = 0)
+  diagnostic(diagnostic_level lvl, std::string msg, file_id_type fid = 0)
       : level(lvl), message(std::move(msg)), file_id(fid) {}
 
   /// Add a primary label (points at the main error site).
@@ -288,9 +288,9 @@ public:
 
   [[nodiscard]] auto has_errors() const noexcept -> bool { return error_count_ > 0; }
 
-  [[nodiscard]] uint32_t error_count() const noexcept { return error_count_; }
+  [[nodiscard]] auto error_count() const noexcept -> uint32_t { return error_count_; }
 
-  [[nodiscard]] uint32_t warning_count() const noexcept {
+  [[nodiscard]] auto warning_count() const noexcept -> uint32_t {
     return warning_count_;
   }
 
@@ -347,14 +347,14 @@ public:
       : file_(file), use_color_(use_color) {}
 
   /// Render a single diagnostic to a string.
-  [[nodiscard]] std::string render(const diagnostic &diag) const {
+  [[nodiscard]] auto render(const diagnostic &diag) const -> std::string {
     std::string out;
     render_diagnostic(out, diag, /*indent=*/0);
     return out;
   }
 
   /// Render all diagnostics in a bag.
-  [[nodiscard]] std::string render_all(const diagnostic_bag &bag) const {
+  [[nodiscard]] auto render_all(const diagnostic_bag &bag) const -> std::string {
     std::string out;
     for (const auto &diag : bag.diagnostics()) {
       render_diagnostic(out, diag, /*indent=*/0);
@@ -607,14 +607,14 @@ private:
     }
   }
 
-  [[nodiscard]] static std::string pad_left(std::string s, uint32_t width) {
+  [[nodiscard]] static auto pad_left(std::string s, uint32_t width) -> std::string {
     if (s.size() >= width) {
       return s;
 }
     return std::string(width - s.size(), ' ') + s;
   }
 
-  [[nodiscard]] static uint32_t count_digits(uint32_t n) {
+  [[nodiscard]] static auto count_digits(uint32_t n) -> uint32_t {
     if (n == 0) {
       return 1;
 }

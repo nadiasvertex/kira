@@ -72,12 +72,12 @@ namespace kira {
 //  holes. The has_error flag on each node lets later phases skip broken
 //  subtrees.
 // ==========================================================================
-template <typename T> struct ParseResult {
+template <typename T> struct parse_result {
   ast::ptr<T> node;
 
-  ParseResult() = default;
-  explicit ParseResult(ast::ptr<T> n) : node(std::move(n)) {}
-  ParseResult(std::nullptr_t) : node(nullptr) {}
+  parse_result() = default;
+  explicit parse_result(ast::ptr<T> n) : node(std::move(n)) {}
+  parse_result(std::nullptr_t) : node(nullptr) {}
 
   [[nodiscard]] auto ok() const noexcept -> bool {
     return node != nullptr && !node->has_error;
@@ -114,15 +114,15 @@ template <typename T> struct ParseResult {
 //  an AST. It reports diagnostics to a diagnostic_bag and uses error
 //  recovery to keep going after syntax errors.
 // ==========================================================================
-class Parser {
+class parser {
 public:
   /// Construct a parser over a token stream.
   ///
   /// @param tokens   The token stream (must end with token_kind::eof).
   /// @param file_id  The source file identifier for diagnostics.
   /// @param diag     The diagnostic bag to report errors into.
-  Parser(std::vector<Token> tokens, FileId file_id, diagnostic_bag &diag)
-      : tokens_(std::move(tokens)), file_id_(file_id), diag_(diag), pos_(0) {
+  parser(std::vector<token> tokens, file_id_type file_id, diagnostic_bag &diag)
+      : tokens_(std::move(tokens)), file_id_(file_id), diag_(diag) {
     assert(!tokens_.empty() && "token stream must contain at least Eof");
     assert(tokens_.back().kind == token_kind::eof &&
            "token stream must end with Eof");
@@ -143,7 +143,7 @@ public:
   [[nodiscard]] auto has_errors() const noexcept -> bool { return diag_.has_errors(); }
 
   /// Returns the number of errors encountered.
-  [[nodiscard]] uint32_t error_count() const noexcept {
+  [[nodiscard]] auto error_count() const noexcept -> uint32_t {
     return diag_.error_count();
   }
 
@@ -158,10 +158,10 @@ private:
   // ========================================================================
 
   /// Returns the current token without consuming it.
-  [[nodiscard]] auto peek() const noexcept -> const Token & { return tokens_[pos_]; }
+  [[nodiscard]] auto peek() const noexcept -> const token & { return tokens_[pos_]; }
 
   /// Returns the token `offset` positions ahead without consuming.
-  [[nodiscard]] auto peek_at(uint32_t offset) const noexcept -> const Token & {
+  [[nodiscard]] auto peek_at(uint32_t offset) const noexcept -> const token & {
     auto idx = static_cast<size_t>(pos_) + offset;
     if (idx >= tokens_.size())
       idx = tokens_.size() - 1; // clamp to Eof
@@ -186,10 +186,11 @@ private:
   [[nodiscard]] auto at_eof() const noexcept -> bool { return at(token_kind::eof); }
 
   /// Consume the current token and return it.
-  auto advance() noexcept -> Token {
-    Token tok = tokens_[pos_];
-    if (pos_ < tokens_.size() - 1)
+  auto advance() noexcept -> token {
+    token tok = tokens_[pos_];
+    if (pos_ < tokens_.size() - 1) {
       ++pos_;
+}
     return tok;
   }
 
@@ -205,7 +206,7 @@ private:
 
   /// If the current token matches, consume it and return it.
   /// Otherwise return std::nullopt.
-  std::optional<Token> try_consume(token_kind kind) noexcept {
+  auto try_consume(token_kind kind) noexcept -> std::optional<token> {
     if (at(kind)) {
       return advance();
     }
@@ -221,7 +222,7 @@ private:
   }
 
   /// Return the previous token.
-  [[nodiscard]] auto previous() const noexcept -> const Token & {
+  [[nodiscard]] auto previous() const noexcept -> const token & {
     if (pos_ == 0)
       return tokens_[0];
     return tokens_[pos_ - 1];
@@ -260,12 +261,12 @@ private:
   ///   3. If not, consume the unexpected token.
   /// Returns the consumed token (or a synthetic placeholder if we
   /// inserted one during recovery).
-  auto expect(token_kind expected) -> Token;
+  auto expect(token_kind expected) -> token;
 
   /// Like expect(), but also provides a custom message for the diagnostic.
   /// The message explains *why* the token is expected, giving the user
   /// more context about what construct we're in the middle of parsing.
-  auto expect_with_context(token_kind expected, std::string_view context) -> Token;
+  auto expect_with_context(token_kind expected, std::string_view context) -> token;
 
   /// Emit a diagnostic for an unexpected token. This is the main
   /// "something went wrong" entry point. The message is constructed
@@ -341,7 +342,7 @@ private:
   /// (`:` NEWLINE INDENT stmts DEDENT). Returns the body as a vector
   /// of statement nodes. For inline form, wraps the expr in an expr_stmt.
   struct BodyResult {
-    ast::ptr<ast::Expr> inline_expr;
+    ast::ptr<ast::expr> inline_expr;
     std::vector<ast::ptr<ast::node>> stmts;
     bool is_block = false;
   };
@@ -499,12 +500,12 @@ private:
 
   // ---- Primary expression sub-parsers ----
 
-  [[nodiscard]] ast::ptr<ast::Expr> parse_literal_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_ident_or_path_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_paren_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_bracket_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_brace_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_lambda_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_literal_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_ident_or_path_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_paren_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_bracket_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_brace_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_lambda_expr();
   [[nodiscard]] ast::ptr<ast::match_expr> parse_match_expr();
   [[nodiscard]] ast::ptr<ast::if_expr> parse_if_expr();
   [[nodiscard]] ast::ptr<ast::for_expr> parse_for_expr();
@@ -522,8 +523,8 @@ private:
   /// Try to parse a postfix suffix (`.field`, `[index]`, `(args)`,
   /// `?`, `as Type`). Returns nullptr if the current token doesn't
   /// start a postfix suffix.
-  [[nodiscard]] ast::ptr<ast::Expr>
-  parse_postfix_suffix(ast::ptr<ast::Expr> base);
+  [[nodiscard]] ast::ptr<ast::expr>
+  parse_postfix_suffix(ast::ptr<ast::expr> base);
 
   // ---- Call arguments ----
 
@@ -537,43 +538,43 @@ private:
   //  Patterns
   // ========================================================================
 
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_pattern();
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_or_pattern();
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_atomic_pattern();
-  [[nodiscard]] std::optional<std::string> parse_pattern_alias();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_or_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_atomic_pattern();
+  [[nodiscard]] auto parse_pattern_alias() -> std::optional<std::string>;
 
   // ---- Pattern sub-parsers ----
 
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_wildcard_pattern();
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_literal_pattern();
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_ident_or_constructor_pattern();
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_paren_pattern();
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_brace_pattern();
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_bracket_pattern();
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_option_result_pattern();
-  [[nodiscard]] ast::ptr<ast::Pattern> parse_ref_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_wildcard_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_literal_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_ident_or_constructor_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_paren_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_brace_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_bracket_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_option_result_pattern();
+  [[nodiscard]] ast::ptr<ast::pattern> parse_ref_pattern();
 
   // ========================================================================
   //  For-loop variable parsing (shared by for-stmt and for-expr)
   // ========================================================================
 
-  [[nodiscard]] std::vector<ast::ptr<ast::Pattern>> parse_for_vars();
+  [[nodiscard]] std::vector<ast::ptr<ast::pattern>> parse_for_vars();
 
   // ========================================================================
   //  Helper: convert an assign-op token to the AssignOp enum.
   // ========================================================================
 
-  [[nodiscard]] static std::optional<ast::AssignOp>
+  [[nodiscard]] static std::optional<ast::assign_op>
   token_to_assign_op(token_kind kind) noexcept;
 
   // ========================================================================
   //  Helper: convert comparison token to BinaryOp.
   // ========================================================================
 
-  [[nodiscard]] std::optional<ast::BinaryOp> token_to_cmp_op();
-  [[nodiscard]] static std::optional<ast::BinaryOp>
+  [[nodiscard]] std::optional<ast::binary_op> token_to_cmp_op();
+  [[nodiscard]] static std::optional<ast::binary_op>
   token_to_add_op(token_kind kind) noexcept;
-  [[nodiscard]] static std::optional<ast::BinaryOp>
+  [[nodiscard]] static std::optional<ast::binary_op>
   token_to_mul_op(token_kind kind) noexcept;
 
   // ========================================================================
@@ -581,16 +582,16 @@ private:
   // ========================================================================
 
   /// The token stream, ending with Eof.
-  std::vector<Token> tokens_;
+  std::vector<token> tokens_;
 
   /// The source file identifier for diagnostics.
-  FileId file_id_;
+  file_id_type file_id_;
 
   /// The diagnostic bag we report errors to.
   diagnostic_bag &diag_;
 
   /// Current position in the token stream.
-  uint32_t pos_;
+  uint32_t pos_{0};
 };
 
 } // namespace kira

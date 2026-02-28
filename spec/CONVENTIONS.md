@@ -1,15 +1,16 @@
 # C++ Conventions (Clang 22, C++26 mode)
 
-> **Safety first, then readability, then performance.** Prefer functional style and value semantics. All **type** and **function** names are **snake_case**.
+> **Safety first, then readability, then performance.** Prefer functional style and value semantics. All names are **snake_case**.
 
 ## 0) Toolchain & Dialect
 - Target **Clang 22.1+** with **`-std=c++2c`**.
 - You may use C++26 features implemented in Clang ≤ 22 (gate anything uncertain with feature‑test macros).
 
 ## 1) Naming, Layout & Structure
-- All type and function names use **snake_case**. Namespaces are lower_snake_case.
+- All names use **snake_case**. Namespaces are lower_snake_case.
 - One logical public entity per header; keep headers minimal; prefer forward declares.
 - Limit lines to ~100 cols; 2‑space indent; trailing commas in multi‑line init‑lists.
+- Use #pragma once at the top of files instead of header guards
 
 ## 2) Functional‑first design
 - Prefer pure free functions with explicit inputs/outputs.

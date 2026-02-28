@@ -529,7 +529,7 @@ enum class binary_op : uint8_t {
   RangeInclusive,
 };
 
-[[nodiscard]] inline std::string_view binary_op_name(binary_op op) noexcept {
+[[nodiscard]] inline auto binary_op_name(binary_op op) noexcept -> std::string_view {
   switch (op) {
   case binary_op::Pipe:
     return "|";
@@ -610,7 +610,7 @@ enum class unary_op : uint8_t {
   Not,       ///< `not`
 };
 
-[[nodiscard]] inline std::string_view unary_op_name(unary_op op) noexcept {
+[[nodiscard]] inline auto unary_op_name(unary_op op) noexcept -> std::string_view {
   switch (op) {
   case unary_op::Neg:
     return "-";
@@ -829,7 +829,7 @@ struct block_expr : expr {
 
 /// Quasi-quote: `` `(content)` `` or `` `content` ``
 struct quote_expr : expr {
-  std::vector<Token> tokens; ///< Raw tokens inside the quote.
+  std::vector<token> tokens; ///< Raw tokens inside the quote.
 
   quote_expr() : expr(node_kind::quote_expr) {}
 };

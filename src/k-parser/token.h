@@ -232,7 +232,7 @@ enum class token_kind : uint16_t {
 // ==========================================================================
 //  Token — a single lexical token with its kind, location, and text.
 // ==========================================================================
-struct Token {
+struct token {
   token_kind kind = token_kind::eof;
   span span;
 
@@ -682,8 +682,8 @@ struct Token {
 //  This is used in diagnostic messages. The names are chosen to be
 //  understandable to someone learning Kira — not compiler-internals jargon.
 // ==========================================================================
-[[nodiscard]] constexpr std::string_view
-token_kind_name(token_kind kind) noexcept {
+[[nodiscard]] constexpr auto
+token_kind_name(token_kind kind) noexcept -> std::string_view {
   switch (kind) {
   case token_kind::eof:
     return "end of file";
@@ -975,8 +975,8 @@ token_kind_name(token_kind kind) noexcept {
 /// Returns a short, user-friendly description of what token was expected.
 /// For punctuation and keywords, returns the literal text. For categories
 /// like Ident, returns a prose description.
-[[nodiscard]] constexpr std::string_view
-token_kind_description(token_kind kind) noexcept {
+[[nodiscard]] constexpr auto
+token_kind_description(token_kind kind) noexcept -> std::string_view {
   switch (kind) {
   case token_kind::ident:
     return "a name";

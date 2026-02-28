@@ -27,12 +27,12 @@ struct source_span {
   [[nodiscard]] constexpr auto empty() const noexcept -> bool { return start == end; }
 
   /// Returns the length of this span in bytes.
-  [[nodiscard]] constexpr uint32_t len() const noexcept { return end - start; }
+  [[nodiscard]] constexpr auto len() const noexcept -> uint32_t { return end - start; }
 
   /// Returns a dummy/invalid span. Used as a sentinel for synthesized nodes
   /// that don't correspond to any real source text (e.g., error recovery
   /// insertions).
-  [[nodiscard]] static constexpr auto dummy() noexcept -> source_span { return source_span{0, 0}; }
+  [[nodiscard]] static constexpr auto dummy() noexcept -> source_span { return source_span{.start=0, .end=0}; }
 
   /// Merge two spans into one that covers both. The result spans from
   /// the earliest start to the latest end. This is used when building
@@ -45,8 +45,8 @@ struct source_span {
       return *this;
 }
     return source_span{
-        start < other.start ? start : other.start,
-        end > other.end ? end : other.end,
+        .start=start < other.start ? start : other.start,
+        .end=end > other.end ? end : other.end,
     };
   }
 
@@ -62,7 +62,7 @@ struct source_span {
 /// We use a small integer index rather than carrying the filename string
 /// everywhere. The SourceManager (or equivalent) maps these back to file
 /// paths and source text when needed.
-using FileId = uint16_t;
+using file_id_type = uint16_t;
 
 /// @brief A fully-qualified location in source code: file + span.
 ///
@@ -70,11 +70,11 @@ using FileId = uint16_t;
 /// enough information to produce a full error message with file name,
 /// line number, column, and the underlined source snippet.
 struct source_location {
-  FileId file_id = 0;
+  file_id_type file_id = 0;
   source_span span;
 
   [[nodiscard]] static constexpr auto dummy() noexcept -> source_location {
-    return source_location{0, source_span::dummy()};
+    return source_location{.file_id=0, .span=source_span::dummy()};
   }
 
   [[nodiscard]] constexpr auto
@@ -83,7 +83,7 @@ struct source_location {
     if (file_id != other.file_id) {
       return *this;
 }
-    return source_location{file_id, span.merge(other.span)};
+    return source_location{.file_id=file_id, .span=span.merge(other.span)};
   }
 
   constexpr auto operator==(const source_location &) const noexcept -> bool = default;
@@ -106,19 +106,19 @@ struct line_column {
 /// the backing storage outlives the source_file.
 class source_file {
 public:
-  source_file(FileId id, std::string name, std::string source)
+  source_file(file_id_type id, std::string name, std::string source)
       : id_(id), name_(std::move(name)), source_(std::move(source)) {
     build_line_index();
   }
 
-  [[nodiscard]] FileId id() const noexcept { return id_; }
-  [[nodiscard]] std::string_view name() const noexcept { return name_; }
-  [[nodiscard]] std::string_view source() const noexcept { return source_; }
+  [[nodiscard]] auto id() const noexcept -> file_id_type { return id_; }
+  [[nodiscard]] auto name() const noexcept -> std::string_view { return name_; }
+  [[nodiscard]] auto source() const noexcept -> std::string_view { return source_; }
 
   /// Resolve a byte offset to a 1-based line and column.
   [[nodiscard]] auto resolve(byte_offset offset) const noexcept -> line_column {
     if (line_starts_.empty()) {
-      return {1, 1};
+      return {.line=1, .column=1};
     }
 
     // Binary search for the line containing this offset.
@@ -141,7 +141,7 @@ public:
   }
 
   /// Extract the source text for a given span.
-  [[nodiscard]] std::string_view text_at(source_span span) const noexcept {
+  [[nodiscard]] auto text_at(source_span span) const noexcept -> std::string_view {
     if (span.start >= source_.size()) {
       return {};
 }
@@ -154,7 +154,7 @@ public:
 
   /// Extract the full source line that contains the given byte offset.
   /// Used to display the source context in diagnostic messages.
-  [[nodiscard]] std::string_view line_at(byte_offset offset) const noexcept {
+  [[nodiscard]] auto line_at(byte_offset offset) const noexcept -> std::string_view {
     auto lc = resolve(offset);
     uint32_t line_idx = lc.line - 1;
     if (line_idx >= line_starts_.size()) {
@@ -179,7 +179,7 @@ public:
   }
 
   /// Return the number of lines in the source file.
-  [[nodiscard]] uint32_t line_count() const noexcept {
+  [[nodiscard]] auto line_count() const noexcept -> uint32_t {
     return static_cast<uint32_t>(line_starts_.size());
   }
 
@@ -195,7 +195,7 @@ private:
     }
   }
 
-  FileId id_;
+  file_id_type id_;
   std::string name_;
   std::string source_;
   std::vector<byte_offset> line_starts_;
