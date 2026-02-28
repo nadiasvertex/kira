@@ -467,10 +467,6 @@ struct expr : node {
   using node::node;
 };
 
-/// Uppercase alias — lets parser.cpp use `ast::Expr` interchangeably with
-/// `ast::expr`. Both refer to the same base class.
-using Expr = expr;
-
 /// A placeholder expression for error recovery.
 struct error_expr : expr {
   std::string description;
@@ -885,10 +881,6 @@ struct pattern : node {
   using node::node;
 };
 
-/// Uppercase alias — lets parser.cpp use `ast::Pattern` interchangeably with
-/// `ast::pattern`.
-using Pattern = pattern;
-
 struct error_pattern : pattern {
   explicit error_pattern(source_span s = source_span::dummy())
       : pattern(node_kind::wildcard_pattern, s) {
@@ -1226,7 +1218,7 @@ struct concept_param {
 struct concept_constraint {
   source_span span;
   ptr<type_expr> subject;  ///< Non-null for `type : bound` constraints.
-  ptr<node> bound_or_expr; ///< Bound for type constraints, Expr for value
+  ptr<node> bound_or_expr; ///< Bound for type constraints, expr for value
                            ///< constraints.
 };
 

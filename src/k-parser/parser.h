@@ -486,17 +486,17 @@ private:
   //    primary_expr    →  literal | ident | (...) | [...] | {...} | ...
   // ========================================================================
 
-  [[nodiscard]] ast::ptr<ast::Expr> parse_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_pipe_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_or_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_and_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_not_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_cmp_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_add_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_mul_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_unary_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_postfix_expr();
-  [[nodiscard]] ast::ptr<ast::Expr> parse_primary_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_pipe_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_or_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_and_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_not_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_cmp_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_add_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_mul_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_unary_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_postfix_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_primary_expr();
 
   // ---- Primary expression sub-parsers ----
 

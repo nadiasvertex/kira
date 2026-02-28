@@ -57,10 +57,6 @@ struct source_span {
   constexpr auto operator<=>(const source_span &) const noexcept = default;
 };
 
-/// Convenience alias so that code throughout the compiler can write `span`
-/// as shorthand for `source_span`. Both names refer to the same type.
-using span = source_span;
-
 /// @brief Identifier for a source file within a compilation session.
 ///
 /// We use a small integer index rather than carrying the filename string
