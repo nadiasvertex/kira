@@ -517,6 +517,7 @@ private:
   [[nodiscard]] ast::ptr<ast::quote_expr> parse_quote_expr();
   [[nodiscard]] ast::ptr<ast::splice_expr> parse_splice_expr_inner();
   [[nodiscard]] ast::ptr<ast::static_expr> parse_static_expr();
+  [[nodiscard]] ast::ptr<ast::expr> parse_trailing_if_expr(ast::ptr<ast::expr> then_expr);
   [[nodiscard]] ast::ptr<ast::where_expr> parse_where_expr(ast::ptr<ast::expr> inner);
 
   // ---- Postfix suffixes ----
@@ -595,6 +596,10 @@ private:
   /// Some contexts, like guarded `for` expressions, need `=>` to act as a
   /// delimiter rather than starting a lambda.
   bool allow_lambda_expr_{true};
+
+  /// Some contexts, like `for ... in expr if guard`, need `if` to delimit the
+  /// surrounding construct rather than start a trailing conditional expression.
+  bool allow_trailing_if_expr_{true};
 };
 
 } // namespace kira

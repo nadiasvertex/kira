@@ -717,6 +717,7 @@ struct struct_field_init {
 
 /// Struct literal: `{a: 1, b: 2}`
 struct struct_expr : expr {
+  ptr<expr> type_name; ///< Optional typed form: `Point { x: 1 }`
   std::vector<struct_field_init> fields;
 
   struct_expr() : expr(node_kind::struct_expr) {}

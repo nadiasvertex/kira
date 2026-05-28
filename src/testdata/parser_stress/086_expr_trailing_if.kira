@@ -1,0 +1,4 @@
+module stress.expr_trailing_if
+
+def run(flag):
+  let label = "pass" if flag else "fail"

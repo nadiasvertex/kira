@@ -1,0 +1,4 @@
+module stress.expr_for_bare_iterable
+
+def run(items):
+  let values = for item in items => item

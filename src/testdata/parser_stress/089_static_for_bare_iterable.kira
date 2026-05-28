@@ -1,0 +1,3 @@
+module stress.static_for_bare_iterable
+
+static for item in items => item

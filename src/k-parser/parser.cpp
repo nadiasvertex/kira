@@ -729,8 +729,32 @@ ast::ptr<ast::use_decl> parser::parse_use_decl(ast::visibility vis) {
   // Parse the use path: `module_path [. use_selector]`
   decl->path = parse_module_path();
 
+  auto imported_name_span = previous_span();
+  if (match(token_kind::kw_as)) {
+    if (decl->path.size() < 2) {
+      emit(diagnostic(diagnostic_level::Error,
+                      "expected `module_path.name as alias` in this `use` declaration",
+                      file_id_)
+               .with_label(previous_span(), "the alias starts here"));
+    } else {
+      ast::use_selector sel;
+      sel.span = imported_name_span;
+      sel.kind = ast::UseSelectorKind::Single;
+
+      ast::use_item item;
+      item.name = decl->path.back();
+      decl->path.pop_back();
+      auto alias_tok = expect(token_kind::ident);
+      item.span = imported_name_span.merge(alias_tok.span);
+      item.alias = std::string(alias_tok.text);
+      sel.items.push_back(std::move(item));
+      sel.span = sel.items.front().span;
+      decl->selector = std::move(sel);
+    }
+  }
+
   // Check for selector: `.{items}` or `.*` or `.Name [as Alias]`
-  if (at(token_kind::dot)) {
+  if (!decl->selector.has_value() && at(token_kind::dot)) {
     // Peek at what follows the dot.
     auto after_dot = peek_at(1);
 
@@ -776,6 +800,25 @@ ast::ptr<ast::use_decl> parser::parse_use_decl(ast::visibility vis) {
       ast::use_selector sel;
       sel.span = after_dot.span;
       sel.kind = ast::UseSelectorKind::Wildcard;
+      decl->selector = std::move(sel);
+    } else if (after_dot.is(token_kind::ident)) {
+      advance(); // consume `.`
+
+      ast::use_selector sel;
+      sel.span = after_dot.span;
+      sel.kind = ast::UseSelectorKind::Single;
+
+      ast::use_item item;
+      auto item_tok = expect(token_kind::ident);
+      item.span = item_tok.span;
+      item.name = std::string(item_tok.text);
+
+      if (match(token_kind::kw_as)) {
+        auto alias_tok = expect(token_kind::ident);
+        item.alias = std::string(alias_tok.text);
+      }
+
+      sel.items.push_back(std::move(item));
       decl->selector = std::move(sel);
     }
     // Otherwise the dot was part of the module path (already consumed).
@@ -1527,14 +1570,17 @@ ast::ptr<ast::concept_decl> parser::parse_concept_decl(ast::visibility vis) {
       constraint.span = peek().span;
       // Try to parse `type : bound` or just `expr`.
       // We parse as type expr, then check for `:`.
+      auto constraint_start = pos_;
       auto subject = parse_type_expr();
       if (at(token_kind::colon)) {
         advance();
         constraint.subject = std::move(subject);
         constraint.bound_or_expr = parse_type_expr();
       } else {
-        // Value constraint — the subject is actually an expression.
-        constraint.bound_or_expr = std::move(subject);
+        // Value constraint — reparse from the start as an expression so
+        // operators like `+` or calls are preserved.
+        pos_ = constraint_start;
+        constraint.bound_or_expr = parse_expr();
       }
       expect_newline();
       decl->constraints.push_back(std::move(constraint));
@@ -1873,10 +1919,21 @@ ast::ptr<ast::static_decl> parser::parse_static_decl(ast::visibility vis) {
     advance(); // consume `for`
     decl->for_patterns = parse_for_vars();
     expect_with_context(token_kind::kw_in, "in `static for ... in ...`");
-    decl->for_iterable = parse_expr();
+    {
+      auto saved_allow_lambda = allow_lambda_expr_;
+      auto saved_allow_trailing_if = allow_trailing_if_expr_;
+      allow_lambda_expr_ = false;
+      allow_trailing_if_expr_ = false;
+      decl->for_iterable = parse_expr();
+      allow_lambda_expr_ = saved_allow_lambda;
+      allow_trailing_if_expr_ = saved_allow_trailing_if;
+    }
 
     if (match(token_kind::kw_if)) {
+      auto saved_allow_lambda = allow_lambda_expr_;
+      allow_lambda_expr_ = false;
       decl->for_guard = parse_expr();
+      allow_lambda_expr_ = saved_allow_lambda;
     }
 
     if (at(token_kind::fat_arrow)) {
@@ -2182,7 +2239,15 @@ ast::ptr<ast::for_stmt> parser::parse_for_stmt() {
   expect(token_kind::kw_for);
   stmt->patterns = parse_for_vars();
   expect_with_context(token_kind::kw_in, "in `for ... in ...`");
-  stmt->iterable = parse_expr();
+  {
+    auto saved_allow_lambda = allow_lambda_expr_;
+    auto saved_allow_trailing_if = allow_trailing_if_expr_;
+    allow_lambda_expr_ = false;
+    allow_trailing_if_expr_ = false;
+    stmt->iterable = parse_expr();
+    allow_lambda_expr_ = saved_allow_lambda;
+    allow_trailing_if_expr_ = saved_allow_trailing_if;
+  }
 
   if (match(token_kind::kw_if)) {
     stmt->guard = parse_expr();
@@ -2353,6 +2418,10 @@ ast::ptr<ast::expr> parser::parse_expr() {
   auto inner = parse_pipe_expr();
   if (!inner) {
     return nullptr;
+  }
+
+  if (allow_trailing_if_expr_ && at(token_kind::kw_if)) {
+    inner = parse_trailing_if_expr(std::move(inner));
   }
 
   // Optional trailing `where:` clause.
@@ -2855,6 +2924,16 @@ ast::ptr<ast::expr> parser::parse_ident_or_path_expr() {
   ident->span = tok.span;
   ident->name = std::string(tok.text);
 
+  if (at(token_kind::lbrace)) {
+    auto expr = parse_brace_expr();
+    if (expr && expr->kind == ast::node_kind::struct_expr) {
+      auto *struct_expr = static_cast<ast::struct_expr *>(expr.get());
+      struct_expr->type_name = std::move(ident);
+      struct_expr->span = struct_expr->type_name->span.merge(struct_expr->span);
+    }
+    return expr;
+  }
+
   // Check for module path: `a.b.c` where next is `.` followed by ident
   // but NOT followed by `(` or `[` (those are field access/method call).
   if (at(token_kind::dot) && peek_at(1).is(token_kind::ident) &&
@@ -2865,6 +2944,44 @@ ast::ptr<ast::expr> parser::parse_ident_or_path_expr() {
   }
 
   return ident;
+}
+
+ast::ptr<ast::expr> parser::parse_trailing_if_expr(ast::ptr<ast::expr> then_expr) {
+  auto iexpr = ast::make<ast::if_expr>();
+  iexpr->span = then_expr->span;
+
+  ast::if_branch branch;
+  branch.span = then_expr->span;
+  {
+    auto stmt = ast::make<ast::expr_stmt>();
+    stmt->expr = std::move(then_expr);
+    branch.body.push_back(std::move(stmt));
+  }
+
+  expect(token_kind::kw_if);
+  branch.condition = parse_expr();
+  branch.span.extend_to(previous_span());
+  iexpr->branches.push_back(std::move(branch));
+
+  expect_with_context(token_kind::kw_else, "in conditional expression");
+  auto else_expr = parse_expr();
+  if (!else_expr) {
+    emit(diagnostic(diagnostic_level::Error,
+                    "expected an expression after `else` in conditional expression",
+                    file_id_)
+             .with_label(previous_span(), "the `else` is here"));
+    else_expr = make_error_expr(previous_span());
+    iexpr->has_error = true;
+  }
+
+  {
+    auto stmt = ast::make<ast::expr_stmt>();
+    stmt->expr = std::move(else_expr);
+    iexpr->else_body.push_back(std::move(stmt));
+  }
+
+  iexpr->span.extend_to(previous_span());
+  return iexpr;
 }
 
 ast::ptr<ast::expr> parser::parse_paren_expr() {
@@ -3300,7 +3417,15 @@ ast::ptr<ast::for_expr> parser::parse_for_expr() {
       clause.patterns.push_back(std::move(p));
     }
     expect_with_context(token_kind::kw_in, "in `for ... in ...`");
-    clause.iterable = parse_expr();
+    {
+      auto saved_allow_lambda = allow_lambda_expr_;
+      auto saved_allow_trailing_if = allow_trailing_if_expr_;
+      allow_lambda_expr_ = false;
+      allow_trailing_if_expr_ = false;
+      clause.iterable = parse_expr();
+      allow_lambda_expr_ = saved_allow_lambda;
+      allow_trailing_if_expr_ = saved_allow_trailing_if;
+    }
     if (!clause.iterable) {
       emit_unexpected("an iterable expression after `in`");
       clause.iterable = make_error_expr(previous_span(), "expected iterable");

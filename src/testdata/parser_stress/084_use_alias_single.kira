@@ -1,0 +1,3 @@
+module stress.use_alias_single
+
+use std.io.reader as rdr

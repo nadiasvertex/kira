@@ -1,0 +1,4 @@
+module stress.concept_value_expr
+
+concept ready[T]:
+  value + 1

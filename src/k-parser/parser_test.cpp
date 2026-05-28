@@ -490,6 +490,120 @@ auto test_parser_recovers_missing_colon_in_where_clause() -> void {
          "expected recovered where binding name");
 }
 
+auto test_parser_accepts_spec_valid_regressions() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "\n"
+      "use std.io.reader as rdr\n"
+      "\n"
+      "concept ready[T]:\n"
+      "  value + 1\n"
+      "\n"
+      "static for item in items => item\n"
+      "\n"
+      "def run(flag, items):\n"
+      "  let label = \"pass\" if flag else \"fail\"\n"
+      "  let point = point { x: 1, y: 2 }\n"
+      "  let produced = for item in items => item\n"
+      "  return produced\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 4,
+         "expected use, concept, static, and function items");
+
+  auto *use_decl = expect_node<kira::ast::use_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::use_decl,
+      "expected first item to be a use declaration");
+  expect(use_decl->path.size() == 2,
+         "expected aliased import path to keep the module path only");
+  expect(use_decl->path[0] == "std", "expected first import path segment");
+  expect(use_decl->path[1] == "io", "expected second import path segment");
+  expect(use_decl->selector.has_value(),
+         "expected aliased import to produce a selector");
+  expect(use_decl->selector->kind == kira::ast::UseSelectorKind::Single,
+         "expected aliased import selector kind");
+  expect(use_decl->selector->items.size() == 1,
+         "expected one imported item in aliased import");
+  expect(use_decl->selector->items[0].name == "reader",
+         "expected imported item name");
+  expect(use_decl->selector->items[0].alias.has_value(),
+         "expected imported item alias");
+  expect(*use_decl->selector->items[0].alias == "rdr",
+         "expected imported item alias name");
+
+  auto *concept_decl = expect_node<kira::ast::concept_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::concept_decl,
+      "expected second item to be a concept declaration");
+  expect(concept_decl->constraints.size() == 1,
+         "expected one concept constraint");
+  expect(concept_decl->constraints[0].subject == nullptr,
+         "expected value constraint to leave type subject empty");
+  auto *concept_expr = expect_node<kira::ast::binary_expr>(
+      concept_decl->constraints[0].bound_or_expr.get(),
+      kira::ast::node_kind::binary_expr,
+      "expected concept value constraint expression");
+  expect(concept_expr->op == kira::ast::binary_op::Add,
+         "expected concept value constraint to preserve addition");
+
+  auto *static_decl = expect_node<kira::ast::static_decl>(
+      parsed.file->items[2].get(), kira::ast::node_kind::static_decl,
+      "expected third item to be a static declaration");
+  expect(static_decl->decl_kind == kira::ast::static_decl_kind::for_inline,
+         "expected static for inline declaration kind");
+  auto *static_iterable = expect_expr<kira::ast::ident_expr>(
+      static_decl->for_iterable.get(), kira::ast::node_kind::ident_expr,
+      "expected bare identifier iterable in static for");
+  expect(static_iterable->name == "items",
+         "expected static for iterable identifier name");
+
+  auto *func_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[3].get(), kira::ast::node_kind::func_decl,
+      "expected final item to be a function declaration");
+  expect(func_decl->body_stmts.size() == 4,
+         "expected four statements in regression function");
+
+  auto *label_stmt = expect_node<kira::ast::let_stmt>(
+      func_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected label binding statement");
+  auto *label_if = expect_expr<kira::ast::if_expr>(
+      label_stmt->initializer.get(), kira::ast::node_kind::if_expr,
+      "expected trailing conditional expression to parse as if-expression");
+  expect(label_if->branches.size() == 1,
+         "expected one branch in trailing conditional expression");
+  expect(label_if->else_body.size() == 1,
+         "expected else body in trailing conditional expression");
+
+  auto *point_stmt = expect_node<kira::ast::let_stmt>(
+      func_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+      "expected point binding statement");
+  auto *point_expr = expect_expr<kira::ast::struct_expr>(
+      point_stmt->initializer.get(), kira::ast::node_kind::struct_expr,
+      "expected typed struct literal initializer");
+  expect(point_expr->type_name != nullptr,
+         "expected typed struct literal to preserve its type name");
+  auto *point_type = expect_expr<kira::ast::ident_expr>(
+      point_expr->type_name.get(), kira::ast::node_kind::ident_expr,
+      "expected typed struct literal type name expression");
+  expect(point_type->name == "point",
+         "expected typed struct literal type name");
+  expect(point_expr->fields.size() == 2,
+         "expected both typed struct literal fields");
+
+  auto *produced_stmt = expect_node<kira::ast::let_stmt>(
+      func_decl->body_stmts[2].get(), kira::ast::node_kind::let_stmt,
+      "expected produced binding statement");
+  auto *produced_expr = expect_expr<kira::ast::for_expr>(
+      produced_stmt->initializer.get(), kira::ast::node_kind::for_expr,
+      "expected bare iterable for-expression initializer");
+  expect(produced_expr->clauses.size() == 1,
+         "expected one for-expression clause");
+  auto *produced_iterable = expect_expr<kira::ast::ident_expr>(
+      produced_expr->clauses[0].iterable.get(), kira::ast::node_kind::ident_expr,
+      "expected bare identifier iterable in for-expression");
+  expect(produced_iterable->name == "items",
+         "expected for-expression iterable identifier name");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -510,6 +624,7 @@ auto main(int argc, char *argv[]) -> int {
       {"missing_module_recovery", test_parser_reports_missing_module_and_recovers},
       {"missing_where_colon_recovery",
        test_parser_recovers_missing_colon_in_where_clause},
+      {"spec_valid_regressions", test_parser_accepts_spec_valid_regressions},
   };
 
   if (argc > 1) {

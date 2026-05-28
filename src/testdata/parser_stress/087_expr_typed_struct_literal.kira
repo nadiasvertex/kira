@@ -1,0 +1,4 @@
+module stress.expr_typed_struct_literal
+
+def run():
+  point { x: 1, y: 2 }
