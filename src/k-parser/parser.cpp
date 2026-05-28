@@ -39,6 +39,12 @@ auto parser::expect_newline() -> bool {
     return true;
 }
 
+  // Block expressions consume their closing DEDENT internally, so the
+  // enclosing statement sees the next statement-starting token directly.
+  if (previous().is(token_kind::dedent)) {
+    return true;
+  }
+
   // Missing newline — emit a helpful diagnostic.
   auto span = previous_span();
   emit(diagnostic(diagnostic_level::Error, "expected end of line after this",

@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 cc_library(
     name = "k-parser",
@@ -12,4 +12,10 @@ cc_library(
         "token.h",
     ],
     visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "parser_test",
+    srcs = ["parser_test.cpp"],
+    deps = [":k-parser"],
 )
