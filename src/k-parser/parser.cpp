@@ -1425,7 +1425,11 @@ ast::ptr<ast::trait_decl> parser::parse_trait_decl(ast::visibility vis) {
       // Parse trait items: func_decl, static_decl, associated_type_decl.
       auto item_vis = parse_optional_visibility();
 
-      if (at(token_kind::kw_def) || peek().is_func_modifier()) {
+      if (at(token_kind::kw_static)) {
+        decl->items.push_back(parse_static_decl(item_vis));
+      } else if (at(token_kind::kw_def) ||
+                 at_any(token_kind::kw_pure, token_kind::kw_async,
+                        token_kind::kw_machine)) {
         auto mods = parse_func_modifiers();
         if (at(token_kind::kw_def)) {
           decl->items.push_back(parse_func_decl(item_vis, std::move(mods)));
@@ -1433,8 +1437,6 @@ ast::ptr<ast::trait_decl> parser::parse_trait_decl(ast::visibility vis) {
           emit_unexpected("`def` in trait body");
           synchronize_to_newline();
         }
-      } else if (at(token_kind::kw_static)) {
-        decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_type)) {
         // Associated type declaration.
         auto assoc = ast::make<ast::associated_type_decl_node>();
@@ -1568,7 +1570,11 @@ ast::ptr<ast::impl_decl> parser::parse_impl_decl() {
 
       auto item_vis = parse_optional_visibility();
 
-      if (at(token_kind::kw_def) || peek().is_func_modifier()) {
+      if (at(token_kind::kw_static)) {
+        decl->items.push_back(parse_static_decl(item_vis));
+      } else if (at(token_kind::kw_def) ||
+                 at_any(token_kind::kw_pure, token_kind::kw_async,
+                        token_kind::kw_machine)) {
         auto mods = parse_func_modifiers();
         if (at(token_kind::kw_def)) {
           decl->items.push_back(parse_func_decl(item_vis, std::move(mods)));
@@ -1576,8 +1582,6 @@ ast::ptr<ast::impl_decl> parser::parse_impl_decl() {
           emit_unexpected("`def` in impl body");
           synchronize_to_newline();
         }
-      } else if (at(token_kind::kw_static)) {
-        decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_type)) {
         // Associated type definition.
         auto assoc = ast::make<ast::associated_type_def_node>();

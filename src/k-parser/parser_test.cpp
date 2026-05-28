@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstring>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -227,11 +228,237 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
   expect(return_ident->name == "chosen", "expected return identifier name");
 }
 
+auto test_parser_preserves_function_signature_and_control_flow() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "\n"
+      "pub async[ctx] def compute(x: int, y = 1) -> int where int: number: 0\n"
+      "def drive(stream, entries):\n"
+      "  if x:\n"
+      "    return y\n"
+      "  elif y:\n"
+      "    return x\n"
+      "  else:\n"
+      "    return 0\n"
+      "  while let some(item) = stream:\n"
+      "    process(item)\n"
+      "  for key, value in entries if ready:\n"
+      "    consume(key)\n"
+      "  let processed = await source as int?\n"
+      "  return y\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 2, "expected two function declarations");
+
+  auto *func_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected top-level signature function declaration");
+  expect(func_decl->visibility == kira::ast::visibility::pub,
+         "expected function visibility to be preserved");
+  expect(func_decl->modifiers.is_async, "expected async modifier");
+  expect(func_decl->modifiers.async_context != nullptr,
+         "expected async context type");
+  expect(func_decl->params.size() == 2, "expected two function parameters");
+  expect(func_decl->params[0].type_annotation != nullptr,
+         "expected first parameter type annotation");
+  expect(func_decl->params[1].default_value != nullptr,
+         "expected second parameter default value");
+  expect(func_decl->return_type != nullptr, "expected return type");
+  expect(func_decl->where_constraints.size() == 1,
+         "expected one where constraint");
+  expect(func_decl->body_expr != nullptr,
+         "expected first function to preserve inline body");
+
+  auto *drive_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+      "expected second control-flow function declaration");
+  expect(drive_decl->body_stmts.size() == 5,
+         "expected five statements in function body");
+
+  auto *if_stmt = expect_node<kira::ast::if_stmt>(
+      drive_decl->body_stmts[0].get(), kira::ast::node_kind::if_stmt,
+      "expected if statement");
+  expect(if_stmt->branches.size() == 2, "expected if and elif branches");
+  expect(if_stmt->else_body.size() == 1, "expected else body");
+
+  auto *while_stmt = expect_node<kira::ast::while_stmt>(
+      drive_decl->body_stmts[1].get(), kira::ast::node_kind::while_stmt,
+      "expected while statement");
+  expect(while_stmt->let_pattern != nullptr,
+         "expected while-let pattern to be preserved");
+  expect(while_stmt->let_expr != nullptr,
+         "expected while-let expression to be preserved");
+  expect(while_stmt->body.size() == 1, "expected single while body statement");
+
+  auto *for_stmt = expect_node<kira::ast::for_stmt>(
+      drive_decl->body_stmts[2].get(), kira::ast::node_kind::for_stmt,
+      "expected for statement");
+  expect(for_stmt->patterns.size() == 2, "expected two for-loop patterns");
+  expect(for_stmt->guard != nullptr, "expected for-loop guard");
+  expect(for_stmt->body.size() == 1, "expected single for-loop body statement");
+
+  auto *processed_stmt = expect_node<kira::ast::let_stmt>(
+      drive_decl->body_stmts[3].get(), kira::ast::node_kind::let_stmt,
+      "expected processed binding statement");
+  auto *await_expr = expect_expr<kira::ast::await_expr>(
+      processed_stmt->initializer.get(), kira::ast::node_kind::await_expr,
+      "expected await-expression initializer");
+  auto *try_expr = expect_expr<kira::ast::try_expr>(
+      await_expr->operand.get(), kira::ast::node_kind::try_expr,
+      "expected try expression inside await expression");
+  auto *cast_expr = expect_expr<kira::ast::cast_expr>(
+      try_expr->operand.get(), kira::ast::node_kind::cast_expr,
+      "expected cast expression inside try expression");
+  expect(cast_expr->target_type != nullptr, "expected cast target type");
+
+  auto *return_stmt = expect_node<kira::ast::return_stmt>(
+      drive_decl->body_stmts[4].get(), kira::ast::node_kind::return_stmt,
+      "expected final return statement");
+  expect(return_stmt->value != nullptr, "expected final return value");
+}
+
+auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "\n"
+      "trait worker[T] requires runnable + sendable:\n"
+      "  pub static helper = seed\n"
+      "  def process(item: T) -> int: item\n"
+      "\n"
+      "impl worker[int] for int where int: runnable:\n"
+      "  static counter = 0\n"
+      "  def process(item: int) -> int: item\n"
+      "\n"
+      "def orchestrate(source, ctx) -> int:\n"
+      "  let fanout = par:\n"
+      "    source\n"
+      "    source\n"
+      "  let winner = race:\n"
+      "    source\n"
+      "    source\n"
+      "  let handled = on(int, ctx):\n"
+      "    return source\n"
+      "  return source\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 3,
+         "expected trait, impl, and function declarations");
+
+  auto *trait_decl = expect_node<kira::ast::trait_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
+      "expected trait declaration");
+  expect(trait_decl->type_params.size() == 1, "expected trait type parameter");
+  expect(trait_decl->requires_bound.has_value(), "expected trait requires bound");
+  expect(trait_decl->items.size() == 2, "expected static and function trait items");
+  auto *trait_static = expect_node<kira::ast::static_decl>(
+      trait_decl->items[0].get(), kira::ast::node_kind::static_decl,
+      "expected trait static item");
+  expect(trait_static->visibility == kira::ast::visibility::pub,
+         "expected trait static visibility");
+  auto *trait_func = expect_node<kira::ast::func_decl>(
+      trait_decl->items[1].get(), kira::ast::node_kind::func_decl,
+      "expected trait function item");
+  expect(trait_func->return_type != nullptr, "expected trait function return type");
+
+  auto *impl_decl = expect_node<kira::ast::impl_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::impl_decl,
+      "expected impl declaration");
+  expect(impl_decl->where_constraints.size() == 1,
+         "expected impl where constraint");
+  expect(impl_decl->items.size() == 2, "expected static and function impl items");
+
+  auto *func_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[2].get(), kira::ast::node_kind::func_decl,
+      "expected orchestrate function declaration");
+  expect(func_decl->body_stmts.size() == 4,
+         "expected four statements in orchestrate body");
+
+  auto *par_binding = expect_node<kira::ast::let_stmt>(
+      func_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected par-binding let statement");
+  auto *par_expr = expect_expr<kira::ast::par_expr>(
+      par_binding->initializer.get(), kira::ast::node_kind::par_expr,
+      "expected par expression initializer");
+  expect(par_expr->branches.size() == 2, "expected two par branches");
+
+  auto *race_binding = expect_node<kira::ast::let_stmt>(
+      func_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+      "expected race-binding let statement");
+  auto *race_expr = expect_expr<kira::ast::race_expr>(
+      race_binding->initializer.get(), kira::ast::node_kind::race_expr,
+      "expected race expression initializer");
+  expect(race_expr->branches.size() == 2, "expected two race branches");
+
+  auto *on_binding = expect_node<kira::ast::let_stmt>(
+      func_decl->body_stmts[2].get(), kira::ast::node_kind::let_stmt,
+      "expected on-binding let statement");
+  auto *on_expr = expect_expr<kira::ast::on_expr>(
+      on_binding->initializer.get(), kira::ast::node_kind::on_expr,
+      "expected on expression initializer");
+  expect(on_expr->context_type != nullptr, "expected on-expression context type");
+  expect(on_expr->sender != nullptr, "expected on-expression sender");
+  expect(on_expr->body.size() == 1, "expected on-expression body statement");
+
+  auto *return_stmt = expect_node<kira::ast::return_stmt>(
+      func_decl->body_stmts[3].get(), kira::ast::node_kind::return_stmt,
+      "expected final return statement");
+  expect(return_stmt->value != nullptr, "expected final return value");
+}
+
+auto test_parser_reports_missing_module_and_recovers() -> void {
+  auto parsed = parse_source(
+      "def greet(name):\n"
+      "  return name\n");
+
+  expect(parsed.error_count > 0,
+         "expected parser to diagnose missing module declaration");
+  expect(parsed.diagnostics.find("every Kira source file must start with a `module` declaration") !=
+             std::string::npos,
+         "expected missing-module diagnostic message");
+  expect(parsed.file->module_decl != nullptr,
+         "expected synthesized module declaration during recovery");
+  expect(parsed.file->module_decl->has_error,
+         "expected synthesized module declaration to be marked erroneous");
+  expect(parsed.file->items.size() == 1,
+         "expected parser to recover and preserve following function");
+  auto *func_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected recovered function declaration");
+  expect(func_decl->name == "greet", "expected recovered function name");
+}
+
+struct named_test {
+  const char *name;
+  void (*fn)();
+};
+
 } // namespace
 
-auto main() -> int {
-  test_lexer_emits_indent_and_dedent();
-  test_parser_builds_type_body_nodes();
-  test_parser_preserves_associated_types_where_and_aliases();
+auto main(int argc, char *argv[]) -> int {
+  const named_test tests[] = {
+      {"lexer_indent_dedent", test_lexer_emits_indent_and_dedent},
+      {"type_body_nodes", test_parser_builds_type_body_nodes},
+      {"associated_types_where_aliases",
+       test_parser_preserves_associated_types_where_and_aliases},
+      {"function_signature_and_control_flow",
+       test_parser_preserves_function_signature_and_control_flow},
+      {"trait_impl_and_block_expressions",
+       test_parser_preserves_trait_impl_and_block_expressions},
+      {"missing_module_recovery", test_parser_reports_missing_module_and_recovers},
+  };
+
+  if (argc > 1) {
+    for (const auto &test : tests) {
+      if (std::strcmp(argv[1], test.name) == 0) {
+        test.fn();
+        return 0;
+      }
+    }
+    fail("unknown test name");
+  }
+
+  for (const auto &test : tests) {
+    test.fn();
+  }
   return 0;
 }
