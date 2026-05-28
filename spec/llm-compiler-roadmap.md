@@ -42,7 +42,7 @@ This document is a planning snapshot for LLMs and contributors. It describes wha
 Exit criteria:
 
 - `bazelisk test //...` stays green after grammar additions.
-- Most syntax described in `spec/kira-reference.md` has parser coverage.
+- All syntax described in `spec/kira-reference.md` has parser coverage.
 
 ### 2. Source management and module graph
 
