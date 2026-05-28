@@ -1,0 +1,10 @@
+third_party/argparse
+bazel-bin
+bazel-kira
+bazel-out
+bazel-testlogs
+external
+src/k-parser/bazel-bin
+src/k-parser/bazel-k-parser
+src/k-parser/bazel-out
+src/k-parser/bazel-testlogs

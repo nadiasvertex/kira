@@ -542,8 +542,6 @@ private:
   [[nodiscard]] ast::ptr<ast::pattern> parse_pattern();
   [[nodiscard]] ast::ptr<ast::pattern> parse_or_pattern();
   [[nodiscard]] ast::ptr<ast::pattern> parse_atomic_pattern();
-  [[nodiscard]] auto parse_pattern_alias() -> std::optional<std::string>;
-
   // ---- Pattern sub-parsers ----
 
   [[nodiscard]] ast::ptr<ast::pattern> parse_wildcard_pattern();

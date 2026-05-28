@@ -936,27 +936,18 @@ ast::ptr<ast::node> parser::parse_type_def() {
   // Sum body: starts with `|`
   if (at(token_kind::pipe)) {
     auto body = parse_sum_body();
-    auto node = ast::make<ast::error_node>(body.span, "sum body");
-    // We wrap sum_body into a Node — in practice, the type_decl stores it
-    // as a generic Node* and we check the structure later.
-    // For a cleaner design we could use variant, but this keeps things simple.
-    // Actually, let's just return a named_type that wraps the concept.
-    // For now, store as error_node with the sum body embedded — the real
-    // solution would be a dedicated SumBodyNode. Let's create an inline
-    // placeholder that is not an error.
-    auto result = ast::make<ast::named_type>();
+    auto result = ast::make<ast::sum_type_def>();
     result->span = body.span;
-    // Store variant info in the named type — semantic layer will handle this.
-    // TODO: proper sum body node
+    result->body = std::move(body);
     return result;
   }
 
   // Struct body: starts with `{`
   if (at(token_kind::lbrace)) {
     auto body = parse_struct_body();
-    auto result = ast::make<ast::named_type>();
+    auto result = ast::make<ast::struct_type_def>();
     result->span = body.span;
-    // TODO: proper struct body node
+    result->body = std::move(body);
     return result;
   }
 
@@ -1440,14 +1431,19 @@ ast::ptr<ast::trait_decl> parser::parse_trait_decl(ast::visibility vis) {
         decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_type)) {
         // Associated type declaration.
+        auto assoc = ast::make<ast::associated_type_decl_node>();
+        assoc->value.visibility = item_vis;
+        assoc->span = peek().span;
         advance(); // consume `type`
-        [[maybe_unused]] auto aname_tok = expect(token_kind::ident);
-        // TODO: build associated_type_decl node properly
-        // For now, skip to newline.
+        auto aname_tok = expect(token_kind::ident);
+        assoc->value.name = std::string(aname_tok.text);
         if (match(token_kind::eq)) {
-          [[maybe_unused]] auto default_type = parse_type_expr();
+          assoc->value.default_type = parse_type_expr();
         }
         expect_newline();
+        assoc->value.span = assoc->span.merge(previous_span());
+        assoc->span = assoc->value.span;
+        decl->items.push_back(std::move(assoc));
       } else if (at(token_kind::newline)) {
         advance();
       } else {
@@ -1578,12 +1574,17 @@ ast::ptr<ast::impl_decl> parser::parse_impl_decl() {
         decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_type)) {
         // Associated type definition.
+        auto assoc = ast::make<ast::associated_type_def_node>();
+        assoc->span = peek().span;
         advance(); // consume `type`
-        [[maybe_unused]] auto assoc_name_tok = expect(token_kind::ident);
+        auto assoc_name_tok = expect(token_kind::ident);
+        assoc->value.name = std::string(assoc_name_tok.text);
         expect(token_kind::eq);
-        [[maybe_unused]] auto assoc_type = parse_type_expr();
+        assoc->value.type = parse_type_expr();
         expect_newline();
-        // TODO: build associated_type_def node
+        assoc->value.span = assoc->span.merge(previous_span());
+        assoc->span = assoc->value.span;
+        decl->items.push_back(std::move(assoc));
       } else if (at(token_kind::newline)) {
         advance();
       } else {
@@ -3226,7 +3227,7 @@ ast::ptr<ast::for_expr> parser::parse_for_expr() {
 
   // Parse one or more iteration clauses.
   do {
-    ast::for_expr::IterClause clause;
+    ast::for_expr::iter_clause clause;
     auto pats = parse_for_vars();
     for (auto &p : pats) {
       clause.patterns.push_back(std::move(p));
@@ -3613,12 +3614,10 @@ ast::ptr<ast::pattern> parser::parse_pattern() {
   if (at(token_kind::kw_as)) {
     advance();
     auto name_tok = expect(token_kind::ident);
-    // Wrap in an or_pattern with alias... for now, just annotate the
-    // binding name on a wrapping group pattern.
-    // TODO: proper pattern alias support
     auto group = ast::make<ast::group_pattern>();
     group->span = pat->span.merge(name_tok.span);
     group->inner = std::move(pat);
+    group->alias = std::string(name_tok.text);
     return group;
   }
 

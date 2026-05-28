@@ -1,8 +1,21 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+
+cc_library(
+    name = "cli",
+    srcs = ["cli.cpp"],
+    hdrs = ["cli.h"],
+    visibility = ["//visibility:public"],
+)
 
 cc_binary(
     name = "kira",
     srcs = ["main.cpp"],
-    deps = ["@argparse"],
+    deps = [":cli"],
     visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "cli_test",
+    srcs = ["cli_test.cpp"],
+    deps = [":cli"],
 )

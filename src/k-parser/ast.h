@@ -25,6 +25,8 @@ struct module_decl;
 // Items
 struct use_decl;
 struct type_decl;
+struct struct_type_def;
+struct sum_type_def;
 struct trait_decl;
 struct impl_decl;
 struct concept_decl;
@@ -32,6 +34,8 @@ struct func_decl;
 struct sub_module_decl;
 struct dep_decl;
 struct static_decl;
+struct associated_type_decl_node;
+struct associated_type_def_node;
 struct splice_stmt;
 
 // Type system
@@ -163,6 +167,8 @@ enum class node_kind : uint8_t {
   // Items
   use_decl,
   type_decl,
+  struct_type_def,
+  sum_type_def,
   trait_decl,
   impl_decl,
   concept_decl,
@@ -170,6 +176,8 @@ enum class node_kind : uint8_t {
   sub_module_decl,
   dep_decl,
   static_decl,
+  associated_type_decl_node,
+  associated_type_def_node,
   splice_stmt,
 
   // Types
@@ -781,11 +789,11 @@ struct match_expr : expr {
 
 /// `for vars in iter [if guard] => yield_expr`
 struct for_expr : expr {
-  struct IterClause {
+  struct iter_clause {
     std::vector<ptr<node>> patterns;
     ptr<expr> iterable;
   };
-  std::vector<IterClause> clauses;
+  std::vector<iter_clause> clauses;
   ptr<expr> guard;      ///< Optional `if` filter.
   ptr<expr> yield_expr; ///< The `=> expr` part.
 
@@ -989,6 +997,7 @@ struct or_pattern : pattern {
 /// `(pattern)` — parenthesized pattern for grouping.
 struct group_pattern : pattern {
   ptr<pattern> inner;
+  std::optional<std::string> alias;
 
   group_pattern() : pattern(node_kind::group_pattern) {}
 };
@@ -1181,6 +1190,18 @@ struct type_decl : node {
   type_decl() : node(node_kind::type_decl) {}
 };
 
+struct struct_type_def : node {
+  struct_body body;
+
+  struct_type_def() : node(node_kind::struct_type_def) {}
+};
+
+struct sum_type_def : node {
+  sum_body body;
+
+  sum_type_def() : node(node_kind::sum_type_def) {}
+};
+
 /// Associated type in a trait: `type Name [= Default]`
 struct associated_type_decl {
   source_span span;
@@ -1189,11 +1210,25 @@ struct associated_type_decl {
   ptr<type_expr> default_type;
 };
 
+struct associated_type_decl_node : node {
+  associated_type_decl value;
+
+  associated_type_decl_node()
+      : node(node_kind::associated_type_decl_node) {}
+};
+
 /// Associated type in an impl: `type Name = ConcreteType`
 struct associated_type_def {
   source_span span;
   std::string name;
   ptr<type_expr> type;
+};
+
+struct associated_type_def_node : node {
+  associated_type_def value;
+
+  associated_type_def_node()
+      : node(node_kind::associated_type_def_node) {}
 };
 
 /// Trait declaration.

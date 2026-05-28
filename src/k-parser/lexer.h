@@ -62,8 +62,8 @@ public:
     // Always end with EOF.
     tokens_.push_back(token{
         .kind = token_kind::eof,
-        .span = span{static_cast<byte_offset>(source_.size()),
-                     static_cast<byte_offset>(source_.size())},
+        .span = source_span{static_cast<byte_offset>(source_.size()),
+                            static_cast<byte_offset>(source_.size())},
         .text = {},
         .error_message = {},
     });
@@ -112,8 +112,8 @@ private:
     return source_.substr(start, pos_ - start);
   }
 
-  [[nodiscard]] span span_from(byte_offset start) const noexcept {
-    return span{start, static_cast<byte_offset>(pos_)};
+  [[nodiscard]] auto span_from(byte_offset start) const noexcept -> source_span {
+    return source_span{start, static_cast<byte_offset>(pos_)};
   }
 
   [[nodiscard]] static auto is_alpha(char c) noexcept -> bool {
@@ -161,7 +161,8 @@ private:
     });
   }
 
-  void emit_synthetic(token_kind kind, span span, std::string_view text = {}) {
+  void emit_synthetic(token_kind kind, source_span span,
+                      std::string_view text = {}) {
     tokens_.push_back(token{
         .kind = kind,
         .span = span,

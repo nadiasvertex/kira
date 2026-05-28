@@ -234,7 +234,7 @@ enum class token_kind : uint16_t {
 // ==========================================================================
 struct token {
   token_kind kind = token_kind::eof;
-  span span;
+  source_span span;
 
   /// The raw source text of this token. For most tokens this is a view into
   /// the original source buffer; for synthesized tokens (error recovery) it
