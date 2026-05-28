@@ -1,0 +1,4 @@
+module stress.expr_boolean_precedence
+
+def run(a, b, c):
+  a or b and not c

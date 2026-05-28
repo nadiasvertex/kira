@@ -1,0 +1,8 @@
+module stress.expr_unary
+
+def run(value):
+  let a = -value
+  let b = ~(value)
+  let c = *ptr
+  let d = &value
+  let e = &mut value

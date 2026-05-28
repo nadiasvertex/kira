@@ -1,0 +1,3 @@
+module stress.func_visibility_and_modifiers
+
+pub pure async[ctx] machine static def run(): 1

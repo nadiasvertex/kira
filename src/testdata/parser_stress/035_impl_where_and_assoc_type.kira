@@ -1,0 +1,4 @@
+module stress.impl_where_assoc_type
+
+impl worker[int] for int where int: runnable:
+  type item = int

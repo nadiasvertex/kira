@@ -1,0 +1,3 @@
+module stress.type_array_type
+
+type ints = array[int, 4]

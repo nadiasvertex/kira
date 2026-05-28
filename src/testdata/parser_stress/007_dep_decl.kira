@@ -1,0 +1,4 @@
+module stress.dep_decl
+
+dep sqlite:
+  version = "3.45"

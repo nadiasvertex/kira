@@ -1,0 +1,10 @@
+module stress.expr_postfix
+
+def run(value, list_value, fn_value):
+  value.field
+  value.method[int]
+  value.()
+  list_value[0]
+  fn_value(1, named: 2)
+  value?
+  value as int

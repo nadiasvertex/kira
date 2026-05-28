@@ -1,0 +1,10 @@
+module stress.pattern_literal_range
+
+def run(x):
+  match x:
+    1 => 1
+    1..10 => 2
+    1..=10 => 3
+    1.. => 4
+    ..10 => 5
+    _ => 0

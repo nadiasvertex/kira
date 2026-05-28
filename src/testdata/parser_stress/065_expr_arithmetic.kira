@@ -1,0 +1,14 @@
+module stress.expr_arithmetic
+
+def run(a, b):
+  a + b
+  a - b
+  a * b
+  a / b
+  a % b
+  a +% b
+  a -% b
+  a *% b
+  a +| b
+  a -| b
+  a *| b

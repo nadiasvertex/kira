@@ -1,0 +1,4 @@
+module stress.trait_static_member
+
+trait worker:
+  pub static helper = seed

@@ -1,0 +1,6 @@
+module stress.func_contracts
+
+def run(x: int) -> int
+pre x > 0, "positive"
+post x > 0, "still positive"
+: x

@@ -1,0 +1,5 @@
+module stress.stmt_while_let
+
+def run(stream):
+  while let some(item) = stream:
+    return item

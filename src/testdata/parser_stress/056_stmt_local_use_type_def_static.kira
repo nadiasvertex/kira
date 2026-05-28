@@ -1,0 +1,7 @@
+module stress.stmt_local_decls
+
+def run():
+  use std.io
+  type local = int
+  def nested(): 1
+  static cached = 1

@@ -1,0 +1,6 @@
+module stress.expr_static_and_where
+
+def run(value):
+  let staged = static value
+  let scoped = value where:
+    base = 1

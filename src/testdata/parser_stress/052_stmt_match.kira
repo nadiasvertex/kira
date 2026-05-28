@@ -1,0 +1,6 @@
+module stress.stmt_match
+
+def run(x):
+  match x:
+    0 => 0
+    _ => 1

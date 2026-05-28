@@ -1,0 +1,6 @@
+module stress.stmt_let_else
+
+def run():
+  let some(value) = item else:
+    return 0
+  return value

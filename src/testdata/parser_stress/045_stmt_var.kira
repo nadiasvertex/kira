@@ -1,0 +1,4 @@
+module stress.stmt_var
+
+def run():
+  var value: int = 1

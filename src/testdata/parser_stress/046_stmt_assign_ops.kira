@@ -1,0 +1,20 @@
+module stress.stmt_assign_ops
+
+def run():
+  var value = 1
+  value += 1
+  value -= 1
+  value *= 1
+  value /= 1
+  value %= 1
+  value &= 1
+  value |= 1
+  value ^= 1
+  value <<= 1
+  value >>= 1
+  value +%= 1
+  value -%= 1
+  value *%= 1
+  value +|= 1
+  value -|= 1
+  value *|= 1

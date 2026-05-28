@@ -1,0 +1,3 @@
+module stress.static_for_inline
+
+static for item in [items] => item

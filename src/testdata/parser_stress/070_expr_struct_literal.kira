@@ -1,0 +1,4 @@
+module stress.expr_struct_literal
+
+def run(value):
+  { value, named: value }

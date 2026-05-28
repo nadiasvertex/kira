@@ -1,0 +1,4 @@
+module stress.stmt_asm
+
+def run():
+  asm { nop }

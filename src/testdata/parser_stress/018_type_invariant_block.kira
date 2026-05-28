@@ -1,0 +1,4 @@
+module stress.type_invariant_block
+
+type positive = int
+  invariant self > 0

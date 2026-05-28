@@ -1,0 +1,3 @@
+module stress.use_group
+
+use std.io.{ reader, writer }

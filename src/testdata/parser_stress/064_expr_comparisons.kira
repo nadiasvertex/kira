@@ -1,0 +1,11 @@
+module stress.expr_comparisons
+
+def run(a, b, items):
+  a == b
+  a != b
+  a < b
+  a <= b
+  a > b
+  a >= b
+  a in items
+  a not in items

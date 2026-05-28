@@ -1,0 +1,4 @@
+module stress.stmt_splice
+
+def run():
+  ~value

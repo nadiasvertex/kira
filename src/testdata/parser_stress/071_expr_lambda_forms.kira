@@ -1,0 +1,7 @@
+module stress.expr_lambda_forms
+
+def run():
+  let short = x => x
+  let rich = pure move (x: int, y) -> int => x
+  let block = x =>:
+    return x

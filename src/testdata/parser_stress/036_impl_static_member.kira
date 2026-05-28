@@ -1,0 +1,4 @@
+module stress.impl_static_member
+
+impl worker for int:
+  static counter = 0

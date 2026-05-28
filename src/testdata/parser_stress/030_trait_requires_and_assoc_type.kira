@@ -1,0 +1,4 @@
+module stress.trait_requires_assoc_type
+
+trait worker[T] requires runnable + sendable:
+  type item = int

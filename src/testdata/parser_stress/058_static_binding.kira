@@ -1,0 +1,3 @@
+module stress.static_binding
+
+static answer: int = 42

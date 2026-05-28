@@ -1,0 +1,4 @@
+module stress.static_for_block
+
+static for item in items if ready:
+  return item

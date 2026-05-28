@@ -1,0 +1,7 @@
+module stress.expr_quote_and_splice
+
+def run(value):
+  let quoted = `value`
+  let grouped = `(value)`
+  let spliced = ~(value)
+  let named = ~value

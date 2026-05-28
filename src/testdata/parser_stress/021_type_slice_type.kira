@@ -1,0 +1,3 @@
+module stress.type_slice_type
+
+type ints = [int]

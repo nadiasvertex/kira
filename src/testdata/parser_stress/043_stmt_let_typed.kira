@@ -1,0 +1,4 @@
+module stress.stmt_let_typed
+
+def run():
+  let value: int = 1

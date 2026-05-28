@@ -1,0 +1,8 @@
+module stress.pattern_composite
+
+def run(x):
+  let (a, b) = x
+  let { left: l, right, .. } = x
+  let [head, tail] = x
+  let &ref_value = x
+  let value | other as chosen = x

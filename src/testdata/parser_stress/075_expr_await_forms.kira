@@ -1,0 +1,5 @@
+module stress.expr_await_forms
+
+def run(source):
+  await source
+  await yield

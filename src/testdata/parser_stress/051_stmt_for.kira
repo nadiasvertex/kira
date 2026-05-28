@@ -1,0 +1,5 @@
+module stress.stmt_for
+
+def run(items):
+  for item in items if ready:
+    return item

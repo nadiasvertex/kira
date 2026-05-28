@@ -1,0 +1,9 @@
+module stress.expr_par_and_race
+
+def run(a, b):
+  par:
+    a
+    b
+  race:
+    a
+    b

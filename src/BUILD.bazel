@@ -2,6 +2,12 @@ load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 
+filegroup(
+    name = "parser_stress_corpus",
+    srcs = glob(["testdata/parser_stress/*.kira"]),
+    visibility = ["//visibility:public"],
+)
+
 proto_library(
     name = "module_metadata_proto",
     srcs = ["module_metadata.proto"],
@@ -39,4 +45,12 @@ cc_test(
         ":cli",
         ":module_metadata_cc_proto",
     ],
+)
+
+cc_test(
+    name = "driver_stress_test",
+    size = "medium",
+    srcs = ["driver_stress_test.cpp"],
+    data = [":parser_stress_corpus"],
+    deps = [":cli"],
 )

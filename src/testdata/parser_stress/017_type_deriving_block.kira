@@ -1,0 +1,4 @@
+module stress.type_deriving_block
+
+type point = { x: int }
+  deriving show

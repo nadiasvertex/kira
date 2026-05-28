@@ -1,0 +1,5 @@
+module stress.stmt_while
+
+def run(x):
+  while x:
+    return x

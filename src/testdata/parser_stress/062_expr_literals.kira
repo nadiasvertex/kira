@@ -1,0 +1,13 @@
+module stress.expr_literals
+
+def run():
+  42
+  0x2A
+  0o52
+  0b101010
+  1.5e2
+  "value {name}"
+  'a'
+  true
+  false
+  unit

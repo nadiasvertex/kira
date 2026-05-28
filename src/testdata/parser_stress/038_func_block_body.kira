@@ -1,0 +1,4 @@
+module stress.func_block_body
+
+def run():
+  return 1

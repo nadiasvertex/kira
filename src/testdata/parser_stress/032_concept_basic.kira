@@ -1,0 +1,4 @@
+module stress.concept_basic
+
+concept comparable[T]:
+  T: orderable

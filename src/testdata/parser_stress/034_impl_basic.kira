@@ -1,0 +1,4 @@
+module stress.impl_basic
+
+impl worker for int:
+  def run(): 1

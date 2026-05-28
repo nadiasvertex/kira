@@ -1,0 +1,5 @@
+module stress.stmt_crew
+
+def run():
+  crew workers(mode: eager):
+    task

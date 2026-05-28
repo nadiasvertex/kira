@@ -1,0 +1,5 @@
+module stress.expr_for_forms
+
+def run(items, other):
+  let values = for item in [items] => item
+  let pairs = for x in [items], y in [other] if ready == true => x

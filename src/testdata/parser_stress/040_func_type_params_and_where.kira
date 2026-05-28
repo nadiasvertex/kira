@@ -1,0 +1,3 @@
+module stress.func_type_params_and_where
+
+def run[T](x: T) -> T where T: value: x

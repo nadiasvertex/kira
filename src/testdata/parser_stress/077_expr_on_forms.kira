@@ -1,0 +1,6 @@
+module stress.expr_on_forms
+
+def run(ctx, sender, value):
+  on(int, sender): value
+  on(int):
+    value

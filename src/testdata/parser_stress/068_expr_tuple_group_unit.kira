@@ -1,0 +1,6 @@
+module stress.expr_tuple_group_unit
+
+def run(value):
+  (value)
+  (value, value)
+  ()

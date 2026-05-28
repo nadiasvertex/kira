@@ -1,0 +1,7 @@
+module stress.expr_arrays
+
+def run(value):
+  []
+  [value]
+  [value, value]
+  [value; 4]

@@ -1,0 +1,4 @@
+module stress.concept_higher_kinded
+
+concept functor[F[_], T]:
+  F: shape

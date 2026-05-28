@@ -1,0 +1,4 @@
+module stress.submodule_block
+
+module child:
+  def run(): 1

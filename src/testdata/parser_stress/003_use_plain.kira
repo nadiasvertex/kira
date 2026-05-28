@@ -1,0 +1,3 @@
+module stress.use_plain
+
+use std.io

@@ -1,0 +1,6 @@
+module stress.static_if
+
+static if enabled:
+  def run(): 1
+else:
+  def run(): 0

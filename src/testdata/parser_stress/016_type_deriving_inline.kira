@@ -1,0 +1,3 @@
+module stress.type_deriving_inline
+
+type point = { x: int } deriving show, eq

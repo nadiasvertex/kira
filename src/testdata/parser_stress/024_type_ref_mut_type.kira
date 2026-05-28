@@ -1,0 +1,3 @@
+module stress.type_ref_mut_type
+
+type ints = &mut int

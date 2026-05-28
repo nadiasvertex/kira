@@ -1,0 +1,3 @@
+module stress.func_inline_body
+
+def run(): 1

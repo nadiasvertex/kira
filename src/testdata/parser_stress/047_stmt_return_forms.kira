@@ -1,0 +1,6 @@
+module stress.stmt_return_forms
+
+def run(flag):
+  if flag:
+    return
+  return 1

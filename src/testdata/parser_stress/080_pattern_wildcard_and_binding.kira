@@ -1,0 +1,5 @@
+module stress.pattern_wildcard_binding
+
+def run(x):
+  let _ = x
+  let value = x

@@ -1,0 +1,3 @@
+module stress.submodule_forward
+
+module child

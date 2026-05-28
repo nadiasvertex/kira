@@ -1,0 +1,3 @@
+module stress.use_visibility
+
+pub use std.io

@@ -1,0 +1,9 @@
+module stress.stmt_if
+
+def run(x):
+  if x:
+    return 1
+  elif x == 0:
+    return 0
+  else:
+    return -1

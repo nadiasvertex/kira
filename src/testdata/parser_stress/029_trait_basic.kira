@@ -1,0 +1,4 @@
+module stress.trait_basic
+
+trait worker:
+  def run(): 1
