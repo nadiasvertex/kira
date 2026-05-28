@@ -234,6 +234,7 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
       "\n"
       "pub async[ctx] def compute(x: int, y = 1) -> int where int: number: 0\n"
       "def drive(stream, entries):\n"
+      "  let branch = if x: y else: 0\n"
       "  if x:\n"
       "    return y\n"
       "  elif y:\n"
@@ -244,6 +245,7 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
       "    process(item)\n"
       "  for key, value in entries if ready:\n"
       "    consume(key)\n"
+      "  let produced = for entry in entries if ready => entry\n"
       "  let processed = await source as int?\n"
       "  return y\n");
 
@@ -272,17 +274,28 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
   auto *drive_decl = expect_node<kira::ast::func_decl>(
       parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
       "expected second control-flow function declaration");
-  expect(drive_decl->body_stmts.size() == 5,
-         "expected five statements in function body");
+  expect(drive_decl->body_stmts.size() == 7,
+         "expected seven statements in function body");
+
+  auto *branch_stmt = expect_node<kira::ast::let_stmt>(
+      drive_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected branch binding statement");
+  auto *if_expr = expect_expr<kira::ast::if_expr>(
+      branch_stmt->initializer.get(), kira::ast::node_kind::if_expr,
+      "expected inline if-expression initializer");
+  expect(if_expr->branches.size() == 1,
+         "expected single branch in inline if-expression");
+  expect(if_expr->else_body.size() == 1,
+         "expected else body in inline if-expression");
 
   auto *if_stmt = expect_node<kira::ast::if_stmt>(
-      drive_decl->body_stmts[0].get(), kira::ast::node_kind::if_stmt,
+      drive_decl->body_stmts[1].get(), kira::ast::node_kind::if_stmt,
       "expected if statement");
   expect(if_stmt->branches.size() == 2, "expected if and elif branches");
   expect(if_stmt->else_body.size() == 1, "expected else body");
 
   auto *while_stmt = expect_node<kira::ast::while_stmt>(
-      drive_decl->body_stmts[1].get(), kira::ast::node_kind::while_stmt,
+      drive_decl->body_stmts[2].get(), kira::ast::node_kind::while_stmt,
       "expected while statement");
   expect(while_stmt->let_pattern != nullptr,
          "expected while-let pattern to be preserved");
@@ -291,14 +304,25 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
   expect(while_stmt->body.size() == 1, "expected single while body statement");
 
   auto *for_stmt = expect_node<kira::ast::for_stmt>(
-      drive_decl->body_stmts[2].get(), kira::ast::node_kind::for_stmt,
+      drive_decl->body_stmts[3].get(), kira::ast::node_kind::for_stmt,
       "expected for statement");
   expect(for_stmt->patterns.size() == 2, "expected two for-loop patterns");
   expect(for_stmt->guard != nullptr, "expected for-loop guard");
   expect(for_stmt->body.size() == 1, "expected single for-loop body statement");
 
+  auto *produced_stmt = expect_node<kira::ast::let_stmt>(
+      drive_decl->body_stmts[4].get(), kira::ast::node_kind::let_stmt,
+      "expected produced binding statement");
+  auto *for_expr = expect_expr<kira::ast::for_expr>(
+      produced_stmt->initializer.get(), kira::ast::node_kind::for_expr,
+      "expected guarded for-expression initializer");
+  expect(for_expr->clauses.size() == 1, "expected one for-expression clause");
+  expect(for_expr->guard != nullptr, "expected guarded for-expression guard");
+  expect(for_expr->yield_expr != nullptr,
+         "expected guarded for-expression yield value");
+
   auto *processed_stmt = expect_node<kira::ast::let_stmt>(
-      drive_decl->body_stmts[3].get(), kira::ast::node_kind::let_stmt,
+      drive_decl->body_stmts[5].get(), kira::ast::node_kind::let_stmt,
       "expected processed binding statement");
   auto *await_expr = expect_expr<kira::ast::await_expr>(
       processed_stmt->initializer.get(), kira::ast::node_kind::await_expr,
@@ -312,7 +336,7 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
   expect(cast_expr->target_type != nullptr, "expected cast target type");
 
   auto *return_stmt = expect_node<kira::ast::return_stmt>(
-      drive_decl->body_stmts[4].get(), kira::ast::node_kind::return_stmt,
+      drive_decl->body_stmts[6].get(), kira::ast::node_kind::return_stmt,
       "expected final return statement");
   expect(return_stmt->value != nullptr, "expected final return value");
 }
@@ -336,8 +360,7 @@ auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
       "  let winner = race:\n"
       "    source\n"
       "    source\n"
-      "  let handled = on(int, ctx):\n"
-      "    return source\n"
+      "  let handled = on(int, ctx): source\n"
       "  return source\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
@@ -398,6 +421,11 @@ auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
   expect(on_expr->context_type != nullptr, "expected on-expression context type");
   expect(on_expr->sender != nullptr, "expected on-expression sender");
   expect(on_expr->body.size() == 1, "expected on-expression body statement");
+  auto *on_stmt_expr = expect_node<kira::ast::expr_stmt>(
+      on_expr->body[0].get(), kira::ast::node_kind::expr_stmt,
+      "expected inline on-expression body to become an expression statement");
+  expect(on_stmt_expr->expr != nullptr,
+         "expected preserved inline expression inside on-expression body");
 
   auto *return_stmt = expect_node<kira::ast::return_stmt>(
       func_decl->body_stmts[3].get(), kira::ast::node_kind::return_stmt,
@@ -427,6 +455,41 @@ auto test_parser_reports_missing_module_and_recovers() -> void {
   expect(func_decl->name == "greet", "expected recovered function name");
 }
 
+auto test_parser_recovers_missing_colon_in_where_clause() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "\n"
+      "def compute(x):\n"
+      "  let value = x where\n"
+      "    base = 1\n"
+      "  return value\n");
+
+  expect(parsed.error_count > 0,
+         "expected malformed where clause to produce diagnostics");
+  expect(parsed.diagnostics.find("expected `:` after `where` but found newline") !=
+             std::string::npos,
+         "expected precise missing-colon diagnostic for where clause");
+  expect(parsed.diagnostics.find("Write it as `expr where:` followed by an indented block") !=
+             std::string::npos,
+         "expected recovery help text for malformed where clause");
+
+  auto *func_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected function declaration despite malformed where clause");
+  auto *let_stmt = expect_node<kira::ast::let_stmt>(
+      func_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected let statement despite malformed where clause");
+  auto *where_expr = expect_expr<kira::ast::where_expr>(
+      let_stmt->initializer.get(), kira::ast::node_kind::where_expr,
+      "expected recovered where-expression node");
+  expect(where_expr->has_error,
+         "expected recovered where-expression to be marked erroneous");
+  expect(where_expr->bindings.size() == 1,
+         "expected recovered where-expression binding");
+  expect(where_expr->bindings[0].name == "base",
+         "expected recovered where binding name");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -445,6 +508,8 @@ auto main(int argc, char *argv[]) -> int {
       {"trait_impl_and_block_expressions",
        test_parser_preserves_trait_impl_and_block_expressions},
       {"missing_module_recovery", test_parser_reports_missing_module_and_recovers},
+      {"missing_where_colon_recovery",
+       test_parser_recovers_missing_colon_in_where_clause},
   };
 
   if (argc > 1) {

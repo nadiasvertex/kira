@@ -591,6 +591,10 @@ private:
 
   /// Current position in the token stream.
   uint32_t pos_{0};
+
+  /// Some contexts, like guarded `for` expressions, need `=>` to act as a
+  /// delimiter rather than starting a lambda.
+  bool allow_lambda_expr_{true};
 };
 
 } // namespace kira

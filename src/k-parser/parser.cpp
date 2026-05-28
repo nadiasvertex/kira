@@ -389,7 +389,19 @@ auto parser::parse_body(std::string_view construct_name) -> parser::BodyResult {
   }
 
   // Inline form: `:` expr NEWLINE
+  auto expr_start = pos_;
   result.inline_expr = parse_expr();
+  if (!result.inline_expr) {
+    pos_ = expr_start;
+    emit(diagnostic(diagnostic_level::Error,
+                    std::format("expected an expression after `:` in this {}",
+                                construct_name),
+                    file_id_)
+             .with_label(previous_span(), "the `:` is here")
+             .with_help("Put a single expression on the same line as the `:`, "
+                        "or move the body to the next line and indent it."));
+    return result;
+  }
   expect_newline();
   return result;
 }
@@ -1708,6 +1720,7 @@ ast::ptr<ast::func_decl> parser::parse_func_decl(ast::visibility vis,
   }
 
   // Optional contract clauses.
+  skip_newlines();
   decl->contracts = parse_contract_clauses();
 
   // Function body.
@@ -1753,8 +1766,10 @@ auto parser::parse_param() -> ast::Param {
 std::vector<ast::contract_clause> parser::parse_contract_clauses() {
   std::vector<ast::contract_clause> clauses;
 
+  skip_newlines();
   while (at_any(token_kind::kw_pre, token_kind::kw_post)) {
     clauses.push_back(parse_contract_clause());
+    skip_newlines();
   }
 
   return clauses;
@@ -2831,7 +2846,7 @@ ast::ptr<ast::expr> parser::parse_literal_expr() {
 
 ast::ptr<ast::expr> parser::parse_ident_or_path_expr() {
   // Check if this looks like a lambda: `ident => ...`
-  if (peek_at(1).is(token_kind::fat_arrow)) {
+  if (allow_lambda_expr_ && peek_at(1).is(token_kind::fat_arrow)) {
     return parse_lambda_expr();
   }
 
@@ -3175,6 +3190,31 @@ ast::ptr<ast::if_expr> parser::parse_if_expr() {
   auto iexpr = ast::make<ast::if_expr>();
   auto start = peek().span;
 
+  auto wrap_inline_body = [](ast::ptr<ast::expr> expr) {
+    std::vector<ast::ptr<ast::node>> body;
+    if (expr) {
+      auto stmt = ast::make<ast::expr_stmt>();
+      stmt->expr = std::move(expr);
+      body.push_back(std::move(stmt));
+    }
+    return body;
+  };
+
+  auto parse_if_inline_body = [this](std::string_view construct_name) {
+    auto body = parse_pipe_expr();
+    if (!body) {
+      emit(diagnostic(diagnostic_level::Error,
+                      std::format("expected an expression after `:` in this {}",
+                                  construct_name),
+                      file_id_)
+               .with_label(previous_span(), "the `:` is here")
+               .with_help("Put a single expression on the same line as the `:`, "
+                          "or move the body to the next line and indent it."));
+      return make_error_expr(previous_span(), "expected inline if-expression body");
+    }
+    return body;
+  };
+
   expect(token_kind::kw_if);
 
   // First branch.
@@ -3182,13 +3222,16 @@ ast::ptr<ast::if_expr> parser::parse_if_expr() {
     ast::if_branch branch;
     branch.span = start;
     branch.condition = parse_expr();
-    auto body = parse_body("if");
-    if (body.inline_expr) {
-      auto es = ast::make<ast::expr_stmt>();
-      es->expr = std::move(body.inline_expr);
-      branch.body.push_back(std::move(es));
+    expect(token_kind::colon);
+    if (at(token_kind::newline)) {
+      auto body = parse_body("if");
+      if (body.inline_expr) {
+        branch.body = wrap_inline_body(std::move(body.inline_expr));
+      } else {
+        branch.body = std::move(body.stmts);
+      }
     } else {
-      branch.body = std::move(body.stmts);
+      branch.body = wrap_inline_body(parse_if_inline_body("if"));
     }
     branch.span.extend_to(previous_span());
     iexpr->branches.push_back(std::move(branch));
@@ -3200,13 +3243,16 @@ ast::ptr<ast::if_expr> parser::parse_if_expr() {
     ast::if_branch branch;
     branch.span = previous_span();
     branch.condition = parse_expr();
-    auto body = parse_body("elif");
-    if (body.inline_expr) {
-      auto es = ast::make<ast::expr_stmt>();
-      es->expr = std::move(body.inline_expr);
-      branch.body.push_back(std::move(es));
+    expect(token_kind::colon);
+    if (at(token_kind::newline)) {
+      auto body = parse_body("elif");
+      if (body.inline_expr) {
+        branch.body = wrap_inline_body(std::move(body.inline_expr));
+      } else {
+        branch.body = std::move(body.stmts);
+      }
     } else {
-      branch.body = std::move(body.stmts);
+      branch.body = wrap_inline_body(parse_if_inline_body("elif"));
     }
     branch.span.extend_to(previous_span());
     iexpr->branches.push_back(std::move(branch));
@@ -3215,14 +3261,25 @@ ast::ptr<ast::if_expr> parser::parse_if_expr() {
   // `else` is required for if-expressions (they must produce a value).
   if (at(token_kind::kw_else)) {
     advance();
-    auto body = parse_body("else");
-    if (body.inline_expr) {
-      auto es = ast::make<ast::expr_stmt>();
-      es->expr = std::move(body.inline_expr);
-      iexpr->else_body.push_back(std::move(es));
+    expect(token_kind::colon);
+    if (at(token_kind::newline)) {
+      auto body = parse_body("else");
+      if (body.inline_expr) {
+        iexpr->else_body = wrap_inline_body(std::move(body.inline_expr));
+      } else {
+        iexpr->else_body = std::move(body.stmts);
+      }
     } else {
-      iexpr->else_body = std::move(body.stmts);
+      iexpr->else_body = wrap_inline_body(parse_if_inline_body("else"));
     }
+  } else {
+    emit(diagnostic(diagnostic_level::Error,
+                    "an `if` expression must have an `else` branch",
+                    file_id_)
+             .with_label(previous_span(), "this `if` expression ends here")
+             .with_help("Unlike an `if` statement, an `if` expression must "
+                        "produce a value in every case. Add an `else:` branch."));
+    iexpr->has_error = true;
   }
 
   iexpr->span = start.merge(previous_span());
@@ -3244,11 +3301,35 @@ ast::ptr<ast::for_expr> parser::parse_for_expr() {
     }
     expect_with_context(token_kind::kw_in, "in `for ... in ...`");
     clause.iterable = parse_expr();
+    if (!clause.iterable) {
+      emit_unexpected("an iterable expression after `in`");
+      clause.iterable = make_error_expr(previous_span(), "expected iterable");
+    }
     fexpr->clauses.push_back(std::move(clause));
-  } while (match(token_kind::comma) && at(token_kind::ident));
+  } while (match(token_kind::comma) && !at_any(token_kind::kw_if, token_kind::fat_arrow));
 
   if (match(token_kind::kw_if)) {
+    auto saved_pos = pos_;
+    auto saved_allow_lambda = allow_lambda_expr_;
+    allow_lambda_expr_ = false;
     fexpr->guard = parse_expr();
+    allow_lambda_expr_ = saved_allow_lambda;
+    if (!at(token_kind::fat_arrow)) {
+      pos_ = saved_pos;
+      allow_lambda_expr_ = false;
+      fexpr->guard = parse_cmp_expr();
+      allow_lambda_expr_ = saved_allow_lambda;
+    }
+    if (!fexpr->guard) {
+      emit(diagnostic(diagnostic_level::Error,
+                      "expected a guard expression after `if` in `for` "
+                      "expression",
+                      file_id_)
+               .with_label(previous_span(), "the `if` is here")
+               .with_help("A guarded `for` expression looks like: `for x in "
+                          "items if predicate(x) => value`."));
+      fexpr->guard = make_error_expr(previous_span(), "expected guard");
+    }
   }
 
   expect(token_kind::fat_arrow);
@@ -3343,13 +3424,45 @@ ast::ptr<ast::on_expr> parser::parse_on_expr() {
   expect(token_kind::rparen);
 
   if (at(token_kind::colon)) {
-    auto body = parse_body("on");
-    if (body.inline_expr) {
-      auto es = ast::make<ast::expr_stmt>();
-      es->expr = std::move(body.inline_expr);
-      oexpr->body.push_back(std::move(es));
+    advance(); // consume `:`
+    if (at(token_kind::newline)) {
+      skip_newlines();
+      if (match(token_kind::indent)) {
+        while (!at_any(token_kind::dedent, token_kind::eof)) {
+          skip_newlines();
+          if (at_any(token_kind::dedent, token_kind::eof)) {
+            break;
+          }
+          auto stmt = parse_stmt();
+          if (stmt) {
+            oexpr->body.push_back(std::move(stmt));
+          } else {
+            synchronize();
+          }
+        }
+        expect_block_end("on");
+      } else {
+        emit(diagnostic(diagnostic_level::Error,
+                        "expected an indented block after `:` for this on",
+                        file_id_)
+                 .with_label(previous_span(), "the `:` is here")
+                 .with_help("After `on(...):` and a new line, indent the body. "
+                            "For a single expression, keep it on the same line."));
+      }
     } else {
-      oexpr->body = std::move(body.stmts);
+      auto inline_expr = parse_expr();
+      if (!inline_expr) {
+        emit(diagnostic(diagnostic_level::Error,
+                        "expected an expression after `:` in this on",
+                        file_id_)
+                 .with_label(previous_span(), "the `:` is here")
+                 .with_help("Write `on(context): expr` for a single expression, "
+                            "or start a new indented block on the next line."));
+      } else {
+        auto es = ast::make<ast::expr_stmt>();
+        es->expr = std::move(inline_expr);
+        oexpr->body.push_back(std::move(es));
+      }
     }
   }
 
@@ -3484,14 +3597,77 @@ ast::ptr<ast::where_expr> parser::parse_where_expr(ast::ptr<ast::expr> inner) {
 
   // Expect the `:` that opens the where block.
   if (!at(token_kind::colon)) {
-    emit(diagnostic(diagnostic_level::Error,
-                    "expected `:` after `where`",
+    auto found = peek();
+    auto diag = diagnostic(
+                    diagnostic_level::Error,
+                    std::format("expected `:` after `where` but found {}",
+                                found.is_eof() ? "end of file"
+                                               : token_kind_name(found.kind)),
                     file_id_)
-             .with_label(previous_span(), "expected `:` after this `where`")
-             .with_help("A `where` clause must be followed by `:` and an "
-                        "indented block of `name = expr` bindings."));
+                    .with_label(found.span, "expected `:` here")
+                    .with_note("A `where` clause introduces a local binding "
+                               "block attached to the preceding expression.")
+                    .with_help("Write it as `expr where:` followed by an "
+                               "indented block of `name = expr` bindings.");
+    if (at(token_kind::newline) && peek_at(1).is(token_kind::indent)) {
+      diag.with_fix("insert `:` before the newline", found.span, ":");
+    }
+    emit(std::move(diag));
     wexpr->has_error = true;
-    wexpr->span.extend_to(previous_span());
+
+    // Recovery: if the user started a binding block on the next line, treat
+    // this as a missing colon and keep parsing the where-bindings.
+    if (at(token_kind::newline) && peek_at(1).is(token_kind::indent)) {
+      advance();
+      match(token_kind::indent);
+
+      while (!at_any(token_kind::dedent, token_kind::eof)) {
+        skip_newlines();
+        if (at_any(token_kind::dedent, token_kind::eof)) {
+          break;
+        }
+
+        ast::where_binding binding;
+        binding.span = peek().span;
+
+        if (!at(token_kind::ident)) {
+          emit_unexpected("an identifier for the `where` binding name");
+          synchronize_to_newline();
+          continue;
+        }
+
+        auto name_tok = advance();
+        binding.name = std::string(name_tok.text);
+
+        if (!match(token_kind::eq)) {
+          emit(diagnostic(diagnostic_level::Error,
+                          std::format("expected `=` after `{}` in `where` "
+                                      "binding",
+                                      binding.name),
+                          file_id_)
+                   .with_label(previous_span(), "expected `=` after this name")
+                   .with_help("Each `where` binding has the form `name = expr`."));
+          synchronize_to_newline();
+          continue;
+        }
+
+        binding.value = parse_expr();
+        if (!binding.value) {
+          emit_unexpected("an expression after `=` in `where` binding");
+          binding.value = make_error_expr(previous_span());
+        }
+
+        binding.span.extend_to(previous_span());
+        wexpr->bindings.push_back(std::move(binding));
+        expect_newline();
+      }
+
+      expect_block_end("where");
+      wexpr->span.extend_to(previous_span());
+      return wexpr;
+    }
+
+    wexpr->span.extend_to(found.span);
     return wexpr;
   }
   advance(); // consume `:`
