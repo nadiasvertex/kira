@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package kira.metadata.v1;
+
+message ModuleMetadata {
+  uint32 schema_version = 1;
+  string source_path = 2;
+  repeated string module_path = 3;
+  bool no_prelude = 4;
+  repeated Import imports = 5;
+  repeated Dependency dependencies = 6;
+  repeated TopLevelSymbol top_level_symbols = 7;
+  uint32 parser_error_count = 8;
+}
+
+message Import {
+  repeated string path = 1;
+  ImportSelectorKind selector_kind = 2;
+  repeated ImportItem items = 3;
+}
+
+message ImportItem {
+  string name = 1;
+  string alias = 2;
+}
+
+enum ImportSelectorKind {
+  IMPORT_SELECTOR_KIND_UNSPECIFIED = 0;
+  IMPORT_SELECTOR_KIND_SINGLE = 1;
+  IMPORT_SELECTOR_KIND_GROUP = 2;
+  IMPORT_SELECTOR_KIND_WILDCARD = 3;
+}
+
+message Dependency {
+  string name = 1;
+  map<string, string> fields = 2;
+}
+
+message TopLevelSymbol {
+  string name = 1;
+  TopLevelSymbolKind kind = 2;
+  ModuleVisibility visibility = 3;
+  bool has_parse_error = 4;
+}
+
+enum TopLevelSymbolKind {
+  TOP_LEVEL_SYMBOL_KIND_UNSPECIFIED = 0;
+  TOP_LEVEL_SYMBOL_KIND_USE = 1;
+  TOP_LEVEL_SYMBOL_KIND_TYPE = 2;
+  TOP_LEVEL_SYMBOL_KIND_TRAIT = 3;
+  TOP_LEVEL_SYMBOL_KIND_IMPL = 4;
+  TOP_LEVEL_SYMBOL_KIND_CONCEPT = 5;
+  TOP_LEVEL_SYMBOL_KIND_FUNCTION = 6;
+  TOP_LEVEL_SYMBOL_KIND_SUBMODULE = 7;
+  TOP_LEVEL_SYMBOL_KIND_DEP = 8;
+  TOP_LEVEL_SYMBOL_KIND_STATIC = 9;
+  TOP_LEVEL_SYMBOL_KIND_SPLICE = 10;
+  TOP_LEVEL_SYMBOL_KIND_ERROR = 11;
+}
+
+enum ModuleVisibility {
+  MODULE_VISIBILITY_UNSPECIFIED = 0;
+  MODULE_VISIBILITY_DEFAULT = 1;
+  MODULE_VISIBILITY_PUBLIC = 2;
+  MODULE_VISIBILITY_INTERNAL = 3;
+  MODULE_VISIBILITY_SUPER = 4;
+  MODULE_VISIBILITY_PRIVATE = 5;
+}

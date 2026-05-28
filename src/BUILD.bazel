@@ -1,9 +1,27 @@
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+
+proto_library(
+    name = "module_metadata_proto",
+    srcs = ["module_metadata.proto"],
+    visibility = ["//visibility:public"],
+)
+
+cc_proto_library(
+    name = "module_metadata_cc_proto",
+    deps = [":module_metadata_proto"],
+    visibility = ["//visibility:public"],
+)
 
 cc_library(
     name = "cli",
     srcs = ["cli.cpp"],
     hdrs = ["cli.h"],
+    deps = [
+        ":module_metadata_cc_proto",
+        "//src/k-parser:k-parser",
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -17,5 +35,8 @@ cc_binary(
 cc_test(
     name = "cli_test",
     srcs = ["cli_test.cpp"],
-    deps = [":cli"],
+    deps = [
+        ":cli",
+        ":module_metadata_cc_proto",
+    ],
 )

@@ -19,60 +19,65 @@ package:
     version=$(grep -m1 'version = "' MODULE.bazel | cut -d '"' -f2)
     platform=$(uname -s | tr '[:upper:]' '[:lower:]')
     machine=$(uname -m)
-    case "$machine" in
-      x86_64)
-        deb_arch=amd64
-        ;;
-      aarch64|arm64)
-        deb_arch=arm64
-        ;;
-      *)
-        deb_arch="$machine"
-        ;;
-    esac
 
     dist_root="{{ DIST_DIR }}"
     work_root="$dist_root/.package"
     tar_root="$work_root/kira-$version-$platform-$machine"
-    deb_root="$work_root/deb"
-    control_root="$work_root/control"
     tarball="$dist_root/kira-$version-$platform-$machine.tar.bz2"
-    deb="$dist_root/kira_${version}_${deb_arch}.deb"
 
     rm -rf "$dist_root"
-    mkdir -p "$tar_root/bin" "$deb_root/usr/bin" "$deb_root/usr/share/doc/kira" "$control_root"
+    mkdir -p "$tar_root/bin"
 
     bazelisk build --config=release //src:kira
     cp -L "bazel-bin/src/kira" "$tar_root/bin/kira"
-    cp -L "bazel-bin/src/kira" "$deb_root/usr/bin/kira"
-    chmod 0755 "$tar_root/bin/kira" "$deb_root/usr/bin/kira"
+    chmod 0755 "$tar_root/bin/kira"
 
     cp "README.md" "$tar_root/README.md"
-    cp "README.md" "$deb_root/usr/share/doc/kira/README.md"
     cp -R "spec" "$tar_root/spec"
-    cp -R "spec" "$deb_root/usr/share/doc/kira/spec"
 
     tar -C "$work_root" -cjf "$tarball" "$(basename "$tar_root")"
 
-    printf '%s\n' \
-      "Package: kira" \
-      "Version: $version" \
-      "Section: devel" \
-      "Priority: optional" \
-      "Architecture: $deb_arch" \
-      "Maintainer: Kira Contributors <maintainers@kira.invalid>" \
-      "Description: Kira compiler and language tooling" \
-      " Kira is an early-stage language and compiler project." \
-      > "$control_root/control"
-    printf '2.0\n' > "$work_root/debian-binary"
-    tar -C "$control_root" -czf "$work_root/control.tar.gz" "control"
-    tar -C "$deb_root" -cjf "$work_root/data.tar.bz2" "."
-    ar -crS "$deb" "$work_root/debian-binary" "$work_root/control.tar.gz" "$work_root/data.tar.bz2"
-
     printf 'Wrote %s\n' "$tarball"
-    printf 'Wrote %s\n' "$deb"
-    if [ "$platform" != "linux" ]; then
-      printf '%s\n' "Note: $deb contains a $platform/$machine build; rebuild on Linux for an installable Debian package."
+    if [ "$platform" = "linux" ]; then
+      case "$machine" in
+        x86_64)
+          deb_arch=amd64
+          ;;
+        aarch64|arm64)
+          deb_arch=arm64
+          ;;
+        *)
+          deb_arch="$machine"
+          ;;
+      esac
+
+      deb_root="$work_root/deb"
+      control_root="$work_root/control"
+      deb="$dist_root/kira_${version}_${deb_arch}.deb"
+
+      mkdir -p "$deb_root/usr/bin" "$deb_root/usr/share/doc/kira" "$control_root"
+      cp -L "bazel-bin/src/kira" "$deb_root/usr/bin/kira"
+      chmod 0755 "$deb_root/usr/bin/kira"
+      cp "README.md" "$deb_root/usr/share/doc/kira/README.md"
+      cp -R "spec" "$deb_root/usr/share/doc/kira/spec"
+
+      printf '%s\n' \
+        "Package: kira" \
+        "Version: $version" \
+        "Section: devel" \
+        "Priority: optional" \
+        "Architecture: $deb_arch" \
+        "Maintainer: Kira Contributors <maintainers@kira.invalid>" \
+        "Description: Kira compiler and language tooling" \
+        " Kira is an early-stage language and compiler project." \
+        > "$control_root/control"
+      printf '2.0\n' > "$work_root/debian-binary"
+      tar -C "$control_root" -czf "$work_root/control.tar.gz" "control"
+      tar -C "$deb_root" -cjf "$work_root/data.tar.bz2" "."
+      ar -crS "$deb" "$work_root/debian-binary" "$work_root/control.tar.gz" "$work_root/data.tar.bz2"
+      printf 'Wrote %s\n' "$deb"
+    else
+      printf '%s\n' "Skipped .deb packaging on $platform; build on Linux to produce a Debian package."
     fi
 
 # Run the kira binary

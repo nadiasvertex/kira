@@ -11,13 +11,13 @@ This document is for LLMs and new contributors who need a fast, high-signal map 
 
 ## Current Scope
 
-- The implemented compiler surface is a CLI plus a hand-written lexer and recursive-descent parser.
+- The implemented compiler surface is a CLI compile driver plus a hand-written lexer and recursive-descent parser.
 - There is no type checker, typed IR, LLVM lowering, runtime, or executable linker yet.
-- The `//src:kira` binary currently parses CLI arguments and prints source summaries. It does not compile Kira source files yet.
+- The `//src:kira` binary currently loads source files, parses them, reports diagnostics, and writes protobuf-backed module metadata.
 
 ## High-Signal Directories
 
-- `src/`: top-level CLI code and the current binary entrypoint.
+- `src/`: top-level CLI code, protobuf schema, and the current binary entrypoint.
 - `src/k-parser/`: lexer, parser, AST, diagnostics, and parser regression tests.
 - `spec/`: language reference, grammar sketch, coding conventions, and planning docs.
 - `third_party/`: vendored code. Avoid it unless the task is explicitly about dependency maintenance.
@@ -42,9 +42,10 @@ This document is for LLMs and new contributors who need a fast, high-signal map 
 
 1. `src/cli.h`
 2. `src/cli.cpp`
-3. `src/main.cpp`
-4. `src/cli_test.cpp`
-5. `src/BUILD.bazel`
+3. `src/module_metadata.proto`
+4. `src/main.cpp`
+5. `src/cli_test.cpp`
+6. `src/BUILD.bazel`
 
 ### Build, release, or packaging work
 
@@ -59,6 +60,7 @@ This document is for LLMs and new contributors who need a fast, high-signal map 
 - Prefer small parser changes over introducing new abstractions.
 - Keep diagnostics explicit: expected item, found item, explanation, and a useful fix.
 - Do not assume vendored `third_party/argparse` is part of the active CLI path. The active CLI lives in `src/cli.cpp`.
+- Module metadata persistence is protobuf-backed; evolve schemas additively for forward compatibility.
 - Ignore the nested Bazel output directories under `src/k-parser/`; they are generated artifacts, not source-of-truth files.
 
 ## Verification Commands
@@ -72,5 +74,6 @@ This document is for LLMs and new contributors who need a fast, high-signal map 
 
 - `src/k-parser/parser.cpp`: main parser implementation and the most active file for syntax work.
 - `src/k-parser/parser_test.cpp`: named parser regressions and the best place to confirm intended behavior.
-- `src/cli.cpp`: project-owned argument parsing.
+- `src/cli.cpp`: project-owned compile driver, diagnostics aggregation, and metadata writing.
+- `src/module_metadata.proto`: persisted module metadata schema.
 - `.justfile`: developer automation and packaging entrypoint.

@@ -17,8 +17,9 @@ This document is a planning snapshot for LLMs and contributors. It describes wha
 - A hand-written lexer.
 - A recursive-descent parser.
 - AST coverage for functions, type bodies, associated types, inline `if`, inline `on`, guarded `for`, and pattern aliases.
-- A small CLI that parses arguments and renders source summaries.
+- A CLI frontend that loads source files, parses them, reports diagnostics, and writes protobuf-backed module metadata.
 - Project-owned Bazel tests for CLI and parser regressions.
+- A protobuf schema for persisted module metadata, intended to evolve additively for forward compatibility.
 
 ### Missing
 
@@ -48,6 +49,7 @@ Exit criteria:
 
 - Add file loading, module declarations, import resolution, and package boundaries.
 - Define a canonical source manager shared by diagnostics and later passes.
+- Expand persisted module metadata as the driver learns more semantic facts.
 
 Exit criteria:
 
@@ -106,7 +108,7 @@ Exit criteria:
 ## Near-Term Work
 
 - Finish parser and spec alignment for the remaining syntax in `spec/kira-reference.md`.
-- Add a real compilation driver instead of source-summary output.
+- Expand the current parse driver into a true multi-phase compiler driver.
 - Design module loading and a shared diagnostics/source manager.
 - Pick the first typed IR boundary and document it before implementing code generation.
 

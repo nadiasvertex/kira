@@ -6,3 +6,4 @@ compile_commands.json
 external
 .cache
 dist
+kira-out
