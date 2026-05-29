@@ -5,6 +5,10 @@
 
 #include "cli.h"
 
+/// Run the Kira CLI driver from process entry to exit status.
+///
+/// @param argc Argument count supplied by the host process.
+/// @param argv Argument vector supplied by the host process.
 auto main(int argc, char *argv[]) -> int {
   auto result = kira::parse_args(argc, argv);
 

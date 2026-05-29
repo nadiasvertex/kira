@@ -611,6 +611,12 @@ ast::ptr<ast::file> parser::parse_file() {
   // Parse top-level items.
   while (!at_eof()) {
     skip_newlines();
+    // Recovery from malformed nested blocks can bubble one stray DEDENT up to
+    // file scope. Consume it here so the file loop always makes progress.
+    if (at(token_kind::dedent)) {
+      advance();
+      continue;
+    }
     if (at_eof()) {
       break;
 }

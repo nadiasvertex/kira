@@ -35,15 +35,28 @@ namespace kira {
 // ==========================================================================
 class Lexer {
 public:
-  /// Construct a lexer for the given source text. `file_id` is the
-  /// identifier for the source file, used in diagnostics. `diag` is the
-  /// diagnostic bag to emit errors into.
+  /// @brief Creates a lexer over one source buffer.
+  ///
+  /// The lexer is intentionally a thin, single-file phase boundary: it owns no
+  /// source text and instead borrows the caller's buffer so emitted tokens can
+  /// point directly into that storage. Parsing and later phases should assume
+  /// every token text view remains valid only while the original source buffer
+  /// outlives them.
+  ///
+  /// @param source Borrowed source text to tokenize.
+  /// @param file_id Source identifier attached to emitted diagnostics.
+  /// @param diag Diagnostic sink used for lexing errors.
   Lexer(std::string_view source, file_id_type file_id, diagnostic_bag &diag)
       : source_(source), file_id_(file_id), diag_(diag),
         indent_stack_{0} {}
 
-  /// Tokenize the entire source and return the token stream.
-  /// The returned vector always ends with an Eof token.
+  /// @brief Tokenizes the entire file into an eager token vector.
+  ///
+  /// Eager tokenization simplifies parser lookahead and error recovery: the
+  /// parser can inspect arbitrary future tokens and the lexer can flush pending
+  /// indentation state exactly once at end-of-file.
+  ///
+  /// @return A token stream that always ends with `token_kind::eof`.
   [[nodiscard]] std::vector<token> tokenize() {
     tokens_.clear();
     pos_ = 0;
@@ -76,6 +89,7 @@ private:
   //  Character inspection helpers
   // ==========================================================================
 
+  /// @brief Returns the current source character, or `\0` at EOF.
   [[nodiscard]] auto peek() const noexcept -> char {
     if (pos_ >= source_.size()) {
       return '\0';
@@ -83,6 +97,9 @@ private:
     return source_[pos_];
   }
 
+  /// @brief Returns the character `offset` bytes ahead, clamped at EOF.
+  ///
+  /// @param offset Relative byte lookahead from the current lexer position.
   [[nodiscard]] auto peek_at(uint32_t offset) const noexcept -> char {
     auto idx = pos_ + offset;
     if (idx >= source_.size()) {
@@ -91,8 +108,10 @@ private:
     return source_[idx];
   }
 
+  /// @brief Returns whether lexing has consumed the entire source buffer.
   [[nodiscard]] auto at_end() const noexcept -> bool { return pos_ >= source_.size(); }
 
+  /// @brief Consumes and returns the current character, or `\0` at EOF.
   auto advance() noexcept -> char {
     if (pos_ >= source_.size()) {
       return '\0';
@@ -100,6 +119,9 @@ private:
     return source_[pos_++];
   }
 
+  /// @brief Consumes `expected` if it is next in the source.
+  ///
+  /// @param expected Character to match at the current position.
   auto match(char expected) noexcept -> bool {
     if (pos_ < source_.size() && source_[pos_] == expected) {
       ++pos_;
@@ -108,42 +130,56 @@ private:
     return false;
   }
 
+  /// @brief Returns the source slice from `start` up to the current position.
+  ///
+  /// @param start Starting byte offset for the slice.
   [[nodiscard]] auto text_from(byte_offset start) const noexcept -> std::string_view {
     return source_.substr(start, pos_ - start);
   }
 
+  /// @brief Builds a half-open source span from `start` to the current position.
+  ///
+  /// @param start Starting byte offset for the span.
   [[nodiscard]] auto span_from(byte_offset start) const noexcept -> source_span {
     return source_span{start, static_cast<byte_offset>(pos_)};
   }
 
+  /// Returns whether `c` is an ASCII alphabetic character.
   [[nodiscard]] static auto is_alpha(char c) noexcept -> bool {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
   }
 
+  /// Returns whether `c` is an ASCII decimal digit.
   [[nodiscard]] static auto is_digit(char c) noexcept -> bool {
     return c >= '0' && c <= '9';
   }
 
+  /// Returns whether `c` is valid in a hexadecimal literal payload.
   [[nodiscard]] static auto is_hex_digit(char c) noexcept -> bool {
     return is_digit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
   }
 
+  /// Returns whether `c` is valid in an octal literal payload.
   [[nodiscard]] static auto is_oct_digit(char c) noexcept -> bool {
     return c >= '0' && c <= '7';
   }
 
+  /// Returns whether `c` is valid in a binary literal payload.
   [[nodiscard]] static auto is_bin_digit(char c) noexcept -> bool {
     return c == '0' || c == '1';
   }
 
+  /// Returns whether `c` can start an identifier in the current grammar.
   [[nodiscard]] static auto is_ident_start(char c) noexcept -> bool {
     return is_alpha(c) || c == '_';
   }
 
+  /// Returns whether `c` can continue an identifier after the first character.
   [[nodiscard]] static auto is_ident_continue(char c) noexcept -> bool {
     return is_alpha(c) || is_digit(c) || c == '_';
   }
 
+  /// Returns whether `c` is horizontal spacing that should not end a statement.
   [[nodiscard]] static auto is_whitespace_not_newline(char c) noexcept -> bool {
     return c == ' ' || c == '\t' || c == '\r';
   }
@@ -152,6 +188,10 @@ private:
   //  Token emission helpers
   // ==========================================================================
 
+  /// @brief Emits a token whose text comes directly from the source buffer.
+  ///
+  /// @param kind Token category to emit.
+  /// @param start Starting byte offset of the token.
   void emit(token_kind kind, byte_offset start) {
     tokens_.push_back(token{
         .kind = kind,
@@ -161,6 +201,15 @@ private:
     });
   }
 
+  /// @brief Emits a synthetic token not tied to exact source text.
+  ///
+  /// Synthetic tokens encode layout and recovery decisions for the parser and
+  /// should be preserved by later phases as such rather than treated as user-
+  /// authored syntax.
+  ///
+  /// @param kind Synthetic token category to emit.
+  /// @param span Source anchor for the inserted token.
+  /// @param text Optional display text for debugging or rendering.
   void emit_synthetic(token_kind kind, source_span span,
                       std::string_view text = {}) {
     tokens_.push_back(token{
@@ -171,6 +220,13 @@ private:
     });
   }
 
+  /// @brief Emits a lexer error token and a matching diagnostic.
+  ///
+  /// Keeping both the token and the diagnostic lets the parser see where lexing
+  /// failed while the user still gets a friendly message immediately.
+  ///
+  /// @param start Starting byte offset of the problematic source region.
+  /// @param message Human-readable explanation of the lexing failure.
   void emit_error(byte_offset start, std::string_view message) {
     auto sp = span_from(start);
     tokens_.push_back(token{
@@ -185,6 +241,10 @@ private:
                 "this is where the problem is");
   }
 
+  /// @brief Flushes all open indentation levels as `dedent` tokens.
+  ///
+  /// The parser depends on this to observe balanced block structure even when a
+  /// file ends without an explicit trailing newline.
   void emit_pending_dedents() {
     auto eof_pos = static_cast<byte_offset>(source_.size());
     while (indent_stack_.size() > 1) {
@@ -197,6 +257,10 @@ private:
   //  Main scan dispatch
   // ==========================================================================
 
+  /// @brief Scans the next logical token or layout transition.
+  ///
+  /// This is the main lexer dispatcher. It handles indentation and newline
+  /// significance before falling through to ordinary token recognition.
   void scan_token() {
     // At the start of a logical line, handle indentation.
     if (at_line_start_) {
@@ -505,6 +569,11 @@ private:
   //  Inside brackets, we suppress newline/indent handling entirely.
   // ==========================================================================
 
+  /// @brief Measures leading indentation and emits indent/dedent transitions.
+  ///
+  /// This only runs at the start of logical lines. When inside brackets, layout
+  /// is intentionally ignored so expression continuations do not create block
+  /// structure.
   void handle_line_start() {
     // Measure leading whitespace.
     uint32_t indent = 0;
@@ -581,6 +650,12 @@ private:
     // If indent == current_indent, no token needed — same level.
   }
 
+  /// @brief Handles a physical newline according to current bracket depth.
+  ///
+  /// Outside bracketed contexts, newlines become statement-boundary tokens.
+  /// Inside them, the newline is treated as ordinary whitespace.
+  ///
+  /// @param start Byte offset of the consumed newline.
   void handle_newline(byte_offset start) {
     // Inside brackets, newlines are suppressed.
     if (bracket_depth_ > 0) {
@@ -594,12 +669,17 @@ private:
     at_line_start_ = true;
   }
 
+  /// @brief Skips spaces, tabs, and carriage returns within a logical line.
   void skip_horizontal_whitespace() {
     while (!at_end() && is_whitespace_not_newline(peek())) {
       advance();
     }
   }
 
+  /// @brief Skips a `#` comment body without consuming the terminating newline.
+  ///
+  /// Leaving the newline in place preserves statement-termination semantics for
+  /// the main scan loop.
   void skip_comment() {
     // We're already past the '#'. Consume everything until newline or EOF.
     while (!at_end() && peek() != '\n') {
@@ -612,6 +692,9 @@ private:
   //  Identifier / keyword scanning
   // ==========================================================================
 
+  /// @brief Consumes an identifier and classifies it as keyword or plain name.
+  ///
+  /// @param start Starting byte offset of the identifier.
   void scan_identifier(byte_offset start) {
     while (!at_end() && is_ident_continue(peek())) {
       advance();
@@ -631,6 +714,12 @@ private:
   //  Number scanning
   // ==========================================================================
 
+  /// @brief Consumes an integer or floating-point literal.
+  ///
+  /// The lexer preserves the literal's exact text and leaves deeper numeric
+  /// validation to later phases.
+  ///
+  /// @param start Starting byte offset of the number literal.
   void scan_number(byte_offset start) {
     // We've already consumed the first digit.
     char first = source_[start];
@@ -679,12 +768,16 @@ private:
     emit(token_kind::int_lit, start);
   }
 
+  /// Consumes decimal digits and digit separators.
   void scan_dec_digits() {
     while (!at_end() && (is_digit(peek()) || peek() == '_')) {
       advance();
     }
   }
 
+  /// Consumes a hexadecimal payload after `0x`, reporting helpful failures.
+  ///
+  /// @param start Starting byte offset of the full literal.
   void scan_hex_digits(byte_offset start) {
     if (at_end() || !is_hex_digit(peek())) {
       emit_error(
@@ -698,6 +791,9 @@ private:
     }
   }
 
+  /// Consumes an octal payload after `0o`, reporting invalid digits.
+  ///
+  /// @param start Starting byte offset of the full literal.
   void scan_oct_digits(byte_offset start) {
     if (at_end() || !is_oct_digit(peek())) {
       emit_error(
@@ -725,6 +821,9 @@ private:
     }
   }
 
+  /// Consumes a binary payload after `0b`, reporting invalid digits.
+  ///
+  /// @param start Starting byte offset of the full literal.
   void scan_bin_digits(byte_offset start) {
     if (at_end() || !is_bin_digit(peek())) {
       emit_error(start,
@@ -751,6 +850,10 @@ private:
     }
   }
 
+  /// @brief Consumes an optional float exponent suffix if present.
+  ///
+  /// This emits diagnostics for malformed exponents but leaves the token kind as
+  /// a float so the parser can preserve source structure.
   void scan_optional_exponent() {
     if (at_end() || (peek() != 'e' && peek() != 'E')) {
       return;
@@ -775,6 +878,12 @@ private:
   //  String literal scanning
   // ==========================================================================
 
+  /// @brief Consumes a string literal, including nested interpolation text.
+  ///
+  /// The lexer intentionally emits one `string_lit` token for the whole source
+  /// region and leaves interpolation decomposition to later syntax handling.
+  ///
+  /// @param start Starting byte offset of the opening quote.
   void scan_string(byte_offset start) {
     // We've already consumed the opening `"`.
     // Track the opening quote position for error messages.
@@ -871,6 +980,9 @@ private:
     emit(token_kind::string_lit, start);
   }
 
+  /// @brief Validates the escape sequence following a backslash.
+  ///
+  /// @param string_start Starting byte offset of the surrounding string or char.
   void scan_escape_sequence([[maybe_unused]] byte_offset string_start) {
     if (at_end()) {
       diag_.emit(
@@ -989,6 +1101,12 @@ private:
   //  Character literal scanning
   // ==========================================================================
 
+  /// @brief Consumes a character literal while preserving recovery-friendly state.
+  ///
+  /// Character literals are validated just enough to produce focused lexing
+  /// diagnostics; later phases can still inspect the original spelling.
+  ///
+  /// @param start Starting byte offset of the opening quote.
   void scan_char(byte_offset start) {
     // We've already consumed the opening `'`.
     if (at_end()) {
@@ -1094,12 +1212,12 @@ private:
   //  Member variables
   // ==========================================================================
 
-  std::string_view source_;
-  file_id_type file_id_;
-  diagnostic_bag &diag_;
+  std::string_view source_; ///< Borrowed source buffer backing all token text.
+  file_id_type file_id_;    ///< File id attached to emitted diagnostics.
+  diagnostic_bag &diag_;    ///< Shared diagnostic sink for lexing failures.
 
-  size_t pos_{0};
-  std::vector<token> tokens_;
+  size_t pos_{0};            ///< Current byte offset in `source_`.
+  std::vector<token> tokens_; ///< Eager token stream under construction.
 
   /// Stack of indentation levels. The bottom is always 0 (column 0).
   /// Each entry is the column number of an INDENT. We push on INDENT

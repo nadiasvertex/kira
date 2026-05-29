@@ -23,23 +23,37 @@ using byte_offset = uint32_t;
 /// point the user back to exactly the piece of source code we're talking
 /// about.
 struct source_span {
-  byte_offset start = 0;
-  byte_offset end = 0;
+  byte_offset start = 0; ///< First byte covered by the span.
+  byte_offset end = 0;   ///< One-past-the-end byte covered by the span.
 
-  /// Returns true if this span is empty (zero-length).
+  /// @brief Returns whether this span covers no concrete source bytes.
+  ///
+  /// Empty spans are used both for zero-width insertion points and for
+  /// synthesized placeholders introduced during recovery. Later phases should
+  /// treat them as locations that can anchor diagnostics, but not as evidence
+  /// that user-authored text existed there.
   [[nodiscard]] constexpr auto empty() const noexcept -> bool { return start == end; }
 
-  /// Returns the length of this span in bytes.
+  /// @brief Returns the width of the covered source region in bytes.
+  ///
+  /// This stays in byte space so lexing and parsing can do constant-time span
+  /// arithmetic without paying for Unicode-aware column tracking.
   [[nodiscard]] constexpr auto len() const noexcept -> uint32_t { return end - start; }
 
-  /// Returns a dummy/invalid span. Used as a sentinel for synthesized nodes
-  /// that don't correspond to any real source text (e.g., error recovery
-  /// insertions).
+  /// @brief Returns a sentinel span for synthesized or unavailable locations.
+  ///
+  /// Downstream code should preserve dummy spans on synthetic nodes instead of
+  /// inventing fake ranges, so diagnostics can distinguish "inserted by the
+  /// compiler" from "came from the user's source".
   [[nodiscard]] static constexpr auto dummy() noexcept -> source_span { return source_span{.start=0, .end=0}; }
 
-  /// Merge two spans into one that covers both. The result spans from
-  /// the earliest start to the latest end. This is used when building
-  /// AST nodes that cover multiple tokens.
+  /// @brief Returns a span covering both this range and `other`.
+  ///
+  /// Parsers and later tree-rewriting phases use this to give compound nodes a
+  /// stable source envelope. Empty spans are ignored so recovery placeholders do
+  /// not accidentally widen a real source range.
+  ///
+  /// @param other The additional source range to include.
   [[nodiscard]] constexpr auto merge(source_span other) const noexcept -> source_span {
     if (empty()) {
       return other;
@@ -53,7 +67,12 @@ struct source_span {
     };
   }
 
-  /// Extend this span to cover `other` as well (mutating version).
+  /// @brief Mutates this span so it encloses `other` as well.
+  ///
+  /// This is the in-place counterpart to `merge` for callers that build spans
+  /// incrementally while consuming tokens.
+  ///
+  /// @param other The additional range to absorb.
   constexpr void extend_to(source_span other) noexcept { *this = merge(other); }
 
   constexpr auto operator==(const source_span &) const noexcept -> bool = default;
@@ -73,13 +92,26 @@ using file_id_type = uint16_t;
 /// enough information to produce a full error message with file name,
 /// line number, column, and the underlined source snippet.
 struct source_location {
-  file_id_type file_id = 0;
-  source_span span;
+  file_id_type file_id = 0; ///< Source file containing the span.
+  source_span span;         ///< Byte range within that file.
 
+  /// @brief Returns a sentinel location for synthesized or detached nodes.
+  ///
+  /// Later phases should keep dummy locations attached to synthetic work rather
+  /// than projecting them onto an arbitrary file, which would make diagnostics
+  /// misleading.
   [[nodiscard]] static constexpr auto dummy() noexcept -> source_location {
     return source_location{.file_id=0, .span=source_span::dummy()};
   }
 
+  /// @brief Merges two locations from the same file.
+  ///
+  /// Compound declarations and diagnostics often need a single location that
+  /// covers multiple child ranges. Cross-file merges are intentionally ignored,
+  /// because forcing a multi-file construct into one location would hide the
+  /// fact that it spans separate compilation units.
+  ///
+  /// @param other The other location to combine with this one.
   [[nodiscard]] constexpr auto
   merge(source_location other) const noexcept -> source_location {
     // Only merge locations from the same file; if they differ, prefer `this`.
@@ -109,16 +141,37 @@ struct line_column {
 /// the backing storage outlives the source_file.
 class source_file {
 public:
+  /// @brief Stores a source file together with indexing data for diagnostics.
+  ///
+  /// The parser and renderer keep everything in byte offsets during normal
+  /// operation. `source_file` is the boundary object that turns those offsets
+  /// back into human-facing file, line, and snippet information when needed.
+  ///
+  /// @param id Stable compilation-session identifier for this file.
+  /// @param name Display name used in diagnostics.
+  /// @param source Owned source text for the file.
   source_file(file_id_type id, std::string name, std::string source)
       : id_(id), name_(std::move(name)), source_(std::move(source)) {
     build_line_index();
   }
 
+  /// @brief Returns the stable identifier used by tokens and diagnostics.
   [[nodiscard]] auto id() const noexcept -> file_id_type { return id_; }
+  /// @brief Returns the display name shown to the user.
   [[nodiscard]] auto name() const noexcept -> std::string_view { return name_; }
+  /// @brief Returns the full source buffer.
+  ///
+  /// Consumers should treat the returned view as read-only shared backing
+  /// storage for token text and diagnostic rendering.
   [[nodiscard]] auto source() const noexcept -> std::string_view { return source_; }
 
-  /// Resolve a byte offset to a 1-based line and column.
+  /// @brief Resolves a byte offset to a 1-based line and column pair.
+  ///
+  /// Line/column conversion is intentionally deferred until diagnostics need
+  /// it. Parsing and AST construction should continue to traffic only in byte
+  /// spans for speed and simplicity.
+  ///
+  /// @param offset Byte offset into `source()`.
   [[nodiscard]] auto resolve(byte_offset offset) const noexcept -> line_column {
     if (line_starts_.empty()) {
       return {.line=1, .column=1};
@@ -143,7 +196,12 @@ public:
     };
   }
 
-  /// Extract the source text for a given span.
+  /// @brief Returns the source slice covered by `span`.
+  ///
+  /// This clamps the end offset to the file length so recovery code can safely
+  /// ask for text from partially invalid spans without crashing.
+  ///
+  /// @param span Byte range to project into the source buffer.
   [[nodiscard]] auto text_at(source_span span) const noexcept -> std::string_view {
     if (span.start >= source_.size()) {
       return {};
@@ -155,8 +213,13 @@ public:
                                             actual_end - span.start);
   }
 
-  /// Extract the full source line that contains the given byte offset.
-  /// Used to display the source context in diagnostic messages.
+  /// @brief Returns the logical source line containing `offset`.
+  ///
+  /// Diagnostic rendering uses this to show a single line of user code without
+  /// trailing newline characters. Later phases should prefer `text_at` for
+  /// semantic slicing and reserve `line_at` for presentation.
+  ///
+  /// @param offset Byte offset whose enclosing line should be shown.
   [[nodiscard]] auto line_at(byte_offset offset) const noexcept -> std::string_view {
     auto lc = resolve(offset);
     uint32_t line_idx = lc.line - 1;
@@ -181,12 +244,16 @@ public:
     return std::string_view(source_).substr(line_start, line_end - line_start);
   }
 
-  /// Return the number of lines in the source file.
+  /// @brief Returns the number of indexed logical lines in the file.
   [[nodiscard]] auto line_count() const noexcept -> uint32_t {
     return static_cast<uint32_t>(line_starts_.size());
   }
 
 private:
+  /// Builds the line-start index used by `resolve` and `line_at`.
+  ///
+  /// This one-time precomputation keeps later diagnostic lookups cheap and
+  /// predictable, even when a file produces many parser errors.
   void build_line_index() {
     line_starts_.clear();
     line_starts_.push_back(0); // Line 1 starts at offset 0.
@@ -198,16 +265,28 @@ private:
     }
   }
 
-  file_id_type id_;
-  std::string name_;
-  std::string source_;
-  std::vector<byte_offset> line_starts_;
+  file_id_type id_;                  ///< Stable session-local file identifier.
+  std::string name_;                 ///< Display path or logical file name.
+  std::string source_;               ///< Owned source buffer backing token text.
+  std::vector<byte_offset> line_starts_; ///< Byte offset of each logical line start.
 };
 
-/// Owns the source files participating in a compilation session and assigns
-/// stable file ids used by diagnostics and later compiler phases.
+/// @brief Owns the source files participating in one compilation session.
+///
+/// This centralizes file-id assignment so tokens, AST nodes, and diagnostics can
+/// all refer to source files by compact integers instead of copying path strings
+/// around. Later phases should treat the ids as stable only within the owning
+/// `source_manager` instance.
 class source_manager {
 public:
+  /// @brief Adds a file and returns its newly assigned id.
+  ///
+  /// The returned id is stable for the lifetime of this manager and can be
+  /// embedded in tokens, diagnostics, and semantic artifacts built from the
+  /// file.
+  ///
+  /// @param name Display name for diagnostics.
+  /// @param source Source text to own.
   [[nodiscard]] auto add_file(std::string name, std::string source)
       -> std::expected<file_id_type, std::string> {
     constexpr auto k_max_source_files =
@@ -221,6 +300,7 @@ public:
     return id;
   }
 
+  /// @brief Returns the file for `id`, or `nullptr` if the id is invalid.
   [[nodiscard]] auto get(file_id_type id) const noexcept -> const source_file * {
     if (static_cast<size_t>(id) >= files_.size()) {
       return nullptr;
@@ -228,6 +308,11 @@ public:
     return &files_[id];
   }
 
+  /// @brief Returns a mutable file handle for `id`, or `nullptr` if missing.
+  ///
+  /// Mutation is rare and should generally be limited to infrastructure code;
+  /// later analysis phases should usually consume `source_file` through the
+  /// const overload.
   [[nodiscard]] auto get(file_id_type id) noexcept -> source_file * {
     if (static_cast<size_t>(id) >= files_.size()) {
       return nullptr;
@@ -235,12 +320,16 @@ public:
     return &files_[id];
   }
 
+  /// @brief Returns the full file table in id order.
+  ///
+  /// Consumers should treat the returned vector as index-addressable storage
+  /// whose positions correspond exactly to `file_id_type` values.
   [[nodiscard]] auto files() const noexcept -> const std::vector<source_file> & {
     return files_;
   }
 
 private:
-  std::vector<source_file> files_;
+  std::vector<source_file> files_; ///< Compilation-session source files by id.
 };
 
 } // namespace kira

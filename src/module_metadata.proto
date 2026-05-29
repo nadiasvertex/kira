@@ -2,67 +2,116 @@ syntax = "proto3";
 
 package kira.metadata.v1;
 
+// Serialized summary of one parsed Kira module file.
 message ModuleMetadata {
+  // Metadata schema version understood by readers and writers.
   uint32 schema_version = 1;
+  // Normalized source file path that produced this metadata record.
   string source_path = 2;
+  // Canonical module path declared by the source file.
   repeated string module_path = 3;
+  // Whether the source file opted out of the prelude.
   bool no_prelude = 4;
+  // Top-level `use` declarations emitted by the parser.
   repeated Import imports = 5;
+  // Top-level `dep` declarations emitted by the parser.
   repeated Dependency dependencies = 6;
+  // Top-level declarations summarized for downstream phases.
   repeated TopLevelSymbol top_level_symbols = 7;
+  // Parser error count observed when this metadata was written.
   uint32 parser_error_count = 8;
 }
 
+// Persisted shape of one `use` declaration.
 message Import {
+  // Base module path written in the source file.
   repeated string path = 1;
+  // Selector form used by the import, if any.
   ImportSelectorKind selector_kind = 2;
+  // Imported item list for single and group selectors.
   repeated ImportItem items = 3;
 }
 
+// One imported item named by a selector.
 message ImportItem {
+  // Imported module member name.
   string name = 1;
+  // Local alias introduced with `as`, if any.
   string alias = 2;
 }
 
+// Selector form used by a persisted import.
 enum ImportSelectorKind {
+  // Selector shape was omitted or could not be determined.
   IMPORT_SELECTOR_KIND_UNSPECIFIED = 0;
+  // Import names one explicit child item.
   IMPORT_SELECTOR_KIND_SINGLE = 1;
+  // Import names a brace-delimited item group.
   IMPORT_SELECTOR_KIND_GROUP = 2;
+  // Import pulls all children from the base module.
   IMPORT_SELECTOR_KIND_WILDCARD = 3;
 }
 
+// Persisted shape of one `dep` declaration.
 message Dependency {
+  // Dependency name as written in source.
   string name = 1;
+  // Key-value fields declared under the dependency block.
   map<string, string> fields = 2;
 }
 
+// Summary of one top-level declaration discovered during parsing.
 message TopLevelSymbol {
+  // User-facing declaration name or label.
   string name = 1;
+  // Broad declaration category.
   TopLevelSymbolKind kind = 2;
+  // Declared visibility for the symbol.
   ModuleVisibility visibility = 3;
+  // Whether the parser recovered while producing this node.
   bool has_parse_error = 4;
 }
 
+// Broad categories of top-level parsed declarations.
 enum TopLevelSymbolKind {
+  // Symbol kind was omitted or could not be determined.
   TOP_LEVEL_SYMBOL_KIND_UNSPECIFIED = 0;
+  // `use` declaration.
   TOP_LEVEL_SYMBOL_KIND_USE = 1;
+  // `type` declaration.
   TOP_LEVEL_SYMBOL_KIND_TYPE = 2;
+  // `trait` declaration.
   TOP_LEVEL_SYMBOL_KIND_TRAIT = 3;
+  // `impl` block.
   TOP_LEVEL_SYMBOL_KIND_IMPL = 4;
+  // `concept` declaration.
   TOP_LEVEL_SYMBOL_KIND_CONCEPT = 5;
+  // Function declaration.
   TOP_LEVEL_SYMBOL_KIND_FUNCTION = 6;
+  // Nested `module` declaration.
   TOP_LEVEL_SYMBOL_KIND_SUBMODULE = 7;
+  // `dep` declaration.
   TOP_LEVEL_SYMBOL_KIND_DEP = 8;
+  // `static` declaration.
   TOP_LEVEL_SYMBOL_KIND_STATIC = 9;
+  // Top-level splice statement.
   TOP_LEVEL_SYMBOL_KIND_SPLICE = 10;
+  // Recovered parse-error placeholder node.
   TOP_LEVEL_SYMBOL_KIND_ERROR = 11;
 }
 
+// Visibility levels persisted for module-scoped declarations.
 enum ModuleVisibility {
+  // Visibility was omitted or could not be determined.
   MODULE_VISIBILITY_UNSPECIFIED = 0;
+  // No explicit visibility modifier was written.
   MODULE_VISIBILITY_DEFAULT = 1;
+  // Visible to any importer.
   MODULE_VISIBILITY_PUBLIC = 2;
+  // Visible within the declaring module tree.
   MODULE_VISIBILITY_INTERNAL = 3;
+  // Visible only to the parent module.
   MODULE_VISIBILITY_SUPER = 4;
+  // Visible only inside the declaring file.
   MODULE_VISIBILITY_PRIVATE = 5;
 }
