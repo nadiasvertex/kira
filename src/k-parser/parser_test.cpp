@@ -604,6 +604,107 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
          "expected for-expression iterable identifier name");
 }
 
+auto test_parser_accepts_remaining_phase1_constructs() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "\n"
+      "type direction = north | south | east | west\n"
+      "type option[T] = some(T) | none\n"
+      "\n"
+      "trait functor[F[_]]:\n"
+      "  def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]\n"
+      "\n"
+      "static pure def align_up(n: usize, align: usize) -> usize:\n"
+      "  (n + align - 1) & ~(align - 1)\n"
+      "\n"
+      "static def derive_show[T]() -> def_expr:\n"
+      "  let fields = T.fields()\n"
+      "  return `impl show for ~(expr.ty[T]())`\n"
+      "\n"
+      "static let increment: expr = `(x + 1)`\n"
+      "\n"
+      "def run[T: show + eq, n: usize](raw_index, items) -> option[super.value]:\n"
+      "  let shared_cfg: shared config_t = shared load_config(\"app.toml\")\n"
+      "  if let some(i) = index[n].try_from(raw_index):\n"
+      "    let sender = channel[str](capacity: 32)\n"
+      "    let watcher = watch[config](initial: default_config())\n"
+      "    let evens = for x in 0..20 if x % 2 == 0 => x\n"
+      "    let handle = crew c(on_error: collect):\n"
+      "      c.spawn(async:\n"
+      "        while let some(line) = await receiver.recv():\n"
+      "          process(line)\n"
+      "      )\n"
+      "    match some(items):\n"
+      "      some(value) => return some(value)\n"
+      "      none => return none\n"
+      "  return err(cancelled)\n"
+      "\n"
+      "~derive_show[point]()\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 8,
+         "expected full phase 1 regression source to parse cleanly");
+
+  auto *direction_decl = expect_node<kira::ast::type_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::type_decl,
+      "expected direction type declaration");
+  auto *direction_sum = expect_node<kira::ast::sum_type_def>(
+      direction_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+      "expected unprefixed sum type to parse as sum body");
+  expect(direction_sum->body.variants.size() == 4,
+         "expected all direction variants to be preserved");
+
+  auto *option_decl = expect_node<kira::ast::type_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::type_decl,
+      "expected option type declaration");
+  auto *option_sum = expect_node<kira::ast::sum_type_def>(
+      option_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+      "expected payload sum type to parse as sum body");
+  expect(option_sum->body.variants.size() == 2,
+         "expected option payload and nullary variants");
+
+  auto *trait_decl = expect_node<kira::ast::trait_decl>(
+      parsed.file->items[2].get(), kira::ast::node_kind::trait_decl,
+      "expected higher-kinded trait declaration");
+  expect(trait_decl->type_params.size() == 1,
+         "expected higher-kinded trait parameter");
+  expect(trait_decl->type_params[0].is_higher_kinded,
+         "expected higher-kinded trait parameter marker");
+
+  auto *static_pure_func = expect_node<kira::ast::func_decl>(
+      parsed.file->items[3].get(), kira::ast::node_kind::func_decl,
+      "expected static pure def to parse as function declaration");
+  expect(static_pure_func->modifiers.is_static,
+         "expected static function modifier to be preserved");
+  expect(static_pure_func->modifiers.is_pure,
+         "expected pure function modifier to be preserved");
+
+  auto *static_def = expect_node<kira::ast::func_decl>(
+      parsed.file->items[4].get(), kira::ast::node_kind::func_decl,
+      "expected static def to parse as function declaration");
+  expect(static_def->modifiers.is_static,
+         "expected static def modifier to be preserved");
+
+  auto *static_let = expect_node<kira::ast::static_decl>(
+      parsed.file->items[5].get(), kira::ast::node_kind::static_decl,
+      "expected static let to parse as static declaration");
+  expect(static_let->decl_kind == kira::ast::static_decl_kind::binding,
+         "expected static let binding kind");
+
+  auto *run_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[6].get(), kira::ast::node_kind::func_decl,
+      "expected run function declaration");
+  expect(run_decl->type_params.size() == 2,
+         "expected bounded and value type parameters");
+  expect(run_decl->type_params[1].is_value_param,
+         "expected value type parameter to be preserved");
+  expect(run_decl->return_type != nullptr,
+         "expected super-qualified return type");
+
+  expect(parsed.file->items[7]->kind == kira::ast::node_kind::splice_stmt,
+         "expected top-level derive splice statement");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -625,6 +726,8 @@ auto main(int argc, char *argv[]) -> int {
       {"missing_where_colon_recovery",
        test_parser_recovers_missing_colon_in_where_clause},
       {"spec_valid_regressions", test_parser_accepts_spec_valid_regressions},
+      {"remaining_phase1_constructs",
+       test_parser_accepts_remaining_phase1_constructs},
   };
 
   if (argc > 1) {

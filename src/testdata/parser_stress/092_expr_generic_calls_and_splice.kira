@@ -1,0 +1,12 @@
+module stress.expr_generic_calls_and_splice
+
+static def derive_show[T]() -> def_expr:
+  `impl show for ~(expr.ty[T]())`
+
+def run(raw_index):
+  let sender = channel[str](capacity: 32)
+  let watcher = watch[config](initial: default_config())
+  let value = index[n].try_from(raw_index)
+  sender.send(value)
+
+~derive_show[point]()

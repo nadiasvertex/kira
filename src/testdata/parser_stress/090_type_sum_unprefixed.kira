@@ -1,0 +1,4 @@
+module stress.type_sum_unprefixed
+
+type direction = north | south | east | west
+type option[T] = some(T) | none

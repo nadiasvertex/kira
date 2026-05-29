@@ -39,6 +39,7 @@ struct associated_type_def_node;
 struct splice_stmt;
 
 // Type system
+struct bound_type;
 struct named_type;
 struct tuple_type;
 struct slice_type;
@@ -51,6 +52,7 @@ struct union_type;
 struct refinement_type;
 
 // Type params & bounds
+struct pattern;
 struct type_param;
 struct type_arg;
 struct bound_term;
@@ -106,8 +108,10 @@ struct match_expr;
 struct if_expr;
 struct for_expr;
 struct await_expr;
+struct async_expr;
 struct par_expr;
 struct race_expr;
+struct crew_expr;
 struct on_expr;
 struct block_expr;
 struct quote_expr;
@@ -182,6 +186,7 @@ enum class node_kind : uint8_t {
 
   // Types
   named_type,
+  bound_type,
   tuple_type,
   slice_type,
   array_type,
@@ -224,8 +229,10 @@ enum class node_kind : uint8_t {
   if_expr,
   for_expr,
   await_expr,
+  async_expr,
   par_expr,
   race_expr,
+  crew_expr,
   on_expr,
   block_expr,
   quote_expr,
@@ -332,15 +339,6 @@ struct error_type_expr : type_expr {
   }
 };
 
-struct named_type : type_expr {
-  std::vector<std::string> path; ///< e.g., ["std", "collections", "Map"]
-  std::vector<ptr<type_expr>> type_args; ///< Generic arguments, if any.
-  // type_arg can also carry value-level expressions; we handle that in
-  // a wrapper node below.
-
-  named_type() : type_expr(node_kind::named_type) {}
-};
-
 struct tuple_type : type_expr {
   std::vector<ptr<type_expr>> elements;
 
@@ -412,6 +410,7 @@ struct type_param {
   /// For value params: the type of the value.
   ptr<type_expr> bound_or_type;
   bool is_value_param = false; ///< True if this is `name : type` (value param).
+  bool is_higher_kinded = false; ///< True if this is `Name[_]`.
 };
 
 struct type_arg {
@@ -420,6 +419,13 @@ struct type_arg {
   /// We store both as Node* and disambiguate later in semantic analysis.
   ptr<node> value;
   std::optional<std::string> name; ///< Named argument: `name: type`
+};
+
+struct named_type : type_expr {
+  std::vector<std::string> path; ///< e.g., ["std", "collections", "Map"]
+  std::vector<type_arg> type_args; ///< Generic or value arguments, if any.
+
+  named_type() : type_expr(node_kind::named_type) {}
 };
 
 struct bound_term {
@@ -431,6 +437,13 @@ struct bound_term {
 struct bound {
   source_span span;
   std::vector<bound_term> terms; ///< Connected by `+`.
+};
+
+/// A bound list represented in a type-expression slot.
+struct bound_type : type_expr {
+  bound value;
+
+  bound_type() : type_expr(node_kind::bound_type) {}
 };
 
 struct where_constraint {
@@ -760,6 +773,8 @@ struct group_expr : expr {
 struct if_branch {
   source_span span;
   ptr<expr> condition;
+  ptr<node> let_pattern; ///< Non-null for `if let` / `elif let`.
+  ptr<expr> let_expr;    ///< The expression in `if let pat = expr`.
   std::vector<ptr<node>> body; ///< Block of statements/exprs.
 };
 
@@ -807,6 +822,13 @@ struct await_expr : expr {
   bool is_yield = false;
 
   await_expr() : expr(node_kind::await_expr) {}
+};
+
+/// `async: ...`
+struct async_expr : expr {
+  std::vector<ptr<node>> body;
+
+  async_expr() : expr(node_kind::async_expr) {}
 };
 
 /// `par: ...`
@@ -1121,6 +1143,15 @@ struct crew_option {
   source_span span;
   std::string name;
   std::string value;
+};
+
+/// `crew name(options): block` in expression position.
+struct crew_expr : expr {
+  std::string name;
+  std::vector<crew_option> options;
+  std::vector<ptr<node>> body;
+
+  crew_expr() : expr(node_kind::crew_expr) {}
 };
 
 /// `crew name(options): block`

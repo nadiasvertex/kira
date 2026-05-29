@@ -1,0 +1,10 @@
+module stress.expr_range_and_concurrency
+
+def run(receiver):
+  let evens = for x in 0..20 if x % 2 == 0 => x
+  let handle = crew c(on_error: collect):
+    c.spawn(async:
+      while let some(line) = await receiver.recv():
+        process(line)
+    )
+  return handle

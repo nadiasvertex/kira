@@ -412,6 +412,7 @@ private:
   [[nodiscard]] ast::ptr<ast::type_expr> parse_type_expr();
   [[nodiscard]] ast::ptr<ast::type_expr> parse_prim_type_expr();
   [[nodiscard]] ast::ptr<ast::named_type> parse_named_type();
+  [[nodiscard]] ast::ptr<ast::bound_type> make_bound_type(ast::bound bound);
   [[nodiscard]] ast::ptr<ast::tuple_type> parse_tuple_type();
   [[nodiscard]] ast::ptr<ast::slice_type> parse_slice_type();
   [[nodiscard]] ast::ptr<ast::array_type> parse_array_type();
@@ -437,7 +438,8 @@ private:
   // ---- Function declarations ----
 
   [[nodiscard]] ast::ptr<ast::func_decl>
-  parse_func_decl(ast::visibility vis, ast::func_modifiers mods);
+  parse_func_decl(ast::visibility vis, ast::func_modifiers mods,
+                  bool allow_bodyless = false);
   [[nodiscard]] auto parse_func_modifiers() -> ast::func_modifiers;
   [[nodiscard]] std::vector<ast::Param> parse_param_list();
   [[nodiscard]] auto parse_param() -> ast::Param;
@@ -510,8 +512,10 @@ private:
   [[nodiscard]] ast::ptr<ast::if_expr> parse_if_expr();
   [[nodiscard]] ast::ptr<ast::for_expr> parse_for_expr();
   [[nodiscard]] ast::ptr<ast::await_expr> parse_await_expr();
+  [[nodiscard]] ast::ptr<ast::async_expr> parse_async_expr();
   [[nodiscard]] ast::ptr<ast::par_expr> parse_par_expr();
   [[nodiscard]] ast::ptr<ast::race_expr> parse_race_expr();
+  [[nodiscard]] ast::ptr<ast::crew_expr> parse_crew_expr();
   [[nodiscard]] ast::ptr<ast::on_expr> parse_on_expr();
   [[nodiscard]] ast::ptr<ast::block_expr> parse_block_expr();
   [[nodiscard]] ast::ptr<ast::quote_expr> parse_quote_expr();
@@ -553,6 +557,7 @@ private:
   [[nodiscard]] ast::ptr<ast::pattern> parse_bracket_pattern();
   [[nodiscard]] ast::ptr<ast::pattern> parse_option_result_pattern();
   [[nodiscard]] ast::ptr<ast::pattern> parse_ref_pattern();
+  [[nodiscard]] auto is_constructor_like_name(std::string_view name) const -> bool;
 
   // ========================================================================
   //  For-loop variable parsing (shared by for-stmt and for-expr)
@@ -600,6 +605,10 @@ private:
   /// Some contexts, like `for ... in expr if guard`, need `if` to delimit the
   /// surrounding construct rather than start a trailing conditional expression.
   bool allow_trailing_if_expr_{true};
+
+  /// Compact statement termination is used when newline tokens are suppressed,
+  /// such as block expressions nested inside parentheses.
+  bool allow_compact_stmt_terminator_{false};
 };
 
 } // namespace kira

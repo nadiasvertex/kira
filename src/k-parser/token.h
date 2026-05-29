@@ -344,6 +344,10 @@ struct token {
     case token_kind::float_lit:
     case token_kind::string_lit:
     case token_kind::char_lit:
+    case token_kind::kw_some:
+    case token_kind::kw_ok:
+    case token_kind::kw_err:
+    case token_kind::kw_super:
     case token_kind::kw_true:
     case token_kind::kw_false:
     case token_kind::kw_unit:
@@ -359,11 +363,14 @@ struct token {
     case token_kind::kw_match:
     case token_kind::kw_for:
     case token_kind::kw_await:
+    case token_kind::kw_async:
     case token_kind::kw_par:
     case token_kind::kw_race:
     case token_kind::kw_on:
+    case token_kind::kw_crew:
     case token_kind::kw_pure:
     case token_kind::kw_move:
+    case token_kind::kw_shared:
     case token_kind::kw_static:
     case token_kind::backtick:
       return true;
