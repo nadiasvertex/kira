@@ -347,8 +347,9 @@ private:
 // ==========================================================================
 class diagnostic_renderer {
 public:
-  explicit diagnostic_renderer(const source_file &file, bool use_color = true)
-      : file_(file), use_color_(use_color) {}
+  explicit diagnostic_renderer(const source_manager &sources,
+                               bool use_color = true)
+      : sources_(sources), use_color_(use_color) {}
 
   /// Render a single diagnostic to a string.
   [[nodiscard]] auto render(const diagnostic &diag) const -> std::string {
@@ -391,14 +392,16 @@ private:
       out += '\n';
     }
 
+    const auto *file = sources_.get(diag.file_id);
+
     // Render labels with source context.
     for (const auto &label : diag.labels) {
-      render_label(out, label, prefix);
+      render_label(out, label, prefix, file);
     }
 
     // Render suggested fixes.
     for (const auto &fix : diag.fixes) {
-      render_fix(out, fix, prefix);
+      render_fix(out, fix, prefix, file);
     }
 
     // Render child diagnostics (notes, help).
@@ -408,27 +411,43 @@ private:
   }
 
   void render_label(std::string &out, const diagnostic_label &label,
-                    const std::string &prefix) const {
+                    const std::string &prefix,
+                    const source_file *file) const {
     if (label.span.empty() && label.span.start == 0) {
       return; // Dummy span — nothing to render.
     }
 
-    auto start_lc = file_.resolve(label.span.start);
-    auto end_lc =
-        file_.resolve(label.span.end > label.span.start ? label.span.end - 1
-                                                        : label.span.start);
-
-    // Location line: "  --> file.kira:10:5"
     std::string arrow_color = use_color_ ? std::string(ansi::BoldBlue) : "";
     std::string reset = use_color_ ? std::string(ansi::Reset) : "";
 
+    if (file == nullptr) {
+      out += prefix;
+      out += "  ";
+      out += arrow_color;
+      out += "-->";
+      out += reset;
+      out += " <unknown file>";
+      if (!label.message.empty()) {
+        out += ": ";
+        out += label.message;
+      }
+      out += '\n';
+      return;
+    }
+
+    auto start_lc = file->resolve(label.span.start);
+    auto end_lc =
+        file->resolve(label.span.end > label.span.start ? label.span.end - 1
+                                                        : label.span.start);
+
+    // Location line: "  --> file.kira:10:5"
     out += prefix;
     out += "  ";
     out += arrow_color;
     out += "-->";
     out += reset;
     out += " ";
-    out += file_.name();
+    out += file->name();
     out += ":";
     out += std::to_string(start_lc.line);
     out += ":";
@@ -447,7 +466,7 @@ private:
 
     if (start_lc.line == end_lc.line) {
       // Single-line label.
-      auto source_line = file_.line_at(label.span.start);
+      auto source_line = file->line_at(label.span.start);
 
       // Gutter + pipe.
       out += prefix;
@@ -494,8 +513,8 @@ private:
     } else {
       // Multi-line span — show first and last lines with a vertical
       // connector in between.
-      auto first_line = file_.line_at(label.span.start);
-      auto last_line = file_.line_at(label.span.end > 0 ? label.span.end - 1
+      auto first_line = file->line_at(label.span.start);
+      auto last_line = file->line_at(label.span.end > 0 ? label.span.end - 1
                                                         : label.span.end);
 
       // First line.
@@ -554,7 +573,8 @@ private:
   }
 
   void render_fix(std::string &out, const suggested_fix &fix,
-                  const std::string &prefix) const {
+                  const std::string &prefix,
+                  const source_file *file) const {
     std::string help_color = use_color_ ? std::string(ansi::BoldGreen) : "";
     std::string reset = use_color_ ? std::string(ansi::Reset) : "";
 
@@ -568,9 +588,19 @@ private:
     out += '\n';
 
     if (!fix.replacement.empty()) {
+      if (file == nullptr) {
+        out += prefix;
+        out += "    ";
+        out += help_color;
+        out += fix.replacement;
+        out += reset;
+        out += '\n';
+        return;
+      }
+
       // Show what the code would look like after the fix.
       if (!fix.span.empty()) {
-        auto lc = file_.resolve(fix.span.start);
+        auto lc = file->resolve(fix.span.start);
         out += prefix;
         out += "    ";
         out += help_color;
@@ -579,7 +609,7 @@ private:
         out += reset;
 
         // Reconstruct the line with the fix applied.
-        auto source_line = file_.line_at(fix.span.start);
+        auto source_line = file->line_at(fix.span.start);
         auto line_start_offset = fix.span.start - (lc.column - 1);
 
         // Characters before the replacement.
@@ -630,7 +660,7 @@ private:
     return digits;
   }
 
-  const source_file &file_;
+  const source_manager &sources_;
   bool use_color_;
 };
 

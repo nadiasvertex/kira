@@ -4,6 +4,7 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -354,6 +355,92 @@ auto add_symbol_metadata(const ast::node &node,
   return normalize_path(output_path);
 }
 
+struct parsed_input {
+  fs::path source_path;
+  file_id_type file_id = 0;
+  ast::ptr<ast::file> ast_file;
+};
+
+[[nodiscard]] auto module_path_key(const ast::file &file)
+    -> std::optional<std::string> {
+  if (file.module_decl == nullptr || file.module_decl->has_error ||
+      file.module_decl->path.empty()) {
+    return std::nullopt;
+  }
+  return join_strings(file.module_decl->path, ".");
+}
+
+auto mark_file_has_error(std::vector<bool> &file_has_errors,
+                         file_id_type file_id) -> void {
+  if (static_cast<size_t>(file_id) >= file_has_errors.size()) {
+    return;
+  }
+  file_has_errors[file_id] = true;
+}
+
+auto detect_duplicate_module_paths(const std::vector<parsed_input> &inputs,
+                                   diagnostic_bag &diag,
+                                   std::vector<bool> &file_has_errors) -> void {
+  struct seen_module {
+    std::string module_name;
+    source_location location;
+  };
+
+  auto seen_modules = std::vector<seen_module>{};
+
+  for (const auto &input : inputs) {
+    if (input.ast_file == nullptr) {
+      continue;
+    }
+
+    auto module_name = module_path_key(*input.ast_file);
+    if (!module_name.has_value()) {
+      continue;
+    }
+
+    auto current_location = source_location{
+        .file_id = input.file_id,
+        .span = input.ast_file->module_decl->span,
+    };
+
+    const seen_module *previous = nullptr;
+    for (const auto &candidate : seen_modules) {
+      if (candidate.module_name == *module_name) {
+        previous = &candidate;
+        break;
+      }
+    }
+
+    if (previous != nullptr) {
+      auto duplicate = diagnostic(
+          diagnostic_level::error,
+          std::format("duplicate module path `{}`", *module_name),
+          current_location.file_id);
+      duplicate.with_label(current_location.span, "duplicate module declaration");
+      duplicate.children.push_back(
+          diagnostic(diagnostic_level::note,
+                     std::format("module `{}` was first declared here",
+                                 *module_name),
+                     previous->location.file_id)
+              .with_label(previous->location.span,
+                          "previous module declaration"));
+      duplicate.with_help(
+          "Give each source file a unique module path before compiling them "
+          "together.");
+      diag.emit(std::move(duplicate));
+
+      mark_file_has_error(file_has_errors, current_location.file_id);
+      mark_file_has_error(file_has_errors, previous->location.file_id);
+      continue;
+    }
+
+    seen_modules.push_back(seen_module{
+        .module_name = *module_name,
+        .location = current_location,
+    });
+  }
+}
+
 } // namespace
 
 auto parse_args(int argc, char *argv[]) -> std::expected<cli_config, std::string> {
@@ -430,6 +517,10 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   auto report = compile_report{};
   const auto metadata_root = fs::path(cfg.metadata_dir);
+  auto sources = source_manager{};
+  auto session_diagnostics = diagnostic_bag{};
+  auto file_has_errors = std::vector<bool>{};
+  auto parsed_inputs = std::vector<parsed_input>{};
 
   for (const auto &source_arg : cfg.sources) {
     const auto source_path = fs::path(source_arg);
@@ -440,22 +531,61 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       continue;
     }
 
-    auto diag = diagnostic_bag{};
-    auto file = source_file(0, normalize_path(source_path), std::move(*source_text));
-    auto lexer = Lexer(file.source(), file.id(), diag);
-    auto tokens = lexer.tokenize();
-    auto parser = kira::parser(std::move(tokens), file.id(), diag);
-    auto ast_file = parser.parse_file();
-
-    append_text(report.diagnostics,
-                diagnostic_renderer(file, use_color).render_all(diag));
-    report.error_count += diag.error_count();
-
-    if (diag.has_errors()) {
+    auto file_id =
+        sources.add_file(normalize_path(source_path), std::move(*source_text));
+    if (!file_id) {
+      ++report.error_count;
+      append_error(report.diagnostics, file_id.error());
       continue;
     }
 
-    auto metadata_path = write_module_metadata(metadata_root, *ast_file, source_path,
+    if (file_has_errors.size() <= static_cast<size_t>(*file_id)) {
+      file_has_errors.resize(static_cast<size_t>(*file_id) + 1, false);
+    }
+
+    const auto *file = sources.get(*file_id);
+    if (file == nullptr) {
+      ++report.error_count;
+      append_error(report.diagnostics, "internal error: missing source file");
+      continue;
+    }
+
+    auto errors_before = session_diagnostics.error_count();
+    auto lexer = Lexer(file->source(), file->id(), session_diagnostics);
+    auto tokens = lexer.tokenize();
+    auto parser = kira::parser(std::move(tokens), file->id(), session_diagnostics);
+    auto ast_file = parser.parse_file();
+
+    if (session_diagnostics.error_count() > errors_before) {
+      file_has_errors[*file_id] = true;
+    }
+
+    parsed_inputs.push_back(parsed_input{
+        .source_path = source_path,
+        .file_id = *file_id,
+        .ast_file = std::move(ast_file),
+    });
+  }
+
+  detect_duplicate_module_paths(parsed_inputs, session_diagnostics,
+                                file_has_errors);
+
+  report.error_count += session_diagnostics.error_count();
+  append_text(report.diagnostics,
+              diagnostic_renderer(sources, use_color).render_all(session_diagnostics));
+
+  for (const auto &input : parsed_inputs) {
+    if (static_cast<size_t>(input.file_id) < file_has_errors.size() &&
+        file_has_errors[input.file_id]) {
+      continue;
+    }
+
+    if (input.ast_file == nullptr) {
+      continue;
+    }
+
+    auto metadata_path = write_module_metadata(metadata_root, *input.ast_file,
+                                               input.source_path,
                                                report.diagnostics);
     if (!metadata_path) {
       ++report.error_count;
@@ -463,9 +593,10 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     }
 
     report.modules.push_back(compiled_module{
-        .source_path = normalize_path(source_path),
-        .module_path = ast_file->module_decl != nullptr ? ast_file->module_decl->path
-                                                        : std::vector<std::string>{},
+        .source_path = normalize_path(input.source_path),
+        .module_path = input.ast_file->module_decl != nullptr
+                           ? input.ast_file->module_decl->path
+                           : std::vector<std::string>{},
         .metadata_path = std::move(*metadata_path),
     });
   }

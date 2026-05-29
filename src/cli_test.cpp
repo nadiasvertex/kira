@@ -219,9 +219,79 @@ auto test_compile_sources_reports_parser_errors() -> void {
   expect(report->modules.empty(), "expected no metadata artifacts on failure");
   expect(report->diagnostics.find(
              "every Kira source file must start with a `module` declaration") !=
-             std::string::npos,
-         "expected missing-module diagnostic");
+              std::string::npos,
+          "expected missing-module diagnostic");
   expect(!fs::exists(metadata_dir), "expected no metadata directory on failure");
+}
+
+auto test_compile_sources_handles_multiple_files() -> void {
+  auto temp = make_temp_dir();
+  auto source_a = temp.path / "sample_tools.kira";
+  auto source_b = temp.path / "sample_math.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_a,
+             "module sample.tools\n"
+             "pub def run():\n"
+             "  return 1\n");
+  write_file(source_b,
+             "module sample.math\n"
+             "pub def add():\n"
+             "  return 2\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_a.string(), source_b.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(), "expected multi-file compile to return a report");
+  expect(report->error_count == 0, "expected multi-file compile to succeed");
+  expect(report->modules.size() == 2, "expected two metadata artifacts");
+  expect(report->diagnostics.empty(), "expected no diagnostics for valid inputs");
+  expect(fs::exists(fs::path(report->modules[0].metadata_path)),
+         "expected first metadata file to exist");
+  expect(fs::exists(fs::path(report->modules[1].metadata_path)),
+         "expected second metadata file to exist");
+}
+
+auto test_compile_sources_reports_duplicate_module_paths() -> void {
+  auto temp = make_temp_dir();
+  auto source_a = temp.path / "first.kira";
+  auto source_b = temp.path / "second.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_a,
+             "module sample.tools\n"
+             "pub def first():\n"
+             "  return 1\n");
+  write_file(source_b,
+             "module sample.tools\n"
+             "pub def second():\n"
+             "  return 2\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_a.string(), source_b.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(), "expected duplicate-module compile to return a report");
+  expect(report->error_count > 0, "expected duplicate module path to fail");
+  expect(report->modules.empty(), "expected duplicate modules to block metadata output");
+  expect(report->diagnostics.find("duplicate module path `sample.tools`") !=
+             std::string::npos,
+         "expected duplicate-module diagnostic");
+  expect(report->diagnostics.find("first.kira") != std::string::npos,
+         "expected diagnostic to mention first file");
+  expect(report->diagnostics.find("second.kira") != std::string::npos,
+         "expected diagnostic to mention second file");
+  expect(!fs::exists(metadata_dir),
+         "expected duplicate modules to skip metadata output entirely");
 }
 
 } // namespace
@@ -234,5 +304,7 @@ auto main() -> int {
   test_rendering_helpers();
   test_compile_sources_writes_module_metadata();
   test_compile_sources_reports_parser_errors();
+  test_compile_sources_handles_multiple_files();
+  test_compile_sources_reports_duplicate_module_paths();
   return 0;
 }

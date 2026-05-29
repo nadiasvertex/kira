@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
+#include <limits>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace kira {
 
@@ -199,6 +202,45 @@ private:
   std::string name_;
   std::string source_;
   std::vector<byte_offset> line_starts_;
+};
+
+/// Owns the source files participating in a compilation session and assigns
+/// stable file ids used by diagnostics and later compiler phases.
+class source_manager {
+public:
+  [[nodiscard]] auto add_file(std::string name, std::string source)
+      -> std::expected<file_id_type, std::string> {
+    constexpr auto k_max_source_files =
+        static_cast<size_t>(std::numeric_limits<file_id_type>::max()) + 1u;
+    if (files_.size() >= k_max_source_files) {
+      return std::unexpected{"too many source files for one compilation session"};
+    }
+
+    auto id = static_cast<file_id_type>(files_.size());
+    files_.emplace_back(id, std::move(name), std::move(source));
+    return id;
+  }
+
+  [[nodiscard]] auto get(file_id_type id) const noexcept -> const source_file * {
+    if (static_cast<size_t>(id) >= files_.size()) {
+      return nullptr;
+    }
+    return &files_[id];
+  }
+
+  [[nodiscard]] auto get(file_id_type id) noexcept -> source_file * {
+    if (static_cast<size_t>(id) >= files_.size()) {
+      return nullptr;
+    }
+    return &files_[id];
+  }
+
+  [[nodiscard]] auto files() const noexcept -> const std::vector<source_file> & {
+    return files_;
+  }
+
+private:
+  std::vector<source_file> files_;
 };
 
 } // namespace kira

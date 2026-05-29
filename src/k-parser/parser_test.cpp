@@ -54,14 +54,20 @@ struct parsed_source {
 
 auto parse_source(std::string_view source) -> parsed_source {
   kira::diagnostic_bag diag;
-  kira::source_file file(0, "test.kira", std::string(source));
-  kira::Lexer lexer(file.source(), file.id(), diag);
+  auto sources = kira::source_manager{};
+  auto file_id = sources.add_file("test.kira", std::string(source));
+  expect(file_id.has_value(), "expected test source to register");
+
+  auto *file = sources.get(*file_id);
+  expect(file != nullptr, "expected registered test source");
+
+  kira::Lexer lexer(file->source(), file->id(), diag);
   auto tokens = lexer.tokenize();
-  kira::parser parser(std::move(tokens), file.id(), diag);
+  kira::parser parser(std::move(tokens), file->id(), diag);
 
   parsed_source parsed{
       .file = parser.parse_file(),
-      .diagnostics = kira::diagnostic_renderer(file, false).render_all(diag),
+      .diagnostics = kira::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
   return parsed;
