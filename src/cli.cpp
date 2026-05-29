@@ -361,6 +361,22 @@ struct parsed_input {
   ast::ptr<ast::file> ast_file;
 };
 
+struct module_file_record {
+  std::string module_name;
+  std::string parent_module_name;
+  std::string child_name;
+  source_location location;
+  file_id_type file_id = 0;
+  const ast::file *ast_file = nullptr;
+};
+
+struct submodule_declaration_record {
+  std::string module_name;
+  source_location location;
+  file_id_type parent_file_id = 0;
+  bool is_inline = false;
+};
+
 [[nodiscard]] auto module_path_key(const ast::file &file)
     -> std::optional<std::string> {
   if (file.module_decl == nullptr || file.module_decl->has_error ||
@@ -368,6 +384,111 @@ struct parsed_input {
     return std::nullopt;
   }
   return join_strings(file.module_decl->path, ".");
+}
+
+[[nodiscard]] auto join_module_path_prefix(const std::vector<std::string> &path,
+                                           size_t limit) -> std::string {
+  if (limit == 0 || path.empty()) {
+    return {};
+  }
+
+  auto out = path.front();
+  for (size_t i = 1; i < limit; ++i) {
+    out += '.';
+    out += path[i];
+  }
+  return out;
+}
+
+[[nodiscard]] auto collect_module_files(const std::vector<parsed_input> &inputs)
+    -> std::vector<module_file_record> {
+  auto module_files = std::vector<module_file_record>{};
+  module_files.reserve(inputs.size());
+
+  for (const auto &input : inputs) {
+    if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
+        input.ast_file->module_decl->has_error ||
+        input.ast_file->module_decl->path.empty()) {
+      continue;
+    }
+
+    const auto &path = input.ast_file->module_decl->path;
+    module_files.push_back(module_file_record{
+        .module_name = join_module_path_prefix(path, path.size()),
+        .parent_module_name =
+            path.size() > 1 ? join_module_path_prefix(path, path.size() - 1)
+                            : std::string{},
+        .child_name = path.back(),
+        .location = source_location{
+            .file_id = input.file_id,
+            .span = input.ast_file->module_decl->span,
+        },
+        .file_id = input.file_id,
+        .ast_file = input.ast_file.get(),
+    });
+  }
+
+  return module_files;
+}
+
+auto collect_submodule_declarations(
+    const std::vector<ast::ptr<ast::node>> &items,
+    const std::vector<std::string> &parent_path, file_id_type file_id,
+    std::vector<submodule_declaration_record> &out) -> void {
+  for (const auto &item : items) {
+    if (item == nullptr || item->kind != ast::node_kind::sub_module_decl) {
+      continue;
+    }
+
+    const auto &decl = static_cast<const ast::sub_module_decl &>(*item);
+    auto module_path = parent_path;
+    module_path.push_back(decl.name);
+    out.push_back(submodule_declaration_record{
+        .module_name = join_module_path_prefix(module_path, module_path.size()),
+        .location = source_location{
+            .file_id = file_id,
+            .span = decl.span,
+        },
+        .parent_file_id = file_id,
+        .is_inline = !decl.items.empty(),
+    });
+
+    if (!decl.items.empty()) {
+      collect_submodule_declarations(decl.items, module_path, file_id, out);
+    }
+  }
+}
+
+[[nodiscard]] auto has_file_error(const std::vector<bool> &file_has_errors,
+                                  file_id_type file_id) -> bool {
+  if (static_cast<size_t>(file_id) >= file_has_errors.size()) {
+    return false;
+  }
+  return file_has_errors[file_id];
+}
+
+[[nodiscard]] auto find_module_file(const std::vector<module_file_record> &modules,
+                                    std::string_view module_name)
+    -> const module_file_record * {
+  for (const auto &module : modules) {
+    if (module.module_name == module_name) {
+      return &module;
+    }
+  }
+  return nullptr;
+}
+
+[[nodiscard]] auto find_submodule_declaration(
+    const std::vector<submodule_declaration_record> &submodules,
+    file_id_type parent_file_id, std::string_view module_name)
+    -> const submodule_declaration_record * {
+  for (const auto &submodule : submodules) {
+    if (submodule.parent_file_id == parent_file_id &&
+        submodule.module_name == module_name) {
+      return &submodule;
+    }
+  }
+  return nullptr;
 }
 
 auto mark_file_has_error(std::vector<bool> &file_has_errors,
@@ -438,6 +559,90 @@ auto detect_duplicate_module_paths(const std::vector<parsed_input> &inputs,
         .module_name = *module_name,
         .location = current_location,
     });
+  }
+}
+
+auto validate_module_boundaries(const std::vector<parsed_input> &inputs,
+                                diagnostic_bag &diag,
+                                std::vector<bool> &file_has_errors) -> void {
+  const auto module_files = collect_module_files(inputs);
+  auto submodule_declarations = std::vector<submodule_declaration_record>{};
+
+  for (const auto &module_file : module_files) {
+    if (module_file.ast_file == nullptr || module_file.ast_file->module_decl == nullptr) {
+      continue;
+    }
+    collect_submodule_declarations(module_file.ast_file->items,
+                                   module_file.ast_file->module_decl->path,
+                                   module_file.file_id, submodule_declarations);
+  }
+
+  for (const auto &module_file : module_files) {
+    if (module_file.parent_module_name.empty() ||
+        has_file_error(file_has_errors, module_file.file_id)) {
+      continue;
+    }
+
+    const auto *parent =
+        find_module_file(module_files, module_file.parent_module_name);
+    if (parent == nullptr || has_file_error(file_has_errors, parent->file_id)) {
+      continue;
+    }
+
+    const auto *declaration = find_submodule_declaration(
+        submodule_declarations, parent->file_id, module_file.module_name);
+    if (declaration == nullptr) {
+      auto missing = diagnostic(
+          diagnostic_level::error,
+          std::format("module `{}` is not declared by parent module `{}`",
+                      module_file.module_name, parent->module_name),
+          module_file.file_id);
+      missing.with_label(module_file.location.span, "child module defined here");
+      missing.children.push_back(
+          diagnostic(diagnostic_level::note,
+                     std::format("parent module `{}` is declared here",
+                                 parent->module_name),
+                     parent->file_id)
+              .with_label(parent->location.span, "parent module declaration"));
+      missing.with_help(std::format(
+          "Add `module {}` to `{}`, or stop compiling `{}` as a separate "
+          "module.",
+          module_file.child_name, parent->module_name, module_file.module_name));
+      diag.emit(std::move(missing));
+
+      mark_file_has_error(file_has_errors, module_file.file_id);
+      mark_file_has_error(file_has_errors, parent->file_id);
+      continue;
+    }
+
+    if (!declaration->is_inline) {
+      continue;
+    }
+
+    auto conflict = diagnostic(
+        diagnostic_level::error,
+        std::format(
+            "module `{}` is declared inline and cannot also be defined in a "
+            "separate file",
+            module_file.module_name),
+        module_file.file_id);
+    conflict.with_label(module_file.location.span,
+                        "separate file module declaration");
+    conflict.children.push_back(
+        diagnostic(diagnostic_level::note,
+                   std::format("inline submodule `{}` is declared here",
+                               module_file.child_name),
+                   declaration->location.file_id)
+            .with_label(declaration->location.span,
+                        "inline submodule declaration"));
+    conflict.with_help(std::format(
+        "Keep `module {}:` inline in `{}` or move it to its own file, but "
+        "not both.",
+        module_file.child_name, parent->module_name));
+    diag.emit(std::move(conflict));
+
+    mark_file_has_error(file_has_errors, module_file.file_id);
+    mark_file_has_error(file_has_errors, declaration->location.file_id);
   }
 }
 
@@ -569,6 +774,7 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   detect_duplicate_module_paths(parsed_inputs, session_diagnostics,
                                 file_has_errors);
+  validate_module_boundaries(parsed_inputs, session_diagnostics, file_has_errors);
 
   report.error_count += session_diagnostics.error_count();
   append_text(report.diagnostics,

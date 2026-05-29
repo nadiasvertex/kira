@@ -294,6 +294,112 @@ auto test_compile_sources_reports_duplicate_module_paths() -> void {
          "expected duplicate modules to skip metadata output entirely");
 }
 
+auto test_compile_sources_accepts_declared_external_submodule() -> void {
+  auto temp = make_temp_dir();
+  auto parent_source = temp.path / "geometry.kira";
+  auto child_source = temp.path / "geometry_transform.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(parent_source,
+             "module geometry\n"
+             "module transform\n"
+             "pub def root():\n"
+             "  return 1\n");
+  write_file(child_source,
+             "module geometry.transform\n"
+             "pub def rotate():\n"
+             "  return 2\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {parent_source.string(), child_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(), "expected declared submodule compile to return a report");
+  expect(report->error_count == 0,
+         "expected declared external submodule to compile cleanly");
+  expect(report->modules.size() == 2,
+         "expected parent and child metadata artifacts");
+  expect(report->diagnostics.empty(),
+         "expected no diagnostics for declared external submodule");
+}
+
+auto test_compile_sources_reports_missing_parent_submodule_declaration() -> void {
+  auto temp = make_temp_dir();
+  auto parent_source = temp.path / "geometry.kira";
+  auto child_source = temp.path / "geometry_transform.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(parent_source,
+             "module geometry\n"
+             "pub def root():\n"
+             "  return 1\n");
+  write_file(child_source,
+             "module geometry.transform\n"
+             "pub def rotate():\n"
+             "  return 2\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {parent_source.string(), child_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(), "expected missing-parent compile to return a report");
+  expect(report->error_count > 0,
+         "expected undeclared external submodule to fail");
+  expect(report->modules.empty(),
+         "expected undeclared external submodule to block metadata output");
+  expect(report->diagnostics.find(
+             "module `geometry.transform` is not declared by parent module `geometry`") !=
+             std::string::npos,
+         "expected missing parent declaration diagnostic");
+  expect(report->diagnostics.find("module transform") != std::string::npos,
+         "expected help text to mention missing submodule declaration");
+}
+
+auto test_compile_sources_reports_inline_external_submodule_conflict() -> void {
+  auto temp = make_temp_dir();
+  auto parent_source = temp.path / "geometry.kira";
+  auto child_source = temp.path / "geometry_shapes.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(parent_source,
+             "module geometry\n"
+             "module shapes:\n"
+             "  pub type circle = { pub radius: float64 }\n");
+  write_file(child_source,
+             "module geometry.shapes\n"
+             "pub def area():\n"
+             "  return 3\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {parent_source.string(), child_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(), "expected inline-conflict compile to return a report");
+  expect(report->error_count > 0,
+         "expected inline and external submodule conflict to fail");
+  expect(report->modules.empty(),
+         "expected inline and external submodule conflict to block metadata output");
+  expect(report->diagnostics.find(
+             "module `geometry.shapes` is declared inline and cannot also be defined in a separate file") !=
+             std::string::npos,
+         "expected inline/external conflict diagnostic");
+  expect(report->diagnostics.find("inline submodule declaration") !=
+             std::string::npos,
+         "expected related inline declaration note");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -306,5 +412,8 @@ auto main() -> int {
   test_compile_sources_reports_parser_errors();
   test_compile_sources_handles_multiple_files();
   test_compile_sources_reports_duplicate_module_paths();
+  test_compile_sources_accepts_declared_external_submodule();
+  test_compile_sources_reports_missing_parent_submodule_declaration();
+  test_compile_sources_reports_inline_external_submodule_conflict();
   return 0;
 }
