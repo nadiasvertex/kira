@@ -347,6 +347,8 @@ private:
     bool is_block = false;
   };
   auto parse_body(std::string_view construct_name) -> BodyResult;
+  [[nodiscard]] std::vector<ast::ptr<ast::node>>
+  body_to_stmt_list(BodyResult body);
 
   // ========================================================================
   //  Comma-separated list helper
@@ -413,6 +415,7 @@ private:
   [[nodiscard]] ast::ptr<ast::type_expr> parse_prim_type_expr();
   [[nodiscard]] ast::ptr<ast::named_type> parse_named_type();
   [[nodiscard]] ast::ptr<ast::bound_type> make_bound_type(ast::bound bound);
+  [[nodiscard]] ast::ptr<ast::type_expr> parse_optional_type_annotation();
   [[nodiscard]] ast::ptr<ast::tuple_type> parse_tuple_type();
   [[nodiscard]] ast::ptr<ast::slice_type> parse_slice_type();
   [[nodiscard]] ast::ptr<ast::array_type> parse_array_type();

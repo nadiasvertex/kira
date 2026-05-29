@@ -1,0 +1,10 @@
+module stress.impl_higher_kinded_header
+
+trait functor[F[_]]:
+  def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]
+
+trait monad[M[_]] requires functor[M]:
+  def pure[A](a: A) -> M[A]
+
+impl monad[option]:
+  def pure[A](a: A) -> option[A]: some(a)

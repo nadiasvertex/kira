@@ -1,0 +1,10 @@
+module stress.project_root_forms
+
+static search_path = ["src", "vendor"]
+
+dep geometry:
+  path = "vendor/geometry"
+  version = "1.2.0"
+
+pub module app
+module utils

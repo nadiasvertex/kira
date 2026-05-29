@@ -422,6 +422,19 @@ auto parser::parse_body(std::string_view construct_name) -> parser::BodyResult {
   return result;
 }
 
+std::vector<ast::ptr<ast::node>> parser::body_to_stmt_list(BodyResult body) {
+  if (body.inline_expr) {
+    auto stmt = ast::make<ast::expr_stmt>();
+    stmt->expr = std::move(body.inline_expr);
+
+    std::vector<ast::ptr<ast::node>> stmts;
+    stmts.push_back(std::move(stmt));
+    return stmts;
+  }
+
+  return std::move(body.stmts);
+}
+
 // ==========================================================================
 //  Comma-separated list helpers
 // ==========================================================================
@@ -872,7 +885,12 @@ parser::parse_sub_module_decl(ast::visibility vis) {
   decl->visibility = vis;
 
   expect(token_kind::kw_module);
-  auto name_tok = expect(token_kind::ident);
+  token name_tok;
+  if (at(token_kind::ident) || at(token_kind::kw_pure)) {
+    name_tok = advance();
+  } else {
+    name_tok = expect(token_kind::ident);
+  }
   decl->name = std::string(name_tok.text);
 
   if (at(token_kind::colon)) {
@@ -1268,6 +1286,31 @@ ast::ptr<ast::bound_type> parser::make_bound_type(ast::bound bound) {
   type->span = bound.span;
   type->value = std::move(bound);
   return type;
+}
+
+ast::ptr<ast::type_expr> parser::parse_optional_type_annotation() {
+  if (!match(token_kind::colon)) {
+    return nullptr;
+  }
+
+  if (match(token_kind::kw_shared)) {
+    auto shared_type = ast::make<ast::named_type>();
+    shared_type->span = previous_span();
+    shared_type->path.push_back("shared");
+
+    auto inner_type = parse_type_expr();
+    if (inner_type) {
+      ast::type_arg inner_arg;
+      inner_arg.span = inner_type->span;
+      inner_arg.value = std::move(inner_type);
+      shared_type->type_args.push_back(std::move(inner_arg));
+      shared_type->span.extend_to(previous_span());
+    }
+
+    return shared_type;
+  }
+
+  return parse_type_expr();
 }
 
 ast::ptr<ast::named_type> parser::parse_named_type() {
@@ -1695,8 +1738,13 @@ ast::ptr<ast::impl_decl> parser::parse_impl_decl() {
   }
 
   decl->trait_type = parse_named_type();
-  expect_with_context(token_kind::kw_for, "in `impl Trait for Type`");
-  decl->for_type = parse_type_expr();
+  if (match(token_kind::kw_for)) {
+    decl->for_type = parse_type_expr();
+  } else if (!at_any(token_kind::kw_where, token_kind::colon,
+                     token_kind::newline, token_kind::eof)) {
+    expect_with_context(token_kind::kw_for, "in `impl Trait for Type`");
+    decl->for_type = parse_type_expr();
+  }
 
   // Optional where clause.
   if (at(token_kind::kw_where)) {
@@ -1829,7 +1877,12 @@ ast::ptr<ast::func_decl> parser::parse_func_decl(ast::visibility vis,
   decl->modifiers = std::move(mods);
 
   expect(token_kind::kw_def);
-  auto name_tok = expect(token_kind::ident);
+  token name_tok;
+  if (at(token_kind::ident) || at(token_kind::kw_pure)) {
+    name_tok = advance();
+  } else {
+    name_tok = expect(token_kind::ident);
+  }
   decl->name = std::string(name_tok.text);
 
   // Optional type parameters.
@@ -2066,26 +2119,7 @@ ast::ptr<ast::static_decl> parser::parse_static_decl(ast::visibility vis) {
     auto name_tok = expect(token_kind::ident);
     decl->name = std::string(name_tok.text);
 
-    if (match(token_kind::colon)) {
-      if (match(token_kind::kw_shared)) {
-        auto shared_type = ast::make<ast::named_type>();
-        shared_type->span = previous_span();
-        shared_type->path.push_back("shared");
-
-        auto inner_type = parse_type_expr();
-        if (inner_type) {
-          ast::type_arg inner_arg;
-          inner_arg.span = inner_type->span;
-          inner_arg.value = std::move(inner_type);
-          shared_type->type_args.push_back(std::move(inner_arg));
-          shared_type->span.extend_to(previous_span());
-        }
-
-        decl->type_annotation = std::move(shared_type);
-      } else {
-        decl->type_annotation = parse_type_expr();
-      }
-    }
+    decl->type_annotation = parse_optional_type_annotation();
 
     expect(token_kind::eq);
     decl->initializer = parse_expr();
@@ -2198,26 +2232,7 @@ ast::ptr<ast::let_stmt> parser::parse_let_stmt() {
   expect(token_kind::kw_let);
   stmt->pattern = parse_pattern();
 
-  if (match(token_kind::colon)) {
-    if (match(token_kind::kw_shared)) {
-      auto shared_type = ast::make<ast::named_type>();
-      shared_type->span = previous_span();
-      shared_type->path.push_back("shared");
-
-      auto inner_type = parse_type_expr();
-      if (inner_type) {
-        ast::type_arg inner_arg;
-        inner_arg.span = inner_type->span;
-        inner_arg.value = std::move(inner_type);
-        shared_type->type_args.push_back(std::move(inner_arg));
-        shared_type->span.extend_to(previous_span());
-      }
-
-      stmt->type_annotation = std::move(shared_type);
-    } else {
-      stmt->type_annotation = parse_type_expr();
-    }
-  }
+  stmt->type_annotation = parse_optional_type_annotation();
 
   expect(token_kind::eq);
   stmt->initializer = parse_expr();
@@ -2309,14 +2324,7 @@ ast::ptr<ast::if_stmt> parser::parse_if_stmt() {
     ast::if_branch branch;
     branch.span = start;
     parse_if_condition(branch);
-    auto body = parse_body("if");
-    if (body.inline_expr) {
-      auto es = ast::make<ast::expr_stmt>();
-      es->expr = std::move(body.inline_expr);
-      branch.body.push_back(std::move(es));
-    } else {
-      branch.body = std::move(body.stmts);
-    }
+    branch.body = body_to_stmt_list(parse_body("if"));
     branch.span.extend_to(previous_span());
     stmt->branches.push_back(std::move(branch));
   }
@@ -2327,14 +2335,7 @@ ast::ptr<ast::if_stmt> parser::parse_if_stmt() {
     ast::if_branch branch;
     branch.span = previous_span();
     parse_if_condition(branch);
-    auto body = parse_body("elif");
-    if (body.inline_expr) {
-      auto es = ast::make<ast::expr_stmt>();
-      es->expr = std::move(body.inline_expr);
-      branch.body.push_back(std::move(es));
-    } else {
-      branch.body = std::move(body.stmts);
-    }
+    branch.body = body_to_stmt_list(parse_body("elif"));
     branch.span.extend_to(previous_span());
     stmt->branches.push_back(std::move(branch));
   }
@@ -2342,14 +2343,7 @@ ast::ptr<ast::if_stmt> parser::parse_if_stmt() {
   // Optional `else` branch.
   if (at(token_kind::kw_else)) {
     advance();
-    auto body = parse_body("else");
-    if (body.inline_expr) {
-      auto es = ast::make<ast::expr_stmt>();
-      es->expr = std::move(body.inline_expr);
-      stmt->else_body.push_back(std::move(es));
-    } else {
-      stmt->else_body = std::move(body.stmts);
-    }
+    stmt->else_body = body_to_stmt_list(parse_body("else"));
   }
 
   stmt->span = start.merge(previous_span());
@@ -2372,14 +2366,7 @@ ast::ptr<ast::while_stmt> parser::parse_while_stmt() {
     stmt->condition = parse_expr();
   }
 
-  auto body = parse_body("while");
-  if (body.inline_expr) {
-    auto es = ast::make<ast::expr_stmt>();
-    es->expr = std::move(body.inline_expr);
-    stmt->body.push_back(std::move(es));
-  } else {
-    stmt->body = std::move(body.stmts);
-  }
+  stmt->body = body_to_stmt_list(parse_body("while"));
 
   stmt->span = start.merge(previous_span());
   return stmt;
@@ -2406,14 +2393,7 @@ ast::ptr<ast::for_stmt> parser::parse_for_stmt() {
     stmt->guard = parse_expr();
   }
 
-  auto body = parse_body("for");
-  if (body.inline_expr) {
-    auto es = ast::make<ast::expr_stmt>();
-    es->expr = std::move(body.inline_expr);
-    stmt->body.push_back(std::move(es));
-  } else {
-    stmt->body = std::move(body.stmts);
-  }
+  stmt->body = body_to_stmt_list(parse_body("for"));
 
   stmt->span = start.merge(previous_span());
   return stmt;
@@ -2468,14 +2448,7 @@ ast::ptr<ast::crew_stmt> parser::parse_crew_stmt() {
     expect(token_kind::rparen);
   }
 
-  auto body = parse_body("crew");
-  if (body.inline_expr) {
-    auto es = ast::make<ast::expr_stmt>();
-    es->expr = std::move(body.inline_expr);
-    stmt->body.push_back(std::move(es));
-  } else {
-    stmt->body = std::move(body.stmts);
-  }
+  stmt->body = body_to_stmt_list(parse_body("crew"));
 
   stmt->span = start.merge(previous_span());
   return stmt;
@@ -3940,14 +3913,7 @@ ast::ptr<ast::crew_expr> parser::parse_crew_expr() {
     expect(token_kind::rparen);
   }
 
-  auto body = parse_body("crew");
-  if (body.inline_expr) {
-    auto stmt = ast::make<ast::expr_stmt>();
-    stmt->expr = std::move(body.inline_expr);
-    expr->body.push_back(std::move(stmt));
-  } else {
-    expr->body = std::move(body.stmts);
-  }
+  expr->body = body_to_stmt_list(parse_body("crew"));
 
   expr->span = start.merge(previous_span());
   return expr;

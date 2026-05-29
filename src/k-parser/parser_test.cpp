@@ -705,6 +705,75 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
          "expected top-level derive splice statement");
 }
 
+auto test_parser_accepts_phase1_audit_regressions() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "\n"
+      "# leading comment\n"
+      "internal use std.io\n"
+      "super module parent_only\n"
+      "static search_path = [\"src\", \"vendor\"]\n"
+      "\n"
+      "trait monad[M[_]]:\n"
+      "  def pure[A](a: A) -> M[A]\n"
+      "\n"
+      "impl monad[option]:\n"
+      "  def pure[A](a: A) -> option[A]: some(a)\n"
+      "\n"
+      "async def handle(pool, req) -> http_response:\n"
+      "  let result = await on(pool):\n"
+      "    expensive_computation(req.body)\n"
+      "  crew c:\n"
+      "    let task = c.spawn(fetch(req))\n"
+      "  return result\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 6,
+         "expected audit regression source to parse cleanly");
+
+  auto *internal_use = expect_node<kira::ast::use_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::use_decl,
+      "expected internal use declaration");
+  expect(internal_use->visibility == kira::ast::visibility::internal,
+         "expected internal visibility on use declaration");
+
+  auto *super_module = expect_node<kira::ast::sub_module_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::sub_module_decl,
+      "expected super-visible submodule declaration");
+  expect(super_module->visibility == kira::ast::visibility::super,
+         "expected super visibility on module declaration");
+
+  auto *impl_decl = expect_node<kira::ast::impl_decl>(
+      parsed.file->items[4].get(), kira::ast::node_kind::impl_decl,
+      "expected higher-kinded impl declaration");
+  expect(impl_decl->trait_type != nullptr, "expected impl trait type");
+  expect(impl_decl->for_type == nullptr,
+         "expected impl without explicit `for` type to omit for_type");
+
+  auto *handle_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[5].get(), kira::ast::node_kind::func_decl,
+      "expected async handle function");
+  expect(handle_decl->body_stmts.size() == 3,
+         "expected handle body statements to be preserved");
+
+  auto *on_stmt = expect_node<kira::ast::let_stmt>(
+      handle_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected await on binding");
+  auto *await_expr = expect_expr<kira::ast::await_expr>(
+      on_stmt->initializer.get(), kira::ast::node_kind::await_expr,
+      "expected await expression");
+  auto *on_expr = expect_expr<kira::ast::on_expr>(
+      await_expr->operand.get(), kira::ast::node_kind::on_expr,
+      "expected single-argument on expression");
+  expect(on_expr->context_type != nullptr, "expected on context type/value");
+  expect(on_expr->sender == nullptr, "expected no second on argument");
+
+  auto *crew_stmt = expect_node<kira::ast::crew_stmt>(
+      handle_decl->body_stmts[1].get(), kira::ast::node_kind::crew_stmt,
+      "expected plain crew statement");
+  expect(crew_stmt->options.empty(), "expected plain crew without options");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -728,6 +797,7 @@ auto main(int argc, char *argv[]) -> int {
       {"spec_valid_regressions", test_parser_accepts_spec_valid_regressions},
       {"remaining_phase1_constructs",
        test_parser_accepts_remaining_phase1_constructs},
+      {"phase1_audit_regressions", test_parser_accepts_phase1_audit_regressions},
   };
 
   if (argc > 1) {

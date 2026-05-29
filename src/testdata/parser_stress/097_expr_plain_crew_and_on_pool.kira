@@ -1,0 +1,8 @@
+module stress.expr_plain_crew_and_on_pool
+
+async def handle(pool, req):
+  let result = await on(pool):
+    expensive_computation(req.body)
+  let tasks = crew c:
+    c.spawn(fetch(req))
+  return result
