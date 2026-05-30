@@ -629,7 +629,7 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
       "\n"
       "static let increment: expr = `(x + 1)`\n"
       "\n"
-      "def run[T: show + eq, n: usize](raw_index, items) -> option[super.value]:\n"
+      "def run[T: show + eq, n: usize](raw_index, items) -> option[value]:\n"
       "  let shared_cfg: shared config_t = shared load_config(\"app.toml\")\n"
       "  if let some(i) = index[n].try_from(raw_index):\n"
       "    let sender = channel[str](capacity: 32)\n"

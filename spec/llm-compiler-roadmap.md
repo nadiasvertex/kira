@@ -18,12 +18,15 @@ This document is a planning snapshot for LLMs and contributors. It describes wha
 - A recursive-descent parser.
 - AST coverage for functions, type bodies, associated types, inline `if`, inline `on`, guarded `for`, and pattern aliases.
 - A CLI frontend that loads source files, parses them, reports diagnostics, and writes protobuf-backed module metadata.
+- A shared multi-file `source_manager` used by parsing and cross-file diagnostics.
+- Session-local module graph validation for duplicate module paths, parent/child module boundaries, and inline-vs-external submodule conflicts.
+- Session-local import validation for owned module roots, unresolved imports, and child-module visibility.
+- An initial semantic declaration-scope pass that rejects duplicate type, trait, concept, and submodule names within one module scope.
 - Project-owned Bazel tests for CLI and parser regressions.
 - A protobuf schema for persisted module metadata, intended to evolve additively for forward compatibility.
 
 ### Missing
 
-- Module loading and source management.
 - Name resolution and symbol tables.
 - Type inference and type checking.
 - Trait and impl validation.
@@ -55,6 +58,12 @@ Exit criteria:
 
 - The driver can load multiple files and report cross-file locations correctly.
 
+Status:
+
+- Complete for the current explicit CLI-input compilation model.
+- Multi-file sessions, shared source management, cross-file module diagnostics, and session-local import validation are implemented and covered by project-owned tests.
+- Full `project.kira` loading, `static search_path`, and dependency resolution remain later module-loader work, not a blocker for phase 3 under the current roadmap exit criteria.
+
 ### 3. Semantic analysis
 
 - Build symbol tables and scope tracking.
@@ -65,6 +74,11 @@ Exit criteria:
 Exit criteria:
 
 - The compiler can reject ill-typed programs with specific, actionable diagnostics.
+
+Status:
+
+- Started.
+- The current phase-3 entry point is module-local declaration scope validation for type/module names, which lays groundwork for symbol tables and later name resolution.
 
 ### 4. Typed lowering pipeline
 

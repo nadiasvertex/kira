@@ -1,6 +1,6 @@
 module stress.stmt_if_let_shared_super
 
-def run(raw_index) -> option[super.value]:
+def run(raw_index) -> option[value]:
   let shared_cfg: shared config_t = shared load_config("app.toml")
   if let some(i) = index.try_from(raw_index):
     return some(i)

@@ -503,6 +503,186 @@ auto test_compile_sources_resolves_session_imports() -> void {
   expect(report->diagnostics.empty(), "expected no diagnostics for valid session imports");
 }
 
+/// Verify that module-local semantic scopes reject duplicate declaration names.
+auto test_compile_sources_reports_duplicate_module_scope_symbol() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "duplicate_scope.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+             "module sample.tools\n"
+             "type point = int32\n"
+             "trait point:\n"
+             "  def show(self) -> str\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(),
+         "expected duplicate declaration scope compile to return a report");
+  expect(report->error_count > 0,
+         "expected duplicate declaration names to fail semantic scope validation");
+  expect(report->modules.empty(),
+         "expected duplicate declaration names to block metadata output");
+  expect(report->diagnostics.find(
+             "duplicate declaration name `point` in module `sample.tools`") !=
+             std::string::npos,
+         "expected duplicate module-scope declaration diagnostic");
+  expect(report->diagnostics.find("previous type declaration") != std::string::npos,
+         "expected note for the original declaration");
+}
+
+/// Verify that inline submodules get their own semantic declaration scopes.
+auto test_compile_sources_reports_duplicate_inline_submodule_scope_symbol() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "inline_duplicate_scope.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+             "module sample\n"
+             "module shapes:\n"
+             "  type circle = float64\n"
+             "  concept circle[T]:\n"
+             "    T: show\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(),
+         "expected duplicate inline scope compile to return a report");
+  expect(report->error_count > 0,
+         "expected duplicate inline submodule declaration names to fail");
+  expect(report->modules.empty(),
+         "expected duplicate inline submodule names to block metadata output");
+  expect(report->diagnostics.find(
+             "duplicate declaration name `circle` in module `sample.shapes`") !=
+              std::string::npos,
+         "expected duplicate inline submodule declaration diagnostic");
+}
+
+/// Verify that child modules may use `super` to name parent-owned types.
+auto test_compile_sources_resolves_super_qualified_type_paths() -> void {
+  auto temp = make_temp_dir();
+  auto geometry_source = temp.path / "geometry.kira";
+  auto transform_source = temp.path / "geometry_transform.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(geometry_source,
+             "module geometry\n"
+             "module shapes:\n"
+             "  pub type circle = { pub radius: float64 }\n"
+             "module transform\n");
+  write_file(transform_source,
+             "module geometry.transform\n"
+             "pub def rotate(p: super.shapes.circle) -> super.shapes.circle:\n"
+             "  return p\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {geometry_source.string(), transform_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(), "expected super-qualified type paths to return a report");
+  expect(report->error_count == 0,
+         "expected legal super-qualified type paths to resolve cleanly");
+  expect(report->modules.size() == 2,
+         "expected both geometry modules to emit metadata");
+  expect(report->diagnostics.empty(),
+         "expected no diagnostics for legal super-qualified type paths");
+}
+
+/// Verify that unresolved qualified type paths fail semantic resolution.
+auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
+  auto temp = make_temp_dir();
+  auto package_source = temp.path / "package.kira";
+  auto tools_source = temp.path / "package_tools.kira";
+  auto app_source = temp.path / "package_tools_app.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(package_source,
+             "module package\n"
+             "module tools\n");
+  write_file(tools_source,
+             "module package.tools\n"
+             "module app\n");
+  write_file(app_source,
+             "module package.tools.app\n"
+             "pub def run(value: package.tools.missing) -> int:\n"
+             "  return 1\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {package_source.string(), tools_source.string(), app_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(),
+         "expected unresolved qualified type path compile to return a report");
+  expect(report->error_count > 0,
+         "expected unresolved qualified type path to fail semantic resolution");
+  expect(report->modules.size() == 2,
+         "expected unaffected modules to still emit metadata");
+  expect(report->diagnostics.find(
+             "qualified type path `package.tools.missing` does not resolve from module `package.tools.app`") !=
+             std::string::npos,
+         "expected unresolved qualified type path diagnostic");
+}
+
+/// Verify that unresolved module-qualified references fail semantic resolution.
+auto test_compile_sources_reports_unresolved_module_qualified_reference() -> void {
+  auto temp = make_temp_dir();
+  auto package_source = temp.path / "package.kira";
+  auto tools_source = temp.path / "package_tools.kira";
+  auto app_source = temp.path / "package_tools_app.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(package_source,
+             "module package\n"
+             "module tools\n");
+  write_file(tools_source,
+             "module package.tools\n"
+             "module app\n");
+  write_file(app_source,
+             "module package.tools.app\n"
+             "pub def run() -> int:\n"
+             "  package.tools.missing\n"
+             "  return 1\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {package_source.string(), tools_source.string(), app_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(),
+         "expected unresolved module-qualified reference compile to return a report");
+  expect(report->error_count > 0,
+         "expected unresolved module-qualified reference to fail semantic resolution");
+  expect(report->modules.size() == 2,
+         "expected unaffected modules to still emit metadata");
+  expect(report->diagnostics.find(
+             "module-qualified reference `package.tools.missing` does not resolve from module `package.tools.app`") !=
+             std::string::npos,
+         "expected unresolved module-qualified reference diagnostic");
+}
+
 /// Verify that unresolved imports fail only when the root module belongs to the session.
 auto test_compile_sources_reports_unresolved_session_import() -> void {
   auto temp = make_temp_dir();
@@ -610,6 +790,11 @@ auto main() -> int {
   test_compile_sources_reports_missing_parent_submodule_declaration();
   test_compile_sources_reports_inline_external_submodule_conflict();
   test_compile_sources_resolves_session_imports();
+  test_compile_sources_reports_duplicate_module_scope_symbol();
+  test_compile_sources_reports_duplicate_inline_submodule_scope_symbol();
+  test_compile_sources_resolves_super_qualified_type_paths();
+  test_compile_sources_reports_unresolved_qualified_type_path();
+  test_compile_sources_reports_unresolved_module_qualified_reference();
   test_compile_sources_reports_unresolved_session_import();
   test_compile_sources_reports_inaccessible_session_import();
   return 0;
