@@ -14,6 +14,7 @@
 
 #include "k-parser/parser.h"
 #include "src/module_metadata.pb.h"
+#include "src/semantic/analysis.h"
 
 namespace kira {
 namespace {
@@ -529,6 +530,10 @@ struct parsed_input {
   ast::ptr<ast::file> ast_file; ///< Parsed AST for the source file.
 };
 
+// The original phase-3 semantic implementation below has been extracted into
+// `src/semantic/`. Keep the old in-file copy disabled until the extraction has
+// fully settled, so the driver can delegate cleanly without duplicate symbols.
+#if 0
 /// One source file that declares a canonical module path for the session.
 struct module_file_record {
   std::string module_name;         ///< Fully-qualified module path declared by the file.
@@ -3265,6 +3270,8 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
   }
 }
 
+#endif
+
 } // namespace
 
 /// Parse CLI arguments into the compile driver's configuration structure.
@@ -3402,16 +3409,16 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     });
   }
 
-  const auto session_index = build_module_session_index(parsed_inputs);
-  const auto semantic_index = build_semantic_resolution_index(parsed_inputs);
-  detect_duplicate_module_paths(parsed_inputs, session_diagnostics,
-                                file_has_errors);
-  validate_module_boundaries(session_index, session_diagnostics, file_has_errors);
-  validate_session_imports(parsed_inputs, session_index, session_diagnostics,
-                           file_has_errors);
-  validate_declaration_scopes(parsed_inputs, session_diagnostics, file_has_errors);
-  validate_qualified_paths(parsed_inputs, session_index, semantic_index,
-                           session_diagnostics, file_has_errors);
+  auto semantic_inputs = std::vector<semantic::parsed_module>{};
+  semantic_inputs.reserve(parsed_inputs.size());
+  for (const auto &input : parsed_inputs) {
+    semantic_inputs.push_back(semantic::parsed_module{
+        .file_id = input.file_id,
+        .ast_file = input.ast_file.get(),
+    });
+  }
+  semantic::validate_semantics(semantic_inputs, session_diagnostics,
+                               file_has_errors);
 
   report.error_count += session_diagnostics.error_count();
   append_text(report.diagnostics,

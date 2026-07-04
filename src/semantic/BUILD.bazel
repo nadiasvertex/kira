@@ -1,0 +1,44 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+cc_library(
+    name = "semantic",
+    srcs = [
+        "analysis.cpp",
+        "module_index.cpp",
+        "resolution.cpp",
+        "scopes.cpp",
+        "session.cpp",
+        "symbols.cpp",
+    ],
+    hdrs = [
+        "analysis.h",
+        "ids.h",
+        "module_index.h",
+        "resolution.h",
+        "scopes.h",
+        "session.h",
+        "symbols.h",
+    ],
+    deps = [
+        "//src/k-parser:k-parser",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "analysis_test",
+    srcs = ["analysis_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/k-parser:k-parser",
+    ],
+)
+
+cc_test(
+    name = "resolution_test",
+    srcs = ["resolution_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/k-parser:k-parser",
+    ],
+)

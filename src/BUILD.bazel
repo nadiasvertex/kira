@@ -26,6 +26,7 @@ cc_library(
     hdrs = ["cli.h"],
     deps = [
         ":module_metadata_cc_proto",
+        "//src/semantic:semantic",
         "//src/k-parser:k-parser",
     ],
     visibility = ["//visibility:public"],
