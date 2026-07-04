@@ -58,11 +58,13 @@ All keywords are lowercase. Comments begin with `#`.
 let x = 42    # so is this
 ```
 
-One file contains one module. The module declaration is the first line of the file.
+A module is one or more files. Every file begins with a `module` declaration naming the module it belongs to; several files may share a name and together form one module.
 
 ```kira
 module my_app.utils
 ```
+
+In a module path, the leading segments are folders and the final segment is the module's name. `my_app.utils` is the module `utils` in the folder `my_app/`; the file's own name does not matter.
 
 ---
 
@@ -446,7 +448,7 @@ panic("should never reach here")
 
 ## Modules and Imports
 
-Every file is a module. The first line declares the module's name:
+Each file's first line names the module it belongs to. A module may span several files:
 
 ```kira
 module my_app.geometry
@@ -460,7 +462,7 @@ use my_app.geometry.{ point, shape }   # multiple at once
 use my_app.geometry.point as pt        # rename
 ```
 
-Visibility controls what other modules can see. The default is `internal` — visible within your module and its submodules, but not to outside code. Mark things `pub` to export them:
+Visibility controls what other code can see. The default is `module` — visible across every file of the current module, but not to outside code. Mark things `pub` to export them; mark them `file` to keep them private to the file they are written in:
 
 ```kira
 module my_app.geometry
@@ -472,18 +474,30 @@ pub def distance(a: point, b: point) -> float64:
     let dy = a.y - b.y
     sqrt(dx*dx + dy*dy)
 
-def internal_helper() -> float64:    # internal — not visible outside
+file def scratch_helper() -> float64:    # file-private — not visible in other files
     ...
 ```
 
 Visibility levels in full:
 
 ```
-pub       visible to any importer
-internal  visible within this module and all submodules (default)
-super     visible to the parent module only
-priv      visible within this file only
+pub     visible to any importer
+module  visible across every file of this module (default)
+file    visible within this file only
 ```
+
+### Re-exporting
+
+`pub use` brings a name in from another module and re-exports it as part of this module's own public surface. This is how a module presents a curated public API — a facade that gathers names from several places into one import point:
+
+```kira
+module my_app
+
+pub use my_app.geometry.{ point, shape }
+pub use my_app.transform.rotate
+```
+
+Importers of `my_app` now see `point`, `shape`, and `rotate` directly.
 
 ---
 
@@ -764,49 +778,44 @@ for err in c.errors():
 
 ## The Module System in Depth
 
-### Submodules
+### Modules Span Files
 
-A module can declare submodules inline or in separate files:
+A module is not a single file, and modules do not nest. Any number of files may declare the same module; together they form it, and `module`-visible names are shared across all of them. Two modules whose paths share a prefix — `my_app.geometry` and `my_app.geometry.shapes` — are unrelated: the shared prefix is a shared folder, not a parent–child relationship. Neither can see the other's non-`pub` names.
+
+To split a large module across files, give each file the same `module` line:
 
 ```kira
-module geometry
+# my_app/geometry/core.kira
+module my_app.geometry
 
-module shapes:             # inline submodule
-    pub type circle = { pub radius: float64 }
-    pub type rect   = { pub width: float64, pub height: float64 }
-
-module transform           # external — compiler looks for geometry/transform.kira
+pub type point = { pub x: float64, pub y: float64 }
 ```
 
-External submodule files begin with their own `module` declaration matching their path:
-
 ```kira
-# geometry/transform.kira
-module geometry.transform
+# my_app/geometry/distance.kira
+module my_app.geometry
 
-pub def rotate(p: super.shapes.circle, angle: float64) -> super.shapes.circle:
+pub def distance(a: point, b: point) -> float64:    # sees point directly
     ...
 ```
 
 ### Project Structure
 
-A project's root is `project.kira`, written in ordinary Kira. It declares the module name, search paths, and dependencies:
+A project's root is `project.kira`, and it is ordinary Kira evaluated at compile time — there is no separate manifest language. Search paths and dependencies are `static` data:
 
 ```kira
 module my_app
 
-static search_path = ["src", "vendor"]
+static search_path: list[str] = ["src", "vendor"]
 
-dep geometry:
-    path = "vendor/geometry"
-    version = "1.2.0"
-
-pub module app
-pub module config
-module utils
+static deps: list[dependency] = [
+    dependency { name: "geometry", path: "vendor/geometry", version: "1.2.0" },
+]
 ```
 
-Dependencies are resolved at compile time. A `project.lock` file records the resolved versions.
+`dependency` is a type the build system provides. Because the manifest is Kira, dependency lists can be computed — assembled with `for`, branched on with `static if`, or factored into helper functions — in the same language as the rest of the program.
+
+Dependencies are resolved at compile time, and a `project.lock` file records the resolved versions. What a package exposes to its dependents is determined by the `pub` surface of its modules, discovered through compile-time reflection — there is no separate list of exported modules to maintain.
 
 ---
 
@@ -1256,7 +1265,7 @@ no_prelude
 | No dynamic dispatch | All polymorphism resolved at compile time; no hidden vtables |
 | No exceptions | All failure paths visible in types; `?` keeps them ergonomic |
 | No dynamic typing | Inference fills in types; ambiguity is a compile error |
-| Modules are types (`module` keyword, `internal` visibility) | Import and member access are uniform; no keyword collision |
+| Modules span files; dotted paths are folders (`pub`/`module`/`file` visibility) | A module is a unit of privacy, not a file; a package exposes its `pub` surface via compile-time reflection |
 | `list[T]` in the prelude | Beginners have a useful collection immediately; `array[T,n]` is the fixed-size variant |
 | Full compile-time execution | No separate macro or template language; reflection and codegen use ordinary Kira |
 | `array[T, n]` as sole built-in collection | All other collections are library types; `list` is the standard resizable sequence |
