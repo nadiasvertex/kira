@@ -30,7 +30,7 @@ error[E0012]: type mismatch
    |
    = compute() returns int32
    = process() expects float64
-   = hint: use x as float64, or change compute()'s return type
+   = hint: use float64(x), or change compute()'s return type
 ```
 
 Error messages always say what was expected, what was found, why the constraint exists, and what you can do about it. When a feature from a later layer would help — for example, when an ownership rule fires — the compiler names the concept and suggests where to read more.
@@ -74,8 +74,8 @@ All built-in types are lowercase. The types you will use most are:
 
 ```kira
 bool          # true or false
-int           # 32-bit signed integer (the default integer type)
-float         # 64-bit floating point (the default float type)
+int32         # 32-bit signed integer (the default for integer literals)
+float64       # 64-bit floating point (the default for decimal literals)
 str           # UTF-8 text
 char          # a single Unicode character
 unit          # the "no value" type, like void in other languages
@@ -106,6 +106,50 @@ let a = 42          # int32 by default
 let b: int64 = 42   # int64 because you said so
 let c: uint8 = 300  # compile error: 300 does not fit in uint8
 ```
+
+---
+
+## Integer Overflow
+
+Arithmetic is checked. When the result of `+`, `-`, or `*` does not fit in its type, that is a bug, not a silently wrong answer — it panics, the same way an out-of-bounds index does. Overflow is never undefined behavior.
+
+```kira
+let x: int32 = int32.max
+let y = x + 1        # panics: int32 overflow
+```
+
+The compiler proves overflow away wherever it can — the literal check above (`uint8 = 300`) is this same rule applied at compile time — and inserts a runtime check only where it cannot. ("The result fits" is an ordinary precondition; see Contracts. Release builds may elide these checks with the same flag that elides other contract checks.)
+
+When you want a behavior other than panicking, ask for it explicitly. These operators are ordinary and safe, available everywhere — not only in `machine` code:
+
+```kira
+let mixed = h *% 31 +% c     # wrapping (modular) — hashes, checksums, ring buffers
+let level = volume +| gain   # saturating — clamps at the type's min or max
+```
+
+To handle a possible overflow as a value instead of crashing, use the checked methods, which return `option`:
+
+```kira
+match a.checked_add(b):
+    some(n) => n
+    none    => use_fallback()
+```
+
+Division and shifts follow the same principle: dividing by zero, `int32.min / -1`, negating `int32.min`, and shifting by more than the type's width all panic as checked violations, with explicit operators or methods available when another behavior is intended.
+
+---
+
+## Converting Between Types
+
+Kira has no cast operator. To convert a value to another type, call the target type like a constructor:
+
+```kira
+let n: int32   = 300
+let x: float64 = float64(n)   # int32 -> float64
+let b: uint8   = uint8(n)     # narrowing — panics: 300 does not fit in uint8
+```
+
+A conversion exists when the target type provides a `from` for the source; the numeric types provide these for one another. Narrowing is checked exactly as arithmetic is: a value that does not fit its destination panics rather than silently truncating. The same `from` mechanism is what `?` uses to convert errors (see Error Handling).
 
 ---
 
@@ -420,10 +464,21 @@ The `?` operator makes error propagation concise. Inside a function that returns
 
 ```kira
 def load_config(path: str) -> result[config, io_error]:
-    let text   = read_file(path)?     # returns early on err
-    let parsed = parse_toml(text)?    # returns early on err
+    let text   = read_file(path)?     # read_file's error is io_error
+    let parsed = parse_toml(text)?    # parse_toml's error is parse_error
     return ok(parsed)
 ```
+
+The two calls fail with *different* error types — `io_error` and `parse_error` — yet both propagate out of a function whose error type is `io_error`. When the propagated error is not already the function's error type, `?` converts it, using the same `from` mechanism as an ordinary type conversion (see Converting Between Types). This is the one place Kira converts implicitly, and it is unambiguous because the target is fixed by the function's return type. If no conversion from the source error to the target exists, the compiler says so and names the impl to add:
+
+```
+error[E0021]: cannot propagate `parse_error` with `?`
+   = load_config() returns errors of type io_error
+   = no conversion from parse_error to io_error exists
+   = hint: add `impl from[parse_error] for io_error`, or return a wider error type
+```
+
+`?` behaves the same way in a function that returns `option`: `e?` yields the inner value on `some`, and returns `none` from the function on `none`.
 
 Without `?`, every step would need a `match`. With it, the happy path is linear and errors propagate automatically.
 
@@ -501,6 +556,35 @@ Importers of `my_app` now see `point`, `shape`, and `rotate` directly.
 
 ---
 
+## Programs and `main`
+
+An executable program has one entry point: a function named `main`. The simplest form takes no arguments and returns `unit`:
+
+```kira
+def main() -> unit:
+    println("Hello, world!")
+```
+
+To use `?` inside `main`, give it a `result` return type. A returned `err` ends the program with a non-zero exit status and reports the error:
+
+```kira
+def main() -> result[unit, app_error]:
+    let cfg = load_config("app.toml")?
+    run(cfg)
+    return ok(unit)
+```
+
+Command-line arguments and environment variables come from prelude functions rather than parameters, so `main`'s signature stays uniform:
+
+```kira
+let arguments = args()        # list[str]
+let home      = env("HOME")   # option[str]
+```
+
+The compiler uses the `main` in the project's entry module (set in `project.kira`) as the program's start. A library has no `main`.
+
+---
+
 # Layer 2 — Intermediate
 
 ---
@@ -528,7 +612,9 @@ If you need to use `numbers` after the call, you have two options: copy it, or l
 
 ### Borrowing
 
-A *borrow* is a temporary reference to a value. The original owner keeps ownership; the borrower can only use it, not move it.
+A *borrow* lends a value to a function for the duration of a call. The owner keeps ownership; the callee may use the value but not move it. Crucially, a borrow is a way of *passing* a value, not a value in its own right: you cannot store a borrow in a variable that outlives the call, return one, or place one in a struct field or collection. Because every borrow is bounded by the call that created it, Kira has no lifetime annotations — there is nothing to name.
+
+Mark the parameter with `&`, and lend the value with `&` at the call site:
 
 ```kira
 def sum(data: &list[int32]) -> int32:    # borrows data, does not take ownership
@@ -537,11 +623,11 @@ def sum(data: &list[int32]) -> int32:    # borrows data, does not take ownership
     return total
 
 let numbers = [1, 2, 3, 4, 5]
-let total = sum(numbers)                 # numbers is still accessible
+let total = sum(&numbers)                # lend it; numbers is still accessible
 println("sum: {total}, list: {numbers}")
 ```
 
-Use `&` to pass a reference. Use `&mut` to pass a mutable reference — one that the callee can modify:
+`&mut` lends mutable access. It is required at the call site too, so that mutation through a call is always visible where it happens:
 
 ```kira
 def double_all(data: &mut list[int32]) -> unit:
@@ -549,14 +635,14 @@ def double_all(data: &mut list[int32]) -> unit:
         data[i] = data[i] * 2
 
 var numbers = [1, 2, 3]
-double_all(numbers)    # numbers is now [2, 4, 6]
+double_all(&mut numbers)    # the &mut marks the mutation; numbers is now [2, 4, 6]
 ```
 
 The rules the compiler enforces:
 - Any number of immutable borrows (`&`) may exist simultaneously.
 - At most one mutable borrow (`&mut`) may exist at a time.
 - A mutable borrow cannot coexist with any immutable borrows.
-- A borrow cannot outlive the value it borrows.
+- A borrow cannot escape the call it was made for — it cannot be returned, stored in a field, or placed in a collection.
 
 When you violate these rules, the compiler explains what went wrong and why:
 
@@ -565,11 +651,57 @@ error[E0013]: cannot borrow `numbers` as mutable — already borrowed as immutab
   --> src/main.kira:8:5
    |
 6  |     let view = &numbers          # immutable borrow starts here
-7  |     double_all(numbers)          # mutable borrow attempted here
-   |                ^^^^^^^ mutable borrow
+7  |     double_all(&mut numbers)     # mutable borrow attempted here
+   |                ^^^^^^^^^^^^ mutable borrow
    |
    = `view` holds an immutable borrow until line 10
    = hint: move the mutable borrow after `view` is last used
+```
+
+### Views: Slices and Strings
+
+Since a borrow cannot escape a call, how do you hand back a *window* into a collection — the first half of a list, a substring? For that Kira has **view types**, the one kind of borrowing value the language permits:
+
+```kira
+slice[T]       # a read-only view of a contiguous run of elements
+slice_mut[T]   # a mutable view
+str            # a read-only view of UTF-8 text (already familiar)
+```
+
+A view is produced by slicing, and unlike a bare borrow it may be passed *and* returned:
+
+```kira
+def first_half[T](xs: &list[T]) -> slice[T]:
+    xs[0 .. xs.len() / 2]
+
+let data  = [1, 2, 3, 4, 5, 6]
+let front = first_half(&data)    # a view; data stays borrowed while front is alive
+```
+
+A view's borrow is still tracked — a view can never outlive the collection it looks into — but you never write a lifetime for it. The compiler infers that a returned view borrows from the argument it was sliced from, and keeps the source borrowed for as long as the view lives. When you need a result that escapes and stands on its own, return an owned value or a handle (an index) rather than a view.
+
+### Closures and Capture
+
+A lambda captures the variables it uses from the surrounding scope. *How* it captures depends on whether the closure escapes:
+
+- A closure that does **not** escape — passed to `map`, `filter`, or any function that calls it and returns — captures by **borrow**. Nothing is copied, and the borrow is bounded by the call, just like any other borrow.
+- A closure that **does** escape — stored somewhere longer-lived or sent to another task — captures by **move**, taking ownership of what it uses, because a borrow cannot escape. Write `move` before the lambda to force move-capture explicitly.
+
+```kira
+let factor = 3
+let scaled = numbers.map(x => x * factor)   # borrows factor; does not escape
+```
+
+Structured concurrency is where this pays off. Because a `crew`'s tasks cannot outlive the `crew`, and the `crew` cannot outlive its enclosing scope, a closure spawned into a `crew` may **borrow** local data — there is no `'static`-style requirement and no forced `move`:
+
+```kira
+async def totals() -> result[summary, error]:
+    let rows = load_rows()
+    crew c:
+        let a = c.spawn(sum_column(&rows, 0))   # borrows rows across the crew
+        let b = c.spawn(sum_column(&rows, 1))
+    let total = a.get()? + b.get()?
+    return ok(total)
 ```
 
 ### Shared Ownership
@@ -583,7 +715,7 @@ let config: shared config_t = shared load_config("app.toml")
 let worker_config = config.clone()
 ```
 
-`shared` values are reference-counted. They have a small runtime cost. Prefer single ownership when you can; reach for `shared` when you need it.
+`shared` values are *atomically* reference-counted, so a single `shared` type is always safe to hand to another task. A `shared` handle gives **read-only** access to what it points at — it never yields `&mut` — so any number of tasks may hold and read the same `shared` value at once without a data race. To *mutate* data behind a `shared`, wrap it in a synchronized cell such as `mutex[T]` (see Data-Race Freedom). `shared` carries a small runtime cost; prefer single ownership, and prefer scoped borrowing — which is free — whenever you can.
 
 ---
 
@@ -624,12 +756,12 @@ A generic function works for any type satisfying a bound:
 def print_item[T: show](item: T) -> unit:
     println(item.show())
 
-def largest[T: ord](items: &list[T]) -> option[&T]:
+def largest[T: ord](items: &list[T]) -> option[usize]:
     if items.is_empty(): return none
-    var best = &items[0]
-    for item in items:
-        if item > *best: best = &item
-    return some(best)
+    var best = 0
+    for i in 1..items.len():
+        if items[i] > items[best]: best = i
+    return some(best)    # return the index — a borrow could not escape this call
 ```
 
 `[T: show]` means "T is any type that implements show." Multiple bounds use `+`:
@@ -774,6 +906,47 @@ for err in c.errors():
     log("failed: {err.message()}")
 ```
 
+### Data-Race Freedom
+
+Kira's memory-safety rule — many readers or one writer, never both — is also its data-race rule. The compiler extends that one invariant across tasks, so concurrent code is checked by the same mechanism as sequential code.
+
+Two concepts, both satisfied automatically (you never write `impl` for them, and they stay invisible until one is violated), decide what may cross a task boundary:
+
+- **`send`** — a type whose ownership may move to another task.
+- **`share`** — a type that several tasks may read through `&` at the same time.
+
+A type satisfies them from its parts: a struct of `send` fields is `send`, and so on. The concurrency primitives require them where it matters — `c.spawn`, `par`, `on`, and `channel.send` move `send` values and borrow `share` values — and when a type qualifies for neither, the compiler names the concept and explains why (a raw pointer, for instance, is neither).
+
+There are two ways to share data between tasks, and they are the same invariant enforced at two different times.
+
+**Scoped sharing — free, checked at compile time.** Because a `crew`'s tasks cannot outlive it, spawned tasks may borrow data from the enclosing scope. The ordinary borrow rules apply across the crew: any number of tasks may hold `&data`, but the compiler will not let two tasks hold `&mut data`. Concurrent mutable aliasing is a compile error, and no lock is involved.
+
+```kira
+let table = build_table()
+crew c:
+    c.spawn(lookup(&table, "a"))   # many readers — fine
+    c.spawn(lookup(&table, "b"))
+```
+
+**Unscoped sharing — `shared`, with synchronized mutation.** When data must outlive any single scope, a `shared[T]` handle keeps it alive and gives read-only access, so many tasks can read at once. To *mutate* shared data, wrap it in a synchronized cell that grants exclusive access one holder at a time:
+
+- `mutex[T]` — lock to obtain a temporary `&mut T`; other tasks wait.
+- `rwlock[T]` — many readers or one writer, decided at runtime.
+- `atomic[T]` — lock-free operations on primitive values.
+
+```kira
+let counter: shared mutex[int32] = shared mutex(0)
+
+crew c:
+    for _ in 0..n:
+        c.spawn(async:
+            let guard = counter.lock()   # exclusive access, released when guard drops
+            *guard += 1
+        )
+```
+
+A `mutex` enforces "one writer at a time" at runtime, exactly as the borrow checker enforces it at compile time — which is why the two guarantees are one guarantee. Reach for `shared mutex[T]` only when data genuinely escapes structure; scoped sharing costs nothing and should be the default.
+
 ---
 
 ## The Module System in Depth
@@ -879,7 +1052,7 @@ Types expose their structure as compile-time values:
 
 ```kira
 T.fields()          # list of field descriptors
-T.field_count()     # number of fields (compile-time int)
+T.field_count()     # number of fields (compile-time integer)
 T.name()            # name of the type as str
 ```
 
@@ -1029,9 +1202,11 @@ Contracts attach preconditions, postconditions, and invariants to functions and 
 ```kira
 def sqrt(x: float64) -> float64
     pre  x >= 0.0
-    post result >= 0.0:
+    post return >= 0.0:
     ...
 ```
+
+In a postcondition, `return` names the value the function returns. (It is deliberately not called `result`, which would collide with the `result` type.)
 
 Multiple conditions, with optional messages:
 
@@ -1092,7 +1267,7 @@ def process[T: sortable + network_value](val: T): ...
 `machine` is a function prefix granting access to low-level machine details. Inside a `machine` function, the compiler makes no safety guarantees. Use it only when you need to cross into territory that Kira's ownership and type system cannot otherwise express.
 
 ```kira
-machine def fast_sum(data: &[float32], len: usize) -> float32:
+machine def fast_sum(data: slice[float32], len: usize) -> float32:
     let p = data.as_ptr()
     var sum: float32 = 0.0
     for i in 0..len:
@@ -1106,8 +1281,6 @@ Available inside `machine` functions:
 - Explicit memory layout (`layout`, `align`, `offset`)
 - SIMD intrinsics
 - Unsafe casts (`transmute`)
-- Wrapping arithmetic: `+%` `-%` `*%`
-- Saturating arithmetic: `+|` `-|` `*|`
 - Inline assembly: `asm { ... }`
 
 Prefixes compose:
@@ -1120,7 +1293,7 @@ pure machine def read_le_u32(p: *uint32) -> uint32:
     *p
 ```
 
-Outside `machine` functions the compiler assumes no pointer aliasing, no overflow, and no invalid memory. Contracts are permitted on `machine` functions; all checks within them are runtime-only.
+Outside `machine` functions the compiler assumes no pointer aliasing and no invalid memory. Contracts are permitted on `machine` functions; all checks within them are runtime-only.
 
 ---
 
@@ -1243,11 +1416,13 @@ impl monad[option]:
 
 The following are available in every module without any `use` declaration:
 
-**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types, `array`, `option`, `result`, `list`
+**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types, `array`, `slice`, `slice_mut`, `option`, `result`, `list`
 
-**Traits:** `eq`, `ord`, `hash`, `show`, `add`, `sub`, `mul`, `div`, `neg`, and the other arithmetic operator traits
+**Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `neg`, and the other arithmetic operator traits
 
-**Functions:** `println`, `print`, `panic`, `assert`, `size_of`
+**Concepts:** `send`, `share`
+
+**Functions:** `println`, `print`, `panic`, `assert`, `size_of`, `args`, `env`
 
 To opt out of the prelude entirely (for low-level or embedded work):
 
@@ -1270,10 +1445,13 @@ no_prelude
 | Full compile-time execution | No separate macro or template language; reflection and codegen use ordinary Kira |
 | `array[T, n]` as sole built-in collection | All other collections are library types; `list` is the standard resizable sequence |
 | Contracts (`pre`, `post`, `invariant`) | Preconditions and postconditions are part of the interface; statically verified when possible |
+| Checked arithmetic by default | Overflow panics like a bad index, never UB; `+%`/`+|` give explicit wrap/saturate, safe and available everywhere |
+| Conversions are constructor calls (`float64(x)`) | No cast operator; one `from` mechanism serves both conversions and `?`; narrowing is checked, never silent |
 | Concepts | Named reusable constraint bundles; satisfied automatically; checked at use site |
 | `requires` for trait dependencies | Dependencies are explicit and readable; implied bounds available to callers automatically |
 | `machine` prefix | Low-level access is syntactically consistent with other function modifiers |
 | `pure` prefix | Compiler-verified referential transparency; enables use in contracts and proof obligations |
 | Quoting and splicing (`` ` `` and `~`) | Code generation uses ordinary Kira; no separate macro language; hygienic by default |
-| Structured concurrency (`crew`) | Tasks cannot outlive their crew; async leaks are impossible |
-| Ownership + concurrency unified | The borrow checker enforces memory safety and data-race freedom with the same rules |
+| Second-class borrows | `&`/`&mut` are call-scoped passing modes, never stored or returned, so there are no lifetime annotations; `slice`/`str` views cover borrowed windows |
+| Structured concurrency (`crew`) | Tasks cannot outlive their crew; async leaks are impossible; spawned closures may borrow local data |
+| Ownership + concurrency unified | Many-readers-or-one-writer is enforced statically for scoped sharing and by locks for `shared`; `send`/`share` concepts gate task boundaries |
