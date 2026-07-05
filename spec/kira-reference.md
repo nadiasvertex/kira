@@ -1143,6 +1143,78 @@ All are compile-time only.
 
 ---
 
+## Compile-Time Semantics
+
+`static` evaluation, reflection, contracts, and dependent types all run before the program does. Together they make compile time a second execution environment, and the sections above describe each feature's syntax in isolation. This section describes the environment they share: what runs there, what it may do, and how the features interact.
+
+### Two Axes: Phase and Effect
+
+Two independent properties classify every function.
+
+*Phase* — when it runs. Runtime code runs in the finished program. Compile-time code runs in the compiler; `static` forces it. Ordinary code is runtime code that the compiler *may* also evaluate at compile time when its inputs are known.
+
+*Effect* — whether it is `pure` (referentially transparent) or may cause effects. This is independent of phase: a function can be pure at runtime, effectful at runtime, pure at compile time, or effectful at compile time.
+
+The two axes do not collapse into one another, and most confusion about `pure` versus `static` comes from treating them as the same axis. They are not: `pure` is about *effects*, `static` is about *phase*.
+
+### Two Subsystems: Evaluation and Reasoning
+
+Compile time has two distinct machineries, and knowing which one is acting resolves most interaction questions.
+
+*Evaluation* is an interpreter that runs ordinary Kira — loops, functions, pattern matching — to produce compile-time values. `build_lookup_table()` and `deriving` are evaluation.
+
+*Reasoning* is the constraint solver that discharges refinement predicates, contract conditions, and dependent-type obligations. It *proves*; it does not run arbitrary code.
+
+Contracts sit on the seam: a contract *condition* is produced by evaluation, but whether it *holds* is settled by reasoning when possible, and by a runtime check otherwise.
+
+### Compile-Time Memory
+
+Compile-time evaluation may allocate freely, on a heap that exists only during compilation. Nothing on that heap reaches the binary unless it is *reified* into a `static` constant — like `static TABLE` — at which point it becomes frozen, immutable data baked into the program.
+
+There is no persistent, program-global, mutable compile-time state. Compile-time evaluation is **confluent**: its results never depend on the order in which the compiler elaborates the program. This is what keeps compilation deterministic, parallel, and incremental — a module's meaning cannot depend on side effects left behind by another.
+
+### Effects at Compile Time
+
+Compile-time code may cause exactly two effects: **emitting diagnostics** (as `static assert` does) and **emitting code** (as quoting and splicing do). Neither is observable *as data* by other compile-time code — you cannot read back which diagnostics or definitions have been emitted. So even effectful `static` code stays confluent, and the order in which the compiler happens to run it cannot change the program.
+
+### Reflection
+
+Reflection reads the program's structure — types, fields, names, the members of a module. That structure is immutable, so reflection is referentially transparent, and a `pure` function may use it freely:
+
+```kira
+pure def field_count[T]() -> usize:
+    T.field_count()
+```
+
+Reflection resolves at compile time. Because Kira monomorphizes and has no dynamic dispatch, every type is known statically, so the reflection above is computed once per instantiation and its result — an ordinary constant — flows into runtime like any other value. There is no *runtime* reflection: a value carries no type tag to interrogate.
+
+Reflection may invoke only pure functions. It therefore can never cause an effect, which is exactly what makes it safe to use from inside a contract.
+
+### Declarative Queries, Not Registries
+
+Because there is no mutable global compile-time state, you do not accumulate program-wide information by having each definition register itself. You state the shape you want and let the compiler answer it against the finished program:
+
+```kira
+# every type that satisfies the `command` concept, gathered at compile time
+static COMMANDS: map[str, command] = map(
+    for t in types_implementing[command]() => (t.name(), make_command(t))
+)
+```
+
+A query observes the complete, elaborated program and returns the same result no matter the elaboration order — "this is the state I want," not "make the state this." A whole-program query naturally depends on the whole program, so it is resolved in a late, post-elaboration phase; its result is still a pure function of the final program.
+
+### How the Pieces Interact
+
+| Question | Answer |
+|---|---|
+| Can a contract use reflection? | Yes. Reflected data is immutable and resolves to a compile-time constant, usable by the static verifier and, when reified, by a runtime check. |
+| Can reflection call pure functions? | Yes — and only pure functions, so no effect can leak through it. |
+| Can a pure function inspect types? | Yes. Type reflection is referentially transparent; it resolves at compile time and its result flows into runtime as a constant. |
+| Can reflection allocate? | Yes, on the compile-time heap. Nothing survives compilation except values reified into `static` constants. |
+| Can compile-time code mutate global state? | No. Compile-time evaluation is confluent; program-wide information comes from declarative queries, never mutation. |
+
+---
+
 ## Dependent Types
 
 A dependent type is a type that contains a value. This lets the compiler reason about properties like buffer lengths, array indices, and state machine states at compile time.
@@ -1522,6 +1594,7 @@ no_prelude
 | Modules are compile-time values; signatures are their types | Parameterized modules give ML-style functors in ordinary generics syntax; reflection over members generates code, replacing dynamic dispatch |
 | `list[T]` in the prelude | Beginners have a useful collection immediately; `array[T,n]` is the fixed-size variant |
 | Full compile-time execution | No separate macro or template language; reflection and codegen use ordinary Kira |
+| Compile time is confluent — no mutable global compile-time state | Deterministic, parallel, incremental compilation; program-wide information comes from declarative queries, not registration |
 | `array[T, n]` as sole built-in collection | All other collections are library types; `list` is the standard resizable sequence |
 | Contracts (`pre`, `post`, `invariant`) | Preconditions and postconditions are part of the interface; statically verified when possible |
 | Checked arithmetic by default | Overflow panics like a bad index, never UB; `+%`/`+|` give explicit wrap/saturate, safe and available everywhere |
