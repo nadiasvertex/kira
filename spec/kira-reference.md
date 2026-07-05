@@ -336,6 +336,8 @@ let ch      = 'a'                       # a char; also '\n', '♥'
 
 ## Control Flow
 
+Every construct in Kira is an expression — it has a value and a type. Conditionals and `match` yield the value of the branch they take, a `for … =>` comprehension yields a list, and constructs that run only for their effect (`while`, a plain `for` loop, an assignment) have type `unit`.
+
 ### `if`
 
 ```kira
@@ -347,7 +349,16 @@ else:
     return "C"
 ```
 
-`if` is also an expression:
+Because `if` is an expression, its value is the last expression of the branch taken:
+
+```kira
+let grade =
+    if score > 90: "A"
+    elif score > 80: "B"
+    else: "C"
+```
+
+For an inline choice between two values, the postfix form puts the likely value first:
 
 ```kira
 let label = "pass" if score > 90 else "fail"
@@ -812,7 +823,7 @@ handlers.push(box(e => log(e)))
 handlers.push(box(e => metrics.record(e)))
 ```
 
-`box` is Kira's one explicit type-erasure escape hatch — reach for it only when the set of types is genuinely open. Everything above resolves with no indirection.
+`box` is Kira's one explicit type-erasure escape hatch, and it generalizes beyond closures to any object-safe trait (see Trait Objects). Reach for it only when the set of types is genuinely open; everything above resolves with no indirection.
 
 ### Shared Ownership
 
@@ -975,6 +986,28 @@ trait account:
 ```
 
 Implementations are checked against the declared contract under **behavioral subtyping**: an implementation may *weaken* a precondition (accept more) and *strengthen* a postcondition (promise more), never the reverse. This guarantees that a caller relying on the trait's contract stays correct no matter which implementation runs. A default method's contract binds every override as well.
+
+### Trait Objects: `box[trait]`
+
+Generic bounds resolve at compile time, so `[T: show]` is monomorphized and costs nothing. But some programs must hold values whose concrete types are *not* known together at compile time — a `list` of user-defined shapes, handlers registered by plugins loaded at run time. That is open-world polymorphism, and it cannot be monomorphized. For it, `box[trait]` is a **trait object**: an owned, heap-allocated value whose concrete type is erased behind the trait, its methods dispatched through a vtable.
+
+```kira
+trait drawable:
+    def area(self) -> float64
+# disk and square are structs that implement drawable
+
+var shapes: list[box[drawable]] = []
+shapes.push(box(disk { radius: 1.0 }))
+shapes.push(box(square { side: 2.0 }))
+
+let total = shapes.map(s => s.area()).sum()   # each call dispatches through the vtable
+```
+
+`box[fn(A) -> B]` is just the special case where the trait is a callable. Because coherence guarantees one implementation per type, a trait object's vtable is never ambiguous.
+
+A trait can be used as `box[...]` only when it is *object-safe*: every method dispatches on `&self` or `&mut self`, takes no type parameters of its own, and neither takes nor returns `self` by value (the concrete size is erased). So `box[drawable]` and `box[show]` work; `box[add]`, whose method takes `other: self` and returns `self.output`, does not — the compiler says so and names the reason. Add `send`/`share` as extra bounds (`box[drawable + send]`) to move a trait object across tasks.
+
+Reach for `box` only at a genuinely open boundary. To merely *accept* any type implementing a trait, use a generic bound — it is monomorphized and free; `box` is for *storing or returning* values whose types are not known together.
 
 ---
 
@@ -1371,7 +1404,7 @@ pure def field_count[T]() -> usize:
     T.field_count()
 ```
 
-Reflection resolves at compile time. Because Kira monomorphizes and has no dynamic dispatch, every type is known statically, so the reflection above is computed once per instantiation and its result — an ordinary constant — flows into runtime like any other value. There is no *runtime* reflection: a value carries no type tag to interrogate.
+Reflection resolves at compile time. Because Kira monomorphizes generic code, the type a reflection queries is known statically, so the reflection above is computed once per instantiation and its result — an ordinary constant — flows into runtime like any other value. There is no *runtime* reflection: a value carries no type tag to interrogate.
 
 Reflection may invoke only pure functions. It therefore can never cause an effect, which is exactly what makes it safe to use from inside a contract.
 
@@ -1772,10 +1805,11 @@ no_prelude
 
 | Decision | Consequence |
 |---|---|
-| No dynamic dispatch | All polymorphism resolved at compile time; no hidden vtables |
+| No *implicit* dynamic dispatch | Polymorphism is monomorphized and free by default; dynamic dispatch exists only where you write `box[trait]` — explicit and visible, never hidden |
 | Closures monomorphize (`fn(A) -> B`) | Return one shape opaquely; vary behavior with sum-type data or dependent types; `box[fn(...)]` is the explicit open-world escape hatch |
 | No exceptions | All failure paths visible in types; `?` keeps them ergonomic |
 | No dynamic typing | Types inferred from function bodies (never call sites); omit them in scripts and private code, annotate `pub` APIs; ambiguity asks for an annotation |
+| Everything is an expression | `if`/`match`/`for … =>` yield values; `while` and plain loops are `unit`-typed; one uniform grammar with no statement/expression split |
 | Modules span files; dotted paths are folders (`pub`/`module`/`file` visibility) | A module is a unit of privacy, not a file; a package exposes its `pub` surface via compile-time reflection |
 | Modules are compile-time values; signatures are their types | Parameterized modules give ML-style functors in ordinary generics syntax; reflection over members generates code, replacing dynamic dispatch |
 | `list[T]` in the prelude | Beginners have a useful collection immediately; `array[T,n]` is the fixed-size variant |
