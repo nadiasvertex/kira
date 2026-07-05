@@ -1,7 +1,13 @@
 # Pending mechanical edits to `kira-reference.md`
 
-Decided, low-judgment changes to be applied in a separate pass. Each item is
-meant to be executable without design decisions.
+**Status: applied.** All `@`-constructor edits and the two example bug fixes
+below have been made to `kira-reference.md`, and `kira-grammar.ebnf` has been
+updated to match (`sum_variant`, `atomic_pattern`, a new `variant_expr`
+production, and the reserved-keyword list). This file is now a historical
+record of what was done, kept for reference.
+
+Decided, low-judgment changes applied in a separate pass. Each item was
+executable without design decisions.
 
 ---
 

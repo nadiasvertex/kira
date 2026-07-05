@@ -131,8 +131,8 @@ To handle a possible overflow as a value instead of crashing, use the checked me
 
 ```kira
 match a.checked_add(b):
-    some(n) => n
-    none    => use_fallback()
+    @some(n) => n
+    @none    => use_fallback()
 ```
 
 Division and shifts follow the same principle: dividing by zero, `int32.min / -1`, negating `int32.min`, and shifting by more than the type's width all panic as checked violations, with explicit operators or methods available when another behavior is intended.
@@ -388,7 +388,7 @@ for name in names:
 `for` is also an expression that collects results:
 
 ```kira
-let squares = for x in 1..5 => x * x     # [1, 4, 9, 16, 25]
+let squares = for x in 1..=5 => x * x    # [1, 4, 9, 16, 25]
 let evens   = for x in 0..20 if x % 2 == 0 => x
 let pairs   = for x in 0..3, y in 0..3 => (x, y)
 ```
@@ -424,22 +424,22 @@ let description = match score:
 
 ```kira
 type shape =
-    | circle(float64)
-    | rect(float64, float64)
+    | @circle(float64)
+    | @rect(float64, float64)
 
 def area(s: shape) -> float64:
     match s:
-        circle(r)    => 3.14159 * r * r
-        rect(w, h)   => w * h
+        @circle(r)    => 3.14159 * r * r
+        @rect(w, h)   => w * h
 ```
 
 Guard clauses narrow a pattern further:
 
 ```kira
 match s:
-    circle(r) if r <= 0.0 => 0.0
-    circle(r)             => 3.14159 * r * r
-    rect(w, h)            => w * h
+    @circle(r) if r <= 0.0 => 0.0
+    @circle(r)             => 3.14159 * r * r
+    @rect(w, h)            => w * h
 ```
 
 Patterns can destructure tuples and structs:
@@ -457,14 +457,14 @@ let { name, age } = someone
 When only one pattern matters, `if let` matches and binds in a single step, running its block only on a match:
 
 ```kira
-if let some(u) = find_user(42):
+if let @some(u) = find_user(42):
     println("found {u.name}")
 ```
 
 `while let` repeats as long as the pattern keeps matching — handy for draining a source that eventually yields `none`:
 
 ```kira
-while let some(line) = reader.next():
+while let @some(line) = reader.next():
     process(line)
 ```
 
@@ -488,12 +488,12 @@ let d = p.x * p.x + p.y * p.y
 A sum type (also called an enum or tagged union) represents a value that is exactly one of several variants:
 
 ```kira
-type direction = north | south | east | west
+type direction = @north | @south | @east | @west
 
 type shape =
-    | circle(float64)            # holds a radius
-    | rect(float64, float64)     # holds width and height
-    | point                      # holds nothing
+    | @circle(float64)           # holds a radius
+    | @rect(float64, float64)    # holds width and height
+    | @point                     # holds nothing
 ```
 
 Constructors are lowercase. You always use `match` to inspect a sum type.
@@ -512,8 +512,8 @@ type name_map = list[(str, str)]
 Kira has no exceptions. Functions that can fail return `result[T, E]`, where `T` is the success value and `E` is the error. Functions that might produce nothing return `option[T]`.
 
 ```kira
-type option[T] = some(T) | none
-type result[T, E] = ok(T) | err(E)
+type option[T] = @some(T) | @none
+type result[T, E] = @ok(T) | @err(E)
 ```
 
 These are ordinary sum types. You inspect them with `match`:
@@ -523,8 +523,8 @@ def find_user(id: int32) -> option[user]:
     ...
 
 match find_user(42):
-    some(u) => println("Found: {u.name}")
-    none    => println("Not found")
+    @some(u) => println("Found: {u.name}")
+    @none    => println("Not found")
 ```
 
 The `?` operator makes error propagation concise. Inside a function that returns `result`, `?` unwraps `ok` or returns `err` early:
@@ -533,7 +533,7 @@ The `?` operator makes error propagation concise. Inside a function that returns
 def load_config(path: str) -> result[config, io_error]:
     let text   = read_file(path)?     # read_file's error is io_error
     let parsed = parse_toml(text)?    # parse_toml's error is parse_error
-    return ok(parsed)
+    return @ok(parsed)
 ```
 
 The two calls fail with *different* error types — `io_error` and `parse_error` — yet both propagate out of a function whose error type is `io_error`. When the propagated error is not already the function's error type, `?` converts it, using the same `from` mechanism as an ordinary type conversion (see Converting Between Types). This is the one place Kira converts implicitly, and it is unambiguous because the target is fixed by the function's return type. If no conversion from the source error to the target exists, the compiler says so and names the impl to add:
@@ -553,9 +553,9 @@ Errors are just values — define them as types:
 
 ```kira
 type app_error =
-    | file_not_found(str)
-    | permission_denied(str)
-    | parse_failed(str)
+    | @file_not_found(str)
+    | @permission_denied(str)
+    | @parse_failed(str)
 ```
 
 **Panics** are different from errors. A panic means a bug in your program — an index out of bounds, an `unwrap()` on `none` when you were certain it held a value. Panics are not for expected failure conditions. Use `result` for those.
@@ -638,7 +638,7 @@ To use `?` inside `main`, give it a `result` return type. A returned `err` ends 
 def main() -> result[unit, app_error]:
     let cfg = load_config("app.toml")?
     run(cfg)
-    return ok(unit)
+    return @ok(unit)
 ```
 
 Command-line arguments and environment variables come from prelude functions rather than parameters, so `main`'s signature stays uniform:
@@ -781,7 +781,7 @@ async def totals() -> result[summary, app_error]:
         let a = c.spawn(sum_column(&rows, 0))   # borrows rows across the crew
         let b = c.spawn(sum_column(&rows, 1))
     let total = a.get()? + b.get()?
-    return ok(total)
+    return @ok(total)
 ```
 
 ### Closure Types and Returning Closures
@@ -804,13 +804,13 @@ To return *different* behaviors, prefer expressing the variation as data rather 
 - **Chosen at runtime, from a known set** → return a sum type that describes the behavior, and interpret it:
 
 ```kira
-type op = inc | scale(int32) | clamp(int32, int32)
+type op = @inc | @scale(int32) | @clamp(int32, int32)
 
 def apply_op(o: op, x: int32) -> int32:
     match o:
-        inc           => x + 1
-        scale(k)      => x * k
-        clamp(lo, hi) => min(max(x, lo), hi)
+        @inc           => x + 1
+        @scale(k)      => x * k
+        @clamp(lo, hi) => min(max(x, lo), hi)
 ```
 
   A sum type is a static, matchable `variant` — the dispatch is a branch on a tag, not a hidden call. It also sidesteps a real obstacle: closures have anonymous types, so you cannot name two different ones to place them in a sum. Modelling the behavior as data avoids the problem entirely.
@@ -878,11 +878,11 @@ def print_item[T: show](item: T) -> unit:
     println(item.show())
 
 def largest[T: ord](items: &list[T]) -> option[usize]:
-    if items.is_empty(): return none
+    if items.is_empty(): return @none
     var best = 0
     for i in 1..items.len():
         if items[i] > items[best]: best = i
-    return some(best)    # return the index — a borrow could not escape this call
+    return @some(best)    # return the index — a borrow could not escape this call
 ```
 
 `[T: show]` means "T is any type that implements show." Multiple bounds use `+`:
@@ -911,7 +911,7 @@ Any type implementing `ord` must first implement `eq`. When you have a bound `T:
 Many common trait implementations can be generated automatically:
 
 ```kira
-type color = red | green | blue
+type color = @red | @green | @blue
     deriving eq, ord, show, hash
 
 type point = { x: float64, y: float64 }
@@ -1041,7 +1041,7 @@ Because `pool` — like any multi-threaded executor — may run a task on a diff
 **Cancellation.** Every task runs inside a *cancellation scope*. A `crew` establishes one, and each task it spawns inherits a cancellation token. Cancellation is *cooperative*: a task observes it only at suspension points (`await`) and at explicit checks, so it is never interrupted at an arbitrary instruction and its invariants stay intact. A task's own token is available as `cancel`:
 
 ```kira
-if cancel.is_requested(): return err(cancelled)
+if cancel.is_requested(): return @err(@cancelled)
 await yield        # a suspension point that only yields and checks cancellation
 ```
 
@@ -1055,7 +1055,7 @@ Mark a function `async` to make it a suspendable computation. Inside an async fu
 async def fetch_name(id: int32) -> result[str, network_error]:
     let response = await http.get("https://api.example.com/users/{id}")?
     let body     = await response.text()?
-    return ok(body)
+    return @ok(body)
 ```
 
 `async` functions return `task[T, E, C]` — a value describing the computation. Nothing runs until something awaits or runs the task.
@@ -1074,7 +1074,7 @@ async def fetch_dashboard(user_id: int32) -> result[dashboard, app_error]:
     let user   = user_task.get()?
     let orders = orders_task.get()?
     let prefs  = prefs_task.get()?
-    return ok(build_dashboard(user, orders, prefs))
+    return @ok(build_dashboard(user, orders, prefs))
 ```
 
 Tasks in a `crew` cannot outlive the `crew` block. This is enforced by the compiler — there are no dangling background tasks.
@@ -1464,7 +1464,7 @@ def safe_get[T, n: usize](v: array[T, n], i: index[n]) -> T:
 When the compiler cannot prove the predicate statically, you prove it with a runtime check that returns a typed proof:
 
 ```kira
-if let some(i) = index[n].try_from(raw_index):
+if let @some(i) = index[n].try_from(raw_index):
     v[i]    # i is now index[n] — access is safe, no bounds check needed
 ```
 
@@ -1702,10 +1702,10 @@ Every task carries a cancellation token from its parent `crew`. Cancellation is 
 ```kira
 async def long_work() -> result[unit, cancelled]:
     for i in 0..1_000_000:
-        if cancel.is_requested(): return err(cancelled)
+        if cancel.is_requested(): return @err(@cancelled)
         step(i)
         await yield    # explicit yield + cancellation check
-    return ok(unit)
+    return @ok(unit)
 ```
 
 `await yield` is a suspension point that does no real waiting — it gives the scheduler a chance to run other work and checks for cancellation.
@@ -1736,7 +1736,7 @@ crew c:
         sender.close()
     )
     c.spawn(async:
-        while let some(line) = await receiver.recv():
+        while let @some(line) = await receiver.recv():
             process(line)
     )
 ```
@@ -1770,12 +1770,12 @@ trait monad[M[_]] requires functor[M]:
     def pure[A](a: A) -> M[A]
     def bind[A, B](ma: M[A], f: fn(A) -> M[B]) -> M[B]
 
-impl monad[option]:
-    def pure[A](a: A) -> option[A]: some(a)
+impl monad for option:
+    def pure[A](a: A) -> option[A]: @some(a)
     def bind[A, B](ma: option[A], f: fn(A) -> option[B]) -> option[B]:
         match ma:
-            some(a) => f(a)
-            none    => none
+            @some(a) => f(a)
+            @none    => @none
 ```
 
 ---

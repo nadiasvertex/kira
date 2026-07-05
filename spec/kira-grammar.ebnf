@@ -114,8 +114,8 @@ struct_field = [ visibility ] IDENT ":" type_expr ;
 sum_body = "|" sum_variant { "|" sum_variant } ;
 
 sum_variant
-    = IDENT
-    | IDENT "(" type_expr { "," type_expr } ")"
+    = "@" IDENT
+    | "@" IDENT "(" type_expr { "," type_expr } ")"
     ;
 
 deriving_clause  = "deriving" deriving_list NEWLINE ;
@@ -530,6 +530,7 @@ primary_expr
     = literal
     | IDENT
     | module_path
+    | variant_expr
     | tuple_expr
     | array_expr
     | struct_expr
@@ -547,6 +548,8 @@ primary_expr
     | static_expr
     | "(" expr ")"
     ;
+
+variant_expr = "@" IDENT [ "(" call_arg_list ")" ] ;   (* sum-type variant constructor *)
 
 tuple_expr  = "(" expr "," expr { "," expr } [ "," ] ")" ;
 
@@ -645,14 +648,11 @@ atomic_pattern
     = "_"                                               (* wildcard           *)
     | literal                                           (* literal            *)
     | IDENT                                             (* binding            *)
-    | IDENT "(" [ pattern_list ] ")"                   (* constructor        *)
+    | "@" IDENT [ "(" pattern_list ")" ]               (* variant constructor *)
     | "(" pattern_list ")"                             (* tuple              *)
     | "{" field_pattern { "," field_pattern } [ "," ] "}"  (* struct        *)
     | "[" [ pattern { "," pattern } ] "]"              (* array / slice      *)
     | range_pattern
-    | "some" "(" pattern ")"                           (* option shorthand   *)
-    | "ok"  "(" pattern ")"                            (* result shorthand   *)
-    | "err" "(" pattern ")"
     | "&" pattern                                      (* reference pattern  *)
     | "(" pattern ")"
     ;
@@ -773,7 +773,9 @@ COMMENT = "#" { (* any character except newline *) } NEWLINE ;
 (* if  elif  else  for  while  match  return  in  as *)
 
 (* Pattern keywords *)
-(* _  some  ok  err *)
+(* _ *)
+(* "some", "ok", "err" are ordinary identifiers, not keywords — only the
+   "@"-prefixed form (@some, @ok, @err, ...) is a variant constructor. *)
 
 (* Expression keywords *)
 (* and  or  not  await  par  race  on  crew  asm *)
@@ -877,4 +879,12 @@ COMMENT = "#" { (* any character except newline *) } NEWLINE ;
       form) which uses ":". The lexer sees the same token stream;
       the parser disambiguates by whether "=>" or ":" follows the
       optional "if" guard.
+
+  11. "@" marks a sum-type variant constructor uniformly wherever one
+      occurs: declaration (sum_variant), construction (variant_expr),
+      and pattern matching (atomic_pattern), including inside "if let"
+      and "while let". A bare IDENT is therefore never a constructor —
+      in an expression it is a variable reference, in a pattern it is
+      always a fresh binding. "@" needs no lookahead or symbol-table
+      lookup to disambiguate: the token alone determines the production.
 *)
