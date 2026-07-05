@@ -2,6 +2,7 @@
 
 namespace kira::semantic {
 
+/// Maps each `semantic_scope_kind` to its stable display label.
 auto semantic_scope_kind_name(semantic_scope_kind kind) -> std::string_view {
   switch (kind) {
   case semantic_scope_kind::module_scope:

@@ -23,9 +23,13 @@ namespace kira::semantic {
 //  knowledge never causes cascading errors.
 // ==========================================================================
 
+/// Interned index into a `type_table`; equality is id equality.
 using type_id = uint32_t;
 
+/// The always-present "not known" type; compatible with every other type.
 inline constexpr type_id k_unknown_type = 0;
+/// The always-present type produced after an error has already been
+/// reported for an expression, so its type doesn't need to be guessed.
 inline constexpr type_id k_error_type = 1;
 
 enum class type_kind : uint8_t {
@@ -44,6 +48,11 @@ enum class type_kind : uint8_t {
   type_param_kind,      ///< In-scope generic parameter such as `T`.
 };
 
+/// The interned data behind one `type_id`. Which fields are meaningful
+/// depends on `kind`: e.g. `args` holds tuple elements for `tuple_kind` but
+/// generic arguments for `builtin_generic_kind`/`struct_kind`/`sum_kind`, and
+/// `result` holds the referenced/pointed-to/array-element type for
+/// `ref_kind`/`ptr_kind`/`array_kind` but the return type for `fn_kind`.
 struct type_entry {
   type_kind kind = type_kind::unknown_kind;
   std::string name;                      ///< Builtin/user/parameter name.
@@ -55,33 +64,61 @@ struct type_entry {
   std::optional<uint64_t> array_size;    ///< Array length when statically known.
 };
 
+/// Owns every `type_entry` produced while checking one session, interning
+/// structurally-identical types (same kind, name/decl, and arguments) to the
+/// same `type_id` so type equality is just id equality.
 class type_table {
 public:
+  /// Seeds the table with `k_unknown_type` and `k_error_type` at their fixed
+  /// ids.
   type_table();
 
+  /// Interns a scalar builtin type such as `int32` or `str`.
   [[nodiscard]] auto builtin(std::string_view name) -> type_id;
+  /// Interns a prelude container instantiation such as `list[T]`.
   [[nodiscard]] auto builtin_generic(std::string_view name,
                                      std::vector<type_id> args) -> type_id;
+  /// Interns a tuple type `(A, B, C)` from its element types.
   [[nodiscard]] auto tuple_of(std::vector<type_id> elements) -> type_id;
+  /// Interns `array[T, n]`; `size` is `nullopt` when the length is not
+  /// statically known (e.g. a non-literal size expression).
   [[nodiscard]] auto array_of(type_id element,
                               std::optional<uint64_t> size) -> type_id;
+  /// Interns a function type `fn(params...) -> result`.
   [[nodiscard]] auto fn_of(std::vector<type_id> params, type_id result)
       -> type_id;
+  /// Interns a reference type `&T` (or `&mut T` when `is_mut`).
   [[nodiscard]] auto ref_to(type_id inner, bool is_mut) -> type_id;
+  /// Interns a raw pointer type `*T` (or `*mut T` when `is_mut`).
   [[nodiscard]] auto ptr_to(type_id inner, bool is_mut) -> type_id;
+  /// Interns an instantiation of a user `type` declaration (struct, sum, or
+  /// alias/opaque) with the given generic `args`.
   [[nodiscard]] auto user_type(const ast::type_decl &decl,
                                std::string_view module_name,
                                std::vector<type_id> args) -> type_id;
+  /// Interns an in-scope generic type/value parameter, identified by name.
   [[nodiscard]] auto type_param(std::string_view name) -> type_id;
 
+  /// Looks up the data behind `id`; returns the `unknown` entry for an
+  /// out-of-range id.
   [[nodiscard]] auto entry(type_id id) const -> const type_entry &;
+  /// Renders `id` as the user-facing type spelling used in diagnostics
+  /// (e.g. `list[int32]`, `fn(int32) -> str`).
   [[nodiscard]] auto display(type_id id) const -> std::string;
 
+  /// Whether `id` is `unknown`, `error`, or a type parameter — anything the
+  /// checker treats as "don't know, don't complain."
   [[nodiscard]] auto is_unknown(type_id id) const -> bool;
+  /// Whether `id` is the builtin `bool`.
   [[nodiscard]] auto is_boolean(type_id id) const -> bool;
+  /// Whether `id` is a builtin signed/unsigned integer type (including
+  /// `byte`, `isize`, `usize`).
   [[nodiscard]] auto is_integer(type_id id) const -> bool;
+  /// Whether `id` is a builtin `float32`/`float64`/`float128`.
   [[nodiscard]] auto is_float(type_id id) const -> bool;
+  /// Whether `id` is an integer or float builtin.
   [[nodiscard]] auto is_numeric(type_id id) const -> bool;
+  /// Whether `id` is the builtin `unit`.
   [[nodiscard]] auto is_unit(type_id id) const -> bool;
 
   /// Whether a value of `found` is acceptable where `expected` is required.
@@ -89,6 +126,8 @@ public:
   [[nodiscard]] auto compatible(type_id expected, type_id found) const -> bool;
 
 private:
+  /// Returns the existing id for `key` if already interned, otherwise
+  /// stores `entry` and returns its new id.
   [[nodiscard]] auto intern(std::string key, type_entry entry) -> type_id;
 
   std::vector<type_entry> entries_;
@@ -116,50 +155,64 @@ private:
 //  Program index — session-wide declaration lookup tables.
 // ==========================================================================
 
+/// A `type` declaration plus the file it was declared in.
 struct type_decl_ref {
   const ast::type_decl *decl = nullptr;
   file_id_type file_id = 0;
 };
 
+/// A `trait` declaration plus the file it was declared in.
 struct trait_decl_ref {
   const ast::trait_decl *decl = nullptr;
   file_id_type file_id = 0;
 };
 
+/// A `concept` declaration plus the file it was declared in.
 struct concept_decl_ref {
   const ast::concept_decl *decl = nullptr;
   file_id_type file_id = 0;
 };
 
+/// A `def` declaration plus the file it was declared in.
 struct func_decl_ref {
   const ast::func_decl *decl = nullptr;
   file_id_type file_id = 0;
 };
 
+/// A `static` binding declaration plus the file it was declared in.
 struct static_decl_ref {
   const ast::static_decl *decl = nullptr;
   file_id_type file_id = 0;
 };
 
+/// One sum-type variant, plus the `type` declaration it belongs to — lets a
+/// bare variant name (`@some`) be looked up without first knowing its sum
+/// type.
 struct variant_ref {
   const ast::type_decl *sum_decl = nullptr;
   const ast::sum_variant *variant = nullptr;
 };
 
+/// One `impl` block, plus the module and file it was declared in.
 struct impl_ref {
   const ast::impl_decl *decl = nullptr;
   std::string module_name;
   file_id_type file_id = 0;
 };
 
+/// One name a `use` declaration binds into a file's local scope — either the
+/// final path segment (`use a.b.c` binds `c`), a selected/renamed item
+/// (`use a.b.{c as d}`), or a wildcard marker (`use a.b.*`).
 struct import_binding {
   std::string local_name;         ///< Name the import introduces locally.
   std::vector<std::string> path;  ///< Source module path of the import.
   std::string leaf_name;          ///< Imported member name; empty for modules.
-  bool is_wildcard = false;
-  source_span span;
+  bool is_wildcard = false;       ///< Whether this is a `use a.b.*` wildcard.
+  source_span span;               ///< Location of the imported item/selector.
 };
 
+/// Every declaration directly owned by one module, aggregated across every
+/// file that contributes to it (a module may span several files).
 struct module_members {
   std::string module_name;
   std::unordered_map<std::string, type_decl_ref> types;
@@ -171,14 +224,22 @@ struct module_members {
   std::vector<impl_ref> impls;
 };
 
+/// Session-wide index of every module's declarations and every file's
+/// imports, used by the checker to resolve names and types without
+/// re-walking the AST for each lookup.
 struct program_index {
   std::unordered_map<std::string, module_members> modules;
   std::unordered_map<file_id_type, std::vector<import_binding>> imports;
 
+  /// Looks up a module by its fully-qualified dotted name, or `nullptr` if
+  /// no file in the session declares it.
   [[nodiscard]] auto find_module(std::string_view module_name) const
       -> const module_members *;
 };
 
+/// Builds a `program_index` by walking every input file's items, recording
+/// each module's direct declarations and each file's `use` bindings
+/// (recursing into inline submodules under their qualified name).
 [[nodiscard]] auto build_program_index(const std::vector<parsed_module> &inputs)
     -> program_index;
 

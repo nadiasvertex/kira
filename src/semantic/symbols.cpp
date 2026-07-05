@@ -2,6 +2,7 @@
 
 namespace kira::semantic {
 
+/// Maps each `semantic_symbol_kind` to its stable display label.
 auto semantic_symbol_kind_name(semantic_symbol_kind kind) -> std::string_view {
   switch (kind) {
   case semantic_symbol_kind::type_symbol:
@@ -34,6 +35,8 @@ auto semantic_symbol_kind_name(semantic_symbol_kind kind) -> std::string_view {
   return "symbol";
 }
 
+/// Only type/trait/concept/submodule symbols compete for a unique name
+/// within one module scope; values and bindings may shadow them freely.
 auto participates_in_duplicate_module_scope_check(semantic_symbol_kind kind)
     -> bool {
   switch (kind) {
@@ -56,6 +59,8 @@ auto participates_in_duplicate_module_scope_check(semantic_symbol_kind kind)
   return false;
 }
 
+/// A named-type reference may land on a type, trait, concept, or submodule;
+/// nothing else is a valid type-position target.
 auto can_resolve_named_type(semantic_symbol_kind kind) -> bool {
   switch (kind) {
   case semantic_symbol_kind::type_symbol:
@@ -77,6 +82,8 @@ auto can_resolve_named_type(semantic_symbol_kind kind) -> bool {
   return false;
 }
 
+/// A module-qualified value reference may land on any module-scope
+/// declaration except a local binding, parameter, or type parameter.
 auto can_resolve_module_reference(semantic_symbol_kind kind) -> bool {
   switch (kind) {
   case semantic_symbol_kind::type_symbol:
@@ -98,6 +105,7 @@ auto can_resolve_module_reference(semantic_symbol_kind kind) -> bool {
   return false;
 }
 
+/// Maps each `symbol_namespace` to its stable display label.
 auto symbol_namespace_name(symbol_namespace name_space) -> std::string_view {
   switch (name_space) {
   case symbol_namespace::module_type_namespace:
@@ -112,6 +120,10 @@ auto symbol_namespace_name(symbol_namespace name_space) -> std::string_view {
   return "symbol";
 }
 
+/// Classifies one top-level or module-scope AST item into the symbol spec
+/// that should be added to its enclosing module scope, or `nullopt` for
+/// items that do not introduce a module-scope symbol (e.g. `use`, non-binding
+/// `static` forms).
 auto module_symbol_spec(const ast::node &node, file_id_type file_id)
     -> std::optional<semantic_symbol_spec> {
   switch (node.kind) {

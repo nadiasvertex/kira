@@ -8,17 +8,22 @@
 namespace kira::semantic {
 namespace {
 
+/// One name a pattern would bind, collected before the enclosing scope that
+/// should own it exists yet.
 struct pattern_binding_spec {
   std::string name;
   source_location location;
 };
 
+/// Ambient state threaded through the AST walk: the session being built, the
+/// file currently being walked, and its fully-qualified module name.
 struct scope_build_context {
   semantic_session &session;
   file_id_type file_id = 0;
   std::string module_name;
 };
 
+/// Appends a new scope to `session` and returns its id.
 auto add_scope(semantic_session &session, semantic_scope_kind kind,
                scope_id parent, file_id_type file_id,
                std::string_view module_name, std::string_view debug_name,
@@ -37,6 +42,8 @@ auto add_scope(semantic_session &session, semantic_scope_kind kind,
   return id;
 }
 
+/// Appends a new symbol to `session`, registers it in `defining_scope`'s
+/// symbol list, and returns its id.
 auto add_symbol(semantic_session &session, scope_id defining_scope,
                 const semantic_symbol_spec &spec) -> symbol_id {
   const auto id = static_cast<symbol_id>(session.symbols.size());
@@ -57,6 +64,8 @@ auto add_symbol(semantic_session &session, scope_id defining_scope,
   return id;
 }
 
+/// Records which scope was active at `node`, for later lookup by
+/// `find_node_scope`. A no-op for a null node (recovery placeholders).
 auto record_node_scope(semantic_session &session, const ast::node *node,
                        scope_id scope) -> void {
   if (node == nullptr) {
@@ -65,6 +74,9 @@ auto record_node_scope(semantic_session &session, const ast::node *node,
   session.node_scopes.emplace(node, scope);
 }
 
+/// Recursively collects every name a pattern would bind (including nested
+/// tuple/struct/constructor/array subpatterns and group-pattern aliases),
+/// appending each to `out` in the order the pattern would bind them.
 auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
                               std::vector<pattern_binding_spec> &out) -> void {
   switch (pattern.kind) {
@@ -191,6 +203,10 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 }
 
+/// Creates a fresh scope holding `bindings` as symbols of `binding_kind`, so
+/// they shadow the parent scope from this point in a block onward (e.g. the
+/// scope a `let` introduces for the statements that follow it). Returns
+/// `parent_scope` unchanged when there are no bindings to add.
 auto extend_scope_with_bindings(semantic_session &session, scope_id parent_scope,
                                 semantic_scope_kind kind,
                                 std::string_view debug_name,
@@ -219,9 +235,14 @@ auto extend_scope_with_bindings(semantic_session &session, scope_id parent_scope
   return extended_scope;
 }
 
+/// Forward declaration: walks one AST node, building scopes/symbols beneath
+/// `active_scope`, and returns the scope subsequent siblings should use (this
+/// is how a `let` in a block extends the scope for the statements after it).
 auto walk_node(const ast::node &node, scope_id active_scope,
                const scope_build_context &context) -> scope_id;
 
+/// Walks each item in `items` in order, threading the scope returned by one
+/// node's walk into the next (so sequential `let`/`var` bindings accumulate).
 auto walk_node_list(const std::vector<ast::ptr<ast::node>> &items,
                     scope_id active_scope,
                     const scope_build_context &context) -> scope_id {
@@ -235,6 +256,7 @@ auto walk_node_list(const std::vector<ast::ptr<ast::node>> &items,
   return current_scope;
 }
 
+/// Convenience wrapper adding a scope located in the file/module of `context`.
 auto create_block_scope(scope_id parent_scope, const scope_build_context &context,
                         semantic_scope_kind kind, std::string_view debug_name,
                         source_span span) -> scope_id {
@@ -246,6 +268,10 @@ auto create_block_scope(scope_id parent_scope, const scope_build_context &contex
                    });
 }
 
+/// Builds the signature scope (type parameters and parameter bindings) and
+/// body scope for a function-shaped declaration, then walks its body. Shared
+/// by both `func_decl` and any future function-like construct that needs the
+/// same signature/body scope split.
 auto walk_function_like_body(const ast::func_decl &decl, scope_id parent_scope,
                              const scope_build_context &context,
                              semantic_scope_kind signature_kind,
@@ -315,6 +341,8 @@ auto walk_function_like_body(const ast::func_decl &decl, scope_id parent_scope,
   walk_node_list(decl.body_stmts, body_scope, context);
 }
 
+/// Builds the signature scope (parameter bindings) and body scope for a
+/// lambda expression, then walks its body.
 auto walk_lambda_body(const ast::lambda_expr &lambda, scope_id parent_scope,
                       const scope_build_context &context) -> void {
   auto signature_scope = add_scope(
@@ -362,6 +390,14 @@ auto walk_lambda_body(const ast::lambda_expr &lambda, scope_id parent_scope,
   walk_node_list(lambda.body_stmts, body_scope, context);
 }
 
+/// Records `active_scope` as the scope for `node`, then builds any scopes
+/// and symbols the node itself introduces (function/lambda bodies, `let`
+/// bindings, `if`/`match`/`for` branch scopes, type/trait/impl/concept
+/// scopes, nested modules, ...), recursing into children as needed.
+///
+/// Returns the scope subsequent sibling statements should use: unchanged for
+/// most constructs, but extended for binding statements (`let`, `var`) so a
+/// binding is visible to the statements that follow it in the same block.
 auto walk_node(const ast::node &node, scope_id active_scope,
                const scope_build_context &context) -> scope_id {
   record_node_scope(context.session, &node, active_scope);
@@ -980,6 +1016,9 @@ auto walk_node(const ast::node &node, scope_id active_scope,
 
 } // namespace
 
+/// For each input file with a valid `module` declaration: creates the
+/// module's scope, indexes its direct module-scope symbols, then walks its
+/// items to build nested scopes/symbols and record per-node scope mappings.
 auto build_semantic_session(const std::vector<parsed_module> &inputs)
     -> semantic_session {
   auto session = semantic_session{};

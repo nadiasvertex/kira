@@ -6,6 +6,7 @@
 namespace kira::semantic {
 namespace {
 
+/// Marks `file_id` as failing, tolerating an out-of-range id.
 auto mark_file_has_error(std::vector<bool> &file_has_errors,
                          file_id_type file_id) -> void {
   if (static_cast<size_t>(file_id) >= file_has_errors.size()) {
@@ -14,6 +15,8 @@ auto mark_file_has_error(std::vector<bool> &file_has_errors,
   file_has_errors[file_id] = true;
 }
 
+/// Emits the "duplicate declaration name in this module" diagnostic, with a
+/// note pointing at the earlier declaration.
 auto emit_duplicate_module_scope_symbol(
     std::string_view module_name, const module_scope_symbol_record &current,
     const module_scope_symbol_record &previous, diagnostic_bag &diag,
@@ -39,6 +42,8 @@ auto emit_duplicate_module_scope_symbol(
   mark_file_has_error(file_has_errors, current.location.file_id);
 }
 
+/// Emits the "import does not resolve in this session" diagnostic, noting
+/// the nearest declared module when one exists.
 auto emit_unresolved_import(const module_session_index &index,
                             const use_decl_record &import_record,
                             std::string_view imported_module_name,
@@ -67,6 +72,8 @@ auto emit_unresolved_import(const module_session_index &index,
   mark_file_has_error(file_has_errors, import_record.file_id);
 }
 
+/// Emits the "module is not visible from module" diagnostic when an import
+/// target exists but its visibility excludes the importer.
 auto emit_inaccessible_import(const submodule_declaration_record &declaration,
                               const use_decl_record &import_record,
                               std::string_view imported_module_name,
@@ -91,6 +98,10 @@ auto emit_inaccessible_import(const submodule_declaration_record &declaration,
   mark_file_has_error(file_has_errors, import_record.file_id);
 }
 
+/// Validates one imported module path: it must exist in the session, must
+/// not be blocked by an upstream error, and (if it is declared as a
+/// submodule) must be visible to the importer. Returns whether the target
+/// is usable.
 auto validate_import_target(const module_session_index &index,
                             const use_decl_record &import_record,
                             std::string_view imported_module_name,
@@ -128,6 +139,9 @@ auto validate_import_target(const module_session_index &index,
   return true;
 }
 
+/// Recursively checks `items` for duplicate type/trait/concept/submodule
+/// names within the same module scope, descending into inline submodules
+/// under their own qualified name.
 auto validate_module_scope(const std::vector<ast::ptr<ast::node>> &items,
                            std::string_view module_name, file_id_type file_id,
                            diagnostic_bag &diag,
@@ -169,30 +183,41 @@ auto validate_module_scope(const std::vector<ast::ptr<ast::node>> &items,
   }
 }
 
+/// Outcome of trying to resolve a qualified path against the session.
 enum class qualified_path_status {
-  resolved,
-  unresolved,
-  blocked,
+  resolved,   ///< The path names a declared module or module-scope symbol.
+  unresolved, ///< No prefix of the path names a declared module.
+  blocked,    ///< A prefix resolved, but its file already has a recorded error.
 };
 
+/// Result of matching a (possibly relative) qualified path against the
+/// session's known modules and their symbols.
 struct qualified_path_resolution {
-  qualified_path_status status = qualified_path_status::unresolved;
-  std::string absolute_path;
-  std::string containing_module_name;
-  size_t resolved_module_prefix = 0;
-  const module_scope_symbol_record *symbol = nullptr;
+  qualified_path_status status = qualified_path_status::unresolved; ///< Overall outcome.
+  std::string absolute_path;             ///< Absolute path text that was checked.
+  std::string containing_module_name;    ///< Longest module-path prefix that resolved.
+  size_t resolved_module_prefix = 0;     ///< Segment count consumed by that module prefix.
+  const module_scope_symbol_record *symbol = nullptr; ///< Symbol the remaining segment named, if any.
 };
 
+/// Ambient state threaded through the qualified-path validation walk: the
+/// fully-qualified module and file the currently-visited node belongs to.
 struct semantic_walk_context {
   std::string module_name;
   file_id_type file_id = 0;
 };
 
+/// Only multi-segment or `super`-rooted named-type paths are qualified
+/// references worth resolving here; a single unqualified segment is an
+/// ordinary type name handled elsewhere.
 auto should_validate_named_type_path(const ast::named_type &type) -> bool {
   return !type.path.empty() &&
          (type.path.front() == "super" || type.path.size() > 1);
 }
 
+/// Only a `super`-rooted or session-owned dotted path is a module
+/// reference worth resolving here; anything else may be an external
+/// namespace this session doesn't know about.
 auto should_validate_module_reference(const ast::module_path_expr &expr,
                                       const module_session_index &index) -> bool {
   return !expr.segments.empty() &&
@@ -200,6 +225,10 @@ auto should_validate_module_reference(const ast::module_path_expr &expr,
           session_owns_root_module(index, expr.segments.front()));
 }
 
+/// Prefers `resolved` over `blocked` over `unresolved`, then the longer
+/// matched module prefix, then a candidate that stopped at a known symbol —
+/// used to pick the best of several relative/absolute interpretations of
+/// one path.
 auto is_better_resolution_candidate(const qualified_path_resolution &candidate,
                                     const qualified_path_resolution &current)
     -> bool {
@@ -224,6 +253,9 @@ auto is_better_resolution_candidate(const qualified_path_resolution &candidate,
   return candidate.symbol != nullptr && current.symbol == nullptr;
 }
 
+/// Resolves an already-absolute segment list against the session: finds the
+/// longest prefix that names a declared module, then (if segments remain)
+/// looks up the next segment as a module-scope symbol.
 auto resolve_absolute_qualified_path(
     const semantic_resolution_index &semantic_index,
     const module_session_index &session_index,
@@ -282,6 +314,10 @@ auto resolve_absolute_qualified_path(
   return result;
 }
 
+/// Resolves a named-type path, which may start with `super` (relative to
+/// the current module's parent), be implicitly relative to the current
+/// module, or be absolute if its root is a session-owned module — trying
+/// both relative and absolute interpretations and keeping the better one.
 auto resolve_named_type_path(const semantic_resolution_index &semantic_index,
                              const module_session_index &session_index,
                              std::string_view current_module_name,
@@ -334,6 +370,10 @@ auto resolve_named_type_path(const semantic_resolution_index &semantic_index,
   return best;
 }
 
+/// Resolves a module-qualified value reference. Unlike named-type paths,
+/// these are only reached here when already known to be `super`-rooted or
+/// session-owned absolute (see `should_validate_module_reference`), so no
+/// relative-path guessing is needed.
 auto resolve_module_reference_path(const semantic_resolution_index &semantic_index,
                                    const module_session_index &session_index,
                                    std::string_view current_module_name,
@@ -361,6 +401,8 @@ auto resolve_module_reference_path(const semantic_resolution_index &semantic_ind
                                          file_has_errors);
 }
 
+/// Emits the "`super` has no parent module here" diagnostic for a `super`-
+/// rooted path used from a top-level (parentless) module.
 auto emit_invalid_super_path(std::string_view kind_name, std::string_view path_text,
                              source_location location,
                              std::string_view module_name, diagnostic_bag &diag,
@@ -377,6 +419,9 @@ auto emit_invalid_super_path(std::string_view kind_name, std::string_view path_t
   mark_file_has_error(file_has_errors, location.file_id);
 }
 
+/// Emits the "path does not resolve from module" diagnostic, adding a note
+/// pointing at whichever declaration the path search got closest to (the
+/// symbol it stopped at, or the nearest resolved module).
 auto emit_unresolved_qualified_path(
     std::string_view kind_name, std::string_view path_text,
     source_location location, std::string_view module_name,
@@ -427,6 +472,9 @@ auto emit_unresolved_qualified_path(
   mark_file_has_error(file_has_errors, location.file_id);
 }
 
+/// Emits the "resolves to a X, not a type" diagnostic when a qualified type
+/// path fully resolves but to a symbol kind that cannot be used as a type
+/// (e.g. a function). A no-op if the resolution has no symbol to blame.
 auto emit_non_type_qualified_path(std::string_view path_text,
                                   source_location location,
                                   const qualified_path_resolution &resolution,
@@ -456,12 +504,17 @@ auto emit_non_type_qualified_path(std::string_view path_text,
   mark_file_has_error(file_has_errors, location.file_id);
 }
 
+/// Forward declaration: dispatches any AST node to the appropriate
+/// validate_* function for its concrete kind, recursing through the whole
+/// tree to find qualified type/module paths worth checking.
 auto validate_ast_node(const ast::node &node, const semantic_walk_context &context,
                        const semantic_resolution_index &semantic_index,
                        const module_session_index &session_index,
                        diagnostic_bag &diag,
                        std::vector<bool> &file_has_errors) -> void;
 
+/// Forward declaration: validates a type-position expression, recursing
+/// into its component types and resolving any qualified named-type path.
 auto validate_type_expr(const ast::type_expr &type,
                         const semantic_walk_context &context,
                         const semantic_resolution_index &semantic_index,
@@ -469,12 +522,17 @@ auto validate_type_expr(const ast::type_expr &type,
                         diagnostic_bag &diag,
                         std::vector<bool> &file_has_errors) -> void;
 
+/// Forward declaration: validates a value-position expression, recursing
+/// into its subexpressions and resolving any qualified module-path
+/// reference.
 auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
                    const semantic_resolution_index &semantic_index,
                    const module_session_index &session_index,
                    diagnostic_bag &diag,
                    std::vector<bool> &file_has_errors) -> void;
 
+/// Forward declaration: validates a pattern, recursing into its
+/// subpatterns and any embedded range-bound expressions.
 auto validate_pattern(const ast::pattern &pattern,
                       const semantic_walk_context &context,
                       const semantic_resolution_index &semantic_index,
@@ -482,6 +540,8 @@ auto validate_pattern(const ast::pattern &pattern,
                       diagnostic_bag &diag,
                       std::vector<bool> &file_has_errors) -> void;
 
+/// Forward declaration: validates each item in `items` in order via
+/// `validate_ast_node`, skipping null entries.
 auto validate_node_list(const std::vector<ast::ptr<ast::node>> &items,
                         const semantic_walk_context &context,
                         const semantic_resolution_index &semantic_index,
@@ -489,6 +549,7 @@ auto validate_node_list(const std::vector<ast::ptr<ast::node>> &items,
                         diagnostic_bag &diag,
                         std::vector<bool> &file_has_errors) -> void;
 
+/// Validates each `+`-joined term of a trait/concept bound list.
 auto validate_bound(const ast::bound &bound, const semantic_walk_context &context,
                     const semantic_resolution_index &semantic_index,
                     const module_session_index &session_index,
@@ -502,6 +563,8 @@ auto validate_bound(const ast::bound &bound, const semantic_walk_context &contex
   }
 }
 
+/// Validates a generic parameter's bound (for a type parameter) or value
+/// type (for a value parameter), if one was written.
 auto validate_type_param(const ast::type_param &param,
                          const semantic_walk_context &context,
                          const semantic_resolution_index &semantic_index,
@@ -514,6 +577,8 @@ auto validate_type_param(const ast::type_param &param,
   }
 }
 
+/// Validates both sides of a `where` clause: the constrained subject and
+/// its trait bound or associated-type equality target.
 auto validate_where_constraint(const ast::where_constraint &constraint,
                                const semantic_walk_context &context,
                                const semantic_resolution_index &semantic_index,
@@ -530,6 +595,8 @@ auto validate_where_constraint(const ast::where_constraint &constraint,
   }
 }
 
+/// Validates a function/lambda parameter's pattern, type annotation, and
+/// default-value expression.
 auto validate_param(const ast::Param &param, const semantic_walk_context &context,
                     const semantic_resolution_index &semantic_index,
                     const module_session_index &session_index,
@@ -549,6 +616,11 @@ auto validate_param(const ast::Param &param, const semantic_walk_context &contex
   }
 }
 
+/// Definition: recurses into a type expression's component types (tuple
+/// elements, slice/array element, ref/ptr target, fn params/return,
+/// refinement base, union alternatives), and for a qualifying named-type
+/// path (see `should_validate_named_type_path`), resolves it and reports an
+/// invalid `super`, unresolved path, or wrong-kind target.
 auto validate_type_expr(const ast::type_expr &type,
                         const semantic_walk_context &context,
                         const semantic_resolution_index &semantic_index,
@@ -709,6 +781,9 @@ auto validate_type_expr(const ast::type_expr &type,
   }
 }
 
+/// Definition: recurses into a pattern's subpatterns (constructor args,
+/// tuple/struct/array elements, option/result/ref inner patterns, or-pattern
+/// alternatives, group inner) and any range-bound expressions.
 auto validate_pattern(const ast::pattern &pattern,
                       const semantic_walk_context &context,
                       const semantic_resolution_index &semantic_index,
@@ -829,6 +904,10 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 }
 
+/// Definition: recurses into a value expression's subexpressions, and for a
+/// module-path expression that qualifies (see
+/// `should_validate_module_reference`), resolves it and reports an invalid
+/// `super`, unresolved path, or a target that cannot be referenced this way.
 auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
                    const semantic_resolution_index &semantic_index,
                    const module_session_index &session_index,
@@ -1218,6 +1297,11 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 }
 
+/// Definition: the top-level dispatcher of the qualified-path validation
+/// walk. Handles every declaration and statement kind directly (recursing
+/// into their type annotations, bodies, and nested items), and forwards
+/// type/expression/pattern node kinds to their dedicated validate_*
+/// function.
 auto validate_ast_node(const ast::node &node, const semantic_walk_context &context,
                        const semantic_resolution_index &semantic_index,
                        const module_session_index &session_index,
@@ -1668,6 +1752,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 }
 
+/// Definition: validates each item in `items` in declaration order.
 auto validate_node_list(const std::vector<ast::ptr<ast::node>> &items,
                         const semantic_walk_context &context,
                         const semantic_resolution_index &semantic_index,
@@ -1685,6 +1770,8 @@ auto validate_node_list(const std::vector<ast::ptr<ast::node>> &items,
 
 } // namespace
 
+/// Compares every file's declared module path against every other file's,
+/// reporting the second and later declarations of the same path as errors.
 auto detect_duplicate_module_paths(const std::vector<parsed_module> &inputs,
                                    diagnostic_bag &diag,
                                    std::vector<bool> &file_has_errors) -> void {
@@ -1748,6 +1835,9 @@ auto detect_duplicate_module_paths(const std::vector<parsed_module> &inputs,
   }
 }
 
+/// For each module with a dotted parent, requires the parent's file to
+/// declare it as a submodule, and rejects a submodule that is declared both
+/// inline and as a separate external file.
 auto validate_module_boundaries(const module_session_index &index,
                                 diagnostic_bag &diag,
                                 std::vector<bool> &file_has_errors) -> void {
@@ -1820,6 +1910,9 @@ auto validate_module_boundaries(const module_session_index &index,
   }
 }
 
+/// Collects every `use` declaration rooted in a session-owned module and
+/// validates each imported target (whole path, or each selected/wildcard
+/// member) via `validate_import_target`.
 auto validate_session_imports(const std::vector<parsed_module> &inputs,
                               const module_session_index &index,
                               diagnostic_bag &diag,
@@ -1865,6 +1958,7 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
   }
 }
 
+/// Runs `validate_module_scope` over each input file's top-level items.
 auto validate_declaration_scopes(const std::vector<parsed_module> &inputs,
                                  diagnostic_bag &diag,
                                  std::vector<bool> &file_has_errors) -> void {
@@ -1882,6 +1976,8 @@ auto validate_declaration_scopes(const std::vector<parsed_module> &inputs,
   }
 }
 
+/// Runs `validate_node_list` over each input file's top-level items,
+/// walking the whole AST to find and resolve qualified type/module paths.
 auto validate_qualified_paths(const std::vector<parsed_module> &inputs,
                               const module_session_index &session_index,
                               const semantic_resolution_index &semantic_index,

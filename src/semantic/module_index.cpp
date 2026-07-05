@@ -3,6 +3,9 @@
 namespace kira::semantic {
 namespace {
 
+/// Recursively records one `module_scope_record` per module/submodule scope
+/// found in `items` (a file's top-level items or a submodule's inline body),
+/// with the direct symbol ids declared in each scope.
 auto collect_module_scopes(const std::vector<ast::ptr<ast::node>> &items,
                            std::string_view module_name, file_id_type file_id,
                            std::vector<module_scope_record> &out) -> void {
@@ -40,6 +43,9 @@ auto collect_module_scopes(const std::vector<ast::ptr<ast::node>> &items,
   }
 }
 
+/// Builds one `module_file_record` per input file that has a valid `module`
+/// declaration, deriving its parent module path from all but the last
+/// dotted segment.
 auto collect_module_files(const std::vector<parsed_module> &inputs)
     -> std::vector<module_file_record> {
   auto module_files = std::vector<module_file_record>{};
@@ -71,6 +77,9 @@ auto collect_module_files(const std::vector<parsed_module> &inputs)
   return module_files;
 }
 
+/// Recursively records one `submodule_declaration_record` for every nested
+/// `module Name` / `module Name: ...` item in `items`, tracking whether each
+/// has an inline body (`is_inline`) and recursing into any that do.
 auto collect_submodule_declarations(
     const std::vector<ast::ptr<ast::node>> &items,
     const std::vector<std::string> &parent_path, file_id_type file_id,
@@ -103,6 +112,9 @@ auto collect_submodule_declarations(
   }
 }
 
+/// Recursively records one `use_decl_record` for every `use` declaration
+/// found in `items`, at any nesting depth of inline submodules, tagging each
+/// with the module path it was imported from.
 auto collect_use_declarations(const std::vector<ast::ptr<ast::node>> &items,
                               const std::vector<std::string> &module_path,
                               file_id_type file_id,
@@ -140,6 +152,7 @@ auto collect_use_declarations(const std::vector<ast::ptr<ast::node>> &items,
 
 } // namespace
 
+/// Joins `parts` with `separator` between each element.
 auto join_strings(const std::vector<std::string> &parts,
                   std::string_view separator) -> std::string {
   if (parts.empty()) {
@@ -154,6 +167,7 @@ auto join_strings(const std::vector<std::string> &parts,
   return out;
 }
 
+/// Strips the last dotted segment of `module_name`.
 auto parent_module_name(std::string_view module_name) -> std::string {
   const auto separator = module_name.rfind('.');
   if (separator == std::string_view::npos) {
@@ -162,6 +176,7 @@ auto parent_module_name(std::string_view module_name) -> std::string {
   return std::string(module_name.substr(0, separator));
 }
 
+/// Returns the first dotted segment of `module_name`.
 auto module_root_name(std::string_view module_name) -> std::string_view {
   const auto separator = module_name.find('.');
   if (separator == std::string_view::npos) {
@@ -170,6 +185,7 @@ auto module_root_name(std::string_view module_name) -> std::string_view {
   return module_name.substr(0, separator);
 }
 
+/// Appends `child` to `parent` as a new dotted segment.
 auto append_module_name(std::string_view parent,
                         std::string_view child) -> std::string {
   if (parent.empty()) {
@@ -178,6 +194,9 @@ auto append_module_name(std::string_view parent,
   return std::format("{}.{}", parent, child);
 }
 
+/// A descendant must have `ancestor` as a full dotted prefix (not merely a
+/// string prefix), so `geometry.shapes` is a descendant of `geometry` but not
+/// of `geo`.
 auto is_same_or_descendant_module(std::string_view module_name,
                                   std::string_view ancestor) -> bool {
   if (ancestor.empty()) {
@@ -189,6 +208,8 @@ auto is_same_or_descendant_module(std::string_view module_name,
           module_name[ancestor.size()] == '.');
 }
 
+/// `def` (no explicit modifier) reports as "internal" here, matching Kira's
+/// default module-visibility rule.
 auto visibility_name(ast::visibility visibility) -> std::string_view {
   switch (visibility) {
   case ast::visibility::def:
@@ -204,6 +225,7 @@ auto visibility_name(ast::visibility visibility) -> std::string_view {
   return "internal";
 }
 
+/// Tailors the fix-it suggestion to the specific visibility that blocked an import.
 auto visibility_help(ast::visibility visibility,
                      std::string_view parent_name) -> std::string {
   switch (visibility) {
@@ -226,6 +248,8 @@ auto visibility_help(ast::visibility visibility,
   return {};
 }
 
+/// Convenience wrapper joining `file.module_decl->path` with `.`, or
+/// `nullopt` when the file has no usable module declaration.
 auto module_path_key(const ast::file &file) -> std::optional<std::string> {
   if (file.module_decl == nullptr || file.module_decl->has_error ||
       file.module_decl->path.empty()) {
@@ -234,6 +258,9 @@ auto module_path_key(const ast::file &file) -> std::optional<std::string> {
   return join_strings(file.module_decl->path, ".");
 }
 
+/// Wraps `module_symbol_spec` into a full `semantic_symbol`-shaped record
+/// with placeholder id/scope, for callers that only need the symbol's shape
+/// (name, kind, visibility, location) before it has been interned.
 auto module_scope_symbol(const ast::node &node, file_id_type file_id)
     -> std::optional<module_scope_symbol_record> {
   if (const auto spec = module_symbol_spec(node, file_id)) {
@@ -251,6 +278,8 @@ auto module_scope_symbol(const ast::node &node, file_id_type file_id)
   return std::nullopt;
 }
 
+/// Joins the first `limit` segments of `path` with `.`; returns an empty
+/// string when `limit` is zero or `path` is empty.
 auto join_module_path_prefix(const std::vector<std::string> &path, size_t limit)
     -> std::string {
   if (limit == 0 || path.empty()) {
@@ -265,6 +294,7 @@ auto join_module_path_prefix(const std::vector<std::string> &path, size_t limit)
   return out;
 }
 
+/// Splits `module_name` on `.` into its segments.
 auto split_module_name(std::string_view module_name)
     -> std::vector<std::string> {
   auto parts = std::vector<std::string>{};
@@ -286,6 +316,9 @@ auto split_module_name(std::string_view module_name)
   return parts;
 }
 
+/// Builds the underlying session, then refreshes each module scope's cached
+/// symbol list from the session's scope table so it reflects every symbol
+/// added while walking (not just those seen before the scope was created).
 auto build_semantic_resolution_index(const std::vector<parsed_module> &inputs)
     -> semantic_resolution_index {
   auto index = semantic_resolution_index{.session = build_semantic_session(inputs)};
@@ -301,6 +334,7 @@ auto build_semantic_resolution_index(const std::vector<parsed_module> &inputs)
   return index;
 }
 
+/// Linear search over the session's module scopes for an exact name match.
 auto find_module_scope(const semantic_resolution_index &index,
                        std::string_view module_name)
     -> const module_scope_record * {
@@ -312,6 +346,8 @@ auto find_module_scope(const semantic_resolution_index &index,
   return nullptr;
 }
 
+/// Searches a module's symbols in reverse-declaration order so the most
+/// recently added definition of a shadowed name wins.
 auto find_module_scope_symbol(const semantic_resolution_index &index,
                               std::string_view module_name,
                               std::string_view symbol_name)
@@ -330,6 +366,8 @@ auto find_module_scope_symbol(const semantic_resolution_index &index,
   return nullptr;
 }
 
+/// Collects module files, then recursively collects every nested submodule
+/// declaration within each one.
 auto build_module_session_index(const std::vector<parsed_module> &inputs)
     -> module_session_index {
   auto index = module_session_index{
@@ -351,6 +389,8 @@ auto build_module_session_index(const std::vector<parsed_module> &inputs)
   return index;
 }
 
+/// Treats an out-of-range `file_id` as "no error" rather than indexing
+/// out of bounds.
 auto has_file_error(const std::vector<bool> &file_has_errors,
                     file_id_type file_id) -> bool {
   if (static_cast<size_t>(file_id) >= file_has_errors.size()) {
@@ -359,6 +399,7 @@ auto has_file_error(const std::vector<bool> &file_has_errors,
   return file_has_errors[file_id];
 }
 
+/// Linear search for the file record declaring exactly `module_name`.
 auto find_module_file(const std::vector<module_file_record> &modules,
                       std::string_view module_name)
     -> const module_file_record * {
@@ -370,6 +411,9 @@ auto find_module_file(const std::vector<module_file_record> &modules,
   return nullptr;
 }
 
+/// Linear search for a submodule declaration matching both the declaring
+/// file and the exact module path, used to detect conflicts between an
+/// inline submodule and a same-named external file.
 auto find_submodule_declaration(
     const std::vector<submodule_declaration_record> &submodules,
     file_id_type parent_file_id, std::string_view module_name)
@@ -383,6 +427,8 @@ auto find_submodule_declaration(
   return nullptr;
 }
 
+/// Linear search for any submodule declaration matching `module_name`,
+/// regardless of which parent file declared it.
 auto find_submodule_declaration_by_name(
     const std::vector<submodule_declaration_record> &submodules,
     std::string_view module_name) -> const submodule_declaration_record * {
@@ -394,6 +440,8 @@ auto find_submodule_declaration_by_name(
   return nullptr;
 }
 
+/// Whether any file's module path begins with `root_name` as its top-level
+/// segment.
 auto session_owns_root_module(const module_session_index &index,
                               std::string_view root_name) -> bool {
   for (const auto &module : index.module_files) {
@@ -404,6 +452,8 @@ auto session_owns_root_module(const module_session_index &index,
   return false;
 }
 
+/// A module is "contained" if it either has its own file or was declared
+/// as a submodule somewhere in the session.
 auto session_contains_module(const module_session_index &index,
                              std::string_view module_name) -> bool {
   return find_module_file(index.module_files, module_name) != nullptr ||
@@ -411,6 +461,8 @@ auto session_contains_module(const module_session_index &index,
                                             module_name) != nullptr;
 }
 
+/// Walks up from `module_name` through successive parent paths until a
+/// declared module file or submodule declaration is found.
 auto find_nearest_module_anchor(const module_session_index &index,
                                 std::string_view module_name)
     -> std::optional<module_anchor_record> {
@@ -434,6 +486,8 @@ auto find_nearest_module_anchor(const module_session_index &index,
   return std::nullopt;
 }
 
+/// True if either the module's own file, or the file declaring it as a
+/// submodule, already has a recorded error.
 auto module_resolution_blocked_by_errors(
     const module_session_index &index, std::string_view module_name,
     const std::vector<bool> &file_has_errors) -> bool {
@@ -454,6 +508,10 @@ auto module_resolution_blocked_by_errors(
   return false;
 }
 
+/// Implements Kira's visibility rules: `pub` is visible everywhere, the
+/// default/`internal` visibility is visible to the declaring module and its
+/// descendants, `super` only to the exact parent module, and `priv` only to
+/// the exact declaring file.
 auto is_import_visible(const submodule_declaration_record &declaration,
                        std::string_view importer_module_name,
                        file_id_type importer_file_id) -> bool {
@@ -472,6 +530,8 @@ auto is_import_visible(const submodule_declaration_record &declaration,
   return false;
 }
 
+/// Skips files with no valid module declaration or an already-recorded
+/// error, then recursively collects `use` declarations from the rest.
 auto collect_use_decl_records(const std::vector<parsed_module> &inputs,
                               const std::vector<bool> &file_has_errors)
     -> std::vector<use_decl_record> {

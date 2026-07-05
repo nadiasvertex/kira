@@ -9,6 +9,8 @@
 namespace kira::semantic {
 namespace {
 
+/// Every scalar name recognized as a builtin type (numeric family, `bool`,
+/// `str`, quote-value types, and the two built-in execution contexts).
 constexpr std::array<std::string_view, 27> k_builtin_scalar_names = {
     "bool",   "char",    "str",     "unit",   "never",  "byte",
     "int8",   "int16",   "int32",   "int64",  "int128", "uint8",
@@ -17,12 +19,15 @@ constexpr std::array<std::string_view, 27> k_builtin_scalar_names = {
     "expr",   "stmt",    "def_expr",
 };
 
+/// One prelude container name and its accepted generic-argument count
+/// range (inclusive).
 struct generic_arity_entry {
   std::string_view name;
   size_t min_args;
   size_t max_args;
 };
 
+/// Prelude container names and their allowed generic-argument arities.
 constexpr std::array<generic_arity_entry, 12> k_builtin_generic_arities = {{
     {"list", 1, 1},
     {"option", 1, 1},
@@ -38,11 +43,14 @@ constexpr std::array<generic_arity_entry, 12> k_builtin_generic_arities = {{
     {"atomic", 1, 1},
 }};
 
+/// Trait names available from the prelude without any `use`.
 constexpr std::array<std::string_view, 12> k_prelude_trait_names = {
     "eq",  "ord", "hash", "show", "from", "into",
     "add", "sub", "mul",  "div",  "rem",  "neg",
 };
 
+/// Appends a bracketed, comma-separated list of `args` ids to `key`, for
+/// building a unique intern key that distinguishes generic instantiations.
 auto append_args_key(std::string &key, const std::vector<type_id> &args)
     -> void {
   key += '[';
@@ -55,6 +63,7 @@ auto append_args_key(std::string &key, const std::vector<type_id> &args)
 
 } // namespace
 
+/// Reserves ids 0 and 1 for `k_unknown_type` and `k_error_type`.
 type_table::type_table() {
   entries_.push_back(type_entry{.kind = type_kind::unknown_kind,
                                 .name = "<unknown>"});
@@ -62,6 +71,9 @@ type_table::type_table() {
                                 .name = "<error>"});
 }
 
+/// Structural interning keyed on `key`: identical keys always produce the
+/// same id, so callers build `key` to encode everything that should make
+/// two types distinct (kind tag, name/declaration identity, arguments).
 auto type_table::intern(std::string key, type_entry entry) -> type_id {
   if (const auto it = interned_.find(key); it != interned_.end()) {
     return it->second;
@@ -72,12 +84,15 @@ auto type_table::intern(std::string key, type_entry entry) -> type_id {
   return id;
 }
 
+/// Interns using name alone as the key — every `int32` is the same type.
 auto type_table::builtin(std::string_view name) -> type_id {
   return intern(std::format("b:{}", name),
                 type_entry{.kind = type_kind::builtin_kind,
                            .name = std::string(name)});
 }
 
+/// Interns using name plus argument ids as the key, so `list[int32]` and
+/// `list[str]` are distinct but any two `list[int32]`s are the same type.
 auto type_table::builtin_generic(std::string_view name,
                                  std::vector<type_id> args) -> type_id {
   auto key = std::format("g:{}", name);
@@ -88,6 +103,8 @@ auto type_table::builtin_generic(std::string_view name,
                            .args = std::move(args)});
 }
 
+/// Interns using element ids as the key, so tuple identity is purely
+/// structural (element types and arity), independent of source location.
 auto type_table::tuple_of(std::vector<type_id> elements) -> type_id {
   auto key = std::string("t:");
   append_args_key(key, elements);
@@ -96,6 +113,8 @@ auto type_table::tuple_of(std::vector<type_id> elements) -> type_id {
                                            .args = std::move(elements)});
 }
 
+/// Interns using the element id and the length (or `?` when not statically
+/// known) as the key.
 auto type_table::array_of(type_id element, std::optional<uint64_t> size)
     -> type_id {
   auto key = std::format("a:{}:{}", element,
@@ -106,6 +125,7 @@ auto type_table::array_of(type_id element, std::optional<uint64_t> size)
                                            .array_size = size});
 }
 
+/// Interns using parameter ids and the result id as the key.
 auto type_table::fn_of(std::vector<type_id> params, type_id result)
     -> type_id {
   auto key = std::string("f:");
@@ -117,6 +137,7 @@ auto type_table::fn_of(std::vector<type_id> params, type_id result)
                                            .result = result});
 }
 
+/// Interns using the inner id and mutability as the key.
 auto type_table::ref_to(type_id inner, bool is_mut) -> type_id {
   return intern(std::format("r:{}:{}", inner, is_mut),
                 type_entry{.kind = type_kind::ref_kind,
@@ -125,6 +146,7 @@ auto type_table::ref_to(type_id inner, bool is_mut) -> type_id {
                            .is_mut = is_mut});
 }
 
+/// Interns using the inner id and mutability as the key.
 auto type_table::ptr_to(type_id inner, bool is_mut) -> type_id {
   return intern(std::format("p:{}:{}", inner, is_mut),
                 type_entry{.kind = type_kind::ptr_kind,
@@ -133,6 +155,11 @@ auto type_table::ptr_to(type_id inner, bool is_mut) -> type_id {
                            .is_mut = is_mut});
 }
 
+/// Interns using the declaration's address and argument ids as the key, so
+/// two instantiations of the same generic `type` declaration with the same
+/// arguments are the same type, while distinct declarations with the same
+/// name (in different modules) never collide. The concrete `type_kind` is
+/// inferred from the declaration's body (struct, sum, or opaque/alias).
 auto type_table::user_type(const ast::type_decl &decl,
                            std::string_view module_name,
                            std::vector<type_id> args) -> type_id {
@@ -154,12 +181,16 @@ auto type_table::user_type(const ast::type_decl &decl,
                                            .args = std::move(args)});
 }
 
+/// Interns using name alone as the key, so same-named type parameters in
+/// the same scope collapse to one id.
 auto type_table::type_param(std::string_view name) -> type_id {
   return intern(std::format("v:{}", name),
                 type_entry{.kind = type_kind::type_param_kind,
                            .name = std::string(name)});
 }
 
+/// Bounds-checks `id`, falling back to the `unknown` entry rather than
+/// indexing out of range.
 auto type_table::entry(type_id id) const -> const type_entry & {
   if (static_cast<size_t>(id) >= entries_.size()) {
     return entries_[k_unknown_type];
@@ -167,6 +198,9 @@ auto type_table::entry(type_id id) const -> const type_entry & {
   return entries_[id];
 }
 
+/// Recursively renders `id` into Kira's own type syntax, matching the
+/// spellings used in error messages (`_` for `unknown`, `list[int32]`,
+/// `fn(int32) -> str`, `&mut T`, ...).
 auto type_table::display(type_id id) const -> std::string {
   const auto &item = entry(id);
   switch (item.kind) {
@@ -266,6 +300,11 @@ auto type_table::is_unit(type_id id) const -> bool {
   return item.kind == type_kind::builtin_kind && item.name == "unit";
 }
 
+/// Structural compatibility: identical ids always match; `unknown`/`error`/
+/// type-parameter types match anything; `never` (from `panic` or an early
+/// return) matches any expected type; a reference on either side compares
+/// against its target type; and same-kind types compare their
+/// declaration/name identity plus recursively-compatible arguments.
 auto type_table::compatible(type_id expected, type_id found) const -> bool {
   if (expected == found || is_unknown(expected) || is_unknown(found)) {
     return true;
@@ -357,6 +396,9 @@ auto builtin_generic_arity(std::string_view name)
   return std::nullopt;
 }
 
+/// 128-bit integer types have no representable max in `uint64_t` and are
+/// intentionally left unhandled (returning `nullopt`), so literal-fit
+/// checking simply does not fire for them yet.
 auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
   if (name == "int8") {
     return 127u;
@@ -400,6 +442,10 @@ auto is_prelude_trait_name(std::string_view name) -> bool {
 
 namespace {
 
+/// Expands one `use` declaration into the local name bindings it
+/// introduces: the trailing path segment for a bare `use a.b.c`, one
+/// binding per selected/renamed item for `use a.b.{c, d as e}`, or a single
+/// wildcard marker for `use a.b.*`.
 auto record_use_bindings(const ast::use_decl &decl, file_id_type file_id,
                          program_index &index) -> void {
   auto &bindings = index.imports[file_id];
@@ -440,6 +486,10 @@ auto record_use_bindings(const ast::use_decl &decl, file_id_type file_id,
   }
 }
 
+/// Classifies one module-scope item into `members`' matching table (types,
+/// traits, concepts, functions, static bindings, impls), also indexing a sum
+/// type's variants by name so a bare `@variant` can be found later without
+/// knowing which sum type it belongs to.
 auto record_module_item(const ast::node &item, file_id_type file_id,
                         module_members &members) -> void {
   switch (item.kind) {
@@ -508,6 +558,9 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
   }
 }
 
+/// Recursively indexes `items` into `index`: `use` declarations become
+/// import bindings, inline submodules recurse under their qualified name,
+/// and everything else is classified via `record_module_item`.
 auto index_items(const std::vector<ast::ptr<ast::node>> &items,
                  std::string_view module_name, file_id_type file_id,
                  program_index &index) -> void {
@@ -543,6 +596,8 @@ auto program_index::find_module(std::string_view module_name) const
   return it != modules.end() ? &it->second : nullptr;
 }
 
+/// Skips files without a valid module declaration, then indexes the rest
+/// via `index_items`.
 auto build_program_index(const std::vector<parsed_module> &inputs)
     -> program_index {
   auto index = program_index{};

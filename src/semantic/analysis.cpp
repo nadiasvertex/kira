@@ -6,12 +6,18 @@
 
 namespace kira::semantic {
 
+/// Delegates to the options-taking overload with the default options (full
+/// pipeline, including name resolution and type checking).
 auto validate_semantics(const std::vector<parsed_module> &inputs,
                         diagnostic_bag &diag,
                         std::vector<bool> &file_has_errors) -> void {
   validate_semantics(inputs, diag, file_has_errors, semantic_options{});
 }
 
+/// Runs the module-graph and declaration-scope validation passes (duplicate
+/// module paths, module boundaries, imports, declaration scopes, qualified
+/// paths), then — unless `options.check_names_and_types` is false — runs the
+/// full name-resolution and type-checking pass.
 auto validate_semantics(const std::vector<parsed_module> &inputs,
                         diagnostic_bag &diag,
                         std::vector<bool> &file_has_errors,

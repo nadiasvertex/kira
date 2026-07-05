@@ -42,6 +42,9 @@ auto edit_distance(std::string_view a, std::string_view b) -> size_t {
   return previous[cols - 1];
 }
 
+/// Picks the closest name in `candidates` to `name` for a "did you mean"
+/// hint, rejecting matches whose edit distance is not meaningfully smaller
+/// than the candidate's own length (avoids suggesting unrelated short names).
 auto best_suggestion(std::string_view name,
                      const std::vector<std::string> &candidates)
     -> std::optional<std::string> {
@@ -100,20 +103,27 @@ auto is_variant_ident(const ast::ident_expr &ident) -> bool {
   return ident.span.len() > ident.name.size();
 }
 
+/// How a value binding entered scope, used to decide whether it may be
+/// reassigned and to word the "declared here" note on an immutability error.
 enum class binding_origin : uint8_t {
-  let_binding,
-  var_binding,
-  parameter,
-  pattern_binding,
-  synthetic,
+  let_binding,     ///< `let` — immutable.
+  var_binding,     ///< `var` — mutable.
+  parameter,       ///< Function or lambda parameter.
+  pattern_binding, ///< Bound by a pattern (match arm, `if let`, `for`, ...).
+  synthetic,       ///< Introduced by the checker itself (e.g. a `crew`/`cancel` name).
 };
 
+/// One name bound in the current lexical scope stack, with enough
+/// information to type future references and to diagnose illegal mutation.
 struct value_binding {
   type_id type = k_unknown_type;
   binding_origin origin = binding_origin::let_binding;
-  source_span span;
+  source_span span; ///< Where the binding was introduced, for "declared here" notes.
 };
 
+/// A normalized function/method parameter, used by call-argument checking
+/// regardless of whether the callee came from a `func_decl`, a trait method,
+/// or a `fn(...)`-typed value.
 struct fn_param_info {
   std::string name;
   type_id type = k_unknown_type;
@@ -121,22 +131,32 @@ struct fn_param_info {
   source_span span;
 };
 
+/// One method available on a type, either from an inherent/trait `impl`
+/// block (`from_trait == nullptr`) or a trait's default body reached
+/// through an impl that didn't override it.
 struct method_entry {
-  const ast::func_decl *decl = nullptr;
-  const module_members *owner = nullptr;
-  const ast::trait_decl *from_trait = nullptr;
+  const ast::func_decl *decl = nullptr;   ///< The method's declaration.
+  const module_members *owner = nullptr;  ///< Module the method should resolve types in.
+  const ast::trait_decl *from_trait = nullptr; ///< Owning trait, if this is a default method.
 };
 
 // ==========================================================================
 //  checker — one instance per session run.
 // ==========================================================================
 
+/// Runs name resolution and type checking over a whole session. One
+/// instance is used for the entire `check_program` call: `types_` and the
+/// caches persist across files so cross-file lookups and impl coherence
+/// work, while per-file/per-function state is saved and restored around
+/// each declaration.
 class checker {
 public:
   checker(const program_index &index, diagnostic_bag &diag,
           std::vector<bool> &file_has_errors)
       : index_(index), diag_(diag), file_has_errors_(file_has_errors) {}
 
+  /// Entry point: validates impl coherence session-wide, then checks every
+  /// input file in turn.
   auto run(const std::vector<parsed_module> &inputs) -> void;
 
 private:
@@ -173,12 +193,15 @@ private:
   //  Diagnostics helpers
   // ==========================================================================
 
+  /// Marks the file currently being checked (`file_id_`) as containing an
+  /// error, so later driver phases skip emitting metadata for it.
   auto mark_error() -> void {
     if (static_cast<size_t>(file_id_) < file_has_errors_.size()) {
       file_has_errors_[file_id_] = true;
     }
   }
 
+  /// Emits a single-label error at `span` in the current file.
   auto error(source_span span, std::string message, std::string label) -> void {
     auto diag = diagnostic(diagnostic_level::error, std::move(message), file_id_);
     diag.with_label(span, std::move(label));
@@ -186,6 +209,7 @@ private:
     mark_error();
   }
 
+  /// Emits a single-label error with an attached help suggestion.
   auto error_with_help(source_span span, std::string message, std::string label,
                        std::string help) -> void {
     auto diag = diagnostic(diagnostic_level::error, std::move(message), file_id_);
@@ -195,6 +219,9 @@ private:
     mark_error();
   }
 
+  /// Emits a "type mismatch" error if `found` is not `compatible` with
+  /// `expected`; a no-op otherwise. Adds a conversion hint when both sides
+  /// are numeric, since Kira never converts numbers implicitly.
   auto type_mismatch(source_span span, type_id expected, type_id found,
                      std::string_view context) -> void {
     if (types_.compatible(expected, found)) {
@@ -221,9 +248,13 @@ private:
   //  Scope management
   // ==========================================================================
 
+  /// Opens a new innermost lexical scope for value bindings.
   auto push_scope() -> void { scopes_.emplace_back(); }
+  /// Closes the innermost lexical scope.
   auto pop_scope() -> void { scopes_.pop_back(); }
 
+  /// Introduces or shadows `name` in the innermost scope. A no-op for an
+  /// empty name (e.g. `_`) or when no scope is open.
   auto bind_value(std::string_view name, type_id type, binding_origin origin,
                   source_span span) -> void {
     if (name.empty() || scopes_.empty()) {
@@ -235,6 +266,8 @@ private:
                                                   .span = span});
   }
 
+  /// Looks up `name` from the innermost scope outward, returning the first
+  /// (most-shadowing) match, or `nullptr` if unbound.
   auto lookup_value(std::string_view name) -> const value_binding * {
     for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
       if (const auto it = scope->find(std::string(name)); it != scope->end()) {
@@ -244,6 +277,8 @@ private:
     return nullptr;
   }
 
+  /// Opens a new generic-parameter scope, interning each named parameter as
+  /// a `type_param` type.
   auto push_type_params(const std::vector<ast::type_param> &params) -> void {
     auto scope = std::unordered_map<std::string, type_id>{};
     for (const auto &param : params) {
@@ -255,8 +290,11 @@ private:
     type_params_.push_back(std::move(scope));
   }
 
+  /// Closes the innermost generic-parameter scope.
   auto pop_type_params() -> void { type_params_.pop_back(); }
 
+  /// Looks up an in-scope generic parameter by name, searching from the
+  /// innermost scope outward.
   auto lookup_type_param(std::string_view name) -> std::optional<type_id> {
     for (auto scope = type_params_.rbegin(); scope != type_params_.rend();
          ++scope) {
@@ -272,6 +310,9 @@ private:
   //  imports and the prelude).
   // ==========================================================================
 
+  /// Finds the session module that owns the longest matching prefix of
+  /// `path`, used to resolve a multi-segment named-type path like
+  /// `pkg.mod.Thing` to the module `pkg.mod` and member `Thing`.
   auto find_session_module_of_path(const std::vector<std::string> &path) const
       -> const module_members * {
     // Longest module prefix registered in the session wins.
@@ -289,6 +330,9 @@ private:
     return found;
   }
 
+  /// Whether `path`'s first segment names (or prefixes) a module declared
+  /// somewhere in this session — used to tell a session-owned reference
+  /// apart from a genuinely external one this checker can't see into.
   auto session_owns_path_root(const std::vector<std::string> &path) const
       -> bool {
     if (path.empty()) {
@@ -303,11 +347,15 @@ private:
     return false;
   }
 
+  /// Returns the `use` bindings recorded for the file currently being
+  /// checked, or `nullptr` if it has none.
   auto imports_for_current_file() const -> const std::vector<import_binding> * {
     const auto it = index_.imports.find(file_id_);
     return it != index_.imports.end() ? &it->second : nullptr;
   }
 
+  /// Finds the non-wildcard import binding that introduces `name` locally
+  /// in the current file.
   auto find_import(std::string_view name) const -> const import_binding * {
     const auto *imports = imports_for_current_file();
     if (imports == nullptr) {
@@ -343,6 +391,8 @@ private:
     return index_.find_module(join_strings(parent, "."));
   }
 
+  /// Returns the local member name an import binds — the selector's item
+  /// name if present, otherwise the trailing path segment.
   auto imported_member_name(const import_binding &binding) const
       -> std::string {
     return binding.leaf_name.empty() ? binding.path.back() : binding.leaf_name;
@@ -356,6 +406,11 @@ private:
   //  pass reports problems at the declaration site.
   // ==========================================================================
 
+  /// Ambient state for resolving a type expression: which module's members
+  /// are in scope, an optional substitution for generic parameters (used
+  /// when instantiating a generic declaration), and whether to also consult
+  /// the live `type_params_` scope stack (only true for types resolved in
+  /// the context of the function/type/impl currently being checked).
   struct resolve_ctx {
     const module_members *module = nullptr;
     const std::unordered_map<std::string, type_id> *param_bindings = nullptr;
@@ -363,6 +418,9 @@ private:
     bool quiet = false;
   };
 
+  /// The resolve context for types written in the body of the
+  /// function/type/impl currently being checked: current module plus the
+  /// live generic-parameter scope stack.
   auto current_resolve_ctx() -> resolve_ctx {
     return resolve_ctx{.module = module_,
                        .param_bindings = nullptr,
@@ -370,6 +428,10 @@ private:
                        .quiet = false};
   }
 
+  /// Recursively resolves a type-position AST node to an interned `type_id`,
+  /// dispatching on its concrete kind. `named_type` is the only case with
+  /// real resolution work (see `resolve_named_type`); the rest just resolve
+  /// their component types structurally.
   auto resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
       -> type_id {
     if (type.has_error) {
@@ -451,6 +513,9 @@ private:
     }
   }
 
+  /// Resolves each generic argument slot of a named type; slots holding a
+  /// compile-time value expression (rather than a type) resolve to
+  /// `unknown` since the checker does not evaluate const expressions.
   auto resolve_type_args(const ast::named_type &named, const resolve_ctx &ctx)
       -> std::vector<type_id> {
     auto args = std::vector<type_id>{};
@@ -485,6 +550,9 @@ private:
     return args;
   }
 
+  /// Builds the candidate name list for "did you mean" suggestions on an
+  /// undefined type: common builtins plus every type/trait/concept in the
+  /// current module and every in-scope generic parameter.
   auto type_name_candidates() -> std::vector<std::string> {
     auto candidates = std::vector<std::string>{
         "bool", "int32", "int64", "float64", "str",  "char",
@@ -509,6 +577,8 @@ private:
     return candidates;
   }
 
+  /// Emits "undefined type" once per distinct name per file (via
+  /// `reported_undefined_`), with a suggestion or a declare/import hint.
   auto emit_undefined_type(const ast::named_type &named, std::string_view name)
       -> void {
     if (!reported_undefined_.insert(std::format("type:{}", name)).second) {
@@ -528,6 +598,9 @@ private:
     mark_error();
   }
 
+  /// Checks generic-argument arity against `decl.type_params` (when
+  /// arguments were written at all — omitting them entirely is allowed and
+  /// leaves parameters `unknown`), then builds the instantiated type.
   auto instantiate_user_type(const ast::type_decl &decl,
                              std::string_view owner_module,
                              const ast::named_type &named,
@@ -600,6 +673,13 @@ private:
     return resolved;
   }
 
+  /// Resolves a named-type reference through, in order: a session-owned
+  /// multi-segment path; an in-scope generic parameter or substitution;
+  /// `self`; a builtin scalar or prelude container; the current module's
+  /// declarations; an imported name; a prelude trait used in bound position;
+  /// or (failing all of that) reports an undefined-type error, unless
+  /// suppressed by `ctx.quiet` or an external wildcard import that might
+  /// plausibly supply the name.
   auto resolve_named_type(const ast::named_type &named, const resolve_ctx &ctx)
       -> type_id {
     if (named.path.empty()) {
@@ -724,6 +804,9 @@ private:
   //  Struct / sum member queries with generic substitution
   // ==========================================================================
 
+  /// Maps an instantiated user type's declared generic-parameter names to
+  /// the concrete argument ids it was instantiated with, for substituting
+  /// into field/variant-payload type expressions.
   auto param_bindings_for_instance(const type_entry &instance)
       -> std::unordered_map<std::string, type_id> {
     auto bindings = std::unordered_map<std::string, type_id>{};
@@ -739,6 +822,9 @@ private:
     return bindings;
   }
 
+  /// Builds the resolve context for a struct field or sum variant payload
+  /// type: the instance's owning module, plus its generic-parameter
+  /// substitution.
   auto member_resolve_ctx(const type_entry &instance,
                           const std::unordered_map<std::string, type_id>
                               &bindings) -> resolve_ctx {
@@ -748,6 +834,8 @@ private:
                        .quiet = true};
   }
 
+  /// Returns the field list of a struct-kind instance, or `nullptr` if
+  /// `instance` is not a struct.
   auto struct_fields_of(const type_entry &instance)
       -> const std::vector<ast::struct_field> * {
     if (instance.kind != type_kind::struct_kind || instance.decl == nullptr ||
@@ -760,6 +848,10 @@ private:
                 .body.fields;
   }
 
+  /// Looks up a field by name on a struct instance, resolving its declared
+  /// type with the instance's generic substitution applied. `nullopt` when
+  /// the field does not exist (distinct from `k_unknown_type`, which means
+  /// the field exists but has no annotation).
   auto struct_field_type(const type_entry &instance, std::string_view name)
       -> std::optional<type_id> {
     const auto *fields = struct_fields_of(instance);
@@ -778,6 +870,8 @@ private:
     return std::nullopt;
   }
 
+  /// Returns the variant list of a sum-kind instance, or `nullptr` if
+  /// `instance` is not a sum type.
   auto sum_variants_of(const type_entry &instance)
       -> const std::vector<ast::sum_variant> * {
     if (instance.kind != type_kind::sum_kind || instance.decl == nullptr ||
@@ -789,6 +883,7 @@ private:
                 .body.variants;
   }
 
+  /// Looks up a variant by name on a sum-type instance.
   auto find_variant(const type_entry &instance, std::string_view name)
       -> const ast::sum_variant * {
     const auto *variants = sum_variants_of(instance);
@@ -803,6 +898,8 @@ private:
     return nullptr;
   }
 
+  /// Resolves a variant's payload types with the instance's generic
+  /// substitution applied.
   auto variant_payload_types(const type_entry &instance,
                              const ast::sum_variant &variant)
       -> std::vector<type_id> {
@@ -821,6 +918,8 @@ private:
   //  Function signatures
   // ==========================================================================
 
+  /// Returns a parameter's bound name if it is a simple identifier
+  /// pattern, or an empty string for a destructuring parameter pattern.
   auto param_name_of(const ast::Param &param) -> std::string {
     if (param.pattern != nullptr &&
         param.pattern->kind == ast::node_kind::binding_pattern) {
@@ -829,6 +928,10 @@ private:
     return {};
   }
 
+  /// Normalizes a function declaration's parameter list into
+  /// `fn_param_info`s with their types resolved against the function's own
+  /// generic parameters. `skip_self` drops a leading `self` parameter,
+  /// since call-argument checking never expects the caller to pass it.
   auto signature_params(const ast::func_decl &decl,
                         const module_members *owner, bool skip_self)
       -> std::vector<fn_param_info> {
@@ -864,6 +967,9 @@ private:
     return params;
   }
 
+  /// Resolves a function's declared return type against its own generic
+  /// parameters; `unknown` for an unannotated return type (inferred from the
+  /// body, never guessed from this signature alone).
   auto signature_return_type(const ast::func_decl &decl,
                              const module_members *owner) -> type_id {
     if (decl.return_type == nullptr) {
@@ -883,6 +989,9 @@ private:
     return resolve_type(*decl.return_type, ctx);
   }
 
+  /// Builds the `fn(...)` value type of a function declaration, used when
+  /// a function name is referenced as a value (passed as an argument,
+  /// assigned to a binding) rather than called directly.
   auto fn_type_of(const ast::func_decl &decl, const module_members *owner)
       -> type_id {
     auto params = std::vector<type_id>{};
@@ -901,6 +1010,11 @@ private:
   //  Call checking
   // ==========================================================================
 
+  /// Matches a call's arguments against a parameter list: positional
+  /// arguments fill the next unused parameter in order, named arguments
+  /// bind by name (reporting unknown/duplicate names), and each argument's
+  /// inferred type is checked against its target parameter's type. Reports
+  /// too many arguments, and any required parameter left unfilled.
   auto check_call_args_against(const ast::call_expr &call,
                                const std::vector<fn_param_info> &params,
                                std::string_view callee_name,
@@ -1002,6 +1116,9 @@ private:
     }
   }
 
+  /// Checks a call against a known `func_decl`: enforces the
+  /// contract-purity rule when inside a contract condition, checks its
+  /// arguments via `check_call_args_against`, and returns its return type.
   auto check_call_against_decl(const ast::call_expr &call,
                                const ast::func_decl &decl,
                                const module_members *owner,
@@ -1024,6 +1141,9 @@ private:
     return signature_return_type(decl, owner);
   }
 
+  /// Infers each argument's type with no expectation, for a call whose
+  /// callee could not be resolved — keeps names inside the arguments from
+  /// going unchecked even though the call itself can't be validated.
   auto infer_call_args_loosely(const ast::call_expr &call) -> void {
     for (const auto &arg : call.args) {
       if (arg.value != nullptr) {
@@ -1032,6 +1152,10 @@ private:
     }
   }
 
+  /// Checks a sum-type variant constructor call's arguments against the
+  /// variant's declared payload types, and — if the sum type is generic and
+  /// wasn't already instantiated — infers its type arguments from payload
+  /// slots that name a bare type parameter directly.
   auto check_variant_construction(const ast::call_expr &call,
                                   const type_entry &instance,
                                   const ast::sum_variant &variant,
@@ -1146,6 +1270,8 @@ private:
                       : std::vector<type_id>{k_unknown_type, payload_found});
   }
 
+  /// Finds a sum-type variant named `name` declared by the current module,
+  /// or reachable through a non-wildcard import of its owning type.
   auto find_module_variant(std::string_view name) -> std::optional<
       std::pair<const ast::type_decl *, const ast::sum_variant *>> {
     if (module_ == nullptr) {
@@ -1179,6 +1305,13 @@ private:
     return std::nullopt;
   }
 
+  /// Resolves a variant name (`@some`/`@ok`/`@err`/`@none`, or a
+  /// user sum-type variant) to its constructed type. Prefers a variant of
+  /// the expected sum type when one matches, then falls back to any
+  /// module-visible sum type declaring that variant name. `call` is
+  /// non-null when the variant is being constructed with arguments
+  /// (`@some(x)`) rather than referenced bare (`@none`). Returns `nullopt`
+  /// when no sum type declares this variant.
   auto resolve_variant_value(std::string_view name, const ast::call_expr *call,
                              source_span span, type_id expected)
       -> std::optional<type_id> {
@@ -1236,6 +1369,10 @@ private:
   //  Identifier resolution (value namespace)
   // ==========================================================================
 
+  /// Whether `name` is a builtin, prelude container/trait, or a
+  /// type/trait/concept the current module declares — used to avoid
+  /// reporting an "undefined name" error for a name that is really a type
+  /// used where the checker didn't expect one.
   auto is_type_like_name(std::string_view name) -> bool {
     if (is_builtin_scalar_name(name) || builtin_generic_arity(name) ||
         name == "array" || is_prelude_trait_name(name)) {
@@ -1250,6 +1387,10 @@ private:
     return false;
   }
 
+  /// Builds the candidate name list for "did you mean" suggestions on an
+  /// undefined value name: every in-scope binding, plus the current
+  /// module's functions, statics, and sum-type variants, plus common
+  /// prelude functions.
   auto value_name_candidates() -> std::vector<std::string> {
     auto candidates = std::vector<std::string>{};
     for (const auto &scope : scopes_) {
@@ -1276,6 +1417,8 @@ private:
     return candidates;
   }
 
+  /// Emits "undefined name" once per distinct name per file, with a
+  /// suggestion or a define/import hint.
   auto emit_undefined_name(source_span span, std::string_view name) -> void {
     if (!reported_undefined_.insert(std::format("value:{}", name)).second) {
       return;
@@ -1293,6 +1436,9 @@ private:
     mark_error();
   }
 
+  /// Names the checker treats as always resolvable without deeper lookup:
+  /// prelude functions, loop control keywords, execution-context names, and
+  /// concurrency primitives whose full typing is out of scope for now.
   auto is_prelude_value_name(std::string_view name) -> bool {
     return name == "println" || name == "print" || name == "panic" ||
            name == "assert" || name == "size_of" || name == "args" ||
@@ -1303,6 +1449,11 @@ private:
            name == "expr";
   }
 
+  /// Resolves a value-position identifier through, in order: a variant
+  /// constructor (if `@`-prefixed); a local binding or `self`; the current
+  /// module's functions/statics; an imported name; a prelude/type-like name;
+  /// a bare (un-`@`-prefixed) variant spelling; or reports undefined-name,
+  /// unless suppressed by an external wildcard import.
   auto resolve_ident(const ast::ident_expr &ident, type_id expected)
       -> type_id {
     const auto &name = ident.name;
@@ -1370,6 +1521,8 @@ private:
     return k_error_type;
   }
 
+  /// Emits "unknown variant" once per distinct name per file, noting the
+  /// expected sum type's actual variants when one is known.
   auto emit_undefined_variant(source_span span, std::string_view name,
                               type_id expected) -> void {
     if (!reported_undefined_.insert(std::format("variant:{}", name)).second) {
@@ -1395,6 +1548,9 @@ private:
     mark_error();
   }
 
+  /// Resolves and caches a `static` binding's declared type, guarding
+  /// against an initializer cycle (`static a = b` / `static b = a`) by
+  /// returning `unknown` if the declaration is already being resolved.
   auto static_binding_type(const ast::static_decl &decl,
                            const module_members *owner) -> type_id {
     if (const auto it = static_types_.find(&decl); it != static_types_.end()) {
@@ -1420,6 +1576,9 @@ private:
   //  Literals
   // ==========================================================================
 
+  /// Reports an error when an integer literal's value does not fit in its
+  /// target builtin type's range (a no-op for non-integer or non-builtin
+  /// targets, or when the literal's value could not be parsed).
   auto check_integer_fit(const ast::literal_expr &lit, type_id target) -> void {
     const auto &entry = types_.entry(target);
     if (entry.kind != type_kind::builtin_kind) {
@@ -1446,6 +1605,10 @@ private:
     mark_error();
   }
 
+  /// Types a literal expression. An integer or float literal adopts the
+  /// expected numeric type when one is given (checking integer fit),
+  /// otherwise defaults to `int32`/`float64` per the language's literal
+  /// defaulting rule.
   auto infer_literal(const ast::literal_expr &lit, type_id expected)
       -> type_id {
     switch (lit.lit_kind) {
