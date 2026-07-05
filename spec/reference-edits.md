@@ -99,15 +99,17 @@ the `checked_add` example), Ownership and Borrowing (`some`/`none`/`ok` in the
 
 ---
 
-## Not on this list (still need design decisions — do NOT touch yet)
+## Design pass complete
 
-- The modules-as-compile-time-values / signatures Layer 3 section
-- Contract `result` variable naming (the `post result >= 0.0` name collides with
-  the `result` type)
+All design items from the review are resolved and written into
+`kira-reference.md`. The only remaining work is the mechanical `@`-constructor
+pass and the two example-bug fixes in this file (items 1 and 2 above).
 
-Resolved in the design pass and already written into `kira-reference.md`
-(here only so the history is clear): arithmetic overflow, wrapping/saturating
-operators, module system, second-class borrows / slices / closure capture,
-data-race freedom (`send`/`share`, `shared`, `mutex`), entry point (`main`),
-casts → constructor-style conversions, `?` error conversion, `int`/`float`
-alias removal, the `largest` borrow inconsistency.
+Resolved and written: arithmetic overflow, wrapping/saturating operators, the
+module system (folders, `pub`/`module`/`file`, `pub use`, compile-time manifest),
+second-class borrows / slices / closure capture, data-race freedom
+(`send`/`share`, `shared`, `mutex`), entry point (`main`), casts →
+constructor-style conversions, `?` error conversion (into-conversion, works on
+`option`), `int`/`float` alias removal, the `largest` borrow inconsistency,
+contract `return` naming, and modules-as-compile-time-values (`signature`,
+parameterized modules, module reflection).

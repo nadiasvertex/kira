@@ -1262,6 +1262,84 @@ def process[T: sortable + network_value](val: T): ...
 
 ---
 
+## Modules as Compile-Time Values
+
+At compile time, a module is a value: a record of the types, functions, and constants it defines. You rarely bind one to a variable, but because a module is a value, it can be *parameterized over*, *passed to* other modules, and *reflected on* — all at compile time. Modules are never runtime values, so none of this adds dynamic dispatch or any run-time cost.
+
+### Signatures
+
+A `signature` describes the shape a module must have — the module-level analogue of a concept. It lists required types, functions, and constants without implementing them:
+
+```kira
+signature backend:
+    type conn
+    def connect(url: str) -> conn
+    def query(c: &conn, sql: str) -> result[rows, db_error]
+    def close(c: conn) -> unit
+```
+
+A module *satisfies* a signature structurally, the same way a type satisfies a concept: if it provides the matching members, it qualifies — there is no `impl` to write. A `postgres` module and a `sqlite` module that both provide `conn`, `connect`, `query`, and `close` each satisfy `backend`.
+
+### Parameterized Modules
+
+A module may take compile-time parameters — types, values, and other modules — using the same `[...]` syntax that types and functions use. A module parameter is bounded by a signature:
+
+```kira
+module audited[DB: backend]:
+    pub def query(c: &DB.conn, sql: str) -> result[rows, db_error]:
+        audit_log(sql)
+        DB.query(c, sql)
+```
+
+`audited` is a function from a module to a module — a functor — written in ordinary module syntax. Instantiating it with a concrete module produces a concrete module:
+
+```kira
+use audited[postgres] as db
+
+let rows = db.query(&conn, "select 1")   # audited, backed by postgres
+```
+
+Parameterization composes with the rest of the compile-time facilities: a parameterized module can branch with `static if`, unroll with `static for`, and synthesize members with quoting and splicing when it must build them programmatically.
+
+### Reflecting on a Module
+
+A module exposes its members as compile-time values, mirroring the reflection available on types:
+
+```kira
+M.functions()   # list of function descriptors
+M.types()       # list of type descriptors
+M.name()        # the module's name, as str
+```
+
+Reflection respects visibility: from outside a module only its `pub` members are visible; from within, all of them are.
+
+### Generating Code From a Module
+
+Reflection plus `static for` turns a module into a source of generated code — which is how Kira does the jobs other languages reach for dynamic dispatch to solve. Here a command table is built from every public function of a module, entirely at compile time:
+
+```kira
+static COMMANDS: map[str, command] = map(
+    for f in cli_commands.functions() => (f.name(), make_command(f))
+)
+```
+
+No registry is populated at run time and no virtual call is made; the table is baked into the binary.
+
+### Selecting a Module at Compile Time
+
+Because module selection happens at compile time, `static if` gives you zero-cost dependency injection — swap a real implementation for a fake in tests with no runtime indirection:
+
+```kira
+static if BUILD.test:
+    use fake_io  as io
+else:
+    use real_io  as io
+```
+
+Both `fake_io` and `real_io` satisfy the same signature, so the code that uses `io` never changes.
+
+---
+
 ## The `machine` Layer
 
 `machine` is a function prefix granting access to low-level machine details. Inside a `machine` function, the compiler makes no safety guarantees. Use it only when you need to cross into territory that Kira's ownership and type system cannot otherwise express.
@@ -1441,6 +1519,7 @@ no_prelude
 | No exceptions | All failure paths visible in types; `?` keeps them ergonomic |
 | No dynamic typing | Inference fills in types; ambiguity is a compile error |
 | Modules span files; dotted paths are folders (`pub`/`module`/`file` visibility) | A module is a unit of privacy, not a file; a package exposes its `pub` surface via compile-time reflection |
+| Modules are compile-time values; signatures are their types | Parameterized modules give ML-style functors in ordinary generics syntax; reflection over members generates code, replacing dynamic dispatch |
 | `list[T]` in the prelude | Beginners have a useful collection immediately; `array[T,n]` is the fixed-size variant |
 | Full compile-time execution | No separate macro or template language; reflection and codegen use ordinary Kira |
 | `array[T, n]` as sole built-in collection | All other collections are library types; `list` is the standard resizable sequence |
