@@ -265,17 +265,20 @@ auto type_table::display(type_id id) const -> std::string {
   return "<?>";
 }
 
+/// See the header for semantics.
 auto type_table::is_unknown(type_id id) const -> bool {
   const auto kind = entry(id).kind;
   return kind == type_kind::unknown_kind || kind == type_kind::error_kind ||
          kind == type_kind::type_param_kind;
 }
 
+/// See the header for semantics.
 auto type_table::is_boolean(type_id id) const -> bool {
   const auto &item = entry(id);
   return item.kind == type_kind::builtin_kind && item.name == "bool";
 }
 
+/// See the header for semantics.
 auto type_table::is_integer(type_id id) const -> bool {
   const auto &item = entry(id);
   if (item.kind != type_kind::builtin_kind) {
@@ -285,16 +288,19 @@ auto type_table::is_integer(type_id id) const -> bool {
          item.name == "byte" || item.name == "isize" || item.name == "usize";
 }
 
+/// See the header for semantics.
 auto type_table::is_float(type_id id) const -> bool {
   const auto &item = entry(id);
   return item.kind == type_kind::builtin_kind &&
          item.name.starts_with("float");
 }
 
+/// See the header for semantics.
 auto type_table::is_numeric(type_id id) const -> bool {
   return is_integer(id) || is_float(id);
 }
 
+/// See the header for semantics.
 auto type_table::is_unit(type_id id) const -> bool {
   const auto &item = entry(id);
   return item.kind == type_kind::builtin_kind && item.name == "unit";
@@ -377,6 +383,7 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
   }
 }
 
+/// Linear search over `k_builtin_scalar_names`.
 auto is_builtin_scalar_name(std::string_view name) -> bool {
   for (const auto candidate : k_builtin_scalar_names) {
     if (candidate == name) {
@@ -386,6 +393,7 @@ auto is_builtin_scalar_name(std::string_view name) -> bool {
   return false;
 }
 
+/// Linear search over `k_builtin_generic_arities`.
 auto builtin_generic_arity(std::string_view name)
     -> std::optional<std::pair<size_t, size_t>> {
   for (const auto &candidate : k_builtin_generic_arities) {
@@ -427,6 +435,7 @@ auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
   return std::nullopt;
 }
 
+/// Linear search over `k_prelude_trait_names`.
 auto is_prelude_trait_name(std::string_view name) -> bool {
   for (const auto candidate : k_prelude_trait_names) {
     if (candidate == name) {
@@ -590,6 +599,7 @@ auto index_items(const std::vector<ast::ptr<ast::node>> &items,
 
 } // namespace
 
+/// Exact-match lookup in the `modules` map.
 auto program_index::find_module(std::string_view module_name) const
     -> const module_members * {
   const auto it = modules.find(std::string(module_name));

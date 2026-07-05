@@ -1775,6 +1775,8 @@ auto validate_node_list(const std::vector<ast::ptr<ast::node>> &items,
 auto detect_duplicate_module_paths(const std::vector<parsed_module> &inputs,
                                    diagnostic_bag &diag,
                                    std::vector<bool> &file_has_errors) -> void {
+  /// One module path already seen while scanning inputs, and where its
+  /// first (so-far only) declaration was found.
   struct seen_module {
     std::string module_name;
     source_location location;

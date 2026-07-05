@@ -1071,6 +1071,7 @@ auto build_semantic_session(const std::vector<parsed_module> &inputs)
   return session;
 }
 
+/// Bounds-checked lookup into `session.scopes`.
 auto find_semantic_scope(const semantic_session &session, scope_id id)
     -> const semantic_scope * {
   if (id == k_invalid_scope_id || static_cast<size_t>(id) >= session.scopes.size()) {
@@ -1079,6 +1080,7 @@ auto find_semantic_scope(const semantic_session &session, scope_id id)
   return &session.scopes[id];
 }
 
+/// Bounds-checked lookup into `session.symbols`.
 auto find_semantic_symbol(const semantic_session &session, symbol_id id)
     -> const semantic_symbol * {
   if (id == k_invalid_symbol_id || static_cast<size_t>(id) >= session.symbols.size()) {
@@ -1087,6 +1089,7 @@ auto find_semantic_symbol(const semantic_session &session, symbol_id id)
   return &session.symbols[id];
 }
 
+/// Looks up the scope recorded for `node` while building the session.
 auto find_node_scope(const semantic_session &session, const ast::node &node)
     -> std::optional<scope_id> {
   if (const auto it = session.node_scopes.find(&node); it != session.node_scopes.end()) {
@@ -1095,6 +1098,9 @@ auto find_node_scope(const semantic_session &session, const ast::node &node)
   return std::nullopt;
 }
 
+/// Walks from `start_scope` outward through parent scopes, checking each
+/// scope's symbols in reverse-declaration order (so a later shadowing `let`
+/// wins), until `name` is found in `name_space` or scopes are exhausted.
 auto resolve_symbol(const semantic_session &session, scope_id start_scope,
                     symbol_namespace name_space, std::string_view name)
     -> const semantic_symbol * {

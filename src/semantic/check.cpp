@@ -1650,6 +1650,9 @@ private:
   //  Binary and unary operators
   // ==========================================================================
 
+  /// Maps an arithmetic operator to the trait that overloads it on a
+  /// user struct/sum type (`add`, `sub`, `mul`, `div`, `rem`); an empty
+  /// string for operators with no overload trait.
   auto operator_trait_for(ast::binary_op op) -> std::string_view {
     switch (op) {
     case ast::binary_op::Add:
@@ -1673,6 +1676,10 @@ private:
     }
   }
 
+  /// For a user struct/sum/opaque operand, requires it to implement
+  /// `trait_name` (reporting a missing-impl error with an `impl`/`deriving`
+  /// hint otherwise); returns `unknown` for anything else, since the result
+  /// type of an overloaded operator is decided by its impl, not guessed here.
   auto require_operand_trait(source_span span, type_id operand,
                              std::string_view trait_name,
                              std::string_view op_name) -> type_id {
@@ -1697,6 +1704,11 @@ private:
     return k_unknown_type;
   }
 
+  /// Types an arithmetic operator (`+`, `-`, `*`, `/`, `%` and their
+  /// wrapping/saturating forms): both operands must be the same numeric
+  /// type, or (for non-numeric operands) must implement the operator's
+  /// overload trait. Reports a mismatched-numeric-types error rather than
+  /// converting either side, since Kira never converts numbers implicitly.
   auto infer_arithmetic(const ast::binary_expr &binary, type_id expected)
       -> type_id {
     const auto numeric_expected =
@@ -1754,6 +1766,9 @@ private:
     return lhs;
   }
 
+  /// Types `==`/`!=` (`is_equality`) or `<`/`<=`/`>`/`>=`: operands must be
+  /// mutually compatible types, and (for a user struct/sum operand) must
+  /// implement `eq`/`ord`. Always yields `bool`.
   auto infer_comparison(const ast::binary_expr &binary, bool is_equality)
       -> type_id {
     const auto lhs = binary.lhs != nullptr
@@ -1779,6 +1794,8 @@ private:
     return bool_type;
   }
 
+  /// Infers `expr` expecting `bool` and reports an error if it isn't —
+  /// Kira has no truthiness, so every condition must be an explicit `bool`.
   auto require_bool(const ast::expr &expr, std::string_view context) -> void {
     const auto found = strip_refs(infer_expr(expr, types_.builtin("bool")));
     if (!types_.is_unknown(found) && !types_.is_boolean(found)) {
@@ -1792,6 +1809,12 @@ private:
     }
   }
 
+  /// Dispatches a binary expression to the appropriate typing rule for its
+  /// operator family: arithmetic, equality/ordering comparison, logical
+  /// (`and`/`or`, requiring `bool` operands), bitwise/shift (requiring
+  /// integer operands), membership (`in`/`not in`), ranges, or `|`
+  /// (bitwise-or on integers; otherwise untyped, since `|` also appears in
+  /// sum-type/pipeline/pattern syntax this checker does not model).
   auto infer_binary(const ast::binary_expr &binary, type_id expected)
       -> type_id {
     switch (binary.op) {
@@ -1894,6 +1917,10 @@ private:
     return k_unknown_type;
   }
 
+  /// Types a unary operator: `-` requires (and preserves) a numeric
+  /// operand, `not` requires and yields `bool`, `~` requires (and preserves)
+  /// an integer operand, `*` (deref) unwraps a pointer/reference, and
+  /// `&`/`&mut` wrap the operand in a reference type.
   auto infer_unary(const ast::unary_expr &unary, type_id expected) -> type_id {
     const auto operand =
         unary.operand != nullptr
@@ -1949,8 +1976,14 @@ private:
   //  Impl / method tables
   // ==========================================================================
 
+  /// Maps `"{trait_name}:{type_key}"` to the location of the first impl
+  /// seen for that (trait, type) pair, session-wide — built by
+  /// `validate_impl_coherence` and consulted by `type_has_trait`.
   std::unordered_map<std::string, source_location> impl_trait_index_;
 
+  /// Extracts the trailing name of an impl's trait-type path (e.g. `show`
+  /// from `impl show for point:`), or empty for an inherent impl with no
+  /// trait.
   auto trait_name_of_impl(const ast::impl_decl &impl) -> std::string {
     if (impl.trait_type == nullptr ||
         impl.trait_type->kind != ast::node_kind::named_type) {
@@ -1960,6 +1993,11 @@ private:
     return named.path.empty() ? std::string{} : named.path.back();
   }
 
+  /// A stable string key identifying a type for impl-coherence bookkeeping:
+  /// the declaration's address for user types, or the type's display name
+  /// otherwise (so two distinct instantiations of the same generic
+  /// declaration share one coherence key, matching Kira's "one impl per
+  /// (trait, type)" rule at the declaration level).
   auto type_key_of(const type_entry &entry) -> std::string {
     if (entry.decl != nullptr) {
       return std::format("u:{}", static_cast<const void *>(entry.decl));
@@ -1967,6 +2005,8 @@ private:
     return std::format("n:{}", entry.name);
   }
 
+  /// Finds a trait declaration named `name` in the current module or
+  /// reachable through a non-wildcard import.
   auto find_session_trait(std::string_view name)
       -> std::optional<trait_decl_ref> {
     if (module_ != nullptr) {
@@ -1986,6 +2026,8 @@ private:
     return std::nullopt;
   }
 
+  /// Resolves the concrete type an impl block targets (its `for` clause),
+  /// against the impl's own generic parameters.
   auto resolve_impl_target(const impl_ref &impl) -> type_id {
     if (impl.decl->for_type == nullptr) {
       return k_unknown_type;
@@ -2004,6 +2046,11 @@ private:
     return resolve_type(*impl.decl->for_type, ctx);
   }
 
+  /// Builds `methods_` once per session (idempotent via `methods_built_`):
+  /// for every impl block in every module, records its methods against the
+  /// impl's target type declaration, plus — for a trait impl — the target
+  /// trait's default-bodied methods, so calling a non-overridden default
+  /// method through the impl works without duplicating its body per type.
   auto build_method_table() -> void {
     if (methods_built_) {
       return;
@@ -2068,6 +2115,9 @@ private:
     }
   }
 
+  /// Looks up a method by name on a user-type instance. An inherent or
+  /// impl-provided method always wins over a trait default with the same
+  /// name; the default is only used as a fallback.
   auto find_method(const type_entry &instance, std::string_view name)
       -> const method_entry * {
     build_method_table();
@@ -2094,6 +2144,8 @@ private:
     return fallback;
   }
 
+  /// Whether `instance` implements `trait_name`, via either a `deriving`
+  /// clause or a recorded `impl` (session-wide coherence index).
   auto type_has_trait(const type_entry &instance, std::string_view trait_name)
       -> bool {
     build_method_table();
@@ -2133,6 +2185,9 @@ private:
   //  Calls
   // ==========================================================================
 
+  /// Checks a call against a `fn(...)`-typed callable value: arity must
+  /// match exactly (no named arguments or defaults for a bare fn type), and
+  /// each argument's type is checked positionally.
   auto check_call_against_fn_type(const ast::call_expr &call,
                                   const type_entry &fn_entry,
                                   std::string_view callee_name) -> type_id {
@@ -2157,6 +2212,12 @@ private:
     return fn_entry.result;
   }
 
+  /// Hard-codes the result types of the handful of prelude methods the
+  /// checker knows about for `list[T]`, `str`, `option[T]`, and `result[T, E]`
+  /// — a stopgap until the standard library itself is represented as
+  /// checkable declarations. Returns `unknown` for any other object kind or
+  /// unrecognized method name, which is silently accepted rather than
+  /// reported as an error.
   auto builtin_method_result(const type_entry &object, std::string_view name)
       -> type_id {
     const auto element = object.args.empty() ? k_unknown_type : object.args[0];
@@ -2221,6 +2282,8 @@ private:
     return k_unknown_type;
   }
 
+  /// Builds the comma-separated, sorted, deduplicated method-name list
+  /// used in the "provides the methods ..." note on an unknown-method error.
   auto available_method_names(const type_entry &instance) -> std::string {
     build_method_table();
     auto names = std::vector<std::string>{};
@@ -2243,6 +2306,11 @@ private:
     return out;
   }
 
+  /// Types a method-call expression `object.method(args...)`: resolves
+  /// `object`'s type, then tries (in order) a user-declared method, a
+  /// `deriving`/prelude-trait-derived method, a callable struct field, or a
+  /// builtin-type method — reporting an unknown-method error only for
+  /// struct/sum/opaque objects, since builtin methods are best-effort.
   auto infer_method_call(const ast::call_expr &call,
                          const ast::field_expr &field) -> type_id {
     if (field.object == nullptr) {
@@ -2307,6 +2375,10 @@ private:
     }
   }
 
+  /// Types a constructor-style conversion call `target_name(value)` (e.g.
+  /// `float64(n)`), Kira's replacement for a cast operator. Reports a
+  /// no-conversion-exists error when the source is a known non-numeric,
+  /// non-boolean type and the target is numeric.
   auto check_conversion_call(const ast::call_expr &call,
                              std::string_view target_name) -> type_id {
     const auto target = types_.builtin(target_name);
@@ -2338,6 +2410,13 @@ private:
     return target;
   }
 
+  /// Types a call expression by dispatching on its callee's shape: a method
+  /// call (field-expr callee) goes to `infer_method_call`; a computed
+  /// callable value is checked against its `fn(...)` type; a variant-ident
+  /// callee constructs that variant; otherwise the identifier is resolved in
+  /// order through local bindings, the current module's functions, imports,
+  /// prelude functions (each with its own hard-coded signature), a builtin
+  /// conversion call, a bare variant spelling, or an undefined-name error.
   auto infer_call(const ast::call_expr &call, type_id expected) -> type_id {
     if (call.callee == nullptr) {
       infer_call_args_loosely(call);
@@ -2512,6 +2591,8 @@ private:
     return k_unknown_type; // other type-level members (reflection, try_from)
   }
 
+  /// Builds the comma-separated field-name list used in the "has the
+  /// fields ..." note on an unknown-field error.
   auto struct_field_names(const type_entry &instance) -> std::string {
     auto out = std::string{};
     if (const auto *fields = struct_fields_of(instance)) {
@@ -2573,6 +2654,7 @@ private:
     }
   }
 
+  /// Types a plain (non-call) field access `object.name`.
   auto infer_field(const ast::field_expr &field) -> type_id {
     if (field.object == nullptr) {
       return k_unknown_type;
@@ -2636,6 +2718,11 @@ private:
            find_import(ident.name) != nullptr;
   }
 
+  /// Types an indexing expression `object[key]`. Distinguishes generic
+  /// instantiation (`size_of[usize]`) from real indexing via
+  /// `ident_names_callable_decl`, then, for `array`/`list`/`slice`/`str`,
+  /// requires an integer key (except for a range key, which produces a
+  /// slice/substring rather than a single element).
   auto infer_index(const ast::index_expr &index) -> type_id {
     if (index.object == nullptr) {
       return k_unknown_type;
@@ -2710,6 +2797,9 @@ private:
   //  Struct literals
   // ==========================================================================
 
+  /// Finds a `type` declaration by name in the current module or
+  /// reachable through a non-wildcard import; returns the declaration paired
+  /// with its owning module's name.
   auto find_type_decl_by_name(std::string_view name)
       -> std::optional<std::pair<const ast::type_decl *, std::string>> {
     if (module_ != nullptr) {
@@ -2730,6 +2820,11 @@ private:
     return std::nullopt;
   }
 
+  /// Types a struct literal `Type { field: value, ... }` (or bare `{ ... }`
+  /// against an expected struct type). Reports duplicate/unknown/missing
+  /// fields and checks each field value's type; when the target is a
+  /// generic struct instantiated with no explicit arguments, infers them
+  /// from field values whose declared type names a bare type parameter.
   auto check_struct_literal(const ast::struct_expr &expr, type_id expected)
       -> type_id {
     auto target = k_unknown_type;
@@ -2904,6 +2999,12 @@ private:
     return last;
   }
 
+  /// Types a lambda expression. Parameter types come from an explicit
+  /// annotation, or (failing that) from the corresponding slot of an
+  /// expected `fn(...)` type; the declared/expected return type is checked
+  /// against the body's inferred type. Always yields a concrete `fn(...)`
+  /// type — Kira monomorphizes closures, so there is no separate closure
+  /// type distinct from the function-value type it's assigned/passed as.
   auto infer_lambda(const ast::lambda_expr &lambda, type_id expected)
       -> type_id {
     const auto &expected_entry = types_.entry(strip_refs(expected));
@@ -2955,6 +3056,8 @@ private:
     return types_.fn_of(std::move(param_types), result);
   }
 
+  /// Checks an `if`/`elif` branch's condition (requiring `bool`) or, for an
+  /// `if let` branch, infers the scrutinee and checks the pattern against it.
   auto check_if_branch_header(const ast::if_branch &branch) -> void {
     if (branch.condition != nullptr) {
       require_bool(*branch.condition, "an `if` condition");
@@ -2993,6 +3096,11 @@ private:
     return current;
   }
 
+  /// Types an `if`/`elif`/`else` expression: each branch's tail value is
+  /// joined via `join_branch_type`, reporting a mismatch if any two
+  /// branches produce genuinely incompatible types. An `if` with no `else`
+  /// still yields the joined branch type, since exhaustiveness for boolean
+  /// conditions is not enforced the way `match` exhaustiveness is.
   auto infer_if_expr(const ast::if_expr &expr, type_id expected) -> type_id {
     auto result = expected;
     for (const auto &branch : expr.branches) {
@@ -3022,6 +3130,10 @@ private:
     return result;
   }
 
+  /// Types a `for ... => yield` comprehension expression: each clause's
+  /// iterable is unwrapped to its element type via `element_type_of` and
+  /// bound to that clause's pattern(s), the optional guard must be `bool`,
+  /// and the result is always `list[yield_type]`.
   auto infer_for_expr(const ast::for_expr &expr) -> type_id {
     push_scope();
     for (const auto &clause : expr.clauses) {
@@ -3057,6 +3169,10 @@ private:
     return types_.builtin_generic("list", {yield_type});
   }
 
+  /// Types `expr?`: the operand must be `result`/`option`, and (when the
+  /// enclosing function's return type is known) that return type must also
+  /// be `result`/`option` for the early-return side of `?` to make sense.
+  /// Yields the wrapped success type.
   auto infer_try(const ast::try_expr &expr) -> type_id {
     if (expr.operand == nullptr) {
       return k_unknown_type;
@@ -3096,6 +3212,10 @@ private:
     return is_wrapper && !entry.args.empty() ? entry.args[0] : k_unknown_type;
   }
 
+  /// Types `await expr` (or bare `await yield`, which yields `unit`).
+  /// Unwraps a `task[T, E, C]` operand to `result[T, E]` (or plain `T` when
+  /// the task cannot fail); any other operand type passes through
+  /// unchanged, since full task/context typing is not yet modeled.
   auto infer_await(const ast::await_expr &expr) -> type_id {
     if (expr.operand == nullptr) {
       return types_.builtin("unit"); // `await yield`
@@ -3112,6 +3232,10 @@ private:
     return operand; // awaiting a non-task is validated once tasks are typed
   }
 
+  /// Returns the element type yielded by iterating `iterable` (array/list/
+  /// slice/range/option element, or `char` for `str`), used by `for`
+  /// loops/comprehensions. Reports a not-iterable error for a known
+  /// non-iterable scalar type.
   auto element_type_of(type_id iterable, source_span span) -> type_id {
     const auto stripped = strip_refs(iterable);
     const auto &entry = types_.entry(stripped);
@@ -3148,6 +3272,11 @@ private:
   //  Expression dispatch
   // ==========================================================================
 
+  /// The central expression-typing dispatcher: infers `expr`'s type given an
+  /// `expected` type (used to disambiguate literals, propagate generic
+  /// arguments into a lambda, and check tail-expression compatibility),
+  /// dispatching to the dedicated `infer_*`/`check_*` function for its
+  /// concrete node kind.
   auto infer_expr(const ast::expr &expr, type_id expected) -> type_id {
     if (expr.has_error) {
       return k_unknown_type;
@@ -3306,6 +3435,11 @@ private:
     }
   }
 
+  /// Types an array literal, either the explicit-list form `[a, b, c]` or
+  /// the fill form `[val; count]`. The expected type (an `array[T, n]` or a
+  /// `list[T]`/`slice[T]`) determines the element type and result container;
+  /// with no useful expectation, an explicit list defaults to `list[T]` with
+  /// `T` inferred from its first element, checking the rest against it.
   auto infer_array(const ast::array_expr &array, type_id expected) -> type_id {
     const auto &expected_entry = types_.entry(strip_refs(expected));
     auto element_expected = k_unknown_type;
@@ -3374,6 +3508,12 @@ private:
   //  Patterns
   // ==========================================================================
 
+  /// Checks a pattern against the type it is matching (`subject`), binding
+  /// any names it introduces and reporting shape mismatches (wrong tuple
+  /// arity, unknown struct field, wrong variant argument count) and literal
+  /// type mismatches. Recurses into every subpattern regardless of whether
+  /// `subject` is fully known, so bindings are always produced even when the
+  /// checker can't fully verify the pattern's shape.
   auto check_pattern(const ast::pattern &pattern, type_id subject) -> void {
     if (pattern.has_error) {
       return;
@@ -3539,6 +3679,11 @@ private:
     }
   }
 
+  /// Checks a `@variant(...)` pattern against the sum type it should match:
+  /// resolves prelude option/result variants specially, otherwise looks up
+  /// the variant on `subject`'s sum type and checks the destructured
+  /// sub-patterns against its declared payload types, reporting an unknown
+  /// variant or wrong destructuring arity.
   auto check_constructor_pattern(const ast::constructor_pattern &ctor,
                                  type_id subject) -> void {
     const auto &entry = types_.entry(subject);
@@ -3625,6 +3770,10 @@ private:
   //  Match checking and exhaustiveness
   // ==========================================================================
 
+  /// Whether `pattern` matches every possible value of its subject's type
+  /// (a wildcard, a plain binding, or an or-pattern with an irrefutable
+  /// alternative) — such an arm guarantees exhaustiveness regardless of
+  /// what other arms cover.
   auto pattern_is_irrefutable(const ast::pattern &pattern) -> bool {
     switch (pattern.kind) {
     case ast::node_kind::wildcard_pattern:
@@ -3648,6 +3797,9 @@ private:
     }
   }
 
+  /// Records the variant/literal names `pattern` covers (a constructor's
+  /// variant name, an option/result kind, a boolean literal), recursing
+  /// into or-pattern alternatives and group-pattern inner patterns.
   auto collect_covered_names(const ast::pattern &pattern,
                              std::unordered_set<std::string> &covered)
       -> void {
@@ -3700,6 +3852,10 @@ private:
     }
   }
 
+  /// Reports a non-exhaustive-match error listing the specific missing
+  /// variants/values, unless some unguarded arm is irrefutable. Only proves
+  /// exhaustiveness for sum types, `option`, `result`, and `bool`; any other
+  /// subject type (including `unknown`) is trusted rather than checked.
   auto check_match_exhaustiveness(type_id subject, source_span span,
                                   const std::vector<ast::match_arm> &arms)
       -> void {
@@ -3773,6 +3929,10 @@ private:
     mark_error();
   }
 
+  /// Types a `match` expression or statement: infers the subject (if any),
+  /// checks each arm's pattern against it, requires a `bool` guard, joins
+  /// arm result types via `join_branch_type`, and finally checks
+  /// exhaustiveness. Shared by `match_expr` and `match_stmt` handling.
   auto check_match(const ast::expr *subject,
                    const std::vector<ast::match_arm> &arms, type_id expected,
                    source_span span) -> type_id {
@@ -3816,6 +3976,8 @@ private:
   //  Statements
   // ==========================================================================
 
+  /// Human-readable phrase for a binding's origin, used in the "declared
+  /// here" note on an immutable-assignment error (e.g. "bound with `let`").
   auto binding_origin_description(binding_origin origin) -> std::string_view {
     switch (origin) {
     case binding_origin::let_binding:
@@ -3832,6 +3994,10 @@ private:
     return "bound here";
   }
 
+  /// Walks through field/index/group access to find the identifier at the
+  /// root of an assignment target (e.g. `a` in `a.b[0].c = x`), so mutation
+  /// through a `let`-bound root can be flagged even when the assignment
+  /// itself targets a nested field.
   auto assignment_root_ident(const ast::expr &target) -> const ast::ident_expr * {
     const auto *current = &target;
     while (true) {
@@ -3868,6 +4034,11 @@ private:
     }
   }
 
+  /// Checks an assignment statement: a plain identifier target must not be
+  /// `let`/pattern-bound; a computed target (field/index chain) is checked
+  /// for mutation through a `let`-bound root; a compound-assignment
+  /// operator (`+=` etc.) requires a numeric target; and the assigned
+  /// value's type is checked against the target's type.
   auto check_assignment(const ast::assign_stmt &stmt) -> void {
     auto target_type = k_unknown_type;
 
@@ -3953,6 +4124,11 @@ private:
   /// Checks one node in statement position. Returns the node's value type so
   /// blocks can surface their tail expression; bindings extend the innermost
   /// scope.
+  /// Checks one statement-position AST node and returns its value type
+  /// (used as the tail-expression type when it is the last node of a
+  /// block). Handles every statement kind directly; a bare expression or a
+  /// nested declaration in statement position falls through to
+  /// `infer_expr`/`check_item` respectively.
   auto check_body_node(const ast::node &node, type_id expected_tail)
       -> type_id {
     if (node.has_error) {
@@ -4155,6 +4331,14 @@ private:
   //  Declarations
   // ==========================================================================
 
+  /// Checks a function/method declaration end to end: enforces the
+  /// `pub`-must-annotate rule (`at_module_scope`), binds type parameters
+  /// and value parameters (including a leading `self` typed from
+  /// `self_type_`) into a fresh scope stack, checks contract conditions
+  /// under purity enforcement, and checks the body against the declared or
+  /// inferred return type. Saves and restores all per-function state
+  /// (scopes, return type, undefined-name dedup) so nested/sibling checks
+  /// don't see stale state.
   auto check_function(const ast::func_decl &decl, bool at_module_scope)
       -> void {
     if (decl.has_error) {
@@ -4282,6 +4466,11 @@ private:
     pop_type_params();
   }
 
+  /// Checks a `type` declaration: validates its `deriving` clause against
+  /// the derivable-trait allowlist, checks for duplicate struct fields or
+  /// sum variants, resolves every field/variant-payload/alias type, and (for
+  /// an `invariant` clause) checks it as a `bool` contract with `self`
+  /// bound to the type being declared.
   auto check_type_decl(const ast::type_decl &decl) -> void {
     push_type_params(decl.type_params);
 
@@ -4359,6 +4548,10 @@ private:
     pop_type_params();
   }
 
+  /// Finds a trait by name reachable from the current module (own
+  /// declarations or imports), then locates which module actually owns it
+  /// (needed because `find_session_trait` doesn't track the owning module
+  /// for an imported trait).
   auto find_trait_anywhere(std::string_view name)
       -> std::optional<std::pair<const ast::trait_decl *,
                                  const module_members *>> {
@@ -4377,6 +4570,12 @@ private:
     return std::nullopt;
   }
 
+  /// Checks an `impl` block: resolves its target type and (if present) its
+  /// trait, validating that a name written before `for` from a type
+  /// declaration rather than a trait is flagged; when the trait is known,
+  /// checks member completeness/extras via `check_impl_members`; then checks
+  /// every member declaration (methods, associated types) with `self_type_`
+  /// bound to the impl's target.
   auto check_impl_decl(const ast::impl_decl &decl) -> void {
     push_type_params(decl.type_params);
 
@@ -4449,6 +4648,11 @@ private:
     pop_type_params();
   }
 
+  /// Validates an impl's members against its trait's requirements: every
+  /// non-default trait method must be implemented, every associated type
+  /// without a default must be defined, every impl method must actually be
+  /// a trait member with a matching parameter count, and every trait
+  /// `requires` obligation must already be satisfied by the target type.
   auto check_impl_members(const ast::impl_decl &impl,
                           const ast::trait_decl &trait,
                           std::string_view trait_name,
@@ -4585,6 +4789,10 @@ private:
     }
   }
 
+  /// Checks a `trait` declaration: binds its type parameters and a
+  /// self-referential `self` type parameter, resolves its `requires` bound
+  /// and associated-type defaults, and checks each method declaration
+  /// (including any default body) as an ordinary function.
   auto check_trait_decl(const ast::trait_decl &decl) -> void {
     push_type_params(decl.type_params);
     const auto saved_self = self_type_;
@@ -4617,6 +4825,10 @@ private:
     pop_type_params();
   }
 
+  /// Checks a `concept` declaration: binds its parameters as generic type
+  /// parameters, then resolves each constraint's subject and (whether it's
+  /// a trait/concept bound or a compile-time value expression) its
+  /// bound-or-expression payload.
   auto check_concept_decl(const ast::concept_decl &decl) -> void {
     auto param_scope = std::unordered_map<std::string, type_id>{};
     for (const auto &param : decl.params) {
@@ -4647,6 +4859,9 @@ private:
     pop_type_params();
   }
 
+  /// Checks a `static` declaration in whichever of its five forms it takes
+  /// (binding, assertion, conditional compilation, or either `static for`
+  /// variant), dispatching on `decl_kind`.
   auto check_static_decl(const ast::static_decl &decl) -> void {
     switch (decl.decl_kind) {
     case ast::static_decl_kind::binding: {
@@ -4707,6 +4922,11 @@ private:
     }
   }
 
+  /// Checks one module/trait/impl-scope item, dispatching to the
+  /// appropriate check_* function for its declaration kind; a nested inline
+  /// submodule recurses with the module context switched to the submodule,
+  /// and anything else (a bare statement reached via unusual nesting) falls
+  /// through to `check_body_node`.
   auto check_item(const ast::node &item, bool at_module_scope) -> void {
     if (item.has_error) {
       return;
@@ -4771,6 +4991,12 @@ private:
   //  Impl coherence (session-wide)
   // ==========================================================================
 
+  /// Session-wide coherence check: for every trait impl in every module,
+  /// records the (trait, target-type) pair in `impl_trait_index_` and
+  /// reports a duplicate-implementation error (with both locations) if the
+  /// pair was already recorded — enforcing Kira's "at most one impl per
+  /// (trait, type)" rule. Inherent impls (no trait) are skipped since they
+  /// cannot conflict by construction.
   auto validate_impl_coherence() -> void {
     for (const auto &[module_name, members] : index_.modules) {
       for (const auto &impl : members.impls) {
@@ -4821,6 +5047,10 @@ private:
   //  Per-file entry
   // ==========================================================================
 
+  /// Recomputes `file_has_external_wildcard_` for the file currently being
+  /// checked: true when it has a `use pkg.*` wildcard import whose root the
+  /// session does not own, meaning some undefined-looking name might
+  /// actually come from that external module.
   auto compute_external_wildcard() -> void {
     file_has_external_wildcard_ = false;
     const auto *imports = imports_for_current_file();
@@ -4835,6 +5065,10 @@ private:
     }
   }
 
+  /// Checks one file's items end to end: enforces the "`main` xor top-level
+  /// statements" rule, recomputes the external-wildcard flag, and checks
+  /// every top-level item (statements via `check_body_node`, declarations
+  /// via `check_item`) in a fresh top-level scope.
   auto check_file(const ast::file &file) -> void {
     compute_external_wildcard();
     reported_undefined_.clear();
@@ -4891,6 +5125,9 @@ private:
   }
 
 public:
+  /// Runs impl coherence once for the whole session, then checks every
+  /// input file that has a valid module declaration and no already-recorded
+  /// error, setting up the current-file/current-module context before each.
   auto run_impl(const std::vector<parsed_module> &inputs) -> void {
     validate_impl_coherence();
 
@@ -4913,12 +5150,16 @@ public:
   }
 };
 
+/// Out-of-line definition of the public entry point declared on `checker`;
+/// forwards to `run_impl`.
 auto checker::run(const std::vector<parsed_module> &inputs) -> void {
   run_impl(inputs);
 }
 
 } // namespace
 
+/// Builds the session-wide `program_index` once, then runs one `checker`
+/// instance over every input file.
 auto check_program(const std::vector<parsed_module> &inputs,
                    diagnostic_bag &diag,
                    std::vector<bool> &file_has_errors) -> void {
@@ -4928,9 +5169,3 @@ auto check_program(const std::vector<parsed_module> &inputs,
 }
 
 } // namespace kira::semantic
-
-
-
-
-
-

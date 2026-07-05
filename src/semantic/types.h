@@ -32,6 +32,8 @@ inline constexpr type_id k_unknown_type = 0;
 /// reported for an expression, so its type doesn't need to be guessed.
 inline constexpr type_id k_error_type = 1;
 
+/// Which shape of type a `type_entry` describes; determines which of its
+/// fields are meaningful.
 enum class type_kind : uint8_t {
   unknown_kind,         ///< Not known; compatible with every type.
   error_kind,           ///< Produced after an error was already reported.
