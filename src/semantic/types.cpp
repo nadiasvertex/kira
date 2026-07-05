@@ -1,0 +1,564 @@
+#include "types.h"
+
+#include <array>
+#include <format>
+#include <utility>
+
+#include "src/semantic/module_index.h"
+
+namespace kira::semantic {
+namespace {
+
+constexpr std::array<std::string_view, 27> k_builtin_scalar_names = {
+    "bool",   "char",    "str",     "unit",   "never",  "byte",
+    "int8",   "int16",   "int32",   "int64",  "int128", "uint8",
+    "uint16", "uint32",  "uint64",  "uint128", "float32", "float64",
+    "float128", "isize", "usize",   "ordering", "io",   "cpu",
+    "expr",   "stmt",    "def_expr",
+};
+
+struct generic_arity_entry {
+  std::string_view name;
+  size_t min_args;
+  size_t max_args;
+};
+
+constexpr std::array<generic_arity_entry, 12> k_builtin_generic_arities = {{
+    {"list", 1, 1},
+    {"option", 1, 1},
+    {"result", 2, 2},
+    {"box", 1, 1},
+    {"slice", 1, 1},
+    {"slice_mut", 1, 1},
+    {"shared", 0, 1},
+    {"task", 1, 3},
+    {"channel", 1, 1},
+    {"watch", 1, 1},
+    {"mutex", 1, 1},
+    {"atomic", 1, 1},
+}};
+
+constexpr std::array<std::string_view, 12> k_prelude_trait_names = {
+    "eq",  "ord", "hash", "show", "from", "into",
+    "add", "sub", "mul",  "div",  "rem",  "neg",
+};
+
+auto append_args_key(std::string &key, const std::vector<type_id> &args)
+    -> void {
+  key += '[';
+  for (const auto arg : args) {
+    key += std::to_string(arg);
+    key += ',';
+  }
+  key += ']';
+}
+
+} // namespace
+
+type_table::type_table() {
+  entries_.push_back(type_entry{.kind = type_kind::unknown_kind,
+                                .name = "<unknown>"});
+  entries_.push_back(type_entry{.kind = type_kind::error_kind,
+                                .name = "<error>"});
+}
+
+auto type_table::intern(std::string key, type_entry entry) -> type_id {
+  if (const auto it = interned_.find(key); it != interned_.end()) {
+    return it->second;
+  }
+  const auto id = static_cast<type_id>(entries_.size());
+  entries_.push_back(std::move(entry));
+  interned_.emplace(std::move(key), id);
+  return id;
+}
+
+auto type_table::builtin(std::string_view name) -> type_id {
+  return intern(std::format("b:{}", name),
+                type_entry{.kind = type_kind::builtin_kind,
+                           .name = std::string(name)});
+}
+
+auto type_table::builtin_generic(std::string_view name,
+                                 std::vector<type_id> args) -> type_id {
+  auto key = std::format("g:{}", name);
+  append_args_key(key, args);
+  return intern(std::move(key),
+                type_entry{.kind = type_kind::builtin_generic_kind,
+                           .name = std::string(name),
+                           .args = std::move(args)});
+}
+
+auto type_table::tuple_of(std::vector<type_id> elements) -> type_id {
+  auto key = std::string("t:");
+  append_args_key(key, elements);
+  return intern(std::move(key), type_entry{.kind = type_kind::tuple_kind,
+                                           .name = "tuple",
+                                           .args = std::move(elements)});
+}
+
+auto type_table::array_of(type_id element, std::optional<uint64_t> size)
+    -> type_id {
+  auto key = std::format("a:{}:{}", element,
+                         size.has_value() ? std::to_string(*size) : "?");
+  return intern(std::move(key), type_entry{.kind = type_kind::array_kind,
+                                           .name = "array",
+                                           .result = element,
+                                           .array_size = size});
+}
+
+auto type_table::fn_of(std::vector<type_id> params, type_id result)
+    -> type_id {
+  auto key = std::string("f:");
+  append_args_key(key, params);
+  key += std::format("->{}", result);
+  return intern(std::move(key), type_entry{.kind = type_kind::fn_kind,
+                                           .name = "fn",
+                                           .args = std::move(params),
+                                           .result = result});
+}
+
+auto type_table::ref_to(type_id inner, bool is_mut) -> type_id {
+  return intern(std::format("r:{}:{}", inner, is_mut),
+                type_entry{.kind = type_kind::ref_kind,
+                           .name = "ref",
+                           .result = inner,
+                           .is_mut = is_mut});
+}
+
+auto type_table::ptr_to(type_id inner, bool is_mut) -> type_id {
+  return intern(std::format("p:{}:{}", inner, is_mut),
+                type_entry{.kind = type_kind::ptr_kind,
+                           .name = "ptr",
+                           .result = inner,
+                           .is_mut = is_mut});
+}
+
+auto type_table::user_type(const ast::type_decl &decl,
+                           std::string_view module_name,
+                           std::vector<type_id> args) -> type_id {
+  auto kind = type_kind::opaque_kind;
+  if (decl.definition != nullptr) {
+    if (decl.definition->kind == ast::node_kind::struct_type_def) {
+      kind = type_kind::struct_kind;
+    } else if (decl.definition->kind == ast::node_kind::sum_type_def) {
+      kind = type_kind::sum_kind;
+    }
+  }
+  auto key = std::format("u:{}", static_cast<const void *>(&decl));
+  append_args_key(key, args);
+  return intern(std::move(key), type_entry{.kind = kind,
+                                           .name = decl.name,
+                                           .module_name =
+                                               std::string(module_name),
+                                           .decl = &decl,
+                                           .args = std::move(args)});
+}
+
+auto type_table::type_param(std::string_view name) -> type_id {
+  return intern(std::format("v:{}", name),
+                type_entry{.kind = type_kind::type_param_kind,
+                           .name = std::string(name)});
+}
+
+auto type_table::entry(type_id id) const -> const type_entry & {
+  if (static_cast<size_t>(id) >= entries_.size()) {
+    return entries_[k_unknown_type];
+  }
+  return entries_[id];
+}
+
+auto type_table::display(type_id id) const -> std::string {
+  const auto &item = entry(id);
+  switch (item.kind) {
+  case type_kind::unknown_kind:
+    return "_";
+  case type_kind::error_kind:
+    return "<error>";
+  case type_kind::builtin_kind:
+  case type_kind::type_param_kind:
+    return item.name;
+  case type_kind::builtin_generic_kind:
+  case type_kind::struct_kind:
+  case type_kind::sum_kind:
+  case type_kind::opaque_kind: {
+    if (item.args.empty()) {
+      return item.name;
+    }
+    auto out = item.name + "[";
+    for (size_t i = 0; i < item.args.size(); ++i) {
+      if (i != 0) {
+        out += ", ";
+      }
+      out += display(item.args[i]);
+    }
+    out += "]";
+    return out;
+  }
+  case type_kind::tuple_kind: {
+    auto out = std::string("(");
+    for (size_t i = 0; i < item.args.size(); ++i) {
+      if (i != 0) {
+        out += ", ";
+      }
+      out += display(item.args[i]);
+    }
+    out += ")";
+    return out;
+  }
+  case type_kind::array_kind:
+    return std::format("array[{}, {}]", display(item.result),
+                       item.array_size.has_value()
+                           ? std::to_string(*item.array_size)
+                           : std::string("_"));
+  case type_kind::fn_kind: {
+    auto out = std::string("fn(");
+    for (size_t i = 0; i < item.args.size(); ++i) {
+      if (i != 0) {
+        out += ", ";
+      }
+      out += display(item.args[i]);
+    }
+    out += std::format(") -> {}", display(item.result));
+    return out;
+  }
+  case type_kind::ref_kind:
+    return std::format("&{}{}", item.is_mut ? "mut " : "",
+                       display(item.result));
+  case type_kind::ptr_kind:
+    return std::format("*{}{}", item.is_mut ? "mut " : "",
+                       display(item.result));
+  }
+  return "<?>";
+}
+
+auto type_table::is_unknown(type_id id) const -> bool {
+  const auto kind = entry(id).kind;
+  return kind == type_kind::unknown_kind || kind == type_kind::error_kind ||
+         kind == type_kind::type_param_kind;
+}
+
+auto type_table::is_boolean(type_id id) const -> bool {
+  const auto &item = entry(id);
+  return item.kind == type_kind::builtin_kind && item.name == "bool";
+}
+
+auto type_table::is_integer(type_id id) const -> bool {
+  const auto &item = entry(id);
+  if (item.kind != type_kind::builtin_kind) {
+    return false;
+  }
+  return item.name.starts_with("int") || item.name.starts_with("uint") ||
+         item.name == "byte" || item.name == "isize" || item.name == "usize";
+}
+
+auto type_table::is_float(type_id id) const -> bool {
+  const auto &item = entry(id);
+  return item.kind == type_kind::builtin_kind &&
+         item.name.starts_with("float");
+}
+
+auto type_table::is_numeric(type_id id) const -> bool {
+  return is_integer(id) || is_float(id);
+}
+
+auto type_table::is_unit(type_id id) const -> bool {
+  const auto &item = entry(id);
+  return item.kind == type_kind::builtin_kind && item.name == "unit";
+}
+
+auto type_table::compatible(type_id expected, type_id found) const -> bool {
+  if (expected == found || is_unknown(expected) || is_unknown(found)) {
+    return true;
+  }
+
+  const auto &expected_entry = entry(expected);
+  const auto &found_entry = entry(found);
+
+  // `never` (panic, propagating return) is acceptable anywhere.
+  if (found_entry.kind == type_kind::builtin_kind &&
+      found_entry.name == "never") {
+    return true;
+  }
+
+  if (expected_entry.kind != found_entry.kind) {
+    // A `&T` argument position accepts a lent `T`; the borrow checker owns
+    // the deeper rules, so typing treats the reference as its target here.
+    if (expected_entry.kind == type_kind::ref_kind) {
+      return compatible(expected_entry.result, found);
+    }
+    if (found_entry.kind == type_kind::ref_kind) {
+      return compatible(expected, found_entry.result);
+    }
+    return false;
+  }
+
+  switch (expected_entry.kind) {
+  case type_kind::builtin_generic_kind:
+  case type_kind::struct_kind:
+  case type_kind::sum_kind:
+  case type_kind::opaque_kind: {
+    const auto same_declaration =
+        expected_entry.decl != nullptr
+            ? expected_entry.decl == found_entry.decl
+            : expected_entry.name == found_entry.name;
+    if (!same_declaration || expected_entry.args.size() != found_entry.args.size()) {
+      return false;
+    }
+    for (size_t i = 0; i < expected_entry.args.size(); ++i) {
+      if (!compatible(expected_entry.args[i], found_entry.args[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  case type_kind::tuple_kind:
+  case type_kind::fn_kind: {
+    if (expected_entry.args.size() != found_entry.args.size() ||
+        !compatible(expected_entry.result, found_entry.result)) {
+      return false;
+    }
+    for (size_t i = 0; i < expected_entry.args.size(); ++i) {
+      if (!compatible(expected_entry.args[i], found_entry.args[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  case type_kind::array_kind:
+    return compatible(expected_entry.result, found_entry.result) &&
+           (!expected_entry.array_size.has_value() ||
+            !found_entry.array_size.has_value() ||
+            *expected_entry.array_size == *found_entry.array_size);
+  case type_kind::ref_kind:
+  case type_kind::ptr_kind:
+    return compatible(expected_entry.result, found_entry.result) &&
+           (found_entry.is_mut || !expected_entry.is_mut);
+  default:
+    return false;
+  }
+}
+
+auto is_builtin_scalar_name(std::string_view name) -> bool {
+  for (const auto candidate : k_builtin_scalar_names) {
+    if (candidate == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+auto builtin_generic_arity(std::string_view name)
+    -> std::optional<std::pair<size_t, size_t>> {
+  for (const auto &candidate : k_builtin_generic_arities) {
+    if (candidate.name == name) {
+      return std::pair{candidate.min_args, candidate.max_args};
+    }
+  }
+  return std::nullopt;
+}
+
+auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
+  if (name == "int8") {
+    return 127u;
+  }
+  if (name == "int16") {
+    return 32767u;
+  }
+  if (name == "int32") {
+    return 2147483647u;
+  }
+  if (name == "int64" || name == "isize") {
+    return 9223372036854775807u;
+  }
+  if (name == "uint8" || name == "byte") {
+    return 255u;
+  }
+  if (name == "uint16") {
+    return 65535u;
+  }
+  if (name == "uint32") {
+    return 4294967295u;
+  }
+  if (name == "uint64" || name == "usize") {
+    return 18446744073709551615u;
+  }
+  return std::nullopt;
+}
+
+auto is_prelude_trait_name(std::string_view name) -> bool {
+  for (const auto candidate : k_prelude_trait_names) {
+    if (candidate == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ==========================================================================
+//  Program index construction
+// ==========================================================================
+
+namespace {
+
+auto record_use_bindings(const ast::use_decl &decl, file_id_type file_id,
+                         program_index &index) -> void {
+  auto &bindings = index.imports[file_id];
+
+  if (!decl.selector.has_value()) {
+    if (decl.path.empty()) {
+      return;
+    }
+    bindings.push_back(import_binding{
+        .local_name = decl.path.back(),
+        .path = decl.path,
+        .leaf_name = {},
+        .is_wildcard = false,
+        .span = decl.span,
+    });
+    return;
+  }
+
+  if (decl.selector->kind == ast::UseSelectorKind::Wildcard) {
+    bindings.push_back(import_binding{
+        .local_name = {},
+        .path = decl.path,
+        .leaf_name = {},
+        .is_wildcard = true,
+        .span = decl.selector->span,
+    });
+    return;
+  }
+
+  for (const auto &item : decl.selector->items) {
+    bindings.push_back(import_binding{
+        .local_name = item.alias.value_or(item.name),
+        .path = decl.path,
+        .leaf_name = item.name,
+        .is_wildcard = false,
+        .span = item.span,
+    });
+  }
+}
+
+auto record_module_item(const ast::node &item, file_id_type file_id,
+                        module_members &members) -> void {
+  switch (item.kind) {
+  case ast::node_kind::type_decl: {
+    const auto &decl = static_cast<const ast::type_decl &>(item);
+    if (decl.name.empty()) {
+      return;
+    }
+    members.types.emplace(decl.name,
+                          type_decl_ref{.decl = &decl, .file_id = file_id});
+    if (decl.definition != nullptr &&
+        decl.definition->kind == ast::node_kind::sum_type_def) {
+      const auto &sum =
+          static_cast<const ast::sum_type_def &>(*decl.definition);
+      for (const auto &variant : sum.body.variants) {
+        if (!variant.name.empty()) {
+          members.variants.emplace(
+              variant.name,
+              variant_ref{.sum_decl = &decl, .variant = &variant});
+        }
+      }
+    }
+    return;
+  }
+  case ast::node_kind::trait_decl: {
+    const auto &decl = static_cast<const ast::trait_decl &>(item);
+    if (!decl.name.empty()) {
+      members.traits.emplace(decl.name,
+                             trait_decl_ref{.decl = &decl, .file_id = file_id});
+    }
+    return;
+  }
+  case ast::node_kind::concept_decl: {
+    const auto &decl = static_cast<const ast::concept_decl &>(item);
+    if (!decl.name.empty()) {
+      members.concepts.emplace(
+          decl.name, concept_decl_ref{.decl = &decl, .file_id = file_id});
+    }
+    return;
+  }
+  case ast::node_kind::func_decl: {
+    const auto &decl = static_cast<const ast::func_decl &>(item);
+    if (!decl.name.empty()) {
+      members.functions.emplace(
+          decl.name, func_decl_ref{.decl = &decl, .file_id = file_id});
+    }
+    return;
+  }
+  case ast::node_kind::static_decl: {
+    const auto &decl = static_cast<const ast::static_decl &>(item);
+    if (decl.decl_kind == ast::static_decl_kind::binding && !decl.name.empty()) {
+      members.statics.emplace(
+          decl.name, static_decl_ref{.decl = &decl, .file_id = file_id});
+    }
+    return;
+  }
+  case ast::node_kind::impl_decl: {
+    const auto &decl = static_cast<const ast::impl_decl &>(item);
+    members.impls.push_back(impl_ref{.decl = &decl,
+                                     .module_name = members.module_name,
+                                     .file_id = file_id});
+    return;
+  }
+  default:
+    return;
+  }
+}
+
+auto index_items(const std::vector<ast::ptr<ast::node>> &items,
+                 std::string_view module_name, file_id_type file_id,
+                 program_index &index) -> void {
+  auto &members = index.modules[std::string(module_name)];
+  members.module_name = std::string(module_name);
+
+  for (const auto &item : items) {
+    if (item == nullptr || item->has_error) {
+      continue;
+    }
+    if (item->kind == ast::node_kind::use_decl) {
+      record_use_bindings(static_cast<const ast::use_decl &>(*item), file_id,
+                          index);
+      continue;
+    }
+    if (item->kind == ast::node_kind::sub_module_decl) {
+      const auto &decl = static_cast<const ast::sub_module_decl &>(*item);
+      if (!decl.items.empty()) {
+        index_items(decl.items, append_module_name(module_name, decl.name),
+                    file_id, index);
+      }
+      continue;
+    }
+    record_module_item(*item, file_id, members);
+  }
+}
+
+} // namespace
+
+auto program_index::find_module(std::string_view module_name) const
+    -> const module_members * {
+  const auto it = modules.find(std::string(module_name));
+  return it != modules.end() ? &it->second : nullptr;
+}
+
+auto build_program_index(const std::vector<parsed_module> &inputs)
+    -> program_index {
+  auto index = program_index{};
+
+  for (const auto &input : inputs) {
+    if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
+        input.ast_file->module_decl->has_error ||
+        input.ast_file->module_decl->path.empty()) {
+      continue;
+    }
+    const auto module_name =
+        join_strings(input.ast_file->module_decl->path, ".");
+    index_items(input.ast_file->items, module_name, input.file_id, index);
+  }
+
+  return index;
+}
+
+} // namespace kira::semantic
