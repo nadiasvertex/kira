@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -122,7 +123,7 @@ auto find_node_scope_or_fail(const kira::semantic::semantic_session &session,
                              const kira::ast::node &node) -> kira::semantic::scope_id {
   const auto scope = kira::semantic::find_node_scope(session, node);
   expect(scope.has_value(), "expected node scope to be recorded");
-  return *scope;
+  return scope.value();
 }
 
 auto test_build_semantic_session_indexes_module_symbols() -> void {
@@ -310,10 +311,14 @@ auto test_lambda_parameters_shadow_outer_bindings() -> void {
 } // namespace
 
 auto main() -> int {
-  test_build_semantic_session_indexes_module_symbols();
-  test_resolve_value_name_shadowing_in_nested_blocks();
-  test_resolve_function_parameters_and_locals();
-  test_match_arm_pattern_bindings_are_arm_local();
-  test_lambda_parameters_shadow_outer_bindings();
+  try {
+    test_build_semantic_session_indexes_module_symbols();
+    test_resolve_value_name_shadowing_in_nested_blocks();
+    test_resolve_function_parameters_and_locals();
+    test_match_arm_pattern_bindings_are_arm_local();
+    test_lambda_parameters_shadow_outer_bindings();
+  } catch (const std::exception &ex) {
+    fail(std::string{"unhandled exception: "} + ex.what());
+  }
   return 0;
 }

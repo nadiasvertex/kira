@@ -216,8 +216,10 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
       "expected first match arm to preserve aliased pattern");
   expect(aliased_pattern->alias.has_value(),
          "expected aliased pattern name to be preserved");
-  expect(*aliased_pattern->alias == "alias",
-         "expected aliased pattern alias name");
+  if (aliased_pattern->alias.has_value()) {
+    expect(*aliased_pattern->alias == "alias",
+           "expected aliased pattern alias name");
+  }
 
   auto *option_pattern = expect_pattern<kira::ast::option_pattern>(
       aliased_pattern->inner.get(), kira::ast::node_kind::option_pattern,
@@ -526,16 +528,21 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
   expect(use_decl->path[1] == "io", "expected second import path segment");
   expect(use_decl->selector.has_value(),
          "expected aliased import to produce a selector");
-  expect(use_decl->selector->kind == kira::ast::UseSelectorKind::Single,
-         "expected aliased import selector kind");
-  expect(use_decl->selector->items.size() == 1,
-         "expected one imported item in aliased import");
-  expect(use_decl->selector->items[0].name == "reader",
-         "expected imported item name");
-  expect(use_decl->selector->items[0].alias.has_value(),
-         "expected imported item alias");
-  expect(*use_decl->selector->items[0].alias == "rdr",
-         "expected imported item alias name");
+  if (use_decl->selector.has_value()) {
+    const auto &selector = *use_decl->selector;
+    expect(selector.kind == kira::ast::UseSelectorKind::Single,
+           "expected aliased import selector kind");
+    expect(selector.items.size() == 1,
+           "expected one imported item in aliased import");
+    expect(selector.items[0].name == "reader",
+           "expected imported item name");
+    expect(selector.items[0].alias.has_value(),
+           "expected imported item alias");
+    if (selector.items[0].alias.has_value()) {
+      expect(*selector.items[0].alias == "rdr",
+             "expected imported item alias name");
+    }
+  }
 
   auto *concept_decl = expect_node<kira::ast::concept_decl>(
       parsed.file->items[1].get(), kira::ast::node_kind::concept_decl,

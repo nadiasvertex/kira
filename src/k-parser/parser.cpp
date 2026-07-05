@@ -3117,8 +3117,6 @@ auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
 
   // Identifiers and module paths.
   case token_kind::ident:
-    return parse_ident_or_path_expr();
-
   case token_kind::kw_some:
   case token_kind::kw_ok:
   case token_kind::kw_err:

@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -255,12 +256,16 @@ auto test_validate_semantics_reports_unresolved_module_qualified_reference()
 } // namespace
 
 auto main() -> int {
-  test_validate_semantics_accepts_clean_session();
-  test_validate_semantics_reports_duplicate_module_paths();
-  test_validate_semantics_reports_missing_parent_module_declaration();
-  test_validate_semantics_reports_unresolved_session_import();
-  test_validate_semantics_reports_duplicate_module_scope_symbol();
-  test_validate_semantics_reports_unresolved_qualified_type_path();
-  test_validate_semantics_reports_unresolved_module_qualified_reference();
+  try {
+    test_validate_semantics_accepts_clean_session();
+    test_validate_semantics_reports_duplicate_module_paths();
+    test_validate_semantics_reports_missing_parent_module_declaration();
+    test_validate_semantics_reports_unresolved_session_import();
+    test_validate_semantics_reports_duplicate_module_scope_symbol();
+    test_validate_semantics_reports_unresolved_qualified_type_path();
+    test_validate_semantics_reports_unresolved_module_qualified_reference();
+  } catch (const std::exception &ex) {
+    fail(std::string{"unhandled exception: "} + ex.what());
+  }
   return 0;
 }

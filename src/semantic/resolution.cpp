@@ -772,9 +772,6 @@ auto validate_type_expr(const ast::type_expr &type,
     return;
   }
 
-  case ast::node_kind::quote_type:
-    return;
-
   default:
     return;
   }

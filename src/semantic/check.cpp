@@ -504,10 +504,6 @@ private:
       return refinement.base != nullptr ? resolve_type(*refinement.base, ctx)
                                         : k_unknown_type;
     }
-    case ast::node_kind::union_type:
-    case ast::node_kind::bound_type:
-    case ast::node_kind::quote_type:
-      return k_unknown_type;
     default:
       return k_unknown_type;
     }
@@ -1026,13 +1022,14 @@ private:
     for (const auto &arg : call.args) {
       const fn_param_info *target = nullptr;
       if (arg.name.has_value()) {
+        const auto &arg_name = *arg.name;
         seen_named = true;
         for (size_t i = 0; i < params.size(); ++i) {
-          if (params[i].name == *arg.name) {
+          if (params[i].name == arg_name) {
             if (param_used[i]) {
               error(arg.span,
                     std::format("argument `{}` is provided more than once",
-                                *arg.name),
+                                arg_name),
                     "duplicate argument");
             }
             param_used[i] = true;
@@ -1044,14 +1041,14 @@ private:
           auto diag = diagnostic(
               diagnostic_level::error,
               std::format("unknown named argument `{}` in call to `{}`",
-                          *arg.name, callee_name),
+                          arg_name, callee_name),
               file_id_);
           diag.with_label(arg.span, "no parameter has this name");
           auto names = std::vector<std::string>{};
           for (const auto &param : params) {
             names.push_back(param.name);
           }
-          if (const auto suggestion = best_suggestion(*arg.name, names)) {
+          if (const auto suggestion = best_suggestion(arg_name, names)) {
             diag.with_help(std::format("did you mean `{}:`?", *suggestion));
           }
           diag_.emit(std::move(diag));
@@ -3951,16 +3948,16 @@ private:
       if (arm.guard != nullptr) {
         require_bool(*arm.guard, "a match guard");
       }
-      auto arm_type = types_.builtin("unit");
+      type_id arm_type;
+      source_span body_span;
       if (arm.body_expr != nullptr) {
         arm_type = infer_expr(*arm.body_expr, expected);
+        body_span = arm.body_expr->span;
       } else {
         arm_type = check_body_nodes(arm.body_stmts, expected);
+        body_span = arm.span;
       }
-      result = join_branch_type(result, arm_type,
-                                arm.body_expr != nullptr ? arm.body_expr->span
-                                                         : arm.span,
-                                "`match`");
+      result = join_branch_type(result, arm_type, body_span, "`match`");
       pop_scope();
     }
 

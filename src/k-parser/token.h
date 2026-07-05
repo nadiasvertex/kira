@@ -1035,7 +1035,6 @@ token_kind_description(token_kind kind) noexcept -> std::string_view {
   case token_kind::ident:
     return "a name";
   case token_kind::int_lit:
-    return "a number";
   case token_kind::float_lit:
     return "a number";
   case token_kind::string_lit:

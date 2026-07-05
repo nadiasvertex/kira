@@ -134,7 +134,9 @@ private:
   ///
   /// @param start Starting byte offset for the slice.
   [[nodiscard]] auto text_from(byte_offset start) const noexcept -> std::string_view {
-    return source_.substr(start, pos_ - start);
+    // `substr` can throw `std::out_of_range`; build the view directly since
+    // `start` is always a valid offset no later than `pos_`.
+    return std::string_view(source_.data() + start, pos_ - start);
   }
 
   /// @brief Builds a half-open source span from `start` to the current position.

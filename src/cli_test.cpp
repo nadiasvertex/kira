@@ -776,26 +776,31 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
 
 /// Run the CLI driver regression tests.
 auto main() -> int {
-  test_parse_args_accepts_sources();
-  test_parse_args_supports_help_and_double_dash();
-  test_parse_args_accepts_metadata_dir();
-  test_parse_args_rejects_unknown_options();
-  test_rendering_helpers();
-  test_compile_sources_writes_module_metadata();
-  test_compile_sources_reports_parser_errors();
-  test_compile_sources_reports_nested_parser_errors();
-  test_compile_sources_handles_multiple_files();
-  test_compile_sources_reports_duplicate_module_paths();
-  test_compile_sources_accepts_declared_external_submodule();
-  test_compile_sources_reports_missing_parent_submodule_declaration();
-  test_compile_sources_reports_inline_external_submodule_conflict();
-  test_compile_sources_resolves_session_imports();
-  test_compile_sources_reports_duplicate_module_scope_symbol();
-  test_compile_sources_reports_duplicate_inline_submodule_scope_symbol();
-  test_compile_sources_resolves_super_qualified_type_paths();
-  test_compile_sources_reports_unresolved_qualified_type_path();
-  test_compile_sources_reports_unresolved_module_qualified_reference();
-  test_compile_sources_reports_unresolved_session_import();
-  test_compile_sources_reports_inaccessible_session_import();
+  try {
+    test_parse_args_accepts_sources();
+    test_parse_args_supports_help_and_double_dash();
+    test_parse_args_accepts_metadata_dir();
+    test_parse_args_rejects_unknown_options();
+    test_rendering_helpers();
+    test_compile_sources_writes_module_metadata();
+    test_compile_sources_reports_parser_errors();
+    test_compile_sources_reports_nested_parser_errors();
+    test_compile_sources_handles_multiple_files();
+    test_compile_sources_reports_duplicate_module_paths();
+    test_compile_sources_accepts_declared_external_submodule();
+    test_compile_sources_reports_missing_parent_submodule_declaration();
+    test_compile_sources_reports_inline_external_submodule_conflict();
+    test_compile_sources_resolves_session_imports();
+    test_compile_sources_reports_duplicate_module_scope_symbol();
+    test_compile_sources_reports_duplicate_inline_submodule_scope_symbol();
+    test_compile_sources_resolves_super_qualified_type_paths();
+    test_compile_sources_reports_unresolved_qualified_type_path();
+    test_compile_sources_reports_unresolved_module_qualified_reference();
+    test_compile_sources_reports_unresolved_session_import();
+    test_compile_sources_reports_inaccessible_session_import();
+  } catch (const std::exception &ex) {
+    std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
+    return 1;
+  }
   return 0;
 }

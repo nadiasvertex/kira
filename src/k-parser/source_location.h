@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <expected>
 #include <limits>
@@ -206,11 +207,13 @@ public:
     if (span.start >= source_.size()) {
       return {};
 }
-    auto actual_end = span.end <= source_.size()
-                          ? span.end
-                          : static_cast<byte_offset>(source_.size());
-    return std::string_view(source_).substr(span.start,
-                                            actual_end - span.start);
+    // `substr` can throw `std::out_of_range`; build the view directly. Clamp
+    // `actual_end` on both sides so a malformed span can't underflow the
+    // resulting length.
+    auto actual_end = std::clamp(span.end, span.start,
+                                 static_cast<byte_offset>(source_.size()));
+    return std::string_view(source_.data() + span.start,
+                            actual_end - span.start);
   }
 
   /// @brief Returns the logical source line containing `offset`.
@@ -241,7 +244,9 @@ public:
       --line_end;
     }
 
-    return std::string_view(source_).substr(line_start, line_end - line_start);
+    // `substr` can throw `std::out_of_range`; build the view directly since
+    // `line_start <= line_end <= source_.size()` always holds here.
+    return std::string_view(source_.data() + line_start, line_end - line_start);
   }
 
   /// @brief Returns the number of indexed logical lines in the file.

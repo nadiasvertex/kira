@@ -98,39 +98,43 @@ auto list_corpus_files(const fs::path &corpus_dir) -> std::vector<std::string> {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  auto corpus_dir = find_corpus_dir(argc > 0 ? std::string_view(argv[0]) : std::string_view{});
-  auto files = list_corpus_files(corpus_dir);
+  try {
+    auto corpus_dir = find_corpus_dir(argc > 0 ? std::string_view(argv[0]) : std::string_view{});
+    auto files = list_corpus_files(corpus_dir);
 
-  expect(!files.empty(), "expected parser stress corpus to contain .kira files");
-  expect(files.size() >= 60,
-         std::format("expected a broad parser stress corpus, found only {} files",
-                     files.size()));
+    expect(!files.empty(), "expected parser stress corpus to contain .kira files");
+    expect(files.size() >= 60,
+           std::format("expected a broad parser stress corpus, found only {} files",
+                       files.size()));
 
-  auto temp = make_temp_dir();
-  kira::cli_config cfg{
-      .program_name = "kira",
-      .sources = files,
-      .metadata_dir = temp.path.string(),
-      .show_help = false,
-      // The stress corpus exercises the parser; its snippets reference names
-      // that intentionally do not exist, so semantic checking stays off.
-      .parse_only = true,
-  };
+    auto temp = make_temp_dir();
+    kira::cli_config cfg{
+        .program_name = "kira",
+        .sources = files,
+        .metadata_dir = temp.path.string(),
+        .show_help = false,
+        // The stress corpus exercises the parser; its snippets reference names
+        // that intentionally do not exist, so semantic checking stays off.
+        .parse_only = true,
+    };
 
-  auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(), "expected compile_sources to return a report");
-  expect(report->error_count == 0,
-         report->diagnostics.empty()
-             ? std::string{"expected parser stress corpus to parse cleanly"}
-             : report->diagnostics);
-  expect(report->modules.size() == files.size(),
-         std::format("expected {} metadata artifacts, got {}", files.size(),
-                     report->modules.size()));
+    auto report = kira::compile_sources(cfg, false);
+    expect(report.has_value(), "expected compile_sources to return a report");
+    expect(report->error_count == 0,
+           report->diagnostics.empty()
+               ? std::string{"expected parser stress corpus to parse cleanly"}
+               : report->diagnostics);
+    expect(report->modules.size() == files.size(),
+           std::format("expected {} metadata artifacts, got {}", files.size(),
+                       report->modules.size()));
 
-  for (const auto &module : report->modules) {
-    expect(fs::exists(module.metadata_path),
-           std::format("expected metadata artifact `{}` to exist",
-                       module.metadata_path));
+    for (const auto &module : report->modules) {
+      expect(fs::exists(module.metadata_path),
+             std::format("expected metadata artifact `{}` to exist",
+                         module.metadata_path));
+    }
+  } catch (const std::exception &ex) {
+    fail(std::string{"unhandled exception: "} + ex.what());
   }
 
   return 0;

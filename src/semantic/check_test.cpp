@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -466,31 +467,35 @@ auto test_reports_impure_contract_call() -> void {
 } // namespace
 
 auto main() -> int {
-  test_accepts_typed_core_program();
-  test_accepts_structs_and_methods();
-  test_accepts_collections_and_lambdas();
-  test_accepts_option_result_flow();
-  test_accepts_cross_module_qualified_types();
+  try {
+    test_accepts_typed_core_program();
+    test_accepts_structs_and_methods();
+    test_accepts_collections_and_lambdas();
+    test_accepts_option_result_flow();
+    test_accepts_cross_module_qualified_types();
 
-  test_reports_undefined_name_with_suggestion();
-  test_reports_undefined_type();
-  test_reports_annotation_mismatch();
-  test_reports_integer_literal_overflow();
-  test_reports_mixed_numeric_types();
-  test_reports_non_bool_condition();
-  test_reports_assignment_to_immutable();
-  test_reports_return_type_mismatch();
-  test_reports_call_argument_problems();
-  test_reports_struct_literal_problems();
-  test_reports_unknown_field_and_method();
-  test_reports_non_exhaustive_match();
-  test_reports_unknown_variant_in_pattern();
-  test_reports_try_in_plain_function();
-  test_reports_unannotated_pub_function();
-  test_reports_duplicate_trait_impl();
-  test_reports_incomplete_trait_impl();
-  test_reports_unsatisfied_trait_requirement();
-  test_reports_unknown_deriving();
-  test_reports_impure_contract_call();
+    test_reports_undefined_name_with_suggestion();
+    test_reports_undefined_type();
+    test_reports_annotation_mismatch();
+    test_reports_integer_literal_overflow();
+    test_reports_mixed_numeric_types();
+    test_reports_non_bool_condition();
+    test_reports_assignment_to_immutable();
+    test_reports_return_type_mismatch();
+    test_reports_call_argument_problems();
+    test_reports_struct_literal_problems();
+    test_reports_unknown_field_and_method();
+    test_reports_non_exhaustive_match();
+    test_reports_unknown_variant_in_pattern();
+    test_reports_try_in_plain_function();
+    test_reports_unannotated_pub_function();
+    test_reports_duplicate_trait_impl();
+    test_reports_incomplete_trait_impl();
+    test_reports_unsatisfied_trait_requirement();
+    test_reports_unknown_deriving();
+    test_reports_impure_contract_call();
+  } catch (const std::exception &ex) {
+    fail(std::string{"unhandled exception: "} + ex.what());
+  }
   return 0;
 }
