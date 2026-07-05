@@ -32,6 +32,7 @@ The constructor names that appear in the current spec:
 - `ok`, `err` — `result`
 - `file_not_found`, `permission_denied`, `parse_failed` — `app_error`
 - `red`, `green`, `blue` — `color`
+- `inc`, `scale`, `clamp` — the `op` type (Closure Types example)
 - `cancelled` — used as an error variant value in `err(cancelled)` → `@cancelled`
 
 ### What DOES NOT get `@` (leave untouched)

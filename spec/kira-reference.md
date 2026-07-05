@@ -78,7 +78,7 @@ int32         # 32-bit signed integer (the default for integer literals)
 float64       # 64-bit floating point (the default for decimal literals)
 str           # UTF-8 text
 char          # a single Unicode character
-unit          # the "no value" type, like void in other languages
+unit          # the "no value" type (like void); its single value is also written unit
 ```
 
 The full numeric family, for when you need a specific width:
@@ -177,6 +177,13 @@ let x = 1
 let x = x + 1    # x is now 2; original x is gone
 ```
 
+A `var` can be updated with compound assignment — `+=`, `-=`, `*=`, `/=`, and the rest — as shorthand for reassigning:
+
+```kira
+var total = 0
+total += 5       # same as total = total + 5
+```
+
 ---
 
 ## Functions
@@ -186,14 +193,26 @@ def add(a: int32, b: int32) -> int32:
     return a + b
 ```
 
-Type annotations on parameters and return type are required for top-level functions when the types cannot be inferred from context. In practice, the compiler will tell you when an annotation is needed.
-
-Parameter types can be omitted when the compiler can infer them:
+You can also leave the types off. When you do, the compiler infers them **from the function's body** — never from how the function is called — and gives each parameter the most general type the body allows:
 
 ```kira
 def double(x):
-    return x * 2
+    return x * 2        # x can be any number; double works for all of them
 ```
+
+`double` works for every numeric type, chosen at each call. Omitting a type does not make it dynamic or untyped — it makes the parameter *as general as the body permits*, resolved at compile time. (In Layer 2 terms, an unannotated parameter is an implicit generic whose bounds are inferred — see Generic Functions.) Add an annotation later, once you know the type you want, to narrow it:
+
+```kira
+def double(x: int32) -> int32:
+    return x * 2        # now double is specifically for int32
+```
+
+Two rules keep this honest as programs grow:
+
+- **`pub` functions must annotate their parameters and return type.** An exported function is a contract other code depends on, so its signature is written down, not inferred. Inference is for the code inside your module; annotations mark the surface you publish.
+- **Inference never crosses a call.** A function's types come from its own body. When the body does not determine them — an ambiguous or genuinely untypable case — the compiler asks for an annotation rather than guessing from callers.
+
+This is the gradual path: write scripts and private helpers with no types at all, then add annotations as the code settles or as you expose it.
 
 Named arguments and defaults:
 
@@ -305,6 +324,14 @@ s.split(",")              # list[str]
 "{s} world"               # "hello world"
 ```
 
+Escape sequences use a backslash; an interpolation brace is written literally by doubling it. A `char` is a single Unicode scalar in single quotes:
+
+```kira
+let quoted = "She said \"hi\"\n"       # \" \\ \n \t \r \0 are supported
+let literal = "{{x}} stays literal"    # "{x} stays literal" — {{ is {, }} is }
+let ch      = 'a'                       # a char; also '\n', '♥'
+```
+
 ---
 
 ## Control Flow
@@ -355,6 +382,19 @@ let evens   = for x in 0..20 if x % 2 == 0 => x
 let pairs   = for x in 0..3, y in 0..3 => (x, y)
 ```
 
+### `break` and `continue`
+
+Inside a `while` or `for` loop, `break` exits the loop and `continue` skips to the next iteration:
+
+```kira
+for line in lines:
+    if line.is_empty(): continue
+    if line == "stop":  break
+    process(line)
+```
+
+In a `for` expression that collects results, `break` ends the collection early and `continue` drops the current element.
+
 ---
 
 ## Pattern Matching
@@ -399,6 +439,22 @@ let (x, y) = point
 
 type person = { name: str, age: int32 }
 let { name, age } = someone
+```
+
+### `if let` and `while let`
+
+When only one pattern matters, `if let` matches and binds in a single step, running its block only on a match:
+
+```kira
+if let some(u) = find_user(42):
+    println("found {u.name}")
+```
+
+`while let` repeats as long as the pattern keeps matching — handy for draining a source that eventually yields `none`:
+
+```kira
+while let some(line) = reader.next():
+    process(line)
 ```
 
 ---
@@ -581,7 +637,20 @@ let arguments = args()        # list[str]
 let home      = env("HOME")   # option[str]
 ```
 
-The compiler uses the `main` in the project's entry module (set in `project.kira`) as the program's start. A library has no `main`.
+### Scripts
+
+For a quick script you can skip the `main` declaration entirely. Top-level statements in the entry module *are* the body of `main`, run in order when the program starts:
+
+```kira
+module hello
+
+for name in args():
+    println("Hi, {name}")
+```
+
+A file may declare `main` explicitly or use top-level statements, but not both. The implicit `main` follows the same rules as an explicit one — including `?`, which exits the program non-zero if an error propagates out of the top level.
+
+The compiler uses the `main` in the project's entry module (set in `project.kira`) — explicit or implicit — as the program's start. A library has no `main`.
 
 ---
 
@@ -695,7 +764,7 @@ let scaled = numbers.map(x => x * factor)   # borrows factor; does not escape
 Structured concurrency is where this pays off. Because a `crew`'s tasks cannot outlive the `crew`, and the `crew` cannot outlive its enclosing scope, a closure spawned into a `crew` may **borrow** local data — there is no `'static`-style requirement and no forced `move`:
 
 ```kira
-async def totals() -> result[summary, error]:
+async def totals() -> result[summary, app_error]:
     let rows = load_rows()
     crew c:
         let a = c.spawn(sum_column(&rows, 0))   # borrows rows across the crew
@@ -703,6 +772,47 @@ async def totals() -> result[summary, error]:
     let total = a.get()? + b.get()?
     return ok(total)
 ```
+
+### Closure Types and Returning Closures
+
+The rules above govern a closure's *environment* — what it captures and who owns it. Its *type* is `fn(A) -> B`, the type of any callable with that signature, capturing or not. Wherever `fn(A) -> B` appears as a parameter or return type, the compiler monomorphizes it to the concrete callable, so calls stay direct and there is no vtable:
+
+```kira
+def apply(f: fn(int32) -> int32, x: int32) -> int32:   # accepts any callable, zero cost
+    return f(x)
+
+def adder(n: int32) -> fn(int32) -> int32:
+    return x => x + n        # returns one concrete closure, hidden behind fn(int32) -> int32
+```
+
+`adder` returns a single closure *shape*, so `fn(int32) -> int32` names it opaquely: the caller can call it and the compiler inlines through it, nothing is boxed. This is the common case.
+
+To return *different* behaviors, prefer expressing the variation as data rather than as an opaque closure — it stays static, is inspectable, and fits the rest of the language:
+
+- **Chosen at compile time** → a dependent return type resolves to a concrete type from a `static` value (see Dependent Types). No runtime cost, no erasure.
+- **Chosen at runtime, from a known set** → return a sum type that describes the behavior, and interpret it:
+
+```kira
+type op = inc | scale(int32) | clamp(int32, int32)
+
+def apply_op(o: op, x: int32) -> int32:
+    match o:
+        inc           => x + 1
+        scale(k)      => x * k
+        clamp(lo, hi) => min(max(x, lo), hi)
+```
+
+  A sum type is a static, matchable `variant` — the dispatch is a branch on a tag, not a hidden call. It also sidesteps a real obstacle: closures have anonymous types, so you cannot name two different ones to place them in a sum. Modelling the behavior as data avoids the problem entirely.
+
+- **Chosen at runtime, from an open set** — heterogeneous callbacks stored together, plugins loaded at run time — is the one case that cannot be monomorphized, because the compiler cannot see the types. For it, and only it, `box[fn(A) -> B]` is an owned, type-erased closure: it owns its captured environment and is called indirectly, and the cost is explicit in the type:
+
+```kira
+var handlers: list[box[fn(event) -> unit]] = []
+handlers.push(box(e => log(e)))
+handlers.push(box(e => metrics.record(e)))
+```
+
+`box` is Kira's one explicit type-erasure escape hatch — reach for it only when the set of types is genuinely open. Everything above resolves with no indirection.
 
 ### Shared Ownership
 
@@ -821,9 +931,88 @@ let b = vec2 { x: 3.0, y: 4.0 }
 let c = a + b    # vec2 { x: 4.0, y: 6.0 }
 ```
 
+### Coherence and the Orphan Rule
+
+For any pair of a trait and a type, a program contains **at most one** implementation, and implementations may not overlap — no two can apply to the same concrete type. A specific `impl show for point` and a blanket `impl[T: show] show for list[T]` coexist because they never apply to the same type; two impls of `show` for `point` do not.
+
+This single-implementation guarantee is what lets `T: show` mean one unambiguous thing, and the standard library depends on it: a `map[K, V]` relies on there being one canonical `hash` and `ord` for `K`, or two modules could corrupt the same map by hashing its keys differently.
+
+To keep the guarantee enforceable across separately compiled packages, an `impl` is allowed only where you own one of the two sides: **you may write `impl Trait for Type` only if the trait or the type is defined in your package** — the *orphan rule*. Because every impl is anchored to a package that owns one side, two packages can never implement the same trait for the same type, so a conflict can only arise inside one package, where the compiler sees it. `deriving` is always allowed — it implements a trait for your own type.
+
+When you need a trait you don't own on a type you don't own, wrap the type:
+
+```kira
+type my_id = { inner: foreign_id }     # a newtype you own
+impl show for my_id:                    # allowed — my_id is yours
+    def show(self) -> str: self.inner.show()
+```
+
+### Extension Methods
+
+Adding a *method* to a type is a different thing from making it implement a trait, and it is not restricted. An `extend` block adds methods to any type — including one you do not own — without claiming any conformance:
+
+```kira
+extend str:
+    def is_palindrome(self) -> bool:
+        self == self.reversed()
+
+"racecar".is_palindrome()      # true
+```
+
+An `extend` method is not an `impl`: it does not make `str` satisfy any trait, so generic code bounded by `T: some_trait` still requires a real `impl`. Because it makes no global claim, it needs neither coherence nor the orphan rule — extend foreign types freely. Extensions are visible only where their module is `use`d, and a call like `s.is_palindrome()` compiles to a direct static call, never a virtual one. Inherent and trait methods take priority; extensions fill in when no method matches, and two conflicting in-scope extensions are an ordinary call-site ambiguity you resolve by imports.
+
+Use `impl` to say a type *is* something (coherent, orphan-restricted); use `extend` to *add convenience* to a type (unrestricted, import-scoped).
+
+### Contracts on Trait Methods
+
+A trait method may carry `pre`/`post` conditions as part of its interface, and every implementation must honor them:
+
+```kira
+trait account:
+    def withdraw(self, amount: int32) -> int32
+        pre  amount > 0
+        post return <= self.balance()
+```
+
+Implementations are checked against the declared contract under **behavioral subtyping**: an implementation may *weaken* a precondition (accept more) and *strengthen* a postcondition (promise more), never the reverse. This guarantees that a caller relying on the trait's contract stays correct no matter which implementation runs. A default method's contract binds every override as well.
+
 ---
 
 ## Async and Concurrency
+
+The primitives in this section — `crew`, `par`, `race`, `on`, channels — all run on one model. This first subsection defines it: what runs tasks, where they run, and how they are cancelled. The rest of the section is that model's syntax.
+
+### The Execution Model
+
+**Executors and contexts.** An *executor* is a concrete resource that runs tasks: the runtime's I/O reactor, a thread pool, a GPU queue. A *context* is the typed capability to run on a kind of executor — what a task requires in order to run, and the `C` in `task[T, E, C]`. Two contexts are built in:
+
+- `io` — the default context for I/O-bound, suspending work, backed by the runtime's reactor.
+- `cpu` — for CPU-bound work, backed by a thread pool; the built-in pool executor is `pool`.
+
+A program can add contexts (`gpu`, `dma`, a real-time loop) by providing an executor for them, and the same primitives work unchanged.
+
+A task may be awaited only from a context that satisfies its requirement, so running CPU-heavy work on the I/O reactor — or I/O on a real-time loop — is a type error rather than a latency bug found in production. `on` bridges contexts:
+
+```kira
+async def handle_request(req: http_request) -> http_response:   # a task[..., io]
+    let result = await on(pool):        # switch to the cpu context for this block
+        expensive_computation(req.body)
+    # back on io here
+    return http_response.ok(result)
+```
+
+Because `pool` — like any multi-threaded executor — may run a task on a different thread, moving work onto it requires the data to satisfy `send`/`share` (see Data-Race Freedom). A single-threaded context imposes no such requirement. The context in a task's type and the concurrency-safety concepts are the same mechanism seen from two sides.
+
+**Tasks.** An `async def` produces a `task[T, E, C]`: a value describing a computation that yields `T` on success or `E` on failure and requires context `C` to run. A task is inert — nothing happens until it is awaited (which runs it to completion on the current context and produces its `result[T, E]`) or spawned into a `crew` (which runs it concurrently). When a task cannot fail, `E` is `never`, and awaiting yields `T` directly instead of a `result`.
+
+**Cancellation.** Every task runs inside a *cancellation scope*. A `crew` establishes one, and each task it spawns inherits a cancellation token. Cancellation is *cooperative*: a task observes it only at suspension points (`await`) and at explicit checks, so it is never interrupted at an arbitrary instruction and its invariants stay intact. A task's own token is available as `cancel`:
+
+```kira
+if cancel.is_requested(): return err(cancelled)
+await yield        # a suspension point that only yields and checks cancellation
+```
+
+Cancellation is requested when a sibling in the same `crew` fails (the crew cancels the rest, unless `on_error: collect`), when a `crew` handle is cancelled from outside (`handle.cancel()`), or when the enclosing scope is torn down. A cancelled task unwinds normally — because ownership frees values at scope exit, its locks, handles, and buffers are released as it returns. Cancellation is an *outcome*, not an error: `cancelled` is its own type, never silently confused with a real failure. And because tasks cannot outlive their `crew`, cancellation always completes before the scope returns — no detached task is left ignoring it. (Advanced Cancellation covers the mechanics in full.)
 
 ### The Basics: `async` and `await`
 
@@ -843,7 +1032,7 @@ async def fetch_name(id: int32) -> result[str, network_error]:
 `crew` is the way to run multiple async tasks together. A `crew` block waits for all its tasks before continuing. If any task fails, the rest are cancelled and the error propagates.
 
 ```kira
-async def fetch_dashboard(user_id: int32) -> result[dashboard, error]:
+async def fetch_dashboard(user_id: int32) -> result[dashboard, app_error]:
     crew c:
         let user_task   = c.spawn(fetch_user(user_id))
         let orders_task = c.spawn(fetch_orders(user_id))
@@ -882,15 +1071,11 @@ let result = await race:
 
 ### Moving Work to a Different Context
 
-`on` runs a block of work on a different executor and returns the result to the current context:
+`on(target)` runs a block on another context or executor and returns the result to the caller's context, as introduced in The Execution Model above. Use it to keep CPU-bound work off the `io` reactor:
 
 ```kira
-async def handle_request(req: http_request) -> http_response:
-    # we're on the io context
-    let result = await on(pool):
-        expensive_computation(req.body)    # runs on the thread pool
-    # back on io context here
-    return http_response.ok(result)
+let result = await on(pool):
+    expensive_computation(req.body)
 ```
 
 ### Error Handling in Concurrent Code
@@ -1459,7 +1644,7 @@ let graph =
     | then(parse)
     | on(pool, then(transform))
     | on(io, then(write_result))
-    | with_timeout(30s)
+    | with_timeout(seconds(30))
     | retry(max: 3, backoff: exponential)
 
 let handle = graph.connect(my_scheduler).start()
@@ -1566,7 +1751,7 @@ impl monad[option]:
 
 The following are available in every module without any `use` declaration:
 
-**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types, `array`, `slice`, `slice_mut`, `option`, `result`, `list`
+**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types, `array`, `slice`, `slice_mut`, `option`, `result`, `list`, `box`
 
 **Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `neg`, and the other arithmetic operator traits
 
@@ -1588,22 +1773,26 @@ no_prelude
 | Decision | Consequence |
 |---|---|
 | No dynamic dispatch | All polymorphism resolved at compile time; no hidden vtables |
+| Closures monomorphize (`fn(A) -> B`) | Return one shape opaquely; vary behavior with sum-type data or dependent types; `box[fn(...)]` is the explicit open-world escape hatch |
 | No exceptions | All failure paths visible in types; `?` keeps them ergonomic |
-| No dynamic typing | Inference fills in types; ambiguity is a compile error |
+| No dynamic typing | Types inferred from function bodies (never call sites); omit them in scripts and private code, annotate `pub` APIs; ambiguity asks for an annotation |
 | Modules span files; dotted paths are folders (`pub`/`module`/`file` visibility) | A module is a unit of privacy, not a file; a package exposes its `pub` surface via compile-time reflection |
 | Modules are compile-time values; signatures are their types | Parameterized modules give ML-style functors in ordinary generics syntax; reflection over members generates code, replacing dynamic dispatch |
 | `list[T]` in the prelude | Beginners have a useful collection immediately; `array[T,n]` is the fixed-size variant |
 | Full compile-time execution | No separate macro or template language; reflection and codegen use ordinary Kira |
 | Compile time is confluent — no mutable global compile-time state | Deterministic, parallel, incremental compilation; program-wide information comes from declarative queries, not registration |
 | `array[T, n]` as sole built-in collection | All other collections are library types; `list` is the standard resizable sequence |
-| Contracts (`pre`, `post`, `invariant`) | Preconditions and postconditions are part of the interface; statically verified when possible |
+| Contracts (`pre`, `post`, `invariant`) | Preconditions and postconditions are part of the interface, including on trait methods (checked by behavioral subtyping); statically verified when possible |
 | Checked arithmetic by default | Overflow panics like a bad index, never UB; `+%`/`+|` give explicit wrap/saturate, safe and available everywhere |
 | Conversions are constructor calls (`float64(x)`) | No cast operator; one `from` mechanism serves both conversions and `?`; narrowing is checked, never silent |
 | Concepts | Named reusable constraint bundles; satisfied automatically; checked at use site |
 | `requires` for trait dependencies | Dependencies are explicit and readable; implied bounds available to callers automatically |
+| Coherent trait implementations | At most one impl per (trait, type); the orphan rule (own the trait or the type) keeps coherence modularly enforceable |
+| `impl` vs `extend` | `impl` declares coherent, orphan-restricted conformance; `extend` adds methods to any type — import-scoped, no conformance, no restriction |
 | `machine` prefix | Low-level access is syntactically consistent with other function modifiers |
 | `pure` prefix | Compiler-verified referential transparency; enables use in contracts and proof obligations |
 | Quoting and splicing (`` ` `` and `~`) | Code generation uses ordinary Kira; no separate macro language; hygienic by default |
 | Second-class borrows | `&`/`&mut` are call-scoped passing modes, never stored or returned, so there are no lifetime annotations; `slice`/`str` views cover borrowed windows |
 | Structured concurrency (`crew`) | Tasks cannot outlive their crew; async leaks are impossible; spawned closures may borrow local data |
+| Typed execution contexts (`task[T, E, C]`) | A task's required context is part of its type; running work on the wrong executor is a type error; `on` bridges contexts; multi-threaded contexts require `send`/`share` |
 | Ownership + concurrency unified | Many-readers-or-one-writer is enforced statically for scoped sharing and by locks for `shared`; `send`/`share` concepts gate task boundaries |
