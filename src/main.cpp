@@ -42,7 +42,9 @@ auto main(int argc, char *argv[]) -> int {
     std::println("{}", kira::render_compile_summary(*report));
     return report->error_count == 0 ? 0 : 1;
   } catch (const std::exception &ex) {
-    std::println(stderr, "Error: unhandled exception: {}", ex.what());
+    // Avoid std::format/std::println here: they can themselves throw, and a
+    // throw from within this handler would escape main() uncaught.
+    std::fprintf(stderr, "Error: unhandled exception: %s\n", ex.what());
     return 1;
   }
 }
