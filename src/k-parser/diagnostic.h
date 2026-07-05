@@ -258,7 +258,7 @@ struct diagnostic {
   /// @param replacement Replacement text.
   auto with_fix(std::string desc, source_span span, std::string replacement) & -> diagnostic & {
     fixes.push_back(
-        suggested_fix{std::move(desc), span, std::move(replacement)});
+        suggested_fix{.description=std::move(desc), .span=span, .replacement=std::move(replacement)});
     return *this;
   }
 
@@ -266,7 +266,7 @@ struct diagnostic {
   auto with_fix(std::string desc, source_span span,
                         std::string replacement) && -> diagnostic && {
     fixes.push_back(
-        suggested_fix{std::move(desc), span, std::move(replacement)});
+        suggested_fix{.description=std::move(desc), .span=span, .replacement=std::move(replacement)});
     return std::move(*this);
   }
 
@@ -315,13 +315,13 @@ public:
       ++error_count_;
       if (error_count_ > max_errors_ && !cascade_reported_) {
         cascade_reported_ = true;
-        diagnostics_.push_back(diagnostic(
+        diagnostics_.emplace_back(
             diagnostic_level::error,
             std::format("too many errors ({}); stopping here to avoid "
                         "overwhelming you — fix the issues above first "
                         "and the rest will likely resolve",
                         error_count_),
-            diag.file_id));
+            diag.file_id);
         return;
       }
       if (error_count_ > max_errors_) {
@@ -405,7 +405,7 @@ public:
   ///
   /// This is useful when a pipeline stage wants to hand off accumulated issues
   /// without preserving previous counters.
-  [[nodiscard]] std::vector<diagnostic> take() {
+  [[nodiscard]] auto take() -> std::vector<diagnostic> {
     auto result = std::move(diagnostics_);
     diagnostics_.clear();
     error_count_ = 0;

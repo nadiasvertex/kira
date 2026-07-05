@@ -29,18 +29,18 @@ struct generic_arity_entry {
 
 /// Prelude container names and their allowed generic-argument arities.
 constexpr std::array<generic_arity_entry, 12> k_builtin_generic_arities = {{
-    {"list", 1, 1},
-    {"option", 1, 1},
-    {"result", 2, 2},
-    {"box", 1, 1},
-    {"slice", 1, 1},
-    {"slice_mut", 1, 1},
-    {"shared", 0, 1},
-    {"task", 1, 3},
-    {"channel", 1, 1},
-    {"watch", 1, 1},
-    {"mutex", 1, 1},
-    {"atomic", 1, 1},
+    {.name="list", .min_args=1, .max_args=1},
+    {.name="option", .min_args=1, .max_args=1},
+    {.name="result", .min_args=2, .max_args=2},
+    {.name="box", .min_args=1, .max_args=1},
+    {.name="slice", .min_args=1, .max_args=1},
+    {.name="slice_mut", .min_args=1, .max_args=1},
+    {.name="shared", .min_args=0, .max_args=1},
+    {.name="task", .min_args=1, .max_args=3},
+    {.name="channel", .min_args=1, .max_args=1},
+    {.name="watch", .min_args=1, .max_args=1},
+    {.name="mutex", .min_args=1, .max_args=1},
+    {.name="atomic", .min_args=1, .max_args=1},
 }};
 
 /// Trait names available from the prelude without any `use`.
@@ -503,7 +503,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
                         module_members &members) -> void {
   switch (item.kind) {
   case ast::node_kind::type_decl: {
-    const auto &decl = static_cast<const ast::type_decl &>(item);
+    const auto &decl = dynamic_cast<const ast::type_decl &>(item);
     if (decl.name.empty()) {
       return;
     }
@@ -512,7 +512,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     if (decl.definition != nullptr &&
         decl.definition->kind == ast::node_kind::sum_type_def) {
       const auto &sum =
-          static_cast<const ast::sum_type_def &>(*decl.definition);
+          dynamic_cast<const ast::sum_type_def &>(*decl.definition);
       for (const auto &variant : sum.body.variants) {
         if (!variant.name.empty()) {
           members.variants.emplace(
@@ -524,7 +524,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::trait_decl: {
-    const auto &decl = static_cast<const ast::trait_decl &>(item);
+    const auto &decl = dynamic_cast<const ast::trait_decl &>(item);
     if (!decl.name.empty()) {
       members.traits.emplace(decl.name,
                              trait_decl_ref{.decl = &decl, .file_id = file_id});
@@ -532,7 +532,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::concept_decl: {
-    const auto &decl = static_cast<const ast::concept_decl &>(item);
+    const auto &decl = dynamic_cast<const ast::concept_decl &>(item);
     if (!decl.name.empty()) {
       members.concepts.emplace(
           decl.name, concept_decl_ref{.decl = &decl, .file_id = file_id});
@@ -540,7 +540,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::func_decl: {
-    const auto &decl = static_cast<const ast::func_decl &>(item);
+    const auto &decl = dynamic_cast<const ast::func_decl &>(item);
     if (!decl.name.empty()) {
       members.functions.emplace(
           decl.name, func_decl_ref{.decl = &decl, .file_id = file_id});
@@ -548,7 +548,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::static_decl: {
-    const auto &decl = static_cast<const ast::static_decl &>(item);
+    const auto &decl = dynamic_cast<const ast::static_decl &>(item);
     if (decl.decl_kind == ast::static_decl_kind::binding && !decl.name.empty()) {
       members.statics.emplace(
           decl.name, static_decl_ref{.decl = &decl, .file_id = file_id});
@@ -556,7 +556,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::impl_decl: {
-    const auto &decl = static_cast<const ast::impl_decl &>(item);
+    const auto &decl = dynamic_cast<const ast::impl_decl &>(item);
     members.impls.push_back(impl_ref{.decl = &decl,
                                      .module_name = members.module_name,
                                      .file_id = file_id});
@@ -581,12 +581,12 @@ auto index_items(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
     if (item->kind == ast::node_kind::use_decl) {
-      record_use_bindings(static_cast<const ast::use_decl &>(*item), file_id,
+      record_use_bindings(dynamic_cast<const ast::use_decl &>(*item), file_id,
                           index);
       continue;
     }
     if (item->kind == ast::node_kind::sub_module_decl) {
-      const auto &decl = static_cast<const ast::sub_module_decl &>(*item);
+      const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
       if (!decl.items.empty()) {
         index_items(decl.items, append_module_name(module_name, decl.name),
                     file_id, index);

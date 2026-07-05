@@ -73,49 +73,49 @@ auto expect_expr_stmt(const kira::ast::node *node) -> const kira::ast::expr_stmt
   expect(node != nullptr, "expected expression statement node");
   expect(node->kind == kira::ast::node_kind::expr_stmt,
          "expected expression statement node kind");
-  return static_cast<const kira::ast::expr_stmt *>(node);
+  return dynamic_cast<const kira::ast::expr_stmt *>(node);
 }
 
 auto expect_func_decl(const kira::ast::node *node) -> const kira::ast::func_decl * {
   expect(node != nullptr, "expected function declaration node");
   expect(node->kind == kira::ast::node_kind::func_decl,
          "expected function declaration node kind");
-  return static_cast<const kira::ast::func_decl *>(node);
+  return dynamic_cast<const kira::ast::func_decl *>(node);
 }
 
 auto expect_if_stmt(const kira::ast::node *node) -> const kira::ast::if_stmt * {
   expect(node != nullptr, "expected if statement node");
   expect(node->kind == kira::ast::node_kind::if_stmt,
          "expected if statement node kind");
-  return static_cast<const kira::ast::if_stmt *>(node);
+  return dynamic_cast<const kira::ast::if_stmt *>(node);
 }
 
 auto expect_match_stmt(const kira::ast::node *node) -> const kira::ast::match_stmt * {
   expect(node != nullptr, "expected match statement node");
   expect(node->kind == kira::ast::node_kind::match_stmt,
          "expected match statement node kind");
-  return static_cast<const kira::ast::match_stmt *>(node);
+  return dynamic_cast<const kira::ast::match_stmt *>(node);
 }
 
 auto expect_lambda_expr(const kira::ast::expr *expr) -> const kira::ast::lambda_expr * {
   expect(expr != nullptr, "expected lambda expression");
   expect(expr->kind == kira::ast::node_kind::lambda_expr,
          "expected lambda expression kind");
-  return static_cast<const kira::ast::lambda_expr *>(expr);
+  return dynamic_cast<const kira::ast::lambda_expr *>(expr);
 }
 
 auto expect_let_stmt(const kira::ast::node *node) -> const kira::ast::let_stmt * {
   expect(node != nullptr, "expected let statement node");
   expect(node->kind == kira::ast::node_kind::let_stmt,
          "expected let statement node kind");
-  return static_cast<const kira::ast::let_stmt *>(node);
+  return dynamic_cast<const kira::ast::let_stmt *>(node);
 }
 
 auto expect_ident_expr(const kira::ast::expr *expr) -> const kira::ast::ident_expr * {
   expect(expr != nullptr, "expected identifier expression");
   expect(expr->kind == kira::ast::node_kind::ident_expr,
          "expected identifier expression kind");
-  return static_cast<const kira::ast::ident_expr *>(expr);
+  return dynamic_cast<const kira::ast::ident_expr *>(expr);
 }
 
 auto find_node_scope_or_fail(const kira::semantic::semantic_session &session,

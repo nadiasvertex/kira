@@ -16,14 +16,14 @@ namespace {
 
 namespace fs = std::filesystem;
 
-auto fail(std::string message) -> void {
+auto fail(const std::string& message) -> void {
   std::cerr << "driver_stress_test failed: " << message << '\n';
   std::exit(1);
 }
 
-auto expect(bool condition, std::string message) -> void {
+auto expect(bool condition, const std::string& message) -> void {
   if (!condition) {
-    fail(std::move(message));
+    fail(message);
   }
 }
 
@@ -91,7 +91,7 @@ auto list_corpus_files(const fs::path &corpus_dir) -> std::vector<std::string> {
     files.push_back(entry.path().string());
   }
 
-  std::sort(files.begin(), files.end());
+  std::ranges::sort(files);
   return files;
 }
 

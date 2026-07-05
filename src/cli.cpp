@@ -306,19 +306,19 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
 [[nodiscard]] auto top_level_visibility(const ast::node &node) -> ast::visibility {
   switch (node.kind) {
   case ast::node_kind::use_decl:
-    return static_cast<const ast::use_decl &>(node).visibility;
+    return dynamic_cast<const ast::use_decl &>(node).visibility;
   case ast::node_kind::type_decl:
-    return static_cast<const ast::type_decl &>(node).visibility;
+    return dynamic_cast<const ast::type_decl &>(node).visibility;
   case ast::node_kind::trait_decl:
-    return static_cast<const ast::trait_decl &>(node).visibility;
+    return dynamic_cast<const ast::trait_decl &>(node).visibility;
   case ast::node_kind::concept_decl:
-    return static_cast<const ast::concept_decl &>(node).visibility;
+    return dynamic_cast<const ast::concept_decl &>(node).visibility;
   case ast::node_kind::func_decl:
-    return static_cast<const ast::func_decl &>(node).visibility;
+    return dynamic_cast<const ast::func_decl &>(node).visibility;
   case ast::node_kind::sub_module_decl:
-    return static_cast<const ast::sub_module_decl &>(node).visibility;
+    return dynamic_cast<const ast::sub_module_decl &>(node).visibility;
   case ast::node_kind::static_decl:
-    return static_cast<const ast::static_decl &>(node).visibility;
+    return dynamic_cast<const ast::static_decl &>(node).visibility;
   default:
     return ast::visibility::def;
   }
@@ -330,23 +330,23 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
 [[nodiscard]] auto top_level_name(const ast::node &node) -> std::string {
   switch (node.kind) {
   case ast::node_kind::use_decl:
-    return join_strings(static_cast<const ast::use_decl &>(node).path, ".");
+    return join_strings(dynamic_cast<const ast::use_decl &>(node).path, ".");
   case ast::node_kind::type_decl:
-    return static_cast<const ast::type_decl &>(node).name;
+    return dynamic_cast<const ast::type_decl &>(node).name;
   case ast::node_kind::trait_decl:
-    return static_cast<const ast::trait_decl &>(node).name;
+    return dynamic_cast<const ast::trait_decl &>(node).name;
   case ast::node_kind::concept_decl:
-    return static_cast<const ast::concept_decl &>(node).name;
+    return dynamic_cast<const ast::concept_decl &>(node).name;
   case ast::node_kind::func_decl:
-    return static_cast<const ast::func_decl &>(node).name;
+    return dynamic_cast<const ast::func_decl &>(node).name;
   case ast::node_kind::sub_module_decl:
-    return static_cast<const ast::sub_module_decl &>(node).name;
+    return dynamic_cast<const ast::sub_module_decl &>(node).name;
   case ast::node_kind::dep_decl:
-    return static_cast<const ast::dep_decl &>(node).name;
+    return dynamic_cast<const ast::dep_decl &>(node).name;
   case ast::node_kind::static_decl:
-    return static_decl_label(static_cast<const ast::static_decl &>(node));
+    return static_decl_label(dynamic_cast<const ast::static_decl &>(node));
   case ast::node_kind::error_node:
-    return static_cast<const ast::error_node &>(node).description;
+    return dynamic_cast<const ast::error_node &>(node).description;
   default:
     return {};
   }
@@ -442,10 +442,10 @@ auto add_symbol_metadata(const ast::node &node,
 
     switch (item->kind) {
     case ast::node_kind::use_decl:
-      add_import_metadata(static_cast<const ast::use_decl &>(*item), metadata);
+      add_import_metadata(dynamic_cast<const ast::use_decl &>(*item), metadata);
       break;
     case ast::node_kind::dep_decl:
-      add_dependency_metadata(static_cast<const ast::dep_decl &>(*item), metadata);
+      add_dependency_metadata(dynamic_cast<const ast::dep_decl &>(*item), metadata);
       break;
     default:
       break;

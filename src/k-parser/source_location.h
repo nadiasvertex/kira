@@ -180,7 +180,7 @@ public:
     // Binary search for the line containing this offset.
     // We want the last line_start that is <= offset.
     uint32_t lo = 0;
-    uint32_t hi = static_cast<uint32_t>(line_starts_.size());
+    auto hi = static_cast<uint32_t>(line_starts_.size());
     while (lo + 1 < hi) {
       uint32_t mid = lo + (hi - lo) / 2;
       if (line_starts_[mid] <= offset) {

@@ -29,6 +29,7 @@ WarningsAsErrors: >
   clang-diagnostic-*,
   clang-analyzer-*,
   bugprone-*,
+  -bugprone-easily-swappable-parameters,
   cppcoreguidelines-narrowing-conversions,
   readability-identifier-naming
 

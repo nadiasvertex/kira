@@ -119,7 +119,7 @@ template <typename T> struct parse_result {
   auto operator*() const -> const T & { return *node; }
 
   /// @brief Moves the owned node out of the result.
-  ast::ptr<T> take() { return std::move(node); }
+  auto take() -> ast::ptr<T> { return std::move(node); }
 };
 
 // ==========================================================================
@@ -160,7 +160,7 @@ public:
   /// This is the only public entry point for syntax analysis. It consumes the
   /// pre-tokenized stream, accumulates diagnostics into `diag_`, and returns a
   /// structurally valid file node even when recovery was required.
-  [[nodiscard]] ast::ptr<ast::file> parse_file();
+  [[nodiscard]] auto parse_file() -> ast::ptr<ast::file>;
 
   // ========================================================================
   //  Accessors
@@ -195,8 +195,9 @@ private:
   /// @param offset Relative lookahead distance from the current token.
   [[nodiscard]] auto peek_at(uint32_t offset) const noexcept -> const token & {
     auto idx = static_cast<size_t>(pos_) + offset;
-    if (idx >= tokens_.size())
+    if (idx >= tokens_.size()) {
       idx = tokens_.size() - 1; // clamp to Eof
+}
     return tokens_[idx];
   }
 
@@ -263,16 +264,18 @@ private:
   ///
   /// Span-building code uses this to close nodes after the parser has already
   /// advanced beyond their final token.
-  [[nodiscard]] source_span previous_span() const noexcept {
-    if (pos_ == 0)
+  [[nodiscard]] auto previous_span() const noexcept -> source_span {
+    if (pos_ == 0) {
       return source_span::dummy();
+}
     return tokens_[pos_ - 1].span;
   }
 
   /// @brief Returns the most recently consumed token.
   [[nodiscard]] auto previous() const noexcept -> const token & {
-    if (pos_ == 0)
+    if (pos_ == 0) {
       return tokens_[0];
+}
     return tokens_[pos_ - 1];
   }
 
@@ -334,7 +337,7 @@ private:
   ///
   /// @param message Primary user-facing message.
   [[nodiscard]] auto make_error(std::string message) const -> diagnostic {
-    return diagnostic(diagnostic_level::error, std::move(message), file_id_);
+    return {diagnostic_level::error, std::move(message), file_id_};
   }
 
   /// @brief Creates an error diagnostic already labeled at `span`.
@@ -404,8 +407,8 @@ private:
   /// @param construct_name User-facing name for diagnostics.
   /// @param parse_item Callback used to parse each block element.
   template <typename T>
-  std::vector<ast::ptr<T>> parse_block(std::string_view construct_name,
-                                       std::function<ast::ptr<T>()> parse_item);
+  auto parse_block(std::string_view construct_name,
+                    const std::function<ast::ptr<T>()> &parse_item) -> std::vector<ast::ptr<T>>;
 
   /// @brief Normalized representation of either inline or block bodies.
   ///
@@ -425,8 +428,8 @@ private:
   ///
   /// Inline expression bodies are wrapped in `expr_stmt` nodes so later phases
   /// can consume a uniform statement list when needed.
-  [[nodiscard]] std::vector<ast::ptr<ast::node>>
-  body_to_stmt_list(BodyResult body);
+  [[nodiscard]] auto
+  body_to_stmt_list(BodyResult body) -> std::vector<ast::ptr<ast::node>>;
 
   // ========================================================================
   //  Comma-separated list helper
@@ -440,10 +443,10 @@ private:
   /// @param construct_name User-facing construct name for diagnostics.
   /// @param parse_element Callback that parses one element if possible.
   template <typename T>
-  std::vector<T>
+  auto
   parse_delimited_list(token_kind open, token_kind close,
                        std::string_view construct_name,
-                       std::function<std::optional<T>()> parse_element);
+                       std::function<std::optional<T>()> parse_element) -> std::vector<T>;
 
   /// @brief Parses a comma-separated list without surrounding delimiters.
   ///
@@ -451,9 +454,9 @@ private:
   /// @param parse_element Callback that parses one element if possible.
   /// @param at_end Callback that reports when the surrounding production ends.
   template <typename T>
-  std::vector<T>
+  auto
   parse_comma_list(std::function<std::optional<T>()> parse_element,
-                   std::function<bool()> at_end);
+                   const std::function<bool()>& at_end) -> std::vector<T>;
 
   // ========================================================================
   //  Visibility
@@ -470,33 +473,33 @@ private:
   // ========================================================================
 
   /// @brief Parses a dotted module path into owned path segments.
-  [[nodiscard]] std::vector<std::string> parse_module_path();
+  [[nodiscard]] auto parse_module_path() -> std::vector<std::string>;
 
   // ========================================================================
   //  Top-level items
   // ========================================================================
 
   /// @brief Parses one top-level item or recovery placeholder.
-  [[nodiscard]] ast::ptr<ast::node> parse_top_level_item();
+  [[nodiscard]] auto parse_top_level_item() -> ast::ptr<ast::node>;
 
   // ---- Module / use / dep ----
 
   /// Parses a file-level `module` declaration.
-  [[nodiscard]] ast::ptr<ast::module_decl> parse_module_decl();
+  [[nodiscard]] auto parse_module_decl() -> ast::ptr<ast::module_decl>;
   /// Parses a `use` import with already-consumed visibility.
-  [[nodiscard]] ast::ptr<ast::use_decl> parse_use_decl(ast::visibility vis);
+  [[nodiscard]] auto parse_use_decl(ast::visibility vis) -> ast::ptr<ast::use_decl>;
   /// Parses a nested `module` item inside a file or module body.
-  [[nodiscard]] ast::ptr<ast::sub_module_decl>
-  parse_sub_module_decl(ast::visibility vis);
+  [[nodiscard]] auto
+  parse_sub_module_decl(ast::visibility vis) -> ast::ptr<ast::sub_module_decl>;
   /// Parses a dependency metadata declaration.
-  [[nodiscard]] ast::ptr<ast::dep_decl> parse_dep_decl();
+  [[nodiscard]] auto parse_dep_decl() -> ast::ptr<ast::dep_decl>;
 
   // ---- Type declarations ----
 
   /// Parses a user-defined type declaration.
-  [[nodiscard]] ast::ptr<ast::type_decl> parse_type_decl(ast::visibility vis);
+  [[nodiscard]] auto parse_type_decl(ast::visibility vis) -> ast::ptr<ast::type_decl>;
   /// Parses the right-hand side of a type declaration after the name.
-  [[nodiscard]] ast::ptr<ast::node> parse_type_def();
+  [[nodiscard]] auto parse_type_def() -> ast::ptr<ast::node>;
   /// Parses a struct-style field body for a type declaration.
   [[nodiscard]] auto parse_struct_body() -> ast::struct_body;
   /// Parses a sum-type variant body for a type declaration.
@@ -509,32 +512,32 @@ private:
   // ---- Type expressions ----
 
   /// Parses any type expression accepted by the grammar.
-  [[nodiscard]] ast::ptr<ast::type_expr> parse_type_expr();
+  [[nodiscard]] auto parse_type_expr() -> ast::ptr<ast::type_expr>;
   /// Parses a primary or atomic type expression before suffix handling.
-  [[nodiscard]] ast::ptr<ast::type_expr> parse_prim_type_expr();
+  [[nodiscard]] auto parse_prim_type_expr() -> ast::ptr<ast::type_expr>;
   /// Parses a named type path with optional generic/value arguments.
-  [[nodiscard]] ast::ptr<ast::named_type> parse_named_type();
+  [[nodiscard]] auto parse_named_type() -> ast::ptr<ast::named_type>;
   /// Wraps a parsed bound list in a `bound_type` node for AST uniformity.
-  [[nodiscard]] ast::ptr<ast::bound_type> make_bound_type(ast::bound bound);
+  [[nodiscard]] auto make_bound_type(ast::bound bound) -> ast::ptr<ast::bound_type>;
   /// Parses an optional `: Type` annotation and returns null when absent.
-  [[nodiscard]] ast::ptr<ast::type_expr> parse_optional_type_annotation();
+  [[nodiscard]] auto parse_optional_type_annotation() -> ast::ptr<ast::type_expr>;
   /// Parses tuple type syntax.
-  [[nodiscard]] ast::ptr<ast::tuple_type> parse_tuple_type();
+  [[nodiscard]] auto parse_tuple_type() -> ast::ptr<ast::tuple_type>;
   /// Parses slice type syntax.
-  [[nodiscard]] ast::ptr<ast::slice_type> parse_slice_type();
+  [[nodiscard]] auto parse_slice_type() -> ast::ptr<ast::slice_type>;
   /// Parses fixed-length array type syntax.
-  [[nodiscard]] ast::ptr<ast::array_type> parse_array_type();
+  [[nodiscard]] auto parse_array_type() -> ast::ptr<ast::array_type>;
   /// Parses reference type syntax, including mutability.
-  [[nodiscard]] ast::ptr<ast::ref_type> parse_ref_type();
+  [[nodiscard]] auto parse_ref_type() -> ast::ptr<ast::ref_type>;
   /// Parses raw pointer type syntax, including mutability.
-  [[nodiscard]] ast::ptr<ast::ptr_type> parse_ptr_type();
+  [[nodiscard]] auto parse_ptr_type() -> ast::ptr<ast::ptr_type>;
   /// Parses function type syntax.
-  [[nodiscard]] ast::ptr<ast::fn_type> parse_fn_type();
+  [[nodiscard]] auto parse_fn_type() -> ast::ptr<ast::fn_type>;
 
   // ---- Type parameters and bounds ----
 
   /// Parses a full type-parameter list.
-  [[nodiscard]] std::vector<ast::type_param> parse_type_params();
+  [[nodiscard]] auto parse_type_params() -> std::vector<ast::type_param>;
   /// Parses one type or value parameter inside a parameter list.
   [[nodiscard]] auto parse_type_param() -> ast::type_param;
   /// Parses a `+`-separated bound list.
@@ -542,72 +545,72 @@ private:
   /// Parses one term inside a bound list.
   [[nodiscard]] auto parse_bound_term() -> ast::bound_term;
   /// Parses a trailing `where` clause into normalized constraints.
-  [[nodiscard]] std::vector<ast::where_constraint> parse_where_clause();
+  [[nodiscard]] auto parse_where_clause() -> std::vector<ast::where_constraint>;
 
   // ---- Trait / concept / impl declarations ----
 
   /// Parses a trait declaration body and signature.
-  [[nodiscard]] ast::ptr<ast::trait_decl> parse_trait_decl(ast::visibility vis);
+  [[nodiscard]] auto parse_trait_decl(ast::visibility vis) -> ast::ptr<ast::trait_decl>;
   /// Parses a concept declaration and its constraints.
-  [[nodiscard]] ast::ptr<ast::concept_decl>
-  parse_concept_decl(ast::visibility vis);
+  [[nodiscard]] auto
+  parse_concept_decl(ast::visibility vis) -> ast::ptr<ast::concept_decl>;
   /// Parses an `impl` block tying items to a concrete target type.
-  [[nodiscard]] ast::ptr<ast::impl_decl> parse_impl_decl();
+  [[nodiscard]] auto parse_impl_decl() -> ast::ptr<ast::impl_decl>;
 
   // ---- Function declarations ----
 
   /// Parses a function declaration with modifiers already collected.
-  [[nodiscard]] ast::ptr<ast::func_decl>
+  [[nodiscard]] auto
   parse_func_decl(ast::visibility vis, ast::func_modifiers mods,
-                  bool allow_bodyless = false);
+                  bool allow_bodyless = false) -> ast::ptr<ast::func_decl>;
   /// Parses the leading modifier sequence for a function-like construct.
   [[nodiscard]] auto parse_func_modifiers() -> ast::func_modifiers;
   /// Parses a function parameter list.
-  [[nodiscard]] std::vector<ast::Param> parse_param_list();
+  [[nodiscard]] auto parse_param_list() -> std::vector<ast::Param>;
   /// Parses one function parameter, including defaults.
   [[nodiscard]] auto parse_param() -> ast::Param;
   /// Parses zero or more contract clauses attached to a function.
-  [[nodiscard]] std::vector<ast::contract_clause> parse_contract_clauses();
+  [[nodiscard]] auto parse_contract_clauses() -> std::vector<ast::contract_clause>;
   /// Parses a single `pre` or `post` contract clause.
   [[nodiscard]] auto parse_contract_clause() -> ast::contract_clause;
 
   // ---- Static declarations ----
 
   /// Parses a `static` declaration after visibility handling.
-  [[nodiscard]] ast::ptr<ast::static_decl>
-  parse_static_decl(ast::visibility vis);
+  [[nodiscard]] auto
+  parse_static_decl(ast::visibility vis) -> ast::ptr<ast::static_decl>;
 
   // ========================================================================
   //  Statements
   // ========================================================================
 
   /// Parses the next statement-level construct.
-  [[nodiscard]] ast::ptr<ast::node> parse_stmt();
+  [[nodiscard]] auto parse_stmt() -> ast::ptr<ast::node>;
   /// Parses an immutable binding statement.
-  [[nodiscard]] ast::ptr<ast::let_stmt> parse_let_stmt();
+  [[nodiscard]] auto parse_let_stmt() -> ast::ptr<ast::let_stmt>;
   /// Parses a mutable variable binding statement.
-  [[nodiscard]] ast::ptr<ast::var_stmt> parse_var_stmt();
+  [[nodiscard]] auto parse_var_stmt() -> ast::ptr<ast::var_stmt>;
   /// Parses a `return` statement.
-  [[nodiscard]] ast::ptr<ast::return_stmt> parse_return_stmt();
+  [[nodiscard]] auto parse_return_stmt() -> ast::ptr<ast::return_stmt>;
   /// Parses an `if` statement chain.
-  [[nodiscard]] ast::ptr<ast::if_stmt> parse_if_stmt();
+  [[nodiscard]] auto parse_if_stmt() -> ast::ptr<ast::if_stmt>;
   /// Parses a `while` loop statement.
-  [[nodiscard]] ast::ptr<ast::while_stmt> parse_while_stmt();
+  [[nodiscard]] auto parse_while_stmt() -> ast::ptr<ast::while_stmt>;
   /// Parses a `for` loop statement.
-  [[nodiscard]] ast::ptr<ast::for_stmt> parse_for_stmt();
+  [[nodiscard]] auto parse_for_stmt() -> ast::ptr<ast::for_stmt>;
   /// Parses a `match` statement.
-  [[nodiscard]] ast::ptr<ast::match_stmt> parse_match_stmt();
+  [[nodiscard]] auto parse_match_stmt() -> ast::ptr<ast::match_stmt>;
   /// Parses a `crew` statement.
-  [[nodiscard]] ast::ptr<ast::crew_stmt> parse_crew_stmt();
+  [[nodiscard]] auto parse_crew_stmt() -> ast::ptr<ast::crew_stmt>;
   /// Parses an inline assembly statement.
-  [[nodiscard]] ast::ptr<ast::asm_stmt> parse_asm_stmt();
+  [[nodiscard]] auto parse_asm_stmt() -> ast::ptr<ast::asm_stmt>;
   /// Parses a top-level or statement-position splice.
-  [[nodiscard]] ast::ptr<ast::splice_stmt> parse_splice_stmt();
+  [[nodiscard]] auto parse_splice_stmt() -> ast::ptr<ast::splice_stmt>;
 
   /// Parse an expression statement or assignment statement.
   /// We parse the LHS as an expression, then check if it's followed
   /// by an assignment operator.
-  [[nodiscard]] ast::ptr<ast::node> parse_expr_or_assign_stmt();
+  [[nodiscard]] auto parse_expr_or_assign_stmt() -> ast::ptr<ast::node>;
 
   // ========================================================================
   //  Expressions
@@ -626,88 +629,88 @@ private:
   // ========================================================================
 
   /// Parses an expression from the lowest-precedence entry point.
-  [[nodiscard]] ast::ptr<ast::expr> parse_expr();
+  [[nodiscard]] auto parse_expr() -> ast::ptr<ast::expr>;
   /// Parses pipe-precedence expressions.
-  [[nodiscard]] ast::ptr<ast::expr> parse_pipe_expr();
+  [[nodiscard]] auto parse_pipe_expr() -> ast::ptr<ast::expr>;
   /// Parses logical `or` expressions.
-  [[nodiscard]] ast::ptr<ast::expr> parse_or_expr();
+  [[nodiscard]] auto parse_or_expr() -> ast::ptr<ast::expr>;
   /// Parses logical `and` expressions.
-  [[nodiscard]] ast::ptr<ast::expr> parse_and_expr();
+  [[nodiscard]] auto parse_and_expr() -> ast::ptr<ast::expr>;
   /// Parses unary `not` expressions.
-  [[nodiscard]] ast::ptr<ast::expr> parse_not_expr();
+  [[nodiscard]] auto parse_not_expr() -> ast::ptr<ast::expr>;
   /// Parses comparison expressions.
-  [[nodiscard]] ast::ptr<ast::expr> parse_cmp_expr();
+  [[nodiscard]] auto parse_cmp_expr() -> ast::ptr<ast::expr>;
   /// Parses additive expressions.
-  [[nodiscard]] ast::ptr<ast::expr> parse_add_expr();
+  [[nodiscard]] auto parse_add_expr() -> ast::ptr<ast::expr>;
   /// Parses multiplicative expressions.
-  [[nodiscard]] ast::ptr<ast::expr> parse_mul_expr();
+  [[nodiscard]] auto parse_mul_expr() -> ast::ptr<ast::expr>;
   /// Parses prefix unary expressions.
-  [[nodiscard]] ast::ptr<ast::expr> parse_unary_expr();
+  [[nodiscard]] auto parse_unary_expr() -> ast::ptr<ast::expr>;
   /// Parses postfix expression chains such as calls and field access.
-  [[nodiscard]] ast::ptr<ast::expr> parse_postfix_expr();
+  [[nodiscard]] auto parse_postfix_expr() -> ast::ptr<ast::expr>;
   /// Parses primary expression forms before suffix chaining.
-  [[nodiscard]] ast::ptr<ast::expr> parse_primary_expr();
+  [[nodiscard]] auto parse_primary_expr() -> ast::ptr<ast::expr>;
 
   // ---- Primary expression sub-parsers ----
 
   /// Parses a literal expression node.
-  [[nodiscard]] ast::ptr<ast::expr> parse_literal_expr();
+  [[nodiscard]] auto parse_literal_expr() -> ast::ptr<ast::expr>;
   /// Parses either a plain identifier or a dotted module/path expression.
-  [[nodiscard]] ast::ptr<ast::expr> parse_ident_or_path_expr();
+  [[nodiscard]] auto parse_ident_or_path_expr() -> ast::ptr<ast::expr>;
   /// Parses an `@`-prefixed variant constructor reference: `@name`, later
   /// applied to a call via ordinary postfix parsing for `@name(args)`.
-  [[nodiscard]] ast::ptr<ast::expr> parse_variant_expr();
+  [[nodiscard]] auto parse_variant_expr() -> ast::ptr<ast::expr>;
   /// Parses parenthesized expressions and tuple literals.
-  [[nodiscard]] ast::ptr<ast::expr> parse_paren_expr();
+  [[nodiscard]] auto parse_paren_expr() -> ast::ptr<ast::expr>;
   /// Parses bracket-based array or index-related expression forms.
-  [[nodiscard]] ast::ptr<ast::expr> parse_bracket_expr();
+  [[nodiscard]] auto parse_bracket_expr() -> ast::ptr<ast::expr>;
   /// Parses brace-based struct or block-like expression forms.
-  [[nodiscard]] ast::ptr<ast::expr> parse_brace_expr();
+  [[nodiscard]] auto parse_brace_expr() -> ast::ptr<ast::expr>;
   /// Parses lambda expressions.
-  [[nodiscard]] ast::ptr<ast::expr> parse_lambda_expr();
+  [[nodiscard]] auto parse_lambda_expr() -> ast::ptr<ast::expr>;
   /// Parses `match` in expression position.
-  [[nodiscard]] ast::ptr<ast::match_expr> parse_match_expr();
+  [[nodiscard]] auto parse_match_expr() -> ast::ptr<ast::match_expr>;
   /// Parses `if` in expression position.
-  [[nodiscard]] ast::ptr<ast::if_expr> parse_if_expr();
+  [[nodiscard]] auto parse_if_expr() -> ast::ptr<ast::if_expr>;
   /// Parses `for` comprehensions or generator-like expressions.
-  [[nodiscard]] ast::ptr<ast::for_expr> parse_for_expr();
+  [[nodiscard]] auto parse_for_expr() -> ast::ptr<ast::for_expr>;
   /// Parses `await` expressions.
-  [[nodiscard]] ast::ptr<ast::await_expr> parse_await_expr();
+  [[nodiscard]] auto parse_await_expr() -> ast::ptr<ast::await_expr>;
   /// Parses `async` expressions.
-  [[nodiscard]] ast::ptr<ast::async_expr> parse_async_expr();
+  [[nodiscard]] auto parse_async_expr() -> ast::ptr<ast::async_expr>;
   /// Parses `par` expressions.
-  [[nodiscard]] ast::ptr<ast::par_expr> parse_par_expr();
+  [[nodiscard]] auto parse_par_expr() -> ast::ptr<ast::par_expr>;
   /// Parses `race` expressions.
-  [[nodiscard]] ast::ptr<ast::race_expr> parse_race_expr();
+  [[nodiscard]] auto parse_race_expr() -> ast::ptr<ast::race_expr>;
   /// Parses `crew` in expression position.
-  [[nodiscard]] ast::ptr<ast::crew_expr> parse_crew_expr();
+  [[nodiscard]] auto parse_crew_expr() -> ast::ptr<ast::crew_expr>;
   /// Parses `on(...)` context expressions.
-  [[nodiscard]] ast::ptr<ast::on_expr> parse_on_expr();
+  [[nodiscard]] auto parse_on_expr() -> ast::ptr<ast::on_expr>;
   /// Parses indentation-delimited block expressions.
-  [[nodiscard]] ast::ptr<ast::block_expr> parse_block_expr();
+  [[nodiscard]] auto parse_block_expr() -> ast::ptr<ast::block_expr>;
   /// Parses quasi-quoted syntax expressions.
-  [[nodiscard]] ast::ptr<ast::quote_expr> parse_quote_expr();
+  [[nodiscard]] auto parse_quote_expr() -> ast::ptr<ast::quote_expr>;
   /// Parses the inner operand of a splice expression.
-  [[nodiscard]] ast::ptr<ast::splice_expr> parse_splice_expr_inner();
+  [[nodiscard]] auto parse_splice_expr_inner() -> ast::ptr<ast::splice_expr>;
   /// Parses `static expr` metaprogramming forms.
-  [[nodiscard]] ast::ptr<ast::static_expr> parse_static_expr();
+  [[nodiscard]] auto parse_static_expr() -> ast::ptr<ast::static_expr>;
   /// Parses a trailing `if` attached to an already-parsed expression.
-  [[nodiscard]] ast::ptr<ast::expr> parse_trailing_if_expr(ast::ptr<ast::expr> then_expr);
+  [[nodiscard]] auto parse_trailing_if_expr(ast::ptr<ast::expr> then_expr) -> ast::ptr<ast::expr>;
   /// Parses a trailing `where` binding clause attached to an expression.
-  [[nodiscard]] ast::ptr<ast::where_expr> parse_where_expr(ast::ptr<ast::expr> inner);
+  [[nodiscard]] auto parse_where_expr(ast::ptr<ast::expr> inner) -> ast::ptr<ast::where_expr>;
 
   // ---- Postfix suffixes ----
 
   /// Try to parse a postfix suffix (`.field`, `[index]`, `(args)`,
   /// `?`, `as Type`). Returns nullptr if the current token doesn't
   /// start a postfix suffix.
-  [[nodiscard]] ast::ptr<ast::expr>
-  parse_postfix_suffix(ast::ptr<ast::expr> base);
+  [[nodiscard]] auto
+  parse_postfix_suffix(ast::ptr<ast::expr> base) -> ast::ptr<ast::expr>;
 
   // ---- Call arguments ----
 
   /// Parses a function or method call argument list.
-  [[nodiscard]] std::vector<ast::call_arg> parse_call_args();
+  [[nodiscard]] auto parse_call_args() -> std::vector<ast::call_arg>;
 
   // ---- Match arms ----
 
@@ -719,31 +722,31 @@ private:
   // ========================================================================
 
   /// Parses a full pattern from the lowest-precedence entry point.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_pattern();
+  [[nodiscard]] auto parse_pattern() -> ast::ptr<ast::pattern>;
   /// Parses `|`-separated alternative patterns.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_or_pattern();
+  [[nodiscard]] auto parse_or_pattern() -> ast::ptr<ast::pattern>;
   /// Parses a single non-alternating pattern form.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_atomic_pattern();
+  [[nodiscard]] auto parse_atomic_pattern() -> ast::ptr<ast::pattern>;
   // ---- Pattern sub-parsers ----
 
   /// Parses the wildcard `_` pattern.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_wildcard_pattern();
+  [[nodiscard]] auto parse_wildcard_pattern() -> ast::ptr<ast::pattern>;
   /// Parses a literal pattern.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_literal_pattern();
+  [[nodiscard]] auto parse_literal_pattern() -> ast::ptr<ast::pattern>;
   /// Parses a bare identifier as a binding pattern (or an `ident..ident` range).
-  [[nodiscard]] ast::ptr<ast::pattern> parse_ident_or_constructor_pattern();
+  [[nodiscard]] auto parse_ident_or_constructor_pattern() -> ast::ptr<ast::pattern>;
   /// Parses an `@`-prefixed variant constructor pattern: `@name`, `@name(...)`.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_variant_pattern();
+  [[nodiscard]] auto parse_variant_pattern() -> ast::ptr<ast::pattern>;
   /// Parses parenthesized and tuple patterns.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_paren_pattern();
+  [[nodiscard]] auto parse_paren_pattern() -> ast::ptr<ast::pattern>;
   /// Parses struct patterns.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_brace_pattern();
+  [[nodiscard]] auto parse_brace_pattern() -> ast::ptr<ast::pattern>;
   /// Parses array and slice patterns.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_bracket_pattern();
+  [[nodiscard]] auto parse_bracket_pattern() -> ast::ptr<ast::pattern>;
   /// Parses `@some(...)`, `@ok(...)`, and `@err(...)` wrapper patterns.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_option_result_pattern();
+  [[nodiscard]] auto parse_option_result_pattern() -> ast::ptr<ast::pattern>;
   /// Parses reference patterns.
-  [[nodiscard]] ast::ptr<ast::pattern> parse_ref_pattern();
+  [[nodiscard]] auto parse_ref_pattern() -> ast::ptr<ast::pattern>;
   /// Heuristic for deciding whether a bare name should parse as a constructor.
   [[nodiscard]] auto is_constructor_like_name(std::string_view name) const -> bool;
 
@@ -752,24 +755,24 @@ private:
   // ========================================================================
 
   /// Parses the variable/pattern list shared by `for` statements and expressions.
-  [[nodiscard]] std::vector<ast::ptr<ast::pattern>> parse_for_vars();
+  [[nodiscard]] auto parse_for_vars() -> std::vector<ast::ptr<ast::pattern>>;
 
   // ========================================================================
   //  Helper: convert an assign-op token to the AssignOp enum.
   // ========================================================================
 
-  [[nodiscard]] static std::optional<ast::assign_op>
-  token_to_assign_op(token_kind kind) noexcept;
+  [[nodiscard]] static auto
+  token_to_assign_op(token_kind kind) noexcept -> std::optional<ast::assign_op>;
 
   // ========================================================================
   //  Helper: convert comparison token to BinaryOp.
   // ========================================================================
 
-  [[nodiscard]] std::optional<ast::binary_op> token_to_cmp_op();
-  [[nodiscard]] static std::optional<ast::binary_op>
-  token_to_add_op(token_kind kind) noexcept;
-  [[nodiscard]] static std::optional<ast::binary_op>
-  token_to_mul_op(token_kind kind) noexcept;
+  [[nodiscard]] auto token_to_cmp_op() -> std::optional<ast::binary_op>;
+  [[nodiscard]] static auto
+  token_to_add_op(token_kind kind) noexcept -> std::optional<ast::binary_op>;
+  [[nodiscard]] static auto
+  token_to_mul_op(token_kind kind) noexcept -> std::optional<ast::binary_op>;
 
   // ========================================================================
   //  Member variables

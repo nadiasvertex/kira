@@ -9,6 +9,11 @@ build --host_cxxopt=-std=c++26
 build --action_env=CC=clang
 build --action_env=CXX=clang++
 
+# Disable header-parsing validation actions; they omit -c and break
+# wolfd_bazel_compile_commands' compile_commands.json generation.
+build --features=-parse_headers
+build --host_features=-parse_headers
+
 # Enable useful warnings
 build --cxxopt=-Wall
 build --cxxopt=-Wextra

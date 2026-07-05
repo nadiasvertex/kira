@@ -162,7 +162,7 @@ template <typename T> using ptr_vec = std::vector<ptr<T>>;
 /// @tparam T Concrete node type to allocate.
 /// @tparam Args Constructor argument pack forwarded to `T`.
 template <typename T, typename... Args>
-[[nodiscard]] ptr<T> make(Args &&...args) {
+[[nodiscard]] auto make(Args &&...args) -> ptr<T> {
   return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
@@ -595,7 +595,7 @@ struct ident_expr : expr {
 
 /// @brief Literal expression preserving the original token spelling.
 struct literal_expr : expr {
-  token_kind lit_kind; ///< Literal token category chosen by the lexer.
+  token_kind lit_kind = token_kind::eof; ///< Literal token category chosen by the lexer.
   std::string value;   ///< Raw source spelling, kept for exact later interpretation.
 
   literal_expr() : expr(node_kind::literal_expr) {}

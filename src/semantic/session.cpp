@@ -1,6 +1,7 @@
 #include "session.h"
 
 #include <format>
+#include <ranges>
 #include <utility>
 
 #include "src/semantic/module_index.h"
@@ -81,7 +82,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
                               std::vector<pattern_binding_spec> &out) -> void {
   switch (pattern.kind) {
   case ast::node_kind::binding_pattern: {
-    const auto &binding = static_cast<const ast::binding_pattern &>(pattern);
+    const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
     if (!binding.name.empty()) {
       out.push_back(pattern_binding_spec{
           .name = binding.name,
@@ -95,7 +96,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 
   case ast::node_kind::tuple_pattern: {
-    const auto &tuple = static_cast<const ast::tuple_pattern &>(pattern);
+    const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
     for (const auto &element : tuple.elements) {
       if (element != nullptr) {
         collect_pattern_bindings(*element, file_id, out);
@@ -105,7 +106,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 
   case ast::node_kind::constructor_pattern: {
-    const auto &ctor = static_cast<const ast::constructor_pattern &>(pattern);
+    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
     for (const auto &arg : ctor.args) {
       if (arg != nullptr) {
         collect_pattern_bindings(*arg, file_id, out);
@@ -115,7 +116,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 
   case ast::node_kind::struct_pattern: {
-    const auto &struct_pattern = static_cast<const ast::struct_pattern &>(pattern);
+    const auto &struct_pattern = dynamic_cast<const ast::struct_pattern &>(pattern);
     for (const auto &field : struct_pattern.fields) {
       if (field.is_rest) {
         continue;
@@ -138,7 +139,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 
   case ast::node_kind::array_pattern: {
-    const auto &array = static_cast<const ast::array_pattern &>(pattern);
+    const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
     for (const auto &element : array.elements) {
       if (element != nullptr) {
         collect_pattern_bindings(*element, file_id, out);
@@ -148,7 +149,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 
   case ast::node_kind::option_pattern: {
-    const auto &option = static_cast<const ast::option_pattern &>(pattern);
+    const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
     if (option.inner != nullptr) {
       collect_pattern_bindings(*option.inner, file_id, out);
     }
@@ -156,7 +157,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 
   case ast::node_kind::result_pattern: {
-    const auto &result = static_cast<const ast::result_pattern &>(pattern);
+    const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
     if (result.inner != nullptr) {
       collect_pattern_bindings(*result.inner, file_id, out);
     }
@@ -164,7 +165,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 
   case ast::node_kind::ref_pattern: {
-    const auto &ref = static_cast<const ast::ref_pattern &>(pattern);
+    const auto &ref = dynamic_cast<const ast::ref_pattern &>(pattern);
     if (ref.inner != nullptr) {
       collect_pattern_bindings(*ref.inner, file_id, out);
     }
@@ -172,7 +173,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 
   case ast::node_kind::or_pattern: {
-    const auto &or_pattern = static_cast<const ast::or_pattern &>(pattern);
+    const auto &or_pattern = dynamic_cast<const ast::or_pattern &>(pattern);
     for (const auto &alternative : or_pattern.alternatives) {
       if (alternative != nullptr) {
         collect_pattern_bindings(*alternative, file_id, out);
@@ -182,7 +183,7 @@ auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
   }
 
   case ast::node_kind::group_pattern: {
-    const auto &group = static_cast<const ast::group_pattern &>(pattern);
+    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
     if (group.inner != nullptr) {
       collect_pattern_bindings(*group.inner, file_id, out);
     }
@@ -357,7 +358,7 @@ auto walk_lambda_body(const ast::lambda_expr &lambda, scope_id parent_scope,
     if (param.pattern != nullptr) {
       record_node_scope(context.session, param.pattern.get(), signature_scope);
       auto bindings = std::vector<pattern_binding_spec>{};
-      collect_pattern_bindings(*static_cast<const ast::pattern *>(param.pattern.get()),
+      collect_pattern_bindings(*dynamic_cast<const ast::pattern *>(param.pattern.get()),
                                context.file_id, bindings);
       for (const auto &binding : bindings) {
         add_symbol(context.session, signature_scope,
@@ -404,7 +405,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
 
   switch (node.kind) {
   case ast::node_kind::func_decl: {
-    const auto &decl = static_cast<const ast::func_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::func_decl &>(node);
     walk_function_like_body(decl, active_scope, context,
                             semantic_scope_kind::function_signature_scope,
                             semantic_scope_kind::function_body_scope);
@@ -412,12 +413,12 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::lambda_expr:
-    walk_lambda_body(static_cast<const ast::lambda_expr &>(node), active_scope,
+    walk_lambda_body(dynamic_cast<const ast::lambda_expr &>(node), active_scope,
                      context);
     return active_scope;
 
   case ast::node_kind::let_stmt: {
-    const auto &stmt = static_cast<const ast::let_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
     if (stmt.pattern != nullptr) {
       walk_node(*stmt.pattern, active_scope, context);
     }
@@ -445,7 +446,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::var_stmt: {
-    const auto &stmt = static_cast<const ast::var_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
     if (stmt.type_annotation != nullptr) {
       walk_node(*stmt.type_annotation, active_scope, context);
     }
@@ -469,7 +470,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::expr_stmt: {
-    const auto &stmt = static_cast<const ast::expr_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
     if (stmt.expr != nullptr) {
       walk_node(*stmt.expr, active_scope, context);
     }
@@ -477,7 +478,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::return_stmt: {
-    const auto &stmt = static_cast<const ast::return_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
     if (stmt.value != nullptr) {
       walk_node(*stmt.value, active_scope, context);
     }
@@ -485,7 +486,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::assign_stmt: {
-    const auto &stmt = static_cast<const ast::assign_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::assign_stmt &>(node);
     if (stmt.target != nullptr) {
       walk_node(*stmt.target, active_scope, context);
     }
@@ -496,7 +497,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::if_stmt: {
-    const auto &stmt = static_cast<const ast::if_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
     for (const auto &branch : stmt.branches) {
       if (branch.condition != nullptr) {
         walk_node(*branch.condition, active_scope, context);
@@ -511,7 +512,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
         walk_node(*branch.let_pattern, branch_scope, context);
         auto bindings = std::vector<pattern_binding_spec>{};
         collect_pattern_bindings(
-            *static_cast<const ast::pattern *>(branch.let_pattern.get()),
+            *dynamic_cast<const ast::pattern *>(branch.let_pattern.get()),
             context.file_id, bindings);
         branch_scope = extend_scope_with_bindings(
             context.session, branch_scope, semantic_scope_kind::branch_scope,
@@ -530,7 +531,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::if_expr: {
-    const auto &expr = static_cast<const ast::if_expr &>(node);
+    const auto &expr = dynamic_cast<const ast::if_expr &>(node);
     for (const auto &branch : expr.branches) {
       if (branch.condition != nullptr) {
         walk_node(*branch.condition, active_scope, context);
@@ -545,7 +546,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
         walk_node(*branch.let_pattern, branch_scope, context);
         auto bindings = std::vector<pattern_binding_spec>{};
         collect_pattern_bindings(
-            *static_cast<const ast::pattern *>(branch.let_pattern.get()),
+            *dynamic_cast<const ast::pattern *>(branch.let_pattern.get()),
             context.file_id, bindings);
         branch_scope = extend_scope_with_bindings(
             context.session, branch_scope, semantic_scope_kind::branch_scope,
@@ -564,7 +565,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::while_stmt: {
-    const auto &stmt = static_cast<const ast::while_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::while_stmt &>(node);
     if (stmt.condition != nullptr) {
       walk_node(*stmt.condition, active_scope, context);
     }
@@ -588,7 +589,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::for_stmt: {
-    const auto &stmt = static_cast<const ast::for_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
     if (stmt.iterable != nullptr) {
       walk_node(*stmt.iterable, active_scope, context);
     }
@@ -614,7 +615,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::for_expr: {
-    const auto &expr = static_cast<const ast::for_expr &>(node);
+    const auto &expr = dynamic_cast<const ast::for_expr &>(node);
     auto current_scope = create_block_scope(active_scope, context,
                                             semantic_scope_kind::loop_scope,
                                             "for expr", expr.span);
@@ -627,7 +628,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
         if (pattern != nullptr) {
           walk_node(*pattern, current_scope, context);
           collect_pattern_bindings(
-              *static_cast<const ast::pattern *>(pattern.get()), context.file_id,
+              *dynamic_cast<const ast::pattern *>(pattern.get()), context.file_id,
               bindings);
         }
       }
@@ -646,7 +647,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::match_stmt: {
-    const auto &stmt = static_cast<const ast::match_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
     if (stmt.subject != nullptr) {
       walk_node(*stmt.subject, active_scope, context);
     }
@@ -658,7 +659,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
         walk_node(*arm.pattern, arm_scope, context);
         auto bindings = std::vector<pattern_binding_spec>{};
         collect_pattern_bindings(
-            *static_cast<const ast::pattern *>(arm.pattern.get()),
+            *dynamic_cast<const ast::pattern *>(arm.pattern.get()),
             context.file_id, bindings);
         arm_scope = extend_scope_with_bindings(
             context.session, arm_scope, semantic_scope_kind::match_arm_scope,
@@ -677,7 +678,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::match_expr: {
-    const auto &expr = static_cast<const ast::match_expr &>(node);
+    const auto &expr = dynamic_cast<const ast::match_expr &>(node);
     if (expr.subject != nullptr) {
       walk_node(*expr.subject, active_scope, context);
     }
@@ -689,7 +690,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
         walk_node(*arm.pattern, arm_scope, context);
         auto bindings = std::vector<pattern_binding_spec>{};
         collect_pattern_bindings(
-            *static_cast<const ast::pattern *>(arm.pattern.get()),
+            *dynamic_cast<const ast::pattern *>(arm.pattern.get()),
             context.file_id, bindings);
         arm_scope = extend_scope_with_bindings(
             context.session, arm_scope, semantic_scope_kind::match_arm_scope,
@@ -708,7 +709,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::block_expr: {
-    const auto &expr = static_cast<const ast::block_expr &>(node);
+    const auto &expr = dynamic_cast<const ast::block_expr &>(node);
     const auto block_scope = create_block_scope(active_scope, context,
                                                 semantic_scope_kind::block_scope,
                                                 "block", expr.span);
@@ -717,7 +718,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::async_expr: {
-    const auto &expr = static_cast<const ast::async_expr &>(node);
+    const auto &expr = dynamic_cast<const ast::async_expr &>(node);
     const auto body_scope = create_block_scope(active_scope, context,
                                                semantic_scope_kind::block_scope,
                                                "async", expr.span);
@@ -726,7 +727,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::crew_expr: {
-    const auto &expr = static_cast<const ast::crew_expr &>(node);
+    const auto &expr = dynamic_cast<const ast::crew_expr &>(node);
     const auto body_scope = create_block_scope(active_scope, context,
                                                semantic_scope_kind::block_scope,
                                                "crew", expr.span);
@@ -735,7 +736,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::crew_stmt: {
-    const auto &stmt = static_cast<const ast::crew_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::crew_stmt &>(node);
     const auto body_scope = create_block_scope(active_scope, context,
                                                semantic_scope_kind::block_scope,
                                                "crew", stmt.span);
@@ -744,7 +745,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::on_expr: {
-    const auto &expr = static_cast<const ast::on_expr &>(node);
+    const auto &expr = dynamic_cast<const ast::on_expr &>(node);
     if (expr.context_type != nullptr) {
       walk_node(*expr.context_type, active_scope, context);
     }
@@ -759,7 +760,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::where_expr: {
-    const auto &expr = static_cast<const ast::where_expr &>(node);
+    const auto &expr = dynamic_cast<const ast::where_expr &>(node);
     auto where_scope = create_block_scope(active_scope, context,
                                           semantic_scope_kind::where_scope,
                                           "where", expr.span);
@@ -788,7 +789,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::type_decl: {
-    const auto &decl = static_cast<const ast::type_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::type_decl &>(node);
     if (!decl.type_params.empty() || decl.definition != nullptr ||
         decl.invariant != nullptr) {
       auto type_scope = add_scope(
@@ -825,7 +826,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::trait_decl: {
-    const auto &decl = static_cast<const ast::trait_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::trait_decl &>(node);
     auto trait_scope = add_scope(
         context.session, semantic_scope_kind::trait_scope, active_scope,
         context.file_id, context.module_name, decl.name,
@@ -854,7 +855,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::impl_decl: {
-    const auto &decl = static_cast<const ast::impl_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::impl_decl &>(node);
     auto impl_scope = add_scope(
         context.session, semantic_scope_kind::impl_scope, active_scope,
         context.file_id, context.module_name, "impl",
@@ -889,7 +890,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::concept_decl: {
-    const auto &decl = static_cast<const ast::concept_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::concept_decl &>(node);
     auto concept_scope = add_scope(
         context.session, semantic_scope_kind::concept_scope, active_scope,
         context.file_id, context.module_name, decl.name,
@@ -925,7 +926,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::associated_type_decl_node: {
-    const auto &assoc = static_cast<const ast::associated_type_decl_node &>(node);
+    const auto &assoc = dynamic_cast<const ast::associated_type_decl_node &>(node);
     if (!assoc.value.name.empty()) {
       add_symbol(context.session, active_scope,
                  semantic_symbol_spec{
@@ -946,7 +947,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::associated_type_def_node: {
-    const auto &assoc = static_cast<const ast::associated_type_def_node &>(node);
+    const auto &assoc = dynamic_cast<const ast::associated_type_def_node &>(node);
     if (!assoc.value.name.empty()) {
       add_symbol(context.session, active_scope,
                  semantic_symbol_spec{
@@ -967,7 +968,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::sub_module_decl: {
-    const auto &decl = static_cast<const ast::sub_module_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(node);
     if (!decl.items.empty()) {
       auto child_context = scope_build_context{
           .session = context.session,
@@ -1110,8 +1111,8 @@ auto resolve_symbol(const semantic_session &session, scope_id start_scope,
     if (scope == nullptr) {
       break;
     }
-    for (auto it = scope->symbols.rbegin(); it != scope->symbols.rend(); ++it) {
-      const auto *symbol = find_semantic_symbol(session, *it);
+    for (unsigned int it : std::views::reverse(scope->symbols)) {
+      const auto *symbol = find_semantic_symbol(session, it);
       if (symbol == nullptr) {
         continue;
       }

@@ -12,16 +12,16 @@ namespace kira {
 // ==========================================================================
 //  Helper: make an error expression for recovery.
 // ==========================================================================
-static ast::ptr<ast::expr> make_error_expr(source_span span, std::string desc = "") {
+static auto make_error_expr(source_span span, std::string desc = "") -> ast::ptr<ast::expr> {
   auto node = ast::make<ast::error_expr>(span, std::move(desc));
   return node;
 }
 
-static ast::ptr<ast::pattern> make_error_pattern(source_span span) {
+static auto make_error_pattern(source_span span) -> ast::ptr<ast::pattern> {
   return ast::make<ast::error_pattern>(span);
 }
 
-static ast::ptr<ast::node> make_error_node(source_span span, std::string desc = "") {
+static auto make_error_node(source_span span, std::string desc = "") -> ast::ptr<ast::node> {
   return ast::make<ast::error_node>(span, std::move(desc));
 }
 
@@ -278,7 +278,7 @@ auto parser::expect_block_start(std::string_view construct_name) -> bool {
                  "either an expression on the same line, or a new line with "
                  "an indented block.",
                  construct_name))
-             .with_fix("add `:`", source_span{span.end, span.end}, ":"));
+             .with_fix("add `:`", source_span{.start=span.end, .end=span.end}, ":"));
     // Recovery: if NEWLINE+INDENT follows, proceed as if `:` was there.
     if (at(token_kind::newline) && peek_at(1).is(token_kind::indent)) {
       // Proceed — the block is clearly intended.
@@ -318,15 +318,16 @@ auto parser::expect_block_end(std::string_view construct_name) -> bool {
 }
 
 template <typename T>
-std::vector<ast::ptr<T>>
+auto
 parser::parse_block(std::string_view construct_name,
-                    std::function<ast::ptr<T>()> parse_item) {
+                    const std::function<ast::ptr<T>()>& parse_item) -> std::vector<ast::ptr<T>> {
   std::vector<ast::ptr<T>> items;
 
   while (!at_any(token_kind::dedent, token_kind::eof)) {
     skip_newlines();
-    if (at_any(token_kind::dedent, token_kind::eof))
+    if (at_any(token_kind::dedent, token_kind::eof)) {
       break;
+}
 
     auto item = parse_item();
     if (item) {
@@ -344,7 +345,7 @@ parser::parse_block(std::string_view construct_name,
 // Explicit template instantiation for common types.
 template std::vector<ast::ptr<ast::node>>
     parser::parse_block<ast::node>(std::string_view,
-                                   std::function<ast::ptr<ast::node>()>);
+                                   const std::function<ast::ptr<ast::node>()> &);
 
 auto parser::parse_body(std::string_view construct_name) -> parser::BodyResult {
   BodyResult result;
@@ -422,7 +423,7 @@ auto parser::parse_body(std::string_view construct_name) -> parser::BodyResult {
   return result;
 }
 
-std::vector<ast::ptr<ast::node>> parser::body_to_stmt_list(BodyResult body) {
+auto parser::body_to_stmt_list(BodyResult body) -> std::vector<ast::ptr<ast::node>> {
   if (body.inline_expr) {
     auto stmt = ast::make<ast::expr_stmt>();
     stmt->expr = std::move(body.inline_expr);
@@ -440,10 +441,10 @@ std::vector<ast::ptr<ast::node>> parser::body_to_stmt_list(BodyResult body) {
 // ==========================================================================
 
 template <typename T>
-std::vector<T>
+auto
 parser::parse_delimited_list(token_kind open, token_kind close,
                              std::string_view construct_name,
-                             std::function<std::optional<T>()> parse_element) {
+                             std::function<std::optional<T>()> parse_element) -> std::vector<T> {
   std::vector<T> items;
 
   auto open_tok = expect(open);
@@ -487,7 +488,7 @@ parser::parse_delimited_list(token_kind open, token_kind close,
                                   token_kind_name(close), construct_name),
                       file_id_)
                .with_label(span, "maybe a `,` is missing here?")
-               .with_fix("add a comma", source_span{span.end, span.end}, ", "));
+               .with_fix("add a comma", source_span{.start=span.end, .end=span.end}, ", "));
       // Don't consume — the next iteration will try to parse the element.
     }
   }
@@ -514,9 +515,9 @@ parser::parse_delimited_list(token_kind open, token_kind close,
 }
 
 template <typename T>
-std::vector<T>
+auto
 parser::parse_comma_list(std::function<std::optional<T>()> parse_element,
-                         std::function<bool()> at_end_fn) {
+                         const std::function<bool()>& at_end_fn) -> std::vector<T> {
   std::vector<T> items;
 
   while (!at_end_fn() && !at_eof()) {
@@ -551,7 +552,7 @@ auto parser::parse_optional_visibility() -> ast::visibility {
 //  Module paths
 // ==========================================================================
 
-std::vector<std::string> parser::parse_module_path() {
+auto parser::parse_module_path() -> std::vector<std::string> {
   std::vector<std::string> segments;
 
   token first;
@@ -576,7 +577,7 @@ std::vector<std::string> parser::parse_module_path() {
 //  Top-level: parse_file
 // ==========================================================================
 
-ast::ptr<ast::file> parser::parse_file() {
+auto parser::parse_file() -> ast::ptr<ast::file> {
   auto file = ast::make<ast::file>();
   auto file_start = peek().span;
 
@@ -638,7 +639,7 @@ ast::ptr<ast::file> parser::parse_file() {
 //  Module declaration
 // ==========================================================================
 
-ast::ptr<ast::module_decl> parser::parse_module_decl() {
+auto parser::parse_module_decl() -> ast::ptr<ast::module_decl> {
   auto decl = ast::make<ast::module_decl>();
   auto start = peek().span;
 
@@ -654,7 +655,7 @@ ast::ptr<ast::module_decl> parser::parse_module_decl() {
 //  Top-level items
 // ==========================================================================
 
-ast::ptr<ast::node> parser::parse_top_level_item() {
+auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
   skip_newlines();
   if (at_eof()) {
     return nullptr;
@@ -770,7 +771,7 @@ ast::ptr<ast::node> parser::parse_top_level_item() {
 //  Use declarations
 // ==========================================================================
 
-ast::ptr<ast::use_decl> parser::parse_use_decl(ast::visibility vis) {
+auto parser::parse_use_decl(ast::visibility vis) -> ast::ptr<ast::use_decl> {
   auto decl = ast::make<ast::use_decl>();
   auto start = peek().span;
   decl->visibility = vis;
@@ -884,8 +885,8 @@ ast::ptr<ast::use_decl> parser::parse_use_decl(ast::visibility vis) {
 //  Sub-module declarations
 // ==========================================================================
 
-ast::ptr<ast::sub_module_decl>
-parser::parse_sub_module_decl(ast::visibility vis) {
+auto
+parser::parse_sub_module_decl(ast::visibility vis) -> ast::ptr<ast::sub_module_decl> {
   auto decl = ast::make<ast::sub_module_decl>();
   auto start = peek().span;
   decl->visibility = vis;
@@ -931,7 +932,7 @@ parser::parse_sub_module_decl(ast::visibility vis) {
 //  Dep declarations
 // ==========================================================================
 
-ast::ptr<ast::dep_decl> parser::parse_dep_decl() {
+auto parser::parse_dep_decl() -> ast::ptr<ast::dep_decl> {
   auto decl = ast::make<ast::dep_decl>();
   auto start = peek().span;
 
@@ -971,7 +972,7 @@ ast::ptr<ast::dep_decl> parser::parse_dep_decl() {
 //  Type declarations
 // ==========================================================================
 
-ast::ptr<ast::type_decl> parser::parse_type_decl(ast::visibility vis) {
+auto parser::parse_type_decl(ast::visibility vis) -> ast::ptr<ast::type_decl> {
   auto decl = ast::make<ast::type_decl>();
   auto start = peek().span;
   decl->visibility = vis;
@@ -1049,7 +1050,7 @@ ast::ptr<ast::type_decl> parser::parse_type_decl(ast::visibility vis) {
   return decl;
 }
 
-ast::ptr<ast::node> parser::parse_type_def() {
+auto parser::parse_type_def() -> ast::ptr<ast::node> {
   // Sum body: either `| @variant ...` or the unprefixed documented form
   // `@variant | @other_variant`. Every variant starts with `@`, so no
   // lookahead beyond the next token is needed to disambiguate.
@@ -1187,7 +1188,7 @@ auto parser::parse_sum_variant() -> ast::sum_variant {
 //  Type expressions
 // ==========================================================================
 
-ast::ptr<ast::type_expr> parser::parse_type_expr() {
+auto parser::parse_type_expr() -> ast::ptr<ast::type_expr> {
   auto first = parse_prim_type_expr();
   if (!first) {
     return nullptr;
@@ -1213,7 +1214,7 @@ ast::ptr<ast::type_expr> parser::parse_type_expr() {
   return first;
 }
 
-ast::ptr<ast::type_expr> parser::parse_prim_type_expr() {
+auto parser::parse_prim_type_expr() -> ast::ptr<ast::type_expr> {
   switch (current()) {
   case token_kind::ident:
   case token_kind::kw_super:
@@ -1224,7 +1225,7 @@ ast::ptr<ast::type_expr> parser::parse_prim_type_expr() {
     auto tok = advance();
     auto named = ast::make<ast::named_type>();
     named->span = tok.span;
-    named->path.push_back("unit");
+    named->path.emplace_back("unit");
     return named;
   }
 
@@ -1297,14 +1298,14 @@ ast::ptr<ast::type_expr> parser::parse_prim_type_expr() {
   }
 }
 
-ast::ptr<ast::bound_type> parser::make_bound_type(ast::bound bound) {
+auto parser::make_bound_type(ast::bound bound) -> ast::ptr<ast::bound_type> {
   auto type = ast::make<ast::bound_type>();
   type->span = bound.span;
   type->value = std::move(bound);
   return type;
 }
 
-ast::ptr<ast::type_expr> parser::parse_optional_type_annotation() {
+auto parser::parse_optional_type_annotation() -> ast::ptr<ast::type_expr> {
   if (!match(token_kind::colon)) {
     return nullptr;
   }
@@ -1312,7 +1313,7 @@ ast::ptr<ast::type_expr> parser::parse_optional_type_annotation() {
   if (match(token_kind::kw_shared)) {
     auto shared_type = ast::make<ast::named_type>();
     shared_type->span = previous_span();
-    shared_type->path.push_back("shared");
+    shared_type->path.emplace_back("shared");
 
     auto inner_type = parse_type_expr();
     if (inner_type) {
@@ -1329,7 +1330,7 @@ ast::ptr<ast::type_expr> parser::parse_optional_type_annotation() {
   return parse_type_expr();
 }
 
-ast::ptr<ast::named_type> parser::parse_named_type() {
+auto parser::parse_named_type() -> ast::ptr<ast::named_type> {
   auto named = ast::make<ast::named_type>();
   named->span = peek().span;
 
@@ -1380,7 +1381,7 @@ ast::ptr<ast::named_type> parser::parse_named_type() {
   return named;
 }
 
-ast::ptr<ast::tuple_type> parser::parse_tuple_type() {
+auto parser::parse_tuple_type() -> ast::ptr<ast::tuple_type> {
   // This is called when we already know we have a tuple.
   // The LParen has NOT been consumed yet.
   auto tuple = ast::make<ast::tuple_type>();
@@ -1402,7 +1403,7 @@ ast::ptr<ast::tuple_type> parser::parse_tuple_type() {
   return tuple;
 }
 
-ast::ptr<ast::slice_type> parser::parse_slice_type() {
+auto parser::parse_slice_type() -> ast::ptr<ast::slice_type> {
   auto slice = ast::make<ast::slice_type>();
   slice->span = peek().span;
 
@@ -1414,7 +1415,7 @@ ast::ptr<ast::slice_type> parser::parse_slice_type() {
   return slice;
 }
 
-ast::ptr<ast::array_type> parser::parse_array_type() {
+auto parser::parse_array_type() -> ast::ptr<ast::array_type> {
   auto arr = ast::make<ast::array_type>();
   arr->span = peek().span;
 
@@ -1429,7 +1430,7 @@ ast::ptr<ast::array_type> parser::parse_array_type() {
   return arr;
 }
 
-ast::ptr<ast::ref_type> parser::parse_ref_type() {
+auto parser::parse_ref_type() -> ast::ptr<ast::ref_type> {
   auto ref = ast::make<ast::ref_type>();
   ref->span = peek().span;
 
@@ -1441,7 +1442,7 @@ ast::ptr<ast::ref_type> parser::parse_ref_type() {
   return ref;
 }
 
-ast::ptr<ast::ptr_type> parser::parse_ptr_type() {
+auto parser::parse_ptr_type() -> ast::ptr<ast::ptr_type> {
   auto ptr = ast::make<ast::ptr_type>();
   ptr->span = peek().span;
 
@@ -1453,7 +1454,7 @@ ast::ptr<ast::ptr_type> parser::parse_ptr_type() {
   return ptr;
 }
 
-ast::ptr<ast::fn_type> parser::parse_fn_type() {
+auto parser::parse_fn_type() -> ast::ptr<ast::fn_type> {
   auto fn = ast::make<ast::fn_type>();
   fn->span = peek().span;
 
@@ -1484,7 +1485,7 @@ ast::ptr<ast::fn_type> parser::parse_fn_type() {
 //  Type parameters and bounds
 // ==========================================================================
 
-std::vector<ast::type_param> parser::parse_type_params() {
+auto parser::parse_type_params() -> std::vector<ast::type_param> {
   std::vector<ast::type_param> params;
 
   expect(token_kind::lbracket);
@@ -1565,7 +1566,7 @@ auto parser::parse_bound_term() -> ast::bound_term {
   return term;
 }
 
-std::vector<ast::where_constraint> parser::parse_where_clause() {
+auto parser::parse_where_clause() -> std::vector<ast::where_constraint> {
   std::vector<ast::where_constraint> constraints;
 
   expect(token_kind::kw_where);
@@ -1594,7 +1595,7 @@ std::vector<ast::where_constraint> parser::parse_where_clause() {
 //  Trait declarations
 // ==========================================================================
 
-ast::ptr<ast::trait_decl> parser::parse_trait_decl(ast::visibility vis) {
+auto parser::parse_trait_decl(ast::visibility vis) -> ast::ptr<ast::trait_decl> {
   auto decl = ast::make<ast::trait_decl>();
   auto start = peek().span;
   decl->visibility = vis;
@@ -1671,7 +1672,7 @@ ast::ptr<ast::trait_decl> parser::parse_trait_decl(ast::visibility vis) {
 //  Concept declarations
 // ==========================================================================
 
-ast::ptr<ast::concept_decl> parser::parse_concept_decl(ast::visibility vis) {
+auto parser::parse_concept_decl(ast::visibility vis) -> ast::ptr<ast::concept_decl> {
   auto decl = ast::make<ast::concept_decl>();
   auto start = peek().span;
   decl->visibility = vis;
@@ -1742,7 +1743,7 @@ ast::ptr<ast::concept_decl> parser::parse_concept_decl(ast::visibility vis) {
 //  Impl declarations
 // ==========================================================================
 
-ast::ptr<ast::impl_decl> parser::parse_impl_decl() {
+auto parser::parse_impl_decl() -> ast::ptr<ast::impl_decl> {
   auto decl = ast::make<ast::impl_decl>();
   auto start = peek().span;
 
@@ -1884,9 +1885,9 @@ auto parser::parse_func_modifiers() -> ast::func_modifiers {
   return mods;
 }
 
-ast::ptr<ast::func_decl> parser::parse_func_decl(ast::visibility vis,
+auto parser::parse_func_decl(ast::visibility vis,
                                                  ast::func_modifiers mods,
-                                                 bool allow_bodyless) {
+                                                 bool allow_bodyless) -> ast::ptr<ast::func_decl> {
   auto decl = ast::make<ast::func_decl>();
   auto start = peek().span;
   decl->visibility = vis;
@@ -1955,7 +1956,7 @@ ast::ptr<ast::func_decl> parser::parse_func_decl(ast::visibility vis,
   return decl;
 }
 
-std::vector<ast::Param> parser::parse_param_list() {
+auto parser::parse_param_list() -> std::vector<ast::Param> {
   std::vector<ast::Param> params;
 
   do {
@@ -1986,7 +1987,7 @@ auto parser::parse_param() -> ast::Param {
   return param;
 }
 
-std::vector<ast::contract_clause> parser::parse_contract_clauses() {
+auto parser::parse_contract_clauses() -> std::vector<ast::contract_clause> {
   std::vector<ast::contract_clause> clauses;
 
   skip_newlines();
@@ -2027,7 +2028,7 @@ auto parser::parse_contract_clause() -> ast::contract_clause {
 //  Static declarations
 // ==========================================================================
 
-ast::ptr<ast::static_decl> parser::parse_static_decl(ast::visibility vis) {
+auto parser::parse_static_decl(ast::visibility vis) -> ast::ptr<ast::static_decl> {
   auto decl = ast::make<ast::static_decl>();
   auto start = peek().span;
   decl->visibility = vis;
@@ -2162,7 +2163,7 @@ ast::ptr<ast::static_decl> parser::parse_static_decl(ast::visibility vis) {
 //  Statements
 // ==========================================================================
 
-ast::ptr<ast::node> parser::parse_stmt() {
+auto parser::parse_stmt() -> ast::ptr<ast::node> {
   skip_newlines();
 
   if (at_eof() || at(token_kind::dedent)) {
@@ -2221,12 +2222,15 @@ ast::ptr<ast::node> parser::parse_stmt() {
         return parse_func_decl(vis, std::move(mods));
       }
     }
-    if (at(token_kind::kw_type))
+    if (at(token_kind::kw_type)) {
       return parse_type_decl(vis);
-    if (at(token_kind::kw_static))
+}
+    if (at(token_kind::kw_static)) {
       return parse_static_decl(vis);
-    if (at(token_kind::kw_use))
+}
+    if (at(token_kind::kw_use)) {
       return parse_use_decl(vis);
+}
     emit_unexpected("a declaration after visibility modifier");
     synchronize_to_newline();
     return make_error_node(peek().span);
@@ -2253,7 +2257,7 @@ ast::ptr<ast::node> parser::parse_stmt() {
   }
 }
 
-ast::ptr<ast::let_stmt> parser::parse_let_stmt() {
+auto parser::parse_let_stmt() -> ast::ptr<ast::let_stmt> {
   auto stmt = ast::make<ast::let_stmt>();
   auto start = peek().span;
 
@@ -2294,7 +2298,7 @@ ast::ptr<ast::let_stmt> parser::parse_let_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::var_stmt> parser::parse_var_stmt() {
+auto parser::parse_var_stmt() -> ast::ptr<ast::var_stmt> {
   auto stmt = ast::make<ast::var_stmt>();
   auto start = peek().span;
 
@@ -2314,7 +2318,7 @@ ast::ptr<ast::var_stmt> parser::parse_var_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::return_stmt> parser::parse_return_stmt() {
+auto parser::parse_return_stmt() -> ast::ptr<ast::return_stmt> {
   auto stmt = ast::make<ast::return_stmt>();
   auto start = peek().span;
 
@@ -2331,11 +2335,11 @@ ast::ptr<ast::return_stmt> parser::parse_return_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::if_stmt> parser::parse_if_stmt() {
+auto parser::parse_if_stmt() -> ast::ptr<ast::if_stmt> {
   auto stmt = ast::make<ast::if_stmt>();
   auto start = peek().span;
 
-  auto parse_if_condition = [this](ast::if_branch &branch) {
+  auto parse_if_condition = [this](ast::if_branch &branch) -> void {
     if (match(token_kind::kw_let)) {
       branch.let_pattern = parse_pattern();
       expect(token_kind::eq);
@@ -2378,7 +2382,7 @@ ast::ptr<ast::if_stmt> parser::parse_if_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::while_stmt> parser::parse_while_stmt() {
+auto parser::parse_while_stmt() -> ast::ptr<ast::while_stmt> {
   auto stmt = ast::make<ast::while_stmt>();
   auto start = peek().span;
 
@@ -2400,7 +2404,7 @@ ast::ptr<ast::while_stmt> parser::parse_while_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::for_stmt> parser::parse_for_stmt() {
+auto parser::parse_for_stmt() -> ast::ptr<ast::for_stmt> {
   auto stmt = ast::make<ast::for_stmt>();
   auto start = peek().span;
 
@@ -2427,7 +2431,7 @@ ast::ptr<ast::for_stmt> parser::parse_for_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::match_stmt> parser::parse_match_stmt() {
+auto parser::parse_match_stmt() -> ast::ptr<ast::match_stmt> {
   auto stmt = ast::make<ast::match_stmt>();
   auto start = peek().span;
 
@@ -2451,7 +2455,7 @@ ast::ptr<ast::match_stmt> parser::parse_match_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::crew_stmt> parser::parse_crew_stmt() {
+auto parser::parse_crew_stmt() -> ast::ptr<ast::crew_stmt> {
   auto stmt = ast::make<ast::crew_stmt>();
   auto start = peek().span;
 
@@ -2482,7 +2486,7 @@ ast::ptr<ast::crew_stmt> parser::parse_crew_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::asm_stmt> parser::parse_asm_stmt() {
+auto parser::parse_asm_stmt() -> ast::ptr<ast::asm_stmt> {
   auto stmt = ast::make<ast::asm_stmt>();
   auto start = peek().span;
 
@@ -2512,7 +2516,7 @@ ast::ptr<ast::asm_stmt> parser::parse_asm_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::splice_stmt> parser::parse_splice_stmt() {
+auto parser::parse_splice_stmt() -> ast::ptr<ast::splice_stmt> {
   auto stmt = ast::make<ast::splice_stmt>();
   auto start = peek().span;
 
@@ -2524,7 +2528,7 @@ ast::ptr<ast::splice_stmt> parser::parse_splice_stmt() {
   return stmt;
 }
 
-ast::ptr<ast::node> parser::parse_expr_or_assign_stmt() {
+auto parser::parse_expr_or_assign_stmt() -> ast::ptr<ast::node> {
   auto start = peek().span;
 
   auto expr = parse_expr();
@@ -2568,7 +2572,7 @@ ast::ptr<ast::node> parser::parse_expr_or_assign_stmt() {
 /// Grammar:
 ///   expr = pipe_expr [ "where" ":" NEWLINE INDENT { where_binding } DEDENT ]
 ///   where_binding = IDENT "=" expr NEWLINE
-ast::ptr<ast::expr> parser::parse_expr() {
+auto parser::parse_expr() -> ast::ptr<ast::expr> {
   auto inner = parse_pipe_expr();
   if (!inner) {
     return nullptr;
@@ -2586,7 +2590,7 @@ ast::ptr<ast::expr> parser::parse_expr() {
   return inner;
 }
 
-ast::ptr<ast::expr> parser::parse_pipe_expr() {
+auto parser::parse_pipe_expr() -> ast::ptr<ast::expr> {
   auto lhs = parse_or_expr();
   if (!lhs) {
     return nullptr;
@@ -2613,7 +2617,7 @@ ast::ptr<ast::expr> parser::parse_pipe_expr() {
   return lhs;
 }
 
-ast::ptr<ast::expr> parser::parse_or_expr() {
+auto parser::parse_or_expr() -> ast::ptr<ast::expr> {
   auto lhs = parse_and_expr();
   if (!lhs) {
     return nullptr;
@@ -2638,7 +2642,7 @@ ast::ptr<ast::expr> parser::parse_or_expr() {
   return lhs;
 }
 
-ast::ptr<ast::expr> parser::parse_and_expr() {
+auto parser::parse_and_expr() -> ast::ptr<ast::expr> {
   auto lhs = parse_not_expr();
   if (!lhs) {
     return nullptr;
@@ -2663,7 +2667,7 @@ ast::ptr<ast::expr> parser::parse_and_expr() {
   return lhs;
 }
 
-ast::ptr<ast::expr> parser::parse_not_expr() {
+auto parser::parse_not_expr() -> ast::ptr<ast::expr> {
   if (at(token_kind::kw_not)) {
     auto op_tok = advance();
     auto operand = parse_not_expr();
@@ -2682,7 +2686,7 @@ ast::ptr<ast::expr> parser::parse_not_expr() {
   return parse_cmp_expr();
 }
 
-ast::ptr<ast::expr> parser::parse_cmp_expr() {
+auto parser::parse_cmp_expr() -> ast::ptr<ast::expr> {
   auto lhs = parse_add_expr();
   if (!lhs) {
     return nullptr;
@@ -2751,7 +2755,7 @@ ast::ptr<ast::expr> parser::parse_cmp_expr() {
   return lhs;
 }
 
-ast::ptr<ast::expr> parser::parse_add_expr() {
+auto parser::parse_add_expr() -> ast::ptr<ast::expr> {
   auto lhs = parse_mul_expr();
   if (!lhs) {
     return nullptr;
@@ -2833,7 +2837,7 @@ ast::ptr<ast::expr> parser::parse_add_expr() {
   return lhs;
 }
 
-ast::ptr<ast::expr> parser::parse_mul_expr() {
+auto parser::parse_mul_expr() -> ast::ptr<ast::expr> {
   auto lhs = parse_unary_expr();
   if (!lhs) {
     return nullptr;
@@ -2865,7 +2869,7 @@ ast::ptr<ast::expr> parser::parse_mul_expr() {
   return lhs;
 }
 
-ast::ptr<ast::expr> parser::parse_unary_expr() {
+auto parser::parse_unary_expr() -> ast::ptr<ast::expr> {
   switch (current()) {
   case token_kind::minus: {
     auto op_tok = advance();
@@ -2938,7 +2942,7 @@ ast::ptr<ast::expr> parser::parse_unary_expr() {
   }
 }
 
-ast::ptr<ast::expr> parser::parse_postfix_expr() {
+auto parser::parse_postfix_expr() -> ast::ptr<ast::expr> {
   auto base = parse_primary_expr();
   if (!base) {
     return nullptr;
@@ -2970,7 +2974,7 @@ ast::ptr<ast::expr> parser::parse_postfix_expr() {
   return base;
 }
 
-ast::ptr<ast::expr> parser::parse_postfix_suffix(ast::ptr<ast::expr> base) {
+auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base) -> ast::ptr<ast::expr> {
   switch (current()) {
   case token_kind::dot: {
     advance(); // consume `.`
@@ -2986,10 +2990,12 @@ ast::ptr<ast::expr> parser::parse_postfix_suffix(ast::ptr<ast::expr> base) {
         advance();
         while (!at(token_kind::rbracket) && !at_eof()) {
           auto arg = parse_type_expr();
-          if (arg)
+          if (arg) {
             field->generic_args.push_back(std::move(arg));
-          if (!match(token_kind::comma))
+}
+          if (!match(token_kind::comma)) {
             break;
+}
         }
         expect(token_kind::rbracket);
         field->span.extend_to(previous_span());
@@ -3097,7 +3103,7 @@ ast::ptr<ast::expr> parser::parse_postfix_suffix(ast::ptr<ast::expr> base) {
   }
 }
 
-ast::ptr<ast::expr> parser::parse_primary_expr() {
+auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
   switch (current()) {
   // Literals.
   case token_kind::int_lit:
@@ -3199,7 +3205,7 @@ ast::ptr<ast::expr> parser::parse_primary_expr() {
   }
 }
 
-ast::ptr<ast::expr> parser::parse_literal_expr() {
+auto parser::parse_literal_expr() -> ast::ptr<ast::expr> {
   auto tok = advance();
   auto lit = ast::make<ast::literal_expr>();
   lit->span = tok.span;
@@ -3208,7 +3214,7 @@ ast::ptr<ast::expr> parser::parse_literal_expr() {
   return lit;
 }
 
-ast::ptr<ast::expr> parser::parse_ident_or_path_expr() {
+auto parser::parse_ident_or_path_expr() -> ast::ptr<ast::expr> {
   // Check if this looks like a lambda: `ident => ...`
   if (allow_lambda_expr_ && peek_at(1).is(token_kind::fat_arrow)) {
     return parse_lambda_expr();
@@ -3222,7 +3228,7 @@ ast::ptr<ast::expr> parser::parse_ident_or_path_expr() {
   if (at(token_kind::lbrace)) {
     auto expr = parse_brace_expr();
     if (expr && expr->kind == ast::node_kind::struct_expr) {
-      auto *struct_expr = static_cast<ast::struct_expr *>(expr.get());
+      auto *struct_expr = dynamic_cast<ast::struct_expr *>(expr.get());
       struct_expr->type_name = std::move(ident);
       struct_expr->span = struct_expr->type_name->span.merge(struct_expr->span);
     }
@@ -3251,7 +3257,7 @@ ast::ptr<ast::expr> parser::parse_ident_or_path_expr() {
   return ident;
 }
 
-ast::ptr<ast::expr> parser::parse_variant_expr() {
+auto parser::parse_variant_expr() -> ast::ptr<ast::expr> {
   auto start = peek().span;
   advance(); // consume `@`
 
@@ -3272,7 +3278,7 @@ ast::ptr<ast::expr> parser::parse_variant_expr() {
   return ident;
 }
 
-ast::ptr<ast::expr> parser::parse_trailing_if_expr(ast::ptr<ast::expr> then_expr) {
+auto parser::parse_trailing_if_expr(ast::ptr<ast::expr> then_expr) -> ast::ptr<ast::expr> {
   auto iexpr = ast::make<ast::if_expr>();
   iexpr->span = then_expr->span;
 
@@ -3310,7 +3316,7 @@ ast::ptr<ast::expr> parser::parse_trailing_if_expr(ast::ptr<ast::expr> then_expr
   return iexpr;
 }
 
-ast::ptr<ast::expr> parser::parse_paren_expr() {
+auto parser::parse_paren_expr() -> ast::ptr<ast::expr> {
   auto start = peek().span;
   advance(); // consume `(`
 
@@ -3361,7 +3367,7 @@ ast::ptr<ast::expr> parser::parse_paren_expr() {
   return group;
 }
 
-ast::ptr<ast::expr> parser::parse_bracket_expr() {
+auto parser::parse_bracket_expr() -> ast::ptr<ast::expr> {
   auto start = peek().span;
   advance(); // consume `[`
 
@@ -3414,7 +3420,7 @@ ast::ptr<ast::expr> parser::parse_bracket_expr() {
   return arr;
 }
 
-ast::ptr<ast::expr> parser::parse_brace_expr() {
+auto parser::parse_brace_expr() -> ast::ptr<ast::expr> {
   auto start = peek().span;
   advance(); // consume `{`
 
@@ -3461,7 +3467,7 @@ ast::ptr<ast::expr> parser::parse_brace_expr() {
   return s;
 }
 
-ast::ptr<ast::expr> parser::parse_lambda_expr() {
+auto parser::parse_lambda_expr() -> ast::ptr<ast::expr> {
   auto lambda = ast::make<ast::lambda_expr>();
   auto start = peek().span;
 
@@ -3553,7 +3559,7 @@ ast::ptr<ast::expr> parser::parse_lambda_expr() {
   return lambda;
 }
 
-ast::ptr<ast::match_expr> parser::parse_match_expr() {
+auto parser::parse_match_expr() -> ast::ptr<ast::match_expr> {
   auto mexpr = ast::make<ast::match_expr>();
   auto start = peek().span;
 
@@ -3650,11 +3656,11 @@ auto parser::parse_match_arm() -> ast::match_arm {
   return arm;
 }
 
-ast::ptr<ast::if_expr> parser::parse_if_expr() {
+auto parser::parse_if_expr() -> ast::ptr<ast::if_expr> {
   auto iexpr = ast::make<ast::if_expr>();
   auto start = peek().span;
 
-  auto parse_if_expr_condition = [this](ast::if_branch &branch) {
+  auto parse_if_expr_condition = [this](ast::if_branch &branch) -> void {
     if (match(token_kind::kw_let)) {
       branch.let_pattern = parse_pattern();
       expect(token_kind::eq);
@@ -3665,7 +3671,8 @@ ast::ptr<ast::if_expr> parser::parse_if_expr() {
     }
   };
 
-  auto wrap_inline_body = [](ast::ptr<ast::expr> expr) {
+  auto wrap_inline_body =
+      [](ast::ptr<ast::expr> expr) -> std::vector<ast::ptr<ast::node>> {
     std::vector<ast::ptr<ast::node>> body;
     if (expr) {
       auto stmt = ast::make<ast::expr_stmt>();
@@ -3675,7 +3682,7 @@ ast::ptr<ast::if_expr> parser::parse_if_expr() {
     return body;
   };
 
-  auto parse_if_inline_body = [this](std::string_view construct_name) {
+  auto parse_if_inline_body = [this](std::string_view construct_name) -> auto {
     auto body = parse_pipe_expr();
     if (!body) {
       emit(diagnostic(diagnostic_level::Error,
@@ -3761,7 +3768,7 @@ ast::ptr<ast::if_expr> parser::parse_if_expr() {
   return iexpr;
 }
 
-ast::ptr<ast::for_expr> parser::parse_for_expr() {
+auto parser::parse_for_expr() -> ast::ptr<ast::for_expr> {
   auto fexpr = ast::make<ast::for_expr>();
   auto start = peek().span;
 
@@ -3822,7 +3829,7 @@ ast::ptr<ast::for_expr> parser::parse_for_expr() {
   return fexpr;
 }
 
-ast::ptr<ast::await_expr> parser::parse_await_expr() {
+auto parser::parse_await_expr() -> ast::ptr<ast::await_expr> {
   auto aexpr = ast::make<ast::await_expr>();
   auto start = peek().span;
 
@@ -3839,7 +3846,7 @@ ast::ptr<ast::await_expr> parser::parse_await_expr() {
   return aexpr;
 }
 
-ast::ptr<ast::async_expr> parser::parse_async_expr() {
+auto parser::parse_async_expr() -> ast::ptr<ast::async_expr> {
   auto aexpr = ast::make<ast::async_expr>();
   auto start = peek().span;
 
@@ -3886,7 +3893,7 @@ ast::ptr<ast::async_expr> parser::parse_async_expr() {
   return aexpr;
 }
 
-ast::ptr<ast::par_expr> parser::parse_par_expr() {
+auto parser::parse_par_expr() -> ast::ptr<ast::par_expr> {
   auto pexpr = ast::make<ast::par_expr>();
   auto start = peek().span;
 
@@ -3913,7 +3920,7 @@ ast::ptr<ast::par_expr> parser::parse_par_expr() {
   return pexpr;
 }
 
-ast::ptr<ast::race_expr> parser::parse_race_expr() {
+auto parser::parse_race_expr() -> ast::ptr<ast::race_expr> {
   auto rexpr = ast::make<ast::race_expr>();
   auto start = peek().span;
 
@@ -3940,7 +3947,7 @@ ast::ptr<ast::race_expr> parser::parse_race_expr() {
   return rexpr;
 }
 
-ast::ptr<ast::crew_expr> parser::parse_crew_expr() {
+auto parser::parse_crew_expr() -> ast::ptr<ast::crew_expr> {
   auto expr = ast::make<ast::crew_expr>();
   auto start = peek().span;
 
@@ -3972,7 +3979,7 @@ ast::ptr<ast::crew_expr> parser::parse_crew_expr() {
   return expr;
 }
 
-ast::ptr<ast::on_expr> parser::parse_on_expr() {
+auto parser::parse_on_expr() -> ast::ptr<ast::on_expr> {
   auto oexpr = ast::make<ast::on_expr>();
   auto start = peek().span;
 
@@ -4032,7 +4039,7 @@ ast::ptr<ast::on_expr> parser::parse_on_expr() {
   return oexpr;
 }
 
-ast::ptr<ast::block_expr> parser::parse_block_expr() {
+auto parser::parse_block_expr() -> ast::ptr<ast::block_expr> {
   auto bexpr = ast::make<ast::block_expr>();
   auto start = peek().span;
 
@@ -4059,7 +4066,7 @@ ast::ptr<ast::block_expr> parser::parse_block_expr() {
   return bexpr;
 }
 
-ast::ptr<ast::quote_expr> parser::parse_quote_expr() {
+auto parser::parse_quote_expr() -> ast::ptr<ast::quote_expr> {
   auto qexpr = ast::make<ast::quote_expr>();
   auto start = peek().span;
 
@@ -4106,7 +4113,7 @@ ast::ptr<ast::quote_expr> parser::parse_quote_expr() {
   return qexpr;
 }
 
-ast::ptr<ast::splice_expr> parser::parse_splice_expr_inner() {
+auto parser::parse_splice_expr_inner() -> ast::ptr<ast::splice_expr> {
   auto sexpr = ast::make<ast::splice_expr>();
   auto start = peek().span;
 
@@ -4127,7 +4134,7 @@ ast::ptr<ast::splice_expr> parser::parse_splice_expr_inner() {
   return sexpr;
 }
 
-ast::ptr<ast::static_expr> parser::parse_static_expr() {
+auto parser::parse_static_expr() -> ast::ptr<ast::static_expr> {
   auto sexpr = ast::make<ast::static_expr>();
   auto start = peek().span;
 
@@ -4146,7 +4153,7 @@ ast::ptr<ast::static_expr> parser::parse_static_expr() {
 ///
 /// The `inner` argument is the already-parsed leading expression that the
 /// where clause is being attached to.
-ast::ptr<ast::where_expr> parser::parse_where_expr(ast::ptr<ast::expr> inner) {
+auto parser::parse_where_expr(ast::ptr<ast::expr> inner) -> ast::ptr<ast::where_expr> {
   auto wexpr = ast::make<ast::where_expr>();
   wexpr->span = inner->span;
   wexpr->inner = std::move(inner);
@@ -4314,7 +4321,7 @@ ast::ptr<ast::where_expr> parser::parse_where_expr(ast::ptr<ast::expr> inner) {
 //  Call arguments
 // ==========================================================================
 
-std::vector<ast::call_arg> parser::parse_call_args() {
+auto parser::parse_call_args() -> std::vector<ast::call_arg> {
   std::vector<ast::call_arg> args;
 
   do {
@@ -4349,10 +4356,11 @@ std::vector<ast::call_arg> parser::parse_call_args() {
 //  patterns
 // ==========================================================================
 
-ast::ptr<ast::pattern> parser::parse_pattern() {
+auto parser::parse_pattern() -> ast::ptr<ast::pattern> {
   auto pat = parse_or_pattern();
-  if (!pat)
+  if (!pat) {
     return make_error_pattern(peek().span);
+}
 
   // Optional alias: `pattern as name`
   if (at(token_kind::kw_as)) {
@@ -4368,7 +4376,7 @@ ast::ptr<ast::pattern> parser::parse_pattern() {
   return pat;
 }
 
-ast::ptr<ast::pattern> parser::parse_or_pattern() {
+auto parser::parse_or_pattern() -> ast::ptr<ast::pattern> {
   auto first = parse_atomic_pattern();
   if (!first) {
     return nullptr;
@@ -4397,7 +4405,7 @@ ast::ptr<ast::pattern> parser::parse_or_pattern() {
   return or_pat;
 }
 
-ast::ptr<ast::pattern> parser::parse_atomic_pattern() {
+auto parser::parse_atomic_pattern() -> ast::ptr<ast::pattern> {
   switch (current()) {
   case token_kind::kw_underscore:
     return parse_wildcard_pattern();
@@ -4446,14 +4454,14 @@ ast::ptr<ast::pattern> parser::parse_atomic_pattern() {
   }
 }
 
-ast::ptr<ast::pattern> parser::parse_wildcard_pattern() {
+auto parser::parse_wildcard_pattern() -> ast::ptr<ast::pattern> {
   auto tok = advance();
   auto wc = ast::make<ast::wildcard_pattern>();
   wc->span = tok.span;
   return wc;
 }
 
-ast::ptr<ast::pattern> parser::parse_literal_pattern() {
+auto parser::parse_literal_pattern() -> ast::ptr<ast::pattern> {
   auto tok = advance();
   auto lit = ast::make<ast::literal_pattern>();
   lit->span = tok.span;
@@ -4487,7 +4495,7 @@ ast::ptr<ast::pattern> parser::parse_literal_pattern() {
   return lit;
 }
 
-ast::ptr<ast::pattern> parser::parse_ident_or_constructor_pattern() {
+auto parser::parse_ident_or_constructor_pattern() -> ast::ptr<ast::pattern> {
   auto tok = advance();
   auto start = tok.span;
 
@@ -4524,7 +4532,7 @@ ast::ptr<ast::pattern> parser::parse_ident_or_constructor_pattern() {
   return binding;
 }
 
-ast::ptr<ast::pattern> parser::parse_variant_pattern() {
+auto parser::parse_variant_pattern() -> ast::ptr<ast::pattern> {
   auto at_start = peek().span;
   advance(); // consume `@`
 
@@ -4567,7 +4575,7 @@ ast::ptr<ast::pattern> parser::parse_variant_pattern() {
   return ctor;
 }
 
-ast::ptr<ast::pattern> parser::parse_paren_pattern() {
+auto parser::parse_paren_pattern() -> ast::ptr<ast::pattern> {
   auto start = peek().span;
   advance(); // consume `(`
 
@@ -4616,7 +4624,7 @@ ast::ptr<ast::pattern> parser::parse_paren_pattern() {
   return group;
 }
 
-ast::ptr<ast::pattern> parser::parse_brace_pattern() {
+auto parser::parse_brace_pattern() -> ast::ptr<ast::pattern> {
   auto start = peek().span;
   advance(); // consume `{`
 
@@ -4662,7 +4670,7 @@ ast::ptr<ast::pattern> parser::parse_brace_pattern() {
   return spat;
 }
 
-ast::ptr<ast::pattern> parser::parse_bracket_pattern() {
+auto parser::parse_bracket_pattern() -> ast::ptr<ast::pattern> {
   auto start = peek().span;
   advance(); // consume `[`
 
@@ -4684,14 +4692,15 @@ ast::ptr<ast::pattern> parser::parse_bracket_pattern() {
   return apat;
 }
 
-ast::ptr<ast::pattern> parser::parse_option_result_pattern() {
+auto parser::parse_option_result_pattern() -> ast::ptr<ast::pattern> {
   auto start = peek().span;
   auto kw = advance();
 
   expect(token_kind::lparen);
   auto inner = parse_pattern();
-  if (!inner)
+  if (!inner) {
     inner = make_error_pattern(peek().span);
+}
   expect(token_kind::rparen);
 
   if (kw.kind == token_kind::kw_some) {
@@ -4711,7 +4720,7 @@ ast::ptr<ast::pattern> parser::parse_option_result_pattern() {
   return pat;
 }
 
-ast::ptr<ast::pattern> parser::parse_ref_pattern() {
+auto parser::parse_ref_pattern() -> ast::ptr<ast::pattern> {
   auto start = peek().span;
   advance(); // consume `&`
 
@@ -4731,7 +4740,7 @@ ast::ptr<ast::pattern> parser::parse_ref_pattern() {
 //  For-loop variable parsing
 // ==========================================================================
 
-std::vector<ast::ptr<ast::pattern>> parser::parse_for_vars() {
+auto parser::parse_for_vars() -> std::vector<ast::ptr<ast::pattern>> {
   std::vector<ast::ptr<ast::pattern>> patterns;
 
   patterns.push_back(parse_pattern());
@@ -4739,8 +4748,9 @@ std::vector<ast::ptr<ast::pattern>> parser::parse_for_vars() {
   while (match(token_kind::comma)) {
     // Check if the next thing is `in` — if so, the comma was part of
     // the for syntax, not another variable.
-    if (at(token_kind::kw_in))
+    if (at(token_kind::kw_in)) {
       break;
+}
     patterns.push_back(parse_pattern());
   }
 
@@ -4751,8 +4761,8 @@ std::vector<ast::ptr<ast::pattern>> parser::parse_for_vars() {
 //  Operator conversion helpers
 // ==========================================================================
 
-std::optional<ast::assign_op>
-parser::token_to_assign_op(token_kind kind) noexcept {
+auto
+parser::token_to_assign_op(token_kind kind) noexcept -> std::optional<ast::assign_op> {
   switch (kind) {
   case token_kind::eq:
     return ast::assign_op::Assign;
@@ -4793,7 +4803,7 @@ parser::token_to_assign_op(token_kind kind) noexcept {
   }
 }
 
-std::optional<ast::binary_op> parser::token_to_cmp_op() {
+auto parser::token_to_cmp_op() -> std::optional<ast::binary_op> {
   switch (current()) {
   case token_kind::eq_eq:
     return ast::binary_op::EqEq;
@@ -4820,7 +4830,7 @@ std::optional<ast::binary_op> parser::token_to_cmp_op() {
   }
 }
 
-std::optional<ast::binary_op> parser::token_to_add_op(token_kind kind) noexcept {
+auto parser::token_to_add_op(token_kind kind) noexcept -> std::optional<ast::binary_op> {
   switch (kind) {
   case token_kind::plus:
     return ast::binary_op::Add;
@@ -4839,7 +4849,7 @@ std::optional<ast::binary_op> parser::token_to_add_op(token_kind kind) noexcept 
   }
 }
 
-std::optional<ast::binary_op> parser::token_to_mul_op(token_kind kind) noexcept {
+auto parser::token_to_mul_op(token_kind kind) noexcept -> std::optional<ast::binary_op> {
   switch (kind) {
   case token_kind::star:
     return ast::binary_op::Mul;

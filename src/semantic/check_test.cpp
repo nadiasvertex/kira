@@ -92,8 +92,8 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
   };
 }
 
-auto analyze_one(std::string text) -> analyzed_session {
-  return analyze_sources({{.path = "sample.kira", .text = std::move(text)}});
+auto analyze_one(const std::string& text) -> analyzed_session {
+  return analyze_sources({{.path = "sample.kira", .text = text}});
 }
 
 // ==========================================================================

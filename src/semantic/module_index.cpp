@@ -1,5 +1,7 @@
 #include "module_index.h"
 
+#include <ranges>
+
 namespace kira::semantic {
 namespace {
 
@@ -33,7 +35,7 @@ auto collect_module_scopes(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
 
-    const auto &decl = static_cast<const ast::sub_module_decl &>(*item);
+    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
     if (decl.items.empty()) {
       continue;
     }
@@ -89,7 +91,7 @@ auto collect_submodule_declarations(
       continue;
     }
 
-    const auto &decl = static_cast<const ast::sub_module_decl &>(*item);
+    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
     auto module_path = parent_path;
     module_path.push_back(decl.name);
     out.push_back(submodule_declaration_record{
@@ -125,7 +127,7 @@ auto collect_use_declarations(const std::vector<ast::ptr<ast::node>> &items,
     }
 
     if (item->kind == ast::node_kind::use_decl) {
-      const auto &decl = static_cast<const ast::use_decl &>(*item);
+      const auto &decl = dynamic_cast<const ast::use_decl &>(*item);
       out.push_back(use_decl_record{
           .decl = &decl,
           .importer_module_name =
@@ -143,7 +145,7 @@ auto collect_use_declarations(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
 
-    const auto &decl = static_cast<const ast::sub_module_decl &>(*item);
+    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
     auto child_path = module_path;
     child_path.push_back(decl.name);
     collect_use_declarations(decl.items, child_path, file_id, out);
@@ -357,8 +359,8 @@ auto find_module_scope_symbol(const semantic_resolution_index &index,
     return nullptr;
   }
 
-  for (auto it = module_scope->symbols.rbegin(); it != module_scope->symbols.rend(); ++it) {
-    const auto *symbol = find_semantic_symbol(index.session, *it);
+  for (unsigned int it : std::views::reverse(module_scope->symbols)) {
+    const auto *symbol = find_semantic_symbol(index.session, it);
     if (symbol != nullptr && symbol->name == symbol_name) {
       return symbol;
     }

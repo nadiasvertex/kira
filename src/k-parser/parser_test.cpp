@@ -87,11 +87,11 @@ auto test_lexer_emits_indent_and_dedent() -> void {
   expect(!diag.has_errors(), "expected lexer test source to tokenize cleanly");
 
   const auto indent_count = std::count_if(
-      tokens.begin(), tokens.end(), [](const kira::token &token) {
+      tokens.begin(), tokens.end(), [](const kira::token &token) -> bool {
         return token.kind == kira::token_kind::indent;
       });
   const auto dedent_count = std::count_if(
-      tokens.begin(), tokens.end(), [](const kira::token &token) {
+      tokens.begin(), tokens.end(), [](const kira::token &token) -> bool {
         return token.kind == kira::token_kind::dedent;
       });
 
@@ -211,7 +211,7 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
   expect(match_expr->arms.size() == 2, "expected two match arms");
 
   auto *aliased_pattern = expect_pattern<kira::ast::group_pattern>(
-      static_cast<kira::ast::pattern *>(match_expr->arms[0].pattern.get()),
+      dynamic_cast<kira::ast::pattern *>(match_expr->arms[0].pattern.get()),
       kira::ast::node_kind::group_pattern,
       "expected first match arm to preserve aliased pattern");
   expect(aliased_pattern->alias.has_value(),
@@ -789,21 +789,21 @@ struct named_test {
 
 auto main(int argc, char *argv[]) -> int {
   const named_test tests[] = {
-      {"lexer_indent_dedent", test_lexer_emits_indent_and_dedent},
-      {"type_body_nodes", test_parser_builds_type_body_nodes},
-      {"associated_types_where_aliases",
-       test_parser_preserves_associated_types_where_and_aliases},
-      {"function_signature_and_control_flow",
-       test_parser_preserves_function_signature_and_control_flow},
-      {"trait_impl_and_block_expressions",
-       test_parser_preserves_trait_impl_and_block_expressions},
-      {"missing_module_recovery", test_parser_reports_missing_module_and_recovers},
-      {"missing_where_colon_recovery",
-       test_parser_recovers_missing_colon_in_where_clause},
-      {"spec_valid_regressions", test_parser_accepts_spec_valid_regressions},
-      {"remaining_phase1_constructs",
-       test_parser_accepts_remaining_phase1_constructs},
-      {"phase1_audit_regressions", test_parser_accepts_phase1_audit_regressions},
+      {.name="lexer_indent_dedent", .fn=test_lexer_emits_indent_and_dedent},
+      {.name="type_body_nodes", .fn=test_parser_builds_type_body_nodes},
+      {.name="associated_types_where_aliases",
+       .fn=test_parser_preserves_associated_types_where_and_aliases},
+      {.name="function_signature_and_control_flow",
+       .fn=test_parser_preserves_function_signature_and_control_flow},
+      {.name="trait_impl_and_block_expressions",
+       .fn=test_parser_preserves_trait_impl_and_block_expressions},
+      {.name="missing_module_recovery", .fn=test_parser_reports_missing_module_and_recovers},
+      {.name="missing_where_colon_recovery",
+       .fn=test_parser_recovers_missing_colon_in_where_clause},
+      {.name="spec_valid_regressions", .fn=test_parser_accepts_spec_valid_regressions},
+      {.name="remaining_phase1_constructs",
+       .fn=test_parser_accepts_remaining_phase1_constructs},
+      {.name="phase1_audit_regressions", .fn=test_parser_accepts_phase1_audit_regressions},
   };
 
   if (argc > 1) {

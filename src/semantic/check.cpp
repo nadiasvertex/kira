@@ -4,6 +4,7 @@
 #include <charconv>
 #include <format>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -269,8 +270,8 @@ private:
   /// Looks up `name` from the innermost scope outward, returning the first
   /// (most-shadowing) match, or `nullptr` if unbound.
   auto lookup_value(std::string_view name) -> const value_binding * {
-    for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
-      if (const auto it = scope->find(std::string(name)); it != scope->end()) {
+    for (auto & scope : std::views::reverse(scopes_)) {
+      if (const auto it = scope.find(std::string(name)); it != scope.end()) {
         return &it->second;
       }
     }
@@ -296,9 +297,8 @@ private:
   /// Looks up an in-scope generic parameter by name, searching from the
   /// innermost scope outward.
   auto lookup_type_param(std::string_view name) -> std::optional<type_id> {
-    for (auto scope = type_params_.rbegin(); scope != type_params_.rend();
-         ++scope) {
-      if (const auto it = scope->find(std::string(name)); it != scope->end()) {
+    for (auto & type_param : std::views::reverse(type_params_)) {
+      if (const auto it = type_param.find(std::string(name)); it != type_param.end()) {
         return it->second;
       }
     }
@@ -313,7 +313,7 @@ private:
   /// Finds the session module that owns the longest matching prefix of
   /// `path`, used to resolve a multi-segment named-type path like
   /// `pkg.mod.Thing` to the module `pkg.mod` and member `Thing`.
-  auto find_session_module_of_path(const std::vector<std::string> &path) const
+  [[nodiscard]] auto find_session_module_of_path(const std::vector<std::string> &path) const
       -> const module_members * {
     // Longest module prefix registered in the session wins.
     const module_members *found = nullptr;
@@ -333,7 +333,7 @@ private:
   /// Whether `path`'s first segment names (or prefixes) a module declared
   /// somewhere in this session — used to tell a session-owned reference
   /// apart from a genuinely external one this checker can't see into.
-  auto session_owns_path_root(const std::vector<std::string> &path) const
+  [[nodiscard]] auto session_owns_path_root(const std::vector<std::string> &path) const
       -> bool {
     if (path.empty()) {
       return false;
@@ -349,14 +349,14 @@ private:
 
   /// Returns the `use` bindings recorded for the file currently being
   /// checked, or `nullptr` if it has none.
-  auto imports_for_current_file() const -> const std::vector<import_binding> * {
+  [[nodiscard]] auto imports_for_current_file() const -> const std::vector<import_binding> * {
     const auto it = index_.imports.find(file_id_);
     return it != index_.imports.end() ? &it->second : nullptr;
   }
 
   /// Finds the non-wildcard import binding that introduces `name` locally
   /// in the current file.
-  auto find_import(std::string_view name) const -> const import_binding * {
+  [[nodiscard]] auto find_import(std::string_view name) const -> const import_binding * {
     const auto *imports = imports_for_current_file();
     if (imports == nullptr) {
       return nullptr;
@@ -371,7 +371,7 @@ private:
 
   /// The module that an import binding pulls its member from, when the
   /// import stays within this compilation session.
-  auto import_source_module(const import_binding &binding) const
+  [[nodiscard]] auto import_source_module(const import_binding &binding) const
       -> const module_members * {
     if (!session_owns_path_root(binding.path)) {
       return nullptr;
@@ -393,7 +393,7 @@ private:
 
   /// Returns the local member name an import binds — the selector's item
   /// name if present, otherwise the trailing path segment.
-  auto imported_member_name(const import_binding &binding) const
+  [[nodiscard]] auto imported_member_name(const import_binding &binding) const
       -> std::string {
     return binding.leaf_name.empty() ? binding.path.back() : binding.leaf_name;
   }
@@ -440,10 +440,10 @@ private:
 
     switch (type.kind) {
     case ast::node_kind::named_type:
-      return resolve_named_type(static_cast<const ast::named_type &>(type),
+      return resolve_named_type(dynamic_cast<const ast::named_type &>(type),
                                 ctx);
     case ast::node_kind::tuple_type: {
-      const auto &tuple = static_cast<const ast::tuple_type &>(type);
+      const auto &tuple = dynamic_cast<const ast::tuple_type &>(type);
       auto elements = std::vector<type_id>{};
       elements.reserve(tuple.elements.size());
       for (const auto &element : tuple.elements) {
@@ -453,21 +453,21 @@ private:
       return types_.tuple_of(std::move(elements));
     }
     case ast::node_kind::slice_type: {
-      const auto &slice = static_cast<const ast::slice_type &>(type);
+      const auto &slice = dynamic_cast<const ast::slice_type &>(type);
       const auto element = slice.element != nullptr
                                ? resolve_type(*slice.element, ctx)
                                : k_unknown_type;
       return types_.builtin_generic("slice", {element});
     }
     case ast::node_kind::array_type: {
-      const auto &array = static_cast<const ast::array_type &>(type);
+      const auto &array = dynamic_cast<const ast::array_type &>(type);
       const auto element = array.element != nullptr
                                ? resolve_type(*array.element, ctx)
                                : k_unknown_type;
       auto size = std::optional<uint64_t>{};
       if (array.size != nullptr &&
           array.size->kind == ast::node_kind::literal_expr) {
-        const auto &lit = static_cast<const ast::literal_expr &>(*array.size);
+        const auto &lit = dynamic_cast<const ast::literal_expr &>(*array.size);
         if (lit.lit_kind == token_kind::int_lit) {
           size = parse_integer_literal(lit.value);
         }
@@ -475,19 +475,19 @@ private:
       return types_.array_of(element, size);
     }
     case ast::node_kind::ref_type: {
-      const auto &ref = static_cast<const ast::ref_type &>(type);
+      const auto &ref = dynamic_cast<const ast::ref_type &>(type);
       const auto inner = ref.inner != nullptr ? resolve_type(*ref.inner, ctx)
                                               : k_unknown_type;
       return types_.ref_to(inner, ref.is_mut);
     }
     case ast::node_kind::ptr_type: {
-      const auto &ptr = static_cast<const ast::ptr_type &>(type);
+      const auto &ptr = dynamic_cast<const ast::ptr_type &>(type);
       const auto inner = ptr.inner != nullptr ? resolve_type(*ptr.inner, ctx)
                                               : k_unknown_type;
       return types_.ptr_to(inner, ptr.is_mut);
     }
     case ast::node_kind::fn_type: {
-      const auto &fn = static_cast<const ast::fn_type &>(type);
+      const auto &fn = dynamic_cast<const ast::fn_type &>(type);
       auto params = std::vector<type_id>{};
       params.reserve(fn.param_types.size());
       for (const auto &param : fn.param_types) {
@@ -500,7 +500,7 @@ private:
       return types_.fn_of(std::move(params), result);
     }
     case ast::node_kind::refinement_type: {
-      const auto &refinement = static_cast<const ast::refinement_type &>(type);
+      const auto &refinement = dynamic_cast<const ast::refinement_type &>(type);
       return refinement.base != nullptr ? resolve_type(*refinement.base, ctx)
                                         : k_unknown_type;
     }
@@ -540,7 +540,7 @@ private:
       case ast::node_kind::refinement_type:
       case ast::node_kind::bound_type:
         args.push_back(resolve_type(
-            static_cast<const ast::type_expr &>(*arg.value), ctx));
+            dynamic_cast<const ast::type_expr &>(*arg.value), ctx));
         break;
       default:
         args.push_back(k_unknown_type);
@@ -664,7 +664,7 @@ private:
     case ast::node_kind::refinement_type:
     case ast::node_kind::bound_type:
       resolved = resolve_type(
-          static_cast<const ast::type_expr &>(*decl.definition), ctx);
+          dynamic_cast<const ast::type_expr &>(*decl.definition), ctx);
       break;
     default:
       break;
@@ -843,7 +843,7 @@ private:
         instance.decl->definition->kind != ast::node_kind::struct_type_def) {
       return nullptr;
     }
-    return &static_cast<const ast::struct_type_def &>(
+    return &dynamic_cast<const ast::struct_type_def &>(
                 *instance.decl->definition)
                 .body.fields;
   }
@@ -879,7 +879,7 @@ private:
         instance.decl->definition->kind != ast::node_kind::sum_type_def) {
       return nullptr;
     }
-    return &static_cast<const ast::sum_type_def &>(*instance.decl->definition)
+    return &dynamic_cast<const ast::sum_type_def &>(*instance.decl->definition)
                 .body.variants;
   }
 
@@ -923,7 +923,7 @@ private:
   auto param_name_of(const ast::Param &param) -> std::string {
     if (param.pattern != nullptr &&
         param.pattern->kind == ast::node_kind::binding_pattern) {
-      return static_cast<const ast::binding_pattern &>(*param.pattern).name;
+      return dynamic_cast<const ast::binding_pattern &>(*param.pattern).name;
     }
     return {};
   }
@@ -1194,7 +1194,7 @@ private:
           if (payload_type != nullptr &&
               payload_type->kind == ast::node_kind::named_type) {
             const auto &named =
-                static_cast<const ast::named_type &>(*payload_type);
+                dynamic_cast<const ast::named_type &>(*payload_type);
             if (named.path.size() == 1 && named.path.front() == param.name &&
                 i < inferred_args.size()) {
               bound = inferred_args[i];
@@ -1216,7 +1216,7 @@ private:
                              source_span span, type_id expected) -> type_id {
     const auto &expected_entry = types_.entry(expected);
     const auto expected_is =
-        [&](std::string_view generic) {
+        [&](std::string_view generic) -> auto {
           return expected_entry.kind == type_kind::builtin_generic_kind &&
                  expected_entry.name == generic;
         };
@@ -1989,7 +1989,7 @@ private:
         impl.trait_type->kind != ast::node_kind::named_type) {
       return {};
     }
-    const auto &named = static_cast<const ast::named_type &>(*impl.trait_type);
+    const auto &named = dynamic_cast<const ast::named_type &>(*impl.trait_type);
     return named.path.empty() ? std::string{} : named.path.back();
   }
 
@@ -2072,7 +2072,7 @@ private:
             continue;
           }
           methods.push_back(method_entry{
-              .decl = static_cast<const ast::func_decl *>(item.get()),
+              .decl = dynamic_cast<const ast::func_decl *>(item.get()),
               .owner = &members,
               .from_trait = nullptr,
           });
@@ -2106,7 +2106,7 @@ private:
             continue;
           }
           methods.push_back(method_entry{
-              .decl = static_cast<const ast::func_decl *>(item.get()),
+              .decl = dynamic_cast<const ast::func_decl *>(item.get()),
               .owner = trait_module,
               .from_trait = trait_decl,
           });
@@ -2163,7 +2163,7 @@ private:
   /// Result types of methods derived through `deriving` or prelude traits.
   auto derived_method_result(const type_entry &instance, std::string_view name)
       -> std::optional<type_id> {
-    const auto has = [&](std::string_view trait_name) {
+    const auto has = [&](std::string_view trait_name) -> auto {
       return type_has_trait(instance, trait_name);
     };
     if (name == "show" && has("show")) {
@@ -2294,8 +2294,8 @@ private:
         }
       }
     }
-    std::sort(names.begin(), names.end());
-    names.erase(std::unique(names.begin(), names.end()), names.end());
+    std::ranges::sort(names);
+    names.erase(std::ranges::unique(names).begin(), names.end());
     auto out = std::string{};
     for (const auto &name : names) {
       if (!out.empty()) {
@@ -2425,7 +2425,7 @@ private:
 
     if (call.callee->kind == ast::node_kind::field_expr) {
       return infer_method_call(
-          call, static_cast<const ast::field_expr &>(*call.callee));
+          call, dynamic_cast<const ast::field_expr &>(*call.callee));
     }
 
     if (call.callee->kind != ast::node_kind::ident_expr) {
@@ -2438,7 +2438,7 @@ private:
       return k_unknown_type;
     }
 
-    const auto &ident = static_cast<const ast::ident_expr &>(*call.callee);
+    const auto &ident = dynamic_cast<const ast::ident_expr &>(*call.callee);
     const auto &name = ident.name;
 
     if (is_variant_ident(ident)) {
@@ -2578,7 +2578,7 @@ private:
         field.object->kind != ast::node_kind::ident_expr) {
       return std::nullopt;
     }
-    const auto &ident = static_cast<const ast::ident_expr &>(*field.object);
+    const auto &ident = dynamic_cast<const ast::ident_expr &>(*field.object);
     if (lookup_value(ident.name) != nullptr ||
         !is_builtin_scalar_name(ident.name)) {
       return std::nullopt;
@@ -2731,7 +2731,7 @@ private:
     // `size_of[usize]` / `index[n]` — generic instantiation, not indexing.
     if (index.object->kind == ast::node_kind::ident_expr &&
         ident_names_callable_decl(
-            static_cast<const ast::ident_expr &>(*index.object))) {
+            dynamic_cast<const ast::ident_expr &>(*index.object))) {
       if (index.index != nullptr) {
         infer_expr(*index.index, k_unknown_type);
       }
@@ -2748,7 +2748,7 @@ private:
         types_.entry(key).kind == type_kind::builtin_generic_kind &&
         types_.entry(key).name == "range";
 
-    const auto require_integer_key = [&] {
+    const auto require_integer_key = [&] -> void {
       if (!key_is_range && !types_.is_unknown(key) &&
           !types_.is_integer(key)) {
         error(index.index != nullptr ? index.index->span : index.span,
@@ -2832,7 +2832,7 @@ private:
     if (expr.type_name != nullptr) {
       if (expr.type_name->kind == ast::node_kind::ident_expr) {
         const auto &ident =
-            static_cast<const ast::ident_expr &>(*expr.type_name);
+            dynamic_cast<const ast::ident_expr &>(*expr.type_name);
         if (const auto found = find_type_decl_by_name(ident.name)) {
           target = make_user_type(*found->first, found->second, {});
         } else if (!file_has_external_wildcard_ &&
@@ -2956,7 +2956,7 @@ private:
           if (field.type != nullptr &&
               field.type->kind == ast::node_kind::named_type) {
             const auto &named =
-                static_cast<const ast::named_type &>(*field.type);
+                dynamic_cast<const ast::named_type &>(*field.type);
             if (named.path.size() == 1 && named.path.front() == param.name) {
               if (const auto it = inferred_by_field.find(field.name);
                   it != inferred_by_field.end()) {
@@ -3024,10 +3024,10 @@ private:
       if (param.pattern != nullptr &&
           param.pattern->kind == ast::node_kind::binding_pattern) {
         const auto &binding =
-            static_cast<const ast::binding_pattern &>(*param.pattern);
+            dynamic_cast<const ast::binding_pattern &>(*param.pattern);
         bind_value(binding.name, type, binding_origin::parameter, param.span);
       } else if (param.pattern != nullptr) {
-        check_pattern(static_cast<const ast::pattern &>(*param.pattern), type);
+        check_pattern(dynamic_cast<const ast::pattern &>(*param.pattern), type);
       }
     }
 
@@ -3064,7 +3064,7 @@ private:
     }
     if (branch.let_expr != nullptr && branch.let_pattern != nullptr) {
       const auto subject = infer_expr(*branch.let_expr, k_unknown_type);
-      check_pattern(static_cast<const ast::pattern &>(*branch.let_pattern),
+      check_pattern(dynamic_cast<const ast::pattern &>(*branch.let_pattern),
                     strip_refs(subject));
     } else if (branch.let_expr != nullptr) {
       infer_expr(*branch.let_expr, k_unknown_type);
@@ -3107,7 +3107,7 @@ private:
       check_if_branch_header(branch);
       push_scope();
       if (branch.let_pattern != nullptr && branch.let_expr == nullptr) {
-        check_pattern(static_cast<const ast::pattern &>(*branch.let_pattern),
+        check_pattern(dynamic_cast<const ast::pattern &>(*branch.let_pattern),
                       k_unknown_type);
       }
       const auto branch_type = check_body_nodes(branch.body, expected);
@@ -3145,14 +3145,14 @@ private:
       // Multiple patterns per clause destructure tuple elements positionally.
       if (clause.patterns.size() == 1) {
         if (clause.patterns.front() != nullptr) {
-          check_pattern(static_cast<const ast::pattern &>(
+          check_pattern(dynamic_cast<const ast::pattern &>(
                             *clause.patterns.front()),
                         element);
         }
       } else {
         for (const auto &pattern : clause.patterns) {
           if (pattern != nullptr) {
-            check_pattern(static_cast<const ast::pattern &>(*pattern),
+            check_pattern(dynamic_cast<const ast::pattern &>(*pattern),
                           k_unknown_type);
           }
         }
@@ -3284,24 +3284,24 @@ private:
 
     switch (expr.kind) {
     case ast::node_kind::ident_expr:
-      return resolve_ident(static_cast<const ast::ident_expr &>(expr),
+      return resolve_ident(dynamic_cast<const ast::ident_expr &>(expr),
                            expected);
     case ast::node_kind::literal_expr:
-      return infer_literal(static_cast<const ast::literal_expr &>(expr),
+      return infer_literal(dynamic_cast<const ast::literal_expr &>(expr),
                            expected);
     case ast::node_kind::binary_expr:
-      return infer_binary(static_cast<const ast::binary_expr &>(expr),
+      return infer_binary(dynamic_cast<const ast::binary_expr &>(expr),
                           expected);
     case ast::node_kind::unary_expr:
-      return infer_unary(static_cast<const ast::unary_expr &>(expr), expected);
+      return infer_unary(dynamic_cast<const ast::unary_expr &>(expr), expected);
     case ast::node_kind::call_expr:
-      return infer_call(static_cast<const ast::call_expr &>(expr), expected);
+      return infer_call(dynamic_cast<const ast::call_expr &>(expr), expected);
     case ast::node_kind::index_expr:
-      return infer_index(static_cast<const ast::index_expr &>(expr));
+      return infer_index(dynamic_cast<const ast::index_expr &>(expr));
     case ast::node_kind::field_expr:
-      return infer_field(static_cast<const ast::field_expr &>(expr));
+      return infer_field(dynamic_cast<const ast::field_expr &>(expr));
     case ast::node_kind::cast_expr: {
-      const auto &cast = static_cast<const ast::cast_expr &>(expr);
+      const auto &cast = dynamic_cast<const ast::cast_expr &>(expr);
       if (cast.operand != nullptr) {
         infer_expr(*cast.operand, k_unknown_type);
       }
@@ -3310,9 +3310,9 @@ private:
                  : k_unknown_type;
     }
     case ast::node_kind::try_expr:
-      return infer_try(static_cast<const ast::try_expr &>(expr));
+      return infer_try(dynamic_cast<const ast::try_expr &>(expr));
     case ast::node_kind::tuple_expr: {
-      const auto &tuple = static_cast<const ast::tuple_expr &>(expr);
+      const auto &tuple = dynamic_cast<const ast::tuple_expr &>(expr);
       const auto &expected_entry = types_.entry(strip_refs(expected));
       auto elements = std::vector<type_id>{};
       elements.reserve(tuple.elements.size());
@@ -3330,30 +3330,30 @@ private:
       return types_.tuple_of(std::move(elements));
     }
     case ast::node_kind::array_expr:
-      return infer_array(static_cast<const ast::array_expr &>(expr), expected);
+      return infer_array(dynamic_cast<const ast::array_expr &>(expr), expected);
     case ast::node_kind::struct_expr:
-      return check_struct_literal(static_cast<const ast::struct_expr &>(expr),
+      return check_struct_literal(dynamic_cast<const ast::struct_expr &>(expr),
                                   expected);
     case ast::node_kind::lambda_expr:
-      return infer_lambda(static_cast<const ast::lambda_expr &>(expr),
+      return infer_lambda(dynamic_cast<const ast::lambda_expr &>(expr),
                           expected);
     case ast::node_kind::match_expr: {
-      const auto &match = static_cast<const ast::match_expr &>(expr);
+      const auto &match = dynamic_cast<const ast::match_expr &>(expr);
       return check_match(match.subject.get(), match.arms, expected,
                          match.span);
     }
     case ast::node_kind::if_expr:
-      return infer_if_expr(static_cast<const ast::if_expr &>(expr), expected);
+      return infer_if_expr(dynamic_cast<const ast::if_expr &>(expr), expected);
     case ast::node_kind::for_expr:
-      return infer_for_expr(static_cast<const ast::for_expr &>(expr));
+      return infer_for_expr(dynamic_cast<const ast::for_expr &>(expr));
     case ast::node_kind::await_expr:
-      return infer_await(static_cast<const ast::await_expr &>(expr));
+      return infer_await(dynamic_cast<const ast::await_expr &>(expr));
     case ast::node_kind::async_expr:
-      check_body_nodes(static_cast<const ast::async_expr &>(expr).body,
+      check_body_nodes(dynamic_cast<const ast::async_expr &>(expr).body,
                        k_unknown_type);
       return k_unknown_type;
     case ast::node_kind::par_expr: {
-      const auto &par = static_cast<const ast::par_expr &>(expr);
+      const auto &par = dynamic_cast<const ast::par_expr &>(expr);
       auto elements = std::vector<type_id>{};
       for (const auto &branch : par.branches) {
         elements.push_back(branch != nullptr
@@ -3363,7 +3363,7 @@ private:
       return types_.tuple_of(std::move(elements));
     }
     case ast::node_kind::race_expr: {
-      const auto &race = static_cast<const ast::race_expr &>(expr);
+      const auto &race = dynamic_cast<const ast::race_expr &>(expr);
       auto result = k_unknown_type;
       for (const auto &branch : race.branches) {
         if (branch != nullptr) {
@@ -3373,7 +3373,7 @@ private:
       return result;
     }
     case ast::node_kind::crew_expr: {
-      const auto &crew = static_cast<const ast::crew_expr &>(expr);
+      const auto &crew = dynamic_cast<const ast::crew_expr &>(expr);
       push_scope();
       bind_value(crew.name, k_unknown_type, binding_origin::synthetic,
                  crew.span);
@@ -3382,7 +3382,7 @@ private:
       return k_unknown_type;
     }
     case ast::node_kind::on_expr: {
-      const auto &on = static_cast<const ast::on_expr &>(expr);
+      const auto &on = dynamic_cast<const ast::on_expr &>(expr);
       if (on.sender != nullptr) {
         infer_expr(*on.sender, k_unknown_type);
       }
@@ -3390,31 +3390,31 @@ private:
     }
     case ast::node_kind::block_expr:
       return check_body_nodes(
-          static_cast<const ast::block_expr &>(expr).stmts, expected);
+          dynamic_cast<const ast::block_expr &>(expr).stmts, expected);
     case ast::node_kind::quote_expr:
       return types_.builtin("expr");
     case ast::node_kind::splice_expr: {
-      const auto &splice = static_cast<const ast::splice_expr &>(expr);
+      const auto &splice = dynamic_cast<const ast::splice_expr &>(expr);
       if (splice.operand != nullptr) {
         infer_expr(*splice.operand, k_unknown_type);
       }
       return k_unknown_type;
     }
     case ast::node_kind::static_expr: {
-      const auto &inner = static_cast<const ast::static_expr &>(expr);
+      const auto &inner = dynamic_cast<const ast::static_expr &>(expr);
       return inner.operand != nullptr ? infer_expr(*inner.operand, expected)
                                       : k_unknown_type;
     }
     case ast::node_kind::module_path_expr:
       return infer_module_path(
-          static_cast<const ast::module_path_expr &>(expr));
+          dynamic_cast<const ast::module_path_expr &>(expr));
     case ast::node_kind::group_expr: {
-      const auto &group = static_cast<const ast::group_expr &>(expr);
+      const auto &group = dynamic_cast<const ast::group_expr &>(expr);
       return group.inner != nullptr ? infer_expr(*group.inner, expected)
                                     : k_unknown_type;
     }
     case ast::node_kind::where_expr: {
-      const auto &where = static_cast<const ast::where_expr &>(expr);
+      const auto &where = dynamic_cast<const ast::where_expr &>(expr);
       push_scope();
       for (const auto &binding : where.bindings) {
         auto type = k_unknown_type;
@@ -3463,7 +3463,7 @@ private:
         infer_expr(*array.fill_count, types_.builtin("usize"));
         if (array.fill_count->kind == ast::node_kind::literal_expr) {
           const auto &lit =
-              static_cast<const ast::literal_expr &>(*array.fill_count);
+              dynamic_cast<const ast::literal_expr &>(*array.fill_count);
           if (lit.lit_kind == token_kind::int_lit) {
             count = parse_integer_literal(lit.value);
           }
@@ -3525,13 +3525,13 @@ private:
     case ast::node_kind::wildcard_pattern:
       return;
     case ast::node_kind::binding_pattern: {
-      const auto &binding = static_cast<const ast::binding_pattern &>(pattern);
+      const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
       bind_value(binding.name, stripped, binding_origin::pattern_binding,
                  binding.span);
       return;
     }
     case ast::node_kind::literal_pattern: {
-      const auto &literal = static_cast<const ast::literal_pattern &>(pattern);
+      const auto &literal = dynamic_cast<const ast::literal_pattern &>(pattern);
       auto lit = ast::literal_expr{};
       lit.lit_kind = literal.lit_kind;
       lit.value = literal.value;
@@ -3541,7 +3541,7 @@ private:
       return;
     }
     case ast::node_kind::tuple_pattern: {
-      const auto &tuple = static_cast<const ast::tuple_pattern &>(pattern);
+      const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
       if (entry.kind == type_kind::tuple_kind &&
           entry.args.size() != tuple.elements.size()) {
         error(tuple.span,
@@ -3564,12 +3564,12 @@ private:
     }
     case ast::node_kind::constructor_pattern: {
       const auto &ctor =
-          static_cast<const ast::constructor_pattern &>(pattern);
+          dynamic_cast<const ast::constructor_pattern &>(pattern);
       check_constructor_pattern(ctor, stripped);
       return;
     }
     case ast::node_kind::option_pattern: {
-      const auto &option = static_cast<const ast::option_pattern &>(pattern);
+      const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
       auto inner = k_unknown_type;
       if (entry.kind == type_kind::builtin_generic_kind &&
           entry.name == "option" && !entry.args.empty()) {
@@ -3581,7 +3581,7 @@ private:
       return;
     }
     case ast::node_kind::result_pattern: {
-      const auto &result = static_cast<const ast::result_pattern &>(pattern);
+      const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
       auto inner = k_unknown_type;
       if (entry.kind == type_kind::builtin_generic_kind &&
           entry.name == "result") {
@@ -3598,7 +3598,7 @@ private:
     }
     case ast::node_kind::struct_pattern: {
       const auto &struct_pattern =
-          static_cast<const ast::struct_pattern &>(pattern);
+          dynamic_cast<const ast::struct_pattern &>(pattern);
       for (const auto &field : struct_pattern.fields) {
         if (field.is_rest) {
           continue;
@@ -3624,7 +3624,7 @@ private:
       return;
     }
     case ast::node_kind::array_pattern: {
-      const auto &array = static_cast<const ast::array_pattern &>(pattern);
+      const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
       const auto element = element_type_of(stripped, array.span);
       for (const auto &item : array.elements) {
         if (item != nullptr) {
@@ -3634,7 +3634,7 @@ private:
       return;
     }
     case ast::node_kind::range_pattern: {
-      const auto &range = static_cast<const ast::range_pattern &>(pattern);
+      const auto &range = dynamic_cast<const ast::range_pattern &>(pattern);
       if (range.start != nullptr) {
         const auto found = infer_expr(*range.start, stripped);
         type_mismatch(range.start->span, stripped, found,
@@ -3648,14 +3648,14 @@ private:
       return;
     }
     case ast::node_kind::ref_pattern: {
-      const auto &ref = static_cast<const ast::ref_pattern &>(pattern);
+      const auto &ref = dynamic_cast<const ast::ref_pattern &>(pattern);
       if (ref.inner != nullptr) {
         check_pattern(*ref.inner, stripped);
       }
       return;
     }
     case ast::node_kind::or_pattern: {
-      const auto &alternatives = static_cast<const ast::or_pattern &>(pattern);
+      const auto &alternatives = dynamic_cast<const ast::or_pattern &>(pattern);
       for (const auto &alternative : alternatives.alternatives) {
         if (alternative != nullptr) {
           check_pattern(*alternative, stripped);
@@ -3664,7 +3664,7 @@ private:
       return;
     }
     case ast::node_kind::group_pattern: {
-      const auto &group = static_cast<const ast::group_pattern &>(pattern);
+      const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
       if (group.inner != nullptr) {
         check_pattern(*group.inner, stripped);
       }
@@ -3780,11 +3780,11 @@ private:
     case ast::node_kind::binding_pattern:
       return true;
     case ast::node_kind::group_pattern: {
-      const auto &group = static_cast<const ast::group_pattern &>(pattern);
+      const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
       return group.inner != nullptr && pattern_is_irrefutable(*group.inner);
     }
     case ast::node_kind::or_pattern: {
-      const auto &alternatives = static_cast<const ast::or_pattern &>(pattern);
+      const auto &alternatives = dynamic_cast<const ast::or_pattern &>(pattern);
       for (const auto &alternative : alternatives.alternatives) {
         if (alternative != nullptr && pattern_is_irrefutable(*alternative)) {
           return true;
@@ -3806,24 +3806,24 @@ private:
     switch (pattern.kind) {
     case ast::node_kind::constructor_pattern:
       covered.insert(
-          static_cast<const ast::constructor_pattern &>(pattern).name);
+          dynamic_cast<const ast::constructor_pattern &>(pattern).name);
       return;
     case ast::node_kind::option_pattern:
       covered.insert(
-          static_cast<const ast::option_pattern &>(pattern).option_kind ==
+          dynamic_cast<const ast::option_pattern &>(pattern).option_kind ==
                   ast::OptionResultKind::Some
               ? "some"
               : "none");
       return;
     case ast::node_kind::result_pattern:
       covered.insert(
-          static_cast<const ast::result_pattern &>(pattern).result_kind ==
+          dynamic_cast<const ast::result_pattern &>(pattern).result_kind ==
                   ast::OptionResultKind::Err
               ? "err"
               : "ok");
       return;
     case ast::node_kind::literal_pattern: {
-      const auto &literal = static_cast<const ast::literal_pattern &>(pattern);
+      const auto &literal = dynamic_cast<const ast::literal_pattern &>(pattern);
       if (literal.lit_kind == token_kind::kw_true) {
         covered.insert("true");
       } else if (literal.lit_kind == token_kind::kw_false) {
@@ -3832,7 +3832,7 @@ private:
       return;
     }
     case ast::node_kind::or_pattern: {
-      const auto &alternatives = static_cast<const ast::or_pattern &>(pattern);
+      const auto &alternatives = dynamic_cast<const ast::or_pattern &>(pattern);
       for (const auto &alternative : alternatives.alternatives) {
         if (alternative != nullptr) {
           collect_covered_names(*alternative, covered);
@@ -3841,7 +3841,7 @@ private:
       return;
     }
     case ast::node_kind::group_pattern: {
-      const auto &group = static_cast<const ast::group_pattern &>(pattern);
+      const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
       if (group.inner != nullptr) {
         collect_covered_names(*group.inner, covered);
       }
@@ -3865,7 +3865,7 @@ private:
         continue;
       }
       const auto &pattern =
-          static_cast<const ast::pattern &>(*arm.pattern);
+          dynamic_cast<const ast::pattern &>(*arm.pattern);
       if (arm.guard != nullptr) {
         continue; // guarded arms never guarantee coverage
       }
@@ -3945,7 +3945,7 @@ private:
     for (const auto &arm : arms) {
       push_scope();
       if (arm.pattern != nullptr) {
-        check_pattern(static_cast<const ast::pattern &>(*arm.pattern),
+        check_pattern(dynamic_cast<const ast::pattern &>(*arm.pattern),
                       subject_type);
       }
       if (arm.guard != nullptr) {
@@ -4003,9 +4003,9 @@ private:
     while (true) {
       switch (current->kind) {
       case ast::node_kind::ident_expr:
-        return static_cast<const ast::ident_expr *>(current);
+        return dynamic_cast<const ast::ident_expr *>(current);
       case ast::node_kind::field_expr: {
-        const auto &field = static_cast<const ast::field_expr &>(*current);
+        const auto &field = dynamic_cast<const ast::field_expr &>(*current);
         if (field.object == nullptr) {
           return nullptr;
         }
@@ -4013,7 +4013,7 @@ private:
         break;
       }
       case ast::node_kind::index_expr: {
-        const auto &index = static_cast<const ast::index_expr &>(*current);
+        const auto &index = dynamic_cast<const ast::index_expr &>(*current);
         if (index.object == nullptr) {
           return nullptr;
         }
@@ -4021,7 +4021,7 @@ private:
         break;
       }
       case ast::node_kind::group_expr: {
-        const auto &group = static_cast<const ast::group_expr &>(*current);
+        const auto &group = dynamic_cast<const ast::group_expr &>(*current);
         if (group.inner == nullptr) {
           return nullptr;
         }
@@ -4045,7 +4045,7 @@ private:
     if (stmt.target != nullptr) {
       if (stmt.target->kind == ast::node_kind::ident_expr) {
         const auto &ident =
-            static_cast<const ast::ident_expr &>(*stmt.target);
+            dynamic_cast<const ast::ident_expr &>(*stmt.target);
         if (const auto *binding = lookup_value(ident.name)) {
           target_type = binding->type;
           if (binding->origin == binding_origin::let_binding ||
@@ -4080,7 +4080,7 @@ private:
           root_name = root->name;
         } else if (stmt.target->kind == ast::node_kind::module_path_expr) {
           const auto &path =
-              static_cast<const ast::module_path_expr &>(*stmt.target);
+              dynamic_cast<const ast::module_path_expr &>(*stmt.target);
           if (!path.segments.empty()) {
             root_name = path.segments.front();
           }
@@ -4138,7 +4138,7 @@ private:
 
     switch (node.kind) {
     case ast::node_kind::let_stmt: {
-      const auto &stmt = static_cast<const ast::let_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
       auto declared = k_unknown_type;
       if (stmt.type_annotation != nullptr) {
         declared = resolve_type(*stmt.type_annotation, current_resolve_ctx());
@@ -4159,7 +4159,7 @@ private:
       if (stmt.pattern != nullptr) {
         if (stmt.pattern->kind == ast::node_kind::binding_pattern) {
           const auto &binding =
-              static_cast<const ast::binding_pattern &>(*stmt.pattern);
+              dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
           bind_value(binding.name, binding_type, binding_origin::let_binding,
                      binding.span);
         } else {
@@ -4170,7 +4170,7 @@ private:
     }
 
     case ast::node_kind::var_stmt: {
-      const auto &stmt = static_cast<const ast::var_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
       auto declared = k_unknown_type;
       if (stmt.type_annotation != nullptr) {
         declared = resolve_type(*stmt.type_annotation, current_resolve_ctx());
@@ -4190,17 +4190,17 @@ private:
     }
 
     case ast::node_kind::assign_stmt:
-      check_assignment(static_cast<const ast::assign_stmt &>(node));
+      check_assignment(dynamic_cast<const ast::assign_stmt &>(node));
       return unit;
 
     case ast::node_kind::expr_stmt: {
-      const auto &stmt = static_cast<const ast::expr_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
       return stmt.expr != nullptr ? infer_expr(*stmt.expr, expected_tail)
                                   : unit;
     }
 
     case ast::node_kind::return_stmt: {
-      const auto &stmt = static_cast<const ast::return_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
       if (stmt.value != nullptr) {
         const auto found = infer_expr(*stmt.value, return_type_);
         if (return_annotated_ && !types_.compatible(return_type_, found)) {
@@ -4233,7 +4233,7 @@ private:
     }
 
     case ast::node_kind::if_stmt: {
-      const auto &stmt = static_cast<const ast::if_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
       for (const auto &branch : stmt.branches) {
         check_if_branch_header(branch);
         push_scope();
@@ -4247,7 +4247,7 @@ private:
     }
 
     case ast::node_kind::while_stmt: {
-      const auto &stmt = static_cast<const ast::while_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::while_stmt &>(node);
       if (stmt.condition != nullptr) {
         require_bool(*stmt.condition, "a `while` condition");
       }
@@ -4262,7 +4262,7 @@ private:
     }
 
     case ast::node_kind::for_stmt: {
-      const auto &stmt = static_cast<const ast::for_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
       auto element = k_unknown_type;
       if (stmt.iterable != nullptr) {
         const auto iterable = infer_expr(*stmt.iterable, k_unknown_type);
@@ -4289,13 +4289,13 @@ private:
     }
 
     case ast::node_kind::match_stmt: {
-      const auto &stmt = static_cast<const ast::match_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
       check_match(stmt.subject.get(), stmt.arms, expected_tail, stmt.span);
       return expected_tail != k_unknown_type ? expected_tail : unit;
     }
 
     case ast::node_kind::crew_stmt: {
-      const auto &stmt = static_cast<const ast::crew_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::crew_stmt &>(node);
       push_scope();
       bind_value(stmt.name, k_unknown_type, binding_origin::synthetic,
                  stmt.span);
@@ -4305,7 +4305,7 @@ private:
     }
 
     case ast::node_kind::splice_stmt: {
-      const auto &stmt = static_cast<const ast::splice_stmt &>(node);
+      const auto &stmt = dynamic_cast<const ast::splice_stmt &>(node);
       if (stmt.expr != nullptr) {
         infer_expr(*stmt.expr, k_unknown_type);
       }
@@ -4396,7 +4396,7 @@ private:
       if (param.pattern != nullptr) {
         if (param.pattern->kind == ast::node_kind::binding_pattern) {
           const auto &binding =
-              static_cast<const ast::binding_pattern &>(*param.pattern);
+              dynamic_cast<const ast::binding_pattern &>(*param.pattern);
           bind_value(binding.name, type, binding_origin::parameter,
                      param.span);
         } else {
@@ -4490,7 +4490,7 @@ private:
       switch (decl.definition->kind) {
       case ast::node_kind::struct_type_def: {
         const auto &body =
-            static_cast<const ast::struct_type_def &>(*decl.definition).body;
+            dynamic_cast<const ast::struct_type_def &>(*decl.definition).body;
         auto seen = std::unordered_set<std::string>{};
         for (const auto &field : body.fields) {
           if (!field.name.empty() && !seen.insert(field.name).second) {
@@ -4507,7 +4507,7 @@ private:
       }
       case ast::node_kind::sum_type_def: {
         const auto &body =
-            static_cast<const ast::sum_type_def &>(*decl.definition).body;
+            dynamic_cast<const ast::sum_type_def &>(*decl.definition).body;
         auto seen = std::unordered_set<std::string>{};
         for (const auto &variant : body.variants) {
           if (!variant.name.empty() && !seen.insert(variant.name).second) {
@@ -4591,7 +4591,7 @@ private:
       resolve_type(*decl.trait_type, current_resolve_ctx());
       if (decl.trait_type->kind == ast::node_kind::named_type) {
         const auto &named =
-            static_cast<const ast::named_type &>(*decl.trait_type);
+            dynamic_cast<const ast::named_type &>(*decl.trait_type);
         if (!named.path.empty()) {
           trait_name = named.path.back();
         }
@@ -4632,11 +4632,11 @@ private:
         continue;
       }
       if (item->kind == ast::node_kind::func_decl) {
-        check_function(static_cast<const ast::func_decl &>(*item),
+        check_function(dynamic_cast<const ast::func_decl &>(*item),
                        /*at_module_scope=*/false);
       } else if (item->kind == ast::node_kind::associated_type_def_node) {
         const auto &assoc =
-            static_cast<const ast::associated_type_def_node &>(*item);
+            dynamic_cast<const ast::associated_type_def_node &>(*item);
         if (assoc.value.type != nullptr) {
           resolve_type(*assoc.value.type, current_resolve_ctx());
         }
@@ -4664,11 +4664,11 @@ private:
         continue;
       }
       if (item->kind == ast::node_kind::func_decl) {
-        const auto &fn = static_cast<const ast::func_decl &>(*item);
+        const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
         impl_methods.emplace(fn.name, &fn);
       } else if (item->kind == ast::node_kind::associated_type_def_node) {
         impl_assoc_types.insert(
-            static_cast<const ast::associated_type_def_node &>(*item)
+            dynamic_cast<const ast::associated_type_def_node &>(*item)
                 .value.name);
       }
     }
@@ -4681,7 +4681,7 @@ private:
         continue;
       }
       if (item->kind == ast::node_kind::func_decl) {
-        const auto &fn = static_cast<const ast::func_decl &>(*item);
+        const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
         trait_methods.emplace(fn.name, &fn);
         const auto has_default =
             fn.body_expr != nullptr || !fn.body_stmts.empty();
@@ -4693,7 +4693,7 @@ private:
         }
       } else if (item->kind == ast::node_kind::associated_type_decl_node) {
         const auto &assoc =
-            static_cast<const ast::associated_type_decl_node &>(*item);
+            dynamic_cast<const ast::associated_type_decl_node &>(*item);
         if (assoc.value.default_type == nullptr &&
             !impl_assoc_types.contains(assoc.value.name)) {
           if (!missing_assoc.empty()) {
@@ -4768,7 +4768,7 @@ private:
             term.type->kind != ast::node_kind::named_type) {
           continue;
         }
-        const auto &named = static_cast<const ast::named_type &>(*term.type);
+        const auto &named = dynamic_cast<const ast::named_type &>(*term.type);
         if (named.path.empty()) {
           continue;
         }
@@ -4810,11 +4810,11 @@ private:
         continue;
       }
       if (item->kind == ast::node_kind::func_decl) {
-        check_function(static_cast<const ast::func_decl &>(*item),
+        check_function(dynamic_cast<const ast::func_decl &>(*item),
                        /*at_module_scope=*/false);
       } else if (item->kind == ast::node_kind::associated_type_decl_node) {
         const auto &assoc =
-            static_cast<const ast::associated_type_decl_node &>(*item);
+            dynamic_cast<const ast::associated_type_decl_node &>(*item);
         if (assoc.value.default_type != nullptr) {
           resolve_type(*assoc.value.default_type, current_resolve_ctx());
         }
@@ -4933,26 +4933,26 @@ private:
     }
     switch (item.kind) {
     case ast::node_kind::func_decl:
-      check_function(static_cast<const ast::func_decl &>(item),
+      check_function(dynamic_cast<const ast::func_decl &>(item),
                      at_module_scope);
       return;
     case ast::node_kind::type_decl:
-      check_type_decl(static_cast<const ast::type_decl &>(item));
+      check_type_decl(dynamic_cast<const ast::type_decl &>(item));
       return;
     case ast::node_kind::trait_decl:
-      check_trait_decl(static_cast<const ast::trait_decl &>(item));
+      check_trait_decl(dynamic_cast<const ast::trait_decl &>(item));
       return;
     case ast::node_kind::impl_decl:
-      check_impl_decl(static_cast<const ast::impl_decl &>(item));
+      check_impl_decl(dynamic_cast<const ast::impl_decl &>(item));
       return;
     case ast::node_kind::concept_decl:
-      check_concept_decl(static_cast<const ast::concept_decl &>(item));
+      check_concept_decl(dynamic_cast<const ast::concept_decl &>(item));
       return;
     case ast::node_kind::static_decl:
-      check_static_decl(static_cast<const ast::static_decl &>(item));
+      check_static_decl(dynamic_cast<const ast::static_decl &>(item));
       return;
     case ast::node_kind::sub_module_decl: {
-      const auto &decl = static_cast<const ast::sub_module_decl &>(item);
+      const auto &decl = dynamic_cast<const ast::sub_module_decl &>(item);
       if (decl.items.empty()) {
         return;
       }
@@ -5081,7 +5081,7 @@ private:
         continue;
       }
       if (item->kind == ast::node_kind::func_decl) {
-        const auto &fn = static_cast<const ast::func_decl &>(*item);
+        const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
         if (fn.name == "main") {
           main_decl = &fn;
         }

@@ -175,7 +175,7 @@ auto validate_module_scope(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
 
-    const auto &decl = static_cast<const ast::sub_module_decl &>(*item);
+    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
     if (!decl.items.empty()) {
       validate_module_scope(decl.items, append_module_name(module_name, decl.name),
                             file_id, diag, file_has_errors);
@@ -436,11 +436,10 @@ auto emit_unresolved_qualified_path(
   unresolved.with_label(location.span, std::format("unresolved {}", kind_name));
 
   if (!resolution.absolute_path.empty() && resolution.absolute_path != path_text) {
-    unresolved.children.push_back(
-        diagnostic(diagnostic_level::note,
+    unresolved.children.emplace_back(diagnostic_level::note,
                    std::format("checked absolute path `{}`",
                                resolution.absolute_path),
-                   location.file_id));
+                   location.file_id);
   }
 
   if (resolution.symbol != nullptr) {
@@ -633,7 +632,7 @@ auto validate_type_expr(const ast::type_expr &type,
 
   switch (type.kind) {
   case ast::node_kind::named_type: {
-    const auto &named = static_cast<const ast::named_type &>(type);
+    const auto &named = dynamic_cast<const ast::named_type &>(type);
     for (const auto &arg : named.type_args) {
       if (arg.value != nullptr) {
         validate_ast_node(*arg.value, context, semantic_index, session_index, diag,
@@ -679,12 +678,12 @@ auto validate_type_expr(const ast::type_expr &type,
   }
 
   case ast::node_kind::bound_type:
-    validate_bound(static_cast<const ast::bound_type &>(type).value, context,
+    validate_bound(dynamic_cast<const ast::bound_type &>(type).value, context,
                    semantic_index, session_index, diag, file_has_errors);
     return;
 
   case ast::node_kind::tuple_type: {
-    const auto &tuple = static_cast<const ast::tuple_type &>(type);
+    const auto &tuple = dynamic_cast<const ast::tuple_type &>(type);
     for (const auto &element : tuple.elements) {
       if (element != nullptr) {
         validate_type_expr(*element, context, semantic_index, session_index, diag,
@@ -695,7 +694,7 @@ auto validate_type_expr(const ast::type_expr &type,
   }
 
   case ast::node_kind::slice_type: {
-    const auto &slice = static_cast<const ast::slice_type &>(type);
+    const auto &slice = dynamic_cast<const ast::slice_type &>(type);
     if (slice.element != nullptr) {
       validate_type_expr(*slice.element, context, semantic_index, session_index,
                          diag, file_has_errors);
@@ -704,7 +703,7 @@ auto validate_type_expr(const ast::type_expr &type,
   }
 
   case ast::node_kind::array_type: {
-    const auto &array = static_cast<const ast::array_type &>(type);
+    const auto &array = dynamic_cast<const ast::array_type &>(type);
     if (array.element != nullptr) {
       validate_type_expr(*array.element, context, semantic_index, session_index,
                          diag, file_has_errors);
@@ -717,7 +716,7 @@ auto validate_type_expr(const ast::type_expr &type,
   }
 
   case ast::node_kind::ref_type: {
-    const auto &ref = static_cast<const ast::ref_type &>(type);
+    const auto &ref = dynamic_cast<const ast::ref_type &>(type);
     if (ref.inner != nullptr) {
       validate_type_expr(*ref.inner, context, semantic_index, session_index, diag,
                          file_has_errors);
@@ -726,7 +725,7 @@ auto validate_type_expr(const ast::type_expr &type,
   }
 
   case ast::node_kind::ptr_type: {
-    const auto &ptr = static_cast<const ast::ptr_type &>(type);
+    const auto &ptr = dynamic_cast<const ast::ptr_type &>(type);
     if (ptr.inner != nullptr) {
       validate_type_expr(*ptr.inner, context, semantic_index, session_index, diag,
                          file_has_errors);
@@ -735,7 +734,7 @@ auto validate_type_expr(const ast::type_expr &type,
   }
 
   case ast::node_kind::fn_type: {
-    const auto &fn = static_cast<const ast::fn_type &>(type);
+    const auto &fn = dynamic_cast<const ast::fn_type &>(type);
     for (const auto &param_type : fn.param_types) {
       if (param_type != nullptr) {
         validate_type_expr(*param_type, context, semantic_index, session_index,
@@ -750,7 +749,7 @@ auto validate_type_expr(const ast::type_expr &type,
   }
 
   case ast::node_kind::union_type: {
-    const auto &union_type = static_cast<const ast::union_type &>(type);
+    const auto &union_type = dynamic_cast<const ast::union_type &>(type);
     for (const auto &alternative : union_type.alternatives) {
       if (alternative != nullptr) {
         validate_type_expr(*alternative, context, semantic_index, session_index,
@@ -761,7 +760,7 @@ auto validate_type_expr(const ast::type_expr &type,
   }
 
   case ast::node_kind::refinement_type: {
-    const auto &refinement = static_cast<const ast::refinement_type &>(type);
+    const auto &refinement = dynamic_cast<const ast::refinement_type &>(type);
     if (refinement.base != nullptr) {
       validate_type_expr(*refinement.base, context, semantic_index, session_index,
                          diag, file_has_errors);
@@ -796,7 +795,7 @@ auto validate_pattern(const ast::pattern &pattern,
 
   switch (pattern.kind) {
   case ast::node_kind::constructor_pattern: {
-    const auto &ctor = static_cast<const ast::constructor_pattern &>(pattern);
+    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
     for (const auto &arg : ctor.args) {
       if (arg != nullptr) {
         validate_pattern(*arg, context, semantic_index, session_index, diag,
@@ -807,7 +806,7 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::tuple_pattern: {
-    const auto &tuple = static_cast<const ast::tuple_pattern &>(pattern);
+    const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
     for (const auto &element : tuple.elements) {
       if (element != nullptr) {
         validate_pattern(*element, context, semantic_index, session_index, diag,
@@ -818,7 +817,7 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::struct_pattern: {
-    const auto &struct_pattern = static_cast<const ast::struct_pattern &>(pattern);
+    const auto &struct_pattern = dynamic_cast<const ast::struct_pattern &>(pattern);
     for (const auto &field : struct_pattern.fields) {
       if (field.pattern != nullptr) {
         validate_pattern(*field.pattern, context, semantic_index, session_index,
@@ -829,7 +828,7 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::array_pattern: {
-    const auto &array = static_cast<const ast::array_pattern &>(pattern);
+    const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
     for (const auto &element : array.elements) {
       if (element != nullptr) {
         validate_pattern(*element, context, semantic_index, session_index, diag,
@@ -840,7 +839,7 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::range_pattern: {
-    const auto &range = static_cast<const ast::range_pattern &>(pattern);
+    const auto &range = dynamic_cast<const ast::range_pattern &>(pattern);
     if (range.start != nullptr) {
       validate_expr(*range.start, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -853,7 +852,7 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::option_pattern: {
-    const auto &option = static_cast<const ast::option_pattern &>(pattern);
+    const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
     if (option.inner != nullptr) {
       validate_pattern(*option.inner, context, semantic_index, session_index, diag,
                        file_has_errors);
@@ -862,7 +861,7 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::result_pattern: {
-    const auto &result = static_cast<const ast::result_pattern &>(pattern);
+    const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
     if (result.inner != nullptr) {
       validate_pattern(*result.inner, context, semantic_index, session_index, diag,
                        file_has_errors);
@@ -871,7 +870,7 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::ref_pattern: {
-    const auto &ref = static_cast<const ast::ref_pattern &>(pattern);
+    const auto &ref = dynamic_cast<const ast::ref_pattern &>(pattern);
     if (ref.inner != nullptr) {
       validate_pattern(*ref.inner, context, semantic_index, session_index, diag,
                        file_has_errors);
@@ -880,7 +879,7 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::or_pattern: {
-    const auto &or_pattern = static_cast<const ast::or_pattern &>(pattern);
+    const auto &or_pattern = dynamic_cast<const ast::or_pattern &>(pattern);
     for (const auto &alternative : or_pattern.alternatives) {
       if (alternative != nullptr) {
         validate_pattern(*alternative, context, semantic_index, session_index,
@@ -891,7 +890,7 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::group_pattern: {
-    const auto &group = static_cast<const ast::group_pattern &>(pattern);
+    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
     if (group.inner != nullptr) {
       validate_pattern(*group.inner, context, semantic_index, session_index, diag,
                        file_has_errors);
@@ -919,7 +918,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
 
   switch (expr.kind) {
   case ast::node_kind::binary_expr: {
-    const auto &binary = static_cast<const ast::binary_expr &>(expr);
+    const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
     if (binary.lhs != nullptr) {
       validate_expr(*binary.lhs, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -932,7 +931,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::unary_expr: {
-    const auto &unary = static_cast<const ast::unary_expr &>(expr);
+    const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
     if (unary.operand != nullptr) {
       validate_expr(*unary.operand, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -941,7 +940,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::call_expr: {
-    const auto &call = static_cast<const ast::call_expr &>(expr);
+    const auto &call = dynamic_cast<const ast::call_expr &>(expr);
     if (call.callee != nullptr) {
       validate_expr(*call.callee, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -956,7 +955,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::index_expr: {
-    const auto &index = static_cast<const ast::index_expr &>(expr);
+    const auto &index = dynamic_cast<const ast::index_expr &>(expr);
     if (index.object != nullptr) {
       validate_expr(*index.object, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -969,7 +968,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::field_expr: {
-    const auto &field = static_cast<const ast::field_expr &>(expr);
+    const auto &field = dynamic_cast<const ast::field_expr &>(expr);
     if (field.object != nullptr) {
       validate_expr(*field.object, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -984,7 +983,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::cast_expr: {
-    const auto &cast = static_cast<const ast::cast_expr &>(expr);
+    const auto &cast = dynamic_cast<const ast::cast_expr &>(expr);
     if (cast.operand != nullptr) {
       validate_expr(*cast.operand, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -997,7 +996,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::try_expr: {
-    const auto &try_expr = static_cast<const ast::try_expr &>(expr);
+    const auto &try_expr = dynamic_cast<const ast::try_expr &>(expr);
     if (try_expr.operand != nullptr) {
       validate_expr(*try_expr.operand, context, semantic_index, session_index,
                     diag, file_has_errors);
@@ -1006,7 +1005,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::tuple_expr: {
-    const auto &tuple = static_cast<const ast::tuple_expr &>(expr);
+    const auto &tuple = dynamic_cast<const ast::tuple_expr &>(expr);
     for (const auto &element : tuple.elements) {
       if (element != nullptr) {
         validate_expr(*element, context, semantic_index, session_index, diag,
@@ -1017,7 +1016,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::array_expr: {
-    const auto &array = static_cast<const ast::array_expr &>(expr);
+    const auto &array = dynamic_cast<const ast::array_expr &>(expr);
     for (const auto &element : array.elements) {
       if (element != nullptr) {
         validate_expr(*element, context, semantic_index, session_index, diag,
@@ -1036,7 +1035,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::struct_expr: {
-    const auto &struct_expr = static_cast<const ast::struct_expr &>(expr);
+    const auto &struct_expr = dynamic_cast<const ast::struct_expr &>(expr);
     if (struct_expr.type_name != nullptr) {
       validate_expr(*struct_expr.type_name, context, semantic_index, session_index,
                     diag, file_has_errors);
@@ -1051,7 +1050,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::lambda_expr: {
-    const auto &lambda = static_cast<const ast::lambda_expr &>(expr);
+    const auto &lambda = dynamic_cast<const ast::lambda_expr &>(expr);
     for (const auto &param : lambda.params) {
       if (param.pattern != nullptr) {
         validate_ast_node(*param.pattern, context, semantic_index, session_index,
@@ -1076,7 +1075,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::module_path_expr: {
-    const auto &path = static_cast<const ast::module_path_expr &>(expr);
+    const auto &path = dynamic_cast<const ast::module_path_expr &>(expr);
     if (!should_validate_module_reference(path, session_index) ||
         path.segments.empty()) {
       return;
@@ -1117,7 +1116,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::group_expr: {
-    const auto &group = static_cast<const ast::group_expr &>(expr);
+    const auto &group = dynamic_cast<const ast::group_expr &>(expr);
     if (group.inner != nullptr) {
       validate_expr(*group.inner, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1126,7 +1125,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::if_expr: {
-    const auto &if_expr = static_cast<const ast::if_expr &>(expr);
+    const auto &if_expr = dynamic_cast<const ast::if_expr &>(expr);
     for (const auto &branch : if_expr.branches) {
       if (branch.condition != nullptr) {
         validate_expr(*branch.condition, context, semantic_index, session_index,
@@ -1149,7 +1148,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::match_expr: {
-    const auto &match = static_cast<const ast::match_expr &>(expr);
+    const auto &match = dynamic_cast<const ast::match_expr &>(expr);
     if (match.subject != nullptr) {
       validate_expr(*match.subject, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1174,7 +1173,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::for_expr: {
-    const auto &for_expr = static_cast<const ast::for_expr &>(expr);
+    const auto &for_expr = dynamic_cast<const ast::for_expr &>(expr);
     for (const auto &clause : for_expr.clauses) {
       for (const auto &pattern : clause.patterns) {
         if (pattern != nullptr) {
@@ -1199,7 +1198,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::await_expr: {
-    const auto &await = static_cast<const ast::await_expr &>(expr);
+    const auto &await = dynamic_cast<const ast::await_expr &>(expr);
     if (await.operand != nullptr) {
       validate_expr(*await.operand, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1208,12 +1207,12 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::async_expr:
-    validate_node_list(static_cast<const ast::async_expr &>(expr).body, context,
+    validate_node_list(dynamic_cast<const ast::async_expr &>(expr).body, context,
                        semantic_index, session_index, diag, file_has_errors);
     return;
 
   case ast::node_kind::par_expr: {
-    const auto &par = static_cast<const ast::par_expr &>(expr);
+    const auto &par = dynamic_cast<const ast::par_expr &>(expr);
     for (const auto &branch : par.branches) {
       if (branch != nullptr) {
         validate_expr(*branch, context, semantic_index, session_index, diag,
@@ -1224,7 +1223,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::race_expr: {
-    const auto &race = static_cast<const ast::race_expr &>(expr);
+    const auto &race = dynamic_cast<const ast::race_expr &>(expr);
     for (const auto &branch : race.branches) {
       if (branch != nullptr) {
         validate_expr(*branch, context, semantic_index, session_index, diag,
@@ -1235,12 +1234,12 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::crew_expr:
-    validate_node_list(static_cast<const ast::crew_expr &>(expr).body, context,
+    validate_node_list(dynamic_cast<const ast::crew_expr &>(expr).body, context,
                        semantic_index, session_index, diag, file_has_errors);
     return;
 
   case ast::node_kind::on_expr: {
-    const auto &on = static_cast<const ast::on_expr &>(expr);
+    const auto &on = dynamic_cast<const ast::on_expr &>(expr);
     if (on.context_type != nullptr) {
       validate_type_expr(*on.context_type, context, semantic_index,
                          session_index, diag, file_has_errors);
@@ -1255,12 +1254,12 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::block_expr:
-    validate_node_list(static_cast<const ast::block_expr &>(expr).stmts, context,
+    validate_node_list(dynamic_cast<const ast::block_expr &>(expr).stmts, context,
                        semantic_index, session_index, diag, file_has_errors);
     return;
 
   case ast::node_kind::splice_expr: {
-    const auto &splice = static_cast<const ast::splice_expr &>(expr);
+    const auto &splice = dynamic_cast<const ast::splice_expr &>(expr);
     if (splice.operand != nullptr) {
       validate_expr(*splice.operand, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1269,7 +1268,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::static_expr: {
-    const auto &static_expr = static_cast<const ast::static_expr &>(expr);
+    const auto &static_expr = dynamic_cast<const ast::static_expr &>(expr);
     if (static_expr.operand != nullptr) {
       validate_expr(*static_expr.operand, context, semantic_index, session_index,
                     diag, file_has_errors);
@@ -1278,7 +1277,7 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::where_expr: {
-    const auto &where = static_cast<const ast::where_expr &>(expr);
+    const auto &where = dynamic_cast<const ast::where_expr &>(expr);
     if (where.inner != nullptr) {
       validate_expr(*where.inner, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1313,7 +1312,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
 
   switch (node.kind) {
   case ast::node_kind::type_decl: {
-    const auto &decl = static_cast<const ast::type_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::type_decl &>(node);
     for (const auto &param : decl.type_params) {
       validate_type_param(param, context, semantic_index, session_index, diag,
                           file_has_errors);
@@ -1330,7 +1329,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::struct_type_def: {
-    const auto &def = static_cast<const ast::struct_type_def &>(node);
+    const auto &def = dynamic_cast<const ast::struct_type_def &>(node);
     for (const auto &field : def.body.fields) {
       if (field.type != nullptr) {
         validate_type_expr(*field.type, context, semantic_index, session_index,
@@ -1341,7 +1340,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::sum_type_def: {
-    const auto &def = static_cast<const ast::sum_type_def &>(node);
+    const auto &def = dynamic_cast<const ast::sum_type_def &>(node);
     for (const auto &variant : def.body.variants) {
       for (const auto &payload : variant.payload_types) {
         if (payload != nullptr) {
@@ -1354,7 +1353,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::trait_decl: {
-    const auto &decl = static_cast<const ast::trait_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::trait_decl &>(node);
     for (const auto &param : decl.type_params) {
       validate_type_param(param, context, semantic_index, session_index, diag,
                           file_has_errors);
@@ -1369,7 +1368,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::associated_type_decl_node: {
-    const auto &assoc = static_cast<const ast::associated_type_decl_node &>(node);
+    const auto &assoc = dynamic_cast<const ast::associated_type_decl_node &>(node);
     if (assoc.value.default_type != nullptr) {
       validate_type_expr(*assoc.value.default_type, context, semantic_index,
                          session_index, diag, file_has_errors);
@@ -1378,7 +1377,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::associated_type_def_node: {
-    const auto &assoc = static_cast<const ast::associated_type_def_node &>(node);
+    const auto &assoc = dynamic_cast<const ast::associated_type_def_node &>(node);
     if (assoc.value.type != nullptr) {
       validate_type_expr(*assoc.value.type, context, semantic_index, session_index,
                          diag, file_has_errors);
@@ -1387,7 +1386,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::concept_decl: {
-    const auto &decl = static_cast<const ast::concept_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::concept_decl &>(node);
     for (const auto &constraint : decl.constraints) {
       if (constraint.subject != nullptr) {
         validate_type_expr(*constraint.subject, context, semantic_index,
@@ -1402,7 +1401,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::impl_decl: {
-    const auto &decl = static_cast<const ast::impl_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::impl_decl &>(node);
     for (const auto &param : decl.type_params) {
       validate_type_param(param, context, semantic_index, session_index, diag,
                           file_has_errors);
@@ -1425,7 +1424,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::func_decl: {
-    const auto &decl = static_cast<const ast::func_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::func_decl &>(node);
     for (const auto &param : decl.type_params) {
       validate_type_param(param, context, semantic_index, session_index, diag,
                           file_has_errors);
@@ -1462,7 +1461,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::sub_module_decl: {
-    const auto &decl = static_cast<const ast::sub_module_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(node);
     auto child_context = semantic_walk_context{
         .module_name = append_module_name(context.module_name, decl.name),
         .file_id = context.file_id,
@@ -1473,7 +1472,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::static_decl: {
-    const auto &decl = static_cast<const ast::static_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
     if (decl.type_annotation != nullptr) {
       validate_type_expr(*decl.type_annotation, context, semantic_index,
                          session_index, diag, file_has_errors);
@@ -1518,7 +1517,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::let_stmt: {
-    const auto &stmt = static_cast<const ast::let_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
     if (stmt.pattern != nullptr) {
       validate_pattern(*stmt.pattern, context, semantic_index, session_index, diag,
                        file_has_errors);
@@ -1537,7 +1536,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::var_stmt: {
-    const auto &stmt = static_cast<const ast::var_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
     if (stmt.type_annotation != nullptr) {
       validate_type_expr(*stmt.type_annotation, context, semantic_index,
                          session_index, diag, file_has_errors);
@@ -1550,7 +1549,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::assign_stmt: {
-    const auto &stmt = static_cast<const ast::assign_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::assign_stmt &>(node);
     if (stmt.target != nullptr) {
       validate_expr(*stmt.target, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1563,7 +1562,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::expr_stmt: {
-    const auto &stmt = static_cast<const ast::expr_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
     if (stmt.expr != nullptr) {
       validate_expr(*stmt.expr, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1572,7 +1571,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::return_stmt: {
-    const auto &stmt = static_cast<const ast::return_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
     if (stmt.value != nullptr) {
       validate_expr(*stmt.value, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1581,7 +1580,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::if_stmt: {
-    const auto &stmt = static_cast<const ast::if_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
     for (const auto &branch : stmt.branches) {
       if (branch.condition != nullptr) {
         validate_expr(*branch.condition, context, semantic_index, session_index,
@@ -1604,7 +1603,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::while_stmt: {
-    const auto &stmt = static_cast<const ast::while_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::while_stmt &>(node);
     if (stmt.condition != nullptr) {
       validate_expr(*stmt.condition, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1623,7 +1622,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::for_stmt: {
-    const auto &stmt = static_cast<const ast::for_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
     for (const auto &pattern : stmt.patterns) {
       if (pattern != nullptr) {
         validate_pattern(*pattern, context, semantic_index, session_index, diag,
@@ -1644,7 +1643,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::match_stmt: {
-    const auto &stmt = static_cast<const ast::match_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
     if (stmt.subject != nullptr) {
       validate_expr(*stmt.subject, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1669,12 +1668,12 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::crew_stmt:
-    validate_node_list(static_cast<const ast::crew_stmt &>(node).body, context,
+    validate_node_list(dynamic_cast<const ast::crew_stmt &>(node).body, context,
                        semantic_index, session_index, diag, file_has_errors);
     return;
 
   case ast::node_kind::splice_stmt: {
-    const auto &stmt = static_cast<const ast::splice_stmt &>(node);
+    const auto &stmt = dynamic_cast<const ast::splice_stmt &>(node);
     if (stmt.expr != nullptr) {
       validate_expr(*stmt.expr, context, semantic_index, session_index, diag,
                     file_has_errors);
@@ -1693,7 +1692,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   case ast::node_kind::quote_type:
   case ast::node_kind::union_type:
   case ast::node_kind::refinement_type:
-    validate_type_expr(static_cast<const ast::type_expr &>(node), context,
+    validate_type_expr(dynamic_cast<const ast::type_expr &>(node), context,
                        semantic_index, session_index, diag, file_has_errors);
     return;
 
@@ -1726,7 +1725,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   case ast::node_kind::module_path_expr:
   case ast::node_kind::group_expr:
   case ast::node_kind::where_expr:
-    validate_expr(static_cast<const ast::expr &>(node), context, semantic_index,
+    validate_expr(dynamic_cast<const ast::expr &>(node), context, semantic_index,
                   session_index, diag, file_has_errors);
     return;
 
@@ -1743,7 +1742,7 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   case ast::node_kind::ref_pattern:
   case ast::node_kind::or_pattern:
   case ast::node_kind::group_pattern:
-    validate_pattern(static_cast<const ast::pattern &>(node), context,
+    validate_pattern(dynamic_cast<const ast::pattern &>(node), context,
                      semantic_index, session_index, diag, file_has_errors);
     return;
 

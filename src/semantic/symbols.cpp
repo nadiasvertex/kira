@@ -128,7 +128,7 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
     -> std::optional<semantic_symbol_spec> {
   switch (node.kind) {
   case ast::node_kind::type_decl: {
-    const auto &decl = static_cast<const ast::type_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::type_decl &>(node);
     return semantic_symbol_spec{
         .name = decl.name,
         .kind = semantic_symbol_kind::type_symbol,
@@ -141,7 +141,7 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
     };
   }
   case ast::node_kind::trait_decl: {
-    const auto &decl = static_cast<const ast::trait_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::trait_decl &>(node);
     return semantic_symbol_spec{
         .name = decl.name,
         .kind = semantic_symbol_kind::trait_symbol,
@@ -154,7 +154,7 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
     };
   }
   case ast::node_kind::concept_decl: {
-    const auto &decl = static_cast<const ast::concept_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::concept_decl &>(node);
     return semantic_symbol_spec{
         .name = decl.name,
         .kind = semantic_symbol_kind::concept_symbol,
@@ -167,7 +167,7 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
     };
   }
   case ast::node_kind::sub_module_decl: {
-    const auto &decl = static_cast<const ast::sub_module_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(node);
     return semantic_symbol_spec{
         .name = decl.name,
         .kind = semantic_symbol_kind::submodule_symbol,
@@ -180,7 +180,7 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
     };
   }
   case ast::node_kind::func_decl: {
-    const auto &decl = static_cast<const ast::func_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::func_decl &>(node);
     return semantic_symbol_spec{
         .name = decl.name,
         .kind = semantic_symbol_kind::function_symbol,
@@ -193,7 +193,7 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
     };
   }
   case ast::node_kind::static_decl: {
-    const auto &decl = static_cast<const ast::static_decl &>(node);
+    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
     if (decl.decl_kind != ast::static_decl_kind::binding || decl.name.empty()) {
       return std::nullopt;
     }
