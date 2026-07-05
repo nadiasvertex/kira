@@ -1,6 +1,6 @@
 module stress.func_multi_bound_value_param
 
 def run[T: show + eq, n: usize](raw_index, items) -> option[value]:
-  if let some(i) = index[n].try_from(raw_index):
-    return some(items)
-  return none
+  if let @some(i) = index[n].try_from(raw_index):
+    return @some(items)
+  return @none

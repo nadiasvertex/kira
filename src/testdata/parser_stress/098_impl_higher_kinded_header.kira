@@ -7,4 +7,4 @@ trait monad[M[_]] requires functor[M]:
   def pure[A](a: A) -> M[A]
 
 impl monad[option]:
-  def pure[A](a: A) -> option[A]: some(a)
+  def pure[A](a: A) -> option[A]: @some(a)

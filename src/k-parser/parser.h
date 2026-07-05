@@ -654,6 +654,9 @@ private:
   [[nodiscard]] ast::ptr<ast::expr> parse_literal_expr();
   /// Parses either a plain identifier or a dotted module/path expression.
   [[nodiscard]] ast::ptr<ast::expr> parse_ident_or_path_expr();
+  /// Parses an `@`-prefixed variant constructor reference: `@name`, later
+  /// applied to a call via ordinary postfix parsing for `@name(args)`.
+  [[nodiscard]] ast::ptr<ast::expr> parse_variant_expr();
   /// Parses parenthesized expressions and tuple literals.
   [[nodiscard]] ast::ptr<ast::expr> parse_paren_expr();
   /// Parses bracket-based array or index-related expression forms.
@@ -727,15 +730,17 @@ private:
   [[nodiscard]] ast::ptr<ast::pattern> parse_wildcard_pattern();
   /// Parses a literal pattern.
   [[nodiscard]] ast::ptr<ast::pattern> parse_literal_pattern();
-  /// Parses either a binding name or constructor-style pattern head.
+  /// Parses a bare identifier as a binding pattern (or an `ident..ident` range).
   [[nodiscard]] ast::ptr<ast::pattern> parse_ident_or_constructor_pattern();
+  /// Parses an `@`-prefixed variant constructor pattern: `@name`, `@name(...)`.
+  [[nodiscard]] ast::ptr<ast::pattern> parse_variant_pattern();
   /// Parses parenthesized and tuple patterns.
   [[nodiscard]] ast::ptr<ast::pattern> parse_paren_pattern();
   /// Parses struct patterns.
   [[nodiscard]] ast::ptr<ast::pattern> parse_brace_pattern();
   /// Parses array and slice patterns.
   [[nodiscard]] ast::ptr<ast::pattern> parse_bracket_pattern();
-  /// Parses `some`, `ok`, and `err` wrapper patterns.
+  /// Parses `@some(...)`, `@ok(...)`, and `@err(...)` wrapper patterns.
   [[nodiscard]] ast::ptr<ast::pattern> parse_option_result_pattern();
   /// Parses reference patterns.
   [[nodiscard]] ast::ptr<ast::pattern> parse_ref_pattern();

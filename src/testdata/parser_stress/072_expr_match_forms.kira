@@ -2,6 +2,6 @@ module stress.expr_match_forms
 
 def run(x):
   let value = match x:
-    some(value) if ready == true => value
+    @some(value) if ready == true => value
     _ =>:
       return 0

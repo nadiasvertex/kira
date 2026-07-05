@@ -1050,11 +1050,10 @@ ast::ptr<ast::type_decl> parser::parse_type_decl(ast::visibility vis) {
 }
 
 ast::ptr<ast::node> parser::parse_type_def() {
-  // Sum body: either `| variant ...` or the unprefixed documented form
-  // `variant | other_variant`.
-  if (at(token_kind::pipe) ||
-      (can_start_sum_variant(current()) &&
-       (peek_at(1).is(token_kind::pipe) || peek_at(1).is(token_kind::lparen)))) {
+  // Sum body: either `| @variant ...` or the unprefixed documented form
+  // `@variant | @other_variant`. Every variant starts with `@`, so no
+  // lookahead beyond the next token is needed to disambiguate.
+  if (at(token_kind::pipe) || at(token_kind::at)) {
     auto body = parse_sum_body();
     auto result = ast::make<ast::sum_type_def>();
     result->span = body.span;
@@ -1156,6 +1155,8 @@ auto parser::parse_sum_body() -> ast::sum_body {
 auto parser::parse_sum_variant() -> ast::sum_variant {
   ast::sum_variant variant;
   variant.span = peek().span;
+
+  expect(token_kind::at);
 
   token name_tok;
   if (can_start_sum_variant(current())) {
@@ -3097,6 +3098,10 @@ ast::ptr<ast::expr> parser::parse_primary_expr() {
   case token_kind::kw_super:
     return parse_ident_or_path_expr();
 
+  // Variant constructor: `@name`, `@name(args)`.
+  case token_kind::at:
+    return parse_variant_expr();
+
   // Parenthesized expr, tuple, or grouped.
   case token_kind::lparen:
     return parse_paren_expr();
@@ -3222,6 +3227,27 @@ ast::ptr<ast::expr> parser::parse_ident_or_path_expr() {
     return path;
   }
 
+  return ident;
+}
+
+ast::ptr<ast::expr> parser::parse_variant_expr() {
+  auto start = peek().span;
+  advance(); // consume `@`
+
+  if (!at_any(token_kind::ident, token_kind::kw_some, token_kind::kw_ok,
+              token_kind::kw_err)) {
+    emit_unexpected("a variant name after `@`");
+    return make_error_expr(start, "expected variant name");
+  }
+
+  auto tok = advance();
+  auto ident = ast::make<ast::ident_expr>();
+  ident->span = start.merge(tok.span);
+  ident->name = std::string(tok.text);
+
+  // Trailing `(args)`, `.field`, `?`, etc. are handled uniformly by the
+  // ordinary postfix-suffix loop in parse_postfix_expr — a variant
+  // constructor call is structurally just a call to this identifier.
   return ident;
 }
 
@@ -4367,6 +4393,9 @@ ast::ptr<ast::pattern> parser::parse_atomic_pattern() {
   case token_kind::ident:
     return parse_ident_or_constructor_pattern();
 
+  case token_kind::at:
+    return parse_variant_pattern();
+
   case token_kind::lparen:
     return parse_paren_pattern();
 
@@ -4375,11 +4404,6 @@ ast::ptr<ast::pattern> parser::parse_atomic_pattern() {
 
   case token_kind::lbracket:
     return parse_bracket_pattern();
-
-  case token_kind::kw_some:
-  case token_kind::kw_ok:
-  case token_kind::kw_err:
-    return parse_option_result_pattern();
 
   case token_kind::amp:
     return parse_ref_pattern();
@@ -4446,26 +4470,10 @@ ast::ptr<ast::pattern> parser::parse_ident_or_constructor_pattern() {
   auto tok = advance();
   auto start = tok.span;
 
-  // Constructor: `Name(patterns...)`
-  if (at(token_kind::lparen)) {
-    advance(); // consume `(`
-    auto ctor = ast::make<ast::constructor_pattern>();
-    ctor->span = start;
-    ctor->name = std::string(tok.text);
-
-    while (!at(token_kind::rparen) && !at_eof()) {
-      auto pat = parse_pattern();
-      if (pat) {
-        ctor->args.push_back(std::move(pat));
-}
-      if (!match(token_kind::comma)) {
-        break;
-}
-    }
-    expect(token_kind::rparen);
-    ctor->span.extend_to(previous_span());
-    return ctor;
-  }
+  // A bare identifier is always a variable — never a constructor. Variant
+  // constructors are always written with a leading `@` (see
+  // parse_variant_pattern), so a plain IDENT here can only be a binding
+  // or the start of an `ident..ident` range.
 
   // Check for range: `ident..ident`
   if (at_any(token_kind::dot_dot, token_kind::dot_dot_eq)) {
@@ -4493,6 +4501,49 @@ ast::ptr<ast::pattern> parser::parse_ident_or_constructor_pattern() {
   binding->span = start;
   binding->name = std::string(tok.text);
   return binding;
+}
+
+ast::ptr<ast::pattern> parser::parse_variant_pattern() {
+  auto at_start = peek().span;
+  advance(); // consume `@`
+
+  // `@some(...)`, `@ok(...)`, `@err(...)` reuse the dedicated option/result
+  // pattern nodes; parse_option_result_pattern expects to see the keyword
+  // token as the current token, which is now guaranteed by the `@` we just
+  // consumed.
+  if (at_any(token_kind::kw_some, token_kind::kw_ok, token_kind::kw_err)) {
+    auto pat = parse_option_result_pattern();
+    if (pat) {
+      pat->span = at_start.merge(pat->span);
+    }
+    return pat;
+  }
+
+  if (!at(token_kind::ident)) {
+    emit_unexpected("a variant name after `@`");
+    return make_error_pattern(at_start);
+  }
+
+  auto tok = advance();
+  auto ctor = ast::make<ast::constructor_pattern>();
+  ctor->span = at_start;
+  ctor->name = std::string(tok.text);
+
+  if (match(token_kind::lparen)) {
+    while (!at(token_kind::rparen) && !at_eof()) {
+      auto pat = parse_pattern();
+      if (pat) {
+        ctor->args.push_back(std::move(pat));
+      }
+      if (!match(token_kind::comma)) {
+        break;
+      }
+    }
+    expect(token_kind::rparen);
+  }
+
+  ctor->span.extend_to(previous_span());
+  return ctor;
 }
 
 ast::ptr<ast::pattern> parser::parse_paren_pattern() {

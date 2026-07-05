@@ -246,11 +246,11 @@ auto test_match_arm_pattern_bindings_are_arm_local() -> void {
   const auto parsed = parse_sources({{
       .path = "sample.kira",
       .text = "module sample\n"
-              "type option[T] = some(T) | none\n"
+              "type option[T] = @some(T) | @none\n"
               "def run(value):\n"
               "  match value:\n"
-              "    some(found) => found\n"
-              "    none => value\n",
+              "    @some(found) => found\n"
+              "    @none => value\n",
   }});
 
   const auto session = kira::semantic::build_semantic_session(parsed.parsed_modules);

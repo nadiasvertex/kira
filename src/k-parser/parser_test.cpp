@@ -104,7 +104,7 @@ auto test_parser_builds_type_body_nodes() -> void {
       "module sample\n"
       "\n"
       "type person = { name: str, age: int }\n"
-      "type shape = | circle(float64) | point\n");
+      "type shape = | @circle(float64) | @point\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2, "expected two top-level type declarations");
@@ -152,7 +152,7 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
       "  let value = x where:\n"
       "    base = 1\n"
       "  let chosen = match x:\n"
-      "    some(item) as alias => alias\n"
+      "    @some(item) as alias => alias\n"
       "    _ => value\n"
       "  return chosen\n");
 
@@ -247,7 +247,7 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
       "    return x\n"
       "  else:\n"
       "    return 0\n"
-      "  while let some(item) = stream:\n"
+      "  while let @some(item) = stream:\n"
       "    process(item)\n"
       "  for key, value in entries if ready:\n"
       "    consume(key)\n"
@@ -614,8 +614,8 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
   auto parsed = parse_source(
       "module sample\n"
       "\n"
-      "type direction = north | south | east | west\n"
-      "type option[T] = some(T) | none\n"
+      "type direction = @north | @south | @east | @west\n"
+      "type option[T] = @some(T) | @none\n"
       "\n"
       "trait functor[F[_]]:\n"
       "  def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]\n"
@@ -631,19 +631,19 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
       "\n"
       "def run[T: show + eq, n: usize](raw_index, items) -> option[value]:\n"
       "  let shared_cfg: shared config_t = shared load_config(\"app.toml\")\n"
-      "  if let some(i) = index[n].try_from(raw_index):\n"
+      "  if let @some(i) = index[n].try_from(raw_index):\n"
       "    let sender = channel[str](capacity: 32)\n"
       "    let watcher = watch[config](initial: default_config())\n"
       "    let evens = for x in 0..20 if x % 2 == 0 => x\n"
       "    let handle = crew c(on_error: collect):\n"
       "      c.spawn(async:\n"
-      "        while let some(line) = await receiver.recv():\n"
+      "        while let @some(line) = await receiver.recv():\n"
       "          process(line)\n"
       "      )\n"
-      "    match some(items):\n"
-      "      some(value) => return some(value)\n"
-      "      none => return none\n"
-      "  return err(cancelled)\n"
+      "    match @some(items):\n"
+      "      @some(value) => return @some(value)\n"
+      "      @none => return @none\n"
+      "  return @err(@cancelled)\n"
       "\n"
       "~derive_show[point]()\n");
 
@@ -724,7 +724,7 @@ auto test_parser_accepts_phase1_audit_regressions() -> void {
       "  def pure[A](a: A) -> M[A]\n"
       "\n"
       "impl monad[option]:\n"
-      "  def pure[A](a: A) -> option[A]: some(a)\n"
+      "  def pure[A](a: A) -> option[A]: @some(a)\n"
       "\n"
       "async def handle(pool, req) -> http_response:\n"
       "  let result = await on(pool):\n"
