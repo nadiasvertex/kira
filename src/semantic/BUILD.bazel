@@ -4,20 +4,24 @@ cc_library(
     name = "semantic",
     srcs = [
         "analysis.cpp",
+        "check.cpp",
         "module_index.cpp",
         "resolution.cpp",
         "scopes.cpp",
         "session.cpp",
         "symbols.cpp",
+        "types.cpp",
     ],
     hdrs = [
         "analysis.h",
+        "check.h",
         "ids.h",
         "module_index.h",
         "resolution.h",
         "scopes.h",
         "session.h",
         "symbols.h",
+        "types.h",
     ],
     deps = [
         "//src/k-parser:k-parser",
@@ -28,6 +32,15 @@ cc_library(
 cc_test(
     name = "analysis_test",
     srcs = ["analysis_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/k-parser:k-parser",
+    ],
+)
+
+cc_test(
+    name = "check_test",
+    srcs = ["check_test.cpp"],
     deps = [
         ":semantic",
         "//src/k-parser:k-parser",

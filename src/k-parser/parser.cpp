@@ -1219,6 +1219,15 @@ ast::ptr<ast::type_expr> parser::parse_prim_type_expr() {
   case token_kind::kw_super:
     return parse_named_type();
 
+  case token_kind::kw_unit: {
+    // `unit` is a keyword token, but in type position it names the unit type.
+    auto tok = advance();
+    auto named = ast::make<ast::named_type>();
+    named->span = tok.span;
+    named->path.push_back("unit");
+    return named;
+  }
+
   case token_kind::lparen: {
     // Could be tuple type or grouped type.
     auto start = peek().span;
@@ -1914,9 +1923,21 @@ ast::ptr<ast::func_decl> parser::parse_func_decl(ast::visibility vis,
     decl->where_constraints = parse_where_clause();
   }
 
-  // Optional contract clauses.
-  skip_newlines();
-  decl->contracts = parse_contract_clauses();
+  // Optional contract clauses. They appear on following indented lines, so
+  // only consume line breaks when a `pre`/`post` clause actually follows —
+  // otherwise the newline stays put and terminates a bodyless declaration.
+  {
+    auto lookahead = uint32_t{0};
+    while (peek_at(lookahead).kind == token_kind::newline ||
+           peek_at(lookahead).kind == token_kind::indent) {
+      ++lookahead;
+    }
+    if (peek_at(lookahead).kind == token_kind::kw_pre ||
+        peek_at(lookahead).kind == token_kind::kw_post) {
+      skip_newlines();
+      decl->contracts = parse_contract_clauses();
+    }
+  }
 
   if (allow_bodyless && at_any(token_kind::newline, token_kind::dedent,
                                token_kind::eof)) {

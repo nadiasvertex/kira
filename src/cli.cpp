@@ -3417,8 +3417,9 @@ auto compile_sources(const cli_config &cfg, bool use_color)
         .ast_file = input.ast_file.get(),
     });
   }
-  semantic::validate_semantics(semantic_inputs, session_diagnostics,
-                               file_has_errors);
+  semantic::validate_semantics(
+      semantic_inputs, session_diagnostics, file_has_errors,
+      semantic::semantic_options{.check_names_and_types = !cfg.parse_only});
 
   report.error_count += session_diagnostics.error_count();
   append_text(report.diagnostics,

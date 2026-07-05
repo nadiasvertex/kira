@@ -22,14 +22,16 @@ This document is a planning snapshot for LLMs and contributors. It describes wha
 - Session-local module graph validation for duplicate module paths, parent/child module boundaries, and inline-vs-external submodule conflicts.
 - Session-local import validation for owned module roots, unresolved imports, and child-module visibility.
 - An initial semantic declaration-scope pass that rejects duplicate type, trait, concept, and submodule names within one module scope.
+- A semantic analysis pass (`src/semantic/check.cpp` + `types.h`) covering name resolution (undefined names/types with "did you mean" suggestions), an interned type model, and type checking for core expressions: literals with fit checks, operators, calls (arity, named arguments, defaults, argument types), field/method access via impls, indexing, struct literals, pattern checking with sum-type match exhaustiveness, `?` propagation rules, immutability of `let` bindings, and the `pub`-functions-must-annotate rule.
+- Trait and impl validation: coherence (one impl per trait/type pair), missing/extra trait members, associated-type completeness, `requires` obligations, `deriving` allowlist, and contract-condition purity.
 - Project-owned Bazel tests for CLI and parser regressions.
 - A protobuf schema for persisted module metadata, intended to evolve additively for forward compatibility.
 
 ### Missing
 
-- Name resolution and symbol tables.
-- Type inference and type checking.
-- Trait and impl validation.
+- Full Hindley-Milner-style inference for unannotated parameters (they are
+  currently treated as unconstrained), borrow checking, and generic
+  instantiation beyond direct type-parameter positions.
 - Typed lowering IR between the parser and backend.
 - LLVM IR generation.
 - Runtime and standard library integration.
@@ -77,8 +79,15 @@ Exit criteria:
 
 Status:
 
-- Started.
-- The current phase-3 entry point is module-local declaration scope validation for type/module names, which lays groundwork for symbol tables and later name resolution.
+- Substantially complete for the current language surface.
+- Name resolution, type checking for core expressions and pattern matching,
+  match exhaustiveness, and trait/impl validation are implemented in
+  `src/semantic/check.cpp` with project-owned tests in `check_test.cpp`.
+- The checker deliberately types unannotated parameters and external-module
+  members as unknown (compatible with everything) so incomplete knowledge
+  never produces false positives; tightening this is follow-on inference work.
+- The parser stress corpus runs with `cli_config::parse_only`, which skips
+  name/type checking while keeping module-graph validation.
 
 ### 4. Typed lowering pipeline
 

@@ -1,7 +1,5 @@
 #include "module_index.h"
 
-#include <format>
-
 namespace kira::semantic {
 namespace {
 

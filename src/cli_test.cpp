@@ -167,7 +167,7 @@ auto test_compile_sources_writes_module_metadata() -> void {
              "use std.io\n"
              "dep sqlite:\n"
              "  version = \"3.45\"\n"
-             "pub def run():\n"
+             "pub def run() -> int32:\n"
              "  return 1\n"
              "type person = { name: str }\n");
 
@@ -251,7 +251,7 @@ auto test_compile_sources_reports_nested_parser_errors() -> void {
   write_file(source_path,
              "module sample\n"
              "module util:\n"
-             "  pub def shared():\n"
+             "  pub def shared() -> int32:\n"
              "    return 1\n");
 
   kira::cli_config cfg{
@@ -281,11 +281,11 @@ auto test_compile_sources_handles_multiple_files() -> void {
 
   write_file(source_a,
              "module sample.tools\n"
-             "pub def run():\n"
+             "pub def run() -> int32:\n"
              "  return 1\n");
   write_file(source_b,
              "module sample.math\n"
-             "pub def add():\n"
+             "pub def add() -> int32:\n"
              "  return 2\n");
 
   kira::cli_config cfg{
@@ -315,11 +315,11 @@ auto test_compile_sources_reports_duplicate_module_paths() -> void {
 
   write_file(source_a,
              "module sample.tools\n"
-             "pub def first():\n"
+             "pub def first() -> int32:\n"
              "  return 1\n");
   write_file(source_b,
              "module sample.tools\n"
-             "pub def second():\n"
+             "pub def second() -> int32:\n"
              "  return 2\n");
 
   kira::cli_config cfg{
@@ -354,11 +354,11 @@ auto test_compile_sources_accepts_declared_external_submodule() -> void {
   write_file(parent_source,
              "module geometry\n"
              "module transform\n"
-             "pub def root():\n"
+             "pub def root() -> int32:\n"
              "  return 1\n");
   write_file(child_source,
              "module geometry.transform\n"
-             "pub def rotate():\n"
+             "pub def rotate() -> int32:\n"
              "  return 2\n");
 
   kira::cli_config cfg{
@@ -387,11 +387,11 @@ auto test_compile_sources_reports_missing_parent_submodule_declaration() -> void
 
   write_file(parent_source,
              "module geometry\n"
-             "pub def root():\n"
+             "pub def root() -> int32:\n"
              "  return 1\n");
   write_file(child_source,
              "module geometry.transform\n"
-             "pub def rotate():\n"
+             "pub def rotate() -> int32:\n"
              "  return 2\n");
 
   kira::cli_config cfg{
@@ -428,7 +428,7 @@ auto test_compile_sources_reports_inline_external_submodule_conflict() -> void {
              "  pub type circle = { pub radius: float64 }\n");
   write_file(child_source,
              "module geometry.shapes\n"
-             "pub def area():\n"
+             "pub def area() -> int32:\n"
              "  return 3\n");
 
   kira::cli_config cfg{
@@ -471,21 +471,21 @@ auto test_compile_sources_resolves_session_imports() -> void {
              "module util\n"
              "module parse\n"
              "module app\n"
-             "pub def helper():\n"
+             "pub def helper() -> int32:\n"
              "  return 1\n");
   write_file(util_source,
              "module package.tools.util\n"
-             "pub def shared_value():\n"
+             "pub def shared_value() -> int32:\n"
              "  return 2\n");
   write_file(parse_source,
              "module package.tools.parse\n"
-             "pub def parse_it():\n"
+             "pub def parse_it() -> int32:\n"
              "  return 3\n");
   write_file(app_source,
              "module package.tools.app\n"
              "use package.tools\n"
              "use package.tools.*\n"
-             "pub def run():\n"
+             "pub def run() -> int32:\n"
              "  return 4\n");
 
   kira::cli_config cfg{
@@ -701,7 +701,7 @@ auto test_compile_sources_reports_unresolved_session_import() -> void {
              "module package.tools.app\n"
              "use package.tools.missing\n"
              "use std.io\n"
-             "pub def run():\n"
+             "pub def run() -> int32:\n"
              "  return 1\n");
 
   kira::cli_config cfg{
@@ -743,12 +743,12 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
              "module secret\n");
   write_file(secret_source,
              "module package.tools.secret\n"
-             "pub def hidden():\n"
+             "pub def hidden() -> int32:\n"
              "  return 1\n");
   write_file(other_source,
              "module package.other\n"
              "use package.tools.secret\n"
-             "pub def run():\n"
+             "pub def run() -> int32:\n"
              "  return 2\n");
 
   kira::cli_config cfg{

@@ -17,6 +17,7 @@ struct cli_config {
   std::vector<std::string> sources; ///< Source file paths to compile in this session.
   std::string metadata_dir = std::string(kDefaultMetadataDir); ///< Output root for metadata files.
   bool show_help = false; ///< True when argument parsing requested help output.
+  bool parse_only = false; ///< Skip name resolution and type checking (parser-focused drivers).
 };
 
 /// Metadata artifact written for one successfully compiled module file.

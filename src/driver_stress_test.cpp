@@ -112,6 +112,9 @@ auto main(int argc, char *argv[]) -> int {
       .sources = files,
       .metadata_dir = temp.path.string(),
       .show_help = false,
+      // The stress corpus exercises the parser; its snippets reference names
+      // that intentionally do not exist, so semantic checking stays off.
+      .parse_only = true,
   };
 
   auto report = kira::compile_sources(cfg, false);
