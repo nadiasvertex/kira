@@ -1,5 +1,6 @@
 #include "types.h"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <utility>
@@ -385,12 +386,10 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
 
 /// Linear search over `k_builtin_scalar_names`.
 auto is_builtin_scalar_name(std::string_view name) -> bool {
-  for (const auto candidate : k_builtin_scalar_names) {
-    if (candidate == name) {
-      return true;
-    }
-  }
-  return false;
+  return std::ranges::any_of(k_builtin_scalar_names,
+                      [name](std::string_view candidate)->  bool  {
+                        return candidate == name;
+                      });
 }
 
 /// Linear search over `k_builtin_generic_arities`.
@@ -437,12 +436,9 @@ auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
 
 /// Linear search over `k_prelude_trait_names`.
 auto is_prelude_trait_name(std::string_view name) -> bool {
-  for (const auto candidate : k_prelude_trait_names) {
-    if (candidate == name) {
-      return true;
-    }
-  }
-  return false;
+  return std::ranges::any_of(k_prelude_trait_names, [name](std::string_view candidate) -> bool -> bool {
+    return candidate == name;
+  });
 }
 
 // ==========================================================================

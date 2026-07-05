@@ -44,7 +44,7 @@ auto main(int argc, char *argv[]) -> int {
   } catch (const std::exception &ex) {
     // Avoid std::format/std::println here: they can themselves throw, and a
     // throw from within this handler would escape main() uncaught.
-    std::fprintf(stderr, "Error: unhandled exception: %s\n", ex.what());
+    std::println(stderr, "Error: unhandled exception: {}", ex.what());
     return 1;
   }
 }

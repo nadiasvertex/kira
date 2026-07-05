@@ -38,15 +38,15 @@ HeaderFilterRegex: '^src/.*'
 
 CheckOptions:
   - key: readability-identifier-naming.FunctionCase
-    value: snake_case
+    value: lower_case
   - key: readability-identifier-naming.ClassCase
-    value: snake_case
+    value: lower_case
   - key: readability-identifier-naming.StructCase
-    value: snake_case
+    value: lower_case
   - key: readability-identifier-naming.EnumCase
-    value: snake_case
+    value: lower_case
   - key: readability-identifier-naming.TypeAliasCase
-    value: snake_case
+    value: lower_case
   - key: readability-identifier-naming.NamespaceCase
     value: lower_case
   - key: readability-identifier-naming.IgnoreMainLikeFunctions
