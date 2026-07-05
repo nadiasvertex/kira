@@ -79,7 +79,6 @@ Status:
 
 - Started.
 - The current phase-3 entry point is module-local declaration scope validation for type/module names, which lays groundwork for symbol tables and later name resolution.
-- The detailed phase-3 implementation backlog lives in `spec/phase-3.md`.
 
 ### 4. Typed lowering pipeline
 
