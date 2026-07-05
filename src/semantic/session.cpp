@@ -432,6 +432,33 @@ auto walk_node(const ast::node &node, scope_id active_scope,
         semantic_symbol_kind::mutable_local_symbol);
   }
 
+  case ast::node_kind::expr_stmt: {
+    const auto &stmt = static_cast<const ast::expr_stmt &>(node);
+    if (stmt.expr != nullptr) {
+      walk_node(*stmt.expr, active_scope, context);
+    }
+    return active_scope;
+  }
+
+  case ast::node_kind::return_stmt: {
+    const auto &stmt = static_cast<const ast::return_stmt &>(node);
+    if (stmt.value != nullptr) {
+      walk_node(*stmt.value, active_scope, context);
+    }
+    return active_scope;
+  }
+
+  case ast::node_kind::assign_stmt: {
+    const auto &stmt = static_cast<const ast::assign_stmt &>(node);
+    if (stmt.target != nullptr) {
+      walk_node(*stmt.target, active_scope, context);
+    }
+    if (stmt.value != nullptr) {
+      walk_node(*stmt.value, active_scope, context);
+    }
+    return active_scope;
+  }
+
   case ast::node_kind::if_stmt: {
     const auto &stmt = static_cast<const ast::if_stmt &>(node);
     for (const auto &branch : stmt.branches) {
