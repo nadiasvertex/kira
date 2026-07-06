@@ -669,6 +669,67 @@ auto test_infers_param_type_from_struct_field_shorthand() -> void {
                     "type");
 }
 
+auto test_infers_param_type_from_annotated_let_binding() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def relay(x):\n"
+      "    let y: int32 = x\n"
+      "    return y\n"
+      "def bad():\n"
+      "    return relay(\"oops\")\n");
+  expect(analyzed.error_count > 0,
+         "expected `relay`'s `x` to be inferred as `int32` from the "
+         "explicitly annotated local `y`");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a type mismatch naming the inferred parameter "
+                    "type");
+}
+
+auto test_infers_param_type_from_annotated_var_binding() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def relay(x):\n"
+      "    var y: int32 = x\n"
+      "    return y\n"
+      "def bad():\n"
+      "    return relay(\"oops\")\n");
+  expect(analyzed.error_count > 0,
+         "expected `relay`'s `x` to be inferred as `int32` from the "
+         "explicitly annotated local `var y`");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a type mismatch naming the inferred parameter "
+                    "type");
+}
+
+auto test_infers_param_type_from_declared_return_type() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def identity(x) -> int32:\n"
+      "    return x\n"
+      "def bad():\n"
+      "    return identity(\"oops\")\n");
+  expect(analyzed.error_count > 0,
+         "expected `identity`'s `x` to be inferred as `int32` from its own "
+         "declared return type");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a type mismatch naming the inferred parameter "
+                    "type");
+}
+
+auto test_infers_param_type_from_declared_return_type_on_expr_body() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def identity(x) -> int32: x\n"
+      "def bad():\n"
+      "    return identity(\"oops\")\n");
+  expect(analyzed.error_count > 0,
+         "expected `identity`'s `x` to be inferred as `int32` from its own "
+         "declared return type on a compact expression body");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a type mismatch naming the inferred parameter "
+                    "type");
+}
+
 auto test_method_call_receiver_subexpr_still_inferred() -> void {
   // `a`'s only usage is inside `(a + b)`, which becomes the *receiver* of a
   // method call (`.to_uppercase()`). The method call itself can't anchor
@@ -752,6 +813,10 @@ auto main() -> int {
     test_infers_param_type_from_call_to_annotated_function();
     test_infers_param_type_from_struct_field_type();
     test_infers_param_type_from_struct_field_shorthand();
+    test_infers_param_type_from_annotated_let_binding();
+    test_infers_param_type_from_annotated_var_binding();
+    test_infers_param_type_from_declared_return_type();
+    test_infers_param_type_from_declared_return_type_on_expr_body();
     test_method_call_receiver_subexpr_still_inferred();
     test_pass_through_param_stays_unannotated();
     test_recursive_function_param_inference_terminates();

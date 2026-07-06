@@ -205,13 +205,21 @@ public:
                                                                 : root;
   }
 
+  /// Seeds the function's own declared return type, if any, so `return`
+  /// statements (and a compact expression body's implicit return) can anchor
+  /// against it — the same "no other type this could be" reasoning as an
+  /// annotated sibling parameter, just applied to the signature's return
+  /// type instead of another parameter.
+  auto set_return_type(type_id type) -> void { return_type_ = type; }
+
   /// Walks a function body (either a single expression or a statement
   /// list), collecting constraints as a side effect on the seeded
   /// environment.
   auto walk_body(const ast::expr *body_expr,
                  const std::vector<ast::ptr<ast::node>> &body_stmts) -> void {
     if (body_expr != nullptr) {
-      walk_expr(*body_expr);
+      // A compact expression body's value *is* the function's return value.
+      unify(walk_expr(*body_expr), return_type_);
       return;
     }
     for (const auto &stmt : body_stmts) {
@@ -224,6 +232,7 @@ public:
 private:
   type_table &types_;
   const module_members *owner_;
+  type_id return_type_ = k_unknown_type;
   std::unordered_map<std::string, type_id> env_;
   std::unordered_map<type_id, type_id> subst_;
 
@@ -581,14 +590,30 @@ private:
       const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
       const auto found =
           stmt.initializer != nullptr ? walk_expr(*stmt.initializer) : k_unknown_type;
-      bind_pattern_name(stmt.pattern.get(), found);
+      // An explicit local annotation (`let y: int32 = x`) is the same kind
+      // of fact as an annotated sibling parameter: there's no other type the
+      // initializer could be, so it anchors whatever unresolved usage it
+      // came from.
+      if (const auto annotated = simple_builtin_annotation(stmt.type_annotation.get());
+          annotated.has_value()) {
+        unify(found, *annotated);
+        bind_pattern_name(stmt.pattern.get(), *annotated);
+      } else {
+        bind_pattern_name(stmt.pattern.get(), found);
+      }
       return;
     }
     case ast::node_kind::var_stmt: {
       const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
       const auto found =
           stmt.initializer != nullptr ? walk_expr(*stmt.initializer) : k_unknown_type;
-      seed(stmt.name, found);
+      if (const auto annotated = simple_builtin_annotation(stmt.type_annotation.get());
+          annotated.has_value()) {
+        unify(found, *annotated);
+        seed(stmt.name, *annotated);
+      } else {
+        seed(stmt.name, found);
+      }
       return;
     }
     case ast::node_kind::assign_stmt: {
@@ -616,7 +641,7 @@ private:
     case ast::node_kind::return_stmt: {
       const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
       if (stmt.value != nullptr) {
-        walk_expr(*stmt.value);
+        unify(walk_expr(*stmt.value), return_type_);
       }
       return;
     }
@@ -1510,6 +1535,13 @@ private:
                                  .param_bindings = nullptr,
                                  .use_type_param_stack = false,
                                  .quiet = true};
+    // A declared return type is the same kind of fact as an annotated
+    // sibling parameter: `def f(x) -> int32: return x` has no other type
+    // `x` could be, so `return` (and a compact expression body's implicit
+    // return) anchor against it.
+    if (decl.return_type != nullptr) {
+      inferrer.set_return_type(resolve_type(*decl.return_type, ctx));
+    }
     for (size_t i = 0; i < decl.params.size(); ++i) {
       const auto &param = decl.params[i];
       const auto name = param_name_of(param);

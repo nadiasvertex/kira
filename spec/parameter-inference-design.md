@@ -95,6 +95,20 @@ other possibility — i.e. the pin is a *fact*, not a guess:
   rule as the callee case above, just keyed by field name instead of
   parameter position. The field shorthand (`point { x, y }`, meaning `x:
   x`) is recognized the same way.
+- **An explicitly annotated local `let`/`var` binding.** `def relay(x): let
+  y: int32 = x; return y` forces `x: int32` — the local annotation is as
+  much a fact as an annotated sibling parameter or struct field; there's no
+  other type the initializer could be.
+- **The function's own declared return type.** `def f(x) -> int32: return
+  x` forces `x: int32`, and the same holds for a compact expression body
+  (`def f(x) -> int32: x`), whose value *is* the implicit return. This one
+  differs from the other three in where it's computed: `param_types_for`
+  resolves `decl.return_type` with the checker's full `resolve_type`/`ctx`
+  machinery (the same way it already resolves an annotated sibling
+  parameter's type) and hands the walker one concrete `type_id` via
+  `set_return_type` — the walker itself stays as ignorant of module context
+  as ever, it just unifies every `return` (and the expression-body value)
+  against whatever it was handed.
 
 Operators still *link* both operands' type variables together (`x + y`
 requires both sides to end up the same type) — that's a structural fact
