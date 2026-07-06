@@ -190,6 +190,15 @@ auto type_table::type_param(std::string_view name) -> type_id {
                            .name = std::string(name)});
 }
 
+/// Always pushes a new entry rather than consulting `interned_`, so every
+/// call yields a distinct, never-shared `type_id`.
+auto type_table::fresh_type_var() -> type_id {
+  const auto id = static_cast<type_id>(entries_.size());
+  entries_.push_back(
+      type_entry{.kind = type_kind::type_var_kind, .name = std::format("?{}", id)});
+  return id;
+}
+
 /// Bounds-checks `id`, falling back to the `unknown` entry rather than
 /// indexing out of range.
 auto type_table::entry(type_id id) const -> const type_entry & {
@@ -206,6 +215,7 @@ auto type_table::display(type_id id) const -> std::string {
   const auto &item = entry(id);
   switch (item.kind) {
   case type_kind::unknown_kind:
+  case type_kind::type_var_kind:
     return "_";
   case type_kind::error_kind:
     return "<error>";
@@ -270,7 +280,7 @@ auto type_table::display(type_id id) const -> std::string {
 auto type_table::is_unknown(type_id id) const -> bool {
   const auto kind = entry(id).kind;
   return kind == type_kind::unknown_kind || kind == type_kind::error_kind ||
-         kind == type_kind::type_param_kind;
+         kind == type_kind::type_param_kind || kind == type_kind::type_var_kind;
 }
 
 /// See the header for semantics.

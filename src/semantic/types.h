@@ -48,6 +48,7 @@ enum class type_kind : uint8_t {
   sum_kind,             ///< User sum type, possibly instantiated.
   opaque_kind,          ///< User alias/opaque type declaration.
   type_param_kind,      ///< In-scope generic parameter such as `T`.
+  type_var_kind,        ///< Fresh inference variable; see `fresh_type_var`.
 };
 
 /// The interned data behind one `type_id`. Which fields are meaningful
@@ -100,6 +101,15 @@ public:
                                std::vector<type_id> args) -> type_id;
   /// Interns an in-scope generic type/value parameter, identified by name.
   [[nodiscard]] auto type_param(std::string_view name) -> type_id;
+  /// Mints a fresh, globally-unique inference variable for local parameter
+  /// inference (see `src/semantic/check.cpp`'s unification engine). Unlike
+  /// every other `type_table` constructor, this never structurally interns —
+  /// each call returns a distinct id, since two variables must stay
+  /// independently solvable even if they happen to arise identically. A
+  /// variable left unsolved after inference behaves exactly like
+  /// `k_unknown_type` everywhere (`is_unknown`, `compatible`, `display`), so
+  /// a var that escapes unresolved is harmless rather than a false positive.
+  [[nodiscard]] auto fresh_type_var() -> type_id;
 
   /// Looks up the data behind `id`; returns the `unknown` entry for an
   /// out-of-range id.

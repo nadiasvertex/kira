@@ -566,6 +566,95 @@ auto test_reports_impure_contract_call() -> void {
                     "expected contract-purity diagnostic");
 }
 
+// ==========================================================================
+//  Local parameter-usage inference
+// ==========================================================================
+
+auto test_bare_literal_never_forces_a_concrete_param_type() -> void {
+  // Per spec/kira-reference.md: "def double(x): return x * 2" must stay
+  // callable with every numeric type, chosen at each call — arithmetic
+  // against a bare literal must never collapse `x` to whichever type the
+  // literal happens to default to (int32). Both an int and a float call
+  // must be accepted.
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def double(x):\n"
+      "    return x * 2\n"
+      "def run():\n"
+      "    let a = double(3)\n"
+      "    let b = double(3.5)\n"
+      "    return unit\n");
+  expect(analyzed.error_count == 0,
+         "expected `double` to stay generic over every numeric type, not "
+         "collapse to whichever type the literal `2` defaults to");
+}
+
+auto test_infers_param_type_from_annotated_sibling() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def add(x, y: int32):\n"
+      "    return x + y\n"
+      "def bad():\n"
+      "    return add(\"oops\", 1)\n");
+  expect(analyzed.error_count > 0,
+         "expected `x` to be inferred as `int32` from unifying with the "
+         "annotated `y`");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a type mismatch naming the inferred parameter "
+                    "type");
+}
+
+auto test_infers_param_type_from_call_to_annotated_function() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def sink(y: int32) -> unit:\n"
+      "    return unit\n"
+      "def relay(x):\n"
+      "    return sink(x)\n"
+      "def bad():\n"
+      "    return relay(\"oops\")\n");
+  expect(analyzed.error_count > 0,
+         "expected `relay`'s `x` to be inferred as `int32` from the call to "
+         "`sink`");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a type mismatch naming the inferred parameter "
+                    "type");
+}
+
+auto test_pass_through_param_stays_unannotated() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def identity(x):\n"
+      "    return x\n"
+      "def run():\n"
+      "    let a = identity(1)\n"
+      "    let b = identity(\"s\")\n"
+      "    return unit\n");
+  expect(analyzed.error_count == 0,
+         "a parameter with no recognizable usage constraint must stay "
+         "compatible with any argument type, exactly as it was before "
+         "inference existed");
+}
+
+auto test_recursive_function_param_inference_terminates() -> void {
+  // `n`'s only usage is comparison/arithmetic against bare literals, so it
+  // must stay generic (no anchor forces it to `int32`); this test exists to
+  // confirm inference over a self-recursive call doesn't hang or crash, not
+  // that `n` gets pinned to one type.
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def fact(n):\n"
+      "    if n <= 1:\n"
+      "        return 1\n"
+      "    return n * fact(n - 1)\n"
+      "def run():\n"
+      "    let a = fact(5)\n"
+      "    return unit\n");
+  expect(analyzed.error_count == 0,
+         "expected self-recursive parameter inference to terminate cleanly "
+         "without wrongly narrowing `n`");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -603,6 +692,12 @@ auto main() -> int {
     test_reports_impure_contract_call();
     test_reports_associated_type_output_mismatch();
     test_reports_extend_method_arity_mismatch();
+
+    test_bare_literal_never_forces_a_concrete_param_type();
+    test_infers_param_type_from_annotated_sibling();
+    test_infers_param_type_from_call_to_annotated_function();
+    test_pass_through_param_stays_unannotated();
+    test_recursive_function_param_inference_terminates();
   } catch (const std::exception &ex) {
     std::cerr << "check_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);

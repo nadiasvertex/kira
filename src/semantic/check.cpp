@@ -148,6 +148,461 @@ struct method_entry {
 };
 
 // ==========================================================================
+//  Local parameter-usage inference
+//
+//  Per spec/kira-reference.md, an unannotated parameter gets "the most
+//  general type the body allows" — `def double(x): return x * 2` must stay
+//  callable with every numeric type, not collapse to whichever type a
+//  literal happens to default to. So a bare literal is deliberately never
+//  treated as a concrete anchor here: `infer_arithmetic` already treats an
+//  unknown/type-parameter operand as fully permissive with no diagnostic
+//  (see `check.cpp`'s `infer_arithmetic`), which is exactly the generic
+//  behavior the reference describes, so leaving such a parameter at
+//  `k_unknown_type` is correct, not merely a conservative fallback.
+//
+//  A parameter is pinned to one concrete type only when the body leaves no
+//  other possibility: unifying with an already-concretely-typed sibling
+//  parameter (Kira never converts numbers implicitly, so `x + y` with
+//  `y: int32` forces `x: int32`), or with a same-module callee's own
+//  concretely-annotated parameter. Operators still link operand variables
+//  together (both sides of `+` must end up the same type), which is a
+//  structural fact independent of any one anchor. This pass never emits
+//  diagnostics — a parameter with no anchor, or a genuinely conflicting
+//  one, simply stays `k_unknown_type`, identical to today's behavior.
+//
+//  This is deliberately narrower than whole-program Hindley-Milner
+//  inference (see spec/llm-compiler-roadmap.md phase 4): there is no
+//  cross-function call-site-driven propagation, and — because the checker
+//  checks each function body exactly once rather than re-checking it per
+//  call-site instantiation — an argument whose type is genuinely
+//  incompatible with an unconstrained parameter's body (e.g. calling
+//  `double` with a type that has no `mul` impl) is not yet caught here;
+//  that requires per-instantiation re-checking, which is a substantially
+//  larger feature left as future work rather than approximated.
+// ==========================================================================
+class param_usage_inferrer {
+public:
+  param_usage_inferrer(type_table &types, const module_members *owner)
+      : types_(types), owner_(owner) {}
+
+  /// Seeds `name` with a type (concrete or a fresh variable) in the local
+  /// inference environment.
+  auto seed(std::string_view name, type_id type) -> void {
+    if (!name.empty()) {
+      env_.insert_or_assign(std::string(name), type);
+    }
+  }
+
+  /// Resolves `name`'s best-known type after walking the body: a concrete
+  /// type if usage constrained it, or `k_unknown_type` if nothing did.
+  [[nodiscard]] auto resolved(std::string_view name) const -> type_id {
+    const auto it = env_.find(std::string(name));
+    if (it == env_.end()) {
+      return k_unknown_type;
+    }
+    const auto root = find(it->second);
+    return types_.entry(root).kind == type_kind::type_var_kind ? k_unknown_type
+                                                                : root;
+  }
+
+  /// Walks a function body (either a single expression or a statement
+  /// list), collecting constraints as a side effect on the seeded
+  /// environment.
+  auto walk_body(const ast::expr *body_expr,
+                 const std::vector<ast::ptr<ast::node>> &body_stmts) -> void {
+    if (body_expr != nullptr) {
+      walk_expr(*body_expr);
+      return;
+    }
+    for (const auto &stmt : body_stmts) {
+      if (stmt != nullptr) {
+        walk_node(*stmt);
+      }
+    }
+  }
+
+private:
+  type_table &types_;
+  const module_members *owner_;
+  std::unordered_map<std::string, type_id> env_;
+  std::unordered_map<type_id, type_id> subst_;
+
+  /// Chases a variable's binding chain to its current root.
+  [[nodiscard]] auto find(type_id id) const -> type_id {
+    auto current = id;
+    while (true) {
+      const auto it = subst_.find(current);
+      if (it == subst_.end() || it->second == current) {
+        return current;
+      }
+      current = it->second;
+    }
+  }
+
+  /// Unifies `a` and `b`: binds whichever side is still an unresolved
+  /// variable to the other. Two already-concrete sides are left as-is —
+  /// this pass never diagnoses, so a genuine conflict is simply not
+  /// recorded (the parameter falls back to `k_unknown_type`, exactly as it
+  /// would today). Never binds to `k_unknown_type`/`k_error_type`, since
+  /// those carry no information to propagate.
+  auto unify(type_id a, type_id b) -> void {
+    if (a == k_unknown_type || b == k_unknown_type || a == k_error_type ||
+        b == k_error_type) {
+      return;
+    }
+    const auto ra = find(a);
+    const auto rb = find(b);
+    if (ra == rb) {
+      return;
+    }
+    if (types_.entry(ra).kind == type_kind::type_var_kind) {
+      subst_.insert_or_assign(ra, rb);
+    } else if (types_.entry(rb).kind == type_kind::type_var_kind) {
+      subst_.insert_or_assign(rb, ra);
+    }
+  }
+
+  /// Resolves a simple, non-generic named-type annotation (a builtin
+  /// scalar spelled directly, e.g. `int32`) without depending on the full
+  /// `resolve_type`/module-context machinery this pass deliberately stays
+  /// independent of; `nullopt` for anything else (generics, user types,
+  /// refs, tuples, ...).
+  [[nodiscard]] auto simple_builtin_annotation(const ast::type_expr *annotation) const
+      -> std::optional<type_id> {
+    if (annotation == nullptr || annotation->kind != ast::node_kind::named_type) {
+      return std::nullopt;
+    }
+    const auto &named = dynamic_cast<const ast::named_type &>(*annotation);
+    if (named.path.size() != 1 || !named.type_args.empty() ||
+        !is_builtin_scalar_name(named.path.front())) {
+      return std::nullopt;
+    }
+    return types_.builtin(named.path.front());
+  }
+
+  static auto is_self_param(const ast::param &param) -> bool {
+    return param.pattern != nullptr &&
+           param.pattern->kind == ast::node_kind::binding_pattern &&
+           dynamic_cast<const ast::binding_pattern &>(*param.pattern).name ==
+               "self";
+  }
+
+  auto bind_pattern_name(const ast::pattern *pattern, type_id type) -> void {
+    if (pattern != nullptr && pattern->kind == ast::node_kind::binding_pattern) {
+      seed(dynamic_cast<const ast::binding_pattern &>(*pattern).name, type);
+    }
+  }
+
+  auto walk_unary(const ast::unary_expr &unary) -> type_id {
+    const auto operand =
+        unary.operand != nullptr ? walk_expr(*unary.operand) : k_unknown_type;
+    if (unary.op == ast::unary_op::Not) {
+      unify(operand, types_.builtin("bool"));
+      return types_.builtin("bool");
+    }
+    if (unary.op == ast::unary_op::Neg || unary.op == ast::unary_op::BitNot) {
+      return operand;
+    }
+    return k_unknown_type;
+  }
+
+  auto walk_binary(const ast::binary_expr &binary) -> type_id {
+    const auto lhs =
+        binary.lhs != nullptr ? walk_expr(*binary.lhs) : k_unknown_type;
+    const auto rhs =
+        binary.rhs != nullptr ? walk_expr(*binary.rhs) : k_unknown_type;
+    switch (binary.op) {
+    case ast::binary_op::And:
+    case ast::binary_op::Or:
+      unify(lhs, types_.builtin("bool"));
+      unify(rhs, types_.builtin("bool"));
+      return types_.builtin("bool");
+    case ast::binary_op::EqEq:
+    case ast::binary_op::BangEq:
+    case ast::binary_op::Lt:
+    case ast::binary_op::LtEq:
+    case ast::binary_op::Gt:
+    case ast::binary_op::GtEq:
+      unify(lhs, rhs);
+      return types_.builtin("bool");
+    case ast::binary_op::Add:
+    case ast::binary_op::Sub:
+    case ast::binary_op::Mul:
+    case ast::binary_op::Div:
+    case ast::binary_op::Mod:
+    case ast::binary_op::AddWrap:
+    case ast::binary_op::SubWrap:
+    case ast::binary_op::MulWrap:
+    case ast::binary_op::AddSat:
+    case ast::binary_op::SubSat:
+    case ast::binary_op::MulSat:
+    case ast::binary_op::BitAnd:
+    case ast::binary_op::BitOr:
+    case ast::binary_op::BitXor:
+    case ast::binary_op::Shl:
+    case ast::binary_op::Shr: {
+      unify(lhs, rhs);
+      const auto left_root = find(lhs);
+      const auto left_is_open =
+          left_root == k_unknown_type ||
+          types_.entry(left_root).kind == type_kind::type_var_kind;
+      return left_is_open ? find(rhs) : left_root;
+    }
+    default:
+      return k_unknown_type;
+    }
+  }
+
+  auto walk_call_args_loosely(const ast::call_expr &call) -> void {
+    for (const auto &arg : call.args) {
+      if (arg.value != nullptr) {
+        walk_expr(*arg.value);
+      }
+    }
+  }
+
+  auto walk_call(const ast::call_expr &call) -> type_id {
+    if (call.callee == nullptr ||
+        call.callee->kind != ast::node_kind::ident_expr || owner_ == nullptr) {
+      walk_call_args_loosely(call);
+      return k_unknown_type;
+    }
+    const auto &name = dynamic_cast<const ast::ident_expr &>(*call.callee).name;
+    const auto it = owner_->functions.find(name);
+    if (it == owner_->functions.end() || it->second.decl == nullptr) {
+      walk_call_args_loosely(call);
+      return k_unknown_type;
+    }
+    const auto &callee = *it->second.decl;
+    for (size_t i = 0; i < callee.params.size() && i < call.args.size(); ++i) {
+      if (call.args[i].name.has_value() ||
+          (i == 0 && is_self_param(callee.params[i]))) {
+        if (call.args[i].value != nullptr) {
+          walk_expr(*call.args[i].value);
+        }
+        continue;
+      }
+      const auto found =
+          simple_builtin_annotation(callee.params[i].type_annotation.get());
+      if (call.args[i].value == nullptr) {
+        continue;
+      }
+      const auto arg_type = walk_expr(*call.args[i].value);
+      if (found.has_value()) {
+        unify(arg_type, *found);
+      }
+    }
+    if (const auto found = simple_builtin_annotation(callee.return_type.get())) {
+      return *found;
+    }
+    return k_unknown_type;
+  }
+
+  auto walk_if_branches(const std::vector<ast::if_branch> &branches,
+                       const std::vector<ast::ptr<ast::node>> &else_body)
+      -> void {
+    for (const auto &branch : branches) {
+      if (branch.condition != nullptr) {
+        unify(walk_expr(*branch.condition), types_.builtin("bool"));
+      }
+      for (const auto &stmt : branch.body) {
+        if (stmt != nullptr) {
+          walk_node(*stmt);
+        }
+      }
+    }
+    for (const auto &stmt : else_body) {
+      if (stmt != nullptr) {
+        walk_node(*stmt);
+      }
+    }
+  }
+
+  auto walk_match_arms(const ast::expr *subject,
+                       const std::vector<ast::match_arm> &arms) -> void {
+    if (subject != nullptr) {
+      walk_expr(*subject);
+    }
+    for (const auto &arm : arms) {
+      if (arm.guard != nullptr) {
+        walk_expr(*arm.guard);
+      }
+      if (arm.body_expr != nullptr) {
+        walk_expr(*arm.body_expr);
+      }
+      for (const auto &stmt : arm.body_stmts) {
+        if (stmt != nullptr) {
+          walk_node(*stmt);
+        }
+      }
+    }
+  }
+
+  /// Best-known type of `expr` for constraint purposes: a concrete type, a
+  /// still-open variable, or `k_unknown_type` if this pass doesn't
+  /// recognize the shape (walked for side effects only, in that case).
+  auto walk_expr(const ast::expr &expr) -> type_id {
+    switch (expr.kind) {
+    case ast::node_kind::ident_expr: {
+      const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
+      const auto it = env_.find(ident.name);
+      return it != env_.end() ? find(it->second) : k_unknown_type;
+    }
+    case ast::node_kind::literal_expr:
+      // A bare literal is never a concrete anchor — see the class comment.
+      // It is inherently polymorphic over whatever numeric/other type its
+      // context requires, so unifying a parameter against one would wrongly
+      // narrow a genuinely general parameter (`double(x): return x * 2`
+      // must stay callable with every numeric type).
+      return k_unknown_type;
+    case ast::node_kind::group_expr:
+      return walk_expr(*dynamic_cast<const ast::group_expr &>(expr).inner);
+    case ast::node_kind::try_expr:
+      return walk_expr(*dynamic_cast<const ast::try_expr &>(expr).operand);
+    case ast::node_kind::unary_expr:
+      return walk_unary(dynamic_cast<const ast::unary_expr &>(expr));
+    case ast::node_kind::binary_expr:
+      return walk_binary(dynamic_cast<const ast::binary_expr &>(expr));
+    case ast::node_kind::call_expr:
+      return walk_call(dynamic_cast<const ast::call_expr &>(expr));
+    case ast::node_kind::tuple_expr:
+      for (const auto &element :
+           dynamic_cast<const ast::tuple_expr &>(expr).elements) {
+        if (element != nullptr) {
+          walk_expr(*element);
+        }
+      }
+      return k_unknown_type;
+    case ast::node_kind::field_expr: {
+      const auto &field = dynamic_cast<const ast::field_expr &>(expr);
+      if (field.object != nullptr) {
+        walk_expr(*field.object);
+      }
+      return k_unknown_type;
+    }
+    case ast::node_kind::index_expr: {
+      const auto &index = dynamic_cast<const ast::index_expr &>(expr);
+      if (index.object != nullptr) {
+        walk_expr(*index.object);
+      }
+      if (index.index != nullptr) {
+        walk_expr(*index.index);
+      }
+      return k_unknown_type;
+    }
+    case ast::node_kind::block_expr:
+      walk_body(nullptr, dynamic_cast<const ast::block_expr &>(expr).stmts);
+      return k_unknown_type;
+    case ast::node_kind::if_expr: {
+      const auto &node = dynamic_cast<const ast::if_expr &>(expr);
+      walk_if_branches(node.branches, node.else_body);
+      return k_unknown_type;
+    }
+    case ast::node_kind::match_expr: {
+      const auto &node = dynamic_cast<const ast::match_expr &>(expr);
+      walk_match_arms(node.subject.get(), node.arms);
+      return k_unknown_type;
+    }
+    default:
+      return k_unknown_type;
+    }
+  }
+
+  auto walk_node(const ast::node &node) -> void {
+    switch (node.kind) {
+    case ast::node_kind::let_stmt: {
+      const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
+      const auto found =
+          stmt.initializer != nullptr ? walk_expr(*stmt.initializer) : k_unknown_type;
+      bind_pattern_name(stmt.pattern.get(), found);
+      return;
+    }
+    case ast::node_kind::var_stmt: {
+      const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
+      const auto found =
+          stmt.initializer != nullptr ? walk_expr(*stmt.initializer) : k_unknown_type;
+      seed(stmt.name, found);
+      return;
+    }
+    case ast::node_kind::assign_stmt: {
+      const auto &stmt = dynamic_cast<const ast::assign_stmt &>(node);
+      const auto rhs =
+          stmt.value != nullptr ? walk_expr(*stmt.value) : k_unknown_type;
+      if (stmt.target != nullptr &&
+          stmt.target->kind == ast::node_kind::ident_expr) {
+        const auto &ident = dynamic_cast<const ast::ident_expr &>(*stmt.target);
+        if (const auto it = env_.find(ident.name); it != env_.end()) {
+          unify(it->second, rhs);
+        }
+      } else if (stmt.target != nullptr) {
+        walk_expr(*stmt.target);
+      }
+      return;
+    }
+    case ast::node_kind::expr_stmt: {
+      const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
+      if (stmt.expr != nullptr) {
+        walk_expr(*stmt.expr);
+      }
+      return;
+    }
+    case ast::node_kind::return_stmt: {
+      const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
+      if (stmt.value != nullptr) {
+        walk_expr(*stmt.value);
+      }
+      return;
+    }
+    case ast::node_kind::if_stmt: {
+      const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
+      walk_if_branches(stmt.branches, stmt.else_body);
+      return;
+    }
+    case ast::node_kind::while_stmt: {
+      const auto &stmt = dynamic_cast<const ast::while_stmt &>(node);
+      if (stmt.condition != nullptr) {
+        unify(walk_expr(*stmt.condition), types_.builtin("bool"));
+      }
+      if (stmt.let_expr != nullptr) {
+        walk_expr(*stmt.let_expr);
+      }
+      for (const auto &body_stmt : stmt.body) {
+        if (body_stmt != nullptr) {
+          walk_node(*body_stmt);
+        }
+      }
+      return;
+    }
+    case ast::node_kind::for_stmt: {
+      const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
+      if (stmt.iterable != nullptr) {
+        walk_expr(*stmt.iterable);
+      }
+      if (stmt.guard != nullptr) {
+        walk_expr(*stmt.guard);
+      }
+      for (const auto &body_stmt : stmt.body) {
+        if (body_stmt != nullptr) {
+          walk_node(*body_stmt);
+        }
+      }
+      return;
+    }
+    case ast::node_kind::match_stmt: {
+      const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
+      walk_match_arms(stmt.subject.get(), stmt.arms);
+      return;
+    }
+    default:
+      if (const auto *as_expr = dynamic_cast<const ast::expr *>(&node)) {
+        walk_expr(*as_expr);
+      }
+      return;
+    }
+  }
+};
+
+// ==========================================================================
 //  checker — one instance per session run.
 // ==========================================================================
 
@@ -196,6 +651,13 @@ private:
   std::unordered_map<const ast::static_decl *, type_id> static_types_;
   std::unordered_set<const ast::static_decl *> statics_in_progress_;
   std::unordered_set<const ast::type_decl *> aliases_in_progress_;
+  /// Cache of `param_types_for`'s result, so `check_function`'s own body
+  /// check and `signature_params`'s call-site view agree on the same
+  /// inferred types instead of independently guessing. Indices align 1:1
+  /// with `decl.params`.
+  std::unordered_map<const ast::func_decl *, std::vector<type_id>>
+      inferred_param_types_;
+  std::unordered_set<const ast::func_decl *> param_inference_in_progress_;
   bool methods_built_ = false;
   std::unordered_map<const ast::type_decl *, std::vector<method_entry>>
       methods_;
@@ -947,6 +1409,64 @@ private:
     return {};
   }
 
+  /// Returns `decl`'s parameter types with unannotated, non-`self`
+  /// parameters filled in from local body-usage inference where possible
+  /// (`param_usage_inferrer` above); indices align 1:1 with `decl.params`.
+  /// Annotated parameters and `self` are untouched by this cache — callers
+  /// still resolve those the way they always have. Generic functions,
+  /// `pub` functions (which must annotate everything already), and a
+  /// function already being inferred higher up the call stack (recursion
+  /// guard) skip inference and simply report `k_unknown_type`, identical
+  /// to today's behavior.
+  auto param_types_for(const ast::func_decl &decl, const module_members *owner)
+      -> const std::vector<type_id> & {
+    if (const auto it = inferred_param_types_.find(&decl);
+        it != inferred_param_types_.end()) {
+      return it->second;
+    }
+    auto &stored =
+        inferred_param_types_
+            .emplace(&decl, std::vector<type_id>(decl.params.size(),
+                                                  k_unknown_type))
+            .first->second;
+
+    const auto can_infer = decl.visibility != ast::visibility::pub &&
+                           decl.type_params.empty() &&
+                           param_inference_in_progress_.insert(&decl).second;
+    if (!can_infer) {
+      return stored;
+    }
+
+    auto inferrer = param_usage_inferrer(types_, owner);
+    auto seeded_names = std::vector<std::string>(decl.params.size());
+    const auto ctx = resolve_ctx{.module = owner,
+                                 .param_bindings = nullptr,
+                                 .use_type_param_stack = false,
+                                 .quiet = true};
+    for (size_t i = 0; i < decl.params.size(); ++i) {
+      const auto &param = decl.params[i];
+      const auto name = param_name_of(param);
+      if (name.empty() || (i == 0 && name == "self")) {
+        continue;
+      }
+      seeded_names[i] = name;
+      // Annotated siblings are seeded with their real type so a mixed
+      // signature still constrains its unannotated parameters (e.g.
+      // `def f(x, y: int32): return x + y` infers `x: int32`).
+      inferrer.seed(name, param.type_annotation != nullptr
+                              ? resolve_type(*param.type_annotation, ctx)
+                              : types_.fresh_type_var());
+    }
+    inferrer.walk_body(decl.body_expr.get(), decl.body_stmts);
+    for (size_t i = 0; i < decl.params.size(); ++i) {
+      if (decl.params[i].type_annotation == nullptr && !seeded_names[i].empty()) {
+        stored[i] = inferrer.resolved(seeded_names[i]);
+      }
+    }
+    param_inference_in_progress_.erase(&decl);
+    return stored;
+  }
+
   /// Normalizes a function declaration's parameter list into
   /// `fn_param_info`s with their types resolved against the function's own
   /// generic parameters. `skip_self` drops a leading `self` parameter,
@@ -966,6 +1486,7 @@ private:
                                  .use_type_param_stack = false,
                                  .quiet = true};
 
+    const auto &inferred = param_types_for(decl, owner);
     auto params = std::vector<fn_param_info>{};
     params.reserve(decl.params.size());
     for (size_t i = 0; i < decl.params.size(); ++i) {
@@ -974,11 +1495,15 @@ private:
       if (i == 0 && skip_self && name == "self") {
         continue;
       }
+      auto type = k_unknown_type;
+      if (param.type_annotation != nullptr) {
+        type = resolve_type(*param.type_annotation, ctx);
+      } else if (i < inferred.size()) {
+        type = inferred[i];
+      }
       params.push_back(fn_param_info{
           .name = name,
-          .type = param.type_annotation != nullptr
-                      ? resolve_type(*param.type_annotation, ctx)
-                      : k_unknown_type,
+          .type = type,
           .has_default = param.default_value != nullptr,
           .span = param.span,
       });
@@ -4494,6 +5019,7 @@ private:
       }
     }
 
+    const auto &inferred_types = param_types_for(decl, module_);
     for (size_t i = 0; i < decl.params.size(); ++i) {
       const auto &param = decl.params[i];
       auto type = k_unknown_type;
@@ -4501,6 +5027,8 @@ private:
         type = resolve_type(*param.type_annotation, current_resolve_ctx());
       } else if (i == 0 && param_name_of(param) == "self") {
         type = self_type_;
+      } else if (i < inferred_types.size()) {
+        type = inferred_types[i];
       }
       if (param.pattern != nullptr) {
         if (param.pattern->kind == ast::node_kind::binding_pattern) {
