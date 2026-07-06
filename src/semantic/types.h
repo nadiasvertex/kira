@@ -73,7 +73,7 @@ struct type_entry {
 class type_table {
 public:
   /// Seeds the table with `k_unknown_type` and `k_error_type` at their fixed
-  /// ids.
+  /// ids, plus `bool` (see `bool_type`).
   type_table();
 
   /// Interns a scalar builtin type such as `int32` or `str`.
@@ -117,6 +117,15 @@ public:
   /// Renders `id` as the user-facing type spelling used in diagnostics
   /// (e.g. `list[int32]`, `fn(int32) -> str`).
   [[nodiscard]] auto display(type_id id) const -> std::string;
+
+  /// The interned id for the builtin `bool` type. Unlike every other
+  /// builtin scalar (interned lazily on first use via `builtin`), `bool`
+  /// is pre-interned unconditionally by the constructor, so this is a
+  /// `const` lookup — no interning, no mutation. Exists for callers that
+  /// hold a `const type_table&` and need a definite `bool` type_id for a
+  /// type the checked program may never have happened to reference itself
+  /// (lowering synthesizing a comparison for a desugared `for` loop, e.g.).
+  [[nodiscard]] auto bool_type() const -> type_id;
 
   /// Whether `id` is `unknown`, `error`, or a type parameter — anything the
   /// checker treats as "don't know, don't complain."

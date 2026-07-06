@@ -1370,6 +1370,115 @@ auto test_lowers_try_expr_on_option() -> void {
          "expected the `none` pattern to have no payload slots");
 }
 
+auto test_lowers_range_for_loop() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def sum_up_to(n: int32) -> int32:\n"
+                               "    var total = 0\n"
+                               "    for i in 0..n:\n"
+                               "        total = total + i\n"
+                               "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "sum_up_to");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a range `for` loop to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 6,
+         "expected total-let, start-let, end-let, index-let, while, return");
+
+  const auto &start_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[1]);
+  expect(start_let.name == "<for start>",
+         "expected the start bound to be bound to a synthetic let");
+  expect(start_let.initializer->kind == hir::hir_node_kind::hir_literal,
+         "expected the start bound to be the literal `0`");
+
+  const auto &end_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[2]);
+  expect(end_let.name == "<for end>",
+         "expected the end bound to be bound to a synthetic let");
+  expect(end_let.initializer->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the end bound to reference `n`");
+
+  const auto &index_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[3]);
+  expect(index_let.name == "<for index>", "expected a synthetic index let");
+  expect(index_let.is_mut, "expected the index to be mutable");
+
+  expect(function.body->stmts[4]->kind == hir::hir_node_kind::hir_while,
+         "expected a hir_while loop");
+  const auto &loop =
+      dynamic_cast<const hir::hir_while &>(*function.body->stmts[4]);
+  expect(loop.condition->kind == hir::hir_node_kind::hir_binary,
+         "expected the loop condition to be a comparison");
+  const auto &condition =
+      dynamic_cast<const hir::hir_binary &>(*loop.condition);
+  expect(condition.op == kira::ast::binary_op::Lt,
+         "expected `..` to lower to a `<` bound check");
+  expect(condition.type == fixture.checked.types.bool_type(),
+         "expected the condition's type to be bool");
+
+  expect(loop.body->stmts.size() == 3,
+         "expected the loop-var let, the assignment, and the increment");
+  const auto &loop_var_let =
+      dynamic_cast<const hir::hir_let &>(*loop.body->stmts[0]);
+  expect(loop_var_let.name == "i", "expected the loop variable to be `i`");
+  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_assign,
+         "expected the loop body's statement to be the assignment to `total`");
+  const auto &increment =
+      dynamic_cast<const hir::hir_assign &>(*loop.body->stmts[2]);
+  expect(increment.op == kira::ast::assign_op::AddAssign,
+         "expected the index increment to be a compound `+=`");
+}
+
+auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def count_evens(n: int32) -> int32:\n"
+                               "    var total = 0\n"
+                               "    for i in 0..=n if i % 2 == 0:\n"
+                               "        total = total + 1\n"
+                               "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "count_evens");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected an inclusive-range `for` loop with a guard to lower");
+
+  const auto &function = **result;
+  const auto &loop =
+      dynamic_cast<const hir::hir_while &>(*function.body->stmts[4]);
+  const auto &condition =
+      dynamic_cast<const hir::hir_binary &>(*loop.condition);
+  expect(condition.op == kira::ast::binary_op::LtEq,
+         "expected `..=` to lower to a `<=` bound check");
+
+  expect(loop.body->stmts.size() == 3,
+         "expected the loop-var let, the guarded body, and the increment");
+  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_if,
+         "expected the guard to wrap the body in a hir_if rather than "
+         "using a `continue`-style jump (this language has none)");
+  const auto &guarded = dynamic_cast<const hir::hir_if &>(*loop.body->stmts[1]);
+  expect(guarded.branches.size() == 1, "expected a single guard branch");
+  expect(guarded.else_body == nullptr,
+         "expected no else branch on the guard conditional");
+}
+
+auto test_rejects_for_loop_over_non_range_iterable() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def sum_list(xs: list[int32]) -> int32:\n"
+                               "    var total = 0\n"
+                               "    for x in xs:\n"
+                               "        total = total + x\n"
+                               "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "sum_list");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(!result.has_value(),
+         "expected a `for` loop over a non-range iterable to be rejected");
+  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
+         "expected the specific unsupported_construct error kind");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1419,6 +1528,9 @@ auto main() -> int {
     test_lowers_struct_pattern_let_destructuring();
     test_lowers_tuple_destructuring_parameter();
     test_lowers_struct_destructuring_parameter();
+    test_lowers_range_for_loop();
+    test_lowers_inclusive_range_for_loop_with_guard();
+    test_rejects_for_loop_over_non_range_iterable();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';

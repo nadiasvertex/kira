@@ -13,11 +13,11 @@ namespace {
 /// Every scalar name recognized as a builtin type (numeric family, `bool`,
 /// `str`, quote-value types, and the two built-in execution contexts).
 constexpr std::array<std::string_view, 27> k_builtin_scalar_names = {
-    "bool",   "char",    "str",     "unit",   "never",  "byte",
-    "int8",   "int16",   "int32",   "int64",  "int128", "uint8",
-    "uint16", "uint32",  "uint64",  "uint128", "float32", "float64",
-    "float128", "isize", "usize",   "ordering", "io",   "cpu",
-    "expr",   "stmt",    "def_expr",
+    "bool",     "char",   "str",      "unit",     "never",   "byte",
+    "int8",     "int16",  "int32",    "int64",    "int128",  "uint8",
+    "uint16",   "uint32", "uint64",   "uint128",  "float32", "float64",
+    "float128", "isize",  "usize",    "ordering", "io",      "cpu",
+    "expr",     "stmt",   "def_expr",
 };
 
 /// One prelude container name and its accepted generic-argument count
@@ -30,18 +30,18 @@ struct generic_arity_entry {
 
 /// Prelude container names and their allowed generic-argument arities.
 constexpr std::array<generic_arity_entry, 12> k_builtin_generic_arities = {{
-    {.name="list", .min_args=1, .max_args=1},
-    {.name="option", .min_args=1, .max_args=1},
-    {.name="result", .min_args=2, .max_args=2},
-    {.name="box", .min_args=1, .max_args=1},
-    {.name="slice", .min_args=1, .max_args=1},
-    {.name="slice_mut", .min_args=1, .max_args=1},
-    {.name="shared", .min_args=0, .max_args=1},
-    {.name="task", .min_args=1, .max_args=3},
-    {.name="channel", .min_args=1, .max_args=1},
-    {.name="watch", .min_args=1, .max_args=1},
-    {.name="mutex", .min_args=1, .max_args=1},
-    {.name="atomic", .min_args=1, .max_args=1},
+    {.name = "list", .min_args = 1, .max_args = 1},
+    {.name = "option", .min_args = 1, .max_args = 1},
+    {.name = "result", .min_args = 2, .max_args = 2},
+    {.name = "box", .min_args = 1, .max_args = 1},
+    {.name = "slice", .min_args = 1, .max_args = 1},
+    {.name = "slice_mut", .min_args = 1, .max_args = 1},
+    {.name = "shared", .min_args = 0, .max_args = 1},
+    {.name = "task", .min_args = 1, .max_args = 3},
+    {.name = "channel", .min_args = 1, .max_args = 1},
+    {.name = "watch", .min_args = 1, .max_args = 1},
+    {.name = "mutex", .min_args = 1, .max_args = 1},
+    {.name = "atomic", .min_args = 1, .max_args = 1},
 }};
 
 /// Trait names available from the prelude without any `use`.
@@ -64,12 +64,14 @@ auto append_args_key(std::string &key, const std::vector<type_id> &args)
 
 } // namespace
 
-/// Reserves ids 0 and 1 for `k_unknown_type` and `k_error_type`.
+/// Reserves ids 0 and 1 for `k_unknown_type` and `k_error_type`, then
+/// pre-interns `bool` (see `bool_type`'s doc comment for why).
 type_table::type_table() {
-  entries_.push_back(type_entry{.kind = type_kind::unknown_kind,
-                                .name = "<unknown>"});
-  entries_.push_back(type_entry{.kind = type_kind::error_kind,
-                                .name = "<error>"});
+  entries_.push_back(
+      type_entry{.kind = type_kind::unknown_kind, .name = "<unknown>"});
+  entries_.push_back(
+      type_entry{.kind = type_kind::error_kind, .name = "<error>"});
+  [[maybe_unused]] const auto bool_id = builtin("bool");
 }
 
 /// Structural interning keyed on `key`: identical keys always produce the
@@ -87,9 +89,9 @@ auto type_table::intern(std::string key, type_entry entry) -> type_id {
 
 /// Interns using name alone as the key — every `int32` is the same type.
 auto type_table::builtin(std::string_view name) -> type_id {
-  return intern(std::format("b:{}", name),
-                type_entry{.kind = type_kind::builtin_kind,
-                           .name = std::string(name)});
+  return intern(
+      std::format("b:{}", name),
+      type_entry{.kind = type_kind::builtin_kind, .name = std::string(name)});
 }
 
 /// Interns using name plus argument ids as the key, so `list[int32]` and
@@ -127,8 +129,7 @@ auto type_table::array_of(type_id element, std::optional<uint64_t> size)
 }
 
 /// Interns using parameter ids and the result id as the key.
-auto type_table::fn_of(std::vector<type_id> params, type_id result)
-    -> type_id {
+auto type_table::fn_of(std::vector<type_id> params, type_id result) -> type_id {
   auto key = std::string("f:");
   append_args_key(key, params);
   key += std::format("->{}", result);
@@ -174,12 +175,12 @@ auto type_table::user_type(const ast::type_decl &decl,
   }
   auto key = std::format("u:{}", static_cast<const void *>(&decl));
   append_args_key(key, args);
-  return intern(std::move(key), type_entry{.kind = kind,
-                                           .name = decl.name,
-                                           .module_name =
-                                               std::string(module_name),
-                                           .decl = &decl,
-                                           .args = std::move(args)});
+  return intern(std::move(key),
+                type_entry{.kind = kind,
+                           .name = decl.name,
+                           .module_name = std::string(module_name),
+                           .decl = &decl,
+                           .args = std::move(args)});
 }
 
 /// Interns using name alone as the key, so same-named type parameters in
@@ -194,8 +195,8 @@ auto type_table::type_param(std::string_view name) -> type_id {
 /// call yields a distinct, never-shared `type_id`.
 auto type_table::fresh_type_var() -> type_id {
   const auto id = static_cast<type_id>(entries_.size());
-  entries_.push_back(
-      type_entry{.kind = type_kind::type_var_kind, .name = std::format("?{}", id)});
+  entries_.push_back(type_entry{.kind = type_kind::type_var_kind,
+                                .name = std::format("?{}", id)});
   return id;
 }
 
@@ -206,6 +207,11 @@ auto type_table::entry(type_id id) const -> const type_entry & {
     return entries_[k_unknown_type];
   }
   return entries_[id];
+}
+
+auto type_table::bool_type() const -> type_id {
+  const auto it = interned_.find("b:bool");
+  return it != interned_.end() ? it->second : k_unknown_type;
 }
 
 /// Recursively renders `id` into Kira's own type syntax, matching the
@@ -302,8 +308,7 @@ auto type_table::is_integer(type_id id) const -> bool {
 /// See the header for semantics.
 auto type_table::is_float(type_id id) const -> bool {
   const auto &item = entry(id);
-  return item.kind == type_kind::builtin_kind &&
-         item.name.starts_with("float");
+  return item.kind == type_kind::builtin_kind && item.name.starts_with("float");
 }
 
 /// See the header for semantics.
@@ -353,11 +358,11 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
   case type_kind::struct_kind:
   case type_kind::sum_kind:
   case type_kind::opaque_kind: {
-    const auto same_declaration =
-        expected_entry.decl != nullptr
-            ? expected_entry.decl == found_entry.decl
-            : expected_entry.name == found_entry.name;
-    if (!same_declaration || expected_entry.args.size() != found_entry.args.size()) {
+    const auto same_declaration = expected_entry.decl != nullptr
+                                      ? expected_entry.decl == found_entry.decl
+                                      : expected_entry.name == found_entry.name;
+    if (!same_declaration ||
+        expected_entry.args.size() != found_entry.args.size()) {
       return false;
     }
     for (size_t i = 0; i < expected_entry.args.size(); ++i) {
@@ -396,10 +401,9 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
 
 /// Linear search over `k_builtin_scalar_names`.
 auto is_builtin_scalar_name(std::string_view name) -> bool {
-  return std::ranges::any_of(k_builtin_scalar_names,
-                      [name](std::string_view candidate)->  bool  {
-                        return candidate == name;
-                      });
+  return std::ranges::any_of(
+      k_builtin_scalar_names,
+      [name](std::string_view candidate) -> bool { return candidate == name; });
 }
 
 /// Linear search over `k_builtin_generic_arities`.
@@ -446,9 +450,9 @@ auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
 
 /// Linear search over `k_prelude_trait_names`.
 auto is_prelude_trait_name(std::string_view name) -> bool {
-  return std::ranges::any_of(k_prelude_trait_names, [name](std::string_view candidate) -> bool {
-    return candidate == name;
-  });
+  return std::ranges::any_of(
+      k_prelude_trait_names,
+      [name](std::string_view candidate) -> bool { return candidate == name; });
 }
 
 // ==========================================================================
@@ -555,7 +559,8 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
   }
   case ast::node_kind::static_decl: {
     const auto &decl = dynamic_cast<const ast::static_decl &>(item);
-    if (decl.decl_kind == ast::static_decl_kind::binding && !decl.name.empty()) {
+    if (decl.decl_kind == ast::static_decl_kind::binding &&
+        !decl.name.empty()) {
       members.statics.emplace(
           decl.name, static_decl_ref{.decl = &decl, .file_id = file_id});
     }
@@ -563,16 +568,14 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
   }
   case ast::node_kind::impl_decl: {
     const auto &decl = dynamic_cast<const ast::impl_decl &>(item);
-    members.impls.push_back(impl_ref{.decl = &decl,
-                                     .module_name = members.module_name,
-                                     .file_id = file_id});
+    members.impls.push_back(impl_ref{
+        .decl = &decl, .module_name = members.module_name, .file_id = file_id});
     return;
   }
   case ast::node_kind::extend_decl: {
     const auto &decl = dynamic_cast<const ast::extend_decl &>(item);
-    members.extends.push_back(extend_ref{.decl = &decl,
-                                         .module_name = members.module_name,
-                                         .file_id = file_id});
+    members.extends.push_back(extend_ref{
+        .decl = &decl, .module_name = members.module_name, .file_id = file_id});
     return;
   }
   default:
