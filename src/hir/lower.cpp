@@ -571,19 +571,19 @@ auto lowerer::lower_pattern(const ast::node &pattern,
   case ast::node_kind::wildcard_pattern:
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
   case ast::node_kind::literal_pattern: {
-    const auto &lit = static_cast<const ast::literal_pattern &>(pattern);
+    const auto &lit = dynamic_cast<const ast::literal_pattern &>(pattern);
     return ptr<hir_pattern>(
         make<hir_literal_pattern>(pattern.span, lit.lit_kind, lit.value));
   }
   case ast::node_kind::binding_pattern: {
-    const auto &binding = static_cast<const ast::binding_pattern &>(pattern);
+    const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
     const auto symbol = declare_local(binding.name);
     pending.push_back(ptr<hir_node>(
         make<hir_let>(pattern.span, symbol, binding.name, make_place())));
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
   }
   case ast::node_kind::group_pattern: {
-    const auto &group = static_cast<const ast::group_pattern &>(pattern);
+    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
     if (group.inner == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, pattern.span,
                   "grouped pattern has no inner pattern");
@@ -603,7 +603,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     // `&pattern` doesn't change which value is matched at the HIR level —
     // there's no separate "place vs. reference to a place" distinction yet
     // — so this is a transparent pass-through to the inner pattern.
-    const auto &ref = static_cast<const ast::ref_pattern &>(pattern);
+    const auto &ref = dynamic_cast<const ast::ref_pattern &>(pattern);
     if (ref.inner == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, pattern.span,
                   "reference pattern has no inner pattern");
@@ -611,7 +611,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     return lower_pattern(*ref.inner, make_place, pending);
   }
   case ast::node_kind::or_pattern: {
-    const auto &alt = static_cast<const ast::or_pattern &>(pattern);
+    const auto &alt = dynamic_cast<const ast::or_pattern &>(pattern);
     if (alt.alternatives.empty()) {
       return fail(lowering_error_kind::unsupported_construct, pattern.span,
                   "`|` pattern has no alternatives");
@@ -640,7 +640,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         make<hir_or_pattern>(pattern.span, std::move(alternatives)));
   }
   case ast::node_kind::tuple_pattern: {
-    const auto &tuple = static_cast<const ast::tuple_pattern &>(pattern);
+    const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
     auto elements = ptr_vec<hir_pattern>{};
     elements.reserve(tuple.elements.size());
     for (size_t i = 0; i < tuple.elements.size(); ++i) {
@@ -670,7 +670,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         make<hir_tuple_pattern>(pattern.span, std::move(elements)));
   }
   case ast::node_kind::struct_pattern: {
-    const auto &struct_pat = static_cast<const ast::struct_pattern &>(pattern);
+    const auto &struct_pat = dynamic_cast<const ast::struct_pattern &>(pattern);
     auto fields = std::vector<hir_struct_pattern_field>{};
     fields.reserve(struct_pat.fields.size());
     for (const auto &field : struct_pat.fields) {
@@ -728,7 +728,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         make<hir_struct_pattern>(pattern.span, std::move(fields)));
   }
   case ast::node_kind::constructor_pattern: {
-    const auto &ctor = static_cast<const ast::constructor_pattern &>(pattern);
+    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
     auto args = ptr_vec<hir_pattern>{};
     args.reserve(ctor.args.size());
     for (size_t i = 0; i < ctor.args.size(); ++i) {
@@ -762,7 +762,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     // `some(inner)` — the only form `ast::option_pattern` represents
     // (`none` arrives as an ordinary zero-arg `constructor_pattern`); lowers
     // to the same `hir_constructor_pattern` shape a user sum type would.
-    const auto &option = static_cast<const ast::option_pattern &>(pattern);
+    const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
     auto args = ptr_vec<hir_pattern>{};
     if (option.inner != nullptr) {
       auto inner_type = checked_type_of(*option.inner);
@@ -785,7 +785,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         pattern.span, std::string("some"), std::move(args)));
   }
   case ast::node_kind::result_pattern: {
-    const auto &result = static_cast<const ast::result_pattern &>(pattern);
+    const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
     const auto variant = result.result_kind == ast::option_result_kind::Err
                              ? std::string("err")
                              : std::string("ok");
@@ -812,7 +812,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         make<hir_constructor_pattern>(pattern.span, variant, std::move(args)));
   }
   case ast::node_kind::range_pattern: {
-    const auto &range = static_cast<const ast::range_pattern &>(pattern);
+    const auto &range = dynamic_cast<const ast::range_pattern &>(pattern);
     auto start = ptr<hir_expr>{};
     if (range.start != nullptr) {
       auto lowered = lower_expr(*range.start);
