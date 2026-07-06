@@ -1,5 +1,6 @@
 #include "resolution.h"
 
+#include <cstdint>
 #include <format>
 #include <utility>
 
@@ -184,7 +185,7 @@ auto validate_module_scope(const std::vector<ast::ptr<ast::node>> &items,
 }
 
 /// Outcome of trying to resolve a qualified path against the session.
-enum class qualified_path_status {
+enum class qualified_path_status : uint8_t {
   resolved,   ///< The path names a declared module or module-scope symbol.
   unresolved, ///< No prefix of the path names a declared module.
   blocked,    ///< A prefix resolved, but its file already has a recorded error.
@@ -596,7 +597,7 @@ auto validate_where_constraint(const ast::where_constraint &constraint,
 
 /// Validates a function/lambda parameter's pattern, type annotation, and
 /// default-value expression.
-auto validate_param(const ast::Param &param, const semantic_walk_context &context,
+auto validate_param(const ast::param &param, const semantic_walk_context &context,
                     const semantic_resolution_index &semantic_index,
                     const module_session_index &session_index,
                     diagnostic_bag &diag,
@@ -1942,7 +1943,7 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
       continue;
     }
 
-    if (decl.selector->kind == ast::UseSelectorKind::Wildcard) {
+    if (decl.selector->kind == ast::use_selector_kind::Wildcard) {
       continue;
     }
 

@@ -21,7 +21,7 @@ struct analyzed_session {
   uint32_t error_count = 0;
 };
 
-auto fail(std::string_view message) -> void {
+[[noreturn]] auto fail(std::string_view message) -> void {
   std::cerr << "check_test failed: " << message << '\n';
   std::exit(1);
 }
@@ -33,7 +33,8 @@ auto expect(bool condition, std::string_view message) -> void {
 }
 
 auto expect_diagnostic(const analyzed_session &analyzed,
-                       std::string_view needle, std::string_view message)
+                       std::string_view needle, // NOLINT(bugprone-easily-swappable-parameters)
+                       std::string_view message)
     -> void {
   if (analyzed.diagnostics.find(needle) == std::string::npos) {
     std::cerr << "check_test: missing diagnostic `" << needle << "`\n"
@@ -65,7 +66,7 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
     expect(file != nullptr, "expected registered fixture source");
 
     const auto errors_before = diag.error_count();
-    auto lexer = kira::Lexer(file->source(), file->id(), diag);
+    auto lexer = kira::lexer(file->source(), file->id(), diag);
     auto tokens = lexer.tokenize();
     auto parser = kira::parser(std::move(tokens), file->id(), diag);
     auto ast_file = parser.parse_file();
@@ -495,7 +496,8 @@ auto main() -> int {
     test_reports_unknown_deriving();
     test_reports_impure_contract_call();
   } catch (const std::exception &ex) {
-    fail(std::string{"unhandled exception: "} + ex.what());
+    std::cerr << "check_test failed: unhandled exception: " << ex.what() << '\n';
+    std::exit(1);
   }
   return 0;
 }

@@ -347,8 +347,8 @@ template std::vector<ast::ptr<ast::node>>
     parser::parse_block<ast::node>(std::string_view,
                                    const std::function<ast::ptr<ast::node>()> &);
 
-auto parser::parse_body(std::string_view construct_name) -> parser::BodyResult {
-  BodyResult result;
+auto parser::parse_body(std::string_view construct_name) -> parser::body_result {
+  body_result result;
 
   if (!at(token_kind::colon)) {
     auto span = previous_span();
@@ -423,7 +423,7 @@ auto parser::parse_body(std::string_view construct_name) -> parser::BodyResult {
   return result;
 }
 
-auto parser::body_to_stmt_list(BodyResult body) -> std::vector<ast::ptr<ast::node>> {
+auto parser::body_to_stmt_list(body_result body) -> std::vector<ast::ptr<ast::node>> {
   if (body.inline_expr) {
     auto stmt = ast::make<ast::expr_stmt>();
     stmt->expr = std::move(body.inline_expr);
@@ -791,7 +791,7 @@ auto parser::parse_use_decl(ast::visibility vis) -> ast::ptr<ast::use_decl> {
     } else {
       ast::use_selector sel;
       sel.span = imported_name_span;
-      sel.kind = ast::UseSelectorKind::Single;
+      sel.kind = ast::use_selector_kind::Single;
 
       ast::use_item item;
       item.name = decl->path.back();
@@ -816,7 +816,7 @@ auto parser::parse_use_decl(ast::visibility vis) -> ast::ptr<ast::use_decl> {
 
       ast::use_selector sel;
       sel.span = after_dot.span;
-      sel.kind = ast::UseSelectorKind::Group;
+      sel.kind = ast::use_selector_kind::Group;
 
       while (!at(token_kind::rbrace) && !at_eof()) {
         skip_newlines();
@@ -851,14 +851,14 @@ auto parser::parse_use_decl(ast::visibility vis) -> ast::ptr<ast::use_decl> {
 
       ast::use_selector sel;
       sel.span = after_dot.span;
-      sel.kind = ast::UseSelectorKind::Wildcard;
+      sel.kind = ast::use_selector_kind::Wildcard;
       decl->selector = std::move(sel);
     } else if (after_dot.is(token_kind::ident)) {
       advance(); // consume `.`
 
       ast::use_selector sel;
       sel.span = after_dot.span;
-      sel.kind = ast::UseSelectorKind::Single;
+      sel.kind = ast::use_selector_kind::Single;
 
       ast::use_item item;
       auto item_tok = expect(token_kind::ident);
@@ -1571,7 +1571,7 @@ auto parser::parse_where_clause() -> std::vector<ast::where_constraint> {
 
   expect(token_kind::kw_where);
 
-  do {
+  while (true) {
     ast::where_constraint c;
     c.span = peek().span;
     c.subject = parse_type_expr();
@@ -1586,7 +1586,10 @@ auto parser::parse_where_clause() -> std::vector<ast::where_constraint> {
     }
     c.span.extend_to(previous_span());
     constraints.push_back(std::move(c));
-  } while (match(token_kind::comma));
+    if (!match(token_kind::comma)) {
+      break;
+    }
+  }
 
   return constraints;
 }
@@ -1956,21 +1959,24 @@ auto parser::parse_func_decl(ast::visibility vis,
   return decl;
 }
 
-auto parser::parse_param_list() -> std::vector<ast::Param> {
-  std::vector<ast::Param> params;
+auto parser::parse_param_list() -> std::vector<ast::param> {
+  std::vector<ast::param> params;
 
-  do {
+  while (true) {
     if (at(token_kind::rparen)) {
       break;
-}
+    }
     params.push_back(parse_param());
-  } while (match(token_kind::comma));
+    if (!match(token_kind::comma)) {
+      break;
+    }
+  }
 
   return params;
 }
 
-auto parser::parse_param() -> ast::Param {
-  ast::Param param;
+auto parser::parse_param() -> ast::param {
+  ast::param param;
   param.span = peek().span;
 
   param.pattern = parse_pattern();
@@ -3773,7 +3779,7 @@ auto parser::parse_for_expr() -> ast::ptr<ast::for_expr> {
   expect(token_kind::kw_for);
 
   // Parse one or more iteration clauses.
-  do {
+  while (true) {
     ast::for_expr::iter_clause clause;
     auto pats = parse_for_vars();
     for (auto &p : pats) {
@@ -3794,7 +3800,11 @@ auto parser::parse_for_expr() -> ast::ptr<ast::for_expr> {
       clause.iterable = make_error_expr(previous_span(), "expected iterable");
     }
     fexpr->clauses.push_back(std::move(clause));
-  } while (match(token_kind::comma) && !at_any(token_kind::kw_if, token_kind::fat_arrow));
+    if (!(match(token_kind::comma) &&
+          !at_any(token_kind::kw_if, token_kind::fat_arrow))) {
+      break;
+    }
+  }
 
   if (match(token_kind::kw_if)) {
     auto saved_pos = pos_;
@@ -4322,11 +4332,11 @@ auto parser::parse_where_expr(ast::ptr<ast::expr> inner) -> ast::ptr<ast::where_
 auto parser::parse_call_args() -> std::vector<ast::call_arg> {
   std::vector<ast::call_arg> args;
 
-  do {
+  while (true) {
     skip_newlines();
     if (at(token_kind::rparen)) {
       break;
-}
+    }
 
     ast::call_arg arg;
     arg.span = peek().span;
@@ -4345,7 +4355,10 @@ auto parser::parse_call_args() -> std::vector<ast::call_arg> {
     args.push_back(std::move(arg));
 
     skip_newlines();
-  } while (match(token_kind::comma));
+    if (!match(token_kind::comma)) {
+      break;
+    }
+  }
 
   return args;
 }
@@ -4704,7 +4717,7 @@ auto parser::parse_option_result_pattern() -> ast::ptr<ast::pattern> {
   if (kw.kind == token_kind::kw_some) {
     auto pat = ast::make<ast::option_pattern>();
     pat->span = start.merge(previous_span());
-    pat->option_kind = ast::OptionResultKind::Some;
+    pat->option_kind = ast::option_result_kind::Some;
     pat->inner = std::move(inner);
     return pat;
   }
@@ -4712,8 +4725,8 @@ auto parser::parse_option_result_pattern() -> ast::ptr<ast::pattern> {
   auto pat = ast::make<ast::result_pattern>();
   pat->span = start.merge(previous_span());
   pat->result_kind = (kw.kind == token_kind::kw_ok)
-                         ? ast::OptionResultKind::Ok
-                         : ast::OptionResultKind::Err;
+                         ? ast::option_result_kind::Ok
+                         : ast::option_result_kind::Err;
   pat->inner = std::move(inner);
   return pat;
 }

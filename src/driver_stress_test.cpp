@@ -16,7 +16,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-auto fail(const std::string& message) -> void {
+[[noreturn]] auto fail(const std::string& message) -> void {
   std::cerr << "driver_stress_test failed: " << message << '\n';
   std::exit(1);
 }
@@ -52,7 +52,7 @@ auto candidate_corpus_dirs(std::string_view argv0) -> std::vector<fs::path> {
 
   if (const auto *srcdir = std::getenv("TEST_SRCDIR"); srcdir != nullptr) {
     if (const auto *workspace = std::getenv("TEST_WORKSPACE");
-        workspace != nullptr && workspace[0] != '\0') {
+        workspace != nullptr && *workspace != '\0') {
       candidates.emplace_back(fs::path(srcdir) / workspace / "src/testdata/parser_stress");
     }
     candidates.emplace_back(fs::path(srcdir) / "_main" / "src/testdata/parser_stress");
@@ -99,7 +99,7 @@ auto list_corpus_files(const fs::path &corpus_dir) -> std::vector<std::string> {
 
 auto main(int argc, char *argv[]) -> int {
   try {
-    auto corpus_dir = find_corpus_dir(argc > 0 ? std::string_view(argv[0]) : std::string_view{});
+    auto corpus_dir = find_corpus_dir(argc > 0 ? std::string_view(*argv) : std::string_view{});
     auto files = list_corpus_files(corpus_dir);
 
     expect(!files.empty(), "expected parser stress corpus to contain .kira files");
@@ -134,7 +134,8 @@ auto main(int argc, char *argv[]) -> int {
                          module.metadata_path));
     }
   } catch (const std::exception &ex) {
-    fail(std::string{"unhandled exception: "} + ex.what());
+    std::cerr << "driver_stress_test failed: unhandled exception: " << ex.what() << '\n';
+    std::exit(1);
   }
 
   return 0;

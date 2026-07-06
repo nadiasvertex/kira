@@ -25,7 +25,7 @@ struct parsed_fixture {
   std::vector<kira::semantic::parsed_module> parsed_modules;
 };
 
-auto fail(std::string_view message) -> void {
+[[noreturn]] auto fail(std::string_view message) -> void {
   std::cerr << "resolution_test failed: " << message << '\n';
   std::exit(1);
 }
@@ -53,7 +53,7 @@ auto parse_sources(const std::vector<source_fixture> &fixtures) -> parsed_fixtur
     const auto *file = parsed.sources.get(*file_id);
     expect(file != nullptr, "expected registered fixture source");
 
-    auto lexer = kira::Lexer(file->source(), file->id(), parsed.diag);
+    auto lexer = kira::lexer(file->source(), file->id(), parsed.diag);
     auto tokens = lexer.tokenize();
     auto parser = kira::parser(std::move(tokens), file->id(), parsed.diag);
     auto ast_file = parser.parse_file();
@@ -122,8 +122,10 @@ auto expect_ident_expr(const kira::ast::expr *expr) -> const kira::ast::ident_ex
 auto find_node_scope_or_fail(const kira::semantic::semantic_session &session,
                              const kira::ast::node &node) -> kira::semantic::scope_id {
   const auto scope = kira::semantic::find_node_scope(session, node);
-  expect(scope.has_value(), "expected node scope to be recorded");
-  return scope.value();
+  if (!scope.has_value()) {
+    fail("expected node scope to be recorded");
+  }
+  return *scope;
 }
 
 auto test_build_semantic_session_indexes_module_symbols() -> void {
@@ -318,7 +320,8 @@ auto main() -> int {
     test_match_arm_pattern_bindings_are_arm_local();
     test_lambda_parameters_shadow_outer_bindings();
   } catch (const std::exception &ex) {
-    fail(std::string{"unhandled exception: "} + ex.what());
+    std::cerr << "resolution_test failed: unhandled exception: " << ex.what() << '\n';
+    std::exit(1);
   }
   return 0;
 }

@@ -17,7 +17,7 @@ namespace kira {
 //    Punct*   — punctuation / operators
 //    Special* — synthetic tokens produced by the lexer (INDENT, etc.)
 // ==========================================================================
-enum class token_kind : uint16_t {
+enum class token_kind : uint8_t {
   // ------------------------------------------------------------------
   //  Sentinel / special
   // ------------------------------------------------------------------

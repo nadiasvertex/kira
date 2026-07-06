@@ -8,6 +8,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "src/module_metadata.pb.h"
 
@@ -26,14 +27,22 @@ auto expect(bool condition, std::string_view message) -> void {
   }
 }
 
+/// Build an argv-style vector of mutable C strings from string arguments.
+auto make_argv(std::vector<std::string> &args) -> std::vector<char *> {
+  std::vector<char *> argv;
+  argv.reserve(args.size());
+  for (auto &arg : args) {
+    argv.push_back(arg.data());
+  }
+  return argv;
+}
+
 /// Verify that plain source paths are accepted as positional arguments.
 auto test_parse_args_accepts_sources() -> void {
-  char arg0[] = "kira";
-  char arg1[] = "main.kira";
-  char arg2[] = "lib.kira";
-  char *argv[] = {arg0, arg1, arg2};
+  std::vector<std::string> args = {"kira", "main.kira", "lib.kira"};
+  auto argv = make_argv(args);
 
-  auto result = kira::parse_args(3, argv);
+  auto result = kira::parse_args(argv);
   expect(result.has_value(), "expected sources to parse successfully");
   expect(!result->show_help, "plain sources should not request help");
   expect(result->sources.size() == 2, "expected two source arguments");
@@ -45,19 +54,17 @@ auto test_parse_args_accepts_sources() -> void {
 
 /// Verify help handling and `--` option termination.
 auto test_parse_args_supports_help_and_double_dash() -> void {
-  char arg0[] = "kira";
-  char arg1[] = "--help";
-  char *help_argv[] = {arg0, arg1};
+  std::vector<std::string> help_args = {"kira", "--help"};
+  auto help_argv = make_argv(help_args);
 
-  auto help_result = kira::parse_args(2, help_argv);
+  auto help_result = kira::parse_args(help_argv);
   expect(help_result.has_value(), "help should parse successfully");
   expect(help_result->show_help, "--help should set show_help");
 
-  char arg2[] = "--";
-  char arg3[] = "-literal.kira";
-  char *dash_argv[] = {arg0, arg2, arg3};
+  std::vector<std::string> dash_args = {"kira", "--", "-literal.kira"};
+  auto dash_argv = make_argv(dash_args);
 
-  auto dash_result = kira::parse_args(3, dash_argv);
+  auto dash_result = kira::parse_args(dash_argv);
   expect(dash_result.has_value(), "-- should stop option parsing");
   expect(dash_result->sources.size() == 1, "expected one source after --");
   expect(dash_result->sources[0] == "-literal.kira",
@@ -66,13 +73,10 @@ auto test_parse_args_supports_help_and_double_dash() -> void {
 
 /// Verify that the metadata output directory can be overridden.
 auto test_parse_args_accepts_metadata_dir() -> void {
-  char arg0[] = "kira";
-  char arg1[] = "--metadata-dir";
-  char arg2[] = "build/meta";
-  char arg3[] = "main.kira";
-  char *argv[] = {arg0, arg1, arg2, arg3};
+  std::vector<std::string> args = {"kira", "--metadata-dir", "build/meta", "main.kira"};
+  auto argv = make_argv(args);
 
-  auto result = kira::parse_args(4, argv);
+  auto result = kira::parse_args(argv);
   expect(result.has_value(), "metadata dir option should parse successfully");
   expect(result->metadata_dir == "build/meta",
          "expected metadata directory override");
@@ -80,11 +84,10 @@ auto test_parse_args_accepts_metadata_dir() -> void {
 
 /// Verify that unknown command-line options are rejected.
 auto test_parse_args_rejects_unknown_options() -> void {
-  char arg0[] = "kira";
-  char arg1[] = "--bogus";
-  char *argv[] = {arg0, arg1};
+  std::vector<std::string> args = {"kira", "--bogus"};
+  auto argv = make_argv(args);
 
-  auto result = kira::parse_args(2, argv);
+  auto result = kira::parse_args(argv);
   expect(!result.has_value(), "unknown options should fail");
   expect(result.error() == "unknown option: --bogus",
          "expected unknown option error message");

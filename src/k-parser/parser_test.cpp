@@ -1,7 +1,9 @@
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <cstdlib>
 #include <iostream>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -11,7 +13,7 @@
 
 namespace {
 
-auto fail(std::string_view message) -> void {
+[[noreturn]] auto fail(std::string_view message) -> void {
   std::cerr << "parser_test failed: " << message << '\n';
   std::exit(1);
 }
@@ -61,7 +63,7 @@ auto parse_source(std::string_view source) -> parsed_source {
   auto *file = sources.get(*file_id);
   expect(file != nullptr, "expected registered test source");
 
-  kira::Lexer lexer(file->source(), file->id(), diag);
+  kira::lexer lexer(file->source(), file->id(), diag);
   auto tokens = lexer.tokenize();
   kira::parser parser(std::move(tokens), file->id(), diag);
 
@@ -81,7 +83,7 @@ auto test_lexer_emits_indent_and_dedent() -> void {
       "def run():\n"
       "  let value = 1\n"
       "  return value\n";
-  kira::Lexer lexer(source, 0, diag);
+  kira::lexer lexer(source, 0, diag);
   auto tokens = lexer.tokenize();
 
   expect(!diag.has_errors(), "expected lexer test source to tokenize cleanly");
@@ -224,7 +226,7 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
   auto *option_pattern = expect_pattern<kira::ast::option_pattern>(
       aliased_pattern->inner.get(), kira::ast::node_kind::option_pattern,
       "expected inner pattern to remain the original option pattern");
-  expect(option_pattern->option_kind == kira::ast::OptionResultKind::Some,
+  expect(option_pattern->option_kind == kira::ast::option_result_kind::Some,
          "expected some-pattern to preserve its kind");
 
   auto *return_stmt = expect_node<kira::ast::return_stmt>(
@@ -530,17 +532,16 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
          "expected aliased import to produce a selector");
   if (use_decl->selector.has_value()) {
     const auto &selector = *use_decl->selector;
-    expect(selector.kind == kira::ast::UseSelectorKind::Single,
+    expect(selector.kind == kira::ast::use_selector_kind::Single,
            "expected aliased import selector kind");
     expect(selector.items.size() == 1,
            "expected one imported item in aliased import");
     expect(selector.items[0].name == "reader",
            "expected imported item name");
-    expect(selector.items[0].alias.has_value(),
-           "expected imported item alias");
-    if (selector.items[0].alias.has_value()) {
-      expect(*selector.items[0].alias == "rdr",
-             "expected imported item alias name");
+    const auto &alias = selector.items[0].alias;
+    expect(alias.has_value(), "expected imported item alias");
+    if (alias.has_value()) {
+      expect(*alias == "rdr", "expected imported item alias name");
     }
   }
 
@@ -795,7 +796,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const named_test tests[] = {
+  const std::array<named_test, 10> tests = {{
       {.name="lexer_indent_dedent", .fn=test_lexer_emits_indent_and_dedent},
       {.name="type_body_nodes", .fn=test_parser_builds_type_body_nodes},
       {.name="associated_types_where_aliases",
@@ -811,11 +812,13 @@ auto main(int argc, char *argv[]) -> int {
       {.name="remaining_phase1_constructs",
        .fn=test_parser_accepts_remaining_phase1_constructs},
       {.name="phase1_audit_regressions", .fn=test_parser_accepts_phase1_audit_regressions},
-  };
+  }};
+
+  const std::span<char *> args(argv, static_cast<size_t>(argc));
 
   if (argc > 1) {
     for (const auto &test : tests) {
-      if (std::strcmp(argv[1], test.name) == 0) {
+      if (std::strcmp(args[1], test.name) == 0) {
         test.fn();
         return 0;
       }

@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <exception>
 #include <print>
+#include <span>
 
 #include <unistd.h>
 
@@ -12,7 +13,7 @@
 /// @param argv Argument vector supplied by the host process.
 auto main(int argc, char *argv[]) -> int {
   try {
-    auto result = kira::parse_args(argc, argv);
+    auto result = kira::parse_args(std::span<char *const>(argv, static_cast<size_t>(argc)));
 
     if (!result) {
       std::println(stderr, "Error: {}", result.error());
@@ -44,7 +45,9 @@ auto main(int argc, char *argv[]) -> int {
   } catch (const std::exception &ex) {
     // Avoid std::format/std::println here: they can themselves throw, and a
     // throw from within this handler would escape main() uncaught.
-    std::println(stderr, "Error: unhandled exception: {}", ex.what());
+    std::fputs("Error: unhandled exception: ", stderr);
+    std::fputs(ex.what(), stderr);
+    std::fputc('\n', stderr);
     return 1;
   }
 }

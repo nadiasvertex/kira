@@ -1,5 +1,6 @@
 #include "module_index.h"
 
+#include <algorithm>
 #include <ranges>
 
 namespace kira::semantic {
@@ -351,7 +352,7 @@ auto find_module_scope(const semantic_resolution_index &index,
 /// Searches a module's symbols in reverse-declaration order so the most
 /// recently added definition of a shadowed name wins.
 auto find_module_scope_symbol(const semantic_resolution_index &index,
-                              std::string_view module_name,
+                              std::string_view module_name, // NOLINT(bugprone-easily-swappable-parameters)
                               std::string_view symbol_name)
     -> const semantic_symbol * {
   const auto *module_scope = find_module_scope(index, module_name);
@@ -446,12 +447,9 @@ auto find_submodule_declaration_by_name(
 /// segment.
 auto session_owns_root_module(const module_session_index &index,
                               std::string_view root_name) -> bool {
-  for (const auto &module : index.module_files) {
-    if (module_root_name(module.module_name) == root_name) {
-      return true;
-    }
-  }
-  return false;
+  return std::ranges::any_of(index.module_files, [&root_name](const auto &module) -> bool {
+    return module_root_name(module.module_name) == root_name;
+  });
 }
 
 /// A module is "contained" if it either has its own file or was declared

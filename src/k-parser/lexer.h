@@ -33,7 +33,7 @@ namespace kira {
 //    - We use `string_view` throughout — the source text must outlive
 //      the Lexer and all tokens it produces.
 // ==========================================================================
-class Lexer {
+class lexer {
 public:
   /// @brief Creates a lexer over one source buffer.
   ///
@@ -46,7 +46,7 @@ public:
   /// @param source Borrowed source text to tokenize.
   /// @param file_id Source identifier attached to emitted diagnostics.
   /// @param diag Diagnostic sink used for lexing errors.
-  Lexer(std::string_view source, file_id_type file_id, diagnostic_bag &diag)
+  lexer(std::string_view source, file_id_type file_id, diagnostic_bag &diag)
       : source_(source), file_id_(file_id), diag_(diag),
         indent_stack_{0} {}
 
@@ -134,8 +134,10 @@ private:
   ///
   /// @param start Starting byte offset for the slice.
   [[nodiscard]] auto text_from(byte_offset start) const noexcept -> std::string_view {
-    // `substr` can throw `std::out_of_range`; build the view directly since
-    // `start` is always a valid offset no later than `pos_`.
+    // `substr` can throw `std::out_of_range`, which this `noexcept` function
+    // can't allow even though `start` is always a valid offset no later than
+    // `pos_`; build the view directly instead.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     return {source_.data() + start, pos_ - start};
   }
 

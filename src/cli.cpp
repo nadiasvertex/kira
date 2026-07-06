@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -232,14 +233,14 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
 /// Map parsed `use` selector kinds into the persisted metadata enum.
 ///
 /// @param kind AST selector kind to encode.
-[[nodiscard]] auto selector_kind_to_proto(ast::UseSelectorKind kind)
+[[nodiscard]] auto selector_kind_to_proto(ast::use_selector_kind kind)
     -> metadata::v1::ImportSelectorKind {
   switch (kind) {
-  case ast::UseSelectorKind::Single:
+  case ast::use_selector_kind::Single:
     return metadata::v1::IMPORT_SELECTOR_KIND_SINGLE;
-  case ast::UseSelectorKind::Group:
+  case ast::use_selector_kind::Group:
     return metadata::v1::IMPORT_SELECTOR_KIND_GROUP;
-  case ast::UseSelectorKind::Wildcard:
+  case ast::use_selector_kind::Wildcard:
     return metadata::v1::IMPORT_SELECTOR_KIND_WILDCARD;
   }
   return metadata::v1::IMPORT_SELECTOR_KIND_UNSPECIFIED;
@@ -1581,7 +1582,7 @@ auto validate_session_imports(const std::vector<parsed_input> &inputs,
       continue;
     }
 
-    if (decl.selector->kind == ast::UseSelectorKind::Wildcard) {
+    if (decl.selector->kind == ast::use_selector_kind::Wildcard) {
       continue;
     }
 
@@ -2088,7 +2089,7 @@ auto validate_where_constraint(const ast::where_constraint &constraint,
   }
 }
 
-auto validate_param(const ast::Param &param, const semantic_walk_context &context,
+auto validate_param(const ast::param &param, const semantic_walk_context &context,
                     const semantic_resolution_index &semantic_index,
                     const module_session_index &session_index,
                     diagnostic_bag &diag,
@@ -3278,8 +3279,8 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
 ///
 /// @param argc Argument count passed to `main`.
 /// @param argv Argument vector passed to `main`.
-auto parse_args(int argc, char *argv[]) -> std::expected<cli_config, std::string> {
-  if (argc < 1) {
+auto parse_args(std::span<char *const> argv) -> std::expected<cli_config, std::string> {
+  if (argv.empty()) {
     return std::unexpected{"argc must be at least 1"};
   }
 
@@ -3291,7 +3292,7 @@ auto parse_args(int argc, char *argv[]) -> std::expected<cli_config, std::string
   };
 
   bool parse_options = true;
-  for (int i = 1; i < argc; ++i) {
+  for (size_t i = 1; i < argv.size(); ++i) {
     std::string_view arg = argv[i];
 
     if (parse_options && arg == "--") {
@@ -3305,7 +3306,7 @@ auto parse_args(int argc, char *argv[]) -> std::expected<cli_config, std::string
     }
 
     if (parse_options && arg == "--metadata-dir") {
-      if (i + 1 >= argc) {
+      if (i + 1 >= argv.size()) {
         return std::unexpected{"missing path after --metadata-dir"};
       }
       cfg.metadata_dir = argv[++i];
@@ -3393,8 +3394,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     }
 
     auto errors_before = session_diagnostics.error_count();
-    auto lexer = Lexer(file->source(), file->id(), session_diagnostics);
-    auto tokens = lexer.tokenize();
+    auto tokenizer = lexer(file->source(), file->id(), session_diagnostics);
+    auto tokens = tokenizer.tokenize();
     auto parser = kira::parser(std::move(tokens), file->id(), session_diagnostics);
     auto ast_file = parser.parse_file();
 

@@ -469,7 +469,7 @@ auto record_use_bindings(const ast::use_decl &decl, file_id_type file_id,
     return;
   }
 
-  if (decl.selector->kind == ast::UseSelectorKind::Wildcard) {
+  if (decl.selector->kind == ast::use_selector_kind::Wildcard) {
     bindings.push_back(import_binding{
         .local_name = {},
         .path = decl.path,

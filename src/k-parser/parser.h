@@ -415,7 +415,7 @@ private:
   /// Many constructs in Kira allow both `: expr` and `:` followed by an indented
   /// block. This record preserves which form the user wrote so later phases can
   /// keep the distinction when it matters.
-  struct BodyResult {
+  struct body_result {
     ast::ptr<ast::expr> inline_expr;           ///< Present for compact `: expr` bodies.
     std::vector<ast::ptr<ast::node>> stmts;    ///< Statement-form body payload.
     bool is_block = false;                     ///< Distinguishes original source form.
@@ -423,13 +423,13 @@ private:
   /// @brief Parses either a compact expression body or an indented statement body.
   ///
   /// @param construct_name User-facing construct name for diagnostics.
-  auto parse_body(std::string_view construct_name) -> BodyResult;
+  auto parse_body(std::string_view construct_name) -> body_result;
   /// @brief Converts a `BodyResult` into a statement list for AST storage.
   ///
   /// Inline expression bodies are wrapped in `expr_stmt` nodes so later phases
   /// can consume a uniform statement list when needed.
   [[nodiscard]] auto
-  body_to_stmt_list(BodyResult body) -> std::vector<ast::ptr<ast::node>>;
+  body_to_stmt_list(body_result body) -> std::vector<ast::ptr<ast::node>>;
 
   // ========================================================================
   //  Comma-separated list helper
@@ -566,9 +566,9 @@ private:
   /// Parses the leading modifier sequence for a function-like construct.
   [[nodiscard]] auto parse_func_modifiers() -> ast::func_modifiers;
   /// Parses a function parameter list.
-  [[nodiscard]] auto parse_param_list() -> std::vector<ast::Param>;
+  [[nodiscard]] auto parse_param_list() -> std::vector<ast::param>;
   /// Parses one function parameter, including defaults.
-  [[nodiscard]] auto parse_param() -> ast::Param;
+  [[nodiscard]] auto parse_param() -> ast::param;
   /// Parses zero or more contract clauses attached to a function.
   [[nodiscard]] auto parse_contract_clauses() -> std::vector<ast::contract_clause>;
   /// Parses a single `pre` or `post` contract clause.

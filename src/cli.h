@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -36,9 +37,8 @@ struct compile_report {
 
 /// Parse command-line arguments into driver configuration.
 ///
-/// @param argc Argument count passed to `main`.
-/// @param argv Argument vector passed to `main`.
-[[nodiscard]] auto parse_args(int argc, char *argv[])
+/// @param argv Argument vector passed to `main`, including the program name at index 0.
+[[nodiscard]] auto parse_args(std::span<char *const> argv)
     -> std::expected<cli_config, std::string>;
 
 /// Render the user-facing CLI help text.

@@ -73,7 +73,7 @@ struct concept_param;
 struct concept_constraint;
 
 // Function-related
-struct Param;
+struct param;
 struct contract_clause;
 
 // Statements
@@ -149,7 +149,6 @@ struct match_arm;
 /// The tree is intentionally pointer-shaped so recursive syntax stays easy to
 /// model and moving subtrees between phases remains explicit.
 template <typename T> using ptr = std::unique_ptr<T>;
-template <typename T> using Ptr = std::unique_ptr<T>; ///< Legacy-style alias retained for parser ergonomics.
 
 /// @brief Common container for owning a homogeneous list of AST nodes.
 template <typename T> using ptr_vec = std::vector<ptr<T>>;
@@ -1105,7 +1104,7 @@ struct range_pattern : pattern {
 
 /// `some(pattern)`, `ok(pattern)`, `err(pattern)`
 /// @brief Shared discriminator for option/result wrapper patterns.
-enum class OptionResultKind : uint8_t {
+enum class option_result_kind : uint8_t {
   Some, ///< Option success/presence wrapper.
   Ok,   ///< Result success wrapper.
   Err,  ///< Result failure wrapper.
@@ -1113,7 +1112,7 @@ enum class OptionResultKind : uint8_t {
 
 /// @brief Pattern matching the option `some(...)` wrapper form.
 struct option_pattern : pattern {
-  OptionResultKind option_kind; ///< Which wrapper keyword was parsed.
+  option_result_kind option_kind; ///< Which wrapper keyword was parsed.
   ptr<pattern> inner;           ///< Inner payload pattern.
 
   option_pattern() : pattern(node_kind::option_pattern) {}
@@ -1121,7 +1120,7 @@ struct option_pattern : pattern {
 
 /// Result pattern — reuses option_pattern but with different kind.
 struct result_pattern : pattern {
-  OptionResultKind result_kind; ///< Distinguishes `ok(...)` from `err(...)`.
+  option_result_kind result_kind; ///< Distinguishes `ok(...)` from `err(...)`.
   ptr<pattern> inner;           ///< Inner payload pattern.
 
   result_pattern() : pattern(node_kind::result_pattern) {}
@@ -1319,7 +1318,7 @@ struct use_item {
 };
 
 /// @brief Shape of the selector portion of a `use` declaration.
-enum class UseSelectorKind : uint8_t {
+enum class use_selector_kind : uint8_t {
   Single,   ///< Import exactly one trailing item, optionally renamed.
   Group,    ///< Import an explicit brace-delimited item set.
   Wildcard, ///< Import every visible item from the path prefix.
@@ -1328,7 +1327,7 @@ enum class UseSelectorKind : uint8_t {
 /// @brief Parsed selector detail for a `use` declaration.
 struct use_selector {
   source_span span;           ///< Source range of the selector portion.
-  UseSelectorKind kind;       ///< Selector strategy chosen by the user.
+  use_selector_kind kind;       ///< Selector strategy chosen by the user.
   std::vector<use_item> items; ///< Imported items for single/group selectors.
 };
 
@@ -1464,7 +1463,7 @@ struct contract_clause {
 };
 
 /// Parameter in a function signature.
-struct Param {
+struct param {
   source_span span; ///< Full source range of the parameter.
   ptr<pattern> pattern; ///< Binding pattern introduced by the parameter.
   ptr<type_expr> type_annotation; ///< Optional explicit parameter type.
@@ -1477,7 +1476,7 @@ struct func_decl : node {
   func_modifiers modifiers;                ///< Semantic modifiers attached to the declaration.
   std::string name;                        ///< Function name.
   std::vector<type_param> type_params;     ///< Generic parameters in declaration order.
-  std::vector<Param> params;               ///< Call parameters in declaration order.
+  std::vector<param> params;               ///< Call parameters in declaration order.
   ptr<type_expr> return_type;              ///< Optional explicit return type.
   std::vector<where_constraint> where_constraints; ///< Additional applicability constraints.
   std::vector<contract_clause> contracts;  ///< Pre/postconditions attached to the function.

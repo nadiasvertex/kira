@@ -89,11 +89,14 @@ auto parse_integer_literal(std::string_view text) -> std::optional<uint64_t> {
     }
   }
   auto value = uint64_t{0};
-  const auto result =
-      std::from_chars(digits.data(), digits.data() + digits.size(), value, base);
-  if (result.ec != std::errc{} || result.ptr != digits.data() + digits.size()) {
+  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
+  // std::from_chars requires a raw begin/end pointer pair.
+  const char *digits_end = digits.data() + digits.size();
+  const auto result = std::from_chars(digits.data(), digits_end, value, base);
+  if (result.ec != std::errc{} || result.ptr != digits_end) {
     return std::nullopt;
   }
+  // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
   return value;
 }
 
@@ -339,12 +342,11 @@ private:
       return false;
     }
     const auto &root = path.front();
-    for (const auto &[name, members] : index_.modules) {
-      if (name == root || name.starts_with(root + ".")) {
-        return true;
-      }
-    }
-    return false;
+    return std::ranges::any_of(
+        index_.modules, [&root](const auto &entry) -> bool {
+          const auto &name = entry.first;
+          return name == root || name.starts_with(root + ".");
+        });
   }
 
   /// Returns the `use` bindings recorded for the file currently being
@@ -916,7 +918,7 @@ private:
 
   /// Returns a parameter's bound name if it is a simple identifier
   /// pattern, or an empty string for a destructuring parameter pattern.
-  auto param_name_of(const ast::Param &param) -> std::string {
+  auto param_name_of(const ast::param &param) -> std::string {
     if (param.pattern != nullptr &&
         param.pattern->kind == ast::node_kind::binding_pattern) {
       return dynamic_cast<const ast::binding_pattern &>(*param.pattern).name;
@@ -3583,7 +3585,7 @@ private:
       if (entry.kind == type_kind::builtin_generic_kind &&
           entry.name == "result") {
         const auto slot =
-            result.result_kind == ast::OptionResultKind::Err ? 1u : 0u;
+            result.result_kind == ast::option_result_kind::Err ? 1u : 0u;
         if (slot < entry.args.size()) {
           inner = entry.args[slot];
         }
@@ -3782,12 +3784,10 @@ private:
     }
     case ast::node_kind::or_pattern: {
       const auto &alternatives = dynamic_cast<const ast::or_pattern &>(pattern);
-      for (const auto &alternative : alternatives.alternatives) {
-        if (alternative != nullptr && pattern_is_irrefutable(*alternative)) {
-          return true;
-        }
-      }
-      return false;
+      return std::ranges::any_of(
+          alternatives.alternatives, [this](const auto &alternative) -> bool {
+            return alternative != nullptr && pattern_is_irrefutable(*alternative);
+          });
     }
     default:
       return false;
@@ -3808,14 +3808,14 @@ private:
     case ast::node_kind::option_pattern:
       covered.insert(
           dynamic_cast<const ast::option_pattern &>(pattern).option_kind ==
-                  ast::OptionResultKind::Some
+                  ast::option_result_kind::Some
               ? "some"
               : "none");
       return;
     case ast::node_kind::result_pattern:
       covered.insert(
           dynamic_cast<const ast::result_pattern &>(pattern).result_kind ==
-                  ast::OptionResultKind::Err
+                  ast::option_result_kind::Err
               ? "err"
               : "ok");
       return;
