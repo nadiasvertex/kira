@@ -1065,6 +1065,131 @@ auto test_lowers_cast_expression() -> void {
          "expected the cast's operand to reference the `x` parameter");
 }
 
+auto test_lowers_lambda_expression() -> void {
+  auto fixture = check_fixture(
+      "module sample\n"
+      "def apply_twice(f: fn(int32) -> int32, x: int32) -> int32:\n"
+      "    return f(f(x))\n"
+      "def double_value(x: int32) -> int32:\n"
+      "    let inc = pure (n: int32) -> int32 => n + 1\n"
+      "    return apply_twice(inc, x)\n");
+  const auto &decl = find_func(*fixture.ast_file, "double_value");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a lambda expression to lower");
+
+  const auto &function = **result;
+  const auto &let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts.front());
+  expect(let.name == "inc", "expected the let to bind `inc`");
+  expect(let.initializer->kind == hir::hir_node_kind::hir_lambda,
+         "expected the let's initializer to be a hir_lambda");
+
+  const auto &lambda = dynamic_cast<const hir::hir_lambda &>(*let.initializer);
+  expect(lambda.params.size() == 1, "expected one lambda parameter");
+  expect(lambda.params[0].name == "n", "expected the parameter to be `n`");
+
+  const auto int32_type = fixture.checked.types.builtin("int32");
+  expect(lambda.params[0].type == int32_type,
+         "expected the parameter's type to be int32");
+  expect(lambda.return_type == int32_type,
+         "expected the lambda's return type to be int32");
+
+  expect(lambda.body->stmts.size() == 1,
+         "expected the compact body to lower to a single implicit return");
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*lambda.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_binary,
+         "expected the lambda's returned value to be a hir_binary");
+
+  const auto &sum = dynamic_cast<const hir::hir_binary &>(*ret.value);
+  expect(sum.lhs->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the lambda body to reference its own parameter `n`");
+  const auto &n_ref = dynamic_cast<const hir::hir_local_ref &>(*sum.lhs);
+  expect(n_ref.symbol == lambda.params[0].symbol,
+         "expected the reference to resolve to the lambda's own parameter, "
+         "not some outer symbol");
+}
+
+auto test_lowers_where_expression() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def compute(v: int32) -> int32:\n"
+                               "    return (a + b) where:\n"
+                               "        a = v + 1\n"
+                               "        b = v + 2\n");
+  const auto &decl = find_func(*fixture.ast_file, "compute");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a where expression to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_block,
+         "expected the returned value to be a hir_block (where's bindings "
+         "plus its inner expression)");
+
+  const auto &block = dynamic_cast<const hir::hir_block &>(*ret.value);
+  expect(block.stmts.size() == 3,
+         "expected two where bindings plus the trailing inner expression");
+  expect(block.stmts[0]->kind == hir::hir_node_kind::hir_let,
+         "expected the first statement to bind `a`");
+  expect(block.stmts[1]->kind == hir::hir_node_kind::hir_let,
+         "expected the second statement to bind `b`");
+  const auto &a_let = dynamic_cast<const hir::hir_let &>(*block.stmts[0]);
+  const auto &b_let = dynamic_cast<const hir::hir_let &>(*block.stmts[1]);
+  expect(a_let.name == "a", "expected the first binding to be `a`");
+  expect(b_let.name == "b", "expected the second binding to be `b`");
+
+  expect(block.stmts[2]->kind == hir::hir_node_kind::hir_expr_stmt,
+         "expected the trailing statement to be the inner `a + b` expression");
+  const auto &inner_stmt =
+      dynamic_cast<const hir::hir_expr_stmt &>(*block.stmts[2]);
+  expect(inner_stmt.expr->kind == hir::hir_node_kind::hir_binary,
+         "expected the inner expression to be a hir_binary");
+}
+
+auto test_lowers_call_to_named_function() -> void {
+  // Regression guard: `infer_call` resolves a plain-identifier callee that
+  // names a real function (a scope binding, a same-module function, or an
+  // import) straight from its declaration rather than through `infer_expr`,
+  // so the callee ident's own type needs its own persistence hook — same
+  // class of gap as the assignment-target and parameter-pattern fixes.
+  auto fixture = check_fixture("module sample\n"
+                               "def helper(x: int32) -> int32:\n"
+                               "    return x + 1\n"
+                               "def caller(x: int32) -> int32:\n"
+                               "    return helper(helper(x))\n");
+  const auto &decl = find_func(*fixture.ast_file, "caller");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a call to a named function to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_call,
+         "expected the returned value to be a hir_call");
+  const auto &outer_call = dynamic_cast<const hir::hir_call &>(*ret.value);
+  expect(outer_call.callee->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the callee to lower to a local reference");
+  const auto &outer_callee =
+      dynamic_cast<const hir::hir_local_ref &>(*outer_call.callee);
+  expect(outer_callee.name == "helper",
+         "expected the callee reference to name `helper`");
+
+  expect(outer_call.args.size() == 1,
+         "expected one argument to the outer call");
+  expect(outer_call.args[0]->kind == hir::hir_node_kind::hir_call,
+         "expected the argument to be the nested `helper(x)` call");
+  const auto &inner_call =
+      dynamic_cast<const hir::hir_call &>(*outer_call.args[0]);
+  const auto &inner_callee =
+      dynamic_cast<const hir::hir_local_ref &>(*inner_call.callee);
+  expect(inner_callee.symbol == outer_callee.symbol,
+         "expected both calls to `helper` to resolve to the same symbol");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1100,6 +1225,9 @@ auto main() -> int {
     test_lowers_struct_literal_explicit_field();
     test_lowers_struct_literal_shorthand_field();
     test_lowers_cast_expression();
+    test_lowers_lambda_expression();
+    test_lowers_where_expression();
+    test_lowers_call_to_named_function();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();
     test_lowers_struct_pattern_let_destructuring();

@@ -746,10 +746,17 @@ private:
   type_table types_;
   /// Resolved type of every expression node visited by `infer_expr`
   /// (recorded there — see its wrapper — plus every pattern node visited by
-  /// `check_pattern`, and the two direct-`resolve_ident`-shaped bypasses in
-  /// `check_assignment`: an assignment target resolved from an existing
-  /// scope binding, and one resolved because no such binding exists).
-  /// Handed to the caller via `take_checked_types`.
+  /// `check_pattern`). Several direct-`resolve_ident`-shaped bypasses also
+  /// record here manually, since each resolves an ident's type from a
+  /// declaration or binding directly rather than through `infer_expr`:
+  /// `check_assignment`'s two branches (an assignment target resolved from
+  /// an existing scope binding, and one resolved because no such binding
+  /// exists), and `infer_call`'s three branches for a plain-identifier
+  /// callee resolved as a real function reference (a scope binding, a
+  /// same-module function, or an imported function — the remaining
+  /// callee-name branches there are prelude magic forms like `println`/
+  /// `panic` with no real declared type to record). Handed to the caller
+  /// via `take_checked_types`.
   std::unordered_map<const ast::node *, type_id> node_types_;
   /// Resolved type of every non-rest `ast::field_pattern` visited by
   /// `check_pattern`'s `struct_pattern` case — needed for shorthand fields
@@ -3223,6 +3230,11 @@ private:
     if (const auto *binding = lookup_value(name)) {
       const auto &entry = types_.entry(strip_refs(binding->type));
       if (entry.kind == type_kind::fn_kind) {
+        // The callee ident is resolved straight from the scope binding
+        // here, not through `infer_expr`, so (like the other direct-
+        // resolution bypasses this chokepoint doc comment lists) it needs
+        // its own persistence hook.
+        record_expr_type(ident, binding->type);
         return check_call_against_fn_type(call, entry, name);
       }
       if (types_.is_unknown(binding->type)) {
@@ -3240,6 +3252,7 @@ private:
     if (module_ != nullptr) {
       if (const auto it = module_->functions.find(name);
           it != module_->functions.end()) {
+        record_expr_type(ident, fn_type_of(*it->second.decl, module_));
         return check_call_against_decl(call, *it->second.decl, module_,
                                        it->second.file_id,
                                        /*skip_self=*/false);
@@ -3251,6 +3264,7 @@ private:
         const auto member = imported_member_name(*import);
         if (const auto it = source->functions.find(member);
             it != source->functions.end()) {
+          record_expr_type(ident, fn_type_of(*it->second.decl, source));
           return check_call_against_decl(call, *it->second.decl, source,
                                          it->second.file_id,
                                          /*skip_self=*/false);

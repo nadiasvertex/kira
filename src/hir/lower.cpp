@@ -22,6 +22,7 @@ using semantic::checked_types;
 using semantic::k_error_type;
 using semantic::k_unknown_type;
 using semantic::type_id;
+using semantic::type_kind;
 
 [[nodiscard]] auto fail(lowering_error_kind kind, source_span span,
                         std::string message)
@@ -140,6 +141,10 @@ private:
   [[nodiscard]] auto lower_struct(const ast::struct_expr &literal)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_cast(const ast::cast_expr &cast)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_lambda(const ast::lambda_expr &lambda)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_where(const ast::where_expr &where)
       -> std::expected<ptr<hir_expr>, lowering_error>;
 
   // ------------------------------------------------------------------
@@ -280,6 +285,10 @@ auto lowerer::lower_expr(const ast::expr &expr)
     return lower_struct(dynamic_cast<const ast::struct_expr &>(expr));
   case ast::node_kind::cast_expr:
     return lower_cast(dynamic_cast<const ast::cast_expr &>(expr));
+  case ast::node_kind::lambda_expr:
+    return lower_lambda(dynamic_cast<const ast::lambda_expr &>(expr));
+  case ast::node_kind::where_expr:
+    return lower_where(dynamic_cast<const ast::where_expr &>(expr));
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
                 std::format("expression kind {} is not lowered by the first "
@@ -548,6 +557,153 @@ auto lowerer::lower_cast(const ast::cast_expr &cast)
     return std::unexpected(operand.error());
   }
   return ok_expr(make<hir_cast>(cast.span, *type, std::move(*operand)));
+}
+
+auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto lambda_type = checked_type_of(lambda);
+  if (!lambda_type.has_value()) {
+    return std::unexpected(lambda_type.error());
+  }
+  // Unlike a free function (Decision 1: every parameter always explicitly
+  // annotated), a lambda's own checked type already carries a concrete
+  // type per parameter regardless of whether that came from an annotation
+  // or the lambda's use-site context (see infer_lambda in check.cpp) — so
+  // decomposing the lambda's own `fn(...)` type is simpler and more
+  // complete than re-deriving each parameter's type from its pattern node.
+  const auto &entry = checked_.types.entry(*lambda_type);
+  if (entry.kind != type_kind::fn_kind) {
+    return fail(lowering_error_kind::unresolved_type, lambda.span,
+                "lambda did not resolve to a concrete function type");
+  }
+  if (entry.args.size() != lambda.params.size()) {
+    return fail(lowering_error_kind::unsupported_construct, lambda.span,
+                "lambda parameter count does not match its checked "
+                "function type");
+  }
+
+  push_scope();
+
+  auto params = std::vector<hir_param>{};
+  auto param_prelude = ptr_vec<hir_node>{};
+  params.reserve(lambda.params.size());
+  for (size_t i = 0; i < lambda.params.size(); ++i) {
+    const auto &param = lambda.params[i];
+    const auto ptype = entry.args[i];
+    if (param.pattern == nullptr || param.pattern->has_error) {
+      pop_scope();
+      return fail(lowering_error_kind::unsupported_construct, param.span,
+                  "lambda parameter has no usable pattern");
+    }
+
+    if (param.pattern->kind == ast::node_kind::binding_pattern) {
+      const auto &binding =
+          dynamic_cast<const ast::binding_pattern &>(*param.pattern);
+      const auto symbol = declare_local(binding.name);
+      params.push_back(
+          hir_param{.symbol = symbol, .name = binding.name, .type = ptype});
+      continue;
+    }
+
+    // A destructuring lambda parameter, same treatment as a destructuring
+    // free-function parameter (see lower_function): synthetic identity,
+    // bindings collected into a prelude spliced onto the body below.
+    const auto symbol = mint_symbol();
+    const auto pspan = param.span;
+    const std::function<ptr<hir_expr>()> make_place =
+        [symbol, ptype, pspan]() -> ptr<hir_expr> {
+      return ptr<hir_expr>(
+          make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>")));
+    };
+    auto pending = std::vector<ptr<hir_node>>{};
+    auto pattern = lower_pattern(*param.pattern, make_place, pending);
+    if (!pattern.has_value()) {
+      pop_scope();
+      return std::unexpected(pattern.error());
+    }
+    params.push_back(hir_param{
+        .symbol = symbol, .name = std::format("<param {}>", i), .type = ptype});
+    for (auto &binding : pending) {
+      param_prelude.push_back(std::move(binding));
+    }
+  }
+
+  const auto return_type = entry.result;
+
+  auto body = std::expected<ptr<hir_block>, lowering_error>{};
+  if (lambda.body_expr != nullptr) {
+    auto expr_type = checked_type_of(*lambda.body_expr);
+    if (!expr_type.has_value()) {
+      pop_scope();
+      return std::unexpected(expr_type.error());
+    }
+    auto value = lower_expr(*lambda.body_expr);
+    if (!value.has_value()) {
+      pop_scope();
+      return std::unexpected(value.error());
+    }
+    auto ret = ptr<hir_node>(
+        make<hir_return>(lambda.body_expr->span, std::move(*value)));
+    auto stmts = std::move(param_prelude);
+    stmts.push_back(std::move(ret));
+    body =
+        make<hir_block>(lambda.body_expr->span, return_type, std::move(stmts));
+  } else {
+    body = lower_block(lambda.body_stmts, lambda.span);
+    if (body.has_value() && !param_prelude.empty()) {
+      auto merged = std::move(param_prelude);
+      for (auto &stmt_ptr : (*body)->stmts) {
+        merged.push_back(std::move(stmt_ptr));
+      }
+      (*body)->stmts = std::move(merged);
+    }
+  }
+  pop_scope();
+  if (!body.has_value()) {
+    return std::unexpected(body.error());
+  }
+
+  return ok_expr(make<hir_lambda>(lambda.span, *lambda_type, std::move(params),
+                                  return_type, std::move(*body)));
+}
+
+auto lowerer::lower_where(const ast::where_expr &where)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto type = checked_type_of(where);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  push_scope();
+  auto stmts = ptr_vec<hir_node>{};
+  for (const auto &binding : where.bindings) {
+    if (binding.value == nullptr) {
+      pop_scope();
+      return fail(lowering_error_kind::unsupported_construct, binding.span,
+                  "where binding has no value");
+    }
+    auto value = lower_expr(*binding.value);
+    if (!value.has_value()) {
+      pop_scope();
+      return std::unexpected(value.error());
+    }
+    const auto symbol = declare_local(binding.name);
+    stmts.push_back(ptr<hir_node>(
+        make<hir_let>(binding.span, symbol, binding.name, std::move(*value))));
+  }
+  if (where.inner == nullptr) {
+    pop_scope();
+    return fail(lowering_error_kind::unsupported_construct, where.span,
+                "where expression has no inner expression");
+  }
+  auto inner = lower_expr(*where.inner);
+  if (!inner.has_value()) {
+    pop_scope();
+    return std::unexpected(inner.error());
+  }
+  stmts.push_back(
+      ptr<hir_node>(make<hir_expr_stmt>(where.inner->span, std::move(*inner))));
+  pop_scope();
+  return ok_expr(make<hir_block>(where.span, *type, std::move(stmts)));
 }
 
 auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,

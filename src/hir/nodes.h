@@ -44,7 +44,18 @@ using semantic::type_id;
 //  `hir_struct_init` (construction, not the pattern kinds of similar name)
 //  got node structs in the literal-construction extension, alongside the
 //  new `hir_array_init`; `hir_cast` got one in the extension after that.
-//  `lambda` still has none.
+//  `hir_lambda` and `where_expr`-as-`hir_block` (no new node needed) were
+//  added in the "finish lowering" pass; still explicitly unsupported after
+//  that: named/default call arguments (need a per-call-site persisted
+//  argument-position mapping this project hasn't built), `try_expr` (needs
+//  a sum-variant-*construction* expression this project hasn't designed —
+//  the inverse of `hir_constructor_pattern`), `for`/`while let`/
+//  comprehensions (blocked on the undecided iterator protocol — see
+//  spec/typed-ir-design.md's open questions), the concurrency forms
+//  (`async`/`await`/`par`/`race`/`crew`/`on`) and compile-time forms
+//  (`quote`/`splice`/`static`), monomorphization (phase 5), and
+//  borrow/ownership metadata — all explicit Non-Goals for this milestone
+//  in spec/typed-ir-design.md, not oversights.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -151,6 +162,15 @@ struct hir_item : hir_node {
 /// `symbol_id`.
 struct hir_pattern : hir_node {
   using hir_node::hir_node;
+};
+
+/// One lowered parameter (of a function or a lambda) — resolved symbol plus
+/// its checked type. Declared here, ahead of both "Expressions" (used by
+/// `hir_lambda`) and "Items" (used by `hir_function`), since both need it.
+struct hir_param {
+  symbol_id symbol = k_invalid_symbol_id;
+  std::string name;
+  type_id type = k_unknown_type;
 };
 
 // ==========================================================================
@@ -392,6 +412,28 @@ struct hir_match : hir_expr {
         subject_symbol(subj_sym), arms(std::move(a)) {}
 };
 
+/// Lambda/closure `x => x + 1` or `(a, b) -> int => a + b`. Kira
+/// monomorphizes closures (there is no separate closure type distinct from
+/// the function-value type it's assigned/passed as — see
+/// `infer_lambda`'s doc comment in check.cpp), so this is shaped exactly
+/// like `hir_function` minus a name: same `hir_param` list, same
+/// `return_type` plus `body`, and this node's own `type` is the lambda's
+/// `fn(...)` type. Unlike a free function's parameters (always explicitly
+/// annotated — Decision 1), a lambda parameter's type may come from
+/// context (an expected `fn(...)` type at the lambda's use site) instead
+/// of an annotation; lowering doesn't distinguish the two sources, only
+/// requiring that a concrete type was resolved one way or another.
+struct hir_lambda : hir_expr {
+  std::vector<hir_param> params;
+  type_id return_type = k_unknown_type;
+  ptr<hir_block> body;
+
+  hir_lambda(source_span s, type_id t, std::vector<hir_param> p, type_id ret,
+             ptr<hir_block> b)
+      : hir_expr(hir_node_kind::hir_lambda, s, t), params(std::move(p)),
+        return_type(ret), body(std::move(b)) {}
+};
+
 /// `_` — matches unconditionally. Also stands in for a plain name binding
 /// (`x`) and for `pattern as name`: both reduce to "match unconditionally,
 /// then let-bind" (see `hir_match_arm`), so neither needs its own pattern
@@ -600,13 +642,6 @@ struct hir_return : hir_stmt {
 // ==========================================================================
 //  Items
 // ==========================================================================
-
-/// One lowered function parameter — resolved symbol plus its checked type.
-struct hir_param {
-  symbol_id symbol = k_invalid_symbol_id;
-  std::string name;
-  type_id type = k_unknown_type;
-};
 
 /// Lowered function. Decision 1 guarantees every parameter and the return
 /// type are concrete by the time this node exists — a function with an
