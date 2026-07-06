@@ -10,8 +10,12 @@
 #include "src/semantic/module_index.h"
 
 #include "src/k-parser/parser.h"
+#include "src/testing/test_assert.h"
 
 namespace {
+
+using kira::testing::expect;
+using kira::testing::fail;
 
 struct source_fixture {
   std::string path;
@@ -24,17 +28,6 @@ struct parsed_fixture {
   std::vector<kira::ast::ptr<kira::ast::file>> ast_files;
   std::vector<kira::semantic::parsed_module> parsed_modules;
 };
-
-[[noreturn]] auto fail(std::string_view message) -> void {
-  std::cerr << "resolution_test failed: " << message << '\n';
-  std::exit(1);
-}
-
-auto expect(bool condition, std::string_view message) -> void {
-  if (!condition) {
-    fail(message);
-  }
-}
 
 auto parse_sources(const std::vector<source_fixture> &fixtures) -> parsed_fixture {
   auto parsed = parsed_fixture{

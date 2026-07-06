@@ -8,8 +8,12 @@
 
 #include "analysis.h"
 #include "src/k-parser/parser.h"
+#include "src/testing/test_assert.h"
 
 namespace {
+
+using kira::testing::expect;
+using kira::testing::fail;
 
 struct source_fixture {
   std::string path;
@@ -20,17 +24,6 @@ struct analyzed_session {
   std::string diagnostics;
   uint32_t error_count = 0;
 };
-
-[[noreturn]] auto fail(std::string_view message) -> void {
-  std::cerr << "check_test failed: " << message << '\n';
-  std::exit(1);
-}
-
-auto expect(bool condition, std::string_view message) -> void {
-  if (!condition) {
-    fail(message);
-  }
-}
 
 auto expect_diagnostic(const analyzed_session &analyzed,
                        std::string_view needle, // NOLINT(bugprone-easily-swappable-parameters)

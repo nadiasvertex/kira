@@ -1,8 +1,6 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <cstdlib>
-#include <iostream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -10,19 +8,12 @@
 #include <vector>
 
 #include "parser.h"
+#include "src/testing/test_assert.h"
 
 namespace {
 
-[[noreturn]] auto fail(std::string_view message) -> void {
-  std::cerr << "parser_test failed: " << message << '\n';
-  std::exit(1);
-}
-
-auto expect(bool condition, std::string_view message) -> void {
-  if (!condition) {
-    fail(message);
-  }
-}
+using kira::testing::expect;
+using kira::testing::fail;
 
 template <typename T>
 auto expect_node(kira::ast::node *node, kira::ast::node_kind kind,

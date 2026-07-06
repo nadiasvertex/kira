@@ -17,5 +17,8 @@ cc_library(
 cc_test(
     name = "parser_test",
     srcs = ["parser_test.cpp"],
-    deps = [":k-parser"],
+    deps = [
+        ":k-parser",
+        "//src/testing",
+    ],
 )

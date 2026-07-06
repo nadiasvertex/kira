@@ -35,6 +35,7 @@ cc_test(
     deps = [
         ":semantic",
         "//src/k-parser:k-parser",
+        "//src/testing",
     ],
 )
 
@@ -44,6 +45,7 @@ cc_test(
     deps = [
         ":semantic",
         "//src/k-parser:k-parser",
+        "//src/testing",
     ],
 )
 
@@ -53,5 +55,6 @@ cc_test(
     deps = [
         ":semantic",
         "//src/k-parser:k-parser",
+        "//src/testing",
     ],
 )
