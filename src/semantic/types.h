@@ -202,6 +202,13 @@ struct impl_ref {
   file_id_type file_id = 0;
 };
 
+/// One `extend` block, plus the module and file it was declared in.
+struct extend_ref {
+  const ast::extend_decl *decl = nullptr;
+  std::string module_name;
+  file_id_type file_id = 0;
+};
+
 /// One name a `use` declaration binds into a file's local scope — either the
 /// final path segment (`use a.b.c` binds `c`), a selected/renamed item
 /// (`use a.b.{c as d}`), or a wildcard marker (`use a.b.*`).
@@ -224,6 +231,7 @@ struct module_members {
   std::unordered_map<std::string, static_decl_ref> statics;
   std::unordered_map<std::string, variant_ref> variants;
   std::vector<impl_ref> impls;
+  std::vector<extend_ref> extends;
 };
 
 /// Session-wide index of every module's declarations and every file's

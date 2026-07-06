@@ -492,9 +492,9 @@ auto record_use_bindings(const ast::use_decl &decl, file_id_type file_id,
 }
 
 /// Classifies one module-scope item into `members`' matching table (types,
-/// traits, concepts, functions, static bindings, impls), also indexing a sum
-/// type's variants by name so a bare `@variant` can be found later without
-/// knowing which sum type it belongs to.
+/// traits, concepts, functions, static bindings, impls, extends), also
+/// indexing a sum type's variants by name so a bare `@variant` can be found
+/// later without knowing which sum type it belongs to.
 auto record_module_item(const ast::node &item, file_id_type file_id,
                         module_members &members) -> void {
   switch (item.kind) {
@@ -556,6 +556,13 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     members.impls.push_back(impl_ref{.decl = &decl,
                                      .module_name = members.module_name,
                                      .file_id = file_id});
+    return;
+  }
+  case ast::node_kind::extend_decl: {
+    const auto &decl = dynamic_cast<const ast::extend_decl &>(item);
+    members.extends.push_back(extend_ref{.decl = &decl,
+                                         .module_name = members.module_name,
+                                         .file_id = file_id});
     return;
   }
   default:

@@ -7,3 +7,4 @@ external
 .cache
 dist
 kira-out
+lint.log

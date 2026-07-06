@@ -135,13 +135,16 @@ struct fn_param_info {
   source_span span;
 };
 
-/// One method available on a type, either from an inherent/trait `impl`
-/// block (`from_trait == nullptr`) or a trait's default body reached
-/// through an impl that didn't override it.
+/// One method available on a type, from an inherent/trait `impl` block
+/// (`from_trait == nullptr`), a trait's default body reached through an
+/// impl that didn't override it, or an `extend` block (`is_extension`).
+/// Inherent/impl methods win over trait defaults, which win over
+/// extensions — see `find_method`.
 struct method_entry {
   const ast::func_decl *decl = nullptr;   ///< The method's declaration.
   const module_members *owner = nullptr;  ///< Module the method should resolve types in.
   const ast::trait_decl *from_trait = nullptr; ///< Owning trait, if this is a default method.
+  bool is_extension = false; ///< Whether this method came from an `extend` block.
 };
 
 // ==========================================================================
@@ -196,6 +199,11 @@ private:
   bool methods_built_ = false;
   std::unordered_map<const ast::type_decl *, std::vector<method_entry>>
       methods_;
+  /// Extend-block methods on a builtin type (e.g. `str`), keyed by the
+  /// builtin's type-entry name since builtins have no `type_decl` to key
+  /// `methods_` by.
+  std::unordered_map<std::string, std::vector<method_entry>>
+      extend_methods_by_builtin_;
 
   // ==========================================================================
   //  Diagnostics helpers
@@ -2058,11 +2066,27 @@ private:
     return resolve_type(*impl.decl->for_type, ctx);
   }
 
+  /// Resolves the concrete type an extend block targets (its `extend`
+  /// clause). Extend blocks carry no generic parameters of their own.
+  auto resolve_extend_target(const extend_ref &ext) -> type_id {
+    if (ext.decl->for_type == nullptr) {
+      return k_unknown_type;
+    }
+    const auto ctx = resolve_ctx{.module = index_.find_module(ext.module_name),
+                                 .param_bindings = nullptr,
+                                 .use_type_param_stack = false,
+                                 .quiet = true};
+    return resolve_type(*ext.decl->for_type, ctx);
+  }
+
   /// Builds `methods_` once per session (idempotent via `methods_built_`):
   /// for every impl block in every module, records its methods against the
   /// impl's target type declaration, plus — for a trait impl — the target
   /// trait's default-bodied methods, so calling a non-overridden default
   /// method through the impl works without duplicating its body per type.
+  /// Also records every `extend` block's methods, against the target's
+  /// `type_decl` when it names a user type or against the target's builtin
+  /// name (`extend_methods_by_builtin_`) otherwise.
   auto build_method_table() -> void {
     if (methods_built_) {
       return;
@@ -2070,6 +2094,36 @@ private:
     methods_built_ = true;
 
     for (const auto &[module_name, members] : index_.modules) {
+      for (const auto &ext : members.extends) {
+        const auto target = strip_refs(resolve_extend_target(ext));
+        const auto &target_entry = types_.entry(target);
+        auto extend_methods = std::vector<method_entry>{};
+        for (const auto &item : ext.decl->items) {
+          if (item == nullptr || item->has_error ||
+              item->kind != ast::node_kind::func_decl) {
+            continue;
+          }
+          extend_methods.push_back(method_entry{
+              .decl = dynamic_cast<const ast::func_decl *>(item.get()),
+              .owner = &members,
+              .from_trait = nullptr,
+              .is_extension = true,
+          });
+        }
+        if (extend_methods.empty()) {
+          continue;
+        }
+        if (target_entry.decl != nullptr) {
+          auto &methods = methods_[target_entry.decl];
+          methods.insert(methods.end(), extend_methods.begin(),
+                         extend_methods.end());
+        } else if (!target_entry.name.empty()) {
+          auto &methods = extend_methods_by_builtin_[target_entry.name];
+          methods.insert(methods.end(), extend_methods.begin(),
+                         extend_methods.end());
+        }
+      }
+
       for (const auto &impl : members.impls) {
         const auto target = strip_refs(resolve_impl_target(impl));
         const auto &target_entry = types_.entry(target);
@@ -2140,20 +2194,47 @@ private:
     if (it == methods_.end()) {
       return nullptr;
     }
-    // Inherent and impl-provided methods take priority over trait defaults.
-    const method_entry *fallback = nullptr;
+    // Inherent/impl-provided methods take priority over trait defaults,
+    // which take priority over `extend`-block methods (the least specific).
+    const method_entry *trait_fallback = nullptr;
+    const method_entry *extension_fallback = nullptr;
     for (const auto &method : it->second) {
       if (method.decl->name != name) {
+        continue;
+      }
+      if (method.is_extension) {
+        if (extension_fallback == nullptr) {
+          extension_fallback = &method;
+        }
         continue;
       }
       if (method.from_trait == nullptr) {
         return &method;
       }
-      if (fallback == nullptr) {
-        fallback = &method;
+      if (trait_fallback == nullptr) {
+        trait_fallback = &method;
       }
     }
-    return fallback;
+    return trait_fallback != nullptr ? trait_fallback : extension_fallback;
+  }
+
+  /// Looks up an `extend`-block method by name on a builtin instance (one
+  /// with no `type_decl`, e.g. `str`), keyed by the builtin's type-entry
+  /// name via `extend_methods_by_builtin_`.
+  auto find_extend_method_for_builtin(const type_entry &instance,
+                                      std::string_view name)
+      -> const method_entry * {
+    build_method_table();
+    const auto it = extend_methods_by_builtin_.find(instance.name);
+    if (it == extend_methods_by_builtin_.end()) {
+      return nullptr;
+    }
+    for (const auto &method : it->second) {
+      if (method.decl->name == name) {
+        return &method;
+      }
+    }
+    return nullptr;
   }
 
   /// Whether `instance` implements `trait_name`, via either a `deriving`
@@ -2381,9 +2462,20 @@ private:
       infer_call_args_loosely(call);
       return k_error_type;
     }
-    default:
+    default: {
+      // Builtin inherent methods take priority; an `extend` block fills in
+      // only when the name isn't one of the hardcoded builtin methods.
+      const auto builtin_result = builtin_method_result(entry, field.field_name);
+      if (types_.is_unknown(builtin_result)) {
+        if (const auto *method =
+                find_extend_method_for_builtin(entry, field.field_name)) {
+          return check_call_against_decl(call, *method->decl, method->owner,
+                                         file_id_, /*skip_self=*/true);
+        }
+      }
       infer_call_args_loosely(call);
-      return builtin_method_result(entry, field.field_name);
+      return builtin_result;
+    }
     }
   }
 
@@ -2661,8 +2753,15 @@ private:
           "its variants.");
       return k_error_type;
     }
-    default:
-      return builtin_method_result(entry, name);
+    default: {
+      const auto builtin_result = builtin_method_result(entry, name);
+      if (types_.is_unknown(builtin_result)) {
+        if (const auto *method = find_extend_method_for_builtin(entry, name)) {
+          return fn_type_of(*method->decl, method->owner);
+        }
+      }
+      return builtin_result;
+    }
     }
   }
 
@@ -4691,6 +4790,31 @@ private:
     pop_type_params();
   }
 
+  /// Checks an `extend` block: resolves its target type and checks each
+  /// method with `self_type_` bound to it. Unlike `check_impl_decl`, there
+  /// is no trait to satisfy, so there is no coherence, completeness, or
+  /// `requires` checking — `extend` makes no conformance claim, so it needs
+  /// none of that bookkeeping.
+  auto check_extend_decl(const ast::extend_decl &decl) -> void {
+    const auto target =
+        decl.for_type != nullptr
+            ? strip_refs(resolve_type(*decl.for_type, current_resolve_ctx()))
+            : k_unknown_type;
+
+    const auto saved_self = self_type_;
+    self_type_ = target;
+    for (const auto &item : decl.items) {
+      if (item == nullptr || item->has_error) {
+        continue;
+      }
+      if (item->kind == ast::node_kind::func_decl) {
+        check_function(dynamic_cast<const ast::func_decl &>(*item),
+                       /*at_module_scope=*/false);
+      }
+    }
+    self_type_ = saved_self;
+  }
+
   /// Validates an impl's members against its trait's requirements: every
   /// non-default trait method must be implemented, every associated type
   /// without a default must be defined, every impl method must actually be
@@ -5002,6 +5126,9 @@ private:
       return;
     case ast::node_kind::impl_decl:
       check_impl_decl(dynamic_cast<const ast::impl_decl &>(item));
+      return;
+    case ast::node_kind::extend_decl:
+      check_extend_decl(dynamic_cast<const ast::extend_decl &>(item));
       return;
     case ast::node_kind::concept_decl:
       check_concept_decl(dynamic_cast<const ast::concept_decl &>(item));

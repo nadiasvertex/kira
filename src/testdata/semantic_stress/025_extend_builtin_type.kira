@@ -1,0 +1,8 @@
+module semantic_stress.extend_builtin_type
+
+extend str:
+    def is_palindrome(self) -> bool:
+        return self == self.reversed()
+
+def run() -> bool:
+    return "racecar".is_palindrome()

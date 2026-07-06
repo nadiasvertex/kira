@@ -45,6 +45,7 @@ enum class token_kind : uint8_t {
   kw_type,    ///< Introduces type declarations and associated type items.
   kw_trait,   ///< Introduces trait interfaces for later conformance checking.
   kw_impl,    ///< Introduces implementation blocks tying behavior to types.
+  kw_extend,  ///< Introduces extension-method blocks adding methods to any type.
   kw_concept, ///< Introduces compile-time concept constraints.
   kw_def,     ///< Reserved declaration introducer kept visible to the grammar.
   kw_let,     ///< Starts immutable binding statements and `let` conditions.
@@ -455,6 +456,7 @@ struct token {
     case token_kind::kw_type:
     case token_kind::kw_trait:
     case token_kind::kw_impl:
+    case token_kind::kw_extend:
     case token_kind::kw_concept:
     case token_kind::kw_def:
     case token_kind::kw_static:
@@ -555,6 +557,9 @@ struct token {
 }
     if (text == "expr") {
       return token_kind::kw_expr;
+}
+    if (text == "extend") {
+      return token_kind::kw_extend;
 }
     break;
   case 'f':
@@ -770,6 +775,8 @@ token_kind_name(token_kind kind) noexcept -> std::string_view {
     return "`trait`";
   case token_kind::kw_impl:
     return "`impl`";
+  case token_kind::kw_extend:
+    return "`extend`";
   case token_kind::kw_concept:
     return "`concept`";
   case token_kind::kw_def:

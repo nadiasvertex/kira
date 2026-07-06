@@ -29,6 +29,7 @@ struct struct_type_def;
 struct sum_type_def;
 struct trait_decl;
 struct impl_decl;
+struct extend_decl;
 struct concept_decl;
 struct func_decl;
 struct sub_module_decl;
@@ -189,6 +190,7 @@ enum class node_kind : uint8_t {
   sum_type_def,              ///< Sum-type body wrapper.
   trait_decl,                ///< Trait declaration item.
   impl_decl,                 ///< Implementation block item.
+  extend_decl,               ///< Extension-method block item.
   concept_decl,              ///< Concept declaration item.
   func_decl,                 ///< Function declaration item.
   sub_module_decl,           ///< Nested module declaration item.
@@ -1443,6 +1445,16 @@ struct impl_decl : node {
       items; ///< Member definitions such as functions, statics, and associated types.
 
   impl_decl() : node(node_kind::impl_decl) {}
+};
+
+/// Extension-method declaration: `extend Type: ...`. Adds methods to `Type`
+/// without claiming trait conformance, so unlike `impl_decl` it carries no
+/// trait, no `where` clause, and no associated-type members.
+struct extend_decl : node {
+  ptr<type_expr> for_type;    ///< Concrete target type receiving the methods.
+  std::vector<ptr<node>> items; ///< Method (`func_decl`) definitions.
+
+  extend_decl() : node(node_kind::extend_decl) {}
 };
 
 /// Function modifier flags.

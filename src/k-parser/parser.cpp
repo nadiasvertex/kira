@@ -687,6 +687,19 @@ auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
     }
     return parse_impl_decl();
 
+  case token_kind::kw_extend:
+    if (vis != ast::visibility::def) {
+      emit(
+          diagnostic(diagnostic_level::Warning,
+                     "visibility modifiers are not meaningful on `extend` blocks",
+                     file_id_)
+              .with_label(peek().span, "this `extend`")
+              .with_help("Remove the visibility modifier — an `extend` "
+                         "block's methods are visible wherever its module "
+                         "is `use`d."));
+    }
+    return parse_extend_decl();
+
   case token_kind::kw_concept:
     return parse_concept_decl(vis);
 
@@ -760,8 +773,8 @@ auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
                     file_id_)
              .with_label(peek().span, "this can't appear here")
              .with_help("At the top level, only declarations are allowed: "
-                        "`use`, `type`, `trait`, `impl`, `concept`, `def`, "
-                        "`static`, `module`, `dep`."));
+                        "`use`, `type`, `trait`, `impl`, `extend`, "
+                        "`concept`, `def`, `static`, `module`, `dep`."));
     synchronize_to_newline();
     return make_error_node(peek().span);
   }
@@ -1817,6 +1830,52 @@ auto parser::parse_impl_decl() -> ast::ptr<ast::impl_decl> {
       }
     }
     expect_block_end("impl");
+  }
+
+  decl->span = start.merge(previous_span());
+  return decl;
+}
+
+/// Parses an `extend` block: `extend Type: def method(self) -> ...`.
+/// Unlike `impl`, there is no trait, no `where` clause, and no associated
+/// types — extend only ever adds methods to a concrete target type.
+auto parser::parse_extend_decl() -> ast::ptr<ast::extend_decl> {
+  auto decl = ast::make<ast::extend_decl>();
+  auto start = peek().span;
+
+  expect(token_kind::kw_extend);
+  decl->for_type = parse_type_expr();
+
+  expect(token_kind::colon);
+  skip_newlines();
+
+  if (match(token_kind::indent)) {
+    while (!at_any(token_kind::dedent, token_kind::eof)) {
+      skip_newlines();
+      if (at_any(token_kind::dedent, token_kind::eof)) {
+        break;
+}
+
+      auto item_vis = parse_optional_visibility();
+
+      if (at(token_kind::kw_def) ||
+          at_any(token_kind::kw_pure, token_kind::kw_async,
+                 token_kind::kw_machine)) {
+        auto mods = parse_func_modifiers();
+        if (at(token_kind::kw_def)) {
+          decl->items.push_back(parse_func_decl(item_vis, std::move(mods)));
+        } else {
+          emit_unexpected("`def` in extend body");
+          synchronize_to_newline();
+        }
+      } else if (at(token_kind::newline)) {
+        advance();
+      } else {
+        emit_unexpected("an extend member (function)");
+        synchronize_to_newline();
+      }
+    }
+    expect_block_end("extend");
   }
 
   decl->span = start.merge(previous_span());

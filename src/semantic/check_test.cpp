@@ -228,6 +228,65 @@ auto test_accepts_associated_type_self_output() -> void {
          "expected `self.output` associated-type return to check cleanly");
 }
 
+auto test_accepts_extend_on_builtin_type() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "extend str:\n"
+      "    def is_palindrome(self) -> bool:\n"
+      "        return self == self.reversed()\n"
+      "def run() -> bool:\n"
+      "    return \"racecar\".is_palindrome()\n");
+  expect(analyzed.error_count == 0,
+         "expected an extend block on a builtin type to check cleanly");
+}
+
+auto test_accepts_extend_on_user_type() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "type point = { x: float64, y: float64 }\n"
+      "extend point:\n"
+      "    def manhattan(self) -> float64:\n"
+      "        return self.x + self.y\n"
+      "def run(p: point) -> float64:\n"
+      "    return p.manhattan()\n");
+  expect(analyzed.error_count == 0,
+         "expected an extend block on a user type to check cleanly");
+}
+
+auto test_reports_extend_method_arity_mismatch() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "type point = { x: float64, y: float64 }\n"
+      "extend point:\n"
+      "    def scaled(self, factor: float64) -> float64:\n"
+      "        return self.x * factor\n"
+      "def run(p: point) -> float64:\n"
+      "    return p.scaled()\n");
+  expect(analyzed.error_count > 0,
+         "expected an extend method call to be checked like a real function");
+  expect_diagnostic(analyzed, "missing argument `factor`",
+                    "expected real arity checking against the extend method");
+}
+
+auto test_impl_method_takes_priority_over_extend() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "type point = { x: float64 }\n"
+      "trait show:\n"
+      "    def show(self) -> str\n"
+      "impl show for point:\n"
+      "    def show(self) -> str:\n"
+      "        return \"impl\"\n"
+      "extend point:\n"
+      "    def show(self) -> str:\n"
+      "        return \"extend\"\n"
+      "def run(p: point) -> str:\n"
+      "    return p.show()\n");
+  expect(analyzed.error_count == 0,
+         "expected impl/extend method name collision to check cleanly, "
+         "with the impl method winning");
+}
+
 auto test_reports_associated_type_output_mismatch() -> void {
   const auto analyzed = analyze_one(
       "module sample\n"
@@ -525,6 +584,9 @@ auto main() -> int {
     test_accepts_cross_module_qualified_types();
     test_accepts_indexing_local_bindings();
     test_accepts_associated_type_self_output();
+    test_accepts_extend_on_builtin_type();
+    test_accepts_extend_on_user_type();
+    test_impl_method_takes_priority_over_extend();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
@@ -547,6 +609,7 @@ auto main() -> int {
     test_reports_unknown_deriving();
     test_reports_impure_contract_call();
     test_reports_associated_type_output_mismatch();
+    test_reports_extend_method_arity_mismatch();
   } catch (const std::exception &ex) {
     std::cerr << "check_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);

@@ -1429,6 +1429,17 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
     return;
   }
 
+  case ast::node_kind::extend_decl: {
+    const auto &decl = dynamic_cast<const ast::extend_decl &>(node);
+    if (decl.for_type != nullptr) {
+      validate_type_expr(*decl.for_type, context, semantic_index, session_index,
+                         diag, file_has_errors);
+    }
+    validate_node_list(decl.items, context, semantic_index, session_index, diag,
+                       file_has_errors);
+    return;
+  }
+
   case ast::node_kind::func_decl: {
     const auto &decl = dynamic_cast<const ast::func_decl &>(node);
     for (const auto &param : decl.type_params) {

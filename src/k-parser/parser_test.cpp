@@ -821,6 +821,28 @@ auto test_parser_disambiguates_index_from_generic_instantiation() -> void {
       "expected `identity[int32](5)` to parse as a call expression");
 }
 
+auto test_parser_accepts_extend_block() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "extend str:\n"
+                             "  def is_palindrome(self) -> bool:\n"
+                             "    self == self.reversed()\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1,
+         "expected one top-level extend item");
+
+  auto *extend_decl = expect_node<kira::ast::extend_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::extend_decl,
+      "expected extend declaration");
+  expect(extend_decl->for_type != nullptr,
+         "expected extend block to carry a target type");
+  expect(extend_decl->items.size() == 1,
+         "expected one method in the extend block");
+  expect_node<kira::ast::func_decl>(
+      extend_decl->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected extend member to be a function declaration");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -829,7 +851,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 11> tests = {{
+  const std::array<named_test, 12> tests = {{
       {.name="lexer_indent_dedent", .fn=test_lexer_emits_indent_and_dedent},
       {.name="type_body_nodes", .fn=test_parser_builds_type_body_nodes},
       {.name="associated_types_where_aliases",
@@ -847,6 +869,7 @@ auto main(int argc, char *argv[]) -> int {
       {.name="phase1_audit_regressions", .fn=test_parser_accepts_phase1_audit_regressions},
       {.name="index_vs_generic_instantiation",
        .fn=test_parser_disambiguates_index_from_generic_instantiation},
+      {.name="extend_block", .fn=test_parser_accepts_extend_block},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

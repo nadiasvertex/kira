@@ -556,6 +556,8 @@ private:
   parse_concept_decl(ast::visibility vis) -> ast::ptr<ast::concept_decl>;
   /// Parses an `impl` block tying items to a concrete target type.
   [[nodiscard]] auto parse_impl_decl() -> ast::ptr<ast::impl_decl>;
+  /// Parses an `extend` block adding methods to a concrete target type.
+  [[nodiscard]] auto parse_extend_decl() -> ast::ptr<ast::extend_decl>;
 
   // ---- Function declarations ----
 
