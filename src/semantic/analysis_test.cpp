@@ -84,9 +84,10 @@ auto test_validate_semantics_accepts_clean_session() -> void {
       },
       {
           .path = "geometry_transform.kira",
-          .text = "module geometry.transform\n"
-                  "pub def rotate(p: super.shapes.circle) -> super.shapes.circle:\n"
-                  "  return p\n",
+          .text =
+              "module geometry.transform\n"
+              "pub def rotate(p: super.shapes.circle) -> super.shapes.circle:\n"
+              "  return p\n",
       },
   });
 
@@ -118,7 +119,8 @@ auto test_validate_semantics_reports_duplicate_module_paths() -> void {
          "expected duplicate-module-path diagnostic");
 }
 
-auto test_validate_semantics_reports_missing_parent_module_declaration() -> void {
+auto test_validate_semantics_reports_missing_parent_module_declaration()
+    -> void {
   const auto analyzed = analyze_sources({
       {
           .path = "geometry.kira",
@@ -136,8 +138,8 @@ auto test_validate_semantics_reports_missing_parent_module_declaration() -> void
 
   expect(analyzed.error_count > 0,
          "expected missing parent declaration to fail semantic validation");
-  expect(analyzed.diagnostics.find(
-             "module `geometry.transform` is not declared by parent module `geometry`") !=
+  expect(analyzed.diagnostics.find("module `geometry.transform` is not "
+                                   "declared by parent module `geometry`") !=
              std::string::npos,
          "expected missing-parent-module diagnostic");
 }
@@ -165,8 +167,8 @@ auto test_validate_semantics_reports_unresolved_session_import() -> void {
 
   expect(analyzed.error_count > 0,
          "expected unresolved session import to fail semantic validation");
-  expect(analyzed.diagnostics.find(
-             "import `package.tools.missing` does not resolve in this compilation session") !=
+  expect(analyzed.diagnostics.find("import `package.tools.missing` does not "
+                                   "resolve in this compilation session") !=
              std::string::npos,
          "expected unresolved-import diagnostic");
 }
@@ -213,8 +215,8 @@ auto test_validate_semantics_reports_unresolved_qualified_type_path() -> void {
   expect(analyzed.error_count > 0,
          "expected unresolved qualified type path to fail semantic validation");
   expect(analyzed.diagnostics.find(
-             "qualified type path `package.tools.missing` does not resolve from module `package.tools.app`") !=
-             std::string::npos,
+             "qualified type path `package.tools.missing` does not resolve "
+             "from module `package.tools.app`") != std::string::npos,
          "expected unresolved-qualified-type diagnostic");
 }
 
@@ -240,11 +242,11 @@ auto test_validate_semantics_reports_unresolved_module_qualified_reference()
       },
   });
 
-  expect(analyzed.error_count > 0,
-         "expected unresolved module-qualified reference to fail semantic validation");
+  expect(analyzed.error_count > 0, "expected unresolved module-qualified "
+                                   "reference to fail semantic validation");
   expect(analyzed.diagnostics.find(
-             "module-qualified reference `package.tools.missing` does not resolve from module `package.tools.app`") !=
-             std::string::npos,
+             "module-qualified reference `package.tools.missing` does not "
+             "resolve from module `package.tools.app`") != std::string::npos,
          "expected unresolved-module-reference diagnostic");
 }
 
@@ -260,7 +262,8 @@ auto main() -> int {
     test_validate_semantics_reports_unresolved_qualified_type_path();
     test_validate_semantics_reports_unresolved_module_qualified_reference();
   } catch (const std::exception &ex) {
-    std::cerr << "analysis_test failed: unhandled exception: " << ex.what() << '\n';
+    std::cerr << "analysis_test failed: unhandled exception: " << ex.what()
+              << '\n';
     std::exit(1);
   }
   return 0;

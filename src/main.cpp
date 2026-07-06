@@ -13,7 +13,8 @@
 /// @param argv Argument vector supplied by the host process.
 auto main(int argc, char *argv[]) -> int {
   try {
-    auto result = kira::parse_args(std::span<char *const>(argv, static_cast<size_t>(argc)));
+    auto result = kira::parse_args(
+        std::span<char *const>(argv, static_cast<size_t>(argc)));
 
     if (!result) {
       std::println(stderr, "Error: {}", result.error());

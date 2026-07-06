@@ -99,7 +99,9 @@ template <typename T> struct parse_result {
   }
 
   /// @brief Returns whether parsing produced any node at all.
-  [[nodiscard]] auto has_value() const noexcept -> bool { return node != nullptr; }
+  [[nodiscard]] auto has_value() const noexcept -> bool {
+    return node != nullptr;
+  }
 
   /// @brief Returns whether the parse failed or required recovery.
   [[nodiscard]] auto has_error() const noexcept -> bool {
@@ -167,7 +169,9 @@ public:
   // ========================================================================
 
   /// @brief Returns whether parsing emitted any error diagnostics.
-  [[nodiscard]] auto has_errors() const noexcept -> bool { return diag_.has_errors(); }
+  [[nodiscard]] auto has_errors() const noexcept -> bool {
+    return diag_.has_errors();
+  }
 
   /// @brief Returns the number of parse errors reported so far.
   [[nodiscard]] auto error_count() const noexcept -> uint32_t {
@@ -185,7 +189,9 @@ private:
   // ========================================================================
 
   /// @brief Returns the current token without consuming it.
-  [[nodiscard]] auto peek() const noexcept -> const token & { return tokens_[pos_]; }
+  [[nodiscard]] auto peek() const noexcept -> const token & {
+    return tokens_[pos_];
+  }
 
   /// @brief Returns the token `offset` positions ahead without consuming it.
   ///
@@ -197,12 +203,14 @@ private:
     auto idx = static_cast<size_t>(pos_) + offset;
     if (idx >= tokens_.size()) {
       idx = tokens_.size() - 1; // clamp to Eof
-}
+    }
     return tokens_[idx];
   }
 
   /// @brief Returns the kind of the current token.
-  [[nodiscard]] auto current() const noexcept -> token_kind { return peek().kind; }
+  [[nodiscard]] auto current() const noexcept -> token_kind {
+    return peek().kind;
+  }
 
   /// @brief Returns whether the current token has kind `kind`.
   ///
@@ -221,7 +229,9 @@ private:
   }
 
   /// @brief Returns whether the parser is positioned at the EOF sentinel.
-  [[nodiscard]] auto at_eof() const noexcept -> bool { return at(token_kind::eof); }
+  [[nodiscard]] auto at_eof() const noexcept -> bool {
+    return at(token_kind::eof);
+  }
 
   /// @brief Consumes and returns the current token.
   ///
@@ -231,7 +241,7 @@ private:
     token tok = tokens_[pos_];
     if (pos_ < tokens_.size() - 1) {
       ++pos_;
-}
+    }
     return tok;
   }
 
@@ -267,7 +277,7 @@ private:
   [[nodiscard]] auto previous_span() const noexcept -> source_span {
     if (pos_ == 0) {
       return source_span::dummy();
-}
+    }
     return tokens_[pos_ - 1].span;
   }
 
@@ -275,7 +285,7 @@ private:
   [[nodiscard]] auto previous() const noexcept -> const token & {
     if (pos_ == 0) {
       return tokens_[0];
-}
+    }
     return tokens_[pos_ - 1];
   }
 
@@ -288,12 +298,13 @@ private:
 
   /// @brief Consumes any contiguous logical newlines.
   ///
-  /// Many productions allow optional blank lines between constructs. Centralizing
-  /// that policy keeps individual grammar functions simpler and more consistent.
+  /// Many productions allow optional blank lines between constructs.
+  /// Centralizing that policy keeps individual grammar functions simpler and
+  /// more consistent.
   void skip_newlines() noexcept {
     while (at(token_kind::newline)) {
       advance();
-}
+    }
   }
 
   /// @brief Requires a logical newline, recovering if one was omitted.
@@ -310,11 +321,12 @@ private:
   //  going.
   // ========================================================================
 
-  /// @brief Requires a specific token kind and performs local recovery if absent.
+  /// @brief Requires a specific token kind and performs local recovery if
+  /// absent.
   ///
   /// This is the parser's main "missing token" mechanism. Callers get back a
-  /// real token when possible or a synthesized placeholder when recovery inserts
-  /// the expected punctuation to preserve tree shape.
+  /// real token when possible or a synthesized placeholder when recovery
+  /// inserts the expected punctuation to preserve tree shape.
   ///
   /// @param expected Token kind required by the current grammar production.
   auto expect(token_kind expected) -> token;
@@ -323,9 +335,11 @@ private:
   ///
   /// @param expected Token kind required by the current grammar production.
   /// @param context Explanation of the surrounding construct.
-  auto expect_with_context(token_kind expected, std::string_view context) -> token;
+  auto expect_with_context(token_kind expected, std::string_view context)
+      -> token;
 
-  /// @brief Emits a friendly unexpected-token diagnostic at the current position.
+  /// @brief Emits a friendly unexpected-token diagnostic at the current
+  /// position.
   ///
   /// @param expected_description User-facing description of the missing syntax.
   void emit_unexpected(std::string_view expected_description);
@@ -344,15 +358,16 @@ private:
   ///
   /// @param span Source range to highlight.
   /// @param message Primary user-facing message.
-  [[nodiscard]] auto make_error_at(source_span span, std::string message) const -> diagnostic {
+  [[nodiscard]] auto make_error_at(source_span span, std::string message) const
+      -> diagnostic {
     return diagnostic(diagnostic_level::error, std::move(message), file_id_)
         .with_label(span, "here");
   }
 
   /// @brief Skips ahead to a token that plausibly starts a fresh construct.
   ///
-  /// This is the parser's coarse panic-mode recovery boundary for file and block
-  /// parsing.
+  /// This is the parser's coarse panic-mode recovery boundary for file and
+  /// block parsing.
   void synchronize();
 
   /// @brief Skips to the next logical statement boundary.
@@ -408,19 +423,21 @@ private:
   /// @param parse_item Callback used to parse each block element.
   template <typename T>
   auto parse_block(std::string_view construct_name,
-                    const std::function<ast::ptr<T>()> &parse_item) -> std::vector<ast::ptr<T>>;
+                   const std::function<ast::ptr<T>()> &parse_item)
+      -> std::vector<ast::ptr<T>>;
 
   /// @brief Normalized representation of either inline or block bodies.
   ///
-  /// Many constructs in Kira allow both `: expr` and `:` followed by an indented
-  /// block. This record preserves which form the user wrote so later phases can
-  /// keep the distinction when it matters.
+  /// Many constructs in Kira allow both `: expr` and `:` followed by an
+  /// indented block. This record preserves which form the user wrote so later
+  /// phases can keep the distinction when it matters.
   struct body_result {
-    ast::ptr<ast::expr> inline_expr;           ///< Present for compact `: expr` bodies.
-    std::vector<ast::ptr<ast::node>> stmts;    ///< Statement-form body payload.
-    bool is_block = false;                     ///< Distinguishes original source form.
+    ast::ptr<ast::expr> inline_expr; ///< Present for compact `: expr` bodies.
+    std::vector<ast::ptr<ast::node>> stmts; ///< Statement-form body payload.
+    bool is_block = false; ///< Distinguishes original source form.
   };
-  /// @brief Parses either a compact expression body or an indented statement body.
+  /// @brief Parses either a compact expression body or an indented statement
+  /// body.
   ///
   /// @param construct_name User-facing construct name for diagnostics.
   auto parse_body(std::string_view construct_name) -> body_result;
@@ -428,8 +445,8 @@ private:
   ///
   /// Inline expression bodies are wrapped in `expr_stmt` nodes so later phases
   /// can consume a uniform statement list when needed.
-  [[nodiscard]] auto
-  body_to_stmt_list(body_result body) -> std::vector<ast::ptr<ast::node>>;
+  [[nodiscard]] auto body_to_stmt_list(body_result body)
+      -> std::vector<ast::ptr<ast::node>>;
 
   // ========================================================================
   //  Comma-separated list helper
@@ -443,10 +460,10 @@ private:
   /// @param construct_name User-facing construct name for diagnostics.
   /// @param parse_element Callback that parses one element if possible.
   template <typename T>
-  auto
-  parse_delimited_list(token_kind open, token_kind close,
-                       std::string_view construct_name,
-                       std::function<std::optional<T>()> parse_element) -> std::vector<T>;
+  auto parse_delimited_list(token_kind open, token_kind close,
+                            std::string_view construct_name,
+                            std::function<std::optional<T>()> parse_element)
+      -> std::vector<T>;
 
   /// @brief Parses a comma-separated list without surrounding delimiters.
   ///
@@ -454,9 +471,8 @@ private:
   /// @param parse_element Callback that parses one element if possible.
   /// @param at_end Callback that reports when the surrounding production ends.
   template <typename T>
-  auto
-  parse_comma_list(std::function<std::optional<T>()> parse_element,
-                   const std::function<bool()>& at_end) -> std::vector<T>;
+  auto parse_comma_list(std::function<std::optional<T>()> parse_element,
+                        const std::function<bool()> &at_end) -> std::vector<T>;
 
   // ========================================================================
   //  Visibility
@@ -487,17 +503,19 @@ private:
   /// Parses a file-level `module` declaration.
   [[nodiscard]] auto parse_module_decl() -> ast::ptr<ast::module_decl>;
   /// Parses a `use` import with already-consumed visibility.
-  [[nodiscard]] auto parse_use_decl(ast::visibility vis) -> ast::ptr<ast::use_decl>;
+  [[nodiscard]] auto parse_use_decl(ast::visibility vis)
+      -> ast::ptr<ast::use_decl>;
   /// Parses a nested `module` item inside a file or module body.
-  [[nodiscard]] auto
-  parse_sub_module_decl(ast::visibility vis) -> ast::ptr<ast::sub_module_decl>;
+  [[nodiscard]] auto parse_sub_module_decl(ast::visibility vis)
+      -> ast::ptr<ast::sub_module_decl>;
   /// Parses a dependency metadata declaration.
   [[nodiscard]] auto parse_dep_decl() -> ast::ptr<ast::dep_decl>;
 
   // ---- Type declarations ----
 
   /// Parses a user-defined type declaration.
-  [[nodiscard]] auto parse_type_decl(ast::visibility vis) -> ast::ptr<ast::type_decl>;
+  [[nodiscard]] auto parse_type_decl(ast::visibility vis)
+      -> ast::ptr<ast::type_decl>;
   /// Parses the right-hand side of a type declaration after the name.
   [[nodiscard]] auto parse_type_def() -> ast::ptr<ast::node>;
   /// Parses a struct-style field body for a type declaration.
@@ -518,9 +536,11 @@ private:
   /// Parses a named type path with optional generic/value arguments.
   [[nodiscard]] auto parse_named_type() -> ast::ptr<ast::named_type>;
   /// Wraps a parsed bound list in a `bound_type` node for AST uniformity.
-  [[nodiscard]] auto make_bound_type(ast::bound bound) -> ast::ptr<ast::bound_type>;
+  [[nodiscard]] auto make_bound_type(ast::bound bound)
+      -> ast::ptr<ast::bound_type>;
   /// Parses an optional `: Type` annotation and returns null when absent.
-  [[nodiscard]] auto parse_optional_type_annotation() -> ast::ptr<ast::type_expr>;
+  [[nodiscard]] auto parse_optional_type_annotation()
+      -> ast::ptr<ast::type_expr>;
   /// Parses tuple type syntax.
   [[nodiscard]] auto parse_tuple_type() -> ast::ptr<ast::tuple_type>;
   /// Parses slice type syntax.
@@ -550,10 +570,11 @@ private:
   // ---- Trait / concept / impl declarations ----
 
   /// Parses a trait declaration body and signature.
-  [[nodiscard]] auto parse_trait_decl(ast::visibility vis) -> ast::ptr<ast::trait_decl>;
+  [[nodiscard]] auto parse_trait_decl(ast::visibility vis)
+      -> ast::ptr<ast::trait_decl>;
   /// Parses a concept declaration and its constraints.
-  [[nodiscard]] auto
-  parse_concept_decl(ast::visibility vis) -> ast::ptr<ast::concept_decl>;
+  [[nodiscard]] auto parse_concept_decl(ast::visibility vis)
+      -> ast::ptr<ast::concept_decl>;
   /// Parses an `impl` block tying items to a concrete target type.
   [[nodiscard]] auto parse_impl_decl() -> ast::ptr<ast::impl_decl>;
   /// Parses an `extend` block adding methods to a concrete target type.
@@ -562,9 +583,10 @@ private:
   // ---- Function declarations ----
 
   /// Parses a function declaration with modifiers already collected.
-  [[nodiscard]] auto
-  parse_func_decl(ast::visibility vis, ast::func_modifiers mods,
-                  bool allow_bodyless = false) -> ast::ptr<ast::func_decl>;
+  [[nodiscard]] auto parse_func_decl(ast::visibility vis,
+                                     ast::func_modifiers mods,
+                                     bool allow_bodyless = false)
+      -> ast::ptr<ast::func_decl>;
   /// Parses the leading modifier sequence for a function-like construct.
   [[nodiscard]] auto parse_func_modifiers() -> ast::func_modifiers;
   /// Parses a function parameter list.
@@ -572,15 +594,16 @@ private:
   /// Parses one function parameter, including defaults.
   [[nodiscard]] auto parse_param() -> ast::param;
   /// Parses zero or more contract clauses attached to a function.
-  [[nodiscard]] auto parse_contract_clauses() -> std::vector<ast::contract_clause>;
+  [[nodiscard]] auto parse_contract_clauses()
+      -> std::vector<ast::contract_clause>;
   /// Parses a single `pre` or `post` contract clause.
   [[nodiscard]] auto parse_contract_clause() -> ast::contract_clause;
 
   // ---- Static declarations ----
 
   /// Parses a `static` declaration after visibility handling.
-  [[nodiscard]] auto
-  parse_static_decl(ast::visibility vis) -> ast::ptr<ast::static_decl>;
+  [[nodiscard]] auto parse_static_decl(ast::visibility vis)
+      -> ast::ptr<ast::static_decl>;
 
   // ========================================================================
   //  Statements
@@ -697,17 +720,19 @@ private:
   /// Parses `static expr` metaprogramming forms.
   [[nodiscard]] auto parse_static_expr() -> ast::ptr<ast::static_expr>;
   /// Parses a trailing `if` attached to an already-parsed expression.
-  [[nodiscard]] auto parse_trailing_if_expr(ast::ptr<ast::expr> then_expr) -> ast::ptr<ast::expr>;
+  [[nodiscard]] auto parse_trailing_if_expr(ast::ptr<ast::expr> then_expr)
+      -> ast::ptr<ast::expr>;
   /// Parses a trailing `where` binding clause attached to an expression.
-  [[nodiscard]] auto parse_where_expr(ast::ptr<ast::expr> inner) -> ast::ptr<ast::where_expr>;
+  [[nodiscard]] auto parse_where_expr(ast::ptr<ast::expr> inner)
+      -> ast::ptr<ast::where_expr>;
 
   // ---- Postfix suffixes ----
 
   /// Try to parse a postfix suffix (`.field`, `[index]`, `(args)`,
   /// `?`, `as Type`). Returns nullptr if the current token doesn't
   /// start a postfix suffix.
-  [[nodiscard]] auto
-  parse_postfix_suffix(ast::ptr<ast::expr> base) -> ast::ptr<ast::expr>;
+  [[nodiscard]] auto parse_postfix_suffix(ast::ptr<ast::expr> base)
+      -> ast::ptr<ast::expr>;
 
   // ---- Call arguments ----
 
@@ -735,8 +760,10 @@ private:
   [[nodiscard]] auto parse_wildcard_pattern() -> ast::ptr<ast::pattern>;
   /// Parses a literal pattern.
   [[nodiscard]] auto parse_literal_pattern() -> ast::ptr<ast::pattern>;
-  /// Parses a bare identifier as a binding pattern (or an `ident..ident` range).
-  [[nodiscard]] auto parse_ident_or_constructor_pattern() -> ast::ptr<ast::pattern>;
+  /// Parses a bare identifier as a binding pattern (or an `ident..ident`
+  /// range).
+  [[nodiscard]] auto parse_ident_or_constructor_pattern()
+      -> ast::ptr<ast::pattern>;
   /// Parses an `@`-prefixed variant constructor pattern: `@name`, `@name(...)`.
   [[nodiscard]] auto parse_variant_pattern() -> ast::ptr<ast::pattern>;
   /// Parses parenthesized and tuple patterns.
@@ -750,31 +777,33 @@ private:
   /// Parses reference patterns.
   [[nodiscard]] auto parse_ref_pattern() -> ast::ptr<ast::pattern>;
   /// Heuristic for deciding whether a bare name should parse as a constructor.
-  [[nodiscard]] auto is_constructor_like_name(std::string_view name) const -> bool;
+  [[nodiscard]] auto is_constructor_like_name(std::string_view name) const
+      -> bool;
 
   // ========================================================================
   //  For-loop variable parsing (shared by for-stmt and for-expr)
   // ========================================================================
 
-  /// Parses the variable/pattern list shared by `for` statements and expressions.
+  /// Parses the variable/pattern list shared by `for` statements and
+  /// expressions.
   [[nodiscard]] auto parse_for_vars() -> std::vector<ast::ptr<ast::pattern>>;
 
   // ========================================================================
   //  Helper: convert an assign-op token to the AssignOp enum.
   // ========================================================================
 
-  [[nodiscard]] static auto
-  token_to_assign_op(token_kind kind) noexcept -> std::optional<ast::assign_op>;
+  [[nodiscard]] static auto token_to_assign_op(token_kind kind) noexcept
+      -> std::optional<ast::assign_op>;
 
   // ========================================================================
   //  Helper: convert comparison token to BinaryOp.
   // ========================================================================
 
   [[nodiscard]] auto token_to_cmp_op() -> std::optional<ast::binary_op>;
-  [[nodiscard]] static auto
-  token_to_add_op(token_kind kind) noexcept -> std::optional<ast::binary_op>;
-  [[nodiscard]] static auto
-  token_to_mul_op(token_kind kind) noexcept -> std::optional<ast::binary_op>;
+  [[nodiscard]] static auto token_to_add_op(token_kind kind) noexcept
+      -> std::optional<ast::binary_op>;
+  [[nodiscard]] static auto token_to_mul_op(token_kind kind) noexcept
+      -> std::optional<ast::binary_op>;
 
   // ========================================================================
   //  Member variables
@@ -794,15 +823,19 @@ private:
 
   /// Some contexts, like guarded `for` expressions, need `=>` to act as a
   /// delimiter rather than starting a lambda.
-  bool allow_lambda_expr_{true}; ///< Context flag that suppresses lambda parsing when `=>` is a delimiter.
+  bool allow_lambda_expr_{true}; ///< Context flag that suppresses lambda
+                                 ///< parsing when `=>` is a delimiter.
 
   /// Some contexts, like `for ... in expr if guard`, need `if` to delimit the
   /// surrounding construct rather than start a trailing conditional expression.
-  bool allow_trailing_if_expr_{true}; ///< Context flag that keeps `if` from stealing outer grammar roles.
+  bool allow_trailing_if_expr_{true}; ///< Context flag that keeps `if` from
+                                      ///< stealing outer grammar roles.
 
   /// Compact statement termination is used when newline tokens are suppressed,
   /// such as block expressions nested inside parentheses.
-  bool allow_compact_stmt_terminator_{false}; ///< Treats non-newline delimiters as statement terminators in compact contexts.
+  bool allow_compact_stmt_terminator_{
+      false}; ///< Treats non-newline delimiters as statement terminators in
+              ///< compact contexts.
 };
 
 } // namespace kira

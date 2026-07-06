@@ -156,8 +156,8 @@ template <typename T> using ptr_vec = std::vector<ptr<T>>;
 
 /// @brief Constructs an AST node with ownership wrapped in `ptr<T>`.
 ///
-/// This keeps AST construction uniform across the parser and later tree-building
-/// passes.
+/// This keeps AST construction uniform across the parser and later
+/// tree-building passes.
 ///
 /// @tparam T Concrete node type to allocate.
 /// @tparam Args Constructor argument pack forwarded to `T`.
@@ -177,7 +177,8 @@ template <typename T, typename... Args>
 /// or exposing parser-only type knowledge at API boundaries.
 enum class node_kind : uint8_t {
   // Sentinel
-  error_node, ///< Recovery placeholder used when no concrete syntax node parsed.
+  error_node, ///< Recovery placeholder used when no concrete syntax node
+              ///< parsed.
 
   // Top-level
   file_node,   ///< Root syntax tree for one source file.
@@ -290,15 +291,17 @@ enum class node_kind : uint8_t {
 /// from. `has_error` marks recovered nodes that later phases should treat as
 /// structurally useful but semantically unreliable.
 struct node {
-  node_kind kind;          ///< Runtime tag for downcasting and diagnostics.
-  source_span span;        ///< Source range covering the full syntactic construct.
-  bool has_error = false;  ///< Set when recovery synthesized or repaired this node.
+  node_kind kind;   ///< Runtime tag for downcasting and diagnostics.
+  source_span span; ///< Source range covering the full syntactic construct.
+  bool has_error =
+      false; ///< Set when recovery synthesized or repaired this node.
 
   /// @brief Creates a node shell with kind and source coverage.
   ///
   /// @param k Concrete runtime kind tag.
   /// @param s Source span covering the node.
-  explicit node(node_kind k, source_span s = source_span::dummy()) : kind(k), span(s) {}
+  explicit node(node_kind k, source_span s = source_span::dummy())
+      : kind(k), span(s) {}
   virtual ~node() = default;
 
   // Non-copyable, movable.
@@ -320,7 +323,8 @@ struct error_node : node {
   ///
   /// @param s Source span where parsing failed.
   /// @param desc Short explanation of the missing or invalid construct.
-  explicit error_node(source_span s = source_span::dummy(), std::string desc = "")
+  explicit error_node(source_span s = source_span::dummy(),
+                      std::string desc = "")
       : node(node_kind::error_node, s), description(std::move(desc)) {
     has_error = true;
   }
@@ -335,9 +339,10 @@ struct error_node : node {
 /// Parsing converts surface keywords into this enum immediately so later phases
 /// can reason about access control without depending on token spellings.
 enum class visibility : uint8_t {
-  def,      ///< No explicit modifier; use the language's default visibility rules.
-  pub,      ///< Publicly visible outside the defining module boundary.
-  internal, ///< Visible within the current package or internal compilation unit.
+  def, ///< No explicit modifier; use the language's default visibility rules.
+  pub, ///< Publicly visible outside the defining module boundary.
+  internal, ///< Visible within the current package or internal compilation
+            ///< unit.
   super,    ///< Visible to the parent module scope.
   priv,     ///< Visible only within the immediately enclosing scope/module.
 };
@@ -348,7 +353,8 @@ enum class visibility : uint8_t {
 /// visibility parsing can stay branch-light.
 ///
 /// @param kind Token that may represent a visibility modifier.
-[[nodiscard]] inline auto token_to_visibility(token_kind kind) noexcept -> visibility {
+[[nodiscard]] inline auto token_to_visibility(token_kind kind) noexcept
+    -> visibility {
   switch (kind) {
   case token_kind::kw_pub:
     return visibility::pub;
@@ -412,24 +418,27 @@ struct array_type : type_expr {
 
 /// @brief Reference type syntax.
 struct ref_type : type_expr {
-  ptr<type_expr> inner;   ///< Referenced type.
-  bool is_mut = false;    ///< Whether the reference grants mutation.
+  ptr<type_expr> inner; ///< Referenced type.
+  bool is_mut = false;  ///< Whether the reference grants mutation.
 
   ref_type() : type_expr(node_kind::ref_type) {}
 };
 
 /// @brief Raw pointer type syntax.
 struct ptr_type : type_expr {
-  ptr<type_expr> inner;   ///< Pointed-to type.
-  bool is_mut = false;    ///< Whether the pointed-to value is mutable through the pointer.
+  ptr<type_expr> inner; ///< Pointed-to type.
+  bool is_mut =
+      false; ///< Whether the pointed-to value is mutable through the pointer.
 
   ptr_type() : type_expr(node_kind::ptr_type) {}
 };
 
 /// @brief Function type syntax with parameter and return types.
 struct fn_type : type_expr {
-  std::vector<ptr<type_expr>> param_types; ///< Parameter types in declaration order.
-  ptr<type_expr> return_type;              ///< Optional return type; null means implicit unit.
+  std::vector<ptr<type_expr>>
+      param_types; ///< Parameter types in declaration order.
+  ptr<type_expr>
+      return_type; ///< Optional return type; null means implicit unit.
 
   fn_type() : type_expr(node_kind::fn_type) {}
 };
@@ -447,7 +456,8 @@ struct quote_type : type_expr {
 
 /// @brief Union-style type expression listing alternative accepted types.
 struct union_type : type_expr {
-  std::vector<ptr<type_expr>> alternatives; ///< Candidate alternative member types.
+  std::vector<ptr<type_expr>>
+      alternatives; ///< Candidate alternative member types.
 
   union_type() : type_expr(node_kind::union_type) {}
 };
@@ -458,7 +468,8 @@ struct union_type : type_expr {
 /// proof-oriented context rather than as an ordinary runtime expression.
 struct refinement_type : type_expr {
   ptr<type_expr> base; ///< Underlying type being constrained.
-  ptr<node> predicate; ///< Predicate syntax attached by the trailing `where` clause.
+  ptr<node>
+      predicate; ///< Predicate syntax attached by the trailing `where` clause.
 
   refinement_type() : type_expr(node_kind::refinement_type) {}
 };
@@ -469,16 +480,20 @@ struct refinement_type : type_expr {
 
 /// @brief Parsed generic parameter, which may itself be a type or value slot.
 ///
-/// The parser preserves both forms in one record because later phases decide how
-/// a parameter participates in generic substitution and constraint checking.
+/// The parser preserves both forms in one record because later phases decide
+/// how a parameter participates in generic substitution and constraint
+/// checking.
 struct type_param {
   source_span span; ///< Full source coverage of the parameter declaration.
   std::string name; ///< Parameter name as written.
   /// For type params: an optional trait/concept bound.
   /// For value params: the type of the value.
-  ptr<type_expr> bound_or_type; ///< Bound or value type depending on parameter form.
-  bool is_value_param = false;  ///< True when the parameter binds a compile-time value slot.
-  bool is_higher_kinded = false; ///< True for higher-kinded parameters like `Name[_]`.
+  ptr<type_expr>
+      bound_or_type; ///< Bound or value type depending on parameter form.
+  bool is_value_param =
+      false; ///< True when the parameter binds a compile-time value slot.
+  bool is_higher_kinded =
+      false; ///< True for higher-kinded parameters like `Name[_]`.
 };
 
 /// @brief One supplied generic argument in a named-type application.
@@ -489,14 +504,17 @@ struct type_arg {
   source_span span; ///< Full source range of the argument.
   /// A type argument is either a type expression or a value expression.
   /// We store both as Node* and disambiguate later in semantic analysis.
-  ptr<node> value;                 ///< Parsed argument payload awaiting semantic classification.
+  ptr<node>
+      value; ///< Parsed argument payload awaiting semantic classification.
   std::optional<std::string> name; ///< Named-argument label when present.
 };
 
 /// @brief Named type reference with optional generic or value arguments.
 struct named_type : type_expr {
-  std::vector<std::string> path; ///< Qualified type path, e.g. `std.collections.Map`.
-  std::vector<type_arg> type_args; ///< Generic or value arguments attached to the path.
+  std::vector<std::string>
+      path; ///< Qualified type path, e.g. `std.collections.Map`.
+  std::vector<type_arg>
+      type_args; ///< Generic or value arguments attached to the path.
 
   named_type() : type_expr(node_kind::named_type) {}
 };
@@ -505,13 +523,15 @@ struct named_type : type_expr {
 struct bound_term {
   source_span span; ///< Source range of the bound term.
   /// A trait bound like `Trait[Args]` or a function type bound.
-  ptr<type_expr> type; ///< Syntax describing the required capability or callable shape.
+  ptr<type_expr>
+      type; ///< Syntax describing the required capability or callable shape.
 };
 
 /// @brief Normalized representation of a trait/concept bound list.
 struct bound {
-  source_span span;              ///< Source range of the full bound expression.
-  std::vector<bound_term> terms; ///< Required terms joined by `+` in source order.
+  source_span span; ///< Source range of the full bound expression.
+  std::vector<bound_term>
+      terms; ///< Required terms joined by `+` in source order.
 };
 
 /// A bound list represented in a type-expression slot.
@@ -524,13 +544,14 @@ struct bound_type : type_expr {
 /// @brief Constraint from a trailing `where` clause.
 ///
 /// These are kept as syntax-level records so semantic analysis can later decide
-/// whether each clause is a trait requirement, associated-type equality, or some
-/// richer relation.
+/// whether each clause is a trait requirement, associated-type equality, or
+/// some richer relation.
 struct where_constraint {
-  source_span span;     ///< Full source range of the clause.
+  source_span span;       ///< Full source range of the clause.
   ptr<type_expr> subject; ///< Thing being constrained.
   /// Either a trait bound or an associated type equality constraint.
-  ptr<type_expr> bound_or_type; ///< Constraint payload interpreted by later phases.
+  ptr<type_expr>
+      bound_or_type; ///< Constraint payload interpreted by later phases.
 };
 
 // ==========================================================================
@@ -539,23 +560,24 @@ struct where_constraint {
 
 /// @brief One field in a struct-style type definition.
 struct struct_field {
-  source_span span;                    ///< Source range of the full field declaration.
+  source_span span; ///< Source range of the full field declaration.
   visibility visibility = visibility::def; ///< Field-level visibility modifier.
-  std::string name;                    ///< Field name.
-  ptr<type_expr> type;                ///< Declared field type.
+  std::string name;                        ///< Field name.
+  ptr<type_expr> type;                     ///< Declared field type.
 };
 
 /// @brief Struct-style type body stored as a reusable helper record.
 struct struct_body {
-  source_span span;               ///< Source range of the field list.
+  source_span span;                 ///< Source range of the field list.
   std::vector<struct_field> fields; ///< Fields in declaration order.
 };
 
 /// @brief One variant inside a sum type definition.
 struct sum_variant {
-  source_span span;                    ///< Source range of the variant declaration.
-  std::string name;                    ///< Variant constructor name.
-  std::vector<ptr<type_expr>> payload_types; ///< Payload member types; empty for unit variants.
+  source_span span; ///< Source range of the variant declaration.
+  std::string name; ///< Variant constructor name.
+  std::vector<ptr<type_expr>>
+      payload_types; ///< Payload member types; empty for unit variants.
 };
 
 /// @brief Sum-type body stored as a reusable helper record.
@@ -581,7 +603,8 @@ struct error_expr : expr {
   ///
   /// @param s Source span where expression parsing failed.
   /// @param desc Short explanation of the missing or malformed expression.
-  explicit error_expr(source_span s = source_span::dummy(), std::string desc = "")
+  explicit error_expr(source_span s = source_span::dummy(),
+                      std::string desc = "")
       : expr(node_kind::ident_expr, s), description(std::move(desc)) {
     has_error = true;
   }
@@ -596,13 +619,16 @@ struct ident_expr : expr {
 
 /// @brief Literal expression preserving the original token spelling.
 struct literal_expr : expr {
-  token_kind lit_kind = token_kind::eof; ///< Literal token category chosen by the lexer.
-  std::string value;   ///< Raw source spelling, kept for exact later interpretation.
+  token_kind lit_kind =
+      token_kind::eof; ///< Literal token category chosen by the lexer.
+  std::string
+      value; ///< Raw source spelling, kept for exact later interpretation.
 
   literal_expr() : expr(node_kind::literal_expr) {}
 };
 
-/// @brief Normalized binary operators produced by expression and pattern parsing.
+/// @brief Normalized binary operators produced by expression and pattern
+/// parsing.
 ///
 /// Surface syntax maps onto this enum so later phases can reason about operator
 /// semantics without carrying token kinds around.
@@ -653,7 +679,8 @@ enum class binary_op : uint8_t {
 /// on the enum directly.
 ///
 /// @param op Binary operator to describe.
-[[nodiscard]] inline auto binary_op_name(binary_op op) noexcept -> std::string_view {
+[[nodiscard]] inline auto binary_op_name(binary_op op) noexcept
+    -> std::string_view {
   switch (op) {
   case binary_op::Pipe:
     return "|";
@@ -739,7 +766,8 @@ enum class unary_op : uint8_t {
 /// @brief Returns the canonical surface spelling for a unary operator.
 ///
 /// @param op Unary operator to describe.
-[[nodiscard]] inline auto unary_op_name(unary_op op) noexcept -> std::string_view {
+[[nodiscard]] inline auto unary_op_name(unary_op op) noexcept
+    -> std::string_view {
   switch (op) {
   case unary_op::Neg:
     return "-";
@@ -767,9 +795,10 @@ struct unary_expr : expr {
 
 /// Field access: `expr.name`
 struct field_expr : expr {
-  ptr<expr> object;                    ///< Base expression being projected from.
-  std::string field_name;              ///< Selected field or method name.
-  std::vector<ptr<type_expr>> generic_args; ///< Optional method generic arguments.
+  ptr<expr> object;       ///< Base expression being projected from.
+  std::string field_name; ///< Selected field or method name.
+  std::vector<ptr<type_expr>>
+      generic_args; ///< Optional method generic arguments.
 
   field_expr() : expr(node_kind::field_expr) {}
 };
@@ -784,23 +813,23 @@ struct index_expr : expr {
 
 /// Function/method call: `expr(args...)`
 struct call_arg {
-  source_span span;               ///< Full source range of the argument.
+  source_span span;                ///< Full source range of the argument.
   std::optional<std::string> name; ///< Named-argument label when present.
-  ptr<expr> value;                ///< Argument value expression.
+  ptr<expr> value;                 ///< Argument value expression.
 };
 
 /// @brief Function or method invocation.
 struct call_expr : expr {
-  ptr<expr> callee;              ///< Expression producing the callable target.
-  std::vector<call_arg> args;    ///< Arguments in evaluation order.
+  ptr<expr> callee;           ///< Expression producing the callable target.
+  std::vector<call_arg> args; ///< Arguments in evaluation order.
 
   call_expr() : expr(node_kind::call_expr) {}
 };
 
 /// Type cast: `expr as Type`
 struct cast_expr : expr {
-  ptr<expr> operand;            ///< Value being reinterpreted or converted.
-  ptr<type_expr> target_type;   ///< Destination type syntax.
+  ptr<expr> operand;          ///< Value being reinterpreted or converted.
+  ptr<type_expr> target_type; ///< Destination type syntax.
 
   cast_expr() : expr(node_kind::cast_expr) {}
 };
@@ -821,9 +850,10 @@ struct tuple_expr : expr {
 
 /// Array literal: `[a, b, c]` or fill: `[val; count]`
 struct array_expr : expr {
-  std::vector<ptr<expr>> elements; ///< Element expressions for explicit-list form.
-  ptr<expr> fill_value;            ///< Repeated value for `[val; count]` form.
-  ptr<expr> fill_count;            ///< Repetition count for `[val; count]` form.
+  std::vector<ptr<expr>>
+      elements;         ///< Element expressions for explicit-list form.
+  ptr<expr> fill_value; ///< Repeated value for `[val; count]` form.
+  ptr<expr> fill_count; ///< Repetition count for `[val; count]` form.
 
   array_expr() : expr(node_kind::array_expr) {}
 };
@@ -832,13 +862,16 @@ struct array_expr : expr {
 struct struct_field_init {
   source_span span; ///< Full source range of the field initializer.
   std::string name; ///< Field name being initialized.
-  ptr<expr> value;  ///< Null for shorthand `{x}`, which later lowers to `{x: x}`.
+  ptr<expr>
+      value; ///< Null for shorthand `{x}`, which later lowers to `{x: x}`.
 };
 
 /// Struct literal: `{a: 1, b: 2}`
 struct struct_expr : expr {
-  ptr<expr> type_name;                 ///< Optional explicit type head, e.g. `Point` in `Point {...}`.
-  std::vector<struct_field_init> fields; ///< Field initializers in source order.
+  ptr<expr> type_name; ///< Optional explicit type head, e.g. `Point` in `Point
+                       ///< {...}`.
+  std::vector<struct_field_init>
+      fields; ///< Field initializers in source order.
 
   struct_expr() : expr(node_kind::struct_expr) {}
 };
@@ -852,13 +885,13 @@ struct lambda_param {
 
 /// @brief Lambda or closure expression.
 ///
-/// The parser preserves both compact expression bodies and block bodies so later
-/// lowering can choose the most natural internal form.
+/// The parser preserves both compact expression bodies and block bodies so
+/// later lowering can choose the most natural internal form.
 struct lambda_expr : expr {
-  bool is_pure = false;              ///< Whether the lambda was declared `pure`.
-  bool is_move = false;              ///< Whether captures should be by move.
-  std::vector<lambda_param> params;  ///< Parameter list in source order.
-  ptr<type_expr> return_type;        ///< Optional explicit return type.
+  bool is_pure = false;             ///< Whether the lambda was declared `pure`.
+  bool is_move = false;             ///< Whether captures should be by move.
+  std::vector<lambda_param> params; ///< Parameter list in source order.
+  ptr<type_expr> return_type;       ///< Optional explicit return type.
   /// Body is either a single expression or a block (vector of statements).
   ptr<expr> body_expr;               ///< Present for compact expression bodies.
   std::vector<ptr<node>> body_stmts; ///< Present for block bodies.
@@ -875,23 +908,25 @@ struct module_path_expr : expr {
 
 /// Parenthesized expression: `(expr)`
 struct group_expr : expr {
-  ptr<expr> inner; ///< Wrapped expression preserved for source-faithful AST shape.
+  ptr<expr>
+      inner; ///< Wrapped expression preserved for source-faithful AST shape.
 
   group_expr() : expr(node_kind::group_expr) {}
 };
 
 /// `if expr: ... elif ...: ... else: ...` (expression form)
 struct if_branch {
-  source_span span;             ///< Full source range of the branch header and body.
-  ptr<expr> condition;          ///< Conditional expression for ordinary branches.
-  ptr<node> let_pattern;        ///< Pattern for `if let` / `elif let` branches.
-  ptr<expr> let_expr;           ///< Scrutinee expression for `if let` branches.
-  std::vector<ptr<node>> body;  ///< Branch body normalized as node list.
+  source_span span;      ///< Full source range of the branch header and body.
+  ptr<expr> condition;   ///< Conditional expression for ordinary branches.
+  ptr<node> let_pattern; ///< Pattern for `if let` / `elif let` branches.
+  ptr<expr> let_expr;    ///< Scrutinee expression for `if let` branches.
+  std::vector<ptr<node>> body; ///< Branch body normalized as node list.
 };
 
 /// @brief Conditional expression with one or more branches.
 struct if_expr : expr {
-  std::vector<if_branch> branches; ///< `if` branch followed by any `elif` branches.
+  std::vector<if_branch>
+      branches; ///< `if` branch followed by any `elif` branches.
   std::vector<ptr<node>> else_body; ///< Optional fallback body.
 
   if_expr() : expr(node_kind::if_expr) {}
@@ -900,18 +935,19 @@ struct if_expr : expr {
 /// `match subject: ...`
 struct match_arm {
   source_span span; ///< Full source range of the arm.
-  ptr<node> pattern; ///< Pattern syntax, stored as node for recovery flexibility.
-  ptr<expr> guard;   ///< Optional guard expression narrowing this arm.
+  ptr<node>
+      pattern;     ///< Pattern syntax, stored as node for recovery flexibility.
+  ptr<expr> guard; ///< Optional guard expression narrowing this arm.
   /// Body: inline expression or block.
-  ptr<expr> body_expr;               ///< Present for compact `=> expr`-style bodies.
+  ptr<expr> body_expr; ///< Present for compact `=> expr`-style bodies.
   std::vector<ptr<node>> body_stmts; ///< Present for block bodies.
   bool has_error = false;            ///< Set when recovery repaired the arm.
 };
 
 /// @brief Pattern-dispatch expression.
 struct match_expr : expr {
-  ptr<expr> subject;             ///< Expression being matched on.
-  std::vector<match_arm> arms;   ///< Arms evaluated in source order.
+  ptr<expr> subject;           ///< Expression being matched on.
+  std::vector<match_arm> arms; ///< Arms evaluated in source order.
 
   match_expr() : expr(node_kind::match_expr) {}
 };
@@ -920,12 +956,14 @@ struct match_expr : expr {
 struct for_expr : expr {
   /// One `vars in iterable` clause in a comprehension chain.
   struct iter_clause {
-    std::vector<ptr<node>> patterns; ///< Iteration patterns introduced by the clause.
-    ptr<expr> iterable;              ///< Source expression producing values to iterate.
+    std::vector<ptr<node>>
+        patterns;       ///< Iteration patterns introduced by the clause.
+    ptr<expr> iterable; ///< Source expression producing values to iterate.
   };
-  std::vector<iter_clause> clauses; ///< One or more iteration clauses in source order.
-  ptr<expr> guard;                  ///< Optional trailing filter expression.
-  ptr<expr> yield_expr;             ///< Expression yielded for each surviving iteration.
+  std::vector<iter_clause>
+      clauses;          ///< One or more iteration clauses in source order.
+  ptr<expr> guard;      ///< Optional trailing filter expression.
+  ptr<expr> yield_expr; ///< Expression yielded for each surviving iteration.
 
   for_expr() : expr(node_kind::for_expr) {}
 };
@@ -933,21 +971,24 @@ struct for_expr : expr {
 /// `await expr` or `await yield`
 struct await_expr : expr {
   ptr<expr> operand; ///< Awaited expression; null for `await yield` syntax.
-  bool is_yield = false; ///< Distinguishes the coroutine handoff form from ordinary await.
+  bool is_yield =
+      false; ///< Distinguishes the coroutine handoff form from ordinary await.
 
   await_expr() : expr(node_kind::await_expr) {}
 };
 
 /// `async: ...`
 struct async_expr : expr {
-  std::vector<ptr<node>> body; ///< Async body normalized as a statement/node list.
+  std::vector<ptr<node>>
+      body; ///< Async body normalized as a statement/node list.
 
   async_expr() : expr(node_kind::async_expr) {}
 };
 
 /// `par: ...`
 struct par_expr : expr {
-  std::vector<ptr<expr>> branches; ///< Branch expressions that should run in parallel.
+  std::vector<ptr<expr>>
+      branches; ///< Branch expressions that should run in parallel.
 
   par_expr() : expr(node_kind::par_expr) {}
 };
@@ -961,9 +1002,9 @@ struct race_expr : expr {
 
 /// `on(Type): block` or `on(Type, sender)`
 struct on_expr : expr {
-  ptr<type_expr> context_type;  ///< Context type that scopes the body.
-  ptr<expr> sender;             ///< Optional sender/source expression.
-  std::vector<ptr<node>> body;  ///< Body normalized as statement/node list.
+  ptr<type_expr> context_type; ///< Context type that scopes the body.
+  ptr<expr> sender;            ///< Optional sender/source expression.
+  std::vector<ptr<node>> body; ///< Body normalized as statement/node list.
 
   on_expr() : expr(node_kind::on_expr) {}
 };
@@ -977,14 +1018,16 @@ struct block_expr : expr {
 
 /// Quasi-quote: `` `(content)` `` or `` `content` ``
 struct quote_expr : expr {
-  std::vector<token> tokens; ///< Raw quoted tokens preserved for macro-like consumers.
+  std::vector<token>
+      tokens; ///< Raw quoted tokens preserved for macro-like consumers.
 
   quote_expr() : expr(node_kind::quote_expr) {}
 };
 
 /// Splice: `~(expr)` or `~ident`
 struct splice_expr : expr {
-  ptr<expr> operand; ///< Expression whose value should be injected into quoted syntax.
+  ptr<expr> operand; ///< Expression whose value should be injected into quoted
+                     ///< syntax.
 
   splice_expr() : expr(node_kind::splice_expr) {}
 };
@@ -1012,8 +1055,9 @@ struct where_binding {
 ///               b = substr(v2, 5)
 ///               c = compute_a_thing(v, 10)
 struct where_expr : expr {
-  ptr<expr> inner;                     ///< Expression whose evaluation sees the bindings.
-  std::vector<where_binding> bindings; ///< Locally scoped bindings in evaluation order.
+  ptr<expr> inner; ///< Expression whose evaluation sees the bindings.
+  std::vector<where_binding>
+      bindings; ///< Locally scoped bindings in evaluation order.
 
   where_expr() : expr(node_kind::where_expr) {}
 };
@@ -1060,8 +1104,9 @@ struct binding_pattern : pattern {
 
 /// Constructor: `Some(x)`, `Point(a, b)`
 struct constructor_pattern : pattern {
-  std::string name;              ///< Constructor or variant name.
-  std::vector<ptr<pattern>> args; ///< Nested subpatterns for payload destructuring.
+  std::string name; ///< Constructor or variant name.
+  std::vector<ptr<pattern>>
+      args; ///< Nested subpatterns for payload destructuring.
 
   constructor_pattern() : pattern(node_kind::constructor_pattern) {}
 };
@@ -1075,15 +1120,17 @@ struct tuple_pattern : pattern {
 
 /// Struct pattern field: `name: pattern`, `name`, or `..`
 struct field_pattern {
-  source_span span;   ///< Full source range of the field clause.
-  std::string name;   ///< Field name; empty only for the rest pattern `..`.
-  ptr<pattern> pattern; ///< Explicit subpattern; null for shorthand `{name}` binding.
+  source_span span; ///< Full source range of the field clause.
+  std::string name; ///< Field name; empty only for the rest pattern `..`.
+  ptr<pattern>
+      pattern; ///< Explicit subpattern; null for shorthand `{name}` binding.
   bool is_rest = false; ///< Whether this entry is the struct-rest marker `..`.
 };
 
 /// Struct pattern: `{x: a, y: b, ..}`
 struct struct_pattern : pattern {
-  std::vector<field_pattern> fields; ///< Field destructuring clauses in source order.
+  std::vector<field_pattern>
+      fields; ///< Field destructuring clauses in source order.
 
   struct_pattern() : pattern(node_kind::struct_pattern) {}
 };
@@ -1115,7 +1162,7 @@ enum class option_result_kind : uint8_t {
 /// @brief Pattern matching the option `some(...)` wrapper form.
 struct option_pattern : pattern {
   option_result_kind option_kind; ///< Which wrapper keyword was parsed.
-  ptr<pattern> inner;           ///< Inner payload pattern.
+  ptr<pattern> inner;             ///< Inner payload pattern.
 
   option_pattern() : pattern(node_kind::option_pattern) {}
 };
@@ -1123,7 +1170,7 @@ struct option_pattern : pattern {
 /// Result pattern — reuses option_pattern but with different kind.
 struct result_pattern : pattern {
   option_result_kind result_kind; ///< Distinguishes `ok(...)` from `err(...)`.
-  ptr<pattern> inner;           ///< Inner payload pattern.
+  ptr<pattern> inner;             ///< Inner payload pattern.
 
   result_pattern() : pattern(node_kind::result_pattern) {}
 };
@@ -1137,15 +1184,17 @@ struct ref_pattern : pattern {
 
 /// `a | b | c`
 struct or_pattern : pattern {
-  std::vector<ptr<pattern>> alternatives; ///< Alternatives tried from left to right.
+  std::vector<ptr<pattern>>
+      alternatives; ///< Alternatives tried from left to right.
 
   or_pattern() : pattern(node_kind::or_pattern) {}
 };
 
 /// `(pattern)` — parenthesized pattern for grouping.
 struct group_pattern : pattern {
-  ptr<pattern> inner;                 ///< Grouped inner pattern.
-  std::optional<std::string> alias;   ///< Optional alias introduced after grouping.
+  ptr<pattern> inner; ///< Grouped inner pattern.
+  std::optional<std::string>
+      alias; ///< Optional alias introduced after grouping.
 
   group_pattern() : pattern(node_kind::group_pattern) {}
 };
@@ -1164,7 +1213,8 @@ struct error_stmt : stmt {
   /// @brief Creates an error-marked statement placeholder.
   ///
   /// @param s Source span where statement parsing failed.
-  explicit error_stmt(source_span s = source_span::dummy()) : stmt(node_kind::expr_stmt, s) {
+  explicit error_stmt(source_span s = source_span::dummy())
+      : stmt(node_kind::expr_stmt, s) {
     has_error = true;
   }
 };
@@ -1172,19 +1222,21 @@ struct error_stmt : stmt {
 /// `let pattern [: type] = expr`
 /// `let pattern [: type] = expr else: block`
 struct let_stmt : stmt {
-  ptr<pattern> pattern;              ///< Binding pattern introduced by the statement.
-  ptr<type_expr> type_annotation;    ///< Optional explicit annotation for the bound value.
-  ptr<expr> initializer;             ///< Expression whose result is destructured or bound.
-  std::vector<ptr<node>> else_body;  ///< Failure path for `let ... else` destructuring.
+  ptr<pattern> pattern; ///< Binding pattern introduced by the statement.
+  ptr<type_expr>
+      type_annotation;   ///< Optional explicit annotation for the bound value.
+  ptr<expr> initializer; ///< Expression whose result is destructured or bound.
+  std::vector<ptr<node>>
+      else_body; ///< Failure path for `let ... else` destructuring.
 
   let_stmt() : stmt(node_kind::let_stmt) {}
 };
 
 /// `var name [: type] = expr`
 struct var_stmt : stmt {
-  std::string name;                ///< Mutable variable name.
-  ptr<type_expr> type_annotation;  ///< Optional explicit variable type.
-  ptr<expr> initializer;           ///< Initial assigned value.
+  std::string name;               ///< Mutable variable name.
+  ptr<type_expr> type_annotation; ///< Optional explicit variable type.
+  ptr<expr> initializer;          ///< Initial assigned value.
 
   var_stmt() : stmt(node_kind::var_stmt) {}
 };
@@ -1235,7 +1287,8 @@ struct return_stmt : stmt {
 
 /// `if expr: block { elif expr: block } [else: block]`
 struct if_stmt : stmt {
-  std::vector<if_branch> branches; ///< `if` branch followed by any `elif` branches.
+  std::vector<if_branch>
+      branches; ///< `if` branch followed by any `elif` branches.
   std::vector<ptr<node>> else_body; ///< Optional fallback body.
 
   if_stmt() : stmt(node_kind::if_stmt) {}
@@ -1243,10 +1296,10 @@ struct if_stmt : stmt {
 
 /// `while expr: block` or `while let pattern = expr: block`
 struct while_stmt : stmt {
-  ptr<expr> condition;           ///< Loop condition for ordinary `while` form.
-  ptr<pattern> let_pattern;      ///< Pattern for `while let` destructuring form.
-  ptr<expr> let_expr;            ///< Scrutinee expression for `while let` form.
-  std::vector<ptr<node>> body;   ///< Loop body nodes.
+  ptr<expr> condition;         ///< Loop condition for ordinary `while` form.
+  ptr<pattern> let_pattern;    ///< Pattern for `while let` destructuring form.
+  ptr<expr> let_expr;          ///< Scrutinee expression for `while let` form.
+  std::vector<ptr<node>> body; ///< Loop body nodes.
 
   while_stmt() : stmt(node_kind::while_stmt) {}
 };
@@ -1263,40 +1316,41 @@ struct for_stmt : stmt {
 
 /// `match subject: ...`
 struct match_stmt : stmt {
-  ptr<expr> subject;            ///< Expression being matched on.
-  std::vector<match_arm> arms;  ///< Arms evaluated in source order.
+  ptr<expr> subject;           ///< Expression being matched on.
+  std::vector<match_arm> arms; ///< Arms evaluated in source order.
 
   match_stmt() : stmt(node_kind::match_stmt) {}
 };
 
 /// Crew option: `name: value`
 struct crew_option {
-  source_span span; ///< Source range of the option entry.
-  std::string name; ///< Option key.
+  source_span span;  ///< Source range of the option entry.
+  std::string name;  ///< Option key.
   std::string value; ///< Raw option value text.
 };
 
 /// `crew name(options): block` in expression position.
 struct crew_expr : expr {
-  std::string name;              ///< Crew target or backend name.
+  std::string name;                 ///< Crew target or backend name.
   std::vector<crew_option> options; ///< Static configuration options.
-  std::vector<ptr<node>> body;   ///< Body executed within the crew context.
+  std::vector<ptr<node>> body;      ///< Body executed within the crew context.
 
   crew_expr() : expr(node_kind::crew_expr) {}
 };
 
 /// `crew name(options): block`
 struct crew_stmt : stmt {
-  std::string name;              ///< Crew target or backend name.
+  std::string name;                 ///< Crew target or backend name.
   std::vector<crew_option> options; ///< Static configuration options.
-  std::vector<ptr<node>> body;   ///< Body executed within the crew context.
+  std::vector<ptr<node>> body;      ///< Body executed within the crew context.
 
   crew_stmt() : stmt(node_kind::crew_stmt) {}
 };
 
 /// `asm { content }`
 struct asm_stmt : stmt {
-  std::string content; ///< Raw assembly body preserved for later backend handling.
+  std::string
+      content; ///< Raw assembly body preserved for later backend handling.
 
   asm_stmt() : stmt(node_kind::asm_stmt) {}
 };
@@ -1314,8 +1368,8 @@ struct splice_stmt : stmt {
 
 /// `use` path handling.
 struct use_item {
-  source_span span;               ///< Source range of the imported leaf item.
-  std::string name;               ///< Imported name.
+  source_span span;                 ///< Source range of the imported leaf item.
+  std::string name;                 ///< Imported name.
   std::optional<std::string> alias; ///< Optional rename introduced by `as`.
 };
 
@@ -1328,16 +1382,17 @@ enum class use_selector_kind : uint8_t {
 
 /// @brief Parsed selector detail for a `use` declaration.
 struct use_selector {
-  source_span span;           ///< Source range of the selector portion.
-  use_selector_kind kind;       ///< Selector strategy chosen by the user.
+  source_span span;            ///< Source range of the selector portion.
+  use_selector_kind kind;      ///< Selector strategy chosen by the user.
   std::vector<use_item> items; ///< Imported items for single/group selectors.
 };
 
 /// @brief Import declaration at file or module scope.
 struct use_decl : node {
-  visibility visibility = visibility::def; ///< Visibility of the imported binding(s).
-  std::vector<std::string> path;           ///< Module path prefix being imported from.
-  std::optional<use_selector> selector;    ///< Optional leaf selection strategy.
+  visibility visibility =
+      visibility::def;           ///< Visibility of the imported binding(s).
+  std::vector<std::string> path; ///< Module path prefix being imported from.
+  std::optional<use_selector> selector; ///< Optional leaf selection strategy.
 
   use_decl() : node(node_kind::use_decl) {}
 };
@@ -1345,13 +1400,15 @@ struct use_decl : node {
 /// `type Name[Params] = TypeDef`
 struct type_decl : node {
   visibility visibility = visibility::def; ///< Declared visibility of the type.
-  std::string name;                        ///< Type name introduced by the declaration.
-  std::vector<type_param> type_params;     ///< Generic parameters in declaration order.
+  std::string name; ///< Type name introduced by the declaration.
+  std::vector<type_param>
+      type_params; ///< Generic parameters in declaration order.
   /// The type definition body — one of: struct_body, sum_body, type_expr,
   /// refinement_type.
-  ptr<node> definition;                    ///< Parsed right-hand-side definition payload.
-  std::vector<std::string> deriving;       ///< Derived traits or behaviors requested by name.
-  ptr<expr> invariant;                     ///< Optional type invariant expression.
+  ptr<node> definition; ///< Parsed right-hand-side definition payload.
+  std::vector<std::string>
+      deriving;        ///< Derived traits or behaviors requested by name.
+  ptr<expr> invariant; ///< Optional type invariant expression.
 
   type_decl() : node(node_kind::type_decl) {}
 };
@@ -1372,41 +1429,45 @@ struct sum_type_def : node {
 
 /// Associated type in a trait: `type Name [= Default]`
 struct associated_type_decl {
-  source_span span;                    ///< Source range of the declaration.
-  visibility visibility = visibility::def; ///< Visibility inside the trait surface.
-  std::string name;                    ///< Associated type name.
-  ptr<type_expr> default_type;         ///< Optional default implementation type.
+  source_span span; ///< Source range of the declaration.
+  visibility visibility =
+      visibility::def;         ///< Visibility inside the trait surface.
+  std::string name;            ///< Associated type name.
+  ptr<type_expr> default_type; ///< Optional default implementation type.
 };
 
-/// @brief Node wrapper allowing associated-type declarations in generic item lists.
+/// @brief Node wrapper allowing associated-type declarations in generic item
+/// lists.
 struct associated_type_decl_node : node {
   associated_type_decl value; ///< Wrapped associated-type declaration payload.
 
-  associated_type_decl_node()
-      : node(node_kind::associated_type_decl_node) {}
+  associated_type_decl_node() : node(node_kind::associated_type_decl_node) {}
 };
 
 /// Associated type in an impl: `type Name = ConcreteType`
 struct associated_type_def {
-  source_span span; ///< Source range of the definition.
-  std::string name; ///< Associated type name being defined.
+  source_span span;    ///< Source range of the definition.
+  std::string name;    ///< Associated type name being defined.
   ptr<type_expr> type; ///< Concrete type provided by the impl.
 };
 
-/// @brief Node wrapper allowing associated-type definitions in generic item lists.
+/// @brief Node wrapper allowing associated-type definitions in generic item
+/// lists.
 struct associated_type_def_node : node {
   associated_type_def value; ///< Wrapped associated-type definition payload.
 
-  associated_type_def_node()
-      : node(node_kind::associated_type_def_node) {}
+  associated_type_def_node() : node(node_kind::associated_type_def_node) {}
 };
 
 /// Trait declaration.
 struct trait_decl : node {
-  visibility visibility = visibility::def; ///< Declared visibility of the trait.
-  std::string name;                        ///< Trait name.
-  std::vector<type_param> type_params;     ///< Generic parameters accepted by the trait.
-  std::optional<bound> requires_bound;     ///< Optional supertrait-style requirements.
+  visibility visibility =
+      visibility::def; ///< Declared visibility of the trait.
+  std::string name;    ///< Trait name.
+  std::vector<type_param>
+      type_params; ///< Generic parameters accepted by the trait.
+  std::optional<bound>
+      requires_bound; ///< Optional supertrait-style requirements.
   std::vector<ptr<node>>
       items; ///< Member items such as functions, statics, and associated types.
 
@@ -1417,32 +1478,41 @@ struct trait_decl : node {
 struct concept_param {
   source_span span; ///< Source range of the concept parameter.
   std::string name; ///< Parameter name used within concept constraints.
-  bool is_higher_kinded = false; ///< Whether the parameter accepts a type constructor.
+  bool is_higher_kinded =
+      false; ///< Whether the parameter accepts a type constructor.
 };
 
 struct concept_constraint {
-  source_span span;        ///< Full source range of the constraint.
-  ptr<type_expr> subject;  ///< Subject type for type-oriented constraints.
-  ptr<node> bound_or_expr; ///< Bound or value expression payload, resolved later.
+  source_span span;       ///< Full source range of the constraint.
+  ptr<type_expr> subject; ///< Subject type for type-oriented constraints.
+  ptr<node>
+      bound_or_expr; ///< Bound or value expression payload, resolved later.
 };
 
 struct concept_decl : node {
-  visibility visibility = visibility::def; ///< Declared visibility of the concept.
-  std::string name;                        ///< Concept name.
-  std::vector<concept_param> params;       ///< Concept parameters in declaration order.
-  std::vector<concept_constraint> constraints; ///< Constraint clauses defining the concept.
+  visibility visibility =
+      visibility::def; ///< Declared visibility of the concept.
+  std::string name;    ///< Concept name.
+  std::vector<concept_param>
+      params; ///< Concept parameters in declaration order.
+  std::vector<concept_constraint>
+      constraints; ///< Constraint clauses defining the concept.
 
   concept_decl() : node(node_kind::concept_decl) {}
 };
 
 /// Impl declaration.
 struct impl_decl : node {
-  std::vector<type_param> type_params;          ///< Generic parameters scoped to the impl.
-  ptr<type_expr> trait_type;                    ///< Implemented trait/concept; null for inherent impls.
-  ptr<type_expr> for_type;                      ///< Concrete target type receiving the implementation.
-  std::vector<where_constraint> where_constraints; ///< Additional applicability constraints.
-  std::vector<ptr<node>>
-      items; ///< Member definitions such as functions, statics, and associated types.
+  std::vector<type_param>
+      type_params; ///< Generic parameters scoped to the impl.
+  ptr<type_expr>
+      trait_type; ///< Implemented trait/concept; null for inherent impls.
+  ptr<type_expr>
+      for_type; ///< Concrete target type receiving the implementation.
+  std::vector<where_constraint>
+      where_constraints;        ///< Additional applicability constraints.
+  std::vector<ptr<node>> items; ///< Member definitions such as functions,
+                                ///< statics, and associated types.
 
   impl_decl() : node(node_kind::impl_decl) {}
 };
@@ -1451,7 +1521,7 @@ struct impl_decl : node {
 /// without claiming trait conformance, so unlike `impl_decl` it carries no
 /// trait, no `where` clause, and no associated-type members.
 struct extend_decl : node {
-  ptr<type_expr> for_type;    ///< Concrete target type receiving the methods.
+  ptr<type_expr> for_type;      ///< Concrete target type receiving the methods.
   std::vector<ptr<node>> items; ///< Method (`func_decl`) definitions.
 
   extend_decl() : node(node_kind::extend_decl) {}
@@ -1459,24 +1529,26 @@ struct extend_decl : node {
 
 /// Function modifier flags.
 struct func_modifiers {
-  bool is_pure = false;        ///< Whether the declaration promises purity.
-  bool is_async = false;       ///< Whether the function executes asynchronously.
-  bool is_machine = false;     ///< Whether machine-mode arithmetic semantics apply.
-  bool is_static = false;      ///< Whether the function is static rather than instance-oriented.
+  bool is_pure = false;    ///< Whether the declaration promises purity.
+  bool is_async = false;   ///< Whether the function executes asynchronously.
+  bool is_machine = false; ///< Whether machine-mode arithmetic semantics apply.
+  bool is_static =
+      false; ///< Whether the function is static rather than instance-oriented.
   ptr<type_expr> async_context; ///< Optional explicit async context type.
 };
 
 /// Contract clause: `pre expr [, message]` or `post expr [, message]`
 struct contract_clause {
-  source_span span; ///< Source range of the contract clause.
-  bool is_pre;      ///< True for preconditions, false for postconditions.
+  source_span span;    ///< Source range of the contract clause.
+  bool is_pre;         ///< True for preconditions, false for postconditions.
   ptr<expr> condition; ///< Condition expression to validate.
-  std::optional<std::string> message; ///< Optional user-facing failure explanation.
+  std::optional<std::string>
+      message; ///< Optional user-facing failure explanation.
 };
 
 /// Parameter in a function signature.
 struct param {
-  source_span span; ///< Full source range of the parameter.
+  source_span span;     ///< Full source range of the parameter.
   ptr<pattern> pattern; ///< Binding pattern introduced by the parameter.
   ptr<type_expr> type_annotation; ///< Optional explicit parameter type.
   ptr<expr> default_value;        ///< Optional default argument expression.
@@ -1484,39 +1556,45 @@ struct param {
 
 /// Function declaration.
 struct func_decl : node {
-  visibility visibility = visibility::def; ///< Declared visibility of the function.
-  func_modifiers modifiers;                ///< Semantic modifiers attached to the declaration.
-  std::string name;                        ///< Function name.
-  std::vector<type_param> type_params;     ///< Generic parameters in declaration order.
-  std::vector<param> params;               ///< Call parameters in declaration order.
-  ptr<type_expr> return_type;              ///< Optional explicit return type.
-  std::vector<where_constraint> where_constraints; ///< Additional applicability constraints.
-  std::vector<contract_clause> contracts;  ///< Pre/postconditions attached to the function.
+  visibility visibility =
+      visibility::def;      ///< Declared visibility of the function.
+  func_modifiers modifiers; ///< Semantic modifiers attached to the declaration.
+  std::string name;         ///< Function name.
+  std::vector<type_param>
+      type_params;            ///< Generic parameters in declaration order.
+  std::vector<param> params;  ///< Call parameters in declaration order.
+  ptr<type_expr> return_type; ///< Optional explicit return type.
+  std::vector<where_constraint>
+      where_constraints; ///< Additional applicability constraints.
+  std::vector<contract_clause>
+      contracts; ///< Pre/postconditions attached to the function.
   /// Body: either an inline expression or a block of statements.
-  ptr<expr> body_expr;                     ///< Present for compact expression-bodied functions.
-  std::vector<ptr<node>> body_stmts;       ///< Present for block-bodied functions.
+  ptr<expr> body_expr; ///< Present for compact expression-bodied functions.
+  std::vector<ptr<node>> body_stmts; ///< Present for block-bodied functions.
 
   func_decl() : node(node_kind::func_decl) {}
 };
 
 /// Sub-module: `module Name` or `module Name: ...`
 struct sub_module_decl : node {
-  visibility visibility = visibility::def; ///< Declared visibility of the nested module.
-  std::string name;                        ///< Nested module name.
-  std::vector<ptr<node>> items;            ///< Nested items; empty for declaration-only form.
+  visibility visibility =
+      visibility::def; ///< Declared visibility of the nested module.
+  std::string name;    ///< Nested module name.
+  std::vector<ptr<node>>
+      items; ///< Nested items; empty for declaration-only form.
 
   sub_module_decl() : node(node_kind::sub_module_decl) {}
 };
 
 /// Dependency declaration: `dep Name: ...`
 struct dep_field {
-  source_span span; ///< Source range of the metadata field.
-  std::string key;  ///< Metadata key.
+  source_span span;  ///< Source range of the metadata field.
+  std::string key;   ///< Metadata key.
   std::string value; ///< Raw metadata value text.
 };
 
 struct dep_decl : node {
-  std::string name;             ///< Dependency name or identifier.
+  std::string name;              ///< Dependency name or identifier.
   std::vector<dep_field> fields; ///< Parsed metadata fields.
 
   dep_decl() : node(node_kind::dep_decl) {}
@@ -1539,42 +1617,48 @@ enum class static_decl_kind : uint8_t {
 /// @brief Compile-time declaration whose fields are interpreted by `decl_kind`.
 ///
 /// The parser keeps all `static` forms in one node so later compile-time phases
-/// can dispatch from a single surface construct while still preserving the exact
-/// syntax the user wrote.
+/// can dispatch from a single surface construct while still preserving the
+/// exact syntax the user wrote.
 struct static_decl : node {
-  visibility visibility = visibility::def; ///< Declared visibility when the form introduces a binding.
-  static_decl_kind decl_kind{static_decl_kind::binding}; ///< Which `static` form this node represents.
+  visibility visibility = visibility::def; ///< Declared visibility when the
+                                           ///< form introduces a binding.
+  static_decl_kind decl_kind{
+      static_decl_kind::binding}; ///< Which `static` form this node represents.
 
   // For Binding:
-  std::string name;            ///< Binding name for `static Name = expr`.
-  ptr<type_expr> type_annotation; ///< Optional type annotation for binding form.
-  ptr<expr> initializer;       ///< Initializer for binding form.
+  std::string name; ///< Binding name for `static Name = expr`.
+  ptr<type_expr>
+      type_annotation;   ///< Optional type annotation for binding form.
+  ptr<expr> initializer; ///< Initializer for binding form.
 
   // For Assert:
-  ptr<expr> assert_condition;          ///< Condition expression for assertion form.
-  std::optional<std::string> assert_message; ///< Optional user-facing assertion message.
+  ptr<expr> assert_condition; ///< Condition expression for assertion form.
+  std::optional<std::string>
+      assert_message; ///< Optional user-facing assertion message.
 
   // For ConditionalCompilation:
-  ptr<expr> if_condition;              ///< Compile-time condition for `static if`.
-  std::vector<ptr<node>> if_body;      ///< Body chosen when the condition is true.
-  std::vector<ptr<node>> else_body;    ///< Optional body chosen when the condition is false.
+  ptr<expr> if_condition;         ///< Compile-time condition for `static if`.
+  std::vector<ptr<node>> if_body; ///< Body chosen when the condition is true.
+  std::vector<ptr<node>>
+      else_body; ///< Optional body chosen when the condition is false.
 
   // For ForInline / ForBlock:
-  std::vector<ptr<pattern>> for_patterns; ///< Loop patterns for compile-time iteration forms.
-  ptr<expr> for_iterable;                ///< Compile-time iterable expression.
-  ptr<expr> for_guard;                   ///< Optional compile-time loop guard.
-  ptr<expr> for_yield;                   ///< Yielded expression for inline `static for`.
-  std::vector<ptr<node>> for_body;       ///< Statement body for block `static for`.
+  std::vector<ptr<pattern>>
+      for_patterns;       ///< Loop patterns for compile-time iteration forms.
+  ptr<expr> for_iterable; ///< Compile-time iterable expression.
+  ptr<expr> for_guard;    ///< Optional compile-time loop guard.
+  ptr<expr> for_yield;    ///< Yielded expression for inline `static for`.
+  std::vector<ptr<node>> for_body; ///< Statement body for block `static for`.
 
-  static_decl()
-      : node(node_kind::static_decl) {}
+  static_decl() : node(node_kind::static_decl) {}
 };
 
 // ==========================================================================
 //  Module declaration and file root
 // ==========================================================================
 
-/// @brief File-level module declaration identifying the source file's logical module.
+/// @brief File-level module declaration identifying the source file's logical
+/// module.
 struct module_decl : node {
   std::vector<std::string> path; ///< Qualified module path in source order.
 
@@ -1584,11 +1668,11 @@ struct module_decl : node {
 /// @brief Root AST node for a parsed source file.
 ///
 /// Later phases should treat this as the unit of module loading, name binding,
-/// and per-file diagnostics. It intentionally retains file-level directives like
-/// `no_prelude` alongside the declared items.
+/// and per-file diagnostics. It intentionally retains file-level directives
+/// like `no_prelude` alongside the declared items.
 struct file : node {
   ptr<module_decl> module_decl; ///< Optional explicit module declaration.
-  bool no_prelude = false;      ///< Whether implicit prelude imports are disabled.
+  bool no_prelude = false; ///< Whether implicit prelude imports are disabled.
   std::vector<ptr<node>> items; ///< Top-level items in source order.
 
   file() : node(node_kind::file_node) {}
@@ -1603,9 +1687,10 @@ struct file : node {
 /// This is not itself a node because it exists only as parser plumbing when a
 /// construct needs both the underlying pattern and a trailing alias name.
 struct aliased_pattern {
-  ptr<pattern> pattern;          ///< Underlying parsed pattern.
-  std::optional<std::string> alias; ///< Optional alias introduced by surface syntax.
-  source_span span;              ///< Combined source range of pattern and alias.
+  ptr<pattern> pattern; ///< Underlying parsed pattern.
+  std::optional<std::string>
+      alias;        ///< Optional alias introduced by surface syntax.
+  source_span span; ///< Combined source range of pattern and alias.
 };
 
 } // namespace kira::ast

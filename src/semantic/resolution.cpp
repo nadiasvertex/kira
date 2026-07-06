@@ -22,23 +22,25 @@ auto emit_duplicate_module_scope_symbol(
     std::string_view module_name, const module_scope_symbol_record &current,
     const module_scope_symbol_record &previous, diagnostic_bag &diag,
     std::vector<bool> &file_has_errors) -> void {
-  auto duplicate = diagnostic(
-      diagnostic_level::error,
-      std::format("duplicate declaration name `{}` in module `{}`", current.name,
-                  module_name),
-      current.location.file_id);
-  duplicate.with_label(current.location.span,
-                       std::format("duplicate {} declaration", current.kind_name));
+  auto duplicate =
+      diagnostic(diagnostic_level::error,
+                 std::format("duplicate declaration name `{}` in module `{}`",
+                             current.name, module_name),
+                 current.location.file_id);
+  duplicate.with_label(
+      current.location.span,
+      std::format("duplicate {} declaration", current.kind_name));
   duplicate.children.push_back(
       diagnostic(diagnostic_level::note,
-                 std::format("`{}` was first declared here as a {}", current.name,
-                             previous.kind_name),
+                 std::format("`{}` was first declared here as a {}",
+                             current.name, previous.kind_name),
                  previous.location.file_id)
-          .with_label(previous.location.span,
-                      std::format("previous {} declaration", previous.kind_name)));
-  duplicate.with_help(
-      "Give each type, trait, concept, and submodule in a module scope a unique "
-      "name before semantic analysis continues.");
+          .with_label(
+              previous.location.span,
+              std::format("previous {} declaration", previous.kind_name)));
+  duplicate.with_help("Give each type, trait, concept, and submodule in a "
+                      "module scope a unique "
+                      "name before semantic analysis continues.");
   diag.emit(std::move(duplicate));
   mark_file_has_error(file_has_errors, current.location.file_id);
 }
@@ -57,7 +59,8 @@ auto emit_unresolved_import(const module_session_index &index,
       import_record.file_id);
   unresolved.with_label(import_span, "unresolved in-session import");
 
-  if (const auto anchor = find_nearest_module_anchor(index, imported_module_name)) {
+  if (const auto anchor =
+          find_nearest_module_anchor(index, imported_module_name)) {
     unresolved.children.push_back(
         diagnostic(diagnostic_level::note,
                    std::format("session-owned module `{}` is declared here",
@@ -66,9 +69,10 @@ auto emit_unresolved_import(const module_session_index &index,
             .with_label(anchor->location.span, "nearest declared module"));
   }
 
-  unresolved.with_help(std::format(
-      "Load module `{}` into this compilation session, or change the import to reference an external module namespace.",
-      imported_module_name));
+  unresolved.with_help(
+      std::format("Load module `{}` into this compilation session, or change "
+                  "the import to reference an external module namespace.",
+                  imported_module_name));
   diag.emit(std::move(unresolved));
   mark_file_has_error(file_has_errors, import_record.file_id);
 }
@@ -87,12 +91,14 @@ auto emit_inaccessible_import(const submodule_declaration_record &declaration,
       import_record.file_id);
   inaccessible.with_label(import_span, "imported here");
   inaccessible.children.push_back(
-      diagnostic(diagnostic_level::note,
-                 std::format("module `{}` is declared here with `{}` visibility",
-                             imported_module_name,
-                             visibility_name(declaration.visibility)),
-                 declaration.location.file_id)
-          .with_label(declaration.location.span, "restricted module declaration"));
+      diagnostic(
+          diagnostic_level::note,
+          std::format("module `{}` is declared here with `{}` visibility",
+                      imported_module_name,
+                      visibility_name(declaration.visibility)),
+          declaration.location.file_id)
+          .with_label(declaration.location.span,
+                      "restricted module declaration"));
   inaccessible.with_help(
       visibility_help(declaration.visibility, declaration.parent_module_name));
   diag.emit(std::move(inaccessible));
@@ -109,8 +115,8 @@ auto validate_import_target(const module_session_index &index,
                             source_span import_span, diagnostic_bag &diag,
                             std::vector<bool> &file_has_errors) -> bool {
   if (!session_contains_module(index, imported_module_name)) {
-    emit_unresolved_import(index, import_record, imported_module_name, import_span,
-                           diag, file_has_errors);
+    emit_unresolved_import(index, import_record, imported_module_name,
+                           import_span, diag, file_has_errors);
     return false;
   }
 
@@ -119,9 +125,8 @@ auto validate_import_target(const module_session_index &index,
     return false;
   }
 
-  const auto *declaration =
-      find_submodule_declaration_by_name(index.submodule_declarations,
-                                         imported_module_name);
+  const auto *declaration = find_submodule_declaration_by_name(
+      index.submodule_declarations, imported_module_name);
   if (declaration == nullptr) {
     return true;
   }
@@ -165,8 +170,8 @@ auto validate_module_scope(const std::vector<ast::ptr<ast::node>> &items,
       }
 
       if (previous != nullptr) {
-        emit_duplicate_module_scope_symbol(module_name, *symbol, *previous, diag,
-                                           file_has_errors);
+        emit_duplicate_module_scope_symbol(module_name, *symbol, *previous,
+                                           diag, file_has_errors);
       } else {
         seen_symbols.push_back(*symbol);
       }
@@ -178,8 +183,9 @@ auto validate_module_scope(const std::vector<ast::ptr<ast::node>> &items,
 
     const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
     if (!decl.items.empty()) {
-      validate_module_scope(decl.items, append_module_name(module_name, decl.name),
-                            file_id, diag, file_has_errors);
+      validate_module_scope(decl.items,
+                            append_module_name(module_name, decl.name), file_id,
+                            diag, file_has_errors);
     }
   }
 }
@@ -194,11 +200,15 @@ enum class qualified_path_status : uint8_t {
 /// Result of matching a (possibly relative) qualified path against the
 /// session's known modules and their symbols.
 struct qualified_path_resolution {
-  qualified_path_status status = qualified_path_status::unresolved; ///< Overall outcome.
-  std::string absolute_path;             ///< Absolute path text that was checked.
-  std::string containing_module_name;    ///< Longest module-path prefix that resolved.
-  size_t resolved_module_prefix = 0;     ///< Segment count consumed by that module prefix.
-  const module_scope_symbol_record *symbol = nullptr; ///< Symbol the remaining segment named, if any.
+  qualified_path_status status =
+      qualified_path_status::unresolved; ///< Overall outcome.
+  std::string absolute_path; ///< Absolute path text that was checked.
+  std::string
+      containing_module_name; ///< Longest module-path prefix that resolved.
+  size_t resolved_module_prefix =
+      0; ///< Segment count consumed by that module prefix.
+  const module_scope_symbol_record *symbol =
+      nullptr; ///< Symbol the remaining segment named, if any.
 };
 
 /// Ambient state threaded through the qualified-path validation walk: the
@@ -228,7 +238,8 @@ auto should_validate_named_type_path(const ast::named_type &type) -> bool {
 /// reference worth resolving here; anything else may be an external
 /// namespace this session doesn't know about.
 auto should_validate_module_reference(const ast::module_path_expr &expr,
-                                      const module_session_index &index) -> bool {
+                                      const module_session_index &index)
+    -> bool {
   return !expr.segments.empty() &&
          (expr.segments.front() == "super" ||
           session_owns_root_module(index, expr.segments.front()));
@@ -297,9 +308,8 @@ auto resolve_absolute_qualified_path(
     return result;
   }
 
-  if (module_resolution_blocked_by_errors(session_index,
-                                          result.containing_module_name,
-                                          file_has_errors)) {
+  if (module_resolution_blocked_by_errors(
+          session_index, result.containing_module_name, file_has_errors)) {
     result.status = qualified_path_status::blocked;
     return result;
   }
@@ -363,14 +373,13 @@ auto resolve_named_type_path(const semantic_resolution_index &semantic_index,
 
   auto relative_segments = split_module_name(current_module_name);
   relative_segments.insert(relative_segments.end(), path.begin(), path.end());
-  auto relative = resolve_absolute_qualified_path(semantic_index, session_index,
-                                                  relative_segments,
-                                                  file_has_errors);
+  auto relative = resolve_absolute_qualified_path(
+      semantic_index, session_index, relative_segments, file_has_errors);
   best = std::move(relative);
 
   if (session_owns_root_module(session_index, path.front())) {
-    auto absolute = resolve_absolute_qualified_path(semantic_index, session_index,
-                                                    path, file_has_errors);
+    auto absolute = resolve_absolute_qualified_path(
+        semantic_index, session_index, path, file_has_errors);
     if (is_better_resolution_candidate(absolute, best)) {
       best = std::move(absolute);
     }
@@ -383,12 +392,11 @@ auto resolve_named_type_path(const semantic_resolution_index &semantic_index,
 /// these are only reached here when already known to be `super`-rooted or
 /// session-owned absolute (see `should_validate_module_reference`), so no
 /// relative-path guessing is needed.
-auto resolve_module_reference_path(const semantic_resolution_index &semantic_index,
-                                   const module_session_index &session_index,
-                                   std::string_view current_module_name,
-                                   const std::vector<std::string> &path,
-                                   const std::vector<bool> &file_has_errors)
-    -> qualified_path_resolution {
+auto resolve_module_reference_path(
+    const semantic_resolution_index &semantic_index,
+    const module_session_index &session_index,
+    std::string_view current_module_name, const std::vector<std::string> &path,
+    const std::vector<bool> &file_has_errors) -> qualified_path_resolution {
   if (path.empty()) {
     return qualified_path_resolution{.status = qualified_path_status::resolved};
   }
@@ -412,18 +420,19 @@ auto resolve_module_reference_path(const semantic_resolution_index &semantic_ind
 
 /// Emits the "`super` has no parent module here" diagnostic for a `super`-
 /// rooted path used from a top-level (parentless) module.
-auto emit_invalid_super_path(std::string_view kind_name, std::string_view path_text,
+auto emit_invalid_super_path(std::string_view kind_name,
+                             std::string_view path_text,
                              source_location location,
                              std::string_view module_name, diagnostic_bag &diag,
                              std::vector<bool> &file_has_errors) -> void {
-  auto invalid = diagnostic(
-      diagnostic_level::error,
-      std::format("{} `{}` cannot be resolved from root module `{}`", kind_name,
-                  path_text, module_name),
-      location.file_id);
+  auto invalid =
+      diagnostic(diagnostic_level::error,
+                 std::format("{} `{}` cannot be resolved from root module `{}`",
+                             kind_name, path_text, module_name),
+                 location.file_id);
   invalid.with_label(location.span, "`super` has no parent module here");
-  invalid.with_help(
-      "Use a session-owned module path, or remove the parent-qualified prefix.");
+  invalid.with_help("Use a session-owned module path, or remove the "
+                    "parent-qualified prefix.");
   diag.emit(std::move(invalid));
   mark_file_has_error(file_has_errors, location.file_id);
 }
@@ -437,18 +446,19 @@ auto emit_unresolved_qualified_path(
     const qualified_path_resolution &resolution,
     const module_session_index &session_index, diagnostic_bag &diag,
     std::vector<bool> &file_has_errors) -> void {
-  auto unresolved = diagnostic(
-      diagnostic_level::error,
-      std::format("{} `{}` does not resolve from module `{}`", kind_name,
-                  path_text, module_name),
-      location.file_id);
+  auto unresolved =
+      diagnostic(diagnostic_level::error,
+                 std::format("{} `{}` does not resolve from module `{}`",
+                             kind_name, path_text, module_name),
+                 location.file_id);
   unresolved.with_label(location.span, std::format("unresolved {}", kind_name));
 
-  if (!resolution.absolute_path.empty() && resolution.absolute_path != path_text) {
-    unresolved.children.emplace_back(diagnostic_level::note,
-                   std::format("checked absolute path `{}`",
-                               resolution.absolute_path),
-                   location.file_id);
+  if (!resolution.absolute_path.empty() &&
+      resolution.absolute_path != path_text) {
+    unresolved.children.emplace_back(
+        diagnostic_level::note,
+        std::format("checked absolute path `{}`", resolution.absolute_path),
+        location.file_id);
   }
 
   if (resolution.symbol != nullptr) {
@@ -461,14 +471,13 @@ auto emit_unresolved_qualified_path(
             .with_label(resolution.symbol->location.span,
                         "path stops at this declaration"));
   } else if (!resolution.containing_module_name.empty()) {
-    if (const auto anchor =
-            find_nearest_module_anchor(session_index,
-                                       resolution.containing_module_name)) {
+    if (const auto anchor = find_nearest_module_anchor(
+            session_index, resolution.containing_module_name)) {
       unresolved.children.push_back(
-          diagnostic(diagnostic_level::note,
-                     std::format("module `{}` is declared here",
-                                 anchor->module_name),
-                     anchor->location.file_id)
+          diagnostic(
+              diagnostic_level::note,
+              std::format("module `{}` is declared here", anchor->module_name),
+              anchor->location.file_id)
               .with_label(anchor->location.span, "nearest resolved module"));
     }
   }
@@ -504,10 +513,11 @@ auto emit_non_type_qualified_path(std::string_view path_text,
                              resolution.symbol->name,
                              resolution.symbol->kind_name),
                  resolution.symbol->location.file_id)
-          .with_label(resolution.symbol->location.span,
-                      std::format("{} declaration", resolution.symbol->kind_name)));
-  wrong_kind.with_help(
-      "Type positions currently accept types, traits, concepts, and modules only.");
+          .with_label(
+              resolution.symbol->location.span,
+              std::format("{} declaration", resolution.symbol->kind_name)));
+  wrong_kind.with_help("Type positions currently accept types, traits, "
+                       "concepts, and modules only.");
   diag.emit(std::move(wrong_kind));
   mark_file_has_error(file_has_errors, location.file_id);
 }
@@ -515,11 +525,12 @@ auto emit_non_type_qualified_path(std::string_view path_text,
 /// Forward declaration: dispatches any AST node to the appropriate
 /// validate_* function for its concrete kind, recursing through the whole
 /// tree to find qualified type/module paths worth checking.
-auto validate_ast_node(const ast::node &node, const semantic_walk_context &context,
+auto validate_ast_node(const ast::node &node,
+                       const semantic_walk_context &context,
                        const semantic_resolution_index &semantic_index,
                        const module_session_index &session_index,
-                       diagnostic_bag &diag,
-                       std::vector<bool> &file_has_errors) -> void;
+                       diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> void;
 
 /// Forward declaration: validates a type-position expression, recursing
 /// into its component types and resolving any qualified named-type path.
@@ -536,8 +547,8 @@ auto validate_type_expr(const ast::type_expr &type,
 auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
                    const semantic_resolution_index &semantic_index,
                    const module_session_index &session_index,
-                   diagnostic_bag &diag,
-                   std::vector<bool> &file_has_errors) -> void;
+                   diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> void;
 
 /// Forward declaration: validates a pattern, recursing into its
 /// subpatterns and any embedded range-bound expressions.
@@ -545,8 +556,8 @@ auto validate_pattern(const ast::pattern &pattern,
                       const semantic_walk_context &context,
                       const semantic_resolution_index &semantic_index,
                       const module_session_index &session_index,
-                      diagnostic_bag &diag,
-                      std::vector<bool> &file_has_errors) -> void;
+                      diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> void;
 
 /// Forward declaration: validates each item in `items` in order via
 /// `validate_ast_node`, skipping null entries.
@@ -558,15 +569,16 @@ auto validate_node_list(const std::vector<ast::ptr<ast::node>> &items,
                         std::vector<bool> &file_has_errors) -> void;
 
 /// Validates each `+`-joined term of a trait/concept bound list.
-auto validate_bound(const ast::bound &bound, const semantic_walk_context &context,
+auto validate_bound(const ast::bound &bound,
+                    const semantic_walk_context &context,
                     const semantic_resolution_index &semantic_index,
                     const module_session_index &session_index,
-                    diagnostic_bag &diag,
-                    std::vector<bool> &file_has_errors) -> void {
+                    diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> void {
   for (const auto &term : bound.terms) {
     if (term.type != nullptr) {
-      validate_type_expr(*term.type, context, semantic_index, session_index, diag,
-                         file_has_errors);
+      validate_type_expr(*term.type, context, semantic_index, session_index,
+                         diag, file_has_errors);
     }
   }
 }
@@ -605,14 +617,15 @@ auto validate_where_constraint(const ast::where_constraint &constraint,
 
 /// Validates a function/lambda parameter's pattern, type annotation, and
 /// default-value expression.
-auto validate_param(const ast::param &param, const semantic_walk_context &context,
+auto validate_param(const ast::param &param,
+                    const semantic_walk_context &context,
                     const semantic_resolution_index &semantic_index,
                     const module_session_index &session_index,
-                    diagnostic_bag &diag,
-                    std::vector<bool> &file_has_errors) -> void {
+                    diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> void {
   if (param.pattern != nullptr) {
-    validate_pattern(*param.pattern, context, semantic_index, session_index, diag,
-                     file_has_errors);
+    validate_pattern(*param.pattern, context, semantic_index, session_index,
+                     diag, file_has_errors);
   }
   if (param.type_annotation != nullptr) {
     validate_type_expr(*param.type_annotation, context, semantic_index,
@@ -644,8 +657,8 @@ auto validate_type_expr(const ast::type_expr &type,
     const auto &named = dynamic_cast<const ast::named_type &>(type);
     for (const auto &arg : named.type_args) {
       if (arg.value != nullptr) {
-        validate_ast_node(*arg.value, context, semantic_index, session_index, diag,
-                          file_has_errors);
+        validate_ast_node(*arg.value, context, semantic_index, session_index,
+                          diag, file_has_errors);
       }
     }
 
@@ -695,8 +708,8 @@ auto validate_type_expr(const ast::type_expr &type,
     const auto &tuple = dynamic_cast<const ast::tuple_type &>(type);
     for (const auto &element : tuple.elements) {
       if (element != nullptr) {
-        validate_type_expr(*element, context, semantic_index, session_index, diag,
-                           file_has_errors);
+        validate_type_expr(*element, context, semantic_index, session_index,
+                           diag, file_has_errors);
       }
     }
     return;
@@ -718,8 +731,8 @@ auto validate_type_expr(const ast::type_expr &type,
                          diag, file_has_errors);
     }
     if (array.size != nullptr) {
-      validate_ast_node(*array.size, context, semantic_index, session_index, diag,
-                        file_has_errors);
+      validate_ast_node(*array.size, context, semantic_index, session_index,
+                        diag, file_has_errors);
     }
     return;
   }
@@ -727,8 +740,8 @@ auto validate_type_expr(const ast::type_expr &type,
   case ast::node_kind::ref_type: {
     const auto &ref = dynamic_cast<const ast::ref_type &>(type);
     if (ref.inner != nullptr) {
-      validate_type_expr(*ref.inner, context, semantic_index, session_index, diag,
-                         file_has_errors);
+      validate_type_expr(*ref.inner, context, semantic_index, session_index,
+                         diag, file_has_errors);
     }
     return;
   }
@@ -736,8 +749,8 @@ auto validate_type_expr(const ast::type_expr &type,
   case ast::node_kind::ptr_type: {
     const auto &ptr = dynamic_cast<const ast::ptr_type &>(type);
     if (ptr.inner != nullptr) {
-      validate_type_expr(*ptr.inner, context, semantic_index, session_index, diag,
-                         file_has_errors);
+      validate_type_expr(*ptr.inner, context, semantic_index, session_index,
+                         diag, file_has_errors);
     }
     return;
   }
@@ -751,8 +764,8 @@ auto validate_type_expr(const ast::type_expr &type,
       }
     }
     if (fn.return_type != nullptr) {
-      validate_type_expr(*fn.return_type, context, semantic_index, session_index,
-                         diag, file_has_errors);
+      validate_type_expr(*fn.return_type, context, semantic_index,
+                         session_index, diag, file_has_errors);
     }
     return;
   }
@@ -771,8 +784,8 @@ auto validate_type_expr(const ast::type_expr &type,
   case ast::node_kind::refinement_type: {
     const auto &refinement = dynamic_cast<const ast::refinement_type &>(type);
     if (refinement.base != nullptr) {
-      validate_type_expr(*refinement.base, context, semantic_index, session_index,
-                         diag, file_has_errors);
+      validate_type_expr(*refinement.base, context, semantic_index,
+                         session_index, diag, file_has_errors);
     }
     if (refinement.predicate != nullptr) {
       validate_ast_node(*refinement.predicate, context, semantic_index,
@@ -793,8 +806,8 @@ auto validate_pattern(const ast::pattern &pattern,
                       const semantic_walk_context &context,
                       const semantic_resolution_index &semantic_index,
                       const module_session_index &session_index,
-                      diagnostic_bag &diag,
-                      std::vector<bool> &file_has_errors) -> void {
+                      diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> void {
   if (pattern.has_error) {
     return;
   }
@@ -823,7 +836,8 @@ auto validate_pattern(const ast::pattern &pattern,
   }
 
   case ast::node_kind::struct_pattern: {
-    const auto &struct_pattern = dynamic_cast<const ast::struct_pattern &>(pattern);
+    const auto &struct_pattern =
+        dynamic_cast<const ast::struct_pattern &>(pattern);
     for (const auto &field : struct_pattern.fields) {
       if (field.pattern != nullptr) {
         validate_pattern(*field.pattern, context, semantic_index, session_index,
@@ -860,8 +874,8 @@ auto validate_pattern(const ast::pattern &pattern,
   case ast::node_kind::option_pattern: {
     const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
     if (option.inner != nullptr) {
-      validate_pattern(*option.inner, context, semantic_index, session_index, diag,
-                       file_has_errors);
+      validate_pattern(*option.inner, context, semantic_index, session_index,
+                       diag, file_has_errors);
     }
     return;
   }
@@ -869,8 +883,8 @@ auto validate_pattern(const ast::pattern &pattern,
   case ast::node_kind::result_pattern: {
     const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
     if (result.inner != nullptr) {
-      validate_pattern(*result.inner, context, semantic_index, session_index, diag,
-                       file_has_errors);
+      validate_pattern(*result.inner, context, semantic_index, session_index,
+                       diag, file_has_errors);
     }
     return;
   }
@@ -898,8 +912,8 @@ auto validate_pattern(const ast::pattern &pattern,
   case ast::node_kind::group_pattern: {
     const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
     if (group.inner != nullptr) {
-      validate_pattern(*group.inner, context, semantic_index, session_index, diag,
-                       file_has_errors);
+      validate_pattern(*group.inner, context, semantic_index, session_index,
+                       diag, file_has_errors);
     }
     return;
   }
@@ -916,8 +930,8 @@ auto validate_pattern(const ast::pattern &pattern,
 auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
                    const semantic_resolution_index &semantic_index,
                    const module_session_index &session_index,
-                   diagnostic_bag &diag,
-                   std::vector<bool> &file_has_errors) -> void {
+                   diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> void {
   if (expr.has_error) {
     return;
   }
@@ -939,8 +953,8 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   case ast::node_kind::unary_expr: {
     const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
     if (unary.operand != nullptr) {
-      validate_expr(*unary.operand, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*unary.operand, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     return;
   }
@@ -1043,13 +1057,13 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   case ast::node_kind::struct_expr: {
     const auto &struct_expr = dynamic_cast<const ast::struct_expr &>(expr);
     if (struct_expr.type_name != nullptr) {
-      validate_expr(*struct_expr.type_name, context, semantic_index, session_index,
-                    diag, file_has_errors);
+      validate_expr(*struct_expr.type_name, context, semantic_index,
+                    session_index, diag, file_has_errors);
     }
     for (const auto &field : struct_expr.fields) {
       if (field.value != nullptr) {
-        validate_expr(*field.value, context, semantic_index, session_index, diag,
-                      file_has_errors);
+        validate_expr(*field.value, context, semantic_index, session_index,
+                      diag, file_has_errors);
       }
     }
     return;
@@ -1059,8 +1073,8 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
     const auto &lambda = dynamic_cast<const ast::lambda_expr &>(expr);
     for (const auto &param : lambda.params) {
       if (param.pattern != nullptr) {
-        validate_ast_node(*param.pattern, context, semantic_index, session_index,
-                          diag, file_has_errors);
+        validate_ast_node(*param.pattern, context, semantic_index,
+                          session_index, diag, file_has_errors);
       }
       if (param.type_annotation != nullptr) {
         validate_type_expr(*param.type_annotation, context, semantic_index,
@@ -1075,8 +1089,8 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
       validate_expr(*lambda.body_expr, context, semantic_index, session_index,
                     diag, file_has_errors);
     }
-    validate_node_list(lambda.body_stmts, context, semantic_index, session_index,
-                       diag, file_has_errors);
+    validate_node_list(lambda.body_stmts, context, semantic_index,
+                       session_index, diag, file_has_errors);
     return;
   }
 
@@ -1107,16 +1121,16 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
       return;
     }
     if (resolution.status != qualified_path_status::resolved) {
-      emit_unresolved_qualified_path(
-          "module-qualified reference", path_text, location, context.module_name,
-          resolution, session_index, diag, file_has_errors);
+      emit_unresolved_qualified_path("module-qualified reference", path_text,
+                                     location, context.module_name, resolution,
+                                     session_index, diag, file_has_errors);
       return;
     }
     if (resolution.symbol != nullptr &&
         !can_resolve_module_reference(resolution.symbol->kind)) {
-      emit_unresolved_qualified_path(
-          "module-qualified reference", path_text, location, context.module_name,
-          resolution, session_index, diag, file_has_errors);
+      emit_unresolved_qualified_path("module-qualified reference", path_text,
+                                     location, context.module_name, resolution,
+                                     session_index, diag, file_has_errors);
     }
     return;
   }
@@ -1145,19 +1159,19 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
         validate_expr(*branch.let_expr, context, semantic_index, session_index,
                       diag, file_has_errors);
       }
-      validate_node_list(branch.body, context, semantic_index, session_index, diag,
-                         file_has_errors);
+      validate_node_list(branch.body, context, semantic_index, session_index,
+                         diag, file_has_errors);
     }
-    validate_node_list(if_expr.else_body, context, semantic_index, session_index,
-                       diag, file_has_errors);
+    validate_node_list(if_expr.else_body, context, semantic_index,
+                       session_index, diag, file_has_errors);
     return;
   }
 
   case ast::node_kind::match_expr: {
     const auto &match = dynamic_cast<const ast::match_expr &>(expr);
     if (match.subject != nullptr) {
-      validate_expr(*match.subject, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*match.subject, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     for (const auto &arm : match.arms) {
       if (arm.pattern != nullptr) {
@@ -1169,8 +1183,8 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
                       file_has_errors);
       }
       if (arm.body_expr != nullptr) {
-        validate_expr(*arm.body_expr, context, semantic_index, session_index, diag,
-                      file_has_errors);
+        validate_expr(*arm.body_expr, context, semantic_index, session_index,
+                      diag, file_has_errors);
       }
       validate_node_list(arm.body_stmts, context, semantic_index, session_index,
                          diag, file_has_errors);
@@ -1183,8 +1197,8 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
     for (const auto &clause : for_expr.clauses) {
       for (const auto &pattern : clause.patterns) {
         if (pattern != nullptr) {
-          validate_ast_node(*pattern, context, semantic_index, session_index, diag,
-                            file_has_errors);
+          validate_ast_node(*pattern, context, semantic_index, session_index,
+                            diag, file_has_errors);
         }
       }
       if (clause.iterable != nullptr) {
@@ -1193,12 +1207,12 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
       }
     }
     if (for_expr.guard != nullptr) {
-      validate_expr(*for_expr.guard, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*for_expr.guard, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     if (for_expr.yield_expr != nullptr) {
-      validate_expr(*for_expr.yield_expr, context, semantic_index, session_index,
-                    diag, file_has_errors);
+      validate_expr(*for_expr.yield_expr, context, semantic_index,
+                    session_index, diag, file_has_errors);
     }
     return;
   }
@@ -1206,15 +1220,16 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   case ast::node_kind::await_expr: {
     const auto &await = dynamic_cast<const ast::await_expr &>(expr);
     if (await.operand != nullptr) {
-      validate_expr(*await.operand, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*await.operand, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     return;
   }
 
   case ast::node_kind::async_expr:
-    validate_node_list(dynamic_cast<const ast::async_expr &>(expr).body, context,
-                       semantic_index, session_index, diag, file_has_errors);
+    validate_node_list(dynamic_cast<const ast::async_expr &>(expr).body,
+                       context, semantic_index, session_index, diag,
+                       file_has_errors);
     return;
 
   case ast::node_kind::par_expr: {
@@ -1260,15 +1275,16 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   }
 
   case ast::node_kind::block_expr:
-    validate_node_list(dynamic_cast<const ast::block_expr &>(expr).stmts, context,
-                       semantic_index, session_index, diag, file_has_errors);
+    validate_node_list(dynamic_cast<const ast::block_expr &>(expr).stmts,
+                       context, semantic_index, session_index, diag,
+                       file_has_errors);
     return;
 
   case ast::node_kind::splice_expr: {
     const auto &splice = dynamic_cast<const ast::splice_expr &>(expr);
     if (splice.operand != nullptr) {
-      validate_expr(*splice.operand, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*splice.operand, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     return;
   }
@@ -1276,8 +1292,8 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
   case ast::node_kind::static_expr: {
     const auto &static_expr = dynamic_cast<const ast::static_expr &>(expr);
     if (static_expr.operand != nullptr) {
-      validate_expr(*static_expr.operand, context, semantic_index, session_index,
-                    diag, file_has_errors);
+      validate_expr(*static_expr.operand, context, semantic_index,
+                    session_index, diag, file_has_errors);
     }
     return;
   }
@@ -1290,8 +1306,8 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
     }
     for (const auto &binding : where.bindings) {
       if (binding.value != nullptr) {
-        validate_expr(*binding.value, context, semantic_index, session_index, diag,
-                      file_has_errors);
+        validate_expr(*binding.value, context, semantic_index, session_index,
+                      diag, file_has_errors);
       }
     }
     return;
@@ -1307,11 +1323,12 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
 /// into their type annotations, bodies, and nested items), and forwards
 /// type/expression/pattern node kinds to their dedicated validate_*
 /// function.
-auto validate_ast_node(const ast::node &node, const semantic_walk_context &context,
+auto validate_ast_node(const ast::node &node,
+                       const semantic_walk_context &context,
                        const semantic_resolution_index &semantic_index,
                        const module_session_index &session_index,
-                       diagnostic_bag &diag,
-                       std::vector<bool> &file_has_errors) -> void {
+                       diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> void {
   if (node.has_error) {
     return;
   }
@@ -1324,12 +1341,12 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
                           file_has_errors);
     }
     if (decl.definition != nullptr) {
-      validate_ast_node(*decl.definition, context, semantic_index, session_index,
-                        diag, file_has_errors);
+      validate_ast_node(*decl.definition, context, semantic_index,
+                        session_index, diag, file_has_errors);
     }
     if (decl.invariant != nullptr) {
-      validate_expr(*decl.invariant, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*decl.invariant, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     return;
   }
@@ -1365,8 +1382,8 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
                           file_has_errors);
     }
     if (decl.requires_bound.has_value()) {
-      validate_bound(*decl.requires_bound, context, semantic_index, session_index,
-                     diag, file_has_errors);
+      validate_bound(*decl.requires_bound, context, semantic_index,
+                     session_index, diag, file_has_errors);
     }
     validate_node_list(decl.items, context, semantic_index, session_index, diag,
                        file_has_errors);
@@ -1374,7 +1391,8 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::associated_type_decl_node: {
-    const auto &assoc = dynamic_cast<const ast::associated_type_decl_node &>(node);
+    const auto &assoc =
+        dynamic_cast<const ast::associated_type_decl_node &>(node);
     if (assoc.value.default_type != nullptr) {
       validate_type_expr(*assoc.value.default_type, context, semantic_index,
                          session_index, diag, file_has_errors);
@@ -1383,10 +1401,11 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   }
 
   case ast::node_kind::associated_type_def_node: {
-    const auto &assoc = dynamic_cast<const ast::associated_type_def_node &>(node);
+    const auto &assoc =
+        dynamic_cast<const ast::associated_type_def_node &>(node);
     if (assoc.value.type != nullptr) {
-      validate_type_expr(*assoc.value.type, context, semantic_index, session_index,
-                         diag, file_has_errors);
+      validate_type_expr(*assoc.value.type, context, semantic_index,
+                         session_index, diag, file_has_errors);
     }
     return;
   }
@@ -1413,8 +1432,8 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
                           file_has_errors);
     }
     if (decl.trait_type != nullptr) {
-      validate_type_expr(*decl.trait_type, context, semantic_index, session_index,
-                         diag, file_has_errors);
+      validate_type_expr(*decl.trait_type, context, semantic_index,
+                         session_index, diag, file_has_errors);
     }
     if (decl.for_type != nullptr) {
       validate_type_expr(*decl.for_type, context, semantic_index, session_index,
@@ -1469,8 +1488,8 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
       }
     }
     if (decl.body_expr != nullptr) {
-      validate_expr(*decl.body_expr, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*decl.body_expr, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     validate_node_list(decl.body_stmts, context, semantic_index, session_index,
                        diag, file_has_errors);
@@ -1506,8 +1525,8 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
       validate_expr(*decl.if_condition, context, semantic_index, session_index,
                     diag, file_has_errors);
     }
-    validate_node_list(decl.if_body, context, semantic_index, session_index, diag,
-                       file_has_errors);
+    validate_node_list(decl.if_body, context, semantic_index, session_index,
+                       diag, file_has_errors);
     validate_node_list(decl.else_body, context, semantic_index, session_index,
                        diag, file_has_errors);
     for (const auto &pattern : decl.for_patterns) {
@@ -1521,34 +1540,34 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
                     diag, file_has_errors);
     }
     if (decl.for_guard != nullptr) {
-      validate_expr(*decl.for_guard, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*decl.for_guard, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     if (decl.for_yield != nullptr) {
-      validate_expr(*decl.for_yield, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*decl.for_yield, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
-    validate_node_list(decl.for_body, context, semantic_index, session_index, diag,
-                       file_has_errors);
+    validate_node_list(decl.for_body, context, semantic_index, session_index,
+                       diag, file_has_errors);
     return;
   }
 
   case ast::node_kind::let_stmt: {
     const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
     if (stmt.pattern != nullptr) {
-      validate_pattern(*stmt.pattern, context, semantic_index, session_index, diag,
-                       file_has_errors);
+      validate_pattern(*stmt.pattern, context, semantic_index, session_index,
+                       diag, file_has_errors);
     }
     if (stmt.type_annotation != nullptr) {
       validate_type_expr(*stmt.type_annotation, context, semantic_index,
                          session_index, diag, file_has_errors);
     }
     if (stmt.initializer != nullptr) {
-      validate_expr(*stmt.initializer, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*stmt.initializer, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
-    validate_node_list(stmt.else_body, context, semantic_index, session_index, diag,
-                       file_has_errors);
+    validate_node_list(stmt.else_body, context, semantic_index, session_index,
+                       diag, file_has_errors);
     return;
   }
 
@@ -1559,8 +1578,8 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
                          session_index, diag, file_has_errors);
     }
     if (stmt.initializer != nullptr) {
-      validate_expr(*stmt.initializer, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*stmt.initializer, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     return;
   }
@@ -1611,27 +1630,27 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
         validate_expr(*branch.let_expr, context, semantic_index, session_index,
                       diag, file_has_errors);
       }
-      validate_node_list(branch.body, context, semantic_index, session_index, diag,
-                         file_has_errors);
+      validate_node_list(branch.body, context, semantic_index, session_index,
+                         diag, file_has_errors);
     }
-    validate_node_list(stmt.else_body, context, semantic_index, session_index, diag,
-                       file_has_errors);
+    validate_node_list(stmt.else_body, context, semantic_index, session_index,
+                       diag, file_has_errors);
     return;
   }
 
   case ast::node_kind::while_stmt: {
     const auto &stmt = dynamic_cast<const ast::while_stmt &>(node);
     if (stmt.condition != nullptr) {
-      validate_expr(*stmt.condition, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*stmt.condition, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     if (stmt.let_pattern != nullptr) {
-      validate_pattern(*stmt.let_pattern, context, semantic_index, session_index,
-                       diag, file_has_errors);
+      validate_pattern(*stmt.let_pattern, context, semantic_index,
+                       session_index, diag, file_has_errors);
     }
     if (stmt.let_expr != nullptr) {
-      validate_expr(*stmt.let_expr, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*stmt.let_expr, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     validate_node_list(stmt.body, context, semantic_index, session_index, diag,
                        file_has_errors);
@@ -1647,8 +1666,8 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
       }
     }
     if (stmt.iterable != nullptr) {
-      validate_expr(*stmt.iterable, context, semantic_index, session_index, diag,
-                    file_has_errors);
+      validate_expr(*stmt.iterable, context, semantic_index, session_index,
+                    diag, file_has_errors);
     }
     if (stmt.guard != nullptr) {
       validate_expr(*stmt.guard, context, semantic_index, session_index, diag,
@@ -1675,8 +1694,8 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
                       file_has_errors);
       }
       if (arm.body_expr != nullptr) {
-        validate_expr(*arm.body_expr, context, semantic_index, session_index, diag,
-                      file_has_errors);
+        validate_expr(*arm.body_expr, context, semantic_index, session_index,
+                      diag, file_has_errors);
       }
       validate_node_list(arm.body_stmts, context, semantic_index, session_index,
                          diag, file_has_errors);
@@ -1742,8 +1761,8 @@ auto validate_ast_node(const ast::node &node, const semantic_walk_context &conte
   case ast::node_kind::module_path_expr:
   case ast::node_kind::group_expr:
   case ast::node_kind::where_expr:
-    validate_expr(dynamic_cast<const ast::expr &>(node), context, semantic_index,
-                  session_index, diag, file_has_errors);
+    validate_expr(dynamic_cast<const ast::expr &>(node), context,
+                  semantic_index, session_index, diag, file_has_errors);
     return;
 
   case ast::node_kind::wildcard_pattern:
@@ -1824,16 +1843,17 @@ auto detect_duplicate_module_paths(const std::vector<parsed_module> &inputs,
     }
 
     if (previous != nullptr) {
-      auto duplicate = diagnostic(
-          diagnostic_level::error,
-          std::format("duplicate module path `{}`", *module_name),
-          current_location.file_id);
-      duplicate.with_label(current_location.span, "duplicate module declaration");
+      auto duplicate =
+          diagnostic(diagnostic_level::error,
+                     std::format("duplicate module path `{}`", *module_name),
+                     current_location.file_id);
+      duplicate.with_label(current_location.span,
+                           "duplicate module declaration");
       duplicate.children.push_back(
-          diagnostic(diagnostic_level::note,
-                     std::format("module `{}` was first declared here",
-                                 *module_name),
-                     previous->location.file_id)
+          diagnostic(
+              diagnostic_level::note,
+              std::format("module `{}` was first declared here", *module_name),
+              previous->location.file_id)
               .with_label(previous->location.span,
                           "previous module declaration"));
       duplicate.with_help(
@@ -1879,7 +1899,8 @@ auto validate_module_boundaries(const module_session_index &index,
           std::format("module `{}` is not declared by parent module `{}`",
                       module_file.module_name, parent->module_name),
           module_file.file_id);
-      missing.with_label(module_file.location.span, "child module defined here");
+      missing.with_label(module_file.location.span,
+                         "child module defined here");
       missing.children.push_back(
           diagnostic(diagnostic_level::note,
                      std::format("parent module `{}` is declared here",
@@ -1889,7 +1910,8 @@ auto validate_module_boundaries(const module_session_index &index,
       missing.with_help(std::format(
           "Add `module {}` to `{}`, or stop compiling `{}` as a separate "
           "module.",
-          module_file.child_name, parent->module_name, module_file.module_name));
+          module_file.child_name, parent->module_name,
+          module_file.module_name));
       diag.emit(std::move(missing));
 
       mark_file_has_error(file_has_errors, module_file.file_id);
@@ -1951,8 +1973,8 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
 
     if (!decl.selector.has_value()) {
       const auto imported_module_name = join_strings(decl.path, ".");
-      validate_import_target(index, import_record, imported_module_name, decl.span,
-                             diag, file_has_errors);
+      validate_import_target(index, import_record, imported_module_name,
+                             decl.span, diag, file_has_errors);
       continue;
     }
 
@@ -1967,7 +1989,8 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
     }
 
     for (const auto &item : decl.selector->items) {
-      const auto imported_module_name = append_module_name(base_module_name, item.name);
+      const auto imported_module_name =
+          append_module_name(base_module_name, item.name);
       if (!validate_import_target(index, import_record, imported_module_name,
                                   item.span, diag, file_has_errors)) {
         break;

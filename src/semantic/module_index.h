@@ -33,8 +33,8 @@ auto module_root_name(std::string_view module_name) -> std::string_view;
 
 /// Returns `parent` with `child` appended as a new dotted segment. Returns
 /// `child` unchanged if `parent` is empty.
-auto append_module_name(std::string_view parent,
-                        std::string_view child) -> std::string;
+auto append_module_name(std::string_view parent, std::string_view child)
+    -> std::string;
 
 /// Whether `module_name` is `ancestor` itself or a dotted descendant of it.
 auto is_same_or_descendant_module(std::string_view module_name,
@@ -47,8 +47,8 @@ auto visibility_name(ast::visibility visibility) -> std::string_view;
 /// Builds the "how to fix this" help text for a visibility-related
 /// diagnostic, tailored to the declared `visibility` and the name of the
 /// module (`parent_name`) that owns the restricted declaration.
-auto visibility_help(ast::visibility visibility,
-                     std::string_view parent_name) -> std::string;
+auto visibility_help(ast::visibility visibility, std::string_view parent_name)
+    -> std::string;
 
 /// Returns the fully-qualified module path declared by `file`, or `nullopt`
 /// if the file has no valid `module` declaration.

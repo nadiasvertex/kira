@@ -29,7 +29,8 @@ struct parsed_fixture {
   std::vector<kira::semantic::parsed_module> parsed_modules;
 };
 
-auto parse_sources(const std::vector<source_fixture> &fixtures) -> parsed_fixture {
+auto parse_sources(const std::vector<source_fixture> &fixtures)
+    -> parsed_fixture {
   auto parsed = parsed_fixture{
       .sources = kira::source_manager{},
       .diag = kira::diagnostic_bag{},
@@ -63,14 +64,16 @@ auto parse_sources(const std::vector<source_fixture> &fixtures) -> parsed_fixtur
   return parsed;
 }
 
-auto expect_expr_stmt(const kira::ast::node *node) -> const kira::ast::expr_stmt * {
+auto expect_expr_stmt(const kira::ast::node *node)
+    -> const kira::ast::expr_stmt * {
   expect(node != nullptr, "expected expression statement node");
   expect(node->kind == kira::ast::node_kind::expr_stmt,
          "expected expression statement node kind");
   return dynamic_cast<const kira::ast::expr_stmt *>(node);
 }
 
-auto expect_func_decl(const kira::ast::node *node) -> const kira::ast::func_decl * {
+auto expect_func_decl(const kira::ast::node *node)
+    -> const kira::ast::func_decl * {
   expect(node != nullptr, "expected function declaration node");
   expect(node->kind == kira::ast::node_kind::func_decl,
          "expected function declaration node kind");
@@ -84,28 +87,32 @@ auto expect_if_stmt(const kira::ast::node *node) -> const kira::ast::if_stmt * {
   return dynamic_cast<const kira::ast::if_stmt *>(node);
 }
 
-auto expect_match_stmt(const kira::ast::node *node) -> const kira::ast::match_stmt * {
+auto expect_match_stmt(const kira::ast::node *node)
+    -> const kira::ast::match_stmt * {
   expect(node != nullptr, "expected match statement node");
   expect(node->kind == kira::ast::node_kind::match_stmt,
          "expected match statement node kind");
   return dynamic_cast<const kira::ast::match_stmt *>(node);
 }
 
-auto expect_lambda_expr(const kira::ast::expr *expr) -> const kira::ast::lambda_expr * {
+auto expect_lambda_expr(const kira::ast::expr *expr)
+    -> const kira::ast::lambda_expr * {
   expect(expr != nullptr, "expected lambda expression");
   expect(expr->kind == kira::ast::node_kind::lambda_expr,
          "expected lambda expression kind");
   return dynamic_cast<const kira::ast::lambda_expr *>(expr);
 }
 
-auto expect_let_stmt(const kira::ast::node *node) -> const kira::ast::let_stmt * {
+auto expect_let_stmt(const kira::ast::node *node)
+    -> const kira::ast::let_stmt * {
   expect(node != nullptr, "expected let statement node");
   expect(node->kind == kira::ast::node_kind::let_stmt,
          "expected let statement node kind");
   return dynamic_cast<const kira::ast::let_stmt *>(node);
 }
 
-auto expect_ident_expr(const kira::ast::expr *expr) -> const kira::ast::ident_expr * {
+auto expect_ident_expr(const kira::ast::expr *expr)
+    -> const kira::ast::ident_expr * {
   expect(expr != nullptr, "expected identifier expression");
   expect(expr->kind == kira::ast::node_kind::ident_expr,
          "expected identifier expression kind");
@@ -113,7 +120,8 @@ auto expect_ident_expr(const kira::ast::expr *expr) -> const kira::ast::ident_ex
 }
 
 auto find_node_scope_or_fail(const kira::semantic::semantic_session &session,
-                             const kira::ast::node &node) -> kira::semantic::scope_id {
+                             const kira::ast::node &node)
+    -> kira::semantic::scope_id {
   const auto scope = kira::semantic::find_node_scope(session, node);
   if (!scope.has_value()) {
     fail("expected node scope to be recorded");
@@ -134,8 +142,10 @@ auto test_build_semantic_session_indexes_module_symbols() -> void {
               "static limit = 4\n",
   }});
 
-  const auto session = kira::semantic::build_semantic_session(parsed.parsed_modules);
-  const auto index = kira::semantic::build_semantic_resolution_index(parsed.parsed_modules);
+  const auto session =
+      kira::semantic::build_semantic_session(parsed.parsed_modules);
+  const auto index =
+      kira::semantic::build_semantic_resolution_index(parsed.parsed_modules);
 
   const auto *module_scope =
       kira::semantic::find_module_scope(index, "sample.tools");
@@ -157,9 +167,10 @@ auto test_build_semantic_session_indexes_module_symbols() -> void {
              kira::semantic::symbol_namespace::value_namespace,
          "expected function to live in value namespace");
 
-  const auto *inner_scope = kira::semantic::find_module_scope(index, "sample.tools.inner");
-  expect(inner_scope == nullptr,
-         "expected declaration-only submodule without a body to avoid creating a nested scope");
+  const auto *inner_scope =
+      kira::semantic::find_module_scope(index, "sample.tools.inner");
+  expect(inner_scope == nullptr, "expected declaration-only submodule without "
+                                 "a body to avoid creating a nested scope");
 
   expect(session.symbols.size() >= 5,
          "expected semantic session to own stable symbol records");
@@ -177,7 +188,8 @@ auto test_resolve_value_name_shadowing_in_nested_blocks() -> void {
               "  value\n",
   }});
 
-  const auto session = kira::semantic::build_semantic_session(parsed.parsed_modules);
+  const auto session =
+      kira::semantic::build_semantic_session(parsed.parsed_modules);
   const auto *file = parsed.ast_files.front().get();
   const auto *run = expect_func_decl(file->items[0].get());
   const auto *if_stmt = expect_if_stmt(run->body_stmts[1].get());
@@ -211,7 +223,8 @@ auto test_resolve_function_parameters_and_locals() -> void {
               "  current\n",
   }});
 
-  const auto session = kira::semantic::build_semantic_session(parsed.parsed_modules);
+  const auto session =
+      kira::semantic::build_semantic_session(parsed.parsed_modules);
   const auto *file = parsed.ast_files.front().get();
   const auto *run = expect_func_decl(file->items[0].get());
   const auto *current_expr = expect_expr_stmt(run->body_stmts[1].get());
@@ -233,8 +246,10 @@ auto test_resolve_function_parameters_and_locals() -> void {
   expect(current_symbol->kind ==
              kira::semantic::semantic_symbol_kind::local_binding_symbol,
          "expected local binding symbol kind");
-  expect(input_symbol != nullptr, "expected parameter to resolve in initializer");
-  expect(input_symbol->kind == kira::semantic::semantic_symbol_kind::parameter_symbol,
+  expect(input_symbol != nullptr,
+         "expected parameter to resolve in initializer");
+  expect(input_symbol->kind ==
+             kira::semantic::semantic_symbol_kind::parameter_symbol,
          "expected parameter symbol kind");
 }
 
@@ -249,7 +264,8 @@ auto test_match_arm_pattern_bindings_are_arm_local() -> void {
               "    @none => value\n",
   }});
 
-  const auto session = kira::semantic::build_semantic_session(parsed.parsed_modules);
+  const auto session =
+      kira::semantic::build_semantic_session(parsed.parsed_modules);
   const auto *file = parsed.ast_files.front().get();
   const auto *run = expect_func_decl(file->items[1].get());
   const auto *match = expect_match_stmt(run->body_stmts[0].get());
@@ -272,7 +288,8 @@ auto test_match_arm_pattern_bindings_are_arm_local() -> void {
          "expected match arm binding symbol kind");
   expect(value_symbol != nullptr,
          "expected non-pattern name to resolve through outer scopes");
-  expect(value_symbol->kind == kira::semantic::semantic_symbol_kind::parameter_symbol,
+  expect(value_symbol->kind ==
+             kira::semantic::semantic_symbol_kind::parameter_symbol,
          "expected match fallback name to resolve to parameter");
 }
 
@@ -286,7 +303,8 @@ auto test_lambda_parameters_shadow_outer_bindings() -> void {
               "  reader\n",
   }});
 
-  const auto session = kira::semantic::build_semantic_session(parsed.parsed_modules);
+  const auto session =
+      kira::semantic::build_semantic_session(parsed.parsed_modules);
   const auto *file = parsed.ast_files.front().get();
   const auto *run = expect_func_decl(file->items[0].get());
   const auto *reader_let = expect_let_stmt(run->body_stmts[1].get());
@@ -299,7 +317,8 @@ auto test_lambda_parameters_shadow_outer_bindings() -> void {
       "value");
 
   expect(resolved != nullptr, "expected lambda body name to resolve");
-  expect(resolved->kind == kira::semantic::semantic_symbol_kind::parameter_symbol,
+  expect(resolved->kind ==
+             kira::semantic::semantic_symbol_kind::parameter_symbol,
          "expected lambda parameter to shadow outer binding");
 }
 
@@ -313,7 +332,8 @@ auto main() -> int {
     test_match_arm_pattern_bindings_are_arm_local();
     test_lambda_parameters_shadow_outer_bindings();
   } catch (const std::exception &ex) {
-    std::cerr << "resolution_test failed: unhandled exception: " << ex.what() << '\n';
+    std::cerr << "resolution_test failed: unhandled exception: " << ex.what()
+              << '\n';
     std::exit(1);
   }
   return 0;

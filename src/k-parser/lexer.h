@@ -47,8 +47,7 @@ public:
   /// @param file_id Source identifier attached to emitted diagnostics.
   /// @param diag Diagnostic sink used for lexing errors.
   lexer(std::string_view source, file_id_type file_id, diagnostic_bag &diag)
-      : source_(source), file_id_(file_id), diag_(diag),
-        indent_stack_{0} {}
+      : source_(source), file_id_(file_id), diag_(diag), indent_stack_{0} {}
 
   /// @brief Tokenizes the entire file into an eager token vector.
   ///
@@ -75,8 +74,8 @@ public:
     // Always end with EOF.
     tokens_.push_back(token{
         .kind = token_kind::eof,
-        .span = source_span{.start=static_cast<byte_offset>(source_.size()),
-                            .end=static_cast<byte_offset>(source_.size())},
+        .span = source_span{.start = static_cast<byte_offset>(source_.size()),
+                            .end = static_cast<byte_offset>(source_.size())},
         .text = {},
         .error_message = {},
     });
@@ -93,7 +92,7 @@ private:
   [[nodiscard]] auto peek() const noexcept -> char {
     if (pos_ >= source_.size()) {
       return '\0';
-}
+    }
     return source_[pos_];
   }
 
@@ -104,18 +103,20 @@ private:
     auto idx = pos_ + offset;
     if (idx >= source_.size()) {
       return '\0';
-}
+    }
     return source_[idx];
   }
 
   /// @brief Returns whether lexing has consumed the entire source buffer.
-  [[nodiscard]] auto at_end() const noexcept -> bool { return pos_ >= source_.size(); }
+  [[nodiscard]] auto at_end() const noexcept -> bool {
+    return pos_ >= source_.size();
+  }
 
   /// @brief Consumes and returns the current character, or `\0` at EOF.
   auto advance() noexcept -> char {
     if (pos_ >= source_.size()) {
       return '\0';
-}
+    }
     return source_[pos_++];
   }
 
@@ -133,7 +134,8 @@ private:
   /// @brief Returns the source slice from `start` up to the current position.
   ///
   /// @param start Starting byte offset for the slice.
-  [[nodiscard]] auto text_from(byte_offset start) const noexcept -> std::string_view {
+  [[nodiscard]] auto text_from(byte_offset start) const noexcept
+      -> std::string_view {
     // `substr` can throw `std::out_of_range`, which this `noexcept` function
     // can't allow even though `start` is always a valid offset no later than
     // `pos_`; build the view directly instead.
@@ -141,11 +143,13 @@ private:
     return {source_.data() + start, pos_ - start};
   }
 
-  /// @brief Builds a half-open source span from `start` to the current position.
+  /// @brief Builds a half-open source span from `start` to the current
+  /// position.
   ///
   /// @param start Starting byte offset for the span.
-  [[nodiscard]] auto span_from(byte_offset start) const noexcept -> source_span {
-    return source_span{.start=start, .end=static_cast<byte_offset>(pos_)};
+  [[nodiscard]] auto span_from(byte_offset start) const noexcept
+      -> source_span {
+    return source_span{.start = start, .end = static_cast<byte_offset>(pos_)};
   }
 
   /// Returns whether `c` is an ASCII alphabetic character.
@@ -253,7 +257,8 @@ private:
     auto eof_pos = static_cast<byte_offset>(source_.size());
     while (indent_stack_.size() > 1) {
       indent_stack_.pop_back();
-      emit_synthetic(token_kind::dedent, source_span{.start=eof_pos, .end=eof_pos});
+      emit_synthetic(token_kind::dedent,
+                     source_span{.start = eof_pos, .end = eof_pos});
     }
   }
 
@@ -276,7 +281,7 @@ private:
     skip_horizontal_whitespace();
     if (at_end()) {
       return;
-}
+    }
 
     auto start = static_cast<byte_offset>(pos_);
     char c = advance();
@@ -302,7 +307,7 @@ private:
     case ')':
       if (bracket_depth_ > 0) {
         --bracket_depth_;
-}
+      }
       emit(token_kind::rparen, start);
       return;
     case '[':
@@ -312,7 +317,7 @@ private:
     case ']':
       if (bracket_depth_ > 0) {
         --bracket_depth_;
-}
+      }
       emit(token_kind::rbracket, start);
       return;
     case '{':
@@ -322,7 +327,7 @@ private:
     case '}':
       if (bracket_depth_ > 0) {
         --bracket_depth_;
-}
+      }
       emit(token_kind::rbrace, start);
       return;
     case ',':
@@ -601,7 +606,7 @@ private:
     if (at_end() || peek() == '\n') {
       if (!at_end()) {
         advance(); // consume the newline
-}
+      }
       // Stay at_line_start_ = true for the next line.
       return;
     }
@@ -625,18 +630,21 @@ private:
       // Increased indentation — emit INDENT.
       indent_stack_.push_back(indent);
       emit_synthetic(token_kind::indent,
-                     source_span{.start=line_begin, .end=static_cast<byte_offset>(pos_)});
+                     source_span{.start = line_begin,
+                                 .end = static_cast<byte_offset>(pos_)});
     } else if (indent < current_indent) {
       // Decreased indentation — emit one or more DEDENT tokens.
       while (indent_stack_.size() > 1 && indent < indent_stack_.back()) {
         indent_stack_.pop_back();
         emit_synthetic(token_kind::dedent,
-                       source_span{.start=line_begin, .end=static_cast<byte_offset>(pos_)});
+                       source_span{.start = line_begin,
+                                   .end = static_cast<byte_offset>(pos_)});
       }
 
       // Check that the dedent lands on a known indent level.
       if (!indent_stack_.empty() && indent != indent_stack_.back()) {
-        auto sp = source_span{.start=line_begin, .end=static_cast<byte_offset>(pos_)};
+        auto sp = source_span{.start = line_begin,
+                              .end = static_cast<byte_offset>(pos_)};
         diag_.emit(
             diagnostic(diagnostic_level::Error,
                        "inconsistent indentation — this line's indentation "
@@ -810,7 +818,8 @@ private:
       if (is_digit(peek()) && !is_oct_digit(peek()) && peek() != '_') {
         auto bad_start = static_cast<byte_offset>(pos_);
         advance();
-        auto sp = source_span{.start=bad_start, .end=static_cast<byte_offset>(pos_)};
+        auto sp = source_span{.start = bad_start,
+                              .end = static_cast<byte_offset>(pos_)};
         diag_.emit(
             diagnostic(diagnostic_level::Error,
                        std::format("the digit `{}` is not valid in an octal "
@@ -839,7 +848,8 @@ private:
       if (is_digit(peek()) && !is_bin_digit(peek()) && peek() != '_') {
         auto bad_start = static_cast<byte_offset>(pos_);
         advance();
-        auto sp = source_span{.start=bad_start, .end=static_cast<byte_offset>(pos_)};
+        auto sp = source_span{.start = bad_start,
+                              .end = static_cast<byte_offset>(pos_)};
         diag_.emit(
             diagnostic(diagnostic_level::Error,
                        std::format("the digit `{}` is not valid in a binary "
@@ -856,12 +866,12 @@ private:
 
   /// @brief Consumes an optional float exponent suffix if present.
   ///
-  /// This emits diagnostics for malformed exponents but leaves the token kind as
-  /// a float so the parser can preserve source structure.
+  /// This emits diagnostics for malformed exponents but leaves the token kind
+  /// as a float so the parser can preserve source structure.
   void scan_optional_exponent() {
     if (at_end() || (peek() != 'e' && peek() != 'E')) {
       return;
-}
+    }
     advance(); // consume 'e' or 'E'
     if (!at_end() && (peek() == '+' || peek() == '-')) {
       advance();
@@ -872,7 +882,8 @@ private:
                             "expected digits after the exponent `e` in a float "
                             "literal — for example, `1.5e10` or `2.0e-3`",
                             file_id_)
-                     .with_label(source_span{.start=pos, .end=pos + 1}, "expected a digit here"));
+                     .with_label(source_span{.start = pos, .end = pos + 1},
+                                 "expected a digit here"));
       return;
     }
     scan_dec_digits();
@@ -909,11 +920,13 @@ private:
                        "unterminated string literal — the string started here "
                        "but the line ended before a closing `\"` was found",
                        file_id_)
-                .with_label(source_span{.start=open_quote, .end=open_quote + 1},
-                            "string starts here")
-                .with_label(source_span{.start=static_cast<byte_offset>(pos_),
-                                 .end=static_cast<byte_offset>(pos_) + 1},
-                            "expected a closing `\"` before end of line")
+                .with_label(
+                    source_span{.start = open_quote, .end = open_quote + 1},
+                    "string starts here")
+                .with_label(
+                    source_span{.start = static_cast<byte_offset>(pos_),
+                                .end = static_cast<byte_offset>(pos_) + 1},
+                    "expected a closing `\"` before end of line")
                 .with_help("Add a closing `\"` to end the string, or if you "
                            "need a multi-line string, use string "
                            "concatenation."));
@@ -947,12 +960,12 @@ private:
             while (!at_end() && peek() != '"') {
               if (peek() == '\\') {
                 advance();
-}
+              }
               advance();
             }
             if (!at_end()) {
               advance(); // consume closing quote
-}
+            }
           }
         }
         if (depth > 0) {
@@ -961,8 +974,9 @@ private:
                          "unterminated string interpolation — the `{` inside "
                          "this string was never closed with a matching `}`",
                          file_id_)
-                  .with_label(source_span{.start=open_quote, .end=open_quote + 1},
-                              "in this string")
+                  .with_label(
+                      source_span{.start = open_quote, .end = open_quote + 1},
+                      "in this string")
                   .with_help("Make sure every `{` inside a string has a "
                              "matching `}`. If you want a literal `{`, "
                              "escape it as `\\{`."));
@@ -979,14 +993,16 @@ private:
                    "unterminated string literal — reached end of file without "
                    "finding a closing `\"`",
                    file_id_)
-            .with_label(source_span{.start=open_quote, .end=open_quote + 1}, "string starts here")
+            .with_label(source_span{.start = open_quote, .end = open_quote + 1},
+                        "string starts here")
             .with_help("Add a closing `\"` to end this string."));
     emit(token_kind::string_lit, start);
   }
 
   /// @brief Validates the escape sequence following a backslash.
   ///
-  /// @param string_start Starting byte offset of the surrounding string or char.
+  /// @param string_start Starting byte offset of the surrounding string or
+  /// char.
   void scan_escape_sequence([[maybe_unused]] byte_offset string_start) {
     if (at_end()) {
       diag_.emit(
@@ -994,9 +1010,10 @@ private:
                      "incomplete escape sequence at end of file — a `\\` was "
                      "found but nothing follows it",
                      file_id_)
-              .with_label(source_span{.start=static_cast<byte_offset>(pos_ - 1),
-                               .end=static_cast<byte_offset>(pos_)},
-                          "this backslash needs something after it")
+              .with_label(
+                  source_span{.start = static_cast<byte_offset>(pos_ - 1),
+                              .end = static_cast<byte_offset>(pos_)},
+                  "this backslash needs something after it")
               .with_help("Valid escape sequences include: \\n (newline), "
                          "\\t (tab), \\r (carriage return), \\\" (quote), "
                          "\\\\ (backslash), \\{ and \\} (braces), "
@@ -1025,9 +1042,10 @@ private:
                 "expected `{` after `\\u` in Unicode escape — the "
                 "correct syntax is `\\u{XXXX}` where XXXX are hex digits",
                 file_id_)
-                .with_label(source_span{.start=static_cast<byte_offset>(pos_ - 2),
-                                 .end=static_cast<byte_offset>(pos_)},
-                            "here")
+                .with_label(
+                    source_span{.start = static_cast<byte_offset>(pos_ - 2),
+                                .end = static_cast<byte_offset>(pos_)},
+                    "here")
                 .with_help("Unicode escapes use the format `\\u{1F600}` — "
                            "hex digits inside curly braces."));
         return;
@@ -1037,9 +1055,10 @@ private:
             diagnostic(diagnostic_level::Error,
                        "expected hex digits inside `\\u{...}` Unicode escape",
                        file_id_)
-                .with_label(source_span{.start=static_cast<byte_offset>(pos_ - 3),
-                                 .end=static_cast<byte_offset>(pos_)},
-                            "here")
+                .with_label(
+                    source_span{.start = static_cast<byte_offset>(pos_ - 3),
+                                .end = static_cast<byte_offset>(pos_)},
+                    "here")
                 .with_help("Put one to six hexadecimal digits inside the "
                            "braces, like `\\u{41}` for 'A' or `\\u{1F600}` "
                            "for a smiley emoji."));
@@ -1055,8 +1074,9 @@ private:
             diagnostic(diagnostic_level::Error,
                        "expected closing `}` for Unicode escape `\\u{...}`",
                        file_id_)
-                .with_label(source_span{.start=static_cast<byte_offset>(pos_ - hex_count - 3),
-                                 .end=static_cast<byte_offset>(pos_)},
+                .with_label(source_span{.start = static_cast<byte_offset>(
+                                            pos_ - hex_count - 3),
+                                        .end = static_cast<byte_offset>(pos_)},
                             "this Unicode escape is missing its closing `}`")
                 .with_help("Make sure the escape is written as "
                            "`\\u{digits}` with a closing brace."));
@@ -1066,8 +1086,8 @@ private:
 
     default: {
       // Unknown escape sequence — give a helpful error.
-      auto esc_span = source_span{.start=static_cast<byte_offset>(pos_ - 2),
-                           .end=static_cast<byte_offset>(pos_)};
+      auto esc_span = source_span{.start = static_cast<byte_offset>(pos_ - 2),
+                                  .end = static_cast<byte_offset>(pos_)};
       std::string msg = "unknown escape sequence `\\";
       msg += c;
       msg += "`";
@@ -1105,7 +1125,8 @@ private:
   //  Character literal scanning
   // ==========================================================================
 
-  /// @brief Consumes a character literal while preserving recovery-friendly state.
+  /// @brief Consumes a character literal while preserving recovery-friendly
+  /// state.
   ///
   /// Character literals are validated just enough to produce focused lexing
   /// diagnostics; later phases can still inspect the original spelling.
@@ -1119,7 +1140,8 @@ private:
                      "unterminated character literal — expected a character "
                      "and closing `'`",
                      file_id_)
-              .with_label(source_span{.start=start, .end=static_cast<byte_offset>(pos_)},
+              .with_label(source_span{.start = start,
+                                      .end = static_cast<byte_offset>(pos_)},
                           "this `'` starts a character literal")
               .with_help("Character literals contain exactly one character: "
                          "`'a'`, `'\\n'`, `'\\u{1F600}'`."));
@@ -1150,7 +1172,8 @@ private:
                      "unterminated character literal — the line ended before "
                      "the closing `'` was found",
                      file_id_)
-              .with_label(source_span{.start=start, .end=static_cast<byte_offset>(pos_)},
+              .with_label(source_span{.start = start,
+                                      .end = static_cast<byte_offset>(pos_)},
                           "character literal starts here")
               .with_help("Add a closing `'` after the character."));
       emit(token_kind::char_lit, start);
@@ -1167,7 +1190,7 @@ private:
         extra_bytes = 2;
       } else if ((first_byte & 0xF8) == 0xF0) {
         extra_bytes = 3;
-}
+      }
       for (int i = 0; i < extra_bytes && !at_end(); ++i) {
         advance();
       }
@@ -1184,7 +1207,7 @@ private:
         bool has_close = !at_end() && peek() == '\'';
         if (has_close) {
           advance();
-}
+        }
 
         diag_.emit(
             diagnostic(diagnostic_level::Error,
@@ -1202,7 +1225,8 @@ private:
           diagnostic(diagnostic_level::Error,
                      "unterminated character literal — expected a closing `'`",
                      file_id_)
-              .with_label(source_span{.start=start, .end=static_cast<byte_offset>(pos_)},
+              .with_label(source_span{.start = start,
+                                      .end = static_cast<byte_offset>(pos_)},
                           "character literal starts here"));
       emit(token_kind::char_lit, start);
       return;
@@ -1220,7 +1244,7 @@ private:
   file_id_type file_id_;    ///< File id attached to emitted diagnostics.
   diagnostic_bag &diag_;    ///< Shared diagnostic sink for lexing failures.
 
-  size_t pos_{0};            ///< Current byte offset in `source_`.
+  size_t pos_{0};             ///< Current byte offset in `source_`.
   std::vector<token> tokens_; ///< Eager token stream under construction.
 
   /// Stack of indentation levels. The bottom is always 0 (column 0).

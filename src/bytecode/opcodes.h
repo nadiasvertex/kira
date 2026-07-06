@@ -47,6 +47,72 @@ namespace kira::bytecode {
 //  `u16` for a constant-pool or function-table index, `i32` for a relative
 //  jump offset. `chunk_writer` (chunk.h) is the only thing that needs to
 //  reason about instruction boundaries.
+//
+//  Two hardware-inspired encoding ideas were considered for this
+//  instruction set and rejected — recorded here so they aren't
+//  re-litigated later without the reasoning that closed them off:
+//
+//  - **VLIW-style instruction bundling** (packing multiple operations into
+//    one wide "word" for a compiler to statically schedule across parallel
+//    functional units, the way Itanium/TI DSPs do): doesn't transfer to a
+//    software interpreter. The whole point of VLIW is to let hardware skip
+//    building a dynamic (out-of-order) scheduler by pushing scheduling to
+//    the compiler; here, the interpreter is *itself* just sequential code
+//    running on a host CPU that already has its own superscalar/OoO engine
+//    extracting whatever parallelism exists in the interpreter's compiled
+//    dispatch loop — there's no analog of "N functional units the
+//    interpreter controls in parallel" for bytecode ops to be bundled
+//    onto. It also fails for the same structural reason VLIW struggled on
+//    general-purpose hardware (Itanium being the canonical case): static
+//    scheduling needs predictable branches and latencies, and a bytecode
+//    stream — dispatch-heavy, full of `if`/`while`/match branches and
+//    (once heap types land) unpredictable-latency loads — is exactly the
+//    shape VLIW handles worst. The one related idea worth keeping on the
+//    roadmap is *superinstructions* (hand- or profile-fused opcodes for
+//    common adjacent sequences, the way CPython 3.11+ specialization
+//    works) — a real, separate technique, worth adding once a working
+//    interpreter's profile shows dispatch count actually dominates, not
+//    designed in up front. The register machine above already captures
+//    most of the same win structurally: fewer total instructions than the
+//    equivalent stack-machine encoding, with no separate push/pop pairs to
+//    fuse away in the first place.
+//  - **Per-instruction predicate bits** (execute-if-true operands, the way
+//    ARM's classic condition codes or Itanium's predicate registers work,
+//    to convert an unpredictable branch into branchless data flow):
+//    rejected for a different, sharper reason than VLIW. A predicated
+//    instruction whose predicate is false must still be *dispatched* —
+//    the interpreter still fetches, decodes, and executes its handler,
+//    just suppressing the write — so predication trades "skip these N
+//    instructions with one cheap `pc` adjustment" (what `op_jump`/
+//    `op_jump_if_false` already do) for "dispatch all N instructions from
+//    *both* arms unconditionally." That's strictly more total dispatch
+//    overhead, not less, for a software interpreter — the CPU-level
+//    branch-misprediction cost predication exists to avoid on real
+//    hardware isn't actually attached to the bytecode's own conditional
+//    jumps here; the interpreter already eats one hard-to-predict
+//    indirect dispatch per instruction *regardless* of whether that
+//    instruction happens to be a jump, since the next opcode's handler
+//    address varies instruction to instruction either way. Worse,
+//    predication doesn't compose with this language's checked-arithmetic
+//    semantics (`spec/kira-reference.md`'s "Integer Overflow" — plain
+//    `+`/`-`/`*` panic on overflow): suppressing a panic for a false
+//    predicate requires the exact same conditional check predication was
+//    supposed to eliminate, so there's no branchless win available even
+//    in principle for this language's arithmetic. Where predication
+//    genuinely earns its keep — real hardware executing compiled native
+//    code with a real branch-predictor pipeline — is already handled
+//    downstream: LLVM performs its own branch-to-`select` if-conversion
+//    in the Decision-4 JIT/AOT tier when it's profitable, so there's
+//    nothing to duplicate in the bytecode format itself. The one
+//    genuinely good idea adjacent to this — a dedicated branchless
+//    `op_select dst, cond, a, b` for pure value-producing ternaries with
+//    no side effects on either arm (unlike full predication, this doesn't
+//    need to suppress anything, so it doesn't hit the checked-arithmetic
+//    problem above, and it's fewer total dispatches than jump+move+move,
+//    not more) — is plausible future scope, not yet added to the enum
+//    below pending a decision on whether it's worth the encoding space now
+//    versus when the compiler's `hir_if`-as-expression lowering exists to
+//    use it.
 // ==========================================================================
 enum class opcode : uint8_t {
   // --- Constants and register-to-register moves --------------------------

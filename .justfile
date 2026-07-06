@@ -91,7 +91,7 @@ compile-commands:
 
 format: compile-commands
     find ./src -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
-      | xargs -0 -P1 {{ CLANG_FORMAT }}
+      | xargs -0 -P1 {{ CLANG_FORMAT }} -i
 
 lint: compile-commands
     # Run clang-tidy

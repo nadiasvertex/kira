@@ -134,10 +134,11 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
         .kind = semantic_symbol_kind::type_symbol,
         .name_space = symbol_namespace::module_type_namespace,
         .visibility = decl.visibility,
-        .location = source_location{
-            .file_id = file_id,
-            .span = decl.span,
-        },
+        .location =
+            source_location{
+                .file_id = file_id,
+                .span = decl.span,
+            },
     };
   }
   case ast::node_kind::trait_decl: {
@@ -147,10 +148,11 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
         .kind = semantic_symbol_kind::trait_symbol,
         .name_space = symbol_namespace::module_type_namespace,
         .visibility = decl.visibility,
-        .location = source_location{
-            .file_id = file_id,
-            .span = decl.span,
-        },
+        .location =
+            source_location{
+                .file_id = file_id,
+                .span = decl.span,
+            },
     };
   }
   case ast::node_kind::concept_decl: {
@@ -160,10 +162,11 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
         .kind = semantic_symbol_kind::concept_symbol,
         .name_space = symbol_namespace::module_type_namespace,
         .visibility = decl.visibility,
-        .location = source_location{
-            .file_id = file_id,
-            .span = decl.span,
-        },
+        .location =
+            source_location{
+                .file_id = file_id,
+                .span = decl.span,
+            },
     };
   }
   case ast::node_kind::sub_module_decl: {
@@ -173,10 +176,11 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
         .kind = semantic_symbol_kind::submodule_symbol,
         .name_space = symbol_namespace::module_type_namespace,
         .visibility = decl.visibility,
-        .location = source_location{
-            .file_id = file_id,
-            .span = decl.span,
-        },
+        .location =
+            source_location{
+                .file_id = file_id,
+                .span = decl.span,
+            },
     };
   }
   case ast::node_kind::func_decl: {
@@ -186,10 +190,11 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
         .kind = semantic_symbol_kind::function_symbol,
         .name_space = symbol_namespace::value_namespace,
         .visibility = decl.visibility,
-        .location = source_location{
-            .file_id = file_id,
-            .span = decl.span,
-        },
+        .location =
+            source_location{
+                .file_id = file_id,
+                .span = decl.span,
+            },
     };
   }
   case ast::node_kind::static_decl: {
@@ -202,10 +207,11 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
         .kind = semantic_symbol_kind::static_binding_symbol,
         .name_space = symbol_namespace::value_namespace,
         .visibility = decl.visibility,
-        .location = source_location{
-            .file_id = file_id,
-            .span = decl.span,
-        },
+        .location =
+            source_location{
+                .file_id = file_id,
+                .span = decl.span,
+            },
     };
   }
   default:

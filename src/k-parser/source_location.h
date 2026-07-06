@@ -33,38 +33,45 @@ struct source_span {
   /// synthesized placeholders introduced during recovery. Later phases should
   /// treat them as locations that can anchor diagnostics, but not as evidence
   /// that user-authored text existed there.
-  [[nodiscard]] constexpr auto empty() const noexcept -> bool { return start == end; }
+  [[nodiscard]] constexpr auto empty() const noexcept -> bool {
+    return start == end;
+  }
 
   /// @brief Returns the width of the covered source region in bytes.
   ///
   /// This stays in byte space so lexing and parsing can do constant-time span
   /// arithmetic without paying for Unicode-aware column tracking.
-  [[nodiscard]] constexpr auto len() const noexcept -> uint32_t { return end - start; }
+  [[nodiscard]] constexpr auto len() const noexcept -> uint32_t {
+    return end - start;
+  }
 
   /// @brief Returns a sentinel span for synthesized or unavailable locations.
   ///
   /// Downstream code should preserve dummy spans on synthetic nodes instead of
   /// inventing fake ranges, so diagnostics can distinguish "inserted by the
   /// compiler" from "came from the user's source".
-  [[nodiscard]] static constexpr auto dummy() noexcept -> source_span { return source_span{.start=0, .end=0}; }
+  [[nodiscard]] static constexpr auto dummy() noexcept -> source_span {
+    return source_span{.start = 0, .end = 0};
+  }
 
   /// @brief Returns a span covering both this range and `other`.
   ///
   /// Parsers and later tree-rewriting phases use this to give compound nodes a
-  /// stable source envelope. Empty spans are ignored so recovery placeholders do
-  /// not accidentally widen a real source range.
+  /// stable source envelope. Empty spans are ignored so recovery placeholders
+  /// do not accidentally widen a real source range.
   ///
   /// @param other The additional source range to include.
-  [[nodiscard]] constexpr auto merge(source_span other) const noexcept -> source_span {
+  [[nodiscard]] constexpr auto merge(source_span other) const noexcept
+      -> source_span {
     if (empty()) {
       return other;
-}
+    }
     if (other.empty()) {
       return *this;
-}
+    }
     return source_span{
-        .start=start < other.start ? start : other.start,
-        .end=end > other.end ? end : other.end,
+        .start = start < other.start ? start : other.start,
+        .end = end > other.end ? end : other.end,
     };
   }
 
@@ -76,7 +83,8 @@ struct source_span {
   /// @param other The additional range to absorb.
   constexpr void extend_to(source_span other) noexcept { *this = merge(other); }
 
-  constexpr auto operator==(const source_span &) const noexcept -> bool = default;
+  constexpr auto operator==(const source_span &) const noexcept
+      -> bool = default;
   constexpr auto operator<=>(const source_span &) const noexcept = default;
 };
 
@@ -102,7 +110,7 @@ struct source_location {
   /// than projecting them onto an arbitrary file, which would make diagnostics
   /// misleading.
   [[nodiscard]] static constexpr auto dummy() noexcept -> source_location {
-    return source_location{.file_id=0, .span=source_span::dummy()};
+    return source_location{.file_id = 0, .span = source_span::dummy()};
   }
 
   /// @brief Merges two locations from the same file.
@@ -113,16 +121,17 @@ struct source_location {
   /// fact that it spans separate compilation units.
   ///
   /// @param other The other location to combine with this one.
-  [[nodiscard]] constexpr auto
-  merge(source_location other) const noexcept -> source_location {
+  [[nodiscard]] constexpr auto merge(source_location other) const noexcept
+      -> source_location {
     // Only merge locations from the same file; if they differ, prefer `this`.
     if (file_id != other.file_id) {
       return *this;
-}
-    return source_location{.file_id=file_id, .span=span.merge(other.span)};
+    }
+    return source_location{.file_id = file_id, .span = span.merge(other.span)};
   }
 
-  constexpr auto operator==(const source_location &) const noexcept -> bool = default;
+  constexpr auto operator==(const source_location &) const noexcept
+      -> bool = default;
 };
 
 /// @brief Resolved line and column information for display.
@@ -164,7 +173,9 @@ public:
   ///
   /// Consumers should treat the returned view as read-only shared backing
   /// storage for token text and diagnostic rendering.
-  [[nodiscard]] auto source() const noexcept -> std::string_view { return source_; }
+  [[nodiscard]] auto source() const noexcept -> std::string_view {
+    return source_;
+  }
 
   /// @brief Resolves a byte offset to a 1-based line and column pair.
   ///
@@ -175,7 +186,7 @@ public:
   /// @param offset Byte offset into `source()`.
   [[nodiscard]] auto resolve(byte_offset offset) const noexcept -> line_column {
     if (line_starts_.empty()) {
-      return {.line=1, .column=1};
+      return {.line = 1, .column = 1};
     }
 
     // Binary search for the line containing this offset.
@@ -203,10 +214,11 @@ public:
   /// ask for text from partially invalid spans without crashing.
   ///
   /// @param span Byte range to project into the source buffer.
-  [[nodiscard]] auto text_at(source_span span) const noexcept -> std::string_view {
+  [[nodiscard]] auto text_at(source_span span) const noexcept
+      -> std::string_view {
     if (span.start >= source_.size()) {
       return {};
-}
+    }
     // Clamp `actual_end` on both sides so a malformed span can't underflow
     // the resulting length. `source_` is an owned member (not a temporary),
     // so pointer arithmetic into it is safe; `substr` would instead build a
@@ -224,12 +236,13 @@ public:
   /// semantic slicing and reserve `line_at` for presentation.
   ///
   /// @param offset Byte offset whose enclosing line should be shown.
-  [[nodiscard]] auto line_at(byte_offset offset) const noexcept -> std::string_view {
+  [[nodiscard]] auto line_at(byte_offset offset) const noexcept
+      -> std::string_view {
     auto lc = resolve(offset);
     uint32_t line_idx = lc.line - 1;
     if (line_idx >= line_starts_.size()) {
       return {};
-}
+    }
 
     byte_offset line_start = line_starts_[line_idx];
     byte_offset line_end;
@@ -273,18 +286,19 @@ private:
     }
   }
 
-  file_id_type id_;                  ///< Stable session-local file identifier.
-  std::string name_;                 ///< Display path or logical file name.
-  std::string source_;               ///< Owned source buffer backing token text.
-  std::vector<byte_offset> line_starts_; ///< Byte offset of each logical line start.
+  file_id_type id_;    ///< Stable session-local file identifier.
+  std::string name_;   ///< Display path or logical file name.
+  std::string source_; ///< Owned source buffer backing token text.
+  std::vector<byte_offset>
+      line_starts_; ///< Byte offset of each logical line start.
 };
 
 /// @brief Owns the source files participating in one compilation session.
 ///
-/// This centralizes file-id assignment so tokens, AST nodes, and diagnostics can
-/// all refer to source files by compact integers instead of copying path strings
-/// around. Later phases should treat the ids as stable only within the owning
-/// `source_manager` instance.
+/// This centralizes file-id assignment so tokens, AST nodes, and diagnostics
+/// can all refer to source files by compact integers instead of copying path
+/// strings around. Later phases should treat the ids as stable only within the
+/// owning `source_manager` instance.
 class source_manager {
 public:
   /// @brief Adds a file and returns its newly assigned id.
@@ -300,7 +314,8 @@ public:
     constexpr auto k_max_source_files =
         static_cast<size_t>(std::numeric_limits<file_id_type>::max()) + 1u;
     if (files_.size() >= k_max_source_files) {
-      return std::unexpected{"too many source files for one compilation session"};
+      return std::unexpected{
+          "too many source files for one compilation session"};
     }
 
     auto id = static_cast<file_id_type>(files_.size());
@@ -309,7 +324,8 @@ public:
   }
 
   /// @brief Returns the file for `id`, or `nullptr` if the id is invalid.
-  [[nodiscard]] auto get(file_id_type id) const noexcept -> const source_file * {
+  [[nodiscard]] auto get(file_id_type id) const noexcept
+      -> const source_file * {
     if (static_cast<size_t>(id) >= files_.size()) {
       return nullptr;
     }
@@ -332,7 +348,8 @@ public:
   ///
   /// Consumers should treat the returned vector as index-addressable storage
   /// whose positions correspond exactly to `file_id_type` values.
-  [[nodiscard]] auto files() const noexcept -> const std::vector<source_file> & {
+  [[nodiscard]] auto files() const noexcept
+      -> const std::vector<source_file> & {
     return files_;
   }
 

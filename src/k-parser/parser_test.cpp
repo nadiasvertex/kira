@@ -68,12 +68,11 @@ auto parse_source(std::string_view source) -> parsed_source {
 
 auto test_lexer_emits_indent_and_dedent() -> void {
   kira::diagnostic_bag diag;
-  std::string source =
-      "module sample\n"
-      "\n"
-      "def run():\n"
-      "  let value = 1\n"
-      "  return value\n";
+  std::string source = "module sample\n"
+                       "\n"
+                       "def run():\n"
+                       "  let value = 1\n"
+                       "  return value\n";
   kira::lexer lexer(source, 0, diag);
   auto tokens = lexer.tokenize();
 
@@ -93,14 +92,14 @@ auto test_lexer_emits_indent_and_dedent() -> void {
 }
 
 auto test_parser_builds_type_body_nodes() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "type person = { name: str, age: int }\n"
-      "type shape = | @circle(float64) | @point\n");
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "type person = { name: str, age: int }\n"
+                             "type shape = | @circle(float64) | @point\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
-  expect(parsed.file->items.size() == 2, "expected two top-level type declarations");
+  expect(parsed.file->items.size() == 2,
+         "expected two top-level type declarations");
 
   auto *person_decl = expect_node<kira::ast::type_decl>(
       parsed.file->items[0].get(), kira::ast::node_kind::type_decl,
@@ -132,25 +131,25 @@ auto test_parser_builds_type_body_nodes() -> void {
 }
 
 auto test_parser_preserves_associated_types_where_and_aliases() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "trait iterable:\n"
-      "  type item = int\n"
-      "\n"
-      "impl iterable for int:\n"
-      "  type item = int\n"
-      "\n"
-      "def evaluate(x):\n"
-      "  let value = x where:\n"
-      "    base = 1\n"
-      "  let chosen = match x:\n"
-      "    @some(item) as alias => alias\n"
-      "    _ => value\n"
-      "  return chosen\n");
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "trait iterable:\n"
+                             "  type item = int\n"
+                             "\n"
+                             "impl iterable for int:\n"
+                             "  type item = int\n"
+                             "\n"
+                             "def evaluate(x):\n"
+                             "  let value = x where:\n"
+                             "    base = 1\n"
+                             "  let chosen = match x:\n"
+                             "    @some(item) as alias => alias\n"
+                             "    _ => value\n"
+                             "  return chosen\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
-  expect(parsed.file->items.size() == 3, "expected trait, impl, and function items");
+  expect(parsed.file->items.size() == 3,
+         "expected trait, impl, and function items");
 
   auto *trait_decl = expect_node<kira::ast::trait_decl>(
       parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
@@ -158,7 +157,8 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
   expect(trait_decl->items.size() == 1,
          "expected trait to preserve associated type item");
   auto *trait_assoc = expect_node<kira::ast::associated_type_decl_node>(
-      trait_decl->items[0].get(), kira::ast::node_kind::associated_type_decl_node,
+      trait_decl->items[0].get(),
+      kira::ast::node_kind::associated_type_decl_node,
       "expected trait associated type node");
   expect(trait_assoc->value.name == "item",
          "expected trait associated type name");
@@ -190,10 +190,8 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
   auto *where_expr = expect_expr<kira::ast::where_expr>(
       let_stmt->initializer.get(), kira::ast::node_kind::where_expr,
       "expected let initializer to be a where expression");
-  expect(where_expr->bindings.size() == 1,
-         "expected one where binding");
-  expect(where_expr->bindings[0].name == "base",
-         "expected where binding name");
+  expect(where_expr->bindings.size() == 1, "expected one where binding");
+  expect(where_expr->bindings[0].name == "base", "expected where binding name");
 
   auto *chosen_stmt = expect_node<kira::ast::let_stmt>(
       func_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
@@ -343,26 +341,25 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
 }
 
 auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "trait worker[T] requires runnable + sendable:\n"
-      "  pub static helper = seed\n"
-      "  def process(item: T) -> int: item\n"
-      "\n"
-      "impl worker[int] for int where int: runnable:\n"
-      "  static counter = 0\n"
-      "  def process(item: int) -> int: item\n"
-      "\n"
-      "def orchestrate(source, ctx) -> int:\n"
-      "  let fanout = par:\n"
-      "    source\n"
-      "    source\n"
-      "  let winner = race:\n"
-      "    source\n"
-      "    source\n"
-      "  let handled = on(int, ctx): source\n"
-      "  return source\n");
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "trait worker[T] requires runnable + sendable:\n"
+                             "  pub static helper = seed\n"
+                             "  def process(item: T) -> int: item\n"
+                             "\n"
+                             "impl worker[int] for int where int: runnable:\n"
+                             "  static counter = 0\n"
+                             "  def process(item: int) -> int: item\n"
+                             "\n"
+                             "def orchestrate(source, ctx) -> int:\n"
+                             "  let fanout = par:\n"
+                             "    source\n"
+                             "    source\n"
+                             "  let winner = race:\n"
+                             "    source\n"
+                             "    source\n"
+                             "  let handled = on(int, ctx): source\n"
+                             "  return source\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 3,
@@ -372,8 +369,10 @@ auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
       parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
       "expected trait declaration");
   expect(trait_decl->type_params.size() == 1, "expected trait type parameter");
-  expect(trait_decl->requires_bound.has_value(), "expected trait requires bound");
-  expect(trait_decl->items.size() == 2, "expected static and function trait items");
+  expect(trait_decl->requires_bound.has_value(),
+         "expected trait requires bound");
+  expect(trait_decl->items.size() == 2,
+         "expected static and function trait items");
   auto *trait_static = expect_node<kira::ast::static_decl>(
       trait_decl->items[0].get(), kira::ast::node_kind::static_decl,
       "expected trait static item");
@@ -382,14 +381,16 @@ auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
   auto *trait_func = expect_node<kira::ast::func_decl>(
       trait_decl->items[1].get(), kira::ast::node_kind::func_decl,
       "expected trait function item");
-  expect(trait_func->return_type != nullptr, "expected trait function return type");
+  expect(trait_func->return_type != nullptr,
+         "expected trait function return type");
 
   auto *impl_decl = expect_node<kira::ast::impl_decl>(
       parsed.file->items[1].get(), kira::ast::node_kind::impl_decl,
       "expected impl declaration");
   expect(impl_decl->where_constraints.size() == 1,
          "expected impl where constraint");
-  expect(impl_decl->items.size() == 2, "expected static and function impl items");
+  expect(impl_decl->items.size() == 2,
+         "expected static and function impl items");
 
   auto *func_decl = expect_node<kira::ast::func_decl>(
       parsed.file->items[2].get(), kira::ast::node_kind::func_decl,
@@ -419,7 +420,8 @@ auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
   auto *on_expr = expect_expr<kira::ast::on_expr>(
       on_binding->initializer.get(), kira::ast::node_kind::on_expr,
       "expected on expression initializer");
-  expect(on_expr->context_type != nullptr, "expected on-expression context type");
+  expect(on_expr->context_type != nullptr,
+         "expected on-expression context type");
   expect(on_expr->sender != nullptr, "expected on-expression sender");
   expect(on_expr->body.size() == 1, "expected on-expression body statement");
   auto *on_stmt_expr = expect_node<kira::ast::expr_stmt>(
@@ -435,13 +437,13 @@ auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
 }
 
 auto test_parser_reports_missing_module_and_recovers() -> void {
-  auto parsed = parse_source(
-      "def greet(name):\n"
-      "  return name\n");
+  auto parsed = parse_source("def greet(name):\n"
+                             "  return name\n");
 
   expect(parsed.error_count > 0,
          "expected parser to diagnose missing module declaration");
-  expect(parsed.diagnostics.find("every Kira source file must start with a `module` declaration") !=
+  expect(parsed.diagnostics.find(
+             "every Kira source file must start with a `module` declaration") !=
              std::string::npos,
          "expected missing-module diagnostic message");
   expect(parsed.file->module_decl != nullptr,
@@ -457,20 +459,21 @@ auto test_parser_reports_missing_module_and_recovers() -> void {
 }
 
 auto test_parser_recovers_missing_colon_in_where_clause() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "def compute(x):\n"
-      "  let value = x where\n"
-      "    base = 1\n"
-      "  return value\n");
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "def compute(x):\n"
+                             "  let value = x where\n"
+                             "    base = 1\n"
+                             "  return value\n");
 
   expect(parsed.error_count > 0,
          "expected malformed where clause to produce diagnostics");
-  expect(parsed.diagnostics.find("expected `:` after `where` but found newline") !=
-             std::string::npos,
-         "expected precise missing-colon diagnostic for where clause");
-  expect(parsed.diagnostics.find("Write it as `expr where:` followed by an indented block") !=
+  expect(
+      parsed.diagnostics.find("expected `:` after `where` but found newline") !=
+          std::string::npos,
+      "expected precise missing-colon diagnostic for where clause");
+  expect(parsed.diagnostics.find(
+             "Write it as `expr where:` followed by an indented block") !=
              std::string::npos,
          "expected recovery help text for malformed where clause");
 
@@ -492,21 +495,20 @@ auto test_parser_recovers_missing_colon_in_where_clause() -> void {
 }
 
 auto test_parser_accepts_spec_valid_regressions() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "use std.io.reader as rdr\n"
-      "\n"
-      "concept ready[T]:\n"
-      "  value + 1\n"
-      "\n"
-      "static for item in items => item\n"
-      "\n"
-      "def run(flag, items):\n"
-      "  let label = \"pass\" if flag else \"fail\"\n"
-      "  let point = point { x: 1, y: 2 }\n"
-      "  let produced = for item in items => item\n"
-      "  return produced\n");
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "use std.io.reader as rdr\n"
+                             "\n"
+                             "concept ready[T]:\n"
+                             "  value + 1\n"
+                             "\n"
+                             "static for item in items => item\n"
+                             "\n"
+                             "def run(flag, items):\n"
+                             "  let label = \"pass\" if flag else \"fail\"\n"
+                             "  let point = point { x: 1, y: 2 }\n"
+                             "  let produced = for item in items => item\n"
+                             "  return produced\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 4,
@@ -527,8 +529,7 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
            "expected aliased import selector kind");
     expect(selector.items.size() == 1,
            "expected one imported item in aliased import");
-    expect(selector.items[0].name == "reader",
-           "expected imported item name");
+    expect(selector.items[0].name == "reader", "expected imported item name");
     const auto &alias = selector.items[0].alias;
     expect(alias.has_value(), "expected imported item alias");
     if (alias.has_value()) {
@@ -603,7 +604,8 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
   expect(produced_expr->clauses.size() == 1,
          "expected one for-expression clause");
   auto *produced_iterable = expect_expr<kira::ast::ident_expr>(
-      produced_expr->clauses[0].iterable.get(), kira::ast::node_kind::ident_expr,
+      produced_expr->clauses[0].iterable.get(),
+      kira::ast::node_kind::ident_expr,
       "expected bare identifier iterable in for-expression");
   expect(produced_iterable->name == "items",
          "expected for-expression iterable identifier name");
@@ -711,26 +713,25 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
 }
 
 auto test_parser_accepts_phase1_audit_regressions() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "# leading comment\n"
-      "internal use std.io\n"
-      "super module parent_only\n"
-      "static search_path = [\"src\", \"vendor\"]\n"
-      "\n"
-      "trait monad[M[_]]:\n"
-      "  def pure[A](a: A) -> M[A]\n"
-      "\n"
-      "impl monad[option]:\n"
-      "  def pure[A](a: A) -> option[A]: @some(a)\n"
-      "\n"
-      "async def handle(pool, req) -> http_response:\n"
-      "  let result = await on(pool):\n"
-      "    expensive_computation(req.body)\n"
-      "  crew c:\n"
-      "    let task = c.spawn(fetch(req))\n"
-      "  return result\n");
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "# leading comment\n"
+                             "internal use std.io\n"
+                             "super module parent_only\n"
+                             "static search_path = [\"src\", \"vendor\"]\n"
+                             "\n"
+                             "trait monad[M[_]]:\n"
+                             "  def pure[A](a: A) -> M[A]\n"
+                             "\n"
+                             "impl monad[option]:\n"
+                             "  def pure[A](a: A) -> option[A]: @some(a)\n"
+                             "\n"
+                             "async def handle(pool, req) -> http_response:\n"
+                             "  let result = await on(pool):\n"
+                             "    expensive_computation(req.body)\n"
+                             "  crew c:\n"
+                             "    let task = c.spawn(fetch(req))\n"
+                             "  return result\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 6,
@@ -819,8 +820,7 @@ auto test_parser_accepts_extend_block() -> void {
                              "    self == self.reversed()\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
-  expect(parsed.file->items.size() == 1,
-         "expected one top-level extend item");
+  expect(parsed.file->items.size() == 1, "expected one top-level extend item");
 
   auto *extend_decl = expect_node<kira::ast::extend_decl>(
       parsed.file->items[0].get(), kira::ast::node_kind::extend_decl,
@@ -843,24 +843,27 @@ struct named_test {
 
 auto main(int argc, char *argv[]) -> int {
   const std::array<named_test, 12> tests = {{
-      {.name="lexer_indent_dedent", .fn=test_lexer_emits_indent_and_dedent},
-      {.name="type_body_nodes", .fn=test_parser_builds_type_body_nodes},
-      {.name="associated_types_where_aliases",
-       .fn=test_parser_preserves_associated_types_where_and_aliases},
-      {.name="function_signature_and_control_flow",
-       .fn=test_parser_preserves_function_signature_and_control_flow},
-      {.name="trait_impl_and_block_expressions",
-       .fn=test_parser_preserves_trait_impl_and_block_expressions},
-      {.name="missing_module_recovery", .fn=test_parser_reports_missing_module_and_recovers},
-      {.name="missing_where_colon_recovery",
-       .fn=test_parser_recovers_missing_colon_in_where_clause},
-      {.name="spec_valid_regressions", .fn=test_parser_accepts_spec_valid_regressions},
-      {.name="remaining_phase1_constructs",
-       .fn=test_parser_accepts_remaining_phase1_constructs},
-      {.name="phase1_audit_regressions", .fn=test_parser_accepts_phase1_audit_regressions},
-      {.name="index_vs_generic_instantiation",
-       .fn=test_parser_disambiguates_index_from_generic_instantiation},
-      {.name="extend_block", .fn=test_parser_accepts_extend_block},
+      {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
+      {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
+      {.name = "associated_types_where_aliases",
+       .fn = test_parser_preserves_associated_types_where_and_aliases},
+      {.name = "function_signature_and_control_flow",
+       .fn = test_parser_preserves_function_signature_and_control_flow},
+      {.name = "trait_impl_and_block_expressions",
+       .fn = test_parser_preserves_trait_impl_and_block_expressions},
+      {.name = "missing_module_recovery",
+       .fn = test_parser_reports_missing_module_and_recovers},
+      {.name = "missing_where_colon_recovery",
+       .fn = test_parser_recovers_missing_colon_in_where_clause},
+      {.name = "spec_valid_regressions",
+       .fn = test_parser_accepts_spec_valid_regressions},
+      {.name = "remaining_phase1_constructs",
+       .fn = test_parser_accepts_remaining_phase1_constructs},
+      {.name = "phase1_audit_regressions",
+       .fn = test_parser_accepts_phase1_audit_regressions},
+      {.name = "index_vs_generic_instantiation",
+       .fn = test_parser_disambiguates_index_from_generic_instantiation},
+      {.name = "extend_block", .fn = test_parser_accepts_extend_block},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

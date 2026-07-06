@@ -25,4 +25,4 @@ inline auto expect(bool condition, std::string_view message) -> void {
   }
 }
 
-}  // namespace kira::testing
+} // namespace kira::testing

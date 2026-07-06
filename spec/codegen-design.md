@@ -394,6 +394,28 @@ way that weren't nailed down before:
   `hir::lowering_error_kind::unsupported_construct` already fails closed,
   not silently miscompiled.
 
+Two hardware-inspired encoding ideas were also considered and rejected for
+this instruction set, recorded in full in `opcodes.h`'s top comment (not
+duplicated here) since that's where anyone extending the ISA will read
+them: **VLIW-style instruction bundling** doesn't transfer to a software
+interpreter (there's no analog of hardware functional units for a
+single-threaded dispatch loop to schedule bytecode ops onto — the host
+CPU already extracts whatever parallelism exists in the interpreter's own
+compiled code regardless of bytecode packing), though the related idea of
+*superinstructions* (fused opcodes for common adjacent sequences) stays a
+plausible later, profile-driven optimization. **Per-instruction predicate
+bits** (execute-if-true operands) are rejected for a sharper reason: a
+predicated instruction still has to be dispatched even when its predicate
+is false, so predication trades "skip N instructions with one cheap `pc`
+adjustment" (what jumps already do) for "dispatch all of both arms
+unconditionally" — strictly more interpreter overhead, not less — and it
+doesn't compose with this language's checked-arithmetic-panics-on-overflow
+semantics at all (suppressing a panic for a false predicate needs the same
+conditional check predication was meant to eliminate). A narrow, branchless
+`op_select dst, cond, a, b` for side-effect-free ternaries is a plausible
+future addition — it doesn't hit either problem above — but isn't in the
+enum yet, pending the compiler reaching `hir_if`-as-expression lowering.
+
 Still pending within increment 1: the actual HIR-to-bytecode compiler
 (walking `hir_function`/`hir_block` and emitting these opcodes) hasn't
 been written yet — this pass only landed the instruction set, value

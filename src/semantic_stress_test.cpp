@@ -16,12 +16,12 @@ namespace {
 
 namespace fs = std::filesystem;
 
-[[noreturn]] auto fail(const std::string& message) -> void {
+[[noreturn]] auto fail(const std::string &message) -> void {
   std::cerr << "semantic_stress_test failed: " << message << '\n';
   std::exit(1);
 }
 
-auto expect(bool condition, const std::string& message) -> void {
+auto expect(bool condition, const std::string &message) -> void {
   if (!condition) {
     fail(message);
   }
@@ -37,9 +37,10 @@ struct temp_dir {
 };
 
 auto make_temp_dir() -> temp_dir {
-  auto base = fs::temp_directory_path() /
-              std::format("kira_semantic_stress_{}",
-                          std::chrono::steady_clock::now().time_since_epoch().count());
+  auto base =
+      fs::temp_directory_path() /
+      std::format("kira_semantic_stress_{}",
+                  std::chrono::steady_clock::now().time_since_epoch().count());
   auto ec = std::error_code{};
   fs::create_directories(base, ec);
   expect(!ec, std::format("expected to create temporary directory: {}",
@@ -53,14 +54,16 @@ auto candidate_corpus_dirs(std::string_view argv0) -> std::vector<fs::path> {
   if (const auto *srcdir = std::getenv("TEST_SRCDIR"); srcdir != nullptr) {
     if (const auto *workspace = std::getenv("TEST_WORKSPACE");
         workspace != nullptr && *workspace != '\0') {
-      candidates.emplace_back(fs::path(srcdir) / workspace / "src/testdata/semantic_stress");
+      candidates.emplace_back(fs::path(srcdir) / workspace /
+                              "src/testdata/semantic_stress");
     }
-    candidates.emplace_back(fs::path(srcdir) / "_main" / "src/testdata/semantic_stress");
+    candidates.emplace_back(fs::path(srcdir) / "_main" /
+                            "src/testdata/semantic_stress");
   }
 
   if (!argv0.empty()) {
-    candidates.emplace_back(fs::path(std::string(argv0) + ".runfiles") / "_main" /
-                            "src/testdata/semantic_stress");
+    candidates.emplace_back(fs::path(std::string(argv0) + ".runfiles") /
+                            "_main" / "src/testdata/semantic_stress");
   }
 
   candidates.emplace_back("src/testdata/semantic_stress");
@@ -99,13 +102,16 @@ auto list_corpus_files(const fs::path &corpus_dir) -> std::vector<std::string> {
 
 auto main(int argc, char *argv[]) -> int {
   try {
-    auto corpus_dir = find_corpus_dir(argc > 0 ? std::string_view(*argv) : std::string_view{});
+    auto corpus_dir = find_corpus_dir(argc > 0 ? std::string_view(*argv)
+                                               : std::string_view{});
     auto files = list_corpus_files(corpus_dir);
 
-    expect(!files.empty(), "expected semantic stress corpus to contain .kira files");
+    expect(!files.empty(),
+           "expected semantic stress corpus to contain .kira files");
     expect(files.size() >= 20,
-           std::format("expected a broad semantic stress corpus, found only {} files",
-                       files.size()));
+           std::format(
+               "expected a broad semantic stress corpus, found only {} files",
+               files.size()));
 
     auto temp = make_temp_dir();
     kira::cli_config cfg{
@@ -134,7 +140,8 @@ auto main(int argc, char *argv[]) -> int {
                          module.metadata_path));
     }
   } catch (const std::exception &ex) {
-    std::cerr << "semantic_stress_test failed: unhandled exception: " << ex.what() << '\n';
+    std::cerr << "semantic_stress_test failed: unhandled exception: "
+              << ex.what() << '\n';
     std::exit(1);
   }
 

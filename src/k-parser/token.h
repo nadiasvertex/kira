@@ -21,36 +21,43 @@ enum class token_kind : uint8_t {
   // ------------------------------------------------------------------
   //  Sentinel / special
   // ------------------------------------------------------------------
-  eof = 0,     ///< Explicit stream terminator every parser entry point can rely on.
-  error,       ///< Carries lexing failure text so parsing can continue with context.
-  newline,     ///< Logical line break used as a statement boundary when significant.
-  indent,      ///< Synthetic token marking entry into an indentation-defined block.
-  dedent,      ///< Synthetic token marking exit from an indentation-defined block.
-  placeholder, ///< Synthetic stand-in inserted by recovery, never by the source text.
+  eof = 0, ///< Explicit stream terminator every parser entry point can rely on.
+  error, ///< Carries lexing failure text so parsing can continue with context.
+  newline, ///< Logical line break used as a statement boundary when
+           ///< significant.
+  indent,  ///< Synthetic token marking entry into an indentation-defined block.
+  dedent,  ///< Synthetic token marking exit from an indentation-defined block.
+  placeholder, ///< Synthetic stand-in inserted by recovery, never by the source
+               ///< text.
 
   // ------------------------------------------------------------------
   //  Identifiers and literals
   // ------------------------------------------------------------------
-  ident,       ///< User-defined name that later phases must resolve semantically.
-  int_lit,     ///< Integer literal text preserved for later base/suffix interpretation.
-  float_lit,   ///< Floating-point literal text preserved for later numeric validation.
-  string_lit,  ///< Full string token, including interpolation syntax for later splitting.
-  char_lit,    ///< Character literal text for later escape and scalar-value checking.
+  ident,     ///< User-defined name that later phases must resolve semantically.
+  int_lit,   ///< Integer literal text preserved for later base/suffix
+             ///< interpretation.
+  float_lit, ///< Floating-point literal text preserved for later numeric
+             ///< validation.
+  string_lit,  ///< Full string token, including interpolation syntax for later
+               ///< splitting.
+  char_lit,    ///< Character literal text for later escape and scalar-value
+               ///< checking.
   asm_content, ///< Raw assembly payload forwarded mostly opaque beyond parsing.
 
   // ------------------------------------------------------------------
   //  Declaration keywords
   // ------------------------------------------------------------------
-  kw_module,  ///< Starts module declarations and nested module items.
-  kw_type,    ///< Introduces type declarations and associated type items.
-  kw_trait,   ///< Introduces trait interfaces for later conformance checking.
-  kw_impl,    ///< Introduces implementation blocks tying behavior to types.
-  kw_extend,  ///< Introduces extension-method blocks adding methods to any type.
+  kw_module, ///< Starts module declarations and nested module items.
+  kw_type,   ///< Introduces type declarations and associated type items.
+  kw_trait,  ///< Introduces trait interfaces for later conformance checking.
+  kw_impl,   ///< Introduces implementation blocks tying behavior to types.
+  kw_extend, ///< Introduces extension-method blocks adding methods to any type.
   kw_concept, ///< Introduces compile-time concept constraints.
   kw_def,     ///< Reserved declaration introducer kept visible to the grammar.
   kw_let,     ///< Starts immutable binding statements and `let` conditions.
   kw_var,     ///< Starts mutable variable bindings.
-  kw_static,  ///< Marks compile-time declarations or modifiers with phase-sensitive meaning.
+  kw_static,  ///< Marks compile-time declarations or modifiers with
+              ///< phase-sensitive meaning.
   kw_use,     ///< Introduces import declarations.
   kw_dep,     ///< Introduces dependency metadata declarations.
 
@@ -59,33 +66,38 @@ enum class token_kind : uint8_t {
   // ------------------------------------------------------------------
   kw_pure,    ///< Function or lambda modifier constraining observable effects.
   kw_async,   ///< Function or expression modifier introducing async execution.
-  kw_machine, ///< Function modifier opting into machine-level arithmetic semantics.
+  kw_machine, ///< Function modifier opting into machine-level arithmetic
+              ///< semantics.
 
   // ------------------------------------------------------------------
   //  Visibility keywords
   // ------------------------------------------------------------------
   kw_pub,      ///< Widest visibility for exported declarations.
-  kw_internal, ///< Visibility scoped to the current package or compilation unit.
+  kw_internal, ///< Visibility scoped to the current package or compilation
+               ///< unit.
   kw_super,    ///< Visibility scoped to the parent module boundary.
   kw_priv,     ///< Narrowest explicit visibility.
 
   // ------------------------------------------------------------------
   //  Control flow keywords
   // ------------------------------------------------------------------
-  kw_if,     ///< Starts conditional statements, expressions, and guards.
-  kw_elif,   ///< Continues a prior conditional chain without closing the construct.
-  kw_else,   ///< Provides fallback control-flow or binding bodies.
-  kw_for,    ///< Starts iteration statements and comprehension-like expressions.
-  kw_while,  ///< Starts looping statements.
-  kw_match,  ///< Starts pattern-dispatch statements and expressions.
+  kw_if,    ///< Starts conditional statements, expressions, and guards.
+  kw_elif,  ///< Continues a prior conditional chain without closing the
+            ///< construct.
+  kw_else,  ///< Provides fallback control-flow or binding bodies.
+  kw_for,   ///< Starts iteration statements and comprehension-like expressions.
+  kw_while, ///< Starts looping statements.
+  kw_match, ///< Starts pattern-dispatch statements and expressions.
   kw_return, ///< Terminates function evaluation with an optional value.
-  kw_in,     ///< Separates iteration patterns from iterables and participates in comparisons.
-  kw_as,     ///< Introduces casts and aliases depending on grammar position.
+  kw_in, ///< Separates iteration patterns from iterables and participates in
+         ///< comparisons.
+  kw_as, ///< Introduces casts and aliases depending on grammar position.
 
   // ------------------------------------------------------------------
   //  Pattern keywords
   // ------------------------------------------------------------------
-  kw_underscore, ///< Wildcard token kept distinct so parser need not special-case ident text.
+  kw_underscore, ///< Wildcard token kept distinct so parser need not
+                 ///< special-case ident text.
   kw_some,       ///< Option-pattern/value constructor keyword.
   kw_ok,         ///< Result success constructor keyword.
   kw_err,        ///< Result failure constructor keyword.
@@ -156,7 +168,8 @@ enum class token_kind : uint8_t {
   colon,     ///< Separates heads from bodies and names from annotated values.
   comma,     ///< Separates list elements while preserving trailing-comma style.
   dot,       ///< Joins paths and field accesses.
-  semicolon, ///< Explicit separator available where newline sensitivity is awkward.
+  semicolon, ///< Explicit separator available where newline sensitivity is
+             ///< awkward.
   hash,      ///< Reserved punctuation token for future surface syntax.
   at,        ///< Reserved punctuation token for attributes or annotations.
   backtick,  ///< Delimits quoted syntax regions for macros/metaprogramming.
@@ -174,9 +187,9 @@ enum class token_kind : uint8_t {
   amp,     ///< Bitwise-and operator or address-of marker.
   pipe,    ///< Pipe or bitwise-or operator depending on precedence layer.
   caret,   ///< Bitwise exclusive-or operator.
-  tilde,   ///< Bitwise-not operator and splice introducer in statement contexts.
-  lt,      ///< Comparison operator or generic-bracket introducer by context.
-  gt,      ///< Comparison operator or generic-bracket closer by context.
+  tilde, ///< Bitwise-not operator and splice introducer in statement contexts.
+  lt,    ///< Comparison operator or generic-bracket introducer by context.
+  gt,    ///< Comparison operator or generic-bracket closer by context.
 
   // ------------------------------------------------------------------
   //  Operators — multi-character
@@ -209,9 +222,9 @@ enum class token_kind : uint8_t {
   // ------------------------------------------------------------------
   //  Wrapping arithmetic operators (machine mode)
   // ------------------------------------------------------------------
-  plus_percent,     ///< Machine-mode wrapping add that preserves overflow intent.
-  minus_percent,    ///< Machine-mode wrapping subtract.
-  star_percent,     ///< Machine-mode wrapping multiply.
+  plus_percent,  ///< Machine-mode wrapping add that preserves overflow intent.
+  minus_percent, ///< Machine-mode wrapping subtract.
+  star_percent,  ///< Machine-mode wrapping multiply.
   plus_percent_eq,  ///< Wrapping add assignment.
   minus_percent_eq, ///< Wrapping subtract assignment.
   star_percent_eq,  ///< Wrapping multiply assignment.
@@ -235,7 +248,7 @@ enum class token_kind : uint8_t {
 // ==========================================================================
 struct token {
   token_kind kind = token_kind::eof; ///< Lexical category chosen by the lexer.
-  source_span span;                  ///< Exact byte range in the originating file.
+  source_span span; ///< Exact byte range in the originating file.
 
   /// The raw source text of this token. For most tokens this is a view into
   /// the original source buffer; for synthesized tokens (error recovery) it
@@ -245,7 +258,8 @@ struct token {
   /// For Error tokens, this carries a short human-readable description of
   /// what went wrong during lexing (e.g., "unterminated string literal").
   /// Empty for all non-error tokens.
-  std::string_view error_message; ///< Lexer-provided explanation for `error` tokens.
+  std::string_view
+      error_message; ///< Lexer-provided explanation for `error` tokens.
 
   // Convenience predicates ------------------------------------------------
 
@@ -264,7 +278,8 @@ struct token {
   /// @tparam Kinds Token-kind enum parameters to compare against.
   /// @param kinds Candidate token kinds.
   template <typename... Kinds>
-  [[nodiscard]] constexpr auto is_one_of(Kinds... kinds) const noexcept -> bool {
+  [[nodiscard]] constexpr auto is_one_of(Kinds... kinds) const noexcept
+      -> bool {
     return ((kind == kinds) || ...);
   }
 
@@ -314,7 +329,8 @@ struct token {
            kind == token_kind::kw_machine || kind == token_kind::kw_static;
   }
 
-  /// @brief Returns whether this token can form an assignment statement operator.
+  /// @brief Returns whether this token can form an assignment statement
+  /// operator.
   ///
   /// The parser uses this to decide when an expression statement should instead
   /// be reinterpreted as assignment syntax.
@@ -488,7 +504,8 @@ struct token {
 /// can evolve without scattering string comparisons through tokenization logic.
 ///
 /// @param text Raw identifier spelling from the source buffer.
-[[nodiscard]] inline auto classify_ident(std::string_view text) noexcept -> token_kind {
+[[nodiscard]] inline auto classify_ident(std::string_view text) noexcept
+    -> token_kind {
   // We use a simple if-chain. For ~50 keywords this is perfectly fine and
   // avoids pulling in a hash map dependency. The compiler will likely
   // optimize this into a switch on the first character anyway.
@@ -497,227 +514,227 @@ struct token {
   // on the most common identifiers, which are NOT keywords.
   if (text.empty()) {
     return token_kind::ident;
-}
+  }
 
   switch (text[0]) {
   case 'a':
     if (text == "and") {
       return token_kind::kw_and;
-}
+    }
     if (text == "as") {
       return token_kind::kw_as;
-}
+    }
     if (text == "async") {
       return token_kind::kw_async;
-}
+    }
     if (text == "await") {
       return token_kind::kw_await;
-}
+    }
     if (text == "asm") {
       return token_kind::kw_asm;
-}
+    }
     if (text == "array") {
       return token_kind::kw_array;
-}
+    }
     if (text == "assert") {
       return token_kind::kw_assert;
-}
+    }
     break;
   case 'c':
     if (text == "concept") {
       return token_kind::kw_concept;
-}
+    }
     if (text == "crew") {
       return token_kind::kw_crew;
-}
+    }
     break;
   case 'd':
     if (text == "def") {
       return token_kind::kw_def;
-}
+    }
     if (text == "dep") {
       return token_kind::kw_dep;
-}
+    }
     if (text == "deriving") {
       return token_kind::kw_deriving;
-}
+    }
     if (text == "def_expr") {
       return token_kind::kw_def_expr;
-}
+    }
     break;
   case 'e':
     if (text == "else") {
       return token_kind::kw_else;
-}
+    }
     if (text == "elif") {
       return token_kind::kw_elif;
-}
+    }
     if (text == "err") {
       return token_kind::kw_err;
-}
+    }
     if (text == "expr") {
       return token_kind::kw_expr;
-}
+    }
     if (text == "extend") {
       return token_kind::kw_extend;
-}
+    }
     break;
   case 'f':
     if (text == "for") {
       return token_kind::kw_for;
-}
+    }
     if (text == "false") {
       return token_kind::kw_false;
-}
+    }
     if (text == "fn") {
       return token_kind::kw_fn;
-}
+    }
     break;
   case 'i':
     if (text == "if") {
       return token_kind::kw_if;
-}
+    }
     if (text == "in") {
       return token_kind::kw_in;
-}
+    }
     if (text == "impl") {
       return token_kind::kw_impl;
-}
+    }
     if (text == "internal") {
       return token_kind::kw_internal;
-}
+    }
     if (text == "invariant") {
       return token_kind::kw_invariant;
-}
+    }
     break;
   case 'l':
     if (text == "let") {
       return token_kind::kw_let;
-}
+    }
     break;
   case 'm':
     if (text == "match") {
       return token_kind::kw_match;
-}
+    }
     if (text == "module") {
       return token_kind::kw_module;
-}
+    }
     if (text == "mut") {
       return token_kind::kw_mut;
-}
+    }
     if (text == "move") {
       return token_kind::kw_move;
-}
+    }
     if (text == "machine") {
       return token_kind::kw_machine;
-}
+    }
     break;
   case 'n':
     if (text == "not") {
       return token_kind::kw_not;
-}
+    }
     if (text == "no_prelude") {
       return token_kind::kw_no_prelude;
-}
+    }
     break;
   case 'o':
     if (text == "or") {
       return token_kind::kw_or;
-}
+    }
     if (text == "ok") {
       return token_kind::kw_ok;
-}
+    }
     if (text == "on") {
       return token_kind::kw_on;
-}
+    }
     break;
   case 'p':
     if (text == "pub") {
       return token_kind::kw_pub;
-}
+    }
     if (text == "pure") {
       return token_kind::kw_pure;
-}
+    }
     if (text == "par") {
       return token_kind::kw_par;
-}
+    }
     if (text == "pre") {
       return token_kind::kw_pre;
-}
+    }
     if (text == "post") {
       return token_kind::kw_post;
-}
+    }
     if (text == "priv") {
       return token_kind::kw_priv;
-}
+    }
     break;
   case 'r':
     if (text == "return") {
       return token_kind::kw_return;
-}
+    }
     if (text == "race") {
       return token_kind::kw_race;
-}
+    }
     if (text == "requires") {
       return token_kind::kw_requires;
-}
+    }
     break;
   case 's':
     if (text == "static") {
       return token_kind::kw_static;
-}
+    }
     if (text == "some") {
       return token_kind::kw_some;
-}
+    }
     if (text == "super") {
       return token_kind::kw_super;
-}
+    }
     if (text == "shared") {
       return token_kind::kw_shared;
-}
+    }
     if (text == "stmt") {
       return token_kind::kw_stmt;
-}
+    }
     break;
   case 't':
     if (text == "type") {
       return token_kind::kw_type;
-}
+    }
     if (text == "trait") {
       return token_kind::kw_trait;
-}
+    }
     if (text == "true") {
       return token_kind::kw_true;
-}
+    }
     if (text == "type_expr") {
       return token_kind::kw_type_expr;
-}
+    }
     break;
   case 'u':
     if (text == "use") {
       return token_kind::kw_use;
-}
+    }
     if (text == "unit") {
       return token_kind::kw_unit;
-}
+    }
     break;
   case 'v':
     if (text == "var") {
       return token_kind::kw_var;
-}
+    }
     break;
   case 'w':
     if (text == "while") {
       return token_kind::kw_while;
-}
+    }
     if (text == "where") {
       return token_kind::kw_where;
-}
+    }
     break;
   case 'y':
     if (text == "yield") {
       return token_kind::kw_yield;
-}
+    }
     break;
   default:
     break;
@@ -727,7 +744,7 @@ struct token {
   // a lone underscore. Identifiers like `_foo` are normal identifiers.
   if (text == "_") {
     return token_kind::kw_underscore;
-}
+  }
 
   return token_kind::ident;
 }
@@ -738,8 +755,8 @@ struct token {
 //  This is used in diagnostic messages. The names are chosen to be
 //  understandable to someone learning Kira — not compiler-internals jargon.
 // ==========================================================================
-[[nodiscard]] constexpr auto
-token_kind_name(token_kind kind) noexcept -> std::string_view {
+[[nodiscard]] constexpr auto token_kind_name(token_kind kind) noexcept
+    -> std::string_view {
   switch (kind) {
   case token_kind::eof:
     return "end of file";
@@ -1036,8 +1053,8 @@ token_kind_name(token_kind kind) noexcept -> std::string_view {
 /// "expected a name" instead of leaking parser jargon like `ident`.
 ///
 /// @param kind Token kind the parser hoped to see.
-[[nodiscard]] constexpr auto
-token_kind_description(token_kind kind) noexcept -> std::string_view {
+[[nodiscard]] constexpr auto token_kind_description(token_kind kind) noexcept
+    -> std::string_view {
   switch (kind) {
   case token_kind::ident:
     return "a name";

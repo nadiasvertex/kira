@@ -31,7 +31,8 @@ enum class diagnostic_level : uint8_t {
   /// something that will fail in a later compilation phase. For example,
   /// using a modifier in the wrong position.
   Warning,
-  warning = Warning, ///< Lowercase spelling used by most call sites and switches.
+  warning =
+      Warning, ///< Lowercase spelling used by most call sites and switches.
 
   /// Additional context attached to a preceding Error or Warning.
   /// Notes point at related locations ("this `{` was opened here",
@@ -70,20 +71,27 @@ diagnostic_level_name(diagnostic_level level) noexcept -> std::string_view {
 /// They live in a dedicated namespace so formatting code can opt into color
 /// without mixing escape literals into the higher-level rendering logic.
 namespace ansi {
-constexpr std::string_view Reset = "\033[0m";       ///< Clear all active formatting.
-constexpr std::string_view Bold = "\033[1m";        ///< Emphasize severity headings.
-constexpr std::string_view Dim = "\033[2m";         ///< Reserved for lower-emphasis text.
-constexpr std::string_view Red = "\033[31m";        ///< Base error color.
-constexpr std::string_view Yellow = "\033[33m";     ///< Base warning color.
-constexpr std::string_view Blue = "\033[34m";       ///< Base note color.
-constexpr std::string_view Magenta = "\033[35m";    ///< Reserved accent color.
-constexpr std::string_view Cyan = "\033[36m";       ///< Reserved accent color.
-constexpr std::string_view BoldRed = "\033[1;31m";  ///< Error headline and underline color.
-constexpr std::string_view BoldYellow = "\033[1;33m"; ///< Warning headline and underline color.
-constexpr std::string_view BoldBlue = "\033[1;34m"; ///< Note headline and gutter color.
-constexpr std::string_view BoldMagenta = "\033[1;35m"; ///< Reserved bold accent color.
-constexpr std::string_view BoldCyan = "\033[1;36m"; ///< Reserved bold accent color.
-constexpr std::string_view BoldGreen = "\033[1;32m"; ///< Help and fix-preview color.
+constexpr std::string_view Reset = "\033[0m"; ///< Clear all active formatting.
+constexpr std::string_view Bold = "\033[1m";  ///< Emphasize severity headings.
+constexpr std::string_view Dim =
+    "\033[2m"; ///< Reserved for lower-emphasis text.
+constexpr std::string_view Red = "\033[31m";     ///< Base error color.
+constexpr std::string_view Yellow = "\033[33m";  ///< Base warning color.
+constexpr std::string_view Blue = "\033[34m";    ///< Base note color.
+constexpr std::string_view Magenta = "\033[35m"; ///< Reserved accent color.
+constexpr std::string_view Cyan = "\033[36m";    ///< Reserved accent color.
+constexpr std::string_view BoldRed =
+    "\033[1;31m"; ///< Error headline and underline color.
+constexpr std::string_view BoldYellow =
+    "\033[1;33m"; ///< Warning headline and underline color.
+constexpr std::string_view BoldBlue =
+    "\033[1;34m"; ///< Note headline and gutter color.
+constexpr std::string_view BoldMagenta =
+    "\033[1;35m"; ///< Reserved bold accent color.
+constexpr std::string_view BoldCyan =
+    "\033[1;36m"; ///< Reserved bold accent color.
+constexpr std::string_view BoldGreen =
+    "\033[1;32m"; ///< Help and fix-preview color.
 } // namespace ansi
 
 /// @brief Returns the preferred display color for a diagnostic severity.
@@ -153,8 +161,8 @@ struct suggested_fix {
 //  the user probably meant to write.
 // ==========================================================================
 struct diagnostic {
-  diagnostic_level level;  ///< Primary severity controlling user attention.
-  std::string message;     ///< Main explanation of what went wrong or matters.
+  diagnostic_level level;   ///< Primary severity controlling user attention.
+  std::string message;      ///< Main explanation of what went wrong or matters.
   file_id_type file_id = 0; ///< File that owns the primary diagnostic context.
 
   /// Primary and secondary labels pointing at source code.
@@ -203,13 +211,15 @@ struct diagnostic {
   ///
   /// @param span Related source range.
   /// @param msg Explanation of that range's relationship to the issue.
-  auto with_secondary_label(source_span span, std::string msg) & -> diagnostic & {
+  auto with_secondary_label(source_span span,
+                            std::string msg) & -> diagnostic & {
     labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return *this;
   }
 
   /// @brief Rvalue overload of `with_secondary_label`.
-  auto with_secondary_label(source_span span, std::string msg) && -> diagnostic && {
+  auto with_secondary_label(source_span span,
+                            std::string msg) && -> diagnostic && {
     labels.emplace_back(span, std::move(msg), diagnostic_level::note);
     return std::move(*this);
   }
@@ -256,17 +266,20 @@ struct diagnostic {
   /// @param desc Description of the edit.
   /// @param span Replacement range.
   /// @param replacement Replacement text.
-  auto with_fix(std::string desc, source_span span, std::string replacement) & -> diagnostic & {
-    fixes.push_back(
-        suggested_fix{.description=std::move(desc), .span=span, .replacement=std::move(replacement)});
+  auto with_fix(std::string desc, source_span span,
+                std::string replacement) & -> diagnostic & {
+    fixes.push_back(suggested_fix{.description = std::move(desc),
+                                  .span = span,
+                                  .replacement = std::move(replacement)});
     return *this;
   }
 
   /// @brief Rvalue overload of `with_fix`.
   auto with_fix(std::string desc, source_span span,
-                        std::string replacement) && -> diagnostic && {
-    fixes.push_back(
-        suggested_fix{.description=std::move(desc), .span=span, .replacement=std::move(replacement)});
+                std::string replacement) && -> diagnostic && {
+    fixes.push_back(suggested_fix{.description = std::move(desc),
+                                  .span = span,
+                                  .replacement = std::move(replacement)});
     return std::move(*this);
   }
 
@@ -290,7 +303,8 @@ struct diagnostic {
 // ==========================================================================
 class diagnostic_bag {
 public:
-  static constexpr uint32_t kDefaultMaxErrors = 50; ///< Default cascade cut-off.
+  static constexpr uint32_t kDefaultMaxErrors =
+      50; ///< Default cascade cut-off.
 
   /// @brief Creates a diagnostic collector with an optional error budget.
   ///
@@ -376,10 +390,14 @@ public:
   // -- Queries --
 
   /// @brief Returns whether any error-level diagnostics have been observed.
-  [[nodiscard]] auto has_errors() const noexcept -> bool { return error_count_ > 0; }
+  [[nodiscard]] auto has_errors() const noexcept -> bool {
+    return error_count_ > 0;
+  }
 
   /// @brief Returns the number of retained or budgeted errors.
-  [[nodiscard]] auto error_count() const noexcept -> uint32_t { return error_count_; }
+  [[nodiscard]] auto error_count() const noexcept -> uint32_t {
+    return error_count_;
+  }
 
   /// @brief Returns the number of warning diagnostics seen so far.
   [[nodiscard]] auto warning_count() const noexcept -> uint32_t {
@@ -392,11 +410,13 @@ public:
   }
 
   /// @brief Returns the stored diagnostics in emission order.
-  [[nodiscard]] auto diagnostics() const noexcept -> const std::vector<diagnostic> & {
+  [[nodiscard]] auto diagnostics() const noexcept
+      -> const std::vector<diagnostic> & {
     return diagnostics_;
   }
 
-  /// @brief Returns mutable access for infrastructure that needs to reorder or inspect.
+  /// @brief Returns mutable access for infrastructure that needs to reorder or
+  /// inspect.
   [[nodiscard]] auto diagnostics() noexcept -> std::vector<diagnostic> & {
     return diagnostics_;
   }
@@ -423,11 +443,12 @@ public:
   }
 
 private:
-  std::vector<diagnostic> diagnostics_; ///< Emitted diagnostics in user-facing order.
-  uint32_t error_count_ = 0;            ///< Total errors observed, even past the cap.
-  uint32_t warning_count_ = 0;          ///< Total warnings observed.
-  uint32_t max_errors_;                 ///< Error budget before throttling begins.
-  bool cascade_reported_ = false;       ///< Whether the max-error notice was emitted.
+  std::vector<diagnostic>
+      diagnostics_;               ///< Emitted diagnostics in user-facing order.
+  uint32_t error_count_ = 0;      ///< Total errors observed, even past the cap.
+  uint32_t warning_count_ = 0;    ///< Total warnings observed.
+  uint32_t max_errors_;           ///< Error budget before throttling begins.
+  bool cascade_reported_ = false; ///< Whether the max-error notice was emitted.
 };
 
 // ==========================================================================
@@ -467,7 +488,8 @@ public:
   /// @brief Renders every diagnostic in `bag` into one terminal-formatted blob.
   ///
   /// @param bag Collection of diagnostics to display in order.
-  [[nodiscard]] auto render_all(const diagnostic_bag &bag) const -> std::string {
+  [[nodiscard]] auto render_all(const diagnostic_bag &bag) const
+      -> std::string {
     std::string out;
     for (const auto &diag : bag.diagnostics()) {
       render_diagnostic(out, diag, /*indent=*/0);
@@ -521,8 +543,7 @@ private:
 
   /// Renders a labeled source span with file and line context when available.
   void render_label(std::string &out, const diagnostic_label &label,
-                    const std::string &prefix,
-                    const source_file *file) const {
+                    const std::string &prefix, const source_file *file) const {
     if (label.span.empty() && label.span.start == 0) {
       return; // Dummy span — nothing to render.
     }
@@ -593,7 +614,7 @@ private:
       uint32_t caret_len = label.span.len();
       if (caret_len == 0) {
         caret_len = 1;
-}
+      }
 
       // Clamp to line length.
       if (caret_start > source_line.size()) {
@@ -603,7 +624,7 @@ private:
         caret_len = static_cast<uint32_t>(source_line.size()) - caret_start;
         if (caret_len == 0) {
           caret_len = 1;
-}
+        }
       }
 
       out += prefix;
@@ -684,8 +705,7 @@ private:
 
   /// Renders a suggested source edit preview below a diagnostic.
   void render_fix(std::string &out, const suggested_fix &fix,
-                  const std::string &prefix,
-                  const source_file *file) const {
+                  const std::string &prefix, const source_file *file) const {
     std::string help_color = use_color_ ? std::string(ansi::BoldGreen) : "";
     std::string reset = use_color_ ? std::string(ansi::Reset) : "";
 
@@ -753,10 +773,11 @@ private:
   }
 
   /// Left-pads line-number strings so diagnostic gutters align cleanly.
-  [[nodiscard]] static auto pad_left(std::string s, uint32_t width) -> std::string {
+  [[nodiscard]] static auto pad_left(std::string s, uint32_t width)
+      -> std::string {
     if (s.size() >= width) {
       return s;
-}
+    }
     return std::string(width - s.size(), ' ') + s;
   }
 
@@ -764,7 +785,7 @@ private:
   [[nodiscard]] static auto count_digits(uint32_t n) -> uint32_t {
     if (n == 0) {
       return 1;
-}
+    }
     uint32_t digits = 0;
     while (n > 0) {
       ++digits;
@@ -773,8 +794,9 @@ private:
     return digits;
   }
 
-  const source_manager &sources_; ///< Source table used for file/snippet lookup.
-  bool use_color_;                ///< Whether ANSI escape sequences are emitted.
+  const source_manager
+      &sources_;   ///< Source table used for file/snippet lookup.
+  bool use_color_; ///< Whether ANSI escape sequences are emitted.
 };
 
 } // namespace kira

@@ -68,10 +68,11 @@ auto collect_module_files(const std::vector<parsed_module> &inputs)
             path.size() > 1 ? join_module_path_prefix(path, path.size() - 1)
                             : std::string{},
         .child_name = path.back(),
-        .location = source_location{
-            .file_id = input.file_id,
-            .span = input.ast_file->module_decl->span,
-        },
+        .location =
+            source_location{
+                .file_id = input.file_id,
+                .span = input.ast_file->module_decl->span,
+            },
         .file_id = input.file_id,
         .ast_file = input.ast_file,
     });
@@ -100,10 +101,11 @@ auto collect_submodule_declarations(
         .parent_module_name =
             join_module_path_prefix(parent_path, parent_path.size()),
         .child_name = decl.name,
-        .location = source_location{
-            .file_id = file_id,
-            .span = decl.span,
-        },
+        .location =
+            source_location{
+                .file_id = file_id,
+                .span = decl.span,
+            },
         .parent_file_id = file_id,
         .visibility = decl.visibility,
         .is_inline = !decl.items.empty(),
@@ -133,10 +135,11 @@ auto collect_use_declarations(const std::vector<ast::ptr<ast::node>> &items,
           .decl = &decl,
           .importer_module_name =
               join_module_path_prefix(module_path, module_path.size()),
-          .location = source_location{
-              .file_id = file_id,
-              .span = decl.span,
-          },
+          .location =
+              source_location{
+                  .file_id = file_id,
+                  .span = decl.span,
+              },
           .file_id = file_id,
       });
       continue;
@@ -189,8 +192,8 @@ auto module_root_name(std::string_view module_name) -> std::string_view {
 }
 
 /// Appends `child` to `parent` as a new dotted segment.
-auto append_module_name(std::string_view parent,
-                        std::string_view child) -> std::string {
+auto append_module_name(std::string_view parent, std::string_view child)
+    -> std::string {
   if (parent.empty()) {
     return std::string(child);
   }
@@ -205,10 +208,9 @@ auto is_same_or_descendant_module(std::string_view module_name,
   if (ancestor.empty()) {
     return false;
   }
-  return module_name == ancestor ||
-         (module_name.starts_with(ancestor) &&
-          module_name.size() > ancestor.size() &&
-          module_name[ancestor.size()] == '.');
+  return module_name == ancestor || (module_name.starts_with(ancestor) &&
+                                     module_name.size() > ancestor.size() &&
+                                     module_name[ancestor.size()] == '.');
 }
 
 /// `def` (no explicit modifier) reports as "internal" here, matching Kira's
@@ -228,9 +230,10 @@ auto visibility_name(ast::visibility visibility) -> std::string_view {
   return "internal";
 }
 
-/// Tailors the fix-it suggestion to the specific visibility that blocked an import.
-auto visibility_help(ast::visibility visibility,
-                     std::string_view parent_name) -> std::string {
+/// Tailors the fix-it suggestion to the specific visibility that blocked an
+/// import.
+auto visibility_help(ast::visibility visibility, std::string_view parent_name)
+    -> std::string {
   switch (visibility) {
   case ast::visibility::pub:
     return std::format(
@@ -238,15 +241,16 @@ auto visibility_help(ast::visibility visibility,
         parent_name);
   case ast::visibility::def:
   case ast::visibility::internal:
-    return std::format(
-        "Import this module from `{}` or one of its submodules, or widen the declaration's visibility.",
-        parent_name);
+    return std::format("Import this module from `{}` or one of its submodules, "
+                       "or widen the declaration's visibility.",
+                       parent_name);
   case ast::visibility::super:
-    return std::format(
-        "Only the parent module `{}` can import this module; widen the declaration if other modules need it.",
-        parent_name);
+    return std::format("Only the parent module `{}` can import this module; "
+                       "widen the declaration if other modules need it.",
+                       parent_name);
   case ast::visibility::priv:
-    return "Keep the import in the declaring file, or widen the module declaration's visibility.";
+    return "Keep the import in the declaring file, or widen the module "
+           "declaration's visibility.";
   }
   return {};
 }
@@ -313,7 +317,8 @@ auto split_module_name(std::string_view module_name)
       break;
     }
 
-    parts.emplace_back(module_name.substr(segment_start, separator - segment_start));
+    parts.emplace_back(
+        module_name.substr(segment_start, separator - segment_start));
     segment_start = separator + 1;
   }
   return parts;
@@ -324,7 +329,8 @@ auto split_module_name(std::string_view module_name)
 /// added while walking (not just those seen before the scope was created).
 auto build_semantic_resolution_index(const std::vector<parsed_module> &inputs)
     -> semantic_resolution_index {
-  auto index = semantic_resolution_index{.session = build_semantic_session(inputs)};
+  auto index =
+      semantic_resolution_index{.session = build_semantic_session(inputs)};
 
   for (auto &module_scope : index.session.module_scopes) {
     const auto *scope = find_semantic_scope(index.session, module_scope.scope);
@@ -351,10 +357,11 @@ auto find_module_scope(const semantic_resolution_index &index,
 
 /// Searches a module's symbols in reverse-declaration order so the most
 /// recently added definition of a shadowed name wins.
-auto find_module_scope_symbol(const semantic_resolution_index &index,
-                              std::string_view module_name, // NOLINT(bugprone-easily-swappable-parameters)
-                              std::string_view symbol_name)
-    -> const semantic_symbol * {
+auto find_module_scope_symbol(
+    const semantic_resolution_index &index,
+    std::string_view
+        module_name, // NOLINT(bugprone-easily-swappable-parameters)
+    std::string_view symbol_name) -> const semantic_symbol * {
   const auto *module_scope = find_module_scope(index, module_name);
   if (module_scope == nullptr) {
     return nullptr;
@@ -379,14 +386,14 @@ auto build_module_session_index(const std::vector<parsed_module> &inputs)
   };
 
   for (const auto &module_file : index.module_files) {
-    if (module_file.ast_file == nullptr || module_file.ast_file->module_decl == nullptr) {
+    if (module_file.ast_file == nullptr ||
+        module_file.ast_file->module_decl == nullptr) {
       continue;
     }
 
-    collect_submodule_declarations(module_file.ast_file->items,
-                                   module_file.ast_file->module_decl->path,
-                                   module_file.file_id,
-                                   index.submodule_declarations);
+    collect_submodule_declarations(
+        module_file.ast_file->items, module_file.ast_file->module_decl->path,
+        module_file.file_id, index.submodule_declarations);
   }
 
   return index;
@@ -447,9 +454,10 @@ auto find_submodule_declaration_by_name(
 /// segment.
 auto session_owns_root_module(const module_session_index &index,
                               std::string_view root_name) -> bool {
-  return std::ranges::any_of(index.module_files, [&root_name](const auto &module) -> bool {
-    return module_root_name(module.module_name) == root_name;
-  });
+  return std::ranges::any_of(
+      index.module_files, [&root_name](const auto &module) -> bool {
+        return module_root_name(module.module_name) == root_name;
+      });
 }
 
 /// A module is "contained" if it either has its own file or was declared
@@ -474,8 +482,8 @@ auto find_nearest_module_anchor(const module_session_index &index,
           .location = module->location,
       };
     }
-    if (const auto *submodule =
-            find_submodule_declaration_by_name(index.submodule_declarations, current)) {
+    if (const auto *submodule = find_submodule_declaration_by_name(
+            index.submodule_declarations, current)) {
       return module_anchor_record{
           .module_name = submodule->module_name,
           .location = submodule->location,
@@ -497,9 +505,8 @@ auto module_resolution_blocked_by_errors(
     }
   }
 
-  if (const auto *submodule =
-          find_submodule_declaration_by_name(index.submodule_declarations,
-                                             module_name)) {
+  if (const auto *submodule = find_submodule_declaration_by_name(
+          index.submodule_declarations, module_name)) {
     if (has_file_error(file_has_errors, submodule->parent_file_id)) {
       return true;
     }
