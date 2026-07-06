@@ -376,7 +376,8 @@ auto test_lowers_struct_pattern_field_destructuring() -> void {
   expect(let.name == "v", "expected the synthetic let to bind `v`");
   expect(let.initializer->kind == hir::hir_node_kind::hir_field,
          "expected the let to be initialized from a field projection");
-  const auto &field_ref = dynamic_cast<const hir::hir_field &>(*let.initializer);
+  const auto &field_ref =
+      dynamic_cast<const hir::hir_field &>(*let.initializer);
   expect(field_ref.field_name == "value",
          "expected the field projection to read `value`");
 }
@@ -468,8 +469,8 @@ auto test_lowers_constructor_pattern_destructuring() -> void {
              hir::hir_node_kind::hir_constructor_pattern,
          "expected the arm's pattern to be a hir_constructor_pattern");
 
-  const auto &ctor_pat =
-      dynamic_cast<const hir::hir_constructor_pattern &>(*match.arms[0].pattern);
+  const auto &ctor_pat = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[0].pattern);
   expect(ctor_pat.variant_name == "circle",
          "expected the constructor pattern's variant to be `circle`");
   expect(ctor_pat.args.size() == 1, "expected one destructured payload arg");
@@ -510,14 +511,14 @@ auto test_lowers_option_and_result_pattern_sugar() -> void {
   // `@some(v)` parses as a plain constructor pattern (not the dedicated
   // `ast::option_pattern` sugar node, which is only for bare `some(...)`
   // without `@`) — still lowers to the same hir_constructor_pattern shape.
-  const auto &some_pat =
-      dynamic_cast<const hir::hir_constructor_pattern &>(*match.arms[0].pattern);
+  const auto &some_pat = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[0].pattern);
   expect(some_pat.variant_name == "some",
          "expected the first arm's variant to be `some`");
   expect(some_pat.args.size() == 1, "expected `some` to destructure one arg");
 
-  const auto &none_pat =
-      dynamic_cast<const hir::hir_constructor_pattern &>(*match.arms[1].pattern);
+  const auto &none_pat = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[1].pattern);
   expect(none_pat.variant_name == "none",
          "expected the second arm's variant to be `none`");
   expect(none_pat.args.empty(), "expected `none` to have no payload args");
@@ -546,6 +547,146 @@ auto test_lowers_range_pattern() -> void {
          "expected the range to have a start bound");
   expect(range_pat.end != nullptr, "expected the range to have an end bound");
   expect(!range_pat.inclusive, "expected `..` to be exclusive");
+}
+
+auto test_lowers_plain_let_as_single_statement() -> void {
+  // Regression guard: a plain `let name = expr` must keep lowering to
+  // exactly one `hir_let` — the fast path in the `let_stmt` case — not the
+  // two-statement synthetic-subject form destructuring patterns need.
+  auto fixture = check_fixture("module sample\n"
+                               "def double(x: int32) -> int32:\n"
+                               "    let y = x\n"
+                               "    return y\n");
+  const auto &decl = find_func(*fixture.ast_file, "double");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a plain let binding to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 2,
+         "expected exactly one let statement plus the return");
+  expect(function.body->stmts[0]->kind == hir::hir_node_kind::hir_let,
+         "expected the first statement to be the plain hir_let");
+  const auto &let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[0]);
+  expect(let.name == "y", "expected the let to bind `y`");
+}
+
+auto test_lowers_tuple_pattern_let_destructuring() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def first_of_pair(pair: (int32, str)) -> int32:\n"
+                    "    let (n, _) = pair\n"
+                    "    return n\n");
+  const auto &decl = find_func(*fixture.ast_file, "first_of_pair");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a destructuring let binding to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 3,
+         "expected the synthetic subject let, the `n` let, and the return");
+
+  const auto &subject_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[0]);
+  expect(subject_let.name == "<let subject>",
+         "expected the first statement to bind the synthetic let subject");
+  expect(subject_let.initializer->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the synthetic subject to be initialized from `pair`");
+
+  const auto &n_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[1]);
+  expect(n_let.name == "n", "expected the second statement to bind `n`");
+  expect(n_let.initializer->kind == hir::hir_node_kind::hir_tuple_index,
+         "expected `n` to be initialized from a tuple-index projection");
+  const auto &tuple_ref =
+      dynamic_cast<const hir::hir_tuple_index &>(*n_let.initializer);
+  expect(tuple_ref.index == 0, "expected the projection to read slot 0");
+  const auto &subject_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*tuple_ref.object);
+  expect(subject_ref.symbol == subject_let.symbol,
+         "expected the projection to read the synthetic subject let");
+
+  expect(function.body->stmts[2]->kind == hir::hir_node_kind::hir_return,
+         "expected the final statement to be the return");
+}
+
+auto test_lowers_struct_pattern_let_destructuring() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type container = { pub value: int32 }\n"
+                               "def read(c: container) -> int32:\n"
+                               "    let { value } = c\n"
+                               "    return value\n");
+  const auto &decl = find_func(*fixture.ast_file, "read");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a destructuring struct let binding to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 3,
+         "expected the synthetic subject let, the `value` let, and the return");
+  const auto &value_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[1]);
+  expect(value_let.name == "value",
+         "expected the second statement to bind `value`");
+  expect(value_let.initializer->kind == hir::hir_node_kind::hir_field,
+         "expected `value` to be initialized from a field projection");
+}
+
+auto test_lowers_tuple_destructuring_parameter() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def first((a, _): (int32, int32)) -> int32:\n"
+                               "    return a\n");
+  const auto &decl = find_func(*fixture.ast_file, "first");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a destructuring tuple parameter to lower");
+
+  const auto &function = **result;
+  expect(function.params.size() == 1, "expected one lowered parameter");
+  expect(function.params[0].name != "a",
+         "expected the destructured parameter itself to get a synthetic "
+         "name, not the bound name `a`");
+
+  expect(function.body->stmts.size() == 2,
+         "expected the synthetic `a` let plus the return");
+  const auto &a_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[0]);
+  expect(a_let.name == "a", "expected the prelude let to bind `a`");
+  expect(a_let.initializer->kind == hir::hir_node_kind::hir_tuple_index,
+         "expected `a` to be initialized from a tuple-index projection");
+  const auto &tuple_ref =
+      dynamic_cast<const hir::hir_tuple_index &>(*a_let.initializer);
+  expect(tuple_ref.index == 0, "expected the projection to read slot 0");
+  const auto &param_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*tuple_ref.object);
+  expect(param_ref.symbol == function.params[0].symbol,
+         "expected the projection to read the synthetic parameter");
+}
+
+auto test_lowers_struct_destructuring_parameter() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "type container = { pub value: int32 }\n"
+                    "def read_value({ value }: container) -> int32:\n"
+                    "    return value\n");
+  const auto &decl = find_func(*fixture.ast_file, "read_value");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a destructuring struct parameter to lower");
+
+  const auto &function = **result;
+  expect(function.params.size() == 1, "expected one lowered parameter");
+  expect(function.body->stmts.size() == 2,
+         "expected the synthetic `value` let plus the return");
+  const auto &value_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[0]);
+  expect(value_let.name == "value", "expected the prelude let to bind `value`");
+  expect(value_let.initializer->kind == hir::hir_node_kind::hir_field,
+         "expected `value` to be initialized from a field projection");
 }
 
 auto test_rejects_array_pattern() -> void {
@@ -585,6 +726,11 @@ auto main() -> int {
     test_lowers_option_and_result_pattern_sugar();
     test_lowers_range_pattern();
     test_rejects_array_pattern();
+    test_lowers_plain_let_as_single_statement();
+    test_lowers_tuple_pattern_let_destructuring();
+    test_lowers_struct_pattern_let_destructuring();
+    test_lowers_tuple_destructuring_parameter();
+    test_lowers_struct_destructuring_parameter();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';

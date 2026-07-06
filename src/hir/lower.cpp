@@ -143,8 +143,14 @@ private:
                                  source_span span,
                                  type_id type = k_unknown_type)
       -> std::expected<ptr<hir_block>, lowering_error>;
+  /// Lowers one statement to zero or more HIR nodes: almost always exactly
+  /// one, except a destructuring `let` (`let (a, b) = pair`), which expands
+  /// to a synthetic subject-binding `hir_let` plus one `hir_let` per name
+  /// the pattern binds (see the `let_stmt` case) — there's no single HIR
+  /// node that could represent "one surface statement" once one surface
+  /// statement can introduce several bindings.
   [[nodiscard]] auto lower_stmt(const ast::node &node)
-      -> std::expected<ptr<hir_node>, lowering_error>;
+      -> std::expected<ptr_vec<hir_node>, lowering_error>;
   [[nodiscard]] auto lower_if(const std::vector<ast::if_branch> &branches,
                               const std::vector<ast::ptr<ast::node>> &else_body,
                               source_span span, type_id type)
@@ -423,14 +429,24 @@ auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
       pop_scope();
       return std::unexpected(lowered.error());
     }
-    lowered_stmts.push_back(std::move(*lowered));
+    for (auto &node : *lowered) {
+      lowered_stmts.push_back(std::move(node));
+    }
   }
   pop_scope();
   return make<hir_block>(span, type, std::move(lowered_stmts));
 }
 
+/// Wraps a single lowered node into the one-or-more-nodes result
+/// `lower_stmt` returns.
+[[nodiscard]] auto one_stmt(ptr<hir_node> node) -> ptr_vec<hir_node> {
+  auto result = ptr_vec<hir_node>{};
+  result.push_back(std::move(node));
+  return result;
+}
+
 auto lowerer::lower_stmt(const ast::node &node)
-    -> std::expected<ptr<hir_node>, lowering_error> {
+    -> std::expected<ptr_vec<hir_node>, lowering_error> {
   if (node.has_error) {
     return fail(
         lowering_error_kind::unsupported_construct, node.span,
@@ -441,13 +457,13 @@ auto lowerer::lower_stmt(const ast::node &node)
     const auto &let = dynamic_cast<const ast::let_stmt &>(node);
     if (!let.else_body.empty()) {
       return fail(lowering_error_kind::unsupported_construct, let.span,
-                  "`let ... else` is not lowered by the first milestone");
+                  "`let ... else` is not lowered yet — a fallible pattern "
+                  "needs the same structural dispatch `match`/`if` already "
+                  "have, which this pass hasn't wired up for `let`");
     }
-    if (let.pattern == nullptr || let.pattern->has_error ||
-        let.pattern->kind != ast::node_kind::binding_pattern) {
+    if (let.pattern == nullptr || let.pattern->has_error) {
       return fail(lowering_error_kind::unsupported_construct, let.span,
-                  "only simple `let name = expr` bindings are lowered by the "
-                  "first milestone (no destructuring patterns yet)");
+                  "let binding has no usable pattern");
     }
     if (let.initializer == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, let.span,
@@ -457,11 +473,54 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!initializer.has_value()) {
       return std::unexpected(initializer.error());
     }
-    const auto &binding =
-        dynamic_cast<const ast::binding_pattern &>(*let.pattern);
-    const auto symbol = declare_local(binding.name);
-    return ptr<hir_node>(
-        make<hir_let>(let.span, symbol, binding.name, std::move(*initializer)));
+
+    // Fast path: a plain `let name = expr` binds the initializer directly —
+    // no synthetic subject temporary needed, since there's nothing to
+    // project a sub-value out of.
+    if (let.pattern->kind == ast::node_kind::binding_pattern) {
+      const auto &binding =
+          dynamic_cast<const ast::binding_pattern &>(*let.pattern);
+      const auto symbol = declare_local(binding.name);
+      return one_stmt(ptr<hir_node>(make<hir_let>(
+          let.span, symbol, binding.name, std::move(*initializer))));
+    }
+
+    // A destructuring pattern needs the initializer evaluated exactly once;
+    // bind it to a synthetic local first (mirrors `lower_match`'s
+    // `subject_symbol`), then let `lower_pattern` desugar every binding or
+    // alias in the pattern into a `hir_let` reading from that local. The
+    // pattern's *structural* shape (what `lower_pattern` returns) is
+    // discarded here — a `let` never branches on it (Decision: only
+    // irrefutable patterns reach lowering, since `let ... else` — the
+    // fallible form — is rejected above), only the bindings it accumulates
+    // in `pending` matter.
+    auto init_type = checked_type_of(*let.initializer);
+    if (!init_type.has_value()) {
+      return std::unexpected(init_type.error());
+    }
+    const auto subject_symbol = mint_symbol();
+    const auto subj_type = *init_type;
+    const auto subject_span = let.initializer->span;
+    const std::function<ptr<hir_expr>()> make_place =
+        [subject_symbol, subj_type, subject_span]() -> ptr<hir_expr> {
+      return ptr<hir_expr>(make<hir_local_ref>(subject_span, subj_type,
+                                               subject_symbol,
+                                               std::string("<let subject>")));
+    };
+    auto pending = std::vector<ptr<hir_node>>{};
+    auto pattern = lower_pattern(*let.pattern, make_place, pending);
+    if (!pattern.has_value()) {
+      return std::unexpected(pattern.error());
+    }
+
+    auto result = ptr_vec<hir_node>{};
+    result.push_back(ptr<hir_node>(make<hir_let>(let.span, subject_symbol,
+                                                 std::string("<let subject>"),
+                                                 std::move(*initializer))));
+    for (auto &binding : pending) {
+      result.push_back(std::move(binding));
+    }
+    return result;
   }
   case ast::node_kind::expr_stmt: {
     const auto &expr_stmt = dynamic_cast<const ast::expr_stmt &>(node);
@@ -473,19 +532,20 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
-    return ptr<hir_node>(
-        make<hir_expr_stmt>(expr_stmt.span, std::move(*lowered)));
+    return one_stmt(ptr<hir_node>(
+        make<hir_expr_stmt>(expr_stmt.span, std::move(*lowered))));
   }
   case ast::node_kind::return_stmt: {
     const auto &ret = dynamic_cast<const ast::return_stmt &>(node);
     if (ret.value == nullptr) {
-      return ptr<hir_node>(make<hir_return>(ret.span, nullptr));
+      return one_stmt(ptr<hir_node>(make<hir_return>(ret.span, nullptr)));
     }
     auto value = lower_expr(*ret.value);
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    return ptr<hir_node>(make<hir_return>(ret.span, std::move(*value)));
+    return one_stmt(
+        ptr<hir_node>(make<hir_return>(ret.span, std::move(*value))));
   }
   case ast::node_kind::if_stmt: {
     const auto &if_s = dynamic_cast<const ast::if_stmt &>(node);
@@ -494,7 +554,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
-    return ptr<hir_node>(std::move(*lowered));
+    return one_stmt(ptr<hir_node>(std::move(*lowered)));
   }
   case ast::node_kind::match_stmt: {
     const auto &match_s = dynamic_cast<const ast::match_stmt &>(node);
@@ -507,7 +567,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
-    return ptr<hir_node>(std::move(*lowered));
+    return one_stmt(ptr<hir_node>(std::move(*lowered)));
   }
   default:
     return fail(lowering_error_kind::unsupported_construct, node.span,
@@ -657,8 +717,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       const auto elem_span = element_ast->span;
       auto element_place = [make_place, elem_type, i,
                             elem_span]() -> ptr<hir_expr> {
-        return {
-            make<hir_tuple_index>(elem_span, elem_type, make_place(), i)};
+        return {make<hir_tuple_index>(elem_span, elem_type, make_place(), i)};
       };
       auto lowered = lower_pattern(*element_ast, element_place, pending);
       if (!lowered.has_value()) {
@@ -687,8 +746,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         const auto ftype = *field_type;
         auto field_place = [make_place, ftype, field_name,
                             field_span]() -> ptr<hir_expr> {
-          return{
-              make<hir_field>(field_span, ftype, make_place(), field_name)};
+          return {make<hir_field>(field_span, ftype, make_place(), field_name)};
         };
         auto lowered = lower_pattern(*field.pattern, field_place, pending);
         if (!lowered.has_value()) {
@@ -746,8 +804,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       const auto variant = ctor.name;
       auto arg_place = [make_place, atype, variant, i,
                         arg_span]() -> ptr<hir_expr> {
-        return {make<hir_variant_payload>(
-            arg_span, atype, make_place(), variant, i)};
+        return {make<hir_variant_payload>(arg_span, atype, make_place(),
+                                          variant, i)};
       };
       auto lowered = lower_pattern(*arg_ast, arg_place, pending);
       if (!lowered.has_value()) {
@@ -858,9 +916,8 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
   const auto subject_span = subject_ast.span;
   const std::function<ptr<hir_expr>()> make_subject_place =
       [subject_symbol, subj_type, subject_span]() -> ptr<hir_expr> {
-    return {make<hir_local_ref>(subject_span, subj_type,
-                                             subject_symbol,
-                                             std::string("<match subject>"))};
+    return {make<hir_local_ref>(subject_span, subj_type, subject_symbol,
+                                std::string("<match subject>"))};
   };
 
   auto hir_arms = std::vector<hir_match_arm>{};
@@ -953,8 +1010,13 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   push_scope();
 
   auto params = std::vector<hir_param>{};
+  // Bindings a destructuring parameter pattern (e.g. `(a, b): (int32,
+  // int32)`) accumulates — spliced onto the front of the function body
+  // below, exactly like a match arm's pattern bindings (`lower_match`).
+  auto param_prelude = ptr_vec<hir_node>{};
   params.reserve(decl.params.size());
-  for (const auto &param : decl.params) {
+  for (size_t i = 0; i < decl.params.size(); ++i) {
+    const auto &param = decl.params[i];
     if (param.type_annotation == nullptr) {
       pop_scope();
       return fail(lowering_error_kind::unannotated_parameter, param.span,
@@ -969,23 +1031,49 @@ auto lowerer::lower_function(const ast::func_decl &decl)
                   "default parameter values are not lowered by the first "
                   "milestone");
     }
-    if (param.pattern == nullptr || param.pattern->has_error ||
-        param.pattern->kind != ast::node_kind::binding_pattern) {
+    if (param.pattern == nullptr || param.pattern->has_error) {
       pop_scope();
       return fail(lowering_error_kind::unsupported_construct, param.span,
-                  "only simple named parameters are lowered by the first "
-                  "milestone (no destructuring patterns yet)");
+                  "parameter has no usable pattern");
     }
     auto type = checked_type_of(*param.pattern);
     if (!type.has_value()) {
       pop_scope();
       return std::unexpected(type.error());
     }
-    const auto &binding =
-        dynamic_cast<const ast::binding_pattern &>(*param.pattern);
-    const auto symbol = declare_local(binding.name);
-    params.push_back(
-        hir_param{.symbol = symbol, .name = binding.name, .type = *type});
+
+    if (param.pattern->kind == ast::node_kind::binding_pattern) {
+      const auto &binding =
+          dynamic_cast<const ast::binding_pattern &>(*param.pattern);
+      const auto symbol = declare_local(binding.name);
+      params.push_back(
+          hir_param{.symbol = symbol, .name = binding.name, .type = *type});
+      continue;
+    }
+
+    // A destructuring parameter pattern has no single surface name, so the
+    // parameter itself gets a synthetic identity; `lower_pattern` desugars
+    // every binding/alias inside the pattern into a `hir_let` reading from
+    // that synthetic parameter, collected into `param_prelude`.
+    const auto symbol = mint_symbol();
+    const auto ptype = *type;
+    const auto pspan = param.span;
+    const std::function<ptr<hir_expr>()> make_place =
+        [symbol, ptype, pspan]() -> ptr<hir_expr> {
+      return ptr<hir_expr>(
+          make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>")));
+    };
+    auto pending = std::vector<ptr<hir_node>>{};
+    auto pattern = lower_pattern(*param.pattern, make_place, pending);
+    if (!pattern.has_value()) {
+      pop_scope();
+      return std::unexpected(pattern.error());
+    }
+    params.push_back(hir_param{
+        .symbol = symbol, .name = std::format("<param {}>", i), .type = *type});
+    for (auto &binding : pending) {
+      param_prelude.push_back(std::move(binding));
+    }
   }
 
   auto return_type = checked_type_of(*decl.return_type);
@@ -1008,12 +1096,19 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     }
     auto ret = ptr<hir_node>(
         make<hir_return>(decl.body_expr->span, std::move(*value)));
-    auto stmts = ptr_vec<hir_node>{};
+    auto stmts = std::move(param_prelude);
     stmts.push_back(std::move(ret));
     body =
         make<hir_block>(decl.body_expr->span, *return_type, std::move(stmts));
   } else {
     body = lower_block(decl.body_stmts, decl.span);
+    if (body.has_value() && !param_prelude.empty()) {
+      auto merged = std::move(param_prelude);
+      for (auto &stmt_ptr : (*body)->stmts) {
+        merged.push_back(std::move(stmt_ptr));
+      }
+      (*body)->stmts = std::move(merged);
+    }
   }
   pop_scope();
   if (!body.has_value()) {
