@@ -10,34 +10,60 @@
 namespace kira {
 
 /// Default output directory for serialized module metadata artifacts.
-inline constexpr std::string_view kDefaultMetadataDir = "kira-out/module-metadata";
+inline constexpr std::string_view kDefaultMetadataDir =
+    "kira-out/module-metadata";
 
 /// Parsed command-line inputs for one `kira` invocation.
 struct cli_config {
   std::string program_name; ///< Executable name shown in usage and diagnostics.
-  std::vector<std::string> sources; ///< Source file paths to compile in this session.
-  std::string metadata_dir = std::string(kDefaultMetadataDir); ///< Output root for metadata files.
+  std::vector<std::string>
+      sources; ///< Source file paths to compile in this session.
+  std::string metadata_dir =
+      std::string(kDefaultMetadataDir); ///< Output root for metadata files.
   bool show_help = false; ///< True when argument parsing requested help output.
-  bool parse_only = false; ///< Skip name resolution and type checking (parser-focused drivers).
+  bool parse_only = false; ///< Skip name resolution and type checking
+                           ///< (parser-focused drivers).
 };
 
 /// Metadata artifact written for one successfully compiled module file.
 struct compiled_module {
-  std::string source_path; ///< Normalized source file path that produced the artifact.
-  std::vector<std::string> module_path; ///< Canonical module path declared by the source file.
-  std::string metadata_path; ///< Serialized metadata file emitted for the module.
+  std::string
+      source_path; ///< Normalized source file path that produced the artifact.
+  std::vector<std::string>
+      module_path; ///< Canonical module path declared by the source file.
+  std::string
+      metadata_path; ///< Serialized metadata file emitted for the module.
+};
+
+/// Best-effort HIR lowering outcome for one module file (see
+/// `src/hir/lower.h`). Lowering coverage is still partial — generics, `for`,
+/// `while let`, lambdas, comprehensions, and the concurrency/compile-time
+/// forms all still reject — so this is informational only: it does not
+/// affect `compile_report::error_count` or whether metadata gets written.
+/// A module that fails to lower is not a compilation failure yet.
+struct hir_lowering_result {
+  std::string
+      module_path; ///< Same module label as the matching `compiled_module`.
+  bool lowered =
+      false;         ///< Whether `hir::lower_module` succeeded for this module.
+  std::string error; ///< Lowering error message; empty when `lowered` is true.
 };
 
 /// Aggregate result of compiling all requested source files.
 struct compile_report {
-  std::vector<compiled_module> modules; ///< Metadata artifacts emitted during the session.
+  std::vector<compiled_module>
+      modules;             ///< Metadata artifacts emitted during the session.
   std::string diagnostics; ///< Rendered diagnostics and driver I/O errors.
-  uint32_t error_count = 0; ///< Total error count across parsing and driver validation.
+  uint32_t error_count =
+      0; ///< Total error count across parsing and driver validation.
+  std::vector<hir_lowering_result>
+      hir_modules; ///< Per-module HIR lowering outcomes.
 };
 
 /// Parse command-line arguments into driver configuration.
 ///
-/// @param argv Argument vector passed to `main`, including the program name at index 0.
+/// @param argv Argument vector passed to `main`, including the program name at
+/// index 0.
 [[nodiscard]] auto parse_args(std::span<char *const> argv)
     -> std::expected<cli_config, std::string>;
 

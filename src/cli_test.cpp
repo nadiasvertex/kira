@@ -73,7 +73,8 @@ auto test_parse_args_supports_help_and_double_dash() -> void {
 
 /// Verify that the metadata output directory can be overridden.
 auto test_parse_args_accepts_metadata_dir() -> void {
-  std::vector<std::string> args = {"kira", "--metadata-dir", "build/meta", "main.kira"};
+  std::vector<std::string> args = {"kira", "--metadata-dir", "build/meta",
+                                   "main.kira"};
   auto argv = make_argv(args);
 
   auto result = kira::parse_args(argv);
@@ -99,8 +100,8 @@ auto test_rendering_helpers() -> void {
   expect(help.find("Usage: kira [OPTIONS] SOURCES...") != std::string::npos,
          "help should contain usage line");
   expect(help.find("Kira - Parse source files and emit module metadata") !=
-              std::string::npos,
-          "help should contain description");
+             std::string::npos,
+         "help should contain description");
   expect(help.find("--metadata-dir PATH") != std::string::npos,
          "help should document metadata dir option");
 
@@ -134,9 +135,10 @@ struct temp_dir {
 
 /// Create a fresh temporary directory for one test case.
 auto make_temp_dir() -> temp_dir {
-  auto base = fs::temp_directory_path() /
-              std::format("kira_cli_test_{}",
-                          std::chrono::steady_clock::now().time_since_epoch().count());
+  auto base =
+      fs::temp_directory_path() /
+      std::format("kira_cli_test_{}",
+                  std::chrono::steady_clock::now().time_since_epoch().count());
   auto ec = std::error_code{};
   fs::create_directories(base, ec);
   expect(!ec, "expected to create temporary test directory");
@@ -164,15 +166,14 @@ auto test_compile_sources_writes_module_metadata() -> void {
   auto source_path = temp.path / "sample_tools.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample.tools\n"
-             "no_prelude\n"
-             "use std.io\n"
-             "dep sqlite:\n"
-             "  version = \"3.45\"\n"
-             "pub def run() -> int32:\n"
-             "  return 1\n"
-             "type person = { name: str }\n");
+  write_file(source_path, "module sample.tools\n"
+                          "no_prelude\n"
+                          "use std.io\n"
+                          "dep sqlite:\n"
+                          "  version = \"3.45\"\n"
+                          "pub def run() -> int32:\n"
+                          "  return 1\n"
+                          "type person = { name: str }\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -185,7 +186,8 @@ auto test_compile_sources_writes_module_metadata() -> void {
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid source to compile cleanly");
   expect(report->modules.size() == 1, "expected one metadata artifact");
-  expect(report->diagnostics.empty(), "expected no diagnostics for valid source");
+  expect(report->diagnostics.empty(),
+         "expected no diagnostics for valid source");
 
   auto metadata_path = fs::path(report->modules[0].metadata_path);
   expect(fs::exists(metadata_path), "expected metadata file to be written");
@@ -197,8 +199,10 @@ auto test_compile_sources_writes_module_metadata() -> void {
   expect(metadata.ParseFromIstream(&in), "expected metadata protobuf to parse");
   expect(metadata.schema_version() == 1, "expected metadata schema version");
   expect(metadata.module_path_size() == 2, "expected module path components");
-  expect(metadata.module_path(0) == "sample", "expected first module path part");
-  expect(metadata.module_path(1) == "tools", "expected second module path part");
+  expect(metadata.module_path(0) == "sample",
+         "expected first module path part");
+  expect(metadata.module_path(1) == "tools",
+         "expected second module path part");
   expect(metadata.no_prelude(), "expected no_prelude flag to be preserved");
   expect(metadata.imports_size() == 1, "expected one import in metadata");
   expect(metadata.dependencies_size() == 1,
@@ -217,15 +221,16 @@ auto test_compile_sources_writes_module_metadata() -> void {
          "expected dependency field value to be unquoted");
 }
 
-/// Verify that parser failures are reported and block metadata output.
-auto test_compile_sources_reports_parser_errors() -> void {
+/// Verify that a fully-annotated module also lowers to HIR alongside its
+/// metadata, and that the outcome is recorded on the report.
+auto test_compile_sources_lowers_module_to_hir() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "broken.kira";
+  auto source_path = temp.path / "sample_math.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "def broken():\n"
-             "  return 1\n");
+  write_file(source_path, "module sample.math\n"
+                          "pub def add(a: int32, b: int32) -> int32:\n"
+                          "  return a + b\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -235,14 +240,110 @@ auto test_compile_sources_reports_parser_errors() -> void {
   };
 
   auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(), "expected compile driver to report parser failures");
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0, "expected valid source to compile cleanly");
+  expect(report->hir_modules.size() == 1, "expected one HIR lowering outcome");
+  expect(report->hir_modules[0].lowered,
+         "expected a fully-annotated module to lower successfully");
+  expect(report->hir_modules[0].module_path == "sample.math",
+         "expected the lowering outcome to name the module");
+  expect(report->hir_modules[0].error.empty(),
+         "expected no error message for a successful lowering");
+
+  auto summary = kira::render_compile_summary(*report);
+  expect(summary.find("Lowered 1/1 module(s) to HIR.") != std::string::npos,
+         "expected the summary to report the lowering outcome");
+}
+
+/// Verify that a module using a construct lowering doesn't support yet
+/// (here, a `for` loop) still compiles and writes metadata normally — HIR
+/// lowering is best-effort and must never gate ordinary compilation.
+auto test_compile_sources_records_hir_lowering_failure_without_failing_compile()
+    -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_loop.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample.loop\n"
+                          "pub def sum_list(xs: list[int32]) -> int32:\n"
+                          "  var total = 0\n"
+                          "  for x in xs:\n"
+                          "    total = total + x\n"
+                          "  return total\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected a for-loop module to still compile cleanly");
+  expect(report->modules.size() == 1,
+         "expected metadata to still be written despite the lowering gap");
+  expect(report->hir_modules.size() == 1, "expected one HIR lowering outcome");
+  expect(!report->hir_modules[0].lowered,
+         "expected the `for` loop to fail lowering");
+  expect(!report->hir_modules[0].error.empty(),
+         "expected a lowering error message to be recorded");
+}
+
+/// Verify that `--parse-only`-equivalent sessions (checking skipped) also
+/// skip HIR lowering rather than lowering against an empty checked-types
+/// result.
+auto test_compile_sources_skips_lowering_when_parse_only() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_parse_only.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample.parse_only\n"
+                          "pub def add(a: int32, b: int32) -> int32:\n"
+                          "  return a + b\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .parse_only = true,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->hir_modules.empty(),
+         "expected no HIR lowering outcomes when parse_only skips checking");
+}
+
+/// Verify that parser failures are reported and block metadata output.
+auto test_compile_sources_reports_parser_errors() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "broken.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "def broken():\n"
+                          "  return 1\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(),
+         "expected compile driver to report parser failures");
   expect(report->error_count > 0, "expected parser errors for invalid source");
   expect(report->modules.empty(), "expected no metadata artifacts on failure");
   expect(report->diagnostics.find(
              "every Kira source file must start with a `module` declaration") !=
-              std::string::npos,
-          "expected missing-module diagnostic");
-  expect(!fs::exists(metadata_dir), "expected no metadata directory on failure");
+             std::string::npos,
+         "expected missing-module diagnostic");
+  expect(!fs::exists(metadata_dir),
+         "expected no metadata directory on failure");
 }
 
 /// Verify that malformed nested blocks still terminate instead of looping.
@@ -251,11 +352,10 @@ auto test_compile_sources_reports_nested_parser_errors() -> void {
   auto source_path = temp.path / "nested_broken.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample\n"
-             "module util:\n"
-             "  pub def shared() -> int32:\n"
-             "    return 1\n");
+  write_file(source_path, "module sample\n"
+                          "module util:\n"
+                          "  pub def shared() -> int32:\n"
+                          "    return 1\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -282,14 +382,12 @@ auto test_compile_sources_handles_multiple_files() -> void {
   auto source_b = temp.path / "sample_math.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_a,
-             "module sample.tools\n"
-             "pub def run() -> int32:\n"
-             "  return 1\n");
-  write_file(source_b,
-             "module sample.math\n"
-             "pub def add() -> int32:\n"
-             "  return 2\n");
+  write_file(source_a, "module sample.tools\n"
+                       "pub def run() -> int32:\n"
+                       "  return 1\n");
+  write_file(source_b, "module sample.math\n"
+                       "pub def add() -> int32:\n"
+                       "  return 2\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -302,7 +400,8 @@ auto test_compile_sources_handles_multiple_files() -> void {
   expect(report.has_value(), "expected multi-file compile to return a report");
   expect(report->error_count == 0, "expected multi-file compile to succeed");
   expect(report->modules.size() == 2, "expected two metadata artifacts");
-  expect(report->diagnostics.empty(), "expected no diagnostics for valid inputs");
+  expect(report->diagnostics.empty(),
+         "expected no diagnostics for valid inputs");
   expect(fs::exists(fs::path(report->modules[0].metadata_path)),
          "expected first metadata file to exist");
   expect(fs::exists(fs::path(report->modules[1].metadata_path)),
@@ -316,14 +415,12 @@ auto test_compile_sources_reports_duplicate_module_paths() -> void {
   auto source_b = temp.path / "second.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_a,
-             "module sample.tools\n"
-             "pub def first() -> int32:\n"
-             "  return 1\n");
-  write_file(source_b,
-             "module sample.tools\n"
-             "pub def second() -> int32:\n"
-             "  return 2\n");
+  write_file(source_a, "module sample.tools\n"
+                       "pub def first() -> int32:\n"
+                       "  return 1\n");
+  write_file(source_b, "module sample.tools\n"
+                       "pub def second() -> int32:\n"
+                       "  return 2\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -333,9 +430,11 @@ auto test_compile_sources_reports_duplicate_module_paths() -> void {
   };
 
   auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(), "expected duplicate-module compile to return a report");
+  expect(report.has_value(),
+         "expected duplicate-module compile to return a report");
   expect(report->error_count > 0, "expected duplicate module path to fail");
-  expect(report->modules.empty(), "expected duplicate modules to block metadata output");
+  expect(report->modules.empty(),
+         "expected duplicate modules to block metadata output");
   expect(report->diagnostics.find("duplicate module path `sample.tools`") !=
              std::string::npos,
          "expected duplicate-module diagnostic");
@@ -354,15 +453,13 @@ auto test_compile_sources_accepts_declared_external_submodule() -> void {
   auto child_source = temp.path / "geometry_transform.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(parent_source,
-             "module geometry\n"
-             "module transform\n"
-             "pub def root() -> int32:\n"
-             "  return 1\n");
-  write_file(child_source,
-             "module geometry.transform\n"
-             "pub def rotate() -> int32:\n"
-             "  return 2\n");
+  write_file(parent_source, "module geometry\n"
+                            "module transform\n"
+                            "pub def root() -> int32:\n"
+                            "  return 1\n");
+  write_file(child_source, "module geometry.transform\n"
+                           "pub def rotate() -> int32:\n"
+                           "  return 2\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -372,7 +469,8 @@ auto test_compile_sources_accepts_declared_external_submodule() -> void {
   };
 
   auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(), "expected declared submodule compile to return a report");
+  expect(report.has_value(),
+         "expected declared submodule compile to return a report");
   expect(report->error_count == 0,
          "expected declared external submodule to compile cleanly");
   expect(report->modules.size() == 2,
@@ -381,21 +479,21 @@ auto test_compile_sources_accepts_declared_external_submodule() -> void {
          "expected no diagnostics for declared external submodule");
 }
 
-/// Verify that child modules need a matching declaration in their parent module.
-auto test_compile_sources_reports_missing_parent_submodule_declaration() -> void {
+/// Verify that child modules need a matching declaration in their parent
+/// module.
+auto test_compile_sources_reports_missing_parent_submodule_declaration()
+    -> void {
   auto temp = make_temp_dir();
   auto parent_source = temp.path / "geometry.kira";
   auto child_source = temp.path / "geometry_transform.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(parent_source,
-             "module geometry\n"
-             "pub def root() -> int32:\n"
-             "  return 1\n");
-  write_file(child_source,
-             "module geometry.transform\n"
-             "pub def rotate() -> int32:\n"
-             "  return 2\n");
+  write_file(parent_source, "module geometry\n"
+                            "pub def root() -> int32:\n"
+                            "  return 1\n");
+  write_file(child_source, "module geometry.transform\n"
+                           "pub def rotate() -> int32:\n"
+                           "  return 2\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -405,34 +503,34 @@ auto test_compile_sources_reports_missing_parent_submodule_declaration() -> void
   };
 
   auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(), "expected missing-parent compile to return a report");
+  expect(report.has_value(),
+         "expected missing-parent compile to return a report");
   expect(report->error_count > 0,
          "expected undeclared external submodule to fail");
   expect(report->modules.empty(),
          "expected undeclared external submodule to block metadata output");
-  expect(report->diagnostics.find(
-             "module `geometry.transform` is not declared by parent module `geometry`") !=
+  expect(report->diagnostics.find("module `geometry.transform` is not declared "
+                                  "by parent module `geometry`") !=
              std::string::npos,
          "expected missing parent declaration diagnostic");
   expect(report->diagnostics.find("module transform") != std::string::npos,
          "expected help text to mention missing submodule declaration");
 }
 
-/// Verify that inline and separate-file definitions of the same child module conflict.
+/// Verify that inline and separate-file definitions of the same child module
+/// conflict.
 auto test_compile_sources_reports_inline_external_submodule_conflict() -> void {
   auto temp = make_temp_dir();
   auto parent_source = temp.path / "geometry.kira";
   auto child_source = temp.path / "geometry_shapes.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(parent_source,
-             "module geometry\n"
-             "module shapes:\n"
-             "  pub type circle = { pub radius: float64 }\n");
-  write_file(child_source,
-             "module geometry.shapes\n"
-             "pub def area() -> int32:\n"
-             "  return 3\n");
+  write_file(parent_source, "module geometry\n"
+                            "module shapes:\n"
+                            "  pub type circle = { pub radius: float64 }\n");
+  write_file(child_source, "module geometry.shapes\n"
+                           "pub def area() -> int32:\n"
+                           "  return 3\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -442,21 +540,23 @@ auto test_compile_sources_reports_inline_external_submodule_conflict() -> void {
   };
 
   auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(), "expected inline-conflict compile to return a report");
+  expect(report.has_value(),
+         "expected inline-conflict compile to return a report");
   expect(report->error_count > 0,
          "expected inline and external submodule conflict to fail");
-  expect(report->modules.empty(),
-         "expected inline and external submodule conflict to block metadata output");
+  expect(report->modules.empty(), "expected inline and external submodule "
+                                  "conflict to block metadata output");
   expect(report->diagnostics.find(
-             "module `geometry.shapes` is declared inline and cannot also be defined in a separate file") !=
-             std::string::npos,
+             "module `geometry.shapes` is declared inline and cannot also be "
+             "defined in a separate file") != std::string::npos,
          "expected inline/external conflict diagnostic");
   expect(report->diagnostics.find("inline submodule declaration") !=
              std::string::npos,
          "expected related inline declaration note");
 }
 
-/// Verify in-session import resolution across plain, alias, group, wildcard, and child imports.
+/// Verify in-session import resolution across plain, alias, group, wildcard,
+/// and child imports.
 auto test_compile_sources_resolves_session_imports() -> void {
   auto temp = make_temp_dir();
   auto package_source = temp.path / "package.kira";
@@ -466,44 +566,42 @@ auto test_compile_sources_resolves_session_imports() -> void {
   auto app_source = temp.path / "package_tools_app.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source,
-             "module package\n"
-             "module tools\n");
-  write_file(tools_source,
-             "module package.tools\n"
-             "module util\n"
-             "module parse\n"
-             "module app\n"
-             "pub def helper() -> int32:\n"
-             "  return 1\n");
-  write_file(util_source,
-             "module package.tools.util\n"
-             "pub def shared_value() -> int32:\n"
-             "  return 2\n");
-  write_file(parse_source,
-             "module package.tools.parse\n"
-             "pub def parse_it() -> int32:\n"
-             "  return 3\n");
-  write_file(app_source,
-             "module package.tools.app\n"
-             "use package.tools\n"
-             "use package.tools.*\n"
-             "pub def run() -> int32:\n"
-             "  return 4\n");
+  write_file(package_source, "module package\n"
+                             "module tools\n");
+  write_file(tools_source, "module package.tools\n"
+                           "module util\n"
+                           "module parse\n"
+                           "module app\n"
+                           "pub def helper() -> int32:\n"
+                           "  return 1\n");
+  write_file(util_source, "module package.tools.util\n"
+                          "pub def shared_value() -> int32:\n"
+                          "  return 2\n");
+  write_file(parse_source, "module package.tools.parse\n"
+                           "pub def parse_it() -> int32:\n"
+                           "  return 3\n");
+  write_file(app_source, "module package.tools.app\n"
+                         "use package.tools\n"
+                         "use package.tools.*\n"
+                         "pub def run() -> int32:\n"
+                         "  return 4\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
       .sources = {package_source.string(), tools_source.string(),
-                  util_source.string(), parse_source.string(), app_source.string()},
+                  util_source.string(), parse_source.string(),
+                  app_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
   auto report = kira::compile_sources(cfg, false);
   expect(report.has_value(), "expected in-session imports to return a report");
-  expect(report->error_count == 0, "expected in-session imports to resolve cleanly");
+  expect(report->error_count == 0,
+         "expected in-session imports to resolve cleanly");
   expect(report->modules.size() == 5, "expected all modules to emit metadata");
-  expect(report->diagnostics.empty(), "expected no diagnostics for valid session imports");
+  expect(report->diagnostics.empty(),
+         "expected no diagnostics for valid session imports");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.
@@ -512,11 +610,10 @@ auto test_compile_sources_reports_duplicate_module_scope_symbol() -> void {
   auto source_path = temp.path / "duplicate_scope.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample.tools\n"
-             "type point = int32\n"
-             "trait point:\n"
-             "  def show(self) -> str\n");
+  write_file(source_path, "module sample.tools\n"
+                          "type point = int32\n"
+                          "trait point:\n"
+                          "  def show(self) -> str\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -528,30 +625,32 @@ auto test_compile_sources_reports_duplicate_module_scope_symbol() -> void {
   auto report = kira::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected duplicate declaration scope compile to return a report");
-  expect(report->error_count > 0,
-         "expected duplicate declaration names to fail semantic scope validation");
+  expect(
+      report->error_count > 0,
+      "expected duplicate declaration names to fail semantic scope validation");
   expect(report->modules.empty(),
          "expected duplicate declaration names to block metadata output");
   expect(report->diagnostics.find(
              "duplicate declaration name `point` in module `sample.tools`") !=
              std::string::npos,
          "expected duplicate module-scope declaration diagnostic");
-  expect(report->diagnostics.find("previous type declaration") != std::string::npos,
+  expect(report->diagnostics.find("previous type declaration") !=
+             std::string::npos,
          "expected note for the original declaration");
 }
 
 /// Verify that inline submodules get their own semantic declaration scopes.
-auto test_compile_sources_reports_duplicate_inline_submodule_scope_symbol() -> void {
+auto test_compile_sources_reports_duplicate_inline_submodule_scope_symbol()
+    -> void {
   auto temp = make_temp_dir();
   auto source_path = temp.path / "inline_duplicate_scope.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample\n"
-             "module shapes:\n"
-             "  type circle = float64\n"
-             "  concept circle[T]:\n"
-             "    T: show\n");
+  write_file(source_path, "module sample\n"
+                          "module shapes:\n"
+                          "  type circle = float64\n"
+                          "  concept circle[T]:\n"
+                          "    T: show\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -569,7 +668,7 @@ auto test_compile_sources_reports_duplicate_inline_submodule_scope_symbol() -> v
          "expected duplicate inline submodule names to block metadata output");
   expect(report->diagnostics.find(
              "duplicate declaration name `circle` in module `sample.shapes`") !=
-              std::string::npos,
+             std::string::npos,
          "expected duplicate inline submodule declaration diagnostic");
 }
 
@@ -580,11 +679,10 @@ auto test_compile_sources_resolves_super_qualified_type_paths() -> void {
   auto transform_source = temp.path / "geometry_transform.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(geometry_source,
-             "module geometry\n"
-             "module shapes:\n"
-             "  pub type circle = { pub radius: float64 }\n"
-             "module transform\n");
+  write_file(geometry_source, "module geometry\n"
+                              "module shapes:\n"
+                              "  pub type circle = { pub radius: float64 }\n"
+                              "module transform\n");
   write_file(transform_source,
              "module geometry.transform\n"
              "pub def rotate(p: super.shapes.circle) -> super.shapes.circle:\n"
@@ -598,7 +696,8 @@ auto test_compile_sources_resolves_super_qualified_type_paths() -> void {
   };
 
   auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(), "expected super-qualified type paths to return a report");
+  expect(report.has_value(),
+         "expected super-qualified type paths to return a report");
   expect(report->error_count == 0,
          "expected legal super-qualified type paths to resolve cleanly");
   expect(report->modules.size() == 2,
@@ -615,20 +714,18 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
   auto app_source = temp.path / "package_tools_app.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source,
-             "module package\n"
-             "module tools\n");
-  write_file(tools_source,
-             "module package.tools\n"
-             "module app\n");
-  write_file(app_source,
-             "module package.tools.app\n"
-             "pub def run(value: package.tools.missing) -> int:\n"
-             "  return 1\n");
+  write_file(package_source, "module package\n"
+                             "module tools\n");
+  write_file(tools_source, "module package.tools\n"
+                           "module app\n");
+  write_file(app_source, "module package.tools.app\n"
+                         "pub def run(value: package.tools.missing) -> int:\n"
+                         "  return 1\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
-      .sources = {package_source.string(), tools_source.string(), app_source.string()},
+      .sources = {package_source.string(), tools_source.string(),
+                  app_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
@@ -641,52 +738,52 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
   expect(report->modules.size() == 2,
          "expected unaffected modules to still emit metadata");
   expect(report->diagnostics.find(
-             "qualified type path `package.tools.missing` does not resolve from module `package.tools.app`") !=
-             std::string::npos,
+             "qualified type path `package.tools.missing` does not resolve "
+             "from module `package.tools.app`") != std::string::npos,
          "expected unresolved qualified type path diagnostic");
 }
 
 /// Verify that unresolved module-qualified references fail semantic resolution.
-auto test_compile_sources_reports_unresolved_module_qualified_reference() -> void {
+auto test_compile_sources_reports_unresolved_module_qualified_reference()
+    -> void {
   auto temp = make_temp_dir();
   auto package_source = temp.path / "package.kira";
   auto tools_source = temp.path / "package_tools.kira";
   auto app_source = temp.path / "package_tools_app.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source,
-             "module package\n"
-             "module tools\n");
-  write_file(tools_source,
-             "module package.tools\n"
-             "module app\n");
-  write_file(app_source,
-             "module package.tools.app\n"
-             "pub def run() -> int:\n"
-             "  package.tools.missing\n"
-             "  return 1\n");
+  write_file(package_source, "module package\n"
+                             "module tools\n");
+  write_file(tools_source, "module package.tools\n"
+                           "module app\n");
+  write_file(app_source, "module package.tools.app\n"
+                         "pub def run() -> int:\n"
+                         "  package.tools.missing\n"
+                         "  return 1\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
-      .sources = {package_source.string(), tools_source.string(), app_source.string()},
+      .sources = {package_source.string(), tools_source.string(),
+                  app_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
   auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(),
-         "expected unresolved module-qualified reference compile to return a report");
-  expect(report->error_count > 0,
-         "expected unresolved module-qualified reference to fail semantic resolution");
+  expect(report.has_value(), "expected unresolved module-qualified reference "
+                             "compile to return a report");
+  expect(report->error_count > 0, "expected unresolved module-qualified "
+                                  "reference to fail semantic resolution");
   expect(report->modules.size() == 2,
          "expected unaffected modules to still emit metadata");
   expect(report->diagnostics.find(
-             "module-qualified reference `package.tools.missing` does not resolve from module `package.tools.app`") !=
-             std::string::npos,
+             "module-qualified reference `package.tools.missing` does not "
+             "resolve from module `package.tools.app`") != std::string::npos,
          "expected unresolved module-qualified reference diagnostic");
 }
 
-/// Verify that unresolved imports fail only when the root module belongs to the session.
+/// Verify that unresolved imports fail only when the root module belongs to the
+/// session.
 auto test_compile_sources_reports_unresolved_session_import() -> void {
   auto temp = make_temp_dir();
   auto package_source = temp.path / "package.kira";
@@ -694,34 +791,33 @@ auto test_compile_sources_reports_unresolved_session_import() -> void {
   auto app_source = temp.path / "package_tools_app.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source,
-             "module package\n"
-             "module tools\n");
-  write_file(tools_source,
-             "module package.tools\n"
-             "module app\n");
-  write_file(app_source,
-             "module package.tools.app\n"
-             "use package.tools.missing\n"
-             "use std.io\n"
-             "pub def run() -> int32:\n"
-             "  return 1\n");
+  write_file(package_source, "module package\n"
+                             "module tools\n");
+  write_file(tools_source, "module package.tools\n"
+                           "module app\n");
+  write_file(app_source, "module package.tools.app\n"
+                         "use package.tools.missing\n"
+                         "use std.io\n"
+                         "pub def run() -> int32:\n"
+                         "  return 1\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
-      .sources = {package_source.string(), tools_source.string(), app_source.string()},
+      .sources = {package_source.string(), tools_source.string(),
+                  app_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
   auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(), "expected unresolved in-session import to return a report");
+  expect(report.has_value(),
+         "expected unresolved in-session import to return a report");
   expect(report->error_count == 1,
          "expected only the in-session unresolved import to fail");
   expect(report->modules.size() == 2,
          "expected unaffected session modules to still emit metadata");
-  expect(report->diagnostics.find(
-             "import `package.tools.missing` does not resolve in this compilation session") !=
+  expect(report->diagnostics.find("import `package.tools.missing` does not "
+                                  "resolve in this compilation session") !=
              std::string::npos,
          "expected unresolved in-session import diagnostic");
   expect(report->diagnostics.find("use std.io") == std::string::npos,
@@ -737,22 +833,18 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
   auto other_source = temp.path / "package_other.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source,
-             "module package\n"
-             "module tools\n"
-             "module other\n");
-  write_file(tools_source,
-             "module package.tools\n"
-             "module secret\n");
-  write_file(secret_source,
-             "module package.tools.secret\n"
-             "pub def hidden() -> int32:\n"
-             "  return 1\n");
-  write_file(other_source,
-             "module package.other\n"
-             "use package.tools.secret\n"
-             "pub def run() -> int32:\n"
-             "  return 2\n");
+  write_file(package_source, "module package\n"
+                             "module tools\n"
+                             "module other\n");
+  write_file(tools_source, "module package.tools\n"
+                           "module secret\n");
+  write_file(secret_source, "module package.tools.secret\n"
+                            "pub def hidden() -> int32:\n"
+                            "  return 1\n");
+  write_file(other_source, "module package.other\n"
+                           "use package.tools.secret\n"
+                           "pub def run() -> int32:\n"
+                           "  return 2\n");
 
   kira::cli_config cfg{
       .program_name = "kira",
@@ -763,15 +855,18 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
   };
 
   auto report = kira::compile_sources(cfg, false);
-  expect(report.has_value(), "expected inaccessible in-session import to return a report");
-  expect(report->error_count > 0, "expected inaccessible in-session import to fail");
+  expect(report.has_value(),
+         "expected inaccessible in-session import to return a report");
+  expect(report->error_count > 0,
+         "expected inaccessible in-session import to fail");
   expect(report->modules.size() == 3,
          "expected unaffected session modules to still emit metadata");
-  expect(report->diagnostics.find(
-             "module `package.tools.secret` is not visible from module `package.other`") !=
+  expect(report->diagnostics.find("module `package.tools.secret` is not "
+                                  "visible from module `package.other`") !=
              std::string::npos,
          "expected inaccessible-import diagnostic");
-  expect(report->diagnostics.find("restricted module declaration") != std::string::npos,
+  expect(report->diagnostics.find("restricted module declaration") !=
+             std::string::npos,
          "expected related declaration label");
 }
 
@@ -786,6 +881,9 @@ auto main() -> int {
     test_parse_args_rejects_unknown_options();
     test_rendering_helpers();
     test_compile_sources_writes_module_metadata();
+    test_compile_sources_lowers_module_to_hir();
+    test_compile_sources_records_hir_lowering_failure_without_failing_compile();
+    test_compile_sources_skips_lowering_when_parse_only();
     test_compile_sources_reports_parser_errors();
     test_compile_sources_reports_nested_parser_errors();
     test_compile_sources_handles_multiple_files();

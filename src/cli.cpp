@@ -1,5 +1,6 @@
 #include "cli.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -14,6 +15,7 @@
 #include <variant>
 
 #include "k-parser/parser.h"
+#include "src/hir/lower.h"
 #include "src/module_metadata.pb.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/types.h"
@@ -29,7 +31,8 @@ constexpr std::string_view kMetadataExtension = ".kmeta.pb";
 /// Schema version embedded in every emitted module metadata payload.
 constexpr uint32_t kModuleMetadataSchemaVersion = 1;
 
-/// Append text to a diagnostic buffer, inserting a separating newline when needed.
+/// Append text to a diagnostic buffer, inserting a separating newline when
+/// needed.
 ///
 /// @param buffer Destination buffer that accumulates rendered diagnostics.
 /// @param text Text fragment to append.
@@ -51,7 +54,8 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
   append_text(buffer, std::format("error: {}", message));
 }
 
-/// Convert a filesystem path to the normalized slash-separated form used in reports.
+/// Convert a filesystem path to the normalized slash-separated form used in
+/// reports.
 ///
 /// @param path Filesystem path to normalize.
 [[nodiscard]] auto normalize_path(const fs::path &path) -> std::string {
@@ -76,7 +80,8 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
   return out;
 }
 
-/// Choose a stable fallback stem for metadata when a source file has no filename stem.
+/// Choose a stable fallback stem for metadata when a source file has no
+/// filename stem.
 ///
 /// @param source_path Source file path being compiled.
 [[nodiscard]] auto source_stem_or_default(const fs::path &source_path)
@@ -91,7 +96,8 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
 /// Render a human-readable module label for compile summaries.
 ///
 /// @param module Compiled module record to describe.
-[[nodiscard]] auto module_display_name(const compiled_module &module) -> std::string {
+[[nodiscard]] auto module_display_name(const compiled_module &module)
+    -> std::string {
   if (!module.module_path.empty()) {
     return join_strings(module.module_path, ".");
   }
@@ -101,7 +107,8 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
 /// Return the parent module portion of a dotted module path.
 ///
 /// @param module_name Canonical dotted module name.
-[[nodiscard]] auto parent_module_name(std::string_view module_name) -> std::string {
+[[nodiscard]] auto parent_module_name(std::string_view module_name)
+    -> std::string {
   const auto separator = module_name.rfind('.');
   if (separator == std::string_view::npos) {
     return {};
@@ -112,7 +119,8 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
 /// Return the root segment of a dotted module path.
 ///
 /// @param module_name Canonical dotted module name.
-[[nodiscard]] auto module_root_name(std::string_view module_name) -> std::string_view {
+[[nodiscard]] auto module_root_name(std::string_view module_name)
+    -> std::string_view {
   const auto separator = module_name.find('.');
   if (separator == std::string_view::npos) {
     return module_name;
@@ -132,24 +140,27 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
   return std::format("{}.{}", parent, child);
 }
 
-/// Report whether `module_name` is the same module as `ancestor` or one of its descendants.
+/// Report whether `module_name` is the same module as `ancestor` or one of its
+/// descendants.
 ///
 /// @param module_name Candidate descendant module path.
 /// @param ancestor Candidate ancestor module path.
 [[nodiscard]] auto is_same_or_descendant_module(std::string_view module_name,
-                                                std::string_view ancestor) -> bool {
+                                                std::string_view ancestor)
+    -> bool {
   if (ancestor.empty()) {
     return false;
   }
-  return module_name == ancestor ||
-         (module_name.starts_with(ancestor) && module_name.size() > ancestor.size() &&
-          module_name[ancestor.size()] == '.');
+  return module_name == ancestor || (module_name.starts_with(ancestor) &&
+                                     module_name.size() > ancestor.size() &&
+                                     module_name[ancestor.size()] == '.');
 }
 
 /// Render user-facing visibility text for diagnostics.
 ///
 /// @param visibility Visibility modifier attached to a declaration.
-[[nodiscard]] auto visibility_name(ast::visibility visibility) -> std::string_view {
+[[nodiscard]] auto visibility_name(ast::visibility visibility)
+    -> std::string_view {
   switch (visibility) {
   case ast::visibility::def:
   case ast::visibility::internal:
@@ -169,7 +180,8 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
 /// @param visibility Visibility modifier attached to the imported declaration.
 /// @param parent_name Parent module that owns the imported child module.
 [[nodiscard]] auto visibility_help(ast::visibility visibility,
-                                   std::string_view parent_name) -> std::string {
+                                   std::string_view parent_name)
+    -> std::string {
   switch (visibility) {
   case ast::visibility::pub:
     return std::format(
@@ -177,15 +189,16 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
         parent_name);
   case ast::visibility::def:
   case ast::visibility::internal:
-    return std::format(
-        "Import this module from `{}` or one of its submodules, or widen the declaration's visibility.",
-        parent_name);
+    return std::format("Import this module from `{}` or one of its submodules, "
+                       "or widen the declaration's visibility.",
+                       parent_name);
   case ast::visibility::super:
-    return std::format(
-        "Only the parent module `{}` can import this module; widen the declaration if other modules need it.",
-        parent_name);
+    return std::format("Only the parent module `{}` can import this module; "
+                       "widen the declaration if other modules need it.",
+                       parent_name);
   case ast::visibility::priv:
-    return "Keep the import in the declaring file, or widen the module declaration's visibility.";
+    return "Keep the import in the declaring file, or widen the module "
+           "declaration's visibility.";
   }
   return {};
 }
@@ -280,10 +293,12 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
   }
 }
 
-/// Choose a stable display label for metadata emitted from `static` declarations.
+/// Choose a stable display label for metadata emitted from `static`
+/// declarations.
 ///
 /// @param decl Static declaration to describe.
-[[nodiscard]] auto static_decl_label(const ast::static_decl &decl) -> std::string {
+[[nodiscard]] auto static_decl_label(const ast::static_decl &decl)
+    -> std::string {
   if (!decl.name.empty()) {
     return decl.name;
   }
@@ -305,7 +320,8 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
 /// Extract the effective top-level visibility from a parsed item node.
 ///
 /// @param node Top-level AST item.
-[[nodiscard]] auto top_level_visibility(const ast::node &node) -> ast::visibility {
+[[nodiscard]] auto top_level_visibility(const ast::node &node)
+    -> ast::visibility {
   switch (node.kind) {
   case ast::node_kind::use_decl:
     return dynamic_cast<const ast::use_decl &>(node).visibility;
@@ -354,10 +370,12 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
   }
 }
 
-/// Remove surrounding quotes from dependency string literals before persisting them.
+/// Remove surrounding quotes from dependency string literals before persisting
+/// them.
 ///
 /// @param value Parsed dependency field value.
-[[nodiscard]] auto unquote_string_literal(std::string_view value) -> std::string {
+[[nodiscard]] auto unquote_string_literal(std::string_view value)
+    -> std::string {
   if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
     return std::string(value.substr(1, value.size() - 2));
   }
@@ -399,7 +417,8 @@ auto add_dependency_metadata(const ast::dep_decl &decl,
   auto *dependency = metadata.add_dependencies();
   dependency->set_name(decl.name);
   for (const auto &field : decl.fields) {
-    (*dependency->mutable_fields())[field.key] = unquote_string_literal(field.value);
+    (*dependency->mutable_fields())[field.key] =
+        unquote_string_literal(field.value);
   }
 }
 
@@ -447,7 +466,8 @@ auto add_symbol_metadata(const ast::node &node,
       add_import_metadata(dynamic_cast<const ast::use_decl &>(*item), metadata);
       break;
     case ast::node_kind::dep_decl:
-      add_dependency_metadata(dynamic_cast<const ast::dep_decl &>(*item), metadata);
+      add_dependency_metadata(dynamic_cast<const ast::dep_decl &>(*item),
+                              metadata);
       break;
     default:
       break;
@@ -464,7 +484,8 @@ auto add_symbol_metadata(const ast::node &node,
 /// @param source_path Original source file path.
 [[nodiscard]] auto metadata_output_path(const fs::path &metadata_root,
                                         const ast::file &file,
-                                        const fs::path &source_path) -> fs::path {
+                                        const fs::path &source_path)
+    -> fs::path {
   auto relative = fs::path{};
 
   if (file.module_decl != nullptr && !file.module_decl->path.empty()) {
@@ -475,7 +496,8 @@ auto add_symbol_metadata(const ast::node &node,
     return metadata_root / relative;
   }
 
-  relative /= source_stem_or_default(source_path) + std::string(kMetadataExtension);
+  relative /=
+      source_stem_or_default(source_path) + std::string(kMetadataExtension);
   return metadata_root / relative;
 }
 
@@ -485,10 +507,9 @@ auto add_symbol_metadata(const ast::node &node,
 /// @param file Parsed AST for the source file.
 /// @param source_path Original source file path.
 /// @param diagnostics Plain-text driver diagnostics buffer for I/O failures.
-[[nodiscard]] auto write_module_metadata(const fs::path &metadata_root,
-                                         const ast::file &file,
-                                         const fs::path &source_path,
-                                         std::string &diagnostics)
+[[nodiscard]] auto
+write_module_metadata(const fs::path &metadata_root, const ast::file &file,
+                      const fs::path &source_path, std::string &diagnostics)
     -> std::expected<std::string, std::monostate> {
   auto output_path = metadata_output_path(metadata_root, file, source_path);
   auto output_parent = output_path.parent_path();
@@ -506,9 +527,8 @@ auto add_symbol_metadata(const ast::node &node,
 
   auto out = std::ofstream(output_path, std::ios::binary | std::ios::trunc);
   if (!out) {
-    append_error(diagnostics,
-                 std::format("failed to open `{}` for writing",
-                             normalize_path(output_path)));
+    append_error(diagnostics, std::format("failed to open `{}` for writing",
+                                          normalize_path(output_path)));
     return std::unexpected(std::monostate{});
   }
 
@@ -527,8 +547,8 @@ auto add_symbol_metadata(const ast::node &node,
 
 /// Parsed source file plus the bookkeeping needed by later driver passes.
 struct parsed_input {
-  fs::path source_path;         ///< Original source file path passed to the CLI.
-  file_id_type file_id = 0;     ///< Source manager file identifier for diagnostics.
+  fs::path source_path;     ///< Original source file path passed to the CLI.
+  file_id_type file_id = 0; ///< Source manager file identifier for diagnostics.
   ast::ptr<ast::file> ast_file; ///< Parsed AST for the source file.
 };
 
@@ -3280,7 +3300,8 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
 ///
 /// @param argc Argument count passed to `main`.
 /// @param argv Argument vector passed to `main`.
-auto parse_args(std::span<char *const> argv) -> std::expected<cli_config, std::string> {
+auto parse_args(std::span<char *const> argv)
+    -> std::expected<cli_config, std::string> {
   if (argv.empty()) {
     return std::unexpected{"argc must be at least 1"};
   }
@@ -3318,7 +3339,8 @@ auto parse_args(std::span<char *const> argv) -> std::expected<cli_config, std::s
     }
 
     if (parse_options && arg.starts_with("--metadata-dir=")) {
-      cfg.metadata_dir = std::string(arg.substr(std::string_view{"--metadata-dir="}.size()));
+      cfg.metadata_dir =
+          std::string(arg.substr(std::string_view{"--metadata-dir="}.size()));
       if (cfg.metadata_dir.empty()) {
         return std::unexpected{"--metadata-dir requires a non-empty path"};
       }
@@ -3339,14 +3361,13 @@ auto parse_args(std::span<char *const> argv) -> std::expected<cli_config, std::s
 ///
 /// @param program_name Executable name to display in the usage line.
 auto render_help(std::string_view program_name) -> std::string {
-  return std::format(
-      "Usage: {} [OPTIONS] SOURCES...\n\n"
-      "Kira - Parse source files and emit module metadata\n\n"
-      "Options:\n"
-      "  -h, --help          Show this help message and exit\n"
-      "  --metadata-dir PATH Write module metadata under PATH\n"
-      "                     (default: {})",
-      program_name, kDefaultMetadataDir);
+  return std::format("Usage: {} [OPTIONS] SOURCES...\n\n"
+                     "Kira - Parse source files and emit module metadata\n\n"
+                     "Options:\n"
+                     "  -h, --help          Show this help message and exit\n"
+                     "  --metadata-dir PATH Write module metadata under PATH\n"
+                     "                     (default: {})",
+                     program_name, kDefaultMetadataDir);
 }
 
 /// Parse, validate, and emit metadata for each requested source file.
@@ -3397,7 +3418,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     auto errors_before = session_diagnostics.error_count();
     auto tokenizer = lexer(file->source(), file->id(), session_diagnostics);
     auto tokens = tokenizer.tokenize();
-    auto parser = kira::parser(std::move(tokens), file->id(), session_diagnostics);
+    auto parser =
+        kira::parser(std::move(tokens), file->id(), session_diagnostics);
     auto ast_file = parser.parse_file();
 
     if (session_diagnostics.error_count() > errors_before) {
@@ -3419,15 +3441,17 @@ auto compile_sources(const cli_config &cfg, bool use_color)
         .ast_file = input.ast_file.get(),
     });
   }
-  // Not yet consumed here — the interned types and per-expression type map
-  // exist for a later typed-lowering pass (spec/typed-ir-design.md) to read.
-  [[maybe_unused]] const auto checked = semantic::validate_semantics(
+  // Consumed below to best-effort lower each successfully-checked module to
+  // HIR (src/hir/lower.h); meaningless (empty) when cfg.parse_only skipped
+  // checking, so lowering is skipped in that case too.
+  const auto checked = semantic::validate_semantics(
       semantic_inputs, session_diagnostics, file_has_errors,
       semantic::semantic_options{.check_names_and_types = !cfg.parse_only});
 
   report.error_count += session_diagnostics.error_count();
-  append_text(report.diagnostics,
-              diagnostic_renderer(sources, use_color).render_all(session_diagnostics));
+  append_text(
+      report.diagnostics,
+      diagnostic_renderer(sources, use_color).render_all(session_diagnostics));
 
   for (const auto &input : parsed_inputs) {
     if (static_cast<size_t>(input.file_id) < file_has_errors.size() &&
@@ -3439,21 +3463,35 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       continue;
     }
 
-    auto metadata_path = write_module_metadata(metadata_root, *input.ast_file,
-                                               input.source_path,
-                                               report.diagnostics);
+    auto metadata_path = write_module_metadata(
+        metadata_root, *input.ast_file, input.source_path, report.diagnostics);
     if (!metadata_path) {
       ++report.error_count;
       continue;
     }
 
+    const auto module_path = input.ast_file->module_decl != nullptr
+                                 ? input.ast_file->module_decl->path
+                                 : std::vector<std::string>{};
+    const auto module_name = join_strings(module_path, ".");
+
     report.modules.push_back(compiled_module{
         .source_path = normalize_path(input.source_path),
-        .module_path = input.ast_file->module_decl != nullptr
-                           ? input.ast_file->module_decl->path
-                           : std::vector<std::string>{},
+        .module_path = module_path,
         .metadata_path = std::move(*metadata_path),
     });
+
+    // Best-effort only (see hir_lowering_result's doc comment): lowering
+    // coverage is still partial, so a failure here is not a compile error.
+    if (!cfg.parse_only) {
+      auto lowered = hir::lower_module(*input.ast_file, module_name, checked);
+      report.hir_modules.push_back(
+          lowered.has_value()
+              ? hir_lowering_result{.module_path = module_name, .lowered = true}
+              : hir_lowering_result{.module_path = module_name,
+                                    .lowered = false,
+                                    .error = lowered.error().message});
+    }
   }
 
   return report;
@@ -3464,13 +3502,22 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 /// @param report Aggregate result of `compile_sources`.
 auto render_compile_summary(const compile_report &report) -> std::string {
   if (report.modules.empty()) {
-    return std::format("Compilation failed with {} error(s).", report.error_count);
+    return std::format("Compilation failed with {} error(s).",
+                       report.error_count);
   }
 
   auto out = std::format("Compiled {} module(s):", report.modules.size());
   for (size_t i = 0; i < report.modules.size(); ++i) {
-    out += std::format("\n  [{}] {} -> {}", i, module_display_name(report.modules[i]),
+    out += std::format("\n  [{}] {} -> {}", i,
+                       module_display_name(report.modules[i]),
                        report.modules[i].metadata_path);
+  }
+  if (!report.hir_modules.empty()) {
+    const auto lowered_count =
+        std::count_if(report.hir_modules.begin(), report.hir_modules.end(),
+                      [](const auto &result) { return result.lowered; });
+    out += std::format("\nLowered {}/{} module(s) to HIR.", lowered_count,
+                       report.hir_modules.size());
   }
   if (report.error_count > 0) {
     out += std::format("\nEncountered {} error(s).", report.error_count);
