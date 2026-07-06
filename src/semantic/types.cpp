@@ -436,7 +436,7 @@ auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
 
 /// Linear search over `k_prelude_trait_names`.
 auto is_prelude_trait_name(std::string_view name) -> bool {
-  return std::ranges::any_of(k_prelude_trait_names, [name](std::string_view candidate) -> bool -> bool {
+  return std::ranges::any_of(k_prelude_trait_names, [name](std::string_view candidate) -> bool {
     return candidate == name;
   });
 }
