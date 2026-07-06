@@ -43,7 +43,8 @@ using semantic::type_id;
 //  every iteration) that hasn't been designed for loops. `hir_tuple` and
 //  `hir_struct_init` (construction, not the pattern kinds of similar name)
 //  got node structs in the literal-construction extension, alongside the
-//  new `hir_array_init`; `cast` and `lambda` still have none.
+//  new `hir_array_init`; `hir_cast` got one in the extension after that.
+//  `lambda` still has none.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -285,6 +286,18 @@ struct hir_struct_init : hir_expr {
   hir_struct_init(source_span s, type_id t,
                   std::vector<hir_struct_init_field> f)
       : hir_expr(hir_node_kind::hir_struct_init, s, t), fields(std::move(f)) {}
+};
+
+/// Explicit cast `expr as Type`. The destination type isn't kept as its own
+/// field — the checker already resolved it, and that resolution *is* this
+/// node's own `type` (same reasoning as dropping `hir_struct_init`'s
+/// explicit type head): nothing about the surface `as Type` syntax survives
+/// lowering that isn't already captured there.
+struct hir_cast : hir_expr {
+  ptr<hir_expr> operand;
+
+  hir_cast(source_span s, type_id t, ptr<hir_expr> op)
+      : hir_expr(hir_node_kind::hir_cast, s, t), operand(std::move(op)) {}
 };
 
 /// Static positional projection `object.index`. There's no surface tuple-

@@ -139,6 +139,8 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_struct(const ast::struct_expr &literal)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_cast(const ast::cast_expr &cast)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
 
   // ------------------------------------------------------------------
   //  Statements, blocks, and if (shared between statement and expression
@@ -276,6 +278,8 @@ auto lowerer::lower_expr(const ast::expr &expr)
     return lower_array(dynamic_cast<const ast::array_expr &>(expr));
   case ast::node_kind::struct_expr:
     return lower_struct(dynamic_cast<const ast::struct_expr &>(expr));
+  case ast::node_kind::cast_expr:
+    return lower_cast(dynamic_cast<const ast::cast_expr &>(expr));
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
                 std::format("expression kind {} is not lowered by the first "
@@ -527,6 +531,23 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
                                                    symbol, field.name))});
   }
   return ok_expr(make<hir_struct_init>(literal.span, *type, std::move(fields)));
+}
+
+auto lowerer::lower_cast(const ast::cast_expr &cast)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto type = checked_type_of(cast);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  if (cast.operand == nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, cast.span,
+                "cast expression has no operand");
+  }
+  auto operand = lower_expr(*cast.operand);
+  if (!operand.has_value()) {
+    return std::unexpected(operand.error());
+  }
+  return ok_expr(make<hir_cast>(cast.span, *type, std::move(*operand)));
 }
 
 auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,

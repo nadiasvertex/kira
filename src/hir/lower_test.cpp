@@ -1040,6 +1040,31 @@ auto test_lowers_struct_literal_shorthand_field() -> void {
          "as the `value` parameter");
 }
 
+auto test_lowers_cast_expression() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def widen(x: int32) -> int64:\n"
+                               "    return x as int64\n");
+  const auto &decl = find_func(*fixture.ast_file, "widen");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a cast expression to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_cast,
+         "expected the returned value to be a hir_cast");
+  const auto &cast = dynamic_cast<const hir::hir_cast &>(*ret.value);
+  expect(cast.type == function.return_type,
+         "expected the cast's type to be the destination type int64");
+  expect(cast.operand->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the cast's operand to be a local reference to `x`");
+  const auto &operand_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*cast.operand);
+  expect(operand_ref.symbol == function.params[0].symbol,
+         "expected the cast's operand to reference the `x` parameter");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1074,6 +1099,7 @@ auto main() -> int {
     test_lowers_array_fill_literal();
     test_lowers_struct_literal_explicit_field();
     test_lowers_struct_literal_shorthand_field();
+    test_lowers_cast_expression();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();
     test_lowers_struct_pattern_let_destructuring();
