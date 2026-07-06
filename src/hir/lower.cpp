@@ -1260,7 +1260,7 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
       dynamic_cast<const ast::binding_pattern &>(*for_stmt.patterns.front());
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-      inner_stmts = [this, &for_stmt]() {
+      inner_stmts = [this, &for_stmt]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
         return lower_guarded_for_body(for_stmt.guard.get(), for_stmt.body,
                                       for_stmt.span);
       };
@@ -1698,7 +1698,7 @@ auto lowerer::lower_comprehension_clause(
   const auto span = clause.iterable->span;
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-      nested = [this, &clauses, index, fallback_span, &innermost]() {
+      nested = [this, &clauses, index, fallback_span, &innermost]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
         return lower_comprehension_clause(clauses, index + 1, fallback_span,
                                           innermost);
       };

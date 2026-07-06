@@ -3515,7 +3515,7 @@ auto render_compile_summary(const compile_report &report) -> std::string {
   if (!report.hir_modules.empty()) {
     const auto lowered_count =
         std::count_if(report.hir_modules.begin(), report.hir_modules.end(),
-                      [](const auto &result) { return result.lowered; });
+                      [](const auto &result) -> auto { return result.lowered; });
     out += std::format("\nLowered {}/{} module(s) to HIR.", lowered_count,
                        report.hir_modules.size());
   }
