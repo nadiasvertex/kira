@@ -45,17 +45,21 @@ using semantic::type_id;
 //  got node structs in the literal-construction extension, alongside the
 //  new `hir_array_init`; `hir_cast` got one in the extension after that.
 //  `hir_lambda` and `where_expr`-as-`hir_block` (no new node needed) were
-//  added in the "finish lowering" pass; still explicitly unsupported after
-//  that: named/default call arguments (need a per-call-site persisted
-//  argument-position mapping this project hasn't built), `try_expr` (needs
-//  a sum-variant-*construction* expression this project hasn't designed —
-//  the inverse of `hir_constructor_pattern`), `for`/`while let`/
-//  comprehensions (blocked on the undecided iterator protocol — see
-//  spec/typed-ir-design.md's open questions), the concurrency forms
-//  (`async`/`await`/`par`/`race`/`crew`/`on`) and compile-time forms
-//  (`quote`/`splice`/`static`), monomorphization (phase 5), and
-//  borrow/ownership metadata — all explicit Non-Goals for this milestone
-//  in spec/typed-ir-design.md, not oversights.
+//  added in the "finish lowering" pass. Named/reordered call arguments
+//  were added after that (`hir_call.args` stays purely positional — the
+//  reordering happens during lowering, via a persisted per-call-site
+//  argument-to-parameter mapping; see `hir::lower_call`); default
+//  parameter values are still unsupported (a call omitting a defaulted
+//  argument still rejects — the default expression's own evaluation
+//  context isn't threaded through this pass). Still explicitly
+//  unsupported: `try_expr` (needs a sum-variant-*construction* expression
+//  this project hasn't designed — the inverse of `hir_constructor_pattern`),
+//  `for`/`while let`/comprehensions (blocked on the undecided iterator
+//  protocol — see spec/typed-ir-design.md's open questions), the
+//  concurrency forms (`async`/`await`/`par`/`race`/`crew`/`on`) and
+//  compile-time forms (`quote`/`splice`/`static`), monomorphization
+//  (phase 5), and borrow/ownership metadata — all explicit Non-Goals for
+//  this milestone in spec/typed-ir-design.md, not oversights.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions

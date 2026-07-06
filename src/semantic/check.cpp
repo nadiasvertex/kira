@@ -735,7 +735,8 @@ public:
         .types = std::move(types_),
         .node_types = std::move(node_types_),
         .struct_pattern_field_types = std::move(struct_pattern_field_types_),
-        .struct_literal_field_types = std::move(struct_literal_field_types_)};
+        .struct_literal_field_types = std::move(struct_literal_field_types_),
+        .call_argument_mappings = std::move(call_argument_mappings_)};
   }
 
 private:
@@ -771,6 +772,13 @@ private:
   /// they need their own map. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::struct_field_init *, type_id>
       struct_literal_field_types_;
+  /// Per-call-site argument-to-parameter mapping, recorded in
+  /// `check_call_args_against` — the only place a call is matched against
+  /// a real declared parameter list (see `call_argument_mapping`'s doc
+  /// comment in types.h for why a bare `fn(...)`-typed callee never gets
+  /// an entry here). Handed to the caller via `take_checked_types`.
+  std::unordered_map<const ast::call_expr *, call_argument_mapping>
+      call_argument_mappings_;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -1715,12 +1723,16 @@ private:
   /// arguments fill the next unused parameter in order, named arguments
   /// bind by name (reporting unknown/duplicate names), and each argument's
   /// inferred type is checked against its target parameter's type. Reports
-  /// too many arguments, and any required parameter left unfilled.
+  /// too many arguments, and any required parameter left unfilled. Also
+  /// records the resulting argument-to-parameter assignment into
+  /// `call_argument_mappings_` (see `call_argument_mapping`'s doc comment
+  /// in types.h), since this is the only place that assignment is known.
   auto check_call_args_against(const ast::call_expr &call,
                                const std::vector<fn_param_info> &params,
                                std::string_view callee_name,
                                source_location decl_location) -> void {
     auto param_used = std::vector<bool>(params.size(), false);
+    auto args_by_param = std::vector<const ast::expr *>(params.size(), nullptr);
     auto next_positional = size_t{0};
     auto seen_named = false;
 
@@ -1738,6 +1750,7 @@ private:
                     "duplicate argument");
             }
             param_used[i] = true;
+            args_by_param[i] = arg.value.get();
             target = &params[i];
             break;
           }
@@ -1769,6 +1782,7 @@ private:
         }
         if (next_positional < params.size()) {
           param_used[next_positional] = true;
+          args_by_param[next_positional] = arg.value.get();
           target = &params[next_positional];
           ++next_positional;
         } else {
@@ -1814,6 +1828,9 @@ private:
       diag_.emit(std::move(diag));
       mark_error();
     }
+
+    call_argument_mappings_[&call] =
+        call_argument_mapping{.args_by_param = std::move(args_by_param)};
   }
 
   /// Checks a call against a known `func_decl`: enforces the

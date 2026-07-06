@@ -172,6 +172,46 @@ private:
 /// `.find`, not `.at`. This is what a later typed-lowering pass
 /// (`spec/typed-ir-design.md`) reads instead of re-deriving types from the
 /// AST a second time.
+/// Per-call-site argument-to-parameter mapping for a call resolved against
+/// a real `ast::func_decl` (a free function, a method, or a trait default
+/// body) via `check_call_against_decl` — the only call form that supports
+/// named arguments and defaults, since a bare `fn(...)`-typed callee has no
+/// parameter names to resolve a named argument against.
+/// `args_by_param[i]` is the AST expression supplying the i-th declared
+/// parameter (in the same order `signature_params` produces, i.e. with
+/// `self` already skipped for a method call) — whichever call argument
+/// that turned out to be, positional or named; null means the argument was
+/// omitted and the parameter's default value applies.
+struct call_argument_mapping {
+  std::vector<const ast::expr *> args_by_param;
+};
+
+/// The persisted result of type-checking one session: the interned
+/// `type_table` every `type_id` below indexes into, plus the resolved type
+/// of every expression node the checker actually visited. Several
+/// non-expression declaration nodes are recorded in `node_types` too, since
+/// a later pass needs their types but they never pass through `infer_expr`:
+/// a function parameter's `pattern` node (keyed by `param.pattern.get()`),
+/// a function's declared return-type node (keyed by
+/// `decl.return_type.get()`), and every `ast::pattern` node checked via
+/// `check_pattern` (keyed by the pattern node itself, recording the type of
+/// the value it matches) — all recorded in `check_function`/`check_pattern`.
+/// Two shorthand shapes have no node to key against, for the same reason:
+/// a struct pattern's shorthand field (`{x}`, matching
+/// `ast::field_pattern.pattern == nullptr`) binds a name straight from a
+/// plain struct field with no dedicated sub-pattern node, and a struct
+/// *literal*'s shorthand field (`{x}`, matching
+/// `ast::struct_field_init.value == nullptr`) reads an in-scope value the
+/// same way with no dedicated value node — so each is recorded separately,
+/// in `struct_pattern_field_types` (keyed by the owning `ast::field_pattern`)
+/// and `struct_literal_field_types` (keyed by the owning
+/// `ast::struct_field_init`) respectively; neither key type is itself an
+/// `ast::node`, but both are stable for the AST's lifetime. A node the
+/// checker never reached (inside a file already marked failing, or simply
+/// never checked) has no entry in any of these maps — look it up with
+/// `.find`, not `.at`. This is what a later typed-lowering pass
+/// (`spec/typed-ir-design.md`) reads instead of re-deriving types from the
+/// AST a second time.
 struct checked_types {
   type_table types;
   std::unordered_map<const ast::node *, type_id> node_types;
@@ -179,6 +219,8 @@ struct checked_types {
       struct_pattern_field_types;
   std::unordered_map<const ast::struct_field_init *, type_id>
       struct_literal_field_types;
+  std::unordered_map<const ast::call_expr *, call_argument_mapping>
+      call_argument_mappings;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

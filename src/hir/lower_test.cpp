@@ -1190,6 +1190,55 @@ auto test_lowers_call_to_named_function() -> void {
          "expected both calls to `helper` to resolve to the same symbol");
 }
 
+auto test_lowers_named_call_arguments_in_declared_order() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def subtract(a: int32, b: int32) -> int32:\n"
+                               "    return a - b\n"
+                               "def caller(x: int32, y: int32) -> int32:\n"
+                               "    return subtract(b: y, a: x)\n");
+  const auto &decl = find_func(*fixture.ast_file, "caller");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a named-argument call to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &call = dynamic_cast<const hir::hir_call &>(*ret.value);
+  expect(call.args.size() == 2, "expected two positional arguments");
+
+  // Written as `subtract(b: y, a: x)` — lowering must still produce the
+  // callee's declared order `(a, b)`, i.e. [x, y], not the written order.
+  const auto &first_arg =
+      dynamic_cast<const hir::hir_local_ref &>(*call.args[0]);
+  const auto &second_arg =
+      dynamic_cast<const hir::hir_local_ref &>(*call.args[1]);
+  expect(first_arg.name == "x",
+         "expected the first positional argument to be `x` (bound to `a`)");
+  expect(second_arg.name == "y",
+         "expected the second positional argument to be `y` (bound to `b`)");
+  expect(first_arg.symbol == function.params[0].symbol,
+         "expected the first argument to reference caller's `x` parameter");
+  expect(second_arg.symbol == function.params[1].symbol,
+         "expected the second argument to reference caller's `y` parameter");
+}
+
+auto test_rejects_call_relying_on_default_argument() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def greet(name: str, greeting: str = \"hello\") -> str:\n"
+                    "    return greeting\n"
+                    "def caller(name: str) -> str:\n"
+                    "    return greet(name)\n");
+  const auto &decl = find_func(*fixture.ast_file, "caller");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(!result.has_value(),
+         "expected a call relying on a default argument to be rejected");
+  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
+         "expected the specific unsupported_construct error kind");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1228,6 +1277,8 @@ auto main() -> int {
     test_lowers_lambda_expression();
     test_lowers_where_expression();
     test_lowers_call_to_named_function();
+    test_lowers_named_call_arguments_in_declared_order();
+    test_rejects_call_relying_on_default_argument();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();
     test_lowers_struct_pattern_let_destructuring();

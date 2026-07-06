@@ -362,13 +362,6 @@ auto lowerer::lower_call(const ast::call_expr &call)
   if (!type.has_value()) {
     return std::unexpected(type.error());
   }
-  for (const auto &arg : call.args) {
-    if (arg.name.has_value()) {
-      return fail(lowering_error_kind::unsupported_construct, arg.span,
-                  "named call arguments are not lowered by the first "
-                  "milestone (positional arguments only)");
-    }
-  }
   if (call.callee == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, call.span,
                 "call expression is missing its callee");
@@ -376,6 +369,49 @@ auto lowerer::lower_call(const ast::call_expr &call)
   auto callee = lower_expr(*call.callee);
   if (!callee.has_value()) {
     return std::unexpected(callee.error());
+  }
+
+  // A call resolved against a real declaration (free function, method, or
+  // trait default) has a persisted argument-to-parameter mapping (see
+  // `call_argument_mapping` in types.h) — reorder named/positional
+  // arguments into the callee's declared parameter order using it. A bare
+  // `fn(...)`-typed callee (no parameter names to resolve against) never
+  // gets an entry, so falls through to the positional-only path below.
+  //
+  // Known limitation: argument expressions are lowered (and will be
+  // evaluated) in *declared-parameter* order here, not necessarily the
+  // order written at the call site — a call that both reorders named
+  // arguments and relies on side effects between them could observe a
+  // different evaluation order than what's written. Positional-only calls
+  // (the overwhelming majority) are unaffected, since parameter order and
+  // written order are the same thing there.
+  if (const auto mapping = checked_.call_argument_mappings.find(&call);
+      mapping != checked_.call_argument_mappings.end()) {
+    auto args = ptr_vec<hir_expr>{};
+    args.reserve(mapping->second.args_by_param.size());
+    for (const auto *arg_expr : mapping->second.args_by_param) {
+      if (arg_expr == nullptr) {
+        return fail(lowering_error_kind::unsupported_construct, call.span,
+                    "calls that rely on a parameter's default value are "
+                    "not lowered yet — the default expression's evaluation "
+                    "context isn't threaded through this pass");
+      }
+      auto lowered = lower_expr(*arg_expr);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      args.push_back(std::move(*lowered));
+    }
+    return ok_expr(
+        make<hir_call>(call.span, *type, std::move(*callee), std::move(args)));
+  }
+
+  for (const auto &arg : call.args) {
+    if (arg.name.has_value()) {
+      return fail(lowering_error_kind::unsupported_construct, arg.span,
+                  "named arguments are only supported calling a named "
+                  "function or method, not a bare function value");
+    }
   }
   auto args = ptr_vec<hir_expr>{};
   args.reserve(call.args.size());
