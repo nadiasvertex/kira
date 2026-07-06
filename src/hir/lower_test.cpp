@@ -689,19 +689,68 @@ auto test_lowers_struct_destructuring_parameter() -> void {
          "expected `value` to be initialized from a field projection");
 }
 
-auto test_rejects_array_pattern() -> void {
-  // Array/slice destructuring is the one pattern shape still deferred: it
-  // needs bounds/rest semantics (`[a, b, ..]`) this pass doesn't design.
+auto test_lowers_array_pattern_destructuring() -> void {
+  // This grammar has no rest/slice-capture pattern syntax (`..` in pattern
+  // position is always an open-ended range_pattern, never "gather the
+  // rest") — so an array pattern is a plain fixed-arity structural
+  // destructure, same shape as a tuple pattern.
   auto fixture = check_fixture("module sample\n"
                                "def head(xs: array[int32, 3]) -> int32:\n"
                                "    return match xs:\n"
-                               "        [a, b, c] => a\n");
+                               "        [a, _, _] => a\n");
   const auto &decl = find_func(*fixture.ast_file, "head");
 
   auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(), "expected an array/slice pattern to be rejected");
-  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
-         "expected the specific unsupported_construct error kind");
+  expect(result.has_value(), "expected an array pattern to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &match = dynamic_cast<const hir::hir_match &>(*ret.value);
+  expect(match.arms[0].pattern->kind == hir::hir_node_kind::hir_array_pattern,
+         "expected the arm's pattern to be a hir_array_pattern");
+
+  const auto &array_pat =
+      dynamic_cast<const hir::hir_array_pattern &>(*match.arms[0].pattern);
+  expect(array_pat.elements.size() == 3, "expected three array slots");
+  expect(array_pat.elements[0]->kind ==
+             hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the bound first slot to desugar to a wildcard");
+  expect(array_pat.elements[1]->kind ==
+             hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the plain `_` slots to already be wildcards");
+
+  const auto &let =
+      dynamic_cast<const hir::hir_let &>(*match.arms[0].body->stmts.front());
+  expect(let.name == "a", "expected the synthetic let to bind `a`");
+  expect(let.initializer->kind == hir::hir_node_kind::hir_tuple_index,
+         "expected `a` to be initialized from a positional projection "
+         "(array elements reuse hir_tuple_index)");
+  const auto &index_ref =
+      dynamic_cast<const hir::hir_tuple_index &>(*let.initializer);
+  expect(index_ref.index == 0, "expected the projection to read slot 0");
+}
+
+auto test_lowers_array_pattern_let_destructuring() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def second(xs: array[int32, 3]) -> int32:\n"
+                               "    let [_, b, _] = xs\n"
+                               "    return b\n");
+  const auto &decl = find_func(*fixture.ast_file, "second");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a destructuring array let binding to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 3,
+         "expected the synthetic subject let, the `b` let, and the return");
+  const auto &b_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[1]);
+  expect(b_let.name == "b", "expected the second statement to bind `b`");
+  const auto &index_ref =
+      dynamic_cast<const hir::hir_tuple_index &>(*b_let.initializer);
+  expect(index_ref.index == 1, "expected the projection to read slot 1");
 }
 
 } // namespace
@@ -725,7 +774,8 @@ auto main() -> int {
     test_lowers_constructor_pattern_destructuring();
     test_lowers_option_and_result_pattern_sugar();
     test_lowers_range_pattern();
-    test_rejects_array_pattern();
+    test_lowers_array_pattern_destructuring();
+    test_lowers_array_pattern_let_destructuring();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();
     test_lowers_struct_pattern_let_destructuring();

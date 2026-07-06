@@ -25,12 +25,16 @@ using semantic::type_id;
 //  but have no concrete node struct below yet; nothing constructs them
 //  until the step that adds their lowering. `match` and its patterns were
 //  added lowering `match`/pattern aliases (Decision 6, items 1-2);
-//  destructuring patterns (tuple/struct/constructor/range) and their
+//  destructuring patterns (tuple/struct/constructor/range/array) and their
 //  supporting projection expressions (`hir_tuple_index`,
 //  `hir_variant_payload`) were added in the extension that tackles
-//  destructuring — `hir_array_pattern` still has no node struct: slice/rest
-//  matching (`[a, b, ..]`) needs a bounds/rest semantics this pass doesn't
-//  design yet.
+//  destructuring. `hir_array_pattern` covers array/list/slice element
+//  destructuring — this grammar has no rest/slice-capture syntax in pattern
+//  position (`..` there is always an open-ended `range_pattern`, never a
+//  "gather the rest" marker), so it's a plain fixed-arity structural
+//  pattern exactly like `hir_tuple_pattern`, just over an indexable rather
+//  than a tuple-shaped value; any length mismatch is a runtime dispatch
+//  concern for codegen (phase 5), the same as a literal or tag comparison.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -48,7 +52,9 @@ enum class hir_node_kind : uint8_t {
   hir_if,
   hir_match,
   hir_lambda,
-  hir_tuple_index, ///< Static tuple-slot projection (pattern lowering only).
+  hir_tuple_index, ///< Static positional projection (pattern lowering only);
+                   ///< used for both tuple slots and array/list/slice
+                   ///< elements — see `hir_tuple_index`'s doc comment.
   hir_variant_payload, ///< Sum-type payload projection (pattern lowering only).
   // patterns (match arms only)
   hir_wildcard_pattern,
@@ -58,6 +64,7 @@ enum class hir_node_kind : uint8_t {
   hir_struct_pattern,
   hir_constructor_pattern,
   hir_range_pattern,
+  hir_array_pattern,
   // statements
   hir_let,
   hir_assign,
@@ -218,11 +225,13 @@ struct hir_index : hir_expr {
         index(std::move(idx)) {}
 };
 
-/// Static tuple-element projection `object.index`. There's no surface tuple-
+/// Static positional projection `object.index`. There's no surface tuple-
 /// index syntax to lower from — this exists purely so pattern lowering can
-/// bind a name to a tuple pattern's `index`-th slot (see `hir_match_arm`)
-/// without inventing a runtime-indexed `hir_index` for what's actually a
-/// fixed, statically-known position.
+/// bind a name to a tuple pattern's `index`-th slot, or an array/list/slice
+/// pattern's `index`-th element (see `hir_match_arm`), without inventing a
+/// runtime-indexed `hir_index` for what's actually a fixed,
+/// statically-known position. Codegen tells the two uses apart from
+/// `object`'s type, the same way it already must for `hir_field`.
 struct hir_tuple_index : hir_expr {
   ptr<hir_expr> object;
   size_t index = 0;
@@ -347,6 +356,20 @@ struct hir_tuple_pattern : hir_pattern {
 
   hir_tuple_pattern(source_span s, ptr_vec<hir_pattern> elems)
       : hir_pattern(hir_node_kind::hir_tuple_pattern, s),
+        elements(std::move(elems)) {}
+};
+
+/// Structural test on an array/list/slice's elements, e.g. `[a, 0, c]`.
+/// Shaped exactly like `hir_tuple_pattern` (see `hir_node_kind`'s doc
+/// comment on why: this grammar has no rest/slice-capture pattern syntax),
+/// but kept as a distinct kind since codegen compiles it differently — a
+/// `hir_tuple_pattern` never needs a length check, but this may, depending
+/// on whether the subject's length is statically known.
+struct hir_array_pattern : hir_pattern {
+  ptr_vec<hir_pattern> elements;
+
+  hir_array_pattern(source_span s, ptr_vec<hir_pattern> elems)
+      : hir_pattern(hir_node_kind::hir_array_pattern, s),
         elements(std::move(elems)) {}
 };
 

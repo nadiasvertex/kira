@@ -890,11 +890,43 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     return ptr<hir_pattern>(make<hir_range_pattern>(
         pattern.span, std::move(start), std::move(end), range.inclusive));
   }
+  case ast::node_kind::array_pattern: {
+    // Shaped exactly like tuple_pattern above — this grammar has no
+    // rest/slice-capture pattern syntax (see hir_array_pattern's doc
+    // comment), so an array/list/slice pattern is just a fixed-arity
+    // positional destructure, reusing hir_tuple_index for element
+    // projections the same way a tuple pattern does.
+    const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
+    auto elements = ptr_vec<hir_pattern>{};
+    elements.reserve(array.elements.size());
+    for (size_t i = 0; i < array.elements.size(); ++i) {
+      const auto &element_ast = array.elements[i];
+      if (element_ast == nullptr) {
+        return fail(lowering_error_kind::unsupported_construct, pattern.span,
+                    "array pattern has a missing element");
+      }
+      auto element_type = checked_type_of(*element_ast);
+      if (!element_type.has_value()) {
+        return std::unexpected(element_type.error());
+      }
+      const auto elem_type = *element_type;
+      const auto elem_span = element_ast->span;
+      auto element_place = [make_place, elem_type, i,
+                            elem_span]() -> ptr<hir_expr> {
+        return {make<hir_tuple_index>(elem_span, elem_type, make_place(), i)};
+      };
+      auto lowered = lower_pattern(*element_ast, element_place, pending);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      elements.push_back(std::move(*lowered));
+    }
+    return ptr<hir_pattern>(
+        make<hir_array_pattern>(pattern.span, std::move(elements)));
+  }
   default:
     return fail(lowering_error_kind::unsupported_construct, pattern.span,
-                std::format("pattern kind {} is not lowered yet — array/"
-                            "slice patterns still need bounds/rest "
-                            "semantics this pass doesn't design",
+                std::format("pattern kind {} is not lowered by this pass",
                             static_cast<int>(pattern.kind)));
   }
 }
