@@ -636,6 +636,60 @@ auto test_pass_through_param_stays_unannotated() -> void {
          "inference existed");
 }
 
+auto test_infers_param_type_from_struct_field_type() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "type point = { x: int32, y: int32 }\n"
+      "def make(x):\n"
+      "    return point { x: x, y: 0 }\n"
+      "def bad():\n"
+      "    return make(\"oops\")\n");
+  expect(analyzed.error_count > 0,
+         "expected `make`'s `x` to be inferred as `int32` from `point`'s "
+         "`x` field");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a type mismatch naming the inferred parameter "
+                    "type");
+}
+
+auto test_infers_param_type_from_struct_field_shorthand() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "type point = { x: int32, y: int32 }\n"
+      "def make(x):\n"
+      "    let y = 0\n"
+      "    return point { x, y }\n"
+      "def bad():\n"
+      "    return make(\"oops\")\n");
+  expect(analyzed.error_count > 0,
+         "expected `make`'s `x` to be inferred as `int32` from `point`'s "
+         "`x` field via shorthand initialization");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a type mismatch naming the inferred parameter "
+                    "type");
+}
+
+auto test_method_call_receiver_subexpr_still_inferred() -> void {
+  // `a`'s only usage is inside `(a + b)`, which becomes the *receiver* of a
+  // method call (`.to_uppercase()`). The method call itself can't anchor
+  // anything (no method-resolution table in this pass), but the arithmetic
+  // link between `a` and the annotated `b` lives inside that receiver
+  // subtree and must still be walked, not silently skipped because the
+  // call's callee isn't a plain name.
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "def combine(a, b: int32):\n"
+      "    return (a + b).to_uppercase()\n"
+      "def bad():\n"
+      "    return combine(\"oops\", 1)\n");
+  expect(analyzed.error_count > 0,
+         "expected `combine`'s `a` to be inferred as `int32` via arithmetic "
+         "with `b` inside a method-call receiver expression");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a type mismatch naming the inferred parameter "
+                    "type");
+}
+
 auto test_recursive_function_param_inference_terminates() -> void {
   // `n`'s only usage is comparison/arithmetic against bare literals, so it
   // must stay generic (no anchor forces it to `int32`); this test exists to
@@ -696,6 +750,9 @@ auto main() -> int {
     test_bare_literal_never_forces_a_concrete_param_type();
     test_infers_param_type_from_annotated_sibling();
     test_infers_param_type_from_call_to_annotated_function();
+    test_infers_param_type_from_struct_field_type();
+    test_infers_param_type_from_struct_field_shorthand();
+    test_method_call_receiver_subexpr_still_inferred();
     test_pass_through_param_stays_unannotated();
     test_recursive_function_param_inference_terminates();
   } catch (const std::exception &ex) {

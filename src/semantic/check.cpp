@@ -362,8 +362,16 @@ private:
   }
 
   auto walk_call(const ast::call_expr &call) -> type_id {
-    if (call.callee == nullptr ||
-        call.callee->kind != ast::node_kind::ident_expr || owner_ == nullptr) {
+    if (call.callee == nullptr) {
+      walk_call_args_loosely(call);
+      return k_unknown_type;
+    }
+    if (call.callee->kind != ast::node_kind::ident_expr || owner_ == nullptr) {
+      // A method call (`x.foo()`) or any other non-plain-name callee: we
+      // can't anchor from an unresolved method's parameter types, but the
+      // callee subtree (e.g. the receiver `x`, or `(a + b)` in
+      // `(a + b).foo()`) may still contain param usage worth visiting.
+      walk_expr(*call.callee);
       walk_call_args_loosely(call);
       return k_unknown_type;
     }
@@ -396,6 +404,62 @@ private:
       return *found;
     }
     return k_unknown_type;
+  }
+
+  /// Finds `field_name` in a same-module struct type's field list, or
+  /// `nullptr` if `owner_` is unset, the type isn't a same-module struct, or
+  /// the field name isn't declared on it.
+  [[nodiscard]] auto
+  struct_field_decl(const ast::expr *type_name, std::string_view field_name) const
+      -> const ast::struct_field * {
+    if (owner_ == nullptr || type_name == nullptr ||
+        type_name->kind != ast::node_kind::ident_expr) {
+      return nullptr;
+    }
+    const auto &name = dynamic_cast<const ast::ident_expr &>(*type_name).name;
+    const auto it = owner_->types.find(name);
+    if (it == owner_->types.end() || it->second.decl == nullptr ||
+        it->second.decl->definition == nullptr ||
+        it->second.decl->definition->kind != ast::node_kind::struct_type_def) {
+      return nullptr;
+    }
+    const auto &body =
+        dynamic_cast<const ast::struct_type_def &>(*it->second.decl->definition)
+            .body;
+    for (const auto &field : body.fields) {
+      if (field.name == field_name) {
+        return &field;
+      }
+    }
+    return nullptr;
+  }
+
+  /// A struct literal's fields are exactly like a callee's annotated
+  /// parameters (see `walk_call`): a field declared with a concrete builtin
+  /// scalar type anchors whatever unannotated parameter is assigned to it,
+  /// by name (`Point { x: p }`) or by shorthand (`Point { x }`, meaning
+  /// `x: x`).
+  auto walk_struct_literal(const ast::struct_expr &literal) -> void {
+    for (const auto &field : literal.fields) {
+      const auto *decl_field =
+          struct_field_decl(literal.type_name.get(), field.name);
+      const auto found = decl_field != nullptr
+                              ? simple_builtin_annotation(decl_field->type.get())
+                              : std::nullopt;
+      if (field.value != nullptr) {
+        const auto value_type = walk_expr(*field.value);
+        if (found.has_value()) {
+          unify(value_type, *found);
+        }
+        continue;
+      }
+      // Shorthand `{ name }`: the value is the local variable `name` itself.
+      if (found.has_value()) {
+        if (const auto it = env_.find(field.name); it != env_.end()) {
+          unify(it->second, *found);
+        }
+      }
+    }
   }
 
   auto walk_if_branches(const std::vector<ast::if_branch> &branches,
@@ -480,6 +544,9 @@ private:
       }
       return k_unknown_type;
     }
+    case ast::node_kind::struct_expr:
+      walk_struct_literal(dynamic_cast<const ast::struct_expr &>(expr));
+      return k_unknown_type;
     case ast::node_kind::index_expr: {
       const auto &index = dynamic_cast<const ast::index_expr &>(expr);
       if (index.object != nullptr) {

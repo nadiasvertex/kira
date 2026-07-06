@@ -89,6 +89,12 @@ other possibility — i.e. the pin is a *fact*, not a guess:
 - **A same-module callee's concretely-annotated parameter.** `def
   relay(x): return sink(x)` where `sink(y: int32)` forces `relay`'s `x:
   int32`, for the same reason.
+- **A same-module struct literal's concretely-typed field.** `def
+  make(x): return point { x: x, y: 0 }` where `point`'s `x` field is
+  declared `int32` forces `make`'s `x: int32` — this is the same anchor
+  rule as the callee case above, just keyed by field name instead of
+  parameter position. The field shorthand (`point { x, y }`, meaning `x:
+  x`) is recognized the same way.
 
 Operators still *link* both operands' type variables together (`x + y`
 requires both sides to end up the same type) — that's a structural fact
@@ -115,10 +121,21 @@ touches checker state. This makes it safe to invoke at arbitrary points
 (mid-call-check, recursively) with no save/restore choreography. The cost
 is that it's deliberately narrow — it only recognizes a bounded set of
 shapes (arithmetic/comparison/logical operators, `let`/`var`/assign,
-`if`/`while`/`for`/`match`, and calls to same-module functions with a
-simple builtin-scalar-annotated target parameter) and silently skips
+`if`/`while`/`for`/`match`, calls to same-module functions with a
+simple builtin-scalar-annotated target parameter, and same-module struct
+literals with a simple builtin-scalar-typed target field) and silently skips
 anything else, rather than trying to cover every expression form
 `infer_expr` does.
+
+One shape that's visited but never anchors: a method call (`x.foo()`). Its
+callee is a `field_expr`, not a plain name, so there's no
+`owner_->functions` lookup to make — the pass has no method-resolution
+table and isn't getting one just for this. But the receiver subtree still
+gets walked (`walk_expr(*call.callee)`), because expressions can be nested
+arbitrarily deep inside it — `(a + b).foo()`'s receiver is where the `a`/`b`
+arithmetic link lives. Skipping the callee entirely, as the first cut of
+this pass did, would silently drop any param usage nested inside a
+method-call receiver.
 
 ## Caching: one shared answer, not two independent guesses
 
