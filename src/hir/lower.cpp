@@ -1,6 +1,7 @@
 #include "src/hir/lower.h"
 
 #include <format>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -72,9 +73,14 @@ private:
     return id;
   }
 
+  /// Mints an id with no name of its own — used for a `match` subject's
+  /// synthetic binding, which arm code never refers to by spelling (see
+  /// `lower_match`).
+  [[nodiscard]] auto mint_symbol() -> symbol_id { return next_symbol_++; }
+
   [[nodiscard]] auto resolve_reference(std::string_view name) -> symbol_id {
-    for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
-      if (const auto found = it->find(std::string(name)); found != it->end()) {
+    for (auto & scope : std::views::reverse(scopes_)) {
+      if (const auto found = scope.find(std::string(name)); found != scope.end()) {
         return found->second;
       }
     }
@@ -142,6 +148,24 @@ private:
                               source_span span, type_id type)
       -> std::expected<ptr<hir_if>, lowering_error>;
 
+  // ------------------------------------------------------------------
+  //  match / patterns
+  // ------------------------------------------------------------------
+
+  /// Lowers one surface pattern to a *structural* `hir_pattern` (wildcard,
+  /// literal, or a `|` of those). A plain binding or a `pattern as name`
+  /// alias contributes no structure of its own — instead it appends a
+  /// synthetic `hir_let name = <subject_symbol>` to `pending`, which the
+  /// caller (`lower_match`) splices onto the front of the arm's body.
+  [[nodiscard]] auto
+  lower_pattern(const ast::node &pattern, symbol_id subject_symbol,
+                type_id subject_type, std::vector<ptr<hir_node>> &pending)
+      -> std::expected<ptr<hir_pattern>, lowering_error>;
+  [[nodiscard]] auto lower_match(const ast::expr &subject_ast,
+                                 const std::vector<ast::match_arm> &arms,
+                                 source_span span, type_id type)
+      -> std::expected<ptr<hir_match>, lowering_error>;
+
   const checked_types &checked_;
   std::vector<std::unordered_map<std::string, symbol_id>> scopes_;
   std::unordered_map<std::string, symbol_id> global_refs_;
@@ -157,7 +181,7 @@ auto lowerer::lower_expr(const ast::expr &expr)
   }
   switch (expr.kind) {
   case ast::node_kind::group_expr: {
-    const auto &group = static_cast<const ast::group_expr &>(expr);
+    const auto &group = dynamic_cast<const ast::group_expr &>(expr);
     if (group.inner == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, expr.span,
                   "parenthesized expression has no inner expression");
@@ -165,21 +189,21 @@ auto lowerer::lower_expr(const ast::expr &expr)
     return lower_expr(*group.inner);
   }
   case ast::node_kind::literal_expr:
-    return lower_literal(static_cast<const ast::literal_expr &>(expr));
+    return lower_literal(dynamic_cast<const ast::literal_expr &>(expr));
   case ast::node_kind::ident_expr:
-    return lower_ident(static_cast<const ast::ident_expr &>(expr));
+    return lower_ident(dynamic_cast<const ast::ident_expr &>(expr));
   case ast::node_kind::binary_expr:
-    return lower_binary(static_cast<const ast::binary_expr &>(expr));
+    return lower_binary(dynamic_cast<const ast::binary_expr &>(expr));
   case ast::node_kind::unary_expr:
-    return lower_unary(static_cast<const ast::unary_expr &>(expr));
+    return lower_unary(dynamic_cast<const ast::unary_expr &>(expr));
   case ast::node_kind::call_expr:
-    return lower_call(static_cast<const ast::call_expr &>(expr));
+    return lower_call(dynamic_cast<const ast::call_expr &>(expr));
   case ast::node_kind::field_expr:
-    return lower_field(static_cast<const ast::field_expr &>(expr));
+    return lower_field(dynamic_cast<const ast::field_expr &>(expr));
   case ast::node_kind::index_expr:
-    return lower_index(static_cast<const ast::index_expr &>(expr));
+    return lower_index(dynamic_cast<const ast::index_expr &>(expr));
   case ast::node_kind::block_expr: {
-    const auto &block = static_cast<const ast::block_expr &>(expr);
+    const auto &block = dynamic_cast<const ast::block_expr &>(expr);
     auto type = checked_type_of(block);
     if (!type.has_value()) {
       return std::unexpected(type.error());
@@ -191,12 +215,29 @@ auto lowerer::lower_expr(const ast::expr &expr)
     return ok_expr(std::move(*lowered));
   }
   case ast::node_kind::if_expr: {
-    const auto &if_e = static_cast<const ast::if_expr &>(expr);
+    const auto &if_e = dynamic_cast<const ast::if_expr &>(expr);
     auto type = checked_type_of(if_e);
     if (!type.has_value()) {
       return std::unexpected(type.error());
     }
     auto lowered = lower_if(if_e.branches, if_e.else_body, if_e.span, *type);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    return ok_expr(std::move(*lowered));
+  }
+  case ast::node_kind::match_expr: {
+    const auto &match_e = dynamic_cast<const ast::match_expr &>(expr);
+    if (match_e.subject == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, match_e.span,
+                  "match expression has no subject");
+    }
+    auto type = checked_type_of(match_e);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    auto lowered =
+        lower_match(*match_e.subject, match_e.arms, match_e.span, *type);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -382,7 +423,7 @@ auto lowerer::lower_stmt(const ast::node &node)
   }
   switch (node.kind) {
   case ast::node_kind::let_stmt: {
-    const auto &let = static_cast<const ast::let_stmt &>(node);
+    const auto &let = dynamic_cast<const ast::let_stmt &>(node);
     if (!let.else_body.empty()) {
       return fail(lowering_error_kind::unsupported_construct, let.span,
                   "`let ... else` is not lowered by the first milestone");
@@ -402,13 +443,13 @@ auto lowerer::lower_stmt(const ast::node &node)
       return std::unexpected(initializer.error());
     }
     const auto &binding =
-        static_cast<const ast::binding_pattern &>(*let.pattern);
+        dynamic_cast<const ast::binding_pattern &>(*let.pattern);
     const auto symbol = declare_local(binding.name);
     return ptr<hir_node>(
         make<hir_let>(let.span, symbol, binding.name, std::move(*initializer)));
   }
   case ast::node_kind::expr_stmt: {
-    const auto &expr_stmt = static_cast<const ast::expr_stmt &>(node);
+    const auto &expr_stmt = dynamic_cast<const ast::expr_stmt &>(node);
     if (expr_stmt.expr == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, expr_stmt.span,
                   "expression statement has no expression");
@@ -421,7 +462,7 @@ auto lowerer::lower_stmt(const ast::node &node)
         make<hir_expr_stmt>(expr_stmt.span, std::move(*lowered)));
   }
   case ast::node_kind::return_stmt: {
-    const auto &ret = static_cast<const ast::return_stmt &>(node);
+    const auto &ret = dynamic_cast<const ast::return_stmt &>(node);
     if (ret.value == nullptr) {
       return ptr<hir_node>(make<hir_return>(ret.span, nullptr));
     }
@@ -432,9 +473,22 @@ auto lowerer::lower_stmt(const ast::node &node)
     return ptr<hir_node>(make<hir_return>(ret.span, std::move(*value)));
   }
   case ast::node_kind::if_stmt: {
-    const auto &if_s = static_cast<const ast::if_stmt &>(node);
+    const auto &if_s = dynamic_cast<const ast::if_stmt &>(node);
     auto lowered =
         lower_if(if_s.branches, if_s.else_body, if_s.span, k_unknown_type);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    return ptr<hir_node>(std::move(*lowered));
+  }
+  case ast::node_kind::match_stmt: {
+    const auto &match_s = dynamic_cast<const ast::match_stmt &>(node);
+    if (match_s.subject == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, match_s.span,
+                  "match statement has no subject");
+    }
+    auto lowered = lower_match(*match_s.subject, match_s.arms, match_s.span,
+                               k_unknown_type);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -490,6 +544,172 @@ auto lowerer::lower_if(const std::vector<ast::if_branch> &branches,
                       std::move(else_block));
 }
 
+auto lowerer::lower_pattern(const ast::node &pattern, symbol_id subject_symbol,
+                            type_id subject_type,
+                            std::vector<ptr<hir_node>> &pending)
+    -> std::expected<ptr<hir_pattern>, lowering_error> {
+  if (pattern.has_error) {
+    return fail(lowering_error_kind::unsupported_construct, pattern.span,
+                "pattern carries a parse/recovery error and cannot be lowered");
+  }
+  switch (pattern.kind) {
+  case ast::node_kind::wildcard_pattern:
+    return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
+  case ast::node_kind::literal_pattern: {
+    const auto &lit = dynamic_cast<const ast::literal_pattern &>(pattern);
+    return ptr<hir_pattern>(
+        make<hir_literal_pattern>(pattern.span, lit.lit_kind, lit.value));
+  }
+  case ast::node_kind::binding_pattern: {
+    const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
+    const auto symbol = declare_local(binding.name);
+    pending.push_back(ptr<hir_node>(make<hir_let>(
+        pattern.span, symbol, binding.name,
+        make<hir_local_ref>(pattern.span, subject_type, subject_symbol,
+                            std::string("<match subject>")))));
+    return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
+  }
+  case ast::node_kind::group_pattern: {
+    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+    if (group.inner == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, pattern.span,
+                  "grouped pattern has no inner pattern");
+    }
+    auto inner =
+        lower_pattern(*group.inner, subject_symbol, subject_type, pending);
+    if (!inner.has_value()) {
+      return std::unexpected(inner.error());
+    }
+    if (group.alias.has_value()) {
+      const auto symbol = declare_local(*group.alias);
+      pending.push_back(ptr<hir_node>(make<hir_let>(
+          pattern.span, symbol, *group.alias,
+          make<hir_local_ref>(pattern.span, subject_type, subject_symbol,
+                              std::string("<match subject>")))));
+    }
+    return inner;
+  }
+  case ast::node_kind::or_pattern: {
+    const auto &alt = dynamic_cast<const ast::or_pattern &>(pattern);
+    if (alt.alternatives.empty()) {
+      return fail(lowering_error_kind::unsupported_construct, pattern.span,
+                  "`|` pattern has no alternatives");
+    }
+    auto alternatives = ptr_vec<hir_pattern>{};
+    alternatives.reserve(alt.alternatives.size());
+    for (const auto &alternative : alt.alternatives) {
+      if (alternative == nullptr) {
+        return fail(lowering_error_kind::unsupported_construct, pattern.span,
+                    "`|` pattern has a missing alternative");
+      }
+      auto local_pending = std::vector<ptr<hir_node>>{};
+      auto lowered = lower_pattern(*alternative, subject_symbol, subject_type,
+                                   local_pending);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      if (!local_pending.empty()) {
+        return fail(lowering_error_kind::unsupported_construct,
+                    alternative->span,
+                    "a name bound inside one `|` alternative is not "
+                    "supported by this milestone");
+      }
+      alternatives.push_back(std::move(*lowered));
+    }
+    return ptr<hir_pattern>(
+        make<hir_or_pattern>(pattern.span, std::move(alternatives)));
+  }
+  default:
+    return fail(lowering_error_kind::unsupported_construct, pattern.span,
+                std::format("pattern kind {} is not lowered yet — structural/"
+                            "payload destructuring needs projection "
+                            "expressions this milestone doesn't have",
+                            static_cast<int>(pattern.kind)));
+  }
+}
+
+auto lowerer::lower_match(const ast::expr &subject_ast,
+                          const std::vector<ast::match_arm> &arms,
+                          source_span span, type_id type)
+    -> std::expected<ptr<hir_match>, lowering_error> {
+  auto subject_type = checked_type_of(subject_ast);
+  if (!subject_type.has_value()) {
+    return std::unexpected(subject_type.error());
+  }
+  auto subject = lower_expr(subject_ast);
+  if (!subject.has_value()) {
+    return std::unexpected(subject.error());
+  }
+  const auto subject_symbol = mint_symbol();
+
+  auto hir_arms = std::vector<hir_match_arm>{};
+  hir_arms.reserve(arms.size());
+  for (const auto &arm : arms) {
+    if (arm.has_error) {
+      return fail(lowering_error_kind::unsupported_construct, arm.span,
+                  "match arm carries a parse/recovery error and cannot be "
+                  "lowered");
+    }
+    if (arm.pattern == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, arm.span,
+                  "match arm has no pattern");
+    }
+    push_scope();
+    auto pending = std::vector<ptr<hir_node>>{};
+    auto pattern =
+        lower_pattern(*arm.pattern, subject_symbol, *subject_type, pending);
+    if (!pattern.has_value()) {
+      pop_scope();
+      return std::unexpected(pattern.error());
+    }
+
+    auto guard = ptr<hir_expr>{};
+    if (arm.guard != nullptr) {
+      auto lowered_guard = lower_expr(*arm.guard);
+      if (!lowered_guard.has_value()) {
+        pop_scope();
+        return std::unexpected(lowered_guard.error());
+      }
+      guard = std::move(*lowered_guard);
+    }
+
+    auto body = ptr<hir_block>{};
+    if (arm.body_expr != nullptr) {
+      auto value = lower_expr(*arm.body_expr);
+      if (!value.has_value()) {
+        pop_scope();
+        return std::unexpected(value.error());
+      }
+      auto stmts = std::move(pending);
+      stmts.push_back(ptr<hir_node>(
+          make<hir_expr_stmt>(arm.body_expr->span, std::move(*value))));
+      body = make<hir_block>(arm.span, k_unknown_type, std::move(stmts));
+    } else {
+      auto lowered_body = lower_block(arm.body_stmts, arm.span);
+      if (!lowered_body.has_value()) {
+        pop_scope();
+        return std::unexpected(lowered_body.error());
+      }
+      body = std::move(*lowered_body);
+      if (!pending.empty()) {
+        auto merged = std::move(pending);
+        for (auto &stmt_ptr : body->stmts) {
+          merged.push_back(std::move(stmt_ptr));
+        }
+        body->stmts = std::move(merged);
+      }
+    }
+    pop_scope();
+
+    hir_arms.push_back(hir_match_arm{.pattern = std::move(*pattern),
+                                     .guard = std::move(guard),
+                                     .body = std::move(body)});
+  }
+
+  return make<hir_match>(span, type, std::move(*subject), subject_symbol,
+                         std::move(hir_arms));
+}
+
 auto lowerer::lower_function(const ast::func_decl &decl)
     -> std::expected<ptr<hir_function>, lowering_error> {
   if (decl.has_error) {
@@ -542,7 +762,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
       return std::unexpected(type.error());
     }
     const auto &binding =
-        static_cast<const ast::binding_pattern &>(*param.pattern);
+        dynamic_cast<const ast::binding_pattern &>(*param.pattern);
     const auto symbol = declare_local(binding.name);
     params.push_back(
         hir_param{.symbol = symbol, .name = binding.name, .type = *type});
@@ -602,7 +822,7 @@ auto lower_module(const ast::file &file, std::string module_name,
       continue;
     }
     auto lowered =
-        lower_function(static_cast<const ast::func_decl &>(*item), checked);
+        lower_function(dynamic_cast<const ast::func_decl &>(*item), checked);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }

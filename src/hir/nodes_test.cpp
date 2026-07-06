@@ -59,7 +59,7 @@ auto test_builds_add_function_by_hand() -> void {
   const auto *returned = function->body->stmts.front().get();
   expect(returned->kind == hir::hir_node_kind::hir_return,
          "expected the lone statement to be a hir_return");
-  const auto &return_stmt = static_cast<const hir::hir_return &>(*returned);
+  const auto &return_stmt = dynamic_cast<const hir::hir_return &>(*returned);
 
   expect(return_stmt.value != nullptr, "expected return to carry a value");
   expect(return_stmt.value->kind == hir::hir_node_kind::hir_binary,
@@ -68,12 +68,12 @@ auto test_builds_add_function_by_hand() -> void {
          "expected the sum's checked type to be int32");
 
   const auto &sum_expr =
-      static_cast<const hir::hir_binary &>(*return_stmt.value);
+      dynamic_cast<const hir::hir_binary &>(*return_stmt.value);
   expect(sum_expr.op == kira::ast::binary_op::Add,
          "expected the operator to be addition");
   expect(sum_expr.lhs->kind == hir::hir_node_kind::hir_local_ref,
          "expected the left operand to be a local reference");
-  const auto &lhs_ref = static_cast<const hir::hir_local_ref &>(*sum_expr.lhs);
+  const auto &lhs_ref = dynamic_cast<const hir::hir_local_ref &>(*sum_expr.lhs);
   expect(lhs_ref.symbol == 0, "expected left operand to reference symbol 0");
   expect(lhs_ref.name == "x", "expected left operand's debug name to be x");
 }

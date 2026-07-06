@@ -20,10 +20,14 @@ using semantic::type_id;
 // ==========================================================================
 //  hir_node_kind — flat tag, same shape as ast::node_kind (see
 //  spec/typed-ir-design.md Decision 4). Kinds beyond this first lowering
-//  milestone (tuple/struct-init/cast/lambda/match) are listed here for the
-//  record — the milestone's Non-Goals explicitly defer them — but have no
-//  concrete node struct below yet; nothing constructs them until the step
-//  that adds their lowering.
+//  milestone (tuple/struct-init/cast/lambda) are listed here for the record
+//  — the milestone's Non-Goals explicitly defer them — but have no concrete
+//  node struct below yet; nothing constructs them until the step that adds
+//  their lowering. `match` and its patterns were added in the extension
+//  that lowers `match`/pattern aliases (Decision 6, items 1-2); only the
+//  structural-dispatch pattern kinds below have node structs — destructuring
+//  patterns (constructor/tuple/struct/...) still need projection
+//  expressions this milestone doesn't have.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -41,6 +45,10 @@ enum class hir_node_kind : uint8_t {
   hir_if,
   hir_match,
   hir_lambda,
+  // patterns (match arms only)
+  hir_wildcard_pattern,
+  hir_literal_pattern,
+  hir_or_pattern,
   // statements
   hir_let,
   hir_assign,
@@ -101,6 +109,18 @@ struct hir_stmt : hir_node {
 
 /// Base for top-level item HIR nodes (functions, modules).
 struct hir_item : hir_node {
+  using hir_node::hir_node;
+};
+
+/// Base for pattern-position HIR nodes, used only inside `hir_match_arm`.
+/// Patterns describe *structural* dispatch only — matches unconditionally,
+/// or compares against a literal. A name a surface pattern would bind
+/// (`x`, or a `pattern as name` alias) is never represented as a pattern
+/// node: it lowers to an ordinary `hir_let` prepended to the arm's body
+/// instead (Decision 6, item 2 — reuse `hir_let` rather than invent a
+/// binding-carrying pattern kind), so no pattern struct below carries a
+/// `symbol_id`.
+struct hir_pattern : hir_node {
   using hir_node::hir_node;
 };
 
@@ -220,13 +240,75 @@ struct hir_if : hir_expr {
         else_body(std::move(else_b)) {}
 };
 
+/// One `case`/arm of a `match`. `guard` is null when the arm has no `if`
+/// guard. See `hir_pattern`'s doc comment: any name the surface arm binds
+/// (a plain binding or a `pattern as name` alias) shows up as an ordinary
+/// `hir_let` at the front of `body`'s statements, not as part of `pattern`.
+struct hir_match_arm {
+  ptr<hir_pattern> pattern;
+  ptr<hir_expr> guard; ///< Null when the arm has no guard.
+  ptr<hir_block> body;
+};
+
+/// Pattern-dispatch, usable as either a statement or an expression
+/// (Decision 6, item 1), matching how `ast::match_stmt`/`ast::match_expr`
+/// already share `ast::match_arm`. `subject` is evaluated exactly once;
+/// later codegen binds that one value to `subject_symbol`, which is what
+/// every arm's dispatch — and any `hir_let` a plain binding or pattern
+/// alias generates in an arm's body — refers back to, instead of
+/// re-evaluating `subject`.
+struct hir_match : hir_expr {
+  ptr<hir_expr> subject;
+  symbol_id subject_symbol = k_invalid_symbol_id;
+  std::vector<hir_match_arm> arms;
+
+  hir_match(source_span s, type_id t, ptr<hir_expr> subj, symbol_id subj_sym,
+            std::vector<hir_match_arm> a)
+      : hir_expr(hir_node_kind::hir_match, s, t), subject(std::move(subj)),
+        subject_symbol(subj_sym), arms(std::move(a)) {}
+};
+
+/// `_` — matches unconditionally. Also stands in for a plain name binding
+/// (`x`) and for `pattern as name`: both reduce to "match unconditionally,
+/// then let-bind" (see `hir_match_arm`), so neither needs its own pattern
+/// kind.
+struct hir_wildcard_pattern : hir_pattern {
+  explicit hir_wildcard_pattern(source_span s)
+      : hir_pattern(hir_node_kind::hir_wildcard_pattern, s) {}
+};
+
+/// A literal value pattern, e.g. `42`, `"hello"`, `true`.
+struct hir_literal_pattern : hir_pattern {
+  token_kind lit_kind;
+  std::string value;
+
+  hir_literal_pattern(source_span s, token_kind lk, std::string v)
+      : hir_pattern(hir_node_kind::hir_literal_pattern, s), lit_kind(lk),
+        value(std::move(v)) {}
+};
+
+/// `a | b | c` — matches if any alternative matches. Lowering rejects an
+/// alternative that binds a name: a binding in one `|` branch but not the
+/// others has no sound meaning without richer exhaustiveness bookkeeping
+/// this milestone doesn't implement.
+struct hir_or_pattern : hir_pattern {
+  ptr_vec<hir_pattern> alternatives;
+
+  hir_or_pattern(source_span s, ptr_vec<hir_pattern> alts)
+      : hir_pattern(hir_node_kind::hir_or_pattern, s),
+        alternatives(std::move(alts)) {}
+};
+
 // ==========================================================================
 //  Statements
 // ==========================================================================
 
-/// `let name = expr`. Milestone 1 only lowers the simple single-name
-/// binding case — pattern aliases are explicitly deferred (Non-Goals) — so
-/// this stores a resolved `symbol_id` directly rather than a pattern tree.
+/// `let name = expr`. Lowering only handles the simple single-name binding
+/// case — destructuring `let` patterns are still deferred — so this stores
+/// a resolved `symbol_id` directly rather than a pattern tree. Also reused,
+/// synthetically, to represent a `match` arm's plain binding or pattern
+/// alias (see `hir_match_arm`), with `initializer` referencing the match's
+/// `subject_symbol` instead of a source-level expression.
 struct hir_let : hir_stmt {
   symbol_id symbol = k_invalid_symbol_id;
   std::string name; ///< Preserved for diagnostics/debugging only.

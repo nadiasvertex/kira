@@ -62,7 +62,7 @@ auto find_func(const kira::ast::file &file, std::string_view name)
     -> const kira::ast::func_decl & {
   for (const auto &item : file.items) {
     if (item != nullptr && item->kind == kira::ast::node_kind::func_decl) {
-      const auto &decl = static_cast<const kira::ast::func_decl &>(*item);
+      const auto &decl = dynamic_cast<const kira::ast::func_decl &>(*item);
       if (decl.name == name) {
         return decl;
       }
@@ -97,20 +97,20 @@ auto test_lowers_fully_annotated_function() -> void {
   const auto *stmt = function.body->stmts.front().get();
   expect(stmt->kind == hir::hir_node_kind::hir_return,
          "expected the lone statement to be a hir_return");
-  const auto &ret = static_cast<const hir::hir_return &>(*stmt);
+  const auto &ret = dynamic_cast<const hir::hir_return &>(*stmt);
   expect(ret.value != nullptr, "expected return to carry a value");
   expect(ret.value->kind == hir::hir_node_kind::hir_binary,
          "expected the returned value to be a hir_binary");
   expect(ret.value->type == int32_type,
          "expected the sum's checked type to be int32");
 
-  const auto &sum = static_cast<const hir::hir_binary &>(*ret.value);
+  const auto &sum = dynamic_cast<const hir::hir_binary &>(*ret.value);
   expect(sum.lhs->kind == hir::hir_node_kind::hir_local_ref,
          "expected the left operand to be a local reference");
   expect(sum.rhs->kind == hir::hir_node_kind::hir_local_ref,
          "expected the right operand to be a local reference");
-  const auto &lhs = static_cast<const hir::hir_local_ref &>(*sum.lhs);
-  const auto &rhs = static_cast<const hir::hir_local_ref &>(*sum.rhs);
+  const auto &lhs = dynamic_cast<const hir::hir_local_ref &>(*sum.lhs);
+  const auto &rhs = dynamic_cast<const hir::hir_local_ref &>(*sum.rhs);
   expect(lhs.name == "x", "expected the left operand to reference x");
   expect(rhs.name == "y", "expected the right operand to reference y");
   expect(lhs.symbol != rhs.symbol,
@@ -163,9 +163,9 @@ auto test_preserves_source_spans() -> void {
          "expected the function's span to match its originating declaration");
 
   const auto &ret =
-      static_cast<const hir::hir_return &>(*function.body->stmts.front());
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
   const auto &return_stmt =
-      static_cast<const kira::ast::return_stmt &>(*decl.body_stmts.front());
+      dynamic_cast<const kira::ast::return_stmt &>(*decl.body_stmts.front());
   expect(
       ret.span.start == return_stmt.span.start &&
           ret.span.end == return_stmt.span.end,
@@ -205,10 +205,10 @@ auto test_lowers_if_expression_and_module() -> void {
 
   const auto &function = *(*module_result)->functions.front();
   const auto &ret =
-      static_cast<const hir::hir_return &>(*function.body->stmts.front());
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
   expect(ret.value->kind == hir::hir_node_kind::hir_if,
          "expected the returned value to be a hir_if");
-  const auto &if_expr = static_cast<const hir::hir_if &>(*ret.value);
+  const auto &if_expr = dynamic_cast<const hir::hir_if &>(*ret.value);
   expect(if_expr.branches.size() == 1, "expected a single if branch");
   expect(if_expr.else_body != nullptr, "expected an else block to be present");
 }
@@ -225,6 +225,138 @@ auto test_rejects_generic_function() -> void {
          "expected the specific unsupported_construct error kind");
 }
 
+auto test_lowers_match_with_literal_and_wildcard_patterns() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def classify(x: int32) -> int32:\n"
+                               "    return match x:\n"
+                               "        0 => 1\n"
+                               "        1 => 2\n"
+                               "        _ => 0\n");
+  const auto &decl = find_func(*fixture.ast_file, "classify");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a literal/wildcard match to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_match,
+         "expected the returned value to be a hir_match");
+
+  const auto &match = dynamic_cast<const hir::hir_match &>(*ret.value);
+  expect(match.arms.size() == 3, "expected three match arms");
+  expect(match.arms[0].pattern->kind == hir::hir_node_kind::hir_literal_pattern,
+         "expected the first arm's pattern to be a literal pattern");
+  expect(match.arms[1].pattern->kind == hir::hir_node_kind::hir_literal_pattern,
+         "expected the second arm's pattern to be a literal pattern");
+  expect(match.arms[2].pattern->kind ==
+             hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the third arm's pattern to be the wildcard pattern");
+  const auto &first_literal =
+      dynamic_cast<const hir::hir_literal_pattern &>(*match.arms[0].pattern);
+  expect(first_literal.value == "0", "expected the first arm to match `0`");
+}
+
+auto test_lowers_plain_binding_arm_as_wildcard_plus_let() -> void {
+  // A bare name in arm position (`y => ...`) always matches — it isn't a
+  // structural pattern at all, so it desugars to a wildcard pattern plus a
+  // synthetic `hir_let` bound to the match subject (Decision 6, item 2),
+  // instead of a dedicated binding-pattern node kind.
+  auto fixture = check_fixture("module sample\n"
+                               "def echo(x: int32) -> int32:\n"
+                               "    return match x:\n"
+                               "        y => y\n");
+  const auto &decl = find_func(*fixture.ast_file, "echo");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a plain-binding match arm to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &match = dynamic_cast<const hir::hir_match &>(*ret.value);
+  expect(match.arms.size() == 1, "expected one match arm");
+  expect(match.arms[0].pattern->kind ==
+             hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the binding arm's pattern to lower to a wildcard");
+
+  expect(match.arms[0].body->stmts.size() == 2,
+         "expected the synthetic let plus the arm's yielded expression");
+  const auto *let_stmt = match.arms[0].body->stmts.front().get();
+  expect(let_stmt->kind == hir::hir_node_kind::hir_let,
+         "expected the arm body to start with the synthetic binding let");
+  const auto &let = dynamic_cast<const hir::hir_let &>(*let_stmt);
+  expect(let.name == "y", "expected the synthetic let to bind `y`");
+  expect(let.initializer->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the let's initializer to reference the match subject");
+  const auto &subject_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*let.initializer);
+  expect(subject_ref.symbol == match.subject_symbol,
+         "expected the let to reference the match's subject_symbol");
+}
+
+auto test_lowers_pattern_alias_to_synthetic_let() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def classify(x: int32) -> int32:\n"
+                               "    return match x:\n"
+                               "        (0 | 1) as small => small\n"
+                               "        _ => x\n");
+  const auto &decl = find_func(*fixture.ast_file, "classify");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a pattern-alias match arm to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &match = dynamic_cast<const hir::hir_match &>(*ret.value);
+
+  // The alias doesn't change the structural pattern: it's still the `0 | 1`
+  // dispatch, plus one extra synthetic let for `small`.
+  expect(match.arms[0].pattern->kind == hir::hir_node_kind::hir_or_pattern,
+         "expected the aliased arm's structural pattern to still be the "
+         "`0 | 1` or-pattern");
+  expect(match.arms[0].body->stmts.size() == 2,
+         "expected the synthetic alias let plus the arm's yielded expression");
+  const auto &let =
+      dynamic_cast<const hir::hir_let &>(*match.arms[0].body->stmts.front());
+  expect(let.name == "small", "expected the synthetic let to bind `small`");
+  const auto &subject_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*let.initializer);
+  expect(subject_ref.symbol == match.subject_symbol,
+         "expected the alias let to reference the match's subject_symbol");
+}
+
+auto test_rejects_binding_inside_or_pattern_alternative() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def classify(x: int32) -> int32:\n"
+                               "    return match x:\n"
+                               "        0 | y => y\n"
+                               "        _ => x\n");
+  const auto &decl = find_func(*fixture.ast_file, "classify");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(!result.has_value(),
+         "expected a binding inside a `|` alternative to be rejected");
+  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
+         "expected the specific unsupported_construct error kind");
+}
+
+auto test_rejects_constructor_pattern() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type box = { pub value: int32 }\n"
+                               "def unwrap(b: box) -> int32:\n"
+                               "    return match b:\n"
+                               "        { value: v } => v\n");
+  const auto &decl = find_func(*fixture.ast_file, "unwrap");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(!result.has_value(),
+         "expected a destructuring struct pattern to be rejected");
+  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
+         "expected the specific unsupported_construct error kind");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -236,6 +368,11 @@ auto main() -> int {
     test_lowers_compact_expression_body();
     test_lowers_if_expression_and_module();
     test_rejects_generic_function();
+    test_lowers_match_with_literal_and_wildcard_patterns();
+    test_lowers_plain_binding_arm_as_wildcard_plus_let();
+    test_lowers_pattern_alias_to_synthetic_let();
+    test_rejects_binding_inside_or_pattern_alternative();
+    test_rejects_constructor_pattern();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';
