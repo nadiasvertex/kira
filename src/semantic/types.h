@@ -156,22 +156,29 @@ private:
 /// `decl.return_type.get()`), and every `ast::pattern` node checked via
 /// `check_pattern` (keyed by the pattern node itself, recording the type of
 /// the value it matches) — all recorded in `check_function`/`check_pattern`.
-/// One pattern shape has no node to key against: a struct pattern's
-/// shorthand field (`{x}`, matching `ast::field_pattern.pattern == nullptr`)
-/// binds a name straight from a plain struct field with no dedicated
-/// sub-pattern node, so its type is recorded separately in
-/// `struct_pattern_field_types`, keyed by the owning `ast::field_pattern`
-/// (which is stable for the AST's lifetime, but is not itself an
-/// `ast::node`). A node the checker never reached (inside a file already
-/// marked failing, or simply never checked) has no entry in either map —
-/// look it up with `.find`, not `.at`. This is what a later typed-lowering
-/// pass (`spec/typed-ir-design.md`) reads instead of re-deriving types from
-/// the AST a second time.
+/// Two shorthand shapes have no node to key against, for the same reason:
+/// a struct pattern's shorthand field (`{x}`, matching
+/// `ast::field_pattern.pattern == nullptr`) binds a name straight from a
+/// plain struct field with no dedicated sub-pattern node, and a struct
+/// *literal*'s shorthand field (`{x}`, matching
+/// `ast::struct_field_init.value == nullptr`) reads an in-scope value the
+/// same way with no dedicated value node — so each is recorded separately,
+/// in `struct_pattern_field_types` (keyed by the owning `ast::field_pattern`)
+/// and `struct_literal_field_types` (keyed by the owning
+/// `ast::struct_field_init`) respectively; neither key type is itself an
+/// `ast::node`, but both are stable for the AST's lifetime. A node the
+/// checker never reached (inside a file already marked failing, or simply
+/// never checked) has no entry in any of these maps — look it up with
+/// `.find`, not `.at`. This is what a later typed-lowering pass
+/// (`spec/typed-ir-design.md`) reads instead of re-deriving types from the
+/// AST a second time.
 struct checked_types {
   type_table types;
   std::unordered_map<const ast::node *, type_id> node_types;
   std::unordered_map<const ast::field_pattern *, type_id>
       struct_pattern_field_types;
+  std::unordered_map<const ast::struct_field_init *, type_id>
+      struct_literal_field_types;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

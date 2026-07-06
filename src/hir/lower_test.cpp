@@ -923,6 +923,123 @@ auto test_rejects_for_loop() -> void {
          "expected the specific unsupported_construct error kind");
 }
 
+auto test_lowers_tuple_literal() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def make_pair(a: int32, b: int32) -> "
+                               "(int32, int32):\n"
+                               "    return (a, b)\n");
+  const auto &decl = find_func(*fixture.ast_file, "make_pair");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a tuple literal to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_tuple,
+         "expected the returned value to be a hir_tuple");
+  const auto &tuple = dynamic_cast<const hir::hir_tuple &>(*ret.value);
+  expect(tuple.elements.size() == 2, "expected two tuple elements");
+  expect(tuple.elements[0]->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the first element to be a local reference");
+}
+
+auto test_lowers_array_literal() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def make_array(a: int32, b: int32, "
+                               "c: int32) -> array[int32, 3]:\n"
+                               "    return [a, b, c]\n");
+  const auto &decl = find_func(*fixture.ast_file, "make_array");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected an array literal to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_array_init,
+         "expected the returned value to be a hir_array_init");
+  const auto &array = dynamic_cast<const hir::hir_array_init &>(*ret.value);
+  expect(array.elements.size() == 3, "expected three array elements");
+  expect(array.fill_value == nullptr,
+         "expected the explicit-list form to have no fill value");
+}
+
+auto test_lowers_array_fill_literal() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def make_filled(v: int32) -> array[int32, 3]:\n"
+                               "    return [v; 3]\n");
+  const auto &decl = find_func(*fixture.ast_file, "make_filled");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected an array fill literal to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &array = dynamic_cast<const hir::hir_array_init &>(*ret.value);
+  expect(array.elements.empty(),
+         "expected the fill form to have no explicit element list");
+  expect(array.fill_value != nullptr, "expected a fill value");
+  expect(array.fill_value->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the fill value to be a local reference to `v`");
+  expect(array.fill_count != nullptr, "expected a fill count");
+  expect(array.fill_count->kind == hir::hir_node_kind::hir_literal,
+         "expected the fill count to be a literal");
+}
+
+auto test_lowers_struct_literal_explicit_field() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type container = { pub value: int32 }\n"
+                               "def make_container(v: int32) -> container:\n"
+                               "    return { value: v }\n");
+  const auto &decl = find_func(*fixture.ast_file, "make_container");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a struct literal to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_struct_init,
+         "expected the returned value to be a hir_struct_init");
+  const auto &init = dynamic_cast<const hir::hir_struct_init &>(*ret.value);
+  expect(init.fields.size() == 1, "expected one initialized field");
+  expect(init.fields[0].name == "value",
+         "expected the field to be named `value`");
+  expect(init.fields[0].value->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the field's value to be a local reference to `v`");
+}
+
+auto test_lowers_struct_literal_shorthand_field() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type container = { pub value: int32 }\n"
+                               "def wrap(value: int32) -> container:\n"
+                               "    return { value }\n");
+  const auto &decl = find_func(*fixture.ast_file, "wrap");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a shorthand struct literal field to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &init = dynamic_cast<const hir::hir_struct_init &>(*ret.value);
+  expect(init.fields.size() == 1, "expected one initialized field");
+  expect(init.fields[0].name == "value",
+         "expected the shorthand field to be named `value`");
+  expect(init.fields[0].value->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the shorthand field to desugar to a local reference");
+  const auto &value_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*init.fields[0].value);
+  expect(value_ref.name == "value",
+         "expected the desugared reference to read the `value` parameter");
+  expect(value_ref.symbol == function.params[0].symbol,
+         "expected the desugared reference to resolve to the same symbol "
+         "as the `value` parameter");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -952,6 +1069,11 @@ auto main() -> int {
     test_lowers_while_loop();
     test_rejects_while_let();
     test_rejects_for_loop();
+    test_lowers_tuple_literal();
+    test_lowers_array_literal();
+    test_lowers_array_fill_literal();
+    test_lowers_struct_literal_explicit_field();
+    test_lowers_struct_literal_shorthand_field();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();
     test_lowers_struct_pattern_let_destructuring();

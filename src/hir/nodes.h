@@ -40,7 +40,10 @@ using semantic::type_id;
 //  unsupported — `for` needs an iterator protocol this project hasn't
 //  decided on yet (see spec/typed-ir-design.md's open questions), and
 //  `while let` needs repeated structural dispatch (re-testing a pattern
-//  every iteration) that hasn't been designed for loops.
+//  every iteration) that hasn't been designed for loops. `hir_tuple` and
+//  `hir_struct_init` (construction, not the pattern kinds of similar name)
+//  got node structs in the literal-construction extension, alongside the
+//  new `hir_array_init`; `cast` and `lambda` still have none.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -53,6 +56,7 @@ enum class hir_node_kind : uint8_t {
   hir_index,
   hir_tuple,
   hir_struct_init,
+  hir_array_init,
   hir_cast,
   hir_block,
   hir_if,
@@ -231,6 +235,56 @@ struct hir_index : hir_expr {
   hir_index(source_span s, type_id t, ptr<hir_expr> obj, ptr<hir_expr> idx)
       : hir_expr(hir_node_kind::hir_index, s, t), object(std::move(obj)),
         index(std::move(idx)) {}
+};
+
+/// Tuple literal `(a, b, c)`.
+struct hir_tuple : hir_expr {
+  ptr_vec<hir_expr> elements;
+
+  hir_tuple(source_span s, type_id t, ptr_vec<hir_expr> elems)
+      : hir_expr(hir_node_kind::hir_tuple, s, t), elements(std::move(elems)) {}
+};
+
+/// Array/list/slice literal — either the explicit-list form `[a, b, c]`
+/// (`elements` populated, `fill_value`/`fill_count` null) or the fill form
+/// `[val; count]` (`fill_value`/`fill_count` populated, `elements` empty),
+/// mirroring `ast::array_expr`'s two-forms-in-one-node shape. `fill_count`
+/// is null when the count itself was omitted or isn't a literal codegen
+/// can read directly; the checker still resolved a length for the overall
+/// literal's type in that case (see `infer_array`), so this only affects
+/// how codegen reconstructs the repeat count, not what `type` says the
+/// literal is.
+struct hir_array_init : hir_expr {
+  ptr_vec<hir_expr> elements;
+  ptr<hir_expr> fill_value;
+  ptr<hir_expr> fill_count;
+
+  hir_array_init(source_span s, type_id t, ptr_vec<hir_expr> elems,
+                 ptr<hir_expr> fill_val, ptr<hir_expr> fill_cnt)
+      : hir_expr(hir_node_kind::hir_array_init, s, t),
+        elements(std::move(elems)), fill_value(std::move(fill_val)),
+        fill_count(std::move(fill_cnt)) {}
+};
+
+/// One field initializer inside a `hir_struct_init`.
+struct hir_struct_init_field {
+  std::string name;
+  ptr<hir_expr> value;
+};
+
+/// Struct literal `{a: 1, b: 2}`. The explicit type head some surface
+/// literals carry (`Point {...}`) isn't kept here — once the checker has
+/// resolved which struct type this constructs, that's exactly this node's
+/// own `type`, so the syntax that got it there has nothing left to add.
+/// Shorthand fields (`{x}`) are already expanded to `{x: x}` by lowering —
+/// see `struct_literal_field_types` — so every field here always has a
+/// `value`.
+struct hir_struct_init : hir_expr {
+  std::vector<hir_struct_init_field> fields;
+
+  hir_struct_init(source_span s, type_id t,
+                  std::vector<hir_struct_init_field> f)
+      : hir_expr(hir_node_kind::hir_struct_init, s, t), fields(std::move(f)) {}
 };
 
 /// Static positional projection `object.index`. There's no surface tuple-

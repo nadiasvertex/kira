@@ -133,6 +133,12 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_index(const ast::index_expr &index)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_tuple(const ast::tuple_expr &tuple)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_array(const ast::array_expr &array)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_struct(const ast::struct_expr &literal)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
 
   // ------------------------------------------------------------------
   //  Statements, blocks, and if (shared between statement and expression
@@ -264,6 +270,12 @@ auto lowerer::lower_expr(const ast::expr &expr)
     }
     return ok_expr(std::move(*lowered));
   }
+  case ast::node_kind::tuple_expr:
+    return lower_tuple(dynamic_cast<const ast::tuple_expr &>(expr));
+  case ast::node_kind::array_expr:
+    return lower_array(dynamic_cast<const ast::array_expr &>(expr));
+  case ast::node_kind::struct_expr:
+    return lower_struct(dynamic_cast<const ast::struct_expr &>(expr));
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
                 std::format("expression kind {} is not lowered by the first "
@@ -412,6 +424,109 @@ auto lowerer::lower_index(const ast::index_expr &index)
   }
   return ok_expr(
       make<hir_index>(index.span, *type, std::move(*object), std::move(*idx)));
+}
+
+auto lowerer::lower_tuple(const ast::tuple_expr &tuple)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto type = checked_type_of(tuple);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  auto elements = ptr_vec<hir_expr>{};
+  elements.reserve(tuple.elements.size());
+  for (const auto &element_ast : tuple.elements) {
+    if (element_ast == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, tuple.span,
+                  "tuple literal has a missing element");
+    }
+    auto lowered = lower_expr(*element_ast);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    elements.push_back(std::move(*lowered));
+  }
+  return ok_expr(make<hir_tuple>(tuple.span, *type, std::move(elements)));
+}
+
+auto lowerer::lower_array(const ast::array_expr &array)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto type = checked_type_of(array);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  if (array.fill_value != nullptr) {
+    auto fill_value = lower_expr(*array.fill_value);
+    if (!fill_value.has_value()) {
+      return std::unexpected(fill_value.error());
+    }
+    auto fill_count = ptr<hir_expr>{};
+    if (array.fill_count != nullptr) {
+      auto lowered_count = lower_expr(*array.fill_count);
+      if (!lowered_count.has_value()) {
+        return std::unexpected(lowered_count.error());
+      }
+      fill_count = std::move(*lowered_count);
+    }
+    return ok_expr(make<hir_array_init>(array.span, *type, ptr_vec<hir_expr>{},
+                                        std::move(*fill_value),
+                                        std::move(fill_count)));
+  }
+
+  auto elements = ptr_vec<hir_expr>{};
+  elements.reserve(array.elements.size());
+  for (const auto &element_ast : array.elements) {
+    if (element_ast == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, array.span,
+                  "array literal has a missing element");
+    }
+    auto lowered = lower_expr(*element_ast);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    elements.push_back(std::move(*lowered));
+  }
+  return ok_expr(make<hir_array_init>(array.span, *type, std::move(elements),
+                                      nullptr, nullptr));
+}
+
+auto lowerer::lower_struct(const ast::struct_expr &literal)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto type = checked_type_of(literal);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  auto fields = std::vector<hir_struct_init_field>{};
+  fields.reserve(literal.fields.size());
+  for (const auto &field : literal.fields) {
+    if (field.value != nullptr) {
+      auto lowered = lower_expr(*field.value);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      fields.push_back(hir_struct_init_field{.name = field.name,
+                                             .value = std::move(*lowered)});
+      continue;
+    }
+    // Shorthand `{x}` reads the in-scope value `x` directly — desugars to
+    // `{x: x}` (see hir_struct_init's doc comment), so lowering builds the
+    // implied `x` reference itself rather than recursing through
+    // lower_expr on a node that doesn't exist.
+    const auto found = checked_.struct_literal_field_types.find(&field);
+    if (found == checked_.struct_literal_field_types.end() ||
+        found->second == k_unknown_type || found->second == k_error_type) {
+      return fail(lowering_error_kind::unresolved_type, field.span,
+                  "no concrete checked type is available for this struct "
+                  "literal's shorthand field; lowering only accepts fully "
+                  "type-checked, fully-annotated code (spec/"
+                  "typed-ir-design.md Decision 1)");
+    }
+    const auto symbol = resolve_reference(field.name);
+    fields.push_back(hir_struct_init_field{
+        .name = field.name,
+        .value = ptr<hir_expr>(make<hir_local_ref>(field.span, found->second,
+                                                   symbol, field.name))});
+  }
+  return ok_expr(make<hir_struct_init>(literal.span, *type, std::move(fields)));
 }
 
 auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,

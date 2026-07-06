@@ -731,10 +731,11 @@ public:
   /// caller, once `run` has finished. Moves both out of the checker, so call
   /// this at most once, after `run` returns.
   auto take_checked_types() -> checked_types {
-    return checked_types{.types = std::move(types_),
-                         .node_types = std::move(node_types_),
-                         .struct_pattern_field_types =
-                             std::move(struct_pattern_field_types_)};
+    return checked_types{
+        .types = std::move(types_),
+        .node_types = std::move(node_types_),
+        .struct_pattern_field_types = std::move(struct_pattern_field_types_),
+        .struct_literal_field_types = std::move(struct_literal_field_types_)};
   }
 
 private:
@@ -756,6 +757,13 @@ private:
   /// against. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::field_pattern *, type_id>
       struct_pattern_field_types_;
+  /// Resolved type of every non-`error` `ast::struct_field_init` shorthand
+  /// field (`{x}`, `field.value == nullptr`) visited by
+  /// `check_struct_literal` — these read an in-scope value directly rather
+  /// than through `infer_expr`, so (like `struct_pattern_field_types_`)
+  /// they need their own map. Handed to the caller via `take_checked_types`.
+  std::unordered_map<const ast::struct_field_init *, type_id>
+      struct_literal_field_types_;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -3684,6 +3692,11 @@ private:
         found = binding->type;
         type_mismatch(field.span, field_expected, found, "for this field");
       }
+      // Recorded unconditionally (even when neither branch above ran, in
+      // which case `found` is still `k_unknown_type`) so lowering's lookup
+      // is a plain `.find` — see `struct_literal_field_types_`'s doc
+      // comment.
+      struct_literal_field_types_[&field] = found;
       inferred_by_field.emplace(field.name, found);
     }
 
