@@ -67,9 +67,11 @@ enum class hir_node_kind : uint8_t {
   hir_array_pattern,
   // statements
   hir_let,
+  hir_let_else,
   hir_assign,
   hir_expr_stmt,
   hir_return,
+  hir_while,
   // items
   hir_function,
   hir_module,
@@ -427,12 +429,14 @@ struct hir_range_pattern : hir_pattern {
 //  Statements
 // ==========================================================================
 
-/// `let name = expr`. Lowering only handles the simple single-name binding
-/// case — destructuring `let` patterns are still deferred — so this stores
-/// a resolved `symbol_id` directly rather than a pattern tree. Also reused,
-/// synthetically, to represent a `match` arm's plain binding or pattern
-/// alias (see `hir_match_arm`), with `initializer` referencing the match's
-/// `subject_symbol` instead of a source-level expression.
+/// `let name = expr`, or one binding a destructuring `let` pattern
+/// introduces — a plain `let (a, b) = pair` lowers to one `hir_let` for a
+/// synthetic subject (see `lower_pattern`'s doc comment) plus one more per
+/// name the pattern binds, each reading a projection of that subject. Also
+/// reused, synthetically, to represent a `match` arm's plain binding or
+/// pattern alias (see `hir_match_arm`), and a `let ... else`'s bindings
+/// (see `hir_let_else`), with `initializer` referencing the relevant
+/// subject symbol instead of a source-level expression in both cases.
 struct hir_let : hir_stmt {
   symbol_id symbol = k_invalid_symbol_id;
   std::string name; ///< Preserved for diagnostics/debugging only.
@@ -441,6 +445,30 @@ struct hir_let : hir_stmt {
   hir_let(source_span s, symbol_id sym, std::string n, ptr<hir_expr> init)
       : hir_stmt(hir_node_kind::hir_let, s), symbol(sym), name(std::move(n)),
         initializer(std::move(init)) {}
+};
+
+/// `let pattern = expr else: block` — a fallible destructure. `initializer`
+/// is evaluated exactly once into `subject_symbol`, then tested against
+/// `pattern`: if it matches, every `hir_let` `pattern` bound is spliced
+/// immediately after this node by lowering (exactly like an irrefutable
+/// destructuring `let`'s own bindings — see `hir_let`), so they're in scope
+/// for the rest of the enclosing block; if it doesn't match, `else_body`
+/// runs instead. `else_body` must diverge (return, break, continue, or
+/// otherwise never fall through) — there's no other way execution could
+/// reach the statements after this one with `pattern`'s bindings left
+/// uninitialized. This is a language-level requirement the checker is
+/// responsible for enforcing, not something represented or verified here.
+struct hir_let_else : hir_stmt {
+  symbol_id subject_symbol = k_invalid_symbol_id;
+  ptr<hir_expr> initializer;
+  ptr<hir_pattern> pattern;
+  ptr<hir_block> else_body;
+
+  hir_let_else(source_span s, symbol_id sym, ptr<hir_expr> init,
+               ptr<hir_pattern> pat, ptr<hir_block> else_b)
+      : hir_stmt(hir_node_kind::hir_let_else, s), subject_symbol(sym),
+        initializer(std::move(init)), pattern(std::move(pat)),
+        else_body(std::move(else_b)) {}
 };
 
 /// Expression evaluated for its side effect (or, as a block's trailing

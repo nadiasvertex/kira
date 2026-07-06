@@ -455,12 +455,6 @@ auto lowerer::lower_stmt(const ast::node &node)
   switch (node.kind) {
   case ast::node_kind::let_stmt: {
     const auto &let = dynamic_cast<const ast::let_stmt &>(node);
-    if (!let.else_body.empty()) {
-      return fail(lowering_error_kind::unsupported_construct, let.span,
-                  "`let ... else` is not lowered yet — a fallible pattern "
-                  "needs the same structural dispatch `match`/`if` already "
-                  "have, which this pass hasn't wired up for `let`");
-    }
     if (let.pattern == nullptr || let.pattern->has_error) {
       return fail(lowering_error_kind::unsupported_construct, let.span,
                   "let binding has no usable pattern");
@@ -474,10 +468,11 @@ auto lowerer::lower_stmt(const ast::node &node)
       return std::unexpected(initializer.error());
     }
 
-    // Fast path: a plain `let name = expr` binds the initializer directly —
-    // no synthetic subject temporary needed, since there's nothing to
-    // project a sub-value out of.
-    if (let.pattern->kind == ast::node_kind::binding_pattern) {
+    // Fast path: a plain `let name = expr` (no `else`) binds the
+    // initializer directly — no synthetic subject temporary needed, since
+    // there's nothing to project a sub-value out of and nothing to test.
+    if (let.else_body.empty() &&
+        let.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
           dynamic_cast<const ast::binding_pattern &>(*let.pattern);
       const auto symbol = declare_local(binding.name);
@@ -485,15 +480,12 @@ auto lowerer::lower_stmt(const ast::node &node)
           let.span, symbol, binding.name, std::move(*initializer))));
     }
 
-    // A destructuring pattern needs the initializer evaluated exactly once;
-    // bind it to a synthetic local first (mirrors `lower_match`'s
-    // `subject_symbol`), then let `lower_pattern` desugar every binding or
-    // alias in the pattern into a `hir_let` reading from that local. The
-    // pattern's *structural* shape (what `lower_pattern` returns) is
-    // discarded here — a `let` never branches on it (Decision: only
-    // irrefutable patterns reach lowering, since `let ... else` — the
-    // fallible form — is rejected above), only the bindings it accumulates
-    // in `pending` matter.
+    // Either a destructuring pattern or a `let ... else`, both of which
+    // need the initializer evaluated exactly once; bind it to a synthetic
+    // subject first (mirrors `lower_match`'s `subject_symbol`), then let
+    // `lower_pattern` desugar every binding or alias in the pattern into a
+    // `hir_let` reading from that subject — spliced in after the
+    // subject-binding node itself, below.
     auto init_type = checked_type_of(*let.initializer);
     if (!init_type.has_value()) {
       return std::unexpected(init_type.error());
@@ -514,9 +506,26 @@ auto lowerer::lower_stmt(const ast::node &node)
     }
 
     auto result = ptr_vec<hir_node>{};
-    result.push_back(ptr<hir_node>(make<hir_let>(let.span, subject_symbol,
-                                                 std::string("<let subject>"),
-                                                 std::move(*initializer))));
+    if (let.else_body.empty()) {
+      // Irrefutable: the pattern's *structural* shape (`pattern` above) is
+      // discarded here — a plain destructuring `let` never branches on it,
+      // only the bindings `lower_pattern` accumulated in `pending` matter.
+      result.push_back(ptr<hir_node>(make<hir_let>(let.span, subject_symbol,
+                                                   std::string("<let subject>"),
+                                                   std::move(*initializer))));
+    } else {
+      // Fallible: unlike an irrefutable destructuring let, the structural
+      // pattern *is* kept — `hir_let_else` needs it to know what to test
+      // the subject against before falling through to `pending`'s
+      // bindings.
+      auto else_block = lower_block(let.else_body, let.span);
+      if (!else_block.has_value()) {
+        return std::unexpected(else_block.error());
+      }
+      result.push_back(ptr<hir_node>(
+          make<hir_let_else>(let.span, subject_symbol, std::move(*initializer),
+                             std::move(*pattern), std::move(*else_block))));
+    }
     for (auto &binding : pending) {
       result.push_back(std::move(binding));
     }

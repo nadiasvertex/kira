@@ -753,6 +753,64 @@ auto test_lowers_array_pattern_let_destructuring() -> void {
   expect(index_ref.index == 1, "expected the projection to read slot 1");
 }
 
+auto test_lowers_let_else_fallible_destructuring() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def parse(v: option[int32]) -> int32:\n"
+                               "    let @some(n) = v else:\n"
+                               "        return -1\n"
+                               "    return n\n");
+  const auto &decl = find_func(*fixture.ast_file, "parse");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a let-else fallible destructure to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 3,
+         "expected the hir_let_else, the `n` let, and the final return");
+
+  expect(function.body->stmts[0]->kind == hir::hir_node_kind::hir_let_else,
+         "expected the first statement to be a hir_let_else");
+  const auto &let_else =
+      dynamic_cast<const hir::hir_let_else &>(*function.body->stmts[0]);
+  expect(let_else.initializer->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the let-else to be initialized from `v`");
+  expect(let_else.pattern->kind == hir::hir_node_kind::hir_constructor_pattern,
+         "expected the let-else's structural pattern to be a "
+         "hir_constructor_pattern (from `@some(n)`)");
+  const auto &ctor_pat =
+      dynamic_cast<const hir::hir_constructor_pattern &>(*let_else.pattern);
+  expect(ctor_pat.variant_name == "some",
+         "expected the structural pattern's variant to be `some`");
+  expect(ctor_pat.args.size() == 1 &&
+             ctor_pat.args[0]->kind == hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the bound payload arg to desugar to a wildcard, "
+         "identically to how match-arm destructuring works");
+
+  expect(let_else.else_body->stmts.size() == 1,
+         "expected the else block to hold the one `return -1` statement");
+  expect(let_else.else_body->stmts.front()->kind ==
+             hir::hir_node_kind::hir_return,
+         "expected the else block's statement to be a hir_return");
+
+  const auto &n_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[1]);
+  expect(n_let.name == "n", "expected the second statement to bind `n`");
+  expect(n_let.initializer->kind == hir::hir_node_kind::hir_variant_payload,
+         "expected `n` to be initialized from a variant-payload projection");
+  const auto &payload_ref =
+      dynamic_cast<const hir::hir_variant_payload &>(*n_let.initializer);
+  expect(payload_ref.variant_name == "some",
+         "expected the payload projection's variant to be `some`");
+  const auto &subject_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*payload_ref.object);
+  expect(subject_ref.symbol == let_else.subject_symbol,
+         "expected the payload projection to read the let-else's subject");
+
+  expect(function.body->stmts[2]->kind == hir::hir_node_kind::hir_return,
+         "expected the final statement to be `return n`");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -776,6 +834,7 @@ auto main() -> int {
     test_lowers_range_pattern();
     test_lowers_array_pattern_destructuring();
     test_lowers_array_pattern_let_destructuring();
+    test_lowers_let_else_fallible_destructuring();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();
     test_lowers_struct_pattern_let_destructuring();
