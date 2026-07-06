@@ -10,8 +10,8 @@ namespace kira::semantic {
 /// pipeline, including name resolution and type checking).
 auto validate_semantics(const std::vector<parsed_module> &inputs,
                         diagnostic_bag &diag,
-                        std::vector<bool> &file_has_errors) -> void {
-  validate_semantics(inputs, diag, file_has_errors, semantic_options{});
+                        std::vector<bool> &file_has_errors) -> checked_types {
+  return validate_semantics(inputs, diag, file_has_errors, semantic_options{});
 }
 
 /// Runs the module-graph and declaration-scope validation passes (duplicate
@@ -21,7 +21,7 @@ auto validate_semantics(const std::vector<parsed_module> &inputs,
 auto validate_semantics(const std::vector<parsed_module> &inputs,
                         diagnostic_bag &diag,
                         std::vector<bool> &file_has_errors,
-                        const semantic_options &options) -> void {
+                        const semantic_options &options) -> checked_types {
   const auto session_index = build_module_session_index(inputs);
   const auto semantic_index = build_semantic_resolution_index(inputs);
 
@@ -33,8 +33,9 @@ auto validate_semantics(const std::vector<parsed_module> &inputs,
                            file_has_errors);
 
   if (options.check_names_and_types) {
-    check_program(inputs, diag, file_has_errors);
+    return check_program(inputs, diag, file_has_errors);
   }
+  return checked_types{};
 }
 
 } // namespace kira::semantic

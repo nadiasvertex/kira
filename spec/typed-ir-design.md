@@ -5,6 +5,20 @@ open questions in `spec/llm-compiler-roadmap.md` phase 4 before any HIR
 code is written, and to scope a first milestone that is small enough to
 land and test on its own.
 
+**Precondition satisfied:** Decision 1 below assumed lowering would consume
+"a `check_program` result in which every expression's `type_id` is
+concrete" — but until now, `check_program` returned `void` and discarded
+its `type_table` and every resolved expression type the moment it
+returned. That's fixed: `check_program`/`validate_semantics` now return a
+`checked_types` (`src/semantic/types.h`) — the session's `type_table` plus
+a `std::unordered_map<const ast::node *, type_id>` recording every checked
+expression's resolved type, populated from the single `infer_expr`
+dispatch chokepoint in `src/semantic/check.cpp`. Milestone step 2
+("lowering... taking a checked `semantic_session`") should read this as
+"taking a `checked_types`" — the AST + `checked_types` pair is the actual
+input lowering has to consume; there's no separate "semantic session" type
+that also carries expression types.
+
 ## Why this document exists
 
 Phase 3 (semantic analysis) is substantially complete, but it made two

@@ -16,6 +16,7 @@
 #include "k-parser/parser.h"
 #include "src/module_metadata.pb.h"
 #include "src/semantic/analysis.h"
+#include "src/semantic/types.h"
 
 namespace kira {
 namespace {
@@ -3418,7 +3419,9 @@ auto compile_sources(const cli_config &cfg, bool use_color)
         .ast_file = input.ast_file.get(),
     });
   }
-  semantic::validate_semantics(
+  // Not yet consumed here — the interned types and per-expression type map
+  // exist for a later typed-lowering pass (spec/typed-ir-design.md) to read.
+  [[maybe_unused]] const auto checked = semantic::validate_semantics(
       semantic_inputs, session_diagnostics, file_has_errors,
       semantic::semantic_options{.check_names_and_types = !cfg.parse_only});
 

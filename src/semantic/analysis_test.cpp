@@ -8,6 +8,7 @@
 
 #include "analysis.h"
 #include "src/k-parser/parser.h"
+#include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
 
 namespace {
@@ -63,7 +64,8 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
     ast_files.push_back(std::move(ast_file));
   }
 
-  kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+  [[maybe_unused]] const auto checked =
+      kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
 
   return analyzed_session{
       .diagnostics = kira::diagnostic_renderer(sources, false).render_all(diag),

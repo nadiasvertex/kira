@@ -146,6 +146,18 @@ private:
   std::unordered_map<std::string, type_id> interned_;
 };
 
+/// The persisted result of type-checking one session: the interned
+/// `type_table` every `type_id` below indexes into, plus the resolved type
+/// of every expression node the checker actually visited. A node the
+/// checker never reached (inside a file already marked failing, or simply
+/// never checked) has no entry — look it up with `.find`, not `.at`. This
+/// is what a later typed-lowering pass (`spec/typed-ir-design.md`) reads
+/// instead of re-deriving types from the AST a second time.
+struct checked_types {
+  type_table types;
+  std::unordered_map<const ast::node *, type_id> node_types;
+};
+
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).
 [[nodiscard]] auto is_builtin_scalar_name(std::string_view name) -> bool;
 

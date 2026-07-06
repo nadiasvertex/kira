@@ -8,6 +8,8 @@
 
 #include "analysis.h"
 #include "src/k-parser/parser.h"
+#include "src/semantic/check.h"
+#include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
 
 namespace {
@@ -79,7 +81,8 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
     std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected check test fixtures to parse");
   }
-  kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+  [[maybe_unused]] const auto checked =
+      kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
 
   return analyzed_session{
       .diagnostics = kira::diagnostic_renderer(sources, false).render_all(diag),
@@ -567,6 +570,68 @@ auto test_reports_impure_contract_call() -> void {
 }
 
 // ==========================================================================
+//  Persisted checked types (checked_types / check_program)
+// ==========================================================================
+
+auto test_check_program_persists_expression_types() -> void {
+  // `check_program` used to return `void`, discarding every type it computed
+  // the moment it returned. This confirms the replacement `checked_types` —
+  // the interned `type_table` plus a node -> type_id map — actually carries
+  // a real expression's resolved type back to the caller, not just that the
+  // API compiles.
+  auto sources = kira::source_manager{};
+  auto diag = kira::diagnostic_bag{};
+  auto file_has_errors = std::vector<bool>{};
+
+  const auto file_id = sources.add_file("sample.kira",
+                                        "module sample\n"
+                                        "def add(x: int32, y: int32) -> int32:\n"
+                                        "    return x + y\n");
+  expect(file_id.has_value(), "expected fixture source to register");
+  file_has_errors.resize(static_cast<size_t>(*file_id) + 1, false);
+
+  const auto *file = sources.get(*file_id);
+  expect(file != nullptr, "expected registered fixture source");
+  auto lexer = kira::lexer(file->source(), file->id(), diag);
+  auto tokens = lexer.tokenize();
+  auto parser = kira::parser(std::move(tokens), file->id(), diag);
+  auto ast_file = parser.parse_file();
+  expect(diag.error_count() == 0, "expected fixture to parse cleanly");
+
+  const auto parsed_modules = std::vector<kira::semantic::parsed_module>{
+      kira::semantic::parsed_module{.file_id = *file_id,
+                                    .ast_file = ast_file.get()},
+  };
+  auto checked =
+      kira::semantic::check_program(parsed_modules, diag, file_has_errors);
+  expect(diag.error_count() == 0, "expected fixture to check cleanly");
+
+  const kira::ast::func_decl *add_decl = nullptr;
+  for (const auto &item : ast_file->items) {
+    if (item != nullptr && item->kind == kira::ast::node_kind::func_decl) {
+      const auto &decl = dynamic_cast<const kira::ast::func_decl &>(*item);
+      if (decl.name == "add") {
+        add_decl = &decl;
+        break;
+      }
+    }
+  }
+  expect(add_decl != nullptr, "expected to find `add`'s declaration");
+  expect(add_decl->body_stmts.size() == 1,
+         "expected `add`'s body to be a single `return` statement");
+
+  const auto &return_stmt = dynamic_cast<const kira::ast::return_stmt &>(
+      *add_decl->body_stmts.front());
+  expect(return_stmt.value != nullptr, "expected `return x + y` to have a value");
+
+  const auto it = checked.node_types.find(return_stmt.value.get());
+  expect(it != checked.node_types.end(),
+         "expected `x + y`'s resolved type to be persisted in node_types");
+  expect(it->second == checked.types.builtin("int32"),
+         "expected `x + y` to have been resolved to `int32`");
+}
+
+// ==========================================================================
 //  Local parameter-usage inference
 // ==========================================================================
 
@@ -807,6 +872,8 @@ auto main() -> int {
     test_reports_impure_contract_call();
     test_reports_associated_type_output_mismatch();
     test_reports_extend_method_arity_mismatch();
+
+    test_check_program_persists_expression_types();
 
     test_bare_literal_never_forces_a_concrete_param_type();
     test_infers_param_type_from_annotated_sibling();

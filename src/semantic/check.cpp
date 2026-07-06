@@ -713,12 +713,25 @@ public:
   /// input file in turn.
   auto run(const std::vector<parsed_module> &inputs) -> void;
 
+  /// Hands the session's interned types and per-expression type map to the
+  /// caller, once `run` has finished. Moves both out of the checker, so call
+  /// this at most once, after `run` returns.
+  auto take_checked_types() -> checked_types {
+    return checked_types{.types = std::move(types_),
+                         .node_types = std::move(node_types_)};
+  }
+
 private:
   // --- session state ----------------------------------------------------
   const program_index &index_;
   diagnostic_bag &diag_;
   std::vector<bool> &file_has_errors_;
   type_table types_;
+  /// Resolved type of every expression node visited by `infer_expr`
+  /// (recorded there — see its wrapper — plus the one direct-`resolve_ident`
+  /// bypass in `check_assignment`). Handed to the caller via
+  /// `take_checked_types`.
+  std::unordered_map<const ast::node *, type_id> node_types_;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -4007,12 +4020,26 @@ private:
   //  Expression dispatch
   // ==========================================================================
 
+  /// Records `type` as `node`'s resolved type in `node_types_` and returns
+  /// it unchanged, so a call site can wrap its result in one expression.
+  auto record_expr_type(const ast::node &node, type_id type) -> type_id {
+    node_types_[&node] = type;
+    return type;
+  }
+
   /// The central expression-typing dispatcher: infers `expr`'s type given an
   /// `expected` type (used to disambiguate literals, propagate generic
   /// arguments into a lambda, and check tail-expression compatibility),
   /// dispatching to the dedicated `infer_*`/`check_*` function for its
-  /// concrete node kind.
+  /// concrete node kind. Thin wrapper around `infer_expr_impl` that records
+  /// every visited expression's resolved type into `node_types_`, so this is
+  /// the one place that needs to — every `infer_*` helper is reached only
+  /// through here (recursively, for nested expressions too).
   auto infer_expr(const ast::expr &expr, type_id expected) -> type_id {
+    return record_expr_type(expr, infer_expr_impl(expr, expected));
+  }
+
+  auto infer_expr_impl(const ast::expr &expr, type_id expected) -> type_id {
     if (expr.has_error) {
       return k_unknown_type;
     }
@@ -4804,7 +4831,7 @@ private:
             mark_error();
           }
         } else {
-          target_type = resolve_ident(ident, k_unknown_type);
+          target_type = record_expr_type(ident, resolve_ident(ident, k_unknown_type));
         }
       } else {
         target_type = infer_expr(*stmt.target, k_unknown_type);
@@ -5974,10 +6001,11 @@ auto checker::run(const std::vector<parsed_module> &inputs) -> void {
 /// instance over every input file.
 auto check_program(const std::vector<parsed_module> &inputs,
                    diagnostic_bag &diag,
-                   std::vector<bool> &file_has_errors) -> void {
+                   std::vector<bool> &file_has_errors) -> checked_types {
   const auto index = build_program_index(inputs);
   auto session_checker = checker(index, diag, file_has_errors);
   session_checker.run(inputs);
+  return session_checker.take_checked_types();
 }
 
 } // namespace kira::semantic
