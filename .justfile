@@ -1,6 +1,7 @@
 #!/usr/bin/env just --justfile
 
 CLANG_TIDY := "/opt/homebrew/opt/llvm/bin/clang-tidy"
+CLANG_FORMAT := "/opt/homebrew/opt/llvm/bin/clang-format"
 DIST_DIR := "dist"
 
 # Build the kira binary
@@ -84,9 +85,16 @@ package:
 run:
     bazelisk run //src:kira
 
-# Generate compile_commands.json and run clang-tidy (apply fixes) using it
-format:
+# Generate compile_commands.json
+compile-commands:
     bazelisk run @wolfd_bazel_compile_commands//:generate_compile_commands -- //src:kira
+
+format: compile-commands
+    find ./src -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
+      | xargs -0 -P1 {{ CLANG_FORMAT }}
+
+lint: compile-commands
+    # Run clang-tidy
     # Auto-detect macOS SDK, then run clang-tidy with extra args.
     # clang-tidy resolves its own matching libc++ headers automatically; forcing
     # an extra -I for Homebrew LLVM's libc++ conflicts with the macOS SDK headers

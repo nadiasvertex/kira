@@ -341,11 +341,53 @@ matching how `src/hir`'s lowering was built shape-by-shape:
    deferred monomorphization to "phase 5, where it's needed anyway,"
    which this document is part of but does not fully discharge.
 
-## Explicitly deferred / open questions
+## Increment 1 status: instruction set decided and landed
 
-- Exact bytecode instruction set (stack-based vs. register-based) is not
-  decided here — that's a detail for increment 1, not an architectural
-  fork worth blocking this document on.
+The "exact bytecode instruction set... not decided here" open question
+below is now resolved and implemented in `src/bytecode/` (`opcodes.h`,
+`value.h`, `chunk.h`/`chunk.cpp`, tested in `chunk_test.cpp`): a stack
+machine (see `opcodes.h`'s top comment for why stack over register — the
+short version is simpler compilation from an expression tree, revisit
+only if benchmarking this tier against LLVM tier-up shows it matters),
+with arithmetic/comparison/bitwise opcodes parameterized by a trailing
+`numeric_kind` immediate byte rather than one opcode per scalar width —
+a deliberate rejection of a JVM-style combinatorial opcode set, justified
+directly by `CLAUDE.md`'s stated priority ("clarity... over performance or
+cleverness") combined with Decision 4 already routing genuinely hot code
+to the LLVM tier, so this tier doesn't need to win a dispatch-speed
+contest at the instruction-decode level. Two things resolved along the
+way that weren't nailed down before:
+
+- **Plain `+`/`-`/`*` are checked, not wrapping** — confirmed from
+  `spec/kira-reference.md`'s "Integer Overflow" section ("Overflow is
+  never undefined behavior... it panics"): these opcodes must panic on
+  overflow/div-by-zero for integer `numeric_kind`s, with `+%`/`+|`-style
+  wrapping/saturating variants as separate opcodes, never a code path
+  plain `op_add` falls into.
+- **`and`/`or` get short-circuit evaluation at the bytecode level even
+  though HIR doesn't mark them specially** — reading `hir::lower_binary`
+  confirmed `ast::binary_op::And`/`Or` lower to a perfectly ordinary
+  `hir_binary`, both operands unconditionally evaluated, with no
+  short-circuit representation anywhere in HIR. Rather than treating that
+  as HIR's final word, the bytecode compiler compiles them via
+  `op_jump_if_false`/`op_jump_if_true` (the same shape `if`/`while` use)
+  instead of "evaluate both, then boolean-combine" — a backend-only
+  choice, since the two are only observably different in the presence of
+  side effects, and short-circuit is what `&&`/`||` mean in essentially
+  every mainstream language.
+- **128-bit integer/float types (`int128`/`uint128`/`float128`) are
+  explicitly unsupported by this value representation** (`slot_value` is
+  one 8-byte register-width union) — `numeric_kind_of` returns `nullopt`
+  for them, meant to be surfaced as a compile error the same way
+  `hir::lowering_error_kind::unsupported_construct` already fails closed,
+  not silently miscompiled.
+
+Still pending within increment 1: the actual HIR-to-bytecode compiler
+(walking `hir_function`/`hir_block` and emitting these opcodes) hasn't
+been written yet — this pass only landed the instruction set, value
+representation, and chunk/writer format it will target.
+
+## Explicitly deferred / open questions
 - Real memory management strategy (refcounting vs. ownership-based drop
   vs. tracing GC) is blocked on Kira's ownership/borrow model, per
   `spec/llm-compiler-roadmap.md`'s existing "What Not To Assume Yet."
