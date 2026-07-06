@@ -58,13 +58,13 @@ enum class type_kind : uint8_t {
 /// `ref_kind`/`ptr_kind`/`array_kind` but the return type for `fn_kind`.
 struct type_entry {
   type_kind kind = type_kind::unknown_kind;
-  std::string name;                      ///< Builtin/user/parameter name.
-  std::string module_name;               ///< Owning module for user types.
-  const ast::type_decl *decl = nullptr;  ///< Declaration for user types.
-  std::vector<type_id> args;             ///< Element/parameter/generic args.
-  type_id result = k_unknown_type;       ///< fn result or ref/ptr/array inner.
-  bool is_mut = false;                   ///< Mutability for ref/ptr types.
-  std::optional<uint64_t> array_size;    ///< Array length when statically known.
+  std::string name;                     ///< Builtin/user/parameter name.
+  std::string module_name;              ///< Owning module for user types.
+  const ast::type_decl *decl = nullptr; ///< Declaration for user types.
+  std::vector<type_id> args;            ///< Element/parameter/generic args.
+  type_id result = k_unknown_type;      ///< fn result or ref/ptr/array inner.
+  bool is_mut = false;                  ///< Mutability for ref/ptr types.
+  std::optional<uint64_t> array_size;   ///< Array length when statically known.
 };
 
 /// Owns every `type_entry` produced while checking one session, interning
@@ -85,8 +85,8 @@ public:
   [[nodiscard]] auto tuple_of(std::vector<type_id> elements) -> type_id;
   /// Interns `array[T, n]`; `size` is `nullopt` when the length is not
   /// statically known (e.g. a non-literal size expression).
-  [[nodiscard]] auto array_of(type_id element,
-                              std::optional<uint64_t> size) -> type_id;
+  [[nodiscard]] auto array_of(type_id element, std::optional<uint64_t> size)
+      -> type_id;
   /// Interns a function type `fn(params...) -> result`.
   [[nodiscard]] auto fn_of(std::vector<type_id> params, type_id result)
       -> type_id;
@@ -148,19 +148,30 @@ private:
 
 /// The persisted result of type-checking one session: the interned
 /// `type_table` every `type_id` below indexes into, plus the resolved type
-/// of every expression node the checker actually visited. Two
-/// non-expression declaration nodes are recorded here too, since a later
-/// pass needs their types but they never pass through `infer_expr`: a
-/// function parameter's `pattern` node (keyed by `param.pattern.get()`) and
+/// of every expression node the checker actually visited. Several
+/// non-expression declaration nodes are recorded in `node_types` too, since
+/// a later pass needs their types but they never pass through `infer_expr`:
+/// a function parameter's `pattern` node (keyed by `param.pattern.get()`),
 /// a function's declared return-type node (keyed by
-/// `decl.return_type.get()`), both recorded in `check_function`. A node the
-/// checker never reached (inside a file already marked failing, or simply
-/// never checked) has no entry — look it up with `.find`, not `.at`. This
-/// is what a later typed-lowering pass (`spec/typed-ir-design.md`) reads
-/// instead of re-deriving types from the AST a second time.
+/// `decl.return_type.get()`), and every `ast::pattern` node checked via
+/// `check_pattern` (keyed by the pattern node itself, recording the type of
+/// the value it matches) — all recorded in `check_function`/`check_pattern`.
+/// One pattern shape has no node to key against: a struct pattern's
+/// shorthand field (`{x}`, matching `ast::field_pattern.pattern == nullptr`)
+/// binds a name straight from a plain struct field with no dedicated
+/// sub-pattern node, so its type is recorded separately in
+/// `struct_pattern_field_types`, keyed by the owning `ast::field_pattern`
+/// (which is stable for the AST's lifetime, but is not itself an
+/// `ast::node`). A node the checker never reached (inside a file already
+/// marked failing, or simply never checked) has no entry in either map —
+/// look it up with `.find`, not `.at`. This is what a later typed-lowering
+/// pass (`spec/typed-ir-design.md`) reads instead of re-deriving types from
+/// the AST a second time.
 struct checked_types {
   type_table types;
   std::unordered_map<const ast::node *, type_id> node_types;
+  std::unordered_map<const ast::field_pattern *, type_id>
+      struct_pattern_field_types;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).
@@ -240,11 +251,11 @@ struct extend_ref {
 /// final path segment (`use a.b.c` binds `c`), a selected/renamed item
 /// (`use a.b.{c as d}`), or a wildcard marker (`use a.b.*`).
 struct import_binding {
-  std::string local_name;         ///< Name the import introduces locally.
-  std::vector<std::string> path;  ///< Source module path of the import.
-  std::string leaf_name;          ///< Imported member name; empty for modules.
-  bool is_wildcard = false;       ///< Whether this is a `use a.b.*` wildcard.
-  source_span span;               ///< Location of the imported item/selector.
+  std::string local_name;        ///< Name the import introduces locally.
+  std::vector<std::string> path; ///< Source module path of the import.
+  std::string leaf_name;         ///< Imported member name; empty for modules.
+  bool is_wildcard = false;      ///< Whether this is a `use a.b.*` wildcard.
+  source_span span;              ///< Location of the imported item/selector.
 };
 
 /// Every declaration directly owned by one module, aggregated across every

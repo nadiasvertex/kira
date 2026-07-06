@@ -36,7 +36,8 @@ auto edit_distance(std::string_view a, std::string_view b) -> size_t {
     for (size_t j = 1; j < cols; ++j) {
       const auto substitution =
           previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
-      current[j] = std::min({previous[j] + 1, current[j - 1] + 1, substitution});
+      current[j] =
+          std::min({previous[j] + 1, current[j - 1] + 1, substitution});
     }
     std::swap(previous, current);
   }
@@ -114,7 +115,8 @@ enum class binding_origin : uint8_t {
   var_binding,     ///< `var` — mutable.
   parameter,       ///< Function or lambda parameter.
   pattern_binding, ///< Bound by a pattern (match arm, `if let`, `for`, ...).
-  synthetic,       ///< Introduced by the checker itself (e.g. a `crew`/`cancel` name).
+  synthetic,       ///< Introduced by the checker itself (e.g. a `crew`/`cancel`
+                   ///< name).
 };
 
 /// One name bound in the current lexical scope stack, with enough
@@ -122,7 +124,8 @@ enum class binding_origin : uint8_t {
 struct value_binding {
   type_id type = k_unknown_type;
   binding_origin origin = binding_origin::let_binding;
-  source_span span; ///< Where the binding was introduced, for "declared here" notes.
+  source_span
+      span; ///< Where the binding was introduced, for "declared here" notes.
 };
 
 /// A normalized function/method parameter, used by call-argument checking
@@ -141,10 +144,13 @@ struct fn_param_info {
 /// Inherent/impl methods win over trait defaults, which win over
 /// extensions — see `find_method`.
 struct method_entry {
-  const ast::func_decl *decl = nullptr;   ///< The method's declaration.
-  const module_members *owner = nullptr;  ///< Module the method should resolve types in.
-  const ast::trait_decl *from_trait = nullptr; ///< Owning trait, if this is a default method.
-  bool is_extension = false; ///< Whether this method came from an `extend` block.
+  const ast::func_decl *decl = nullptr; ///< The method's declaration.
+  const module_members *owner =
+      nullptr; ///< Module the method should resolve types in.
+  const ast::trait_decl *from_trait =
+      nullptr; ///< Owning trait, if this is a default method.
+  bool is_extension =
+      false; ///< Whether this method came from an `extend` block.
 };
 
 // ==========================================================================
@@ -202,7 +208,7 @@ public:
     }
     const auto root = find(it->second);
     return types_.entry(root).kind == type_kind::type_var_kind ? k_unknown_type
-                                                                : root;
+                                                               : root;
   }
 
   /// Seeds the function's own declared return type, if any, so `return`
@@ -276,9 +282,11 @@ private:
   /// `resolve_type`/module-context machinery this pass deliberately stays
   /// independent of; `nullopt` for anything else (generics, user types,
   /// refs, tuples, ...).
-  [[nodiscard]] auto simple_builtin_annotation(const ast::type_expr *annotation) const
+  [[nodiscard]] auto
+  simple_builtin_annotation(const ast::type_expr *annotation) const
       -> std::optional<type_id> {
-    if (annotation == nullptr || annotation->kind != ast::node_kind::named_type) {
+    if (annotation == nullptr ||
+        annotation->kind != ast::node_kind::named_type) {
       return std::nullopt;
     }
     const auto &named = dynamic_cast<const ast::named_type &>(*annotation);
@@ -297,7 +305,8 @@ private:
   }
 
   auto bind_pattern_name(const ast::pattern *pattern, type_id type) -> void {
-    if (pattern != nullptr && pattern->kind == ast::node_kind::binding_pattern) {
+    if (pattern != nullptr &&
+        pattern->kind == ast::node_kind::binding_pattern) {
       seed(dynamic_cast<const ast::binding_pattern &>(*pattern).name, type);
     }
   }
@@ -409,7 +418,8 @@ private:
         unify(arg_type, *found);
       }
     }
-    if (const auto found = simple_builtin_annotation(callee.return_type.get())) {
+    if (const auto found =
+            simple_builtin_annotation(callee.return_type.get())) {
       return *found;
     }
     return k_unknown_type;
@@ -418,8 +428,8 @@ private:
   /// Finds `field_name` in a same-module struct type's field list, or
   /// `nullptr` if `owner_` is unset, the type isn't a same-module struct, or
   /// the field name isn't declared on it.
-  [[nodiscard]] auto
-  struct_field_decl(const ast::expr *type_name, std::string_view field_name) const
+  [[nodiscard]] auto struct_field_decl(const ast::expr *type_name,
+                                       std::string_view field_name) const
       -> const ast::struct_field * {
     if (owner_ == nullptr || type_name == nullptr ||
         type_name->kind != ast::node_kind::ident_expr) {
@@ -453,8 +463,8 @@ private:
       const auto *decl_field =
           struct_field_decl(literal.type_name.get(), field.name);
       const auto found = decl_field != nullptr
-                              ? simple_builtin_annotation(decl_field->type.get())
-                              : std::nullopt;
+                             ? simple_builtin_annotation(decl_field->type.get())
+                             : std::nullopt;
       if (field.value != nullptr) {
         const auto value_type = walk_expr(*field.value);
         if (found.has_value()) {
@@ -472,7 +482,7 @@ private:
   }
 
   auto walk_if_branches(const std::vector<ast::if_branch> &branches,
-                       const std::vector<ast::ptr<ast::node>> &else_body)
+                        const std::vector<ast::ptr<ast::node>> &else_body)
       -> void {
     for (const auto &branch : branches) {
       if (branch.condition != nullptr) {
@@ -588,13 +598,15 @@ private:
     switch (node.kind) {
     case ast::node_kind::let_stmt: {
       const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
-      const auto found =
-          stmt.initializer != nullptr ? walk_expr(*stmt.initializer) : k_unknown_type;
+      const auto found = stmt.initializer != nullptr
+                             ? walk_expr(*stmt.initializer)
+                             : k_unknown_type;
       // An explicit local annotation (`let y: int32 = x`) is the same kind
       // of fact as an annotated sibling parameter: there's no other type the
       // initializer could be, so it anchors whatever unresolved usage it
       // came from.
-      if (const auto annotated = simple_builtin_annotation(stmt.type_annotation.get());
+      if (const auto annotated =
+              simple_builtin_annotation(stmt.type_annotation.get());
           annotated.has_value()) {
         unify(found, *annotated);
         bind_pattern_name(stmt.pattern.get(), *annotated);
@@ -605,9 +617,11 @@ private:
     }
     case ast::node_kind::var_stmt: {
       const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
-      const auto found =
-          stmt.initializer != nullptr ? walk_expr(*stmt.initializer) : k_unknown_type;
-      if (const auto annotated = simple_builtin_annotation(stmt.type_annotation.get());
+      const auto found = stmt.initializer != nullptr
+                             ? walk_expr(*stmt.initializer)
+                             : k_unknown_type;
+      if (const auto annotated =
+              simple_builtin_annotation(stmt.type_annotation.get());
           annotated.has_value()) {
         unify(found, *annotated);
         seed(stmt.name, *annotated);
@@ -718,7 +732,9 @@ public:
   /// this at most once, after `run` returns.
   auto take_checked_types() -> checked_types {
     return checked_types{.types = std::move(types_),
-                         .node_types = std::move(node_types_)};
+                         .node_types = std::move(node_types_),
+                         .struct_pattern_field_types =
+                             std::move(struct_pattern_field_types_)};
   }
 
 private:
@@ -732,6 +748,12 @@ private:
   /// bypass in `check_assignment`). Handed to the caller via
   /// `take_checked_types`.
   std::unordered_map<const ast::node *, type_id> node_types_;
+  /// Resolved type of every non-rest `ast::field_pattern` visited by
+  /// `check_pattern`'s `struct_pattern` case — needed for shorthand fields
+  /// (`{x}`), which have no sub-pattern node of their own to key `node_types_`
+  /// against. Handed to the caller via `take_checked_types`.
+  std::unordered_map<const ast::field_pattern *, type_id>
+      struct_pattern_field_types_;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -786,7 +808,8 @@ private:
 
   /// Emits a single-label error at `span` in the current file.
   auto error(source_span span, std::string message, std::string label) -> void {
-    auto diag = diagnostic(diagnostic_level::error, std::move(message), file_id_);
+    auto diag =
+        diagnostic(diagnostic_level::error, std::move(message), file_id_);
     diag.with_label(span, std::move(label));
     diag_.emit(std::move(diag));
     mark_error();
@@ -795,7 +818,8 @@ private:
   /// Emits a single-label error with an attached help suggestion.
   auto error_with_help(source_span span, std::string message, std::string label,
                        std::string help) -> void {
-    auto diag = diagnostic(diagnostic_level::error, std::move(message), file_id_);
+    auto diag =
+        diagnostic(diagnostic_level::error, std::move(message), file_id_);
     diag.with_label(span, std::move(label));
     diag.with_help(std::move(help));
     diag_.emit(std::move(diag));
@@ -810,11 +834,11 @@ private:
     if (types_.compatible(expected, found)) {
       return;
     }
-    auto diag = diagnostic(
-        diagnostic_level::error,
-        std::format("type mismatch: expected `{}`, found `{}`",
-                    types_.display(expected), types_.display(found)),
-        file_id_);
+    auto diag =
+        diagnostic(diagnostic_level::error,
+                   std::format("type mismatch: expected `{}`, found `{}`",
+                               types_.display(expected), types_.display(found)),
+                   file_id_);
     diag.with_label(span, std::format("expected `{}` {}",
                                       types_.display(expected), context));
     if (types_.is_numeric(expected) && types_.is_numeric(found)) {
@@ -843,16 +867,15 @@ private:
     if (name.empty() || scopes_.empty()) {
       return;
     }
-    scopes_.back().insert_or_assign(std::string(name),
-                                    value_binding{.type = type,
-                                                  .origin = origin,
-                                                  .span = span});
+    scopes_.back().insert_or_assign(
+        std::string(name),
+        value_binding{.type = type, .origin = origin, .span = span});
   }
 
   /// Looks up `name` from the innermost scope outward, returning the first
   /// (most-shadowing) match, or `nullptr` if unbound.
   auto lookup_value(std::string_view name) -> const value_binding * {
-    for (auto & scope : std::views::reverse(scopes_)) {
+    for (auto &scope : std::views::reverse(scopes_)) {
       if (const auto it = scope.find(std::string(name)); it != scope.end()) {
         return &it->second;
       }
@@ -879,8 +902,9 @@ private:
   /// Looks up an in-scope generic parameter by name, searching from the
   /// innermost scope outward.
   auto lookup_type_param(std::string_view name) -> std::optional<type_id> {
-    for (auto & type_param : std::views::reverse(type_params_)) {
-      if (const auto it = type_param.find(std::string(name)); it != type_param.end()) {
+    for (auto &type_param : std::views::reverse(type_params_)) {
+      if (const auto it = type_param.find(std::string(name));
+          it != type_param.end()) {
         return it->second;
       }
     }
@@ -895,7 +919,8 @@ private:
   /// Finds the session module that owns the longest matching prefix of
   /// `path`, used to resolve a multi-segment named-type path like
   /// `pkg.mod.Thing` to the module `pkg.mod` and member `Thing`.
-  [[nodiscard]] auto find_session_module_of_path(const std::vector<std::string> &path) const
+  [[nodiscard]] auto
+  find_session_module_of_path(const std::vector<std::string> &path) const
       -> const module_members * {
     // Longest module prefix registered in the session wins.
     const module_members *found = nullptr;
@@ -915,8 +940,8 @@ private:
   /// Whether `path`'s first segment names (or prefixes) a module declared
   /// somewhere in this session — used to tell a session-owned reference
   /// apart from a genuinely external one this checker can't see into.
-  [[nodiscard]] auto session_owns_path_root(const std::vector<std::string> &path) const
-      -> bool {
+  [[nodiscard]] auto
+  session_owns_path_root(const std::vector<std::string> &path) const -> bool {
     if (path.empty()) {
       return false;
     }
@@ -930,14 +955,16 @@ private:
 
   /// Returns the `use` bindings recorded for the file currently being
   /// checked, or `nullptr` if it has none.
-  [[nodiscard]] auto imports_for_current_file() const -> const std::vector<import_binding> * {
+  [[nodiscard]] auto imports_for_current_file() const
+      -> const std::vector<import_binding> * {
     const auto it = index_.imports.find(file_id_);
     return it != index_.imports.end() ? &it->second : nullptr;
   }
 
   /// Finds the non-wildcard import binding that introduces `name` locally
   /// in the current file.
-  [[nodiscard]] auto find_import(std::string_view name) const -> const import_binding * {
+  [[nodiscard]] auto find_import(std::string_view name) const
+      -> const import_binding * {
     const auto *imports = imports_for_current_file();
     if (imports == nullptr) {
       return nullptr;
@@ -1057,14 +1084,14 @@ private:
     }
     case ast::node_kind::ref_type: {
       const auto &ref = dynamic_cast<const ast::ref_type &>(type);
-      const auto inner = ref.inner != nullptr ? resolve_type(*ref.inner, ctx)
-                                              : k_unknown_type;
+      const auto inner =
+          ref.inner != nullptr ? resolve_type(*ref.inner, ctx) : k_unknown_type;
       return types_.ref_to(inner, ref.is_mut);
     }
     case ast::node_kind::ptr_type: {
       const auto &ptr = dynamic_cast<const ast::ptr_type &>(type);
-      const auto inner = ptr.inner != nullptr ? resolve_type(*ptr.inner, ctx)
-                                              : k_unknown_type;
+      const auto inner =
+          ptr.inner != nullptr ? resolve_type(*ptr.inner, ctx) : k_unknown_type;
       return types_.ptr_to(inner, ptr.is_mut);
     }
     case ast::node_kind::fn_type: {
@@ -1132,8 +1159,8 @@ private:
   /// current module and every in-scope generic parameter.
   auto type_name_candidates() -> std::vector<std::string> {
     auto candidates = std::vector<std::string>{
-        "bool", "int32", "int64", "float64", "str",  "char",
-        "unit", "list",  "option", "result", "usize", "byte",
+        "bool", "int32", "int64",  "float64", "str",   "char",
+        "unit", "list",  "option", "result",  "usize", "byte",
     };
     if (module_ != nullptr) {
       for (const auto &[name, decl] : module_->types) {
@@ -1411,9 +1438,10 @@ private:
   /// Builds the resolve context for a struct field or sum variant payload
   /// type: the instance's owning module, plus its generic-parameter
   /// substitution.
-  auto member_resolve_ctx(const type_entry &instance,
-                          const std::unordered_map<std::string, type_id>
-                              &bindings) -> resolve_ctx {
+  auto
+  member_resolve_ctx(const type_entry &instance,
+                     const std::unordered_map<std::string, type_id> &bindings)
+      -> resolve_ctx {
     return resolve_ctx{.module = index_.find_module(instance.module_name),
                        .param_bindings = &bindings,
                        .use_type_param_stack = false,
@@ -1450,7 +1478,8 @@ private:
           return k_unknown_type;
         }
         const auto bindings = param_bindings_for_instance(instance);
-        return resolve_type(*field.type, member_resolve_ctx(instance, bindings));
+        return resolve_type(*field.type,
+                            member_resolve_ctx(instance, bindings));
       }
     }
     return std::nullopt;
@@ -1529,11 +1558,10 @@ private:
         it != inferred_param_types_.end()) {
       return it->second;
     }
-    auto &stored =
-        inferred_param_types_
-            .emplace(&decl, std::vector<type_id>(decl.params.size(),
-                                                  k_unknown_type))
-            .first->second;
+    auto &stored = inferred_param_types_
+                       .emplace(&decl, std::vector<type_id>(decl.params.size(),
+                                                            k_unknown_type))
+                       .first->second;
 
     const auto can_infer = decl.visibility != ast::visibility::pub &&
                            decl.type_params.empty() &&
@@ -1571,7 +1599,8 @@ private:
     }
     inferrer.walk_body(decl.body_expr.get(), decl.body_stmts);
     for (size_t i = 0; i < decl.params.size(); ++i) {
-      if (decl.params[i].type_annotation == nullptr && !seeded_names[i].empty()) {
+      if (decl.params[i].type_annotation == nullptr &&
+          !seeded_names[i].empty()) {
         stored[i] = inferrer.resolved(seeded_names[i]);
       }
     }
@@ -1583,9 +1612,8 @@ private:
   /// `fn_param_info`s with their types resolved against the function's own
   /// generic parameters. `skip_self` drops a leading `self` parameter,
   /// since call-argument checking never expects the caller to pass it.
-  auto signature_params(const ast::func_decl &decl,
-                        const module_members *owner, bool skip_self)
-      -> std::vector<fn_param_info> {
+  auto signature_params(const ast::func_decl &decl, const module_members *owner,
+                        bool skip_self) -> std::vector<fn_param_info> {
     auto param_bindings = std::unordered_map<std::string, type_id>{};
     for (const auto &type_param : decl.type_params) {
       if (!type_param.name.empty()) {
@@ -1716,12 +1744,10 @@ private:
         }
       } else {
         if (seen_named) {
-          error(arg.span,
-                "positional arguments may not follow named arguments",
+          error(arg.span, "positional arguments may not follow named arguments",
                 "positional argument after a named one");
         }
-        while (next_positional < params.size() &&
-               param_used[next_positional]) {
+        while (next_positional < params.size() && param_used[next_positional]) {
           ++next_positional;
         }
         if (next_positional < params.size()) {
@@ -1792,9 +1818,9 @@ private:
                       decl.name));
     }
     const auto params = signature_params(decl, owner, skip_self);
-    check_call_args_against(call, params, decl.name,
-                            source_location{.file_id = decl_file,
-                                            .span = decl.span});
+    check_call_args_against(
+        call, params, decl.name,
+        source_location{.file_id = decl_file, .span = decl.span});
     return signature_return_type(decl, owner);
   }
 
@@ -1872,21 +1898,19 @@ private:
   auto check_prelude_variant(std::string_view name, const ast::call_expr *call,
                              source_span span, type_id expected) -> type_id {
     const auto &expected_entry = types_.entry(expected);
-    const auto expected_is =
-        [&](std::string_view generic) -> auto {
-          return expected_entry.kind == type_kind::builtin_generic_kind &&
-                 expected_entry.name == generic;
-        };
+    const auto expected_is = [&](std::string_view generic) -> auto {
+      return expected_entry.kind == type_kind::builtin_generic_kind &&
+             expected_entry.name == generic;
+    };
 
     auto payload_expected = k_unknown_type;
     if ((name == "some" && expected_is("option")) ||
         (name == "ok" && expected_is("result"))) {
-      payload_expected = expected_entry.args.empty() ? k_unknown_type
-                                                     : expected_entry.args[0];
+      payload_expected =
+          expected_entry.args.empty() ? k_unknown_type : expected_entry.args[0];
     } else if (name == "err" && expected_is("result")) {
-      payload_expected = expected_entry.args.size() > 1
-                             ? expected_entry.args[1]
-                             : k_unknown_type;
+      payload_expected = expected_entry.args.size() > 1 ? expected_entry.args[1]
+                                                        : k_unknown_type;
     }
 
     auto payload_found = k_unknown_type;
@@ -1986,12 +2010,11 @@ private:
         }
         if (!variant->payload_types.empty()) {
           error(span,
-                std::format("variant `@{}` of `{}` carries {} value{} and "
-                            "must be constructed with `@{}(...)`",
-                            name, expected_entry.name,
-                            variant->payload_types.size(),
-                            variant->payload_types.size() == 1 ? "" : "s",
-                            name),
+                std::format(
+                    "variant `@{}` of `{}` carries {} value{} and "
+                    "must be constructed with `@{}(...)`",
+                    name, expected_entry.name, variant->payload_types.size(),
+                    variant->payload_types.size() == 1 ? "" : "s", name),
                 "missing constructor values");
         }
         return strip_refs(expected);
@@ -2000,8 +2023,7 @@ private:
 
     if (const auto found = find_module_variant(name)) {
       const auto *decl = found->first;
-      const auto instance_id =
-          make_user_type(*decl, module_name_, {});
+      const auto instance_id = make_user_type(*decl, module_name_, {});
       const auto &instance = types_.entry(instance_id);
       if (call != nullptr) {
         return check_variant_construction(*call, instance, *found->second,
@@ -2035,10 +2057,9 @@ private:
         name == "array" || is_prelude_trait_name(name)) {
       return true;
     }
-    if (module_ != nullptr &&
-        (module_->types.contains(std::string(name)) ||
-         module_->traits.contains(std::string(name)) ||
-         module_->concepts.contains(std::string(name)))) {
+    if (module_ != nullptr && (module_->types.contains(std::string(name)) ||
+                               module_->traits.contains(std::string(name)) ||
+                               module_->concepts.contains(std::string(name)))) {
       return true;
     }
     return false;
@@ -2066,9 +2087,8 @@ private:
         candidates.push_back(name);
       }
     }
-    for (const auto prelude :
-         {"println", "print", "panic", "assert", "size_of", "args", "env",
-          "min", "max"}) {
+    for (const auto prelude : {"println", "print", "panic", "assert", "size_of",
+                               "args", "env", "min", "max"}) {
       candidates.emplace_back(prelude);
     }
     return candidates;
@@ -2083,7 +2103,8 @@ private:
     auto diag = diagnostic(diagnostic_level::error,
                            std::format("undefined name `{}`", name), file_id_);
     diag.with_label(span, "not found in this scope");
-    if (const auto suggestion = best_suggestion(name, value_name_candidates())) {
+    if (const auto suggestion =
+            best_suggestion(name, value_name_candidates())) {
       diag.with_help(std::format("did you mean `{}`?", *suggestion));
     } else {
       diag.with_help(std::format(
@@ -2099,11 +2120,10 @@ private:
   auto is_prelude_value_name(std::string_view name) -> bool {
     return name == "println" || name == "print" || name == "panic" ||
            name == "assert" || name == "size_of" || name == "args" ||
-           name == "env" || name == "min" || name == "max" ||
-           name == "break" || name == "continue" || name == "cancel" ||
-           name == "pool" || name == "io" || name == "cpu" ||
-           name == "channel" || name == "watch" || name == "shared" ||
-           name == "expr";
+           name == "env" || name == "min" || name == "max" || name == "break" ||
+           name == "continue" || name == "cancel" || name == "pool" ||
+           name == "io" || name == "cpu" || name == "channel" ||
+           name == "watch" || name == "shared" || name == "expr";
   }
 
   /// Resolves a value-position identifier through, in order: a variant
@@ -2185,9 +2205,9 @@ private:
     if (!reported_undefined_.insert(std::format("variant:{}", name)).second) {
       return;
     }
-    auto diag = diagnostic(
-        diagnostic_level::error,
-        std::format("unknown variant `@{}`", name), file_id_);
+    auto diag =
+        diagnostic(diagnostic_level::error,
+                   std::format("unknown variant `@{}`", name), file_id_);
     diag.with_label(span, "no sum type in scope declares this variant");
     const auto expected_entry = types_.entry(strip_refs(expected));
     if (const auto *variants = sum_variants_of(expected_entry)) {
@@ -2249,11 +2269,11 @@ private:
     if (value.has_value() && *value <= *max_value) {
       return;
     }
-    auto diag = diagnostic(
-        diagnostic_level::error,
-        std::format("integer literal `{}` does not fit in `{}`", lit.value,
-                    entry.name),
-        file_id_);
+    auto diag =
+        diagnostic(diagnostic_level::error,
+                   std::format("integer literal `{}` does not fit in `{}`",
+                               lit.value, entry.name),
+                   file_id_);
     diag.with_label(lit.span, std::format("too large for `{}`", entry.name));
     diag.with_note(
         std::format("the largest `{}` value is {}", entry.name, *max_value));
@@ -2550,10 +2570,9 @@ private:
       const auto rhs = binary.rhs != nullptr
                            ? strip_refs(infer_expr(*binary.rhs, lhs))
                            : k_unknown_type;
-      const auto element = types_.is_integer(lhs) ? lhs
-                           : types_.is_integer(rhs)
-                               ? rhs
-                               : k_unknown_type;
+      const auto element = types_.is_integer(lhs)   ? lhs
+                           : types_.is_integer(rhs) ? rhs
+                                                    : k_unknown_type;
       return types_.builtin_generic("range", {element});
     }
 
@@ -2581,9 +2600,9 @@ private:
   auto infer_unary(const ast::unary_expr &unary, type_id expected) -> type_id {
     const auto operand =
         unary.operand != nullptr
-            ? infer_expr(*unary.operand,
-                         unary.op == ast::unary_op::Neg ? expected
-                                                        : k_unknown_type)
+            ? infer_expr(*unary.operand, unary.op == ast::unary_op::Neg
+                                             ? expected
+                                             : k_unknown_type)
             : k_unknown_type;
     const auto stripped = strip_refs(operand);
 
@@ -2695,11 +2714,10 @@ private:
         param_bindings.emplace(param.name, types_.type_param(param.name));
       }
     }
-    const auto ctx =
-        resolve_ctx{.module = index_.find_module(impl.module_name),
-                    .param_bindings = &param_bindings,
-                    .use_type_param_stack = false,
-                    .quiet = true};
+    const auto ctx = resolve_ctx{.module = index_.find_module(impl.module_name),
+                                 .param_bindings = &param_bindings,
+                                 .use_type_param_stack = false,
+                                 .quiet = true};
     return resolve_type(*impl.decl->for_type, ctx);
   }
 
@@ -3078,11 +3096,10 @@ private:
         infer_call_args_loosely(call);
         return k_unknown_type;
       }
-      auto diag = diagnostic(
-          diagnostic_level::error,
-          std::format("no method `{}` on type `{}`", field.field_name,
-                      entry.name),
-          file_id_);
+      auto diag = diagnostic(diagnostic_level::error,
+                             std::format("no method `{}` on type `{}`",
+                                         field.field_name, entry.name),
+                             file_id_);
       diag.with_label(field.span, "method not found");
       if (const auto methods = available_method_names(entry);
           !methods.empty()) {
@@ -3102,7 +3119,8 @@ private:
     default: {
       // Builtin inherent methods take priority; an `extend` block fills in
       // only when the name isn't one of the hardcoded builtin methods.
-      const auto builtin_result = builtin_method_result(entry, field.field_name);
+      const auto builtin_result =
+          builtin_method_result(entry, field.field_name);
       if (types_.is_unknown(builtin_result)) {
         if (const auto *method =
                 find_extend_method_for_builtin(entry, field.field_name)) {
@@ -3202,8 +3220,7 @@ private:
         return k_unknown_type;
       }
       error_with_help(
-          call.span,
-          std::format("`{}` is not callable", name),
+          call.span, std::format("`{}` is not callable", name),
           std::format("this has type `{}`", types_.display(binding->type)),
           "Only functions, lambdas, and callable values can be called.");
       infer_call_args_loosely(call);
@@ -3383,8 +3400,7 @@ private:
         return k_unknown_type;
       }
       error_with_help(
-          span,
-          std::format("no field `{}` on sum type `{}`", name, entry.name),
+          span, std::format("no field `{}` on sum type `{}`", name, entry.name),
           "sum types have no fields",
           "Inspect a sum-type value with `match` to reach the data inside "
           "its variants.");
@@ -3488,17 +3504,16 @@ private:
 
     const auto object = strip_refs(infer_expr(*index.object, k_unknown_type));
     const auto &entry = types_.entry(object);
-    const auto key = index.index != nullptr
-                         ? strip_refs(infer_expr(*index.index,
-                                                 types_.builtin("usize")))
-                         : k_unknown_type;
+    const auto key =
+        index.index != nullptr
+            ? strip_refs(infer_expr(*index.index, types_.builtin("usize")))
+            : k_unknown_type;
     const auto key_is_range =
         types_.entry(key).kind == type_kind::builtin_generic_kind &&
         types_.entry(key).name == "range";
 
     const auto require_integer_key = [&] -> void {
-      if (!key_is_range && !types_.is_unknown(key) &&
-          !types_.is_integer(key)) {
+      if (!key_is_range && !types_.is_unknown(key) && !types_.is_integer(key)) {
         error(index.index != nullptr ? index.index->span : index.span,
               std::format("index must be an integer type, found `{}`",
                           types_.display(key)),
@@ -3509,9 +3524,8 @@ private:
     switch (entry.kind) {
     case type_kind::array_kind:
       require_integer_key();
-      return key_is_range
-                 ? types_.builtin_generic("slice", {entry.result})
-                 : entry.result;
+      return key_is_range ? types_.builtin_generic("slice", {entry.result})
+                          : entry.result;
     case type_kind::builtin_generic_kind: {
       if (entry.name == "list" || entry.name == "slice" ||
           entry.name == "slice_mut") {
@@ -3558,8 +3572,7 @@ private:
     }
     if (const auto *binding = find_import(name)) {
       if (const auto *source = import_source_module(*binding)) {
-        if (const auto it =
-                source->types.find(imported_member_name(*binding));
+        if (const auto it = source->types.find(imported_member_name(*binding));
             it != source->types.end()) {
           return std::pair{it->second.decl, source->module_name};
         }
@@ -3625,10 +3638,10 @@ private:
 
     for (const auto &field : expr.fields) {
       if (!initialized.insert(field.name).second) {
-        error(field.span,
-              std::format("field `{}` is initialized more than once",
-                          field.name),
-              "duplicate field");
+        error(
+            field.span,
+            std::format("field `{}` is initialized more than once", field.name),
+            "duplicate field");
         continue;
       }
       const ast::struct_field *declared = nullptr;
@@ -3657,9 +3670,8 @@ private:
         continue;
       }
       const auto field_expected =
-          declared->type != nullptr
-              ? resolve_type(*declared->type, member_ctx)
-              : k_unknown_type;
+          declared->type != nullptr ? resolve_type(*declared->type, member_ctx)
+                                    : k_unknown_type;
       auto found = k_unknown_type;
       if (field.value != nullptr) {
         found = infer_expr(*field.value, field_expected);
@@ -3737,8 +3749,8 @@ private:
         continue;
       }
       const auto is_last = i + 1 == items.size();
-      last = check_body_node(*items[i], is_last ? expected_tail
-                                                : k_unknown_type);
+      last =
+          check_body_node(*items[i], is_last ? expected_tail : k_unknown_type);
       if (!is_last) {
         last = types_.builtin("unit");
       }
@@ -3799,8 +3811,8 @@ private:
     }
     pop_scope();
 
-    const auto result = declared_result != k_unknown_type ? declared_result
-                                                          : body_result;
+    const auto result =
+        declared_result != k_unknown_type ? declared_result : body_result;
     return types_.fn_of(std::move(param_types), result);
   }
 
@@ -3822,8 +3834,7 @@ private:
   /// Joins branch value types, diagnosing genuinely conflicting branches.
   auto join_branch_type(type_id current, type_id found, source_span span,
                         std::string_view construct) -> type_id {
-    if (types_.is_unknown(current) ||
-        types_.entry(found).name == "never") {
+    if (types_.is_unknown(current) || types_.entry(found).name == "never") {
       return types_.is_unknown(current) ? found : current;
     }
     if (types_.is_unknown(found)) {
@@ -3860,12 +3871,12 @@ private:
       }
       const auto branch_type = check_body_nodes(branch.body, expected);
       pop_scope();
-      result = join_branch_type(result, branch_type,
-                                branch.body.empty() || branch.body.back() ==
-                                                           nullptr
-                                    ? branch.span
-                                    : branch.body.back()->span,
-                                "`if`");
+      result =
+          join_branch_type(result, branch_type,
+                           branch.body.empty() || branch.body.back() == nullptr
+                               ? branch.span
+                               : branch.body.back()->span,
+                           "`if`");
     }
     if (!expr.else_body.empty()) {
       const auto else_type = check_body_nodes(expr.else_body, expected);
@@ -3893,9 +3904,9 @@ private:
       // Multiple patterns per clause destructure tuple elements positionally.
       if (clause.patterns.size() == 1) {
         if (clause.patterns.front() != nullptr) {
-          check_pattern(dynamic_cast<const ast::pattern &>(
-                            *clause.patterns.front()),
-                        element);
+          check_pattern(
+              dynamic_cast<const ast::pattern &>(*clause.patterns.front()),
+              element);
         }
       } else {
         for (const auto &pattern : clause.patterns) {
@@ -3972,8 +3983,7 @@ private:
     const auto &entry = types_.entry(operand);
     if (entry.kind == type_kind::builtin_generic_kind && entry.name == "task") {
       if (entry.args.size() >= 2 && !types_.is_unknown(entry.args[1])) {
-        return types_.builtin_generic("result",
-                                      {entry.args[0], entry.args[1]});
+        return types_.builtin_generic("result", {entry.args[0], entry.args[1]});
       }
       return entry.args.empty() ? k_unknown_type : entry.args[0];
     }
@@ -4084,10 +4094,10 @@ private:
                     i < expected_entry.args.size()
                 ? expected_entry.args[i]
                 : k_unknown_type;
-        elements.push_back(tuple.elements[i] != nullptr
-                               ? infer_expr(*tuple.elements[i],
-                                            element_expected)
-                               : k_unknown_type);
+        elements.push_back(
+            tuple.elements[i] != nullptr
+                ? infer_expr(*tuple.elements[i], element_expected)
+                : k_unknown_type);
       }
       return types_.tuple_of(std::move(elements));
     }
@@ -4101,8 +4111,7 @@ private:
                           expected);
     case ast::node_kind::match_expr: {
       const auto &match = dynamic_cast<const ast::match_expr &>(expr);
-      return check_match(match.subject.get(), match.arms, expected,
-                         match.span);
+      return check_match(match.subject.get(), match.arms, expected, match.span);
     }
     case ast::node_kind::if_expr:
       return infer_if_expr(dynamic_cast<const ast::if_expr &>(expr), expected);
@@ -4151,8 +4160,8 @@ private:
       return check_body_nodes(on.body, expected);
     }
     case ast::node_kind::block_expr:
-      return check_body_nodes(
-          dynamic_cast<const ast::block_expr &>(expr).stmts, expected);
+      return check_body_nodes(dynamic_cast<const ast::block_expr &>(expr).stmts,
+                              expected);
     case ast::node_kind::quote_expr:
       return types_.builtin("expr");
     case ast::node_kind::splice_expr: {
@@ -4231,9 +4240,8 @@ private:
           }
         }
       }
-      return expected_is_list
-                 ? types_.builtin_generic("list", {element})
-                 : types_.array_of(element, count);
+      return expected_is_list ? types_.builtin_generic("list", {element})
+                              : types_.array_of(element, count);
     }
 
     auto element = element_expected;
@@ -4282,6 +4290,12 @@ private:
     }
     const auto stripped = strip_refs(subject);
     const auto &entry = types_.entry(stripped);
+    // Every pattern kind below matches against `stripped` — recording it
+    // uniformly here (rather than in each branch) is what lets a later
+    // lowering pass ask "what type does this pattern node match?" for any
+    // pattern, including ones nested inside tuple/constructor/struct
+    // destructuring, without re-deriving it from the AST a second time.
+    record_expr_type(pattern, stripped);
 
     switch (pattern.kind) {
     case ast::node_kind::wildcard_pattern:
@@ -4315,10 +4329,10 @@ private:
       }
       for (size_t i = 0; i < tuple.elements.size(); ++i) {
         if (tuple.elements[i] != nullptr) {
-          const auto element = entry.kind == type_kind::tuple_kind &&
-                                       i < entry.args.size()
-                                   ? entry.args[i]
-                                   : k_unknown_type;
+          const auto element =
+              entry.kind == type_kind::tuple_kind && i < entry.args.size()
+                  ? entry.args[i]
+                  : k_unknown_type;
           check_pattern(*tuple.elements[i], element);
         }
       }
@@ -4376,6 +4390,10 @@ private:
                   "unknown field in pattern");
           }
         }
+        // A shorthand field (`{x}`, field.pattern == nullptr) has no
+        // sub-pattern node to key `node_types_` against, so it's recorded
+        // here instead — see `struct_pattern_field_types_`'s doc comment.
+        struct_pattern_field_types_[&field] = field_type;
         if (field.pattern != nullptr) {
           check_pattern(*field.pattern, field_type);
         } else if (!field.name.empty()) {
@@ -4475,11 +4493,11 @@ private:
     if (entry.kind == type_kind::sum_kind) {
       const auto *variant = find_variant(entry, ctor.name);
       if (variant == nullptr) {
-        auto diag = diagnostic(
-            diagnostic_level::error,
-            std::format("unknown variant `@{}` for sum type `{}`", ctor.name,
-                        entry.name),
-            file_id_);
+        auto diag =
+            diagnostic(diagnostic_level::error,
+                       std::format("unknown variant `@{}` for sum type `{}`",
+                                   ctor.name, entry.name),
+                       file_id_);
         diag.with_label(ctor.span, "no such variant");
         if (const auto *variants = sum_variants_of(entry)) {
           auto names = std::string{};
@@ -4489,8 +4507,8 @@ private:
             }
             names += std::format("`@{}`", candidate.name);
           }
-          diag.with_note(std::format("`{}` declares the variants {}",
-                                     entry.name, names));
+          diag.with_note(
+              std::format("`{}` declares the variants {}", entry.name, names));
         }
         diag_.emit(std::move(diag));
         mark_error();
@@ -4547,10 +4565,11 @@ private:
     }
     case ast::node_kind::or_pattern: {
       const auto &alternatives = dynamic_cast<const ast::or_pattern &>(pattern);
-      return std::ranges::any_of(
-          alternatives.alternatives, [this](const auto &alternative) -> bool {
-            return alternative != nullptr && pattern_is_irrefutable(*alternative);
-          });
+      return std::ranges::any_of(alternatives.alternatives,
+                                 [this](const auto &alternative) -> bool {
+                                   return alternative != nullptr &&
+                                          pattern_is_irrefutable(*alternative);
+                                 });
     }
     default:
       return false;
@@ -4561,8 +4580,7 @@ private:
   /// variant name, an option/result kind, a boolean literal), recursing
   /// into or-pattern alternatives and group-pattern inner patterns.
   auto collect_covered_names(const ast::pattern &pattern,
-                             std::unordered_set<std::string> &covered)
-      -> void {
+                             std::unordered_set<std::string> &covered) -> void {
     switch (pattern.kind) {
     case ast::node_kind::constructor_pattern:
       covered.insert(
@@ -4624,8 +4642,7 @@ private:
       if (arm.pattern == nullptr || arm.has_error) {
         continue;
       }
-      const auto &pattern =
-          dynamic_cast<const ast::pattern &>(*arm.pattern);
+      const auto &pattern = dynamic_cast<const ast::pattern &>(*arm.pattern);
       if (arm.guard != nullptr) {
         continue; // guarded arms never guarantee coverage
       }
@@ -4677,11 +4694,11 @@ private:
     if (missing.empty()) {
       return;
     }
-    auto diag = diagnostic(
-        diagnostic_level::error,
-        std::format("non-exhaustive match on `{}`: {} not covered",
-                    types_.display(stripped), missing),
-        file_id_);
+    auto diag =
+        diagnostic(diagnostic_level::error,
+                   std::format("non-exhaustive match on `{}`: {} not covered",
+                               types_.display(stripped), missing),
+                   file_id_);
     diag.with_label(span, "missing match arms");
     diag.with_help(std::format(
         "Handle {} explicitly, or add a final `_ => ...` arm.", missing));
@@ -4725,9 +4742,8 @@ private:
     }
 
     if (!arms.empty()) {
-      check_match_exhaustiveness(subject_type,
-                                 subject != nullptr ? subject->span : span,
-                                 arms);
+      check_match_exhaustiveness(
+          subject_type, subject != nullptr ? subject->span : span, arms);
     }
     return result;
   }
@@ -4758,7 +4774,8 @@ private:
   /// root of an assignment target (e.g. `a` in `a.b[0].c = x`), so mutation
   /// through a `let`-bound root can be flagged even when the assignment
   /// itself targets a nested field.
-  auto assignment_root_ident(const ast::expr &target) -> const ast::ident_expr * {
+  auto assignment_root_ident(const ast::expr &target)
+      -> const ast::ident_expr * {
     const auto *current = &target;
     while (true) {
       switch (current->kind) {
@@ -4804,8 +4821,7 @@ private:
 
     if (stmt.target != nullptr) {
       if (stmt.target->kind == ast::node_kind::ident_expr) {
-        const auto &ident =
-            dynamic_cast<const ast::ident_expr &>(*stmt.target);
+        const auto &ident = dynamic_cast<const ast::ident_expr &>(*stmt.target);
         if (const auto *binding = lookup_value(ident.name)) {
           target_type = binding->type;
           if (binding->origin == binding_origin::let_binding ||
@@ -4817,11 +4833,11 @@ private:
                 file_id_);
             diag.with_label(ident.span, "this binding is immutable");
             diag.children.push_back(
-                diagnostic(diagnostic_level::note,
-                           std::format("`{}` is {}", ident.name,
-                                       binding_origin_description(
-                                           binding->origin)),
-                           file_id_)
+                diagnostic(
+                    diagnostic_level::note,
+                    std::format("`{}` is {}", ident.name,
+                                binding_origin_description(binding->origin)),
+                    file_id_)
                     .with_label(binding->span, "binding declared here"));
             diag.with_help(std::format(
                 "Declare it with `var {}` to allow reassignment, or shadow "
@@ -4831,7 +4847,8 @@ private:
             mark_error();
           }
         } else {
-          target_type = record_expr_type(ident, resolve_ident(ident, k_unknown_type));
+          target_type =
+              record_expr_type(ident, resolve_ident(ident, k_unknown_type));
         }
       } else {
         target_type = infer_expr(*stmt.target, k_unknown_type);
@@ -4943,8 +4960,7 @@ private:
                         "from the annotation");
         }
       }
-      bind_value(stmt.name,
-                 stmt.type_annotation != nullptr ? declared : found,
+      bind_value(stmt.name, stmt.type_annotation != nullptr ? declared : found,
                  binding_origin::var_binding, stmt.span);
       return unit;
     }
@@ -4969,12 +4985,11 @@ private:
               std::format("return type mismatch: expected `{}`, found `{}`",
                           types_.display(return_type_), types_.display(found)),
               file_id_);
-          diag.with_label(stmt.value->span,
-                          std::format("this returns `{}`",
-                                      types_.display(found)));
-          diag.with_note(std::format(
-              "the enclosing function is declared to return `{}`",
-              types_.display(return_type_)));
+          diag.with_label(stmt.value->span, std::format("this returns `{}`",
+                                                        types_.display(found)));
+          diag.with_note(
+              std::format("the enclosing function is declared to return `{}`",
+                          types_.display(return_type_)));
           diag_.emit(std::move(diag));
           mark_error();
         }
@@ -5136,10 +5151,10 @@ private:
     // the body.
     for (const auto &type_param : decl.type_params) {
       if (type_param.is_value_param && !type_param.name.empty()) {
-        const auto type = type_param.bound_or_type != nullptr
-                              ? resolve_type(*type_param.bound_or_type,
-                                             current_resolve_ctx())
-                              : k_unknown_type;
+        const auto type =
+            type_param.bound_or_type != nullptr
+                ? resolve_type(*type_param.bound_or_type, current_resolve_ctx())
+                : k_unknown_type;
         bind_value(type_param.name, type, binding_origin::parameter,
                    type_param.span);
       }
@@ -5165,8 +5180,7 @@ private:
         if (param.pattern->kind == ast::node_kind::binding_pattern) {
           const auto &binding =
               dynamic_cast<const ast::binding_pattern &>(*param.pattern);
-          bind_value(binding.name, type, binding_origin::parameter,
-                     param.span);
+          bind_value(binding.name, type, binding_origin::parameter, param.span);
         } else {
           check_pattern(*param.pattern, strip_refs(type));
         }
@@ -5209,9 +5223,8 @@ private:
     in_contract_ = false;
 
     if (decl.body_expr != nullptr) {
-      const auto found =
-          infer_expr(*decl.body_expr,
-                     return_annotated_ ? return_type_ : k_unknown_type);
+      const auto found = infer_expr(
+          *decl.body_expr, return_annotated_ ? return_type_ : k_unknown_type);
       if (return_annotated_) {
         type_mismatch(decl.body_expr->span, return_type_, found,
                       "as the function result");
@@ -5222,9 +5235,8 @@ private:
       if (return_annotated_ && !types_.is_unit(return_type_) &&
           !types_.is_unknown(return_type_) && !types_.is_unknown(tail) &&
           !types_.is_unit(tail) && !types_.compatible(return_type_, tail)) {
-        error(decl.body_stmts.back() != nullptr
-                  ? decl.body_stmts.back()->span
-                  : decl.span,
+        error(decl.body_stmts.back() != nullptr ? decl.body_stmts.back()->span
+                                                : decl.span,
               std::format("function `{}` returns `{}`, but its final "
                           "expression has type `{}`",
                           decl.name, types_.display(return_type_),
@@ -5269,8 +5281,8 @@ private:
         for (const auto &field : body.fields) {
           if (!field.name.empty() && !seen.insert(field.name).second) {
             error(field.span,
-                  std::format("duplicate field `{}` in struct `{}`",
-                              field.name, decl.name),
+                  std::format("duplicate field `{}` in struct `{}`", field.name,
+                              decl.name),
                   "field declared more than once");
           }
           if (field.type != nullptr) {
@@ -5326,9 +5338,8 @@ private:
   /// declarations or imports), then locates which module actually owns it
   /// (needed because `find_session_trait` doesn't track the owning module
   /// for an imported trait).
-  auto find_trait_anywhere(std::string_view name)
-      -> std::optional<std::pair<const ast::trait_decl *,
-                                 const module_members *>> {
+  auto find_trait_anywhere(std::string_view name) -> std::optional<
+      std::pair<const ast::trait_decl *, const module_members *>> {
     if (const auto found = find_session_trait(name)) {
       const auto *owner = module_;
       // The trait may live in another module of the session.
@@ -5373,8 +5384,7 @@ private:
       if (!trait_name.empty()) {
         if (const auto found = find_trait_anywhere(trait_name)) {
           trait_decl = found->first;
-        } else if (module_ != nullptr &&
-                   module_->types.contains(trait_name)) {
+        } else if (module_ != nullptr && module_->types.contains(trait_name)) {
           error_with_help(
               decl.trait_type->span,
               std::format("`{}` is a type, not a trait", trait_name),
@@ -5430,10 +5440,10 @@ private:
       }
       const auto &assoc =
           dynamic_cast<const ast::associated_type_def_node &>(*item);
-      const auto resolved = assoc.value.type != nullptr
-                                ? resolve_type(*assoc.value.type,
-                                              current_resolve_ctx())
-                                : k_unknown_type;
+      const auto resolved =
+          assoc.value.type != nullptr
+              ? resolve_type(*assoc.value.type, current_resolve_ctx())
+              : k_unknown_type;
       self_assoc_types_.insert_or_assign(assoc.value.name, resolved);
     }
 
@@ -5487,9 +5497,10 @@ private:
   /// `requires` obligation must already be satisfied by the target type.
   auto check_impl_members(const ast::impl_decl &impl,
                           const ast::trait_decl &trait,
-                          std::string_view trait_name,
-                          const type_entry &target) -> void {
-    auto impl_methods = std::unordered_map<std::string, const ast::func_decl *>{};
+                          std::string_view trait_name, const type_entry &target)
+      -> void {
+    auto impl_methods =
+        std::unordered_map<std::string, const ast::func_decl *>{};
     auto impl_assoc_types = std::unordered_set<std::string>{};
     for (const auto &item : impl.items) {
       if (item == nullptr || item->has_error) {
@@ -5505,7 +5516,8 @@ private:
       }
     }
 
-    auto trait_methods = std::unordered_map<std::string, const ast::func_decl *>{};
+    auto trait_methods =
+        std::unordered_map<std::string, const ast::func_decl *>{};
     auto missing_methods = std::string{};
     auto missing_assoc = std::string{};
     for (const auto &item : trait.items) {
@@ -5546,8 +5558,7 @@ private:
           std::format("implementation of trait `{}` for `{}` is missing "
                       "method{} {}",
                       trait_name, target_name,
-                      missing_methods.find(',') != std::string::npos ? "s"
-                                                                     : "",
+                      missing_methods.find(',') != std::string::npos ? "s" : "",
                       missing_methods),
           "incomplete trait implementation",
           "Every trait method without a default body must be implemented.");
@@ -5570,8 +5581,7 @@ private:
       if (it == trait_methods.end()) {
         error_with_help(
             fn->span,
-            std::format("`{}` is not a member of trait `{}`", name,
-                        trait_name),
+            std::format("`{}` is not a member of trait `{}`", name, trait_name),
             "unexpected method in trait implementation",
             std::format("Move `{}` into an inherent `impl {}:` block, or add "
                         "it to the trait.",
@@ -5650,10 +5660,10 @@ private:
       }
       const auto &assoc =
           dynamic_cast<const ast::associated_type_decl_node &>(*item);
-      const auto resolved = assoc.value.default_type != nullptr
-                                ? resolve_type(*assoc.value.default_type,
-                                              current_resolve_ctx())
-                                : k_unknown_type;
+      const auto resolved =
+          assoc.value.default_type != nullptr
+              ? resolve_type(*assoc.value.default_type, current_resolve_ctx())
+              : k_unknown_type;
       self_assoc_types_.emplace(assoc.value.name, resolved);
     }
 
@@ -5751,9 +5761,9 @@ private:
       }
       for (const auto &pattern : decl.for_patterns) {
         if (pattern != nullptr) {
-          check_pattern(*pattern,
-                        decl.for_patterns.size() == 1 ? element
-                                                      : k_unknown_type);
+          check_pattern(*pattern, decl.for_patterns.size() == 1
+                                      ? element
+                                      : k_unknown_type);
         }
       }
       if (decl.for_guard != nullptr) {
@@ -5814,8 +5824,8 @@ private:
       for (const auto &child : decl.items) {
         if (child != nullptr && !child->has_error) {
           if (const auto *expr = dynamic_cast<const ast::expr *>(child.get());
-              expr != nullptr || dynamic_cast<const ast::stmt *>(child.get()) !=
-                                     nullptr) {
+              expr != nullptr ||
+              dynamic_cast<const ast::stmt *>(child.get()) != nullptr) {
             check_body_node(*child, k_unknown_type);
           } else {
             check_item(*child, /*at_module_scope=*/true);
@@ -5864,8 +5874,8 @@ private:
         }
         const auto key =
             std::format("{}:{}", trait_name, type_key_of(target_entry));
-        const auto location = source_location{.file_id = impl.file_id,
-                                              .span = impl.decl->span};
+        const auto location =
+            source_location{.file_id = impl.file_id, .span = impl.decl->span};
         const auto [it, inserted] = impl_trait_index_.emplace(key, location);
         if (inserted) {
           continue;
@@ -5982,8 +5992,7 @@ public:
     validate_impl_coherence();
 
     for (const auto &input : inputs) {
-      if (input.ast_file == nullptr ||
-          input.ast_file->module_decl == nullptr ||
+      if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
           input.ast_file->module_decl->has_error ||
           input.ast_file->module_decl->path.empty()) {
         continue;
@@ -6011,8 +6020,8 @@ auto checker::run(const std::vector<parsed_module> &inputs) -> void {
 /// Builds the session-wide `program_index` once, then runs one `checker`
 /// instance over every input file.
 auto check_program(const std::vector<parsed_module> &inputs,
-                   diagnostic_bag &diag,
-                   std::vector<bool> &file_has_errors) -> checked_types {
+                   diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> checked_types {
   const auto index = build_program_index(inputs);
   auto session_checker = checker(index, diag, file_has_errors);
   session_checker.run(inputs);

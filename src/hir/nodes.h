@@ -20,14 +20,17 @@ using semantic::type_id;
 // ==========================================================================
 //  hir_node_kind — flat tag, same shape as ast::node_kind (see
 //  spec/typed-ir-design.md Decision 4). Kinds beyond this first lowering
-//  milestone (tuple/struct-init/cast/lambda) are listed here for the record
-//  — the milestone's Non-Goals explicitly defer them — but have no concrete
-//  node struct below yet; nothing constructs them until the step that adds
-//  their lowering. `match` and its patterns were added in the extension
-//  that lowers `match`/pattern aliases (Decision 6, items 1-2); only the
-//  structural-dispatch pattern kinds below have node structs — destructuring
-//  patterns (constructor/tuple/struct/...) still need projection
-//  expressions this milestone doesn't have.
+//  milestone (tuple literal, struct-init literal, cast, lambda) are listed
+//  here for the record — the milestone's Non-Goals explicitly defer them —
+//  but have no concrete node struct below yet; nothing constructs them
+//  until the step that adds their lowering. `match` and its patterns were
+//  added lowering `match`/pattern aliases (Decision 6, items 1-2);
+//  destructuring patterns (tuple/struct/constructor/range) and their
+//  supporting projection expressions (`hir_tuple_index`,
+//  `hir_variant_payload`) were added in the extension that tackles
+//  destructuring — `hir_array_pattern` still has no node struct: slice/rest
+//  matching (`[a, b, ..]`) needs a bounds/rest semantics this pass doesn't
+//  design yet.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -45,10 +48,16 @@ enum class hir_node_kind : uint8_t {
   hir_if,
   hir_match,
   hir_lambda,
+  hir_tuple_index, ///< Static tuple-slot projection (pattern lowering only).
+  hir_variant_payload, ///< Sum-type payload projection (pattern lowering only).
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,
   hir_or_pattern,
+  hir_tuple_pattern,
+  hir_struct_pattern,
+  hir_constructor_pattern,
+  hir_range_pattern,
   // statements
   hir_let,
   hir_assign,
@@ -209,6 +218,37 @@ struct hir_index : hir_expr {
         index(std::move(idx)) {}
 };
 
+/// Static tuple-element projection `object.index`. There's no surface tuple-
+/// index syntax to lower from — this exists purely so pattern lowering can
+/// bind a name to a tuple pattern's `index`-th slot (see `hir_match_arm`)
+/// without inventing a runtime-indexed `hir_index` for what's actually a
+/// fixed, statically-known position.
+struct hir_tuple_index : hir_expr {
+  ptr<hir_expr> object;
+  size_t index = 0;
+
+  hir_tuple_index(source_span s, type_id t, ptr<hir_expr> obj, size_t idx)
+      : hir_expr(hir_node_kind::hir_tuple_index, s, t), object(std::move(obj)),
+        index(idx) {}
+};
+
+/// Sum-type payload projection: `object`'s `index`-th payload slot for the
+/// `variant_name` variant. Well-defined only where a `hir_constructor_pattern`
+/// has already confirmed `object`'s runtime tag is `variant_name` — codegen's
+/// responsibility to place this only where that's true, the same discipline
+/// `hir_field`/`hir_tuple_index` already rely on for their own preconditions.
+/// Like `hir_tuple_index`, this only ever comes from pattern lowering.
+struct hir_variant_payload : hir_expr {
+  ptr<hir_expr> object;
+  std::string variant_name;
+  size_t index = 0;
+
+  hir_variant_payload(source_span s, type_id t, ptr<hir_expr> obj,
+                      std::string variant, size_t idx)
+      : hir_expr(hir_node_kind::hir_variant_payload, s, t),
+        object(std::move(obj)), variant_name(std::move(variant)), index(idx) {}
+};
+
 /// Indentation-delimited block. In expression position its `type` is the
 /// type of the trailing expression (or `unit` if the block ends in a
 /// non-expression statement); statement-only blocks (a function body, an
@@ -297,6 +337,67 @@ struct hir_or_pattern : hir_pattern {
   hir_or_pattern(source_span s, ptr_vec<hir_pattern> alts)
       : hir_pattern(hir_node_kind::hir_or_pattern, s),
         alternatives(std::move(alts)) {}
+};
+
+/// Structural test on a tuple's elements, e.g. `(1, y)`. Always matches
+/// structurally — the checker already validated arity — only `elements[i]`
+/// itself can fail to match.
+struct hir_tuple_pattern : hir_pattern {
+  ptr_vec<hir_pattern> elements;
+
+  hir_tuple_pattern(source_span s, ptr_vec<hir_pattern> elems)
+      : hir_pattern(hir_node_kind::hir_tuple_pattern, s),
+        elements(std::move(elems)) {}
+};
+
+/// One named field inside a `hir_struct_pattern`.
+struct hir_struct_pattern_field {
+  std::string name;
+  ptr<hir_pattern> pattern;
+};
+
+/// Struct destructuring, e.g. `{x: 1, y}`. Unlike a sum type, a struct has
+/// exactly one shape, so this always matches structurally; only its
+/// fields' own patterns can fail to match. A field the surface pattern
+/// omitted (including via a trailing `..`) simply has no entry here.
+struct hir_struct_pattern : hir_pattern {
+  std::vector<hir_struct_pattern_field> fields;
+
+  hir_struct_pattern(source_span s, std::vector<hir_struct_pattern_field> f)
+      : hir_pattern(hir_node_kind::hir_struct_pattern, s),
+        fields(std::move(f)) {}
+};
+
+/// `@variant(args...)` — matches if the subject's runtime tag is
+/// `variant_name`; `args` destructure its payload slots (empty for a unit
+/// variant, e.g. `none`). Also used to lower the `some(...)`/`ok(...)`/
+/// `err(...)` sugar forms (`ast::option_pattern`/`ast::result_pattern`),
+/// which are just single-payload constructor patterns against the
+/// prelude's option/result sum types — there's no separate HIR pattern
+/// kind for those.
+struct hir_constructor_pattern : hir_pattern {
+  std::string variant_name;
+  ptr_vec<hir_pattern> args;
+
+  hir_constructor_pattern(source_span s, std::string name,
+                          ptr_vec<hir_pattern> a)
+      : hir_pattern(hir_node_kind::hir_constructor_pattern, s),
+        variant_name(std::move(name)), args(std::move(a)) {}
+};
+
+/// `start..end` / `start..=end` — matches if the subject falls in range.
+/// Unlike the other structural patterns, its bounds are ordinary
+/// expressions (they can be arbitrary constants, not just literals), so
+/// they're lowered with `lower_expr` rather than recursed into as patterns.
+struct hir_range_pattern : hir_pattern {
+  ptr<hir_expr> start; ///< Null for an open-start range.
+  ptr<hir_expr> end;   ///< Null for an open-end range.
+  bool inclusive = false;
+
+  hir_range_pattern(source_span s, ptr<hir_expr> lo, ptr<hir_expr> hi,
+                    bool incl)
+      : hir_pattern(hir_node_kind::hir_range_pattern, s), start(std::move(lo)),
+        end(std::move(hi)), inclusive(incl) {}
 };
 
 // ==========================================================================

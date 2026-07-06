@@ -1,6 +1,7 @@
 #include "src/hir/lower.h"
 
 #include <format>
+#include <functional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -79,8 +80,9 @@ private:
   [[nodiscard]] auto mint_symbol() -> symbol_id { return next_symbol_++; }
 
   [[nodiscard]] auto resolve_reference(std::string_view name) -> symbol_id {
-    for (auto & scope : std::views::reverse(scopes_)) {
-      if (const auto found = scope.find(std::string(name)); found != scope.end()) {
+    for (auto &scope : std::views::reverse(scopes_)) {
+      if (const auto found = scope.find(std::string(name));
+          found != scope.end()) {
         return found->second;
       }
     }
@@ -153,13 +155,26 @@ private:
   // ------------------------------------------------------------------
 
   /// Lowers one surface pattern to a *structural* `hir_pattern` (wildcard,
-  /// literal, or a `|` of those). A plain binding or a `pattern as name`
-  /// alias contributes no structure of its own — instead it appends a
-  /// synthetic `hir_let name = <subject_symbol>` to `pending`, which the
-  /// caller (`lower_match`) splices onto the front of the arm's body.
+  /// literal, a `|` of those, or a tuple/struct/constructor/range
+  /// destructuring of them). A plain binding or a `pattern as name` alias
+  /// contributes no structure of its own — instead it appends a synthetic
+  /// `hir_let` to `pending`, initialized from `make_place()`, which the
+  /// caller (`lower_match`, or a recursive call for a nested destructuring
+  /// position) splices onto the front of the arm's body.
+  ///
+  /// `make_place` builds a fresh, correctly-typed expression referencing
+  /// whatever value `pattern` matches against — a `hir_local_ref` to the
+  /// match subject at the top level, or a `hir_field`/`hir_tuple_index`/
+  /// `hir_variant_payload` projection one level down for a nested
+  /// destructuring position. It's a factory rather than a single built
+  /// expression because it may be invoked more than once (once per binding
+  /// or alias at this position, plus once per recursive call into a
+  /// sub-pattern) — always safe here since every projection this pass
+  /// builds is a pure read with no side effects to duplicate.
   [[nodiscard]] auto
-  lower_pattern(const ast::node &pattern, symbol_id subject_symbol,
-                type_id subject_type, std::vector<ptr<hir_node>> &pending)
+  lower_pattern(const ast::node &pattern,
+                const std::function<ptr<hir_expr>()> &make_place,
+                std::vector<ptr<hir_node>> &pending)
       -> std::expected<ptr<hir_pattern>, lowering_error>;
   [[nodiscard]] auto lower_match(const ast::expr &subject_ast,
                                  const std::vector<ast::match_arm> &arms,
@@ -544,8 +559,8 @@ auto lowerer::lower_if(const std::vector<ast::if_branch> &branches,
                       std::move(else_block));
 }
 
-auto lowerer::lower_pattern(const ast::node &pattern, symbol_id subject_symbol,
-                            type_id subject_type,
+auto lowerer::lower_pattern(const ast::node &pattern,
+                            const std::function<ptr<hir_expr>()> &make_place,
                             std::vector<ptr<hir_node>> &pending)
     -> std::expected<ptr<hir_pattern>, lowering_error> {
   if (pattern.has_error) {
@@ -556,41 +571,47 @@ auto lowerer::lower_pattern(const ast::node &pattern, symbol_id subject_symbol,
   case ast::node_kind::wildcard_pattern:
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
   case ast::node_kind::literal_pattern: {
-    const auto &lit = dynamic_cast<const ast::literal_pattern &>(pattern);
+    const auto &lit = static_cast<const ast::literal_pattern &>(pattern);
     return ptr<hir_pattern>(
         make<hir_literal_pattern>(pattern.span, lit.lit_kind, lit.value));
   }
   case ast::node_kind::binding_pattern: {
-    const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
+    const auto &binding = static_cast<const ast::binding_pattern &>(pattern);
     const auto symbol = declare_local(binding.name);
-    pending.push_back(ptr<hir_node>(make<hir_let>(
-        pattern.span, symbol, binding.name,
-        make<hir_local_ref>(pattern.span, subject_type, subject_symbol,
-                            std::string("<match subject>")))));
+    pending.push_back(ptr<hir_node>(
+        make<hir_let>(pattern.span, symbol, binding.name, make_place())));
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
   }
   case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+    const auto &group = static_cast<const ast::group_pattern &>(pattern);
     if (group.inner == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, pattern.span,
                   "grouped pattern has no inner pattern");
     }
-    auto inner =
-        lower_pattern(*group.inner, subject_symbol, subject_type, pending);
+    auto inner = lower_pattern(*group.inner, make_place, pending);
     if (!inner.has_value()) {
       return std::unexpected(inner.error());
     }
     if (group.alias.has_value()) {
       const auto symbol = declare_local(*group.alias);
-      pending.push_back(ptr<hir_node>(make<hir_let>(
-          pattern.span, symbol, *group.alias,
-          make<hir_local_ref>(pattern.span, subject_type, subject_symbol,
-                              std::string("<match subject>")))));
+      pending.push_back(ptr<hir_node>(
+          make<hir_let>(pattern.span, symbol, *group.alias, make_place())));
     }
     return inner;
   }
+  case ast::node_kind::ref_pattern: {
+    // `&pattern` doesn't change which value is matched at the HIR level —
+    // there's no separate "place vs. reference to a place" distinction yet
+    // — so this is a transparent pass-through to the inner pattern.
+    const auto &ref = static_cast<const ast::ref_pattern &>(pattern);
+    if (ref.inner == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, pattern.span,
+                  "reference pattern has no inner pattern");
+    }
+    return lower_pattern(*ref.inner, make_place, pending);
+  }
   case ast::node_kind::or_pattern: {
-    const auto &alt = dynamic_cast<const ast::or_pattern &>(pattern);
+    const auto &alt = static_cast<const ast::or_pattern &>(pattern);
     if (alt.alternatives.empty()) {
       return fail(lowering_error_kind::unsupported_construct, pattern.span,
                   "`|` pattern has no alternatives");
@@ -603,27 +624,219 @@ auto lowerer::lower_pattern(const ast::node &pattern, symbol_id subject_symbol,
                     "`|` pattern has a missing alternative");
       }
       auto local_pending = std::vector<ptr<hir_node>>{};
-      auto lowered = lower_pattern(*alternative, subject_symbol, subject_type,
-                                   local_pending);
+      auto lowered = lower_pattern(*alternative, make_place, local_pending);
       if (!lowered.has_value()) {
         return std::unexpected(lowered.error());
       }
       if (!local_pending.empty()) {
         return fail(lowering_error_kind::unsupported_construct,
                     alternative->span,
-                    "a name bound inside one `|` alternative is not "
-                    "supported by this milestone");
+                    "a name bound (directly, or via destructuring) inside "
+                    "one `|` alternative is not supported by this milestone");
       }
       alternatives.push_back(std::move(*lowered));
     }
     return ptr<hir_pattern>(
         make<hir_or_pattern>(pattern.span, std::move(alternatives)));
   }
+  case ast::node_kind::tuple_pattern: {
+    const auto &tuple = static_cast<const ast::tuple_pattern &>(pattern);
+    auto elements = ptr_vec<hir_pattern>{};
+    elements.reserve(tuple.elements.size());
+    for (size_t i = 0; i < tuple.elements.size(); ++i) {
+      const auto &element_ast = tuple.elements[i];
+      if (element_ast == nullptr) {
+        return fail(lowering_error_kind::unsupported_construct, pattern.span,
+                    "tuple pattern has a missing element");
+      }
+      auto element_type = checked_type_of(*element_ast);
+      if (!element_type.has_value()) {
+        return std::unexpected(element_type.error());
+      }
+      const auto elem_type = *element_type;
+      const auto elem_span = element_ast->span;
+      auto element_place = [make_place, elem_type, i,
+                            elem_span]() -> ptr<hir_expr> {
+        return ptr<hir_expr>(
+            make<hir_tuple_index>(elem_span, elem_type, make_place(), i));
+      };
+      auto lowered = lower_pattern(*element_ast, element_place, pending);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      elements.push_back(std::move(*lowered));
+    }
+    return ptr<hir_pattern>(
+        make<hir_tuple_pattern>(pattern.span, std::move(elements)));
+  }
+  case ast::node_kind::struct_pattern: {
+    const auto &struct_pat = static_cast<const ast::struct_pattern &>(pattern);
+    auto fields = std::vector<hir_struct_pattern_field>{};
+    fields.reserve(struct_pat.fields.size());
+    for (const auto &field : struct_pat.fields) {
+      if (field.is_rest) {
+        continue;
+      }
+      const auto field_span = field.span;
+      const auto field_name = field.name;
+      if (field.pattern != nullptr) {
+        auto field_type = checked_type_of(*field.pattern);
+        if (!field_type.has_value()) {
+          return std::unexpected(field_type.error());
+        }
+        const auto ftype = *field_type;
+        auto field_place = [make_place, ftype, field_name,
+                            field_span]() -> ptr<hir_expr> {
+          return ptr<hir_expr>(
+              make<hir_field>(field_span, ftype, make_place(), field_name));
+        };
+        auto lowered = lower_pattern(*field.pattern, field_place, pending);
+        if (!lowered.has_value()) {
+          return std::unexpected(lowered.error());
+        }
+        fields.push_back(hir_struct_pattern_field{
+            .name = field_name, .pattern = std::move(*lowered)});
+        continue;
+      }
+      if (field_name.empty()) {
+        continue;
+      }
+      // Shorthand `{x}` has no sub-pattern node to key `node_types` against,
+      // so its type lives in the dedicated `struct_pattern_field_types` map
+      // instead (see checked_types's doc comment). Desugars exactly like a
+      // plain binding: a wildcard structural match plus a synthetic let.
+      const auto found = checked_.struct_pattern_field_types.find(&field);
+      if (found == checked_.struct_pattern_field_types.end() ||
+          found->second == k_unknown_type || found->second == k_error_type) {
+        return fail(lowering_error_kind::unresolved_type, field_span,
+                    "no concrete checked type is available for this struct "
+                    "pattern field; lowering only accepts fully "
+                    "type-checked, fully-annotated code (spec/"
+                    "typed-ir-design.md Decision 1)");
+      }
+      const auto ftype = found->second;
+      const auto symbol = declare_local(field_name);
+      pending.push_back(ptr<hir_node>(
+          make<hir_let>(field_span, symbol, field_name,
+                        ptr<hir_expr>(make<hir_field>(
+                            field_span, ftype, make_place(), field_name)))));
+      fields.push_back(hir_struct_pattern_field{
+          .name = field_name,
+          .pattern = ptr<hir_pattern>(make<hir_wildcard_pattern>(field_span))});
+    }
+    return ptr<hir_pattern>(
+        make<hir_struct_pattern>(pattern.span, std::move(fields)));
+  }
+  case ast::node_kind::constructor_pattern: {
+    const auto &ctor = static_cast<const ast::constructor_pattern &>(pattern);
+    auto args = ptr_vec<hir_pattern>{};
+    args.reserve(ctor.args.size());
+    for (size_t i = 0; i < ctor.args.size(); ++i) {
+      const auto &arg_ast = ctor.args[i];
+      if (arg_ast == nullptr) {
+        return fail(lowering_error_kind::unsupported_construct, pattern.span,
+                    "constructor pattern has a missing argument");
+      }
+      auto arg_type = checked_type_of(*arg_ast);
+      if (!arg_type.has_value()) {
+        return std::unexpected(arg_type.error());
+      }
+      const auto atype = *arg_type;
+      const auto arg_span = arg_ast->span;
+      const auto variant = ctor.name;
+      auto arg_place = [make_place, atype, variant, i,
+                        arg_span]() -> ptr<hir_expr> {
+        return ptr<hir_expr>(make<hir_variant_payload>(
+            arg_span, atype, make_place(), variant, i));
+      };
+      auto lowered = lower_pattern(*arg_ast, arg_place, pending);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      args.push_back(std::move(*lowered));
+    }
+    return ptr<hir_pattern>(make<hir_constructor_pattern>(
+        pattern.span, ctor.name, std::move(args)));
+  }
+  case ast::node_kind::option_pattern: {
+    // `some(inner)` — the only form `ast::option_pattern` represents
+    // (`none` arrives as an ordinary zero-arg `constructor_pattern`); lowers
+    // to the same `hir_constructor_pattern` shape a user sum type would.
+    const auto &option = static_cast<const ast::option_pattern &>(pattern);
+    auto args = ptr_vec<hir_pattern>{};
+    if (option.inner != nullptr) {
+      auto inner_type = checked_type_of(*option.inner);
+      if (!inner_type.has_value()) {
+        return std::unexpected(inner_type.error());
+      }
+      const auto itype = *inner_type;
+      const auto inner_span = option.inner->span;
+      auto inner_place = [make_place, itype, inner_span]() -> ptr<hir_expr> {
+        return ptr<hir_expr>(make<hir_variant_payload>(
+            inner_span, itype, make_place(), std::string("some"), size_t{0}));
+      };
+      auto lowered = lower_pattern(*option.inner, inner_place, pending);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      args.push_back(std::move(*lowered));
+    }
+    return ptr<hir_pattern>(make<hir_constructor_pattern>(
+        pattern.span, std::string("some"), std::move(args)));
+  }
+  case ast::node_kind::result_pattern: {
+    const auto &result = static_cast<const ast::result_pattern &>(pattern);
+    const auto variant = result.result_kind == ast::option_result_kind::Err
+                             ? std::string("err")
+                             : std::string("ok");
+    auto args = ptr_vec<hir_pattern>{};
+    if (result.inner != nullptr) {
+      auto inner_type = checked_type_of(*result.inner);
+      if (!inner_type.has_value()) {
+        return std::unexpected(inner_type.error());
+      }
+      const auto itype = *inner_type;
+      const auto inner_span = result.inner->span;
+      auto inner_place = [make_place, itype, variant,
+                          inner_span]() -> ptr<hir_expr> {
+        return ptr<hir_expr>(make<hir_variant_payload>(
+            inner_span, itype, make_place(), variant, size_t{0}));
+      };
+      auto lowered = lower_pattern(*result.inner, inner_place, pending);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      args.push_back(std::move(*lowered));
+    }
+    return ptr<hir_pattern>(
+        make<hir_constructor_pattern>(pattern.span, variant, std::move(args)));
+  }
+  case ast::node_kind::range_pattern: {
+    const auto &range = static_cast<const ast::range_pattern &>(pattern);
+    auto start = ptr<hir_expr>{};
+    if (range.start != nullptr) {
+      auto lowered = lower_expr(*range.start);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      start = std::move(*lowered);
+    }
+    auto end = ptr<hir_expr>{};
+    if (range.end != nullptr) {
+      auto lowered = lower_expr(*range.end);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      end = std::move(*lowered);
+    }
+    return ptr<hir_pattern>(make<hir_range_pattern>(
+        pattern.span, std::move(start), std::move(end), range.inclusive));
+  }
   default:
     return fail(lowering_error_kind::unsupported_construct, pattern.span,
-                std::format("pattern kind {} is not lowered yet — structural/"
-                            "payload destructuring needs projection "
-                            "expressions this milestone doesn't have",
+                std::format("pattern kind {} is not lowered yet — array/"
+                            "slice patterns still need bounds/rest "
+                            "semantics this pass doesn't design",
                             static_cast<int>(pattern.kind)));
   }
 }
@@ -641,6 +854,14 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
     return std::unexpected(subject.error());
   }
   const auto subject_symbol = mint_symbol();
+  const auto subj_type = *subject_type;
+  const auto subject_span = subject_ast.span;
+  const std::function<ptr<hir_expr>()> make_subject_place =
+      [subject_symbol, subj_type, subject_span]() -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_local_ref>(subject_span, subj_type,
+                                             subject_symbol,
+                                             std::string("<match subject>")));
+  };
 
   auto hir_arms = std::vector<hir_match_arm>{};
   hir_arms.reserve(arms.size());
@@ -656,8 +877,7 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
     }
     push_scope();
     auto pending = std::vector<ptr<hir_node>>{};
-    auto pattern =
-        lower_pattern(*arm.pattern, subject_symbol, *subject_type, pending);
+    auto pattern = lower_pattern(*arm.pattern, make_subject_place, pending);
     if (!pattern.has_value()) {
       pop_scope();
       return std::unexpected(pattern.error());

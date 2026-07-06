@@ -342,17 +342,223 @@ auto test_rejects_binding_inside_or_pattern_alternative() -> void {
          "expected the specific unsupported_construct error kind");
 }
 
-auto test_rejects_constructor_pattern() -> void {
+auto test_lowers_struct_pattern_field_destructuring() -> void {
   auto fixture = check_fixture("module sample\n"
-                               "type box = { pub value: int32 }\n"
-                               "def unwrap(b: box) -> int32:\n"
+                               "type container = { pub value: int32 }\n"
+                               "def unwrap(b: container) -> int32:\n"
                                "    return match b:\n"
                                "        { value: v } => v\n");
   const auto &decl = find_func(*fixture.ast_file, "unwrap");
 
   auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(),
-         "expected a destructuring struct pattern to be rejected");
+  expect(result.has_value(), "expected struct field destructuring to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      static_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &match = static_cast<const hir::hir_match &>(*ret.value);
+  expect(match.arms[0].pattern->kind == hir::hir_node_kind::hir_struct_pattern,
+         "expected the arm's pattern to be a hir_struct_pattern");
+
+  const auto &struct_pat =
+      static_cast<const hir::hir_struct_pattern &>(*match.arms[0].pattern);
+  expect(struct_pat.fields.size() == 1, "expected one destructured field");
+  expect(struct_pat.fields[0].name == "value",
+         "expected the destructured field to be `value`");
+  expect(struct_pat.fields[0].pattern->kind ==
+             hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the explicit `v` sub-pattern to desugar to a wildcard");
+
+  expect(match.arms[0].body->stmts.size() == 2,
+         "expected the synthetic let plus the arm's yielded expression");
+  const auto &let =
+      static_cast<const hir::hir_let &>(*match.arms[0].body->stmts.front());
+  expect(let.name == "v", "expected the synthetic let to bind `v`");
+  expect(let.initializer->kind == hir::hir_node_kind::hir_field,
+         "expected the let to be initialized from a field projection");
+  const auto &field_ref = static_cast<const hir::hir_field &>(*let.initializer);
+  expect(field_ref.field_name == "value",
+         "expected the field projection to read `value`");
+}
+
+auto test_lowers_struct_pattern_shorthand_field() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type container = { pub value: int32 }\n"
+                               "def unwrap(b: container) -> int32:\n"
+                               "    return match b:\n"
+                               "        { value } => value\n");
+  const auto &decl = find_func(*fixture.ast_file, "unwrap");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a shorthand struct field pattern to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      static_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &match = static_cast<const hir::hir_match &>(*ret.value);
+  const auto &struct_pat =
+      static_cast<const hir::hir_struct_pattern &>(*match.arms[0].pattern);
+  expect(struct_pat.fields[0].pattern->kind ==
+             hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the shorthand field to desugar to a wildcard");
+
+  const auto &let =
+      static_cast<const hir::hir_let &>(*match.arms[0].body->stmts.front());
+  expect(let.name == "value", "expected the synthetic let to bind `value`");
+  expect(let.initializer->kind == hir::hir_node_kind::hir_field,
+         "expected the shorthand field to still project via hir_field");
+}
+
+auto test_lowers_tuple_pattern_destructuring() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def first(pair: (int32, str)) -> int32:\n"
+                               "    return match pair:\n"
+                               "        (a, _) => a\n");
+  const auto &decl = find_func(*fixture.ast_file, "first");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected tuple pattern destructuring to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      static_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &match = static_cast<const hir::hir_match &>(*ret.value);
+  expect(match.arms[0].pattern->kind == hir::hir_node_kind::hir_tuple_pattern,
+         "expected the arm's pattern to be a hir_tuple_pattern");
+
+  const auto &tuple_pat =
+      static_cast<const hir::hir_tuple_pattern &>(*match.arms[0].pattern);
+  expect(tuple_pat.elements.size() == 2, "expected two tuple slots");
+  expect(tuple_pat.elements[0]->kind ==
+             hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the bound first slot to desugar to a wildcard");
+  expect(tuple_pat.elements[1]->kind ==
+             hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the plain `_` slot to already be a wildcard");
+
+  const auto &let =
+      static_cast<const hir::hir_let &>(*match.arms[0].body->stmts.front());
+  expect(let.name == "a", "expected the synthetic let to bind `a`");
+  expect(let.initializer->kind == hir::hir_node_kind::hir_tuple_index,
+         "expected the let to be initialized from a tuple-index projection");
+  const auto &tuple_ref =
+      static_cast<const hir::hir_tuple_index &>(*let.initializer);
+  expect(tuple_ref.index == 0, "expected the projection to read slot 0");
+}
+
+auto test_lowers_constructor_pattern_destructuring() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type shape = @circle(int32) | @square(int32)\n"
+                               "def area_hint(s: shape) -> int32:\n"
+                               "    return match s:\n"
+                               "        @circle(r) => r\n"
+                               "        @square(side) => side\n");
+  const auto &decl = find_func(*fixture.ast_file, "area_hint");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected sum-type constructor destructuring to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      static_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &match = static_cast<const hir::hir_match &>(*ret.value);
+  expect(match.arms[0].pattern->kind ==
+             hir::hir_node_kind::hir_constructor_pattern,
+         "expected the arm's pattern to be a hir_constructor_pattern");
+
+  const auto &ctor_pat =
+      static_cast<const hir::hir_constructor_pattern &>(*match.arms[0].pattern);
+  expect(ctor_pat.variant_name == "circle",
+         "expected the constructor pattern's variant to be `circle`");
+  expect(ctor_pat.args.size() == 1, "expected one destructured payload arg");
+  expect(ctor_pat.args[0]->kind == hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the bound payload arg to desugar to a wildcard");
+
+  const auto &let =
+      static_cast<const hir::hir_let &>(*match.arms[0].body->stmts.front());
+  expect(let.name == "r", "expected the synthetic let to bind `r`");
+  expect(
+      let.initializer->kind == hir::hir_node_kind::hir_variant_payload,
+      "expected the let to be initialized from a variant-payload projection");
+  const auto &payload_ref =
+      static_cast<const hir::hir_variant_payload &>(*let.initializer);
+  expect(payload_ref.variant_name == "circle",
+         "expected the payload projection's variant to be `circle`");
+  expect(payload_ref.index == 0,
+         "expected the payload projection to read slot 0");
+}
+
+auto test_lowers_option_and_result_pattern_sugar() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def unwrap_or_zero(x: option[int32]) -> int32:\n"
+                    "    return match x:\n"
+                    "        @some(v) => v\n"
+                    "        @none => 0\n");
+  const auto &decl = find_func(*fixture.ast_file, "unwrap_or_zero");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected option pattern sugar to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      static_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &match = static_cast<const hir::hir_match &>(*ret.value);
+
+  // `@some(v)` parses as a plain constructor pattern (not the dedicated
+  // `ast::option_pattern` sugar node, which is only for bare `some(...)`
+  // without `@`) — still lowers to the same hir_constructor_pattern shape.
+  const auto &some_pat =
+      static_cast<const hir::hir_constructor_pattern &>(*match.arms[0].pattern);
+  expect(some_pat.variant_name == "some",
+         "expected the first arm's variant to be `some`");
+  expect(some_pat.args.size() == 1, "expected `some` to destructure one arg");
+
+  const auto &none_pat =
+      static_cast<const hir::hir_constructor_pattern &>(*match.arms[1].pattern);
+  expect(none_pat.variant_name == "none",
+         "expected the second arm's variant to be `none`");
+  expect(none_pat.args.empty(), "expected `none` to have no payload args");
+}
+
+auto test_lowers_range_pattern() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def bucket(x: int32) -> int32:\n"
+                               "    return match x:\n"
+                               "        0..10 => 1\n"
+                               "        _ => 0\n");
+  const auto &decl = find_func(*fixture.ast_file, "bucket");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a range pattern to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      static_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &match = static_cast<const hir::hir_match &>(*ret.value);
+  expect(match.arms[0].pattern->kind == hir::hir_node_kind::hir_range_pattern,
+         "expected the first arm's pattern to be a hir_range_pattern");
+  const auto &range_pat =
+      static_cast<const hir::hir_range_pattern &>(*match.arms[0].pattern);
+  expect(range_pat.start != nullptr,
+         "expected the range to have a start bound");
+  expect(range_pat.end != nullptr, "expected the range to have an end bound");
+  expect(!range_pat.inclusive, "expected `..` to be exclusive");
+}
+
+auto test_rejects_array_pattern() -> void {
+  // Array/slice destructuring is the one pattern shape still deferred: it
+  // needs bounds/rest semantics (`[a, b, ..]`) this pass doesn't design.
+  auto fixture = check_fixture("module sample\n"
+                               "def head(xs: array[int32, 3]) -> int32:\n"
+                               "    return match xs:\n"
+                               "        [a, b, c] => a\n");
+  const auto &decl = find_func(*fixture.ast_file, "head");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(!result.has_value(), "expected an array/slice pattern to be rejected");
   expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
          "expected the specific unsupported_construct error kind");
 }
@@ -372,7 +578,13 @@ auto main() -> int {
     test_lowers_plain_binding_arm_as_wildcard_plus_let();
     test_lowers_pattern_alias_to_synthetic_let();
     test_rejects_binding_inside_or_pattern_alternative();
-    test_rejects_constructor_pattern();
+    test_lowers_struct_pattern_field_destructuring();
+    test_lowers_struct_pattern_shorthand_field();
+    test_lowers_tuple_pattern_destructuring();
+    test_lowers_constructor_pattern_destructuring();
+    test_lowers_option_and_result_pattern_sugar();
+    test_lowers_range_pattern();
+    test_rejects_array_pattern();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';
