@@ -657,8 +657,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       const auto elem_span = element_ast->span;
       auto element_place = [make_place, elem_type, i,
                             elem_span]() -> ptr<hir_expr> {
-        return ptr<hir_expr>(
-            make<hir_tuple_index>(elem_span, elem_type, make_place(), i));
+        return {
+            make<hir_tuple_index>(elem_span, elem_type, make_place(), i)};
       };
       auto lowered = lower_pattern(*element_ast, element_place, pending);
       if (!lowered.has_value()) {
@@ -687,8 +687,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         const auto ftype = *field_type;
         auto field_place = [make_place, ftype, field_name,
                             field_span]() -> ptr<hir_expr> {
-          return ptr<hir_expr>(
-              make<hir_field>(field_span, ftype, make_place(), field_name));
+          return{
+              make<hir_field>(field_span, ftype, make_place(), field_name)};
         };
         auto lowered = lower_pattern(*field.pattern, field_place, pending);
         if (!lowered.has_value()) {
@@ -746,8 +746,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       const auto variant = ctor.name;
       auto arg_place = [make_place, atype, variant, i,
                         arg_span]() -> ptr<hir_expr> {
-        return ptr<hir_expr>(make<hir_variant_payload>(
-            arg_span, atype, make_place(), variant, i));
+        return {make<hir_variant_payload>(
+            arg_span, atype, make_place(), variant, i)};
       };
       auto lowered = lower_pattern(*arg_ast, arg_place, pending);
       if (!lowered.has_value()) {
@@ -858,9 +858,9 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
   const auto subject_span = subject_ast.span;
   const std::function<ptr<hir_expr>()> make_subject_place =
       [subject_symbol, subj_type, subject_span]() -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_local_ref>(subject_span, subj_type,
+    return {make<hir_local_ref>(subject_span, subj_type,
                                              subject_symbol,
-                                             std::string("<match subject>")));
+                                             std::string("<match subject>"))};
   };
 
   auto hir_arms = std::vector<hir_match_arm>{};
