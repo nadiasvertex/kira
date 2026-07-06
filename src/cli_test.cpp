@@ -256,9 +256,9 @@ auto test_compile_sources_lowers_module_to_hir() -> void {
 }
 
 /// Verify that a module using a construct lowering doesn't support yet
-/// (here, `for` iteration over an `option`) still compiles and writes
-/// metadata normally — HIR lowering is best-effort and must never gate
-/// ordinary compilation.
+/// (here, `for` iteration over a user-defined type) still compiles and
+/// writes metadata normally — HIR lowering is best-effort and must never
+/// gate ordinary compilation.
 auto test_compile_sources_records_hir_lowering_failure_without_failing_compile()
     -> void {
   auto temp = make_temp_dir();
@@ -266,9 +266,10 @@ auto test_compile_sources_records_hir_lowering_failure_without_failing_compile()
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample.loop\n"
-                          "pub def sum_opt(o: option[int32]) -> int32:\n"
+                          "type counter = { pub value: int32 }\n"
+                          "pub def sum_counters(xs: counter) -> int32:\n"
                           "  var total = 0\n"
-                          "  for x in o:\n"
+                          "  for x in xs:\n"
                           "    total = total + x\n"
                           "  return total\n");
 

@@ -62,13 +62,19 @@ using semantic::type_id;
 //  `hir_while`), then `array`/`list`/`slice`/`slice_mut`/`str` loops,
 //  which needed one new node — `hir_container_len` — since a container's
 //  element count isn't always statically known (an `array[T, N]`'s is,
-//  and uses a plain `hir_literal` instead). Still explicitly unsupported:
-//  `option` iteration and `for` comprehensions (see that same design doc),
-//  `while let`, the concurrency forms (`async`/`await`/`par`/`race`/`crew`/
-//  `on`) and compile-time forms
-//  (`quote`/`splice`/`static`), monomorphization (phase 5), and
-//  borrow/ownership metadata — all explicit Non-Goals for
-//  this milestone in spec/typed-ir-design.md, not oversights.
+//  and uses a plain `hir_literal` instead). `option` iteration (a plain
+//  `hir_match`, no loop) and `while let` (`hir_while_let`, re-testing a
+//  pattern every iteration and falling out on the first mismatch — see
+//  its own doc comment) came after that. `for` comprehensions came last,
+//  reusing every iterable shape above (nested when a comprehension has
+//  more than one clause) plus `hir_array_init` for the fresh accumulator
+//  and one new node — `hir_list_push` — to grow it, for the same reason
+//  `hir_container_len` isn't a synthesized `.len()` call. Still explicitly
+//  unsupported: the concurrency forms (`async`/`await`/`par`/`race`/
+//  `crew`/`on`) and compile-time forms (`quote`/`splice`/`static`),
+//  monomorphization (phase 5), and borrow/ownership metadata — all
+//  explicit Non-Goals for this milestone in spec/typed-ir-design.md, not
+//  oversights.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -110,6 +116,8 @@ enum class hir_node_kind : uint8_t {
   hir_expr_stmt,
   hir_return,
   hir_while,
+  hir_while_let,
+  hir_list_push,
   // items
   hir_function,
   hir_module,
@@ -657,12 +665,8 @@ struct hir_assign : hir_stmt {
         value(std::move(v)) {}
 };
 
-/// `while condition: body`. Only the plain-condition form lowers — `while
-/// let pattern = expr: body` needs to re-test `pattern` against a freshly
-/// re-evaluated `expr` every iteration and fall out of the loop the first
-/// time it fails to match, which is a different (and currently
-/// unimplemented) shape of repeated structural dispatch than anything
-/// `hir_match`/`hir_let_else` do today.
+/// `while condition: body` — the plain-condition form. See `hir_while_let`
+/// for `while let pattern = expr: body`.
 struct hir_while : hir_stmt {
   ptr<hir_expr> condition;
   ptr<hir_block> body;
@@ -670,6 +674,48 @@ struct hir_while : hir_stmt {
   hir_while(source_span s, ptr<hir_expr> cond, ptr<hir_block> b)
       : hir_stmt(hir_node_kind::hir_while, s), condition(std::move(cond)),
         body(std::move(b)) {}
+};
+
+/// `while let pattern = expr: body`. Unlike a `for` loop's iterable
+/// (evaluated once) or `hir_let_else`'s subject (also evaluated once),
+/// `subject` here is conceptually re-evaluated *every iteration* — the
+/// same lowered expression tree is executed repeatedly by the loop
+/// itself, exactly the way `hir_while.condition` already is; there's no
+/// separate mechanism for "re-lowering" it per pass. Each iteration:
+/// evaluate `subject`, test it against `pattern`; if it matches, bind
+/// `pattern`'s names (reading from `subject_symbol`, the same convention
+/// `hir_match`/`hir_let_else` use) and run `body`, then loop again; if it
+/// doesn't match, exit the loop. There is no `else` — falling out of the
+/// loop on a failed match is simply what happens, matching how this
+/// language has no `break`/`continue` to express it any other way.
+/// `pattern` can be any pattern `lower_pattern` supports (not just a
+/// simple binding), unlike a `for` loop's single plain loop variable.
+struct hir_while_let : hir_stmt {
+  ptr<hir_expr> subject;
+  symbol_id subject_symbol = k_invalid_symbol_id;
+  ptr<hir_pattern> pattern;
+  ptr<hir_block> body;
+
+  hir_while_let(source_span s, ptr<hir_expr> subj, symbol_id subj_sym,
+                ptr<hir_pattern> pat, ptr<hir_block> b)
+      : hir_stmt(hir_node_kind::hir_while_let, s), subject(std::move(subj)),
+        subject_symbol(subj_sym), pattern(std::move(pat)), body(std::move(b)) {}
+};
+
+/// Appends `value` onto `target` (a `list[T]` place) — the counterpart of
+/// `hir_container_len` for `for`-comprehension lowering (see
+/// spec/iterator-protocol-design.md): a dedicated node rather than a
+/// synthesized `.push()` method call, for the same reason
+/// `hir_container_len` isn't a synthesized `.len()` call — there's no
+/// callee to resolve, just a well-defined mutating operation lowering
+/// needs to grow the comprehension's accumulator.
+struct hir_list_push : hir_stmt {
+  ptr<hir_expr> target;
+  ptr<hir_expr> value;
+
+  hir_list_push(source_span s, ptr<hir_expr> t, ptr<hir_expr> v)
+      : hir_stmt(hir_node_kind::hir_list_push, s), target(std::move(t)),
+        value(std::move(v)) {}
 };
 
 /// Expression evaluated for its side effect (or, as a block's trailing

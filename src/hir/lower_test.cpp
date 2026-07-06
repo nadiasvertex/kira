@@ -894,7 +894,7 @@ auto test_lowers_while_loop() -> void {
          "expected the loop body's statement to be a hir_assign");
 }
 
-auto test_rejects_while_let() -> void {
+auto test_lowers_while_let() -> void {
   auto fixture = check_fixture("module sample\n"
                                "def parse(v: option[int32]) -> int32:\n"
                                "    while let @some(n) = v:\n"
@@ -903,9 +903,32 @@ auto test_rejects_while_let() -> void {
   const auto &decl = find_func(*fixture.ast_file, "parse");
 
   auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(), "expected `while let` to be rejected");
-  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
-         "expected the specific unsupported_construct error kind");
+  expect(result.has_value(), "expected `while let` to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 2,
+         "expected the while-let loop and the trailing return");
+  expect(function.body->stmts[0]->kind == hir::hir_node_kind::hir_while_let,
+         "expected a hir_while_let node");
+  const auto &loop =
+      dynamic_cast<const hir::hir_while_let &>(*function.body->stmts[0]);
+  expect(loop.subject->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the subject to be a reference to `v`");
+  expect(loop.pattern->kind == hir::hir_node_kind::hir_constructor_pattern,
+         "expected the pattern to be `@some(n)`");
+  const auto &pattern =
+      dynamic_cast<const hir::hir_constructor_pattern &>(*loop.pattern);
+  expect(pattern.variant_name == "some", "expected the `some` variant");
+
+  expect(loop.body->stmts.size() == 2,
+         "expected the synthesized `let n = <payload>` plus the surface "
+         "`return n`");
+  const auto &n_let = dynamic_cast<const hir::hir_let &>(*loop.body->stmts[0]);
+  expect(n_let.name == "n", "expected the bound name to be `n`");
+  expect(n_let.initializer->kind == hir::hir_node_kind::hir_variant_payload,
+         "expected `n` to be bound from the `some` payload");
+  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_return,
+         "expected the surface `return n` as the second statement");
 }
 
 auto test_rejects_for_loop_over_user_defined_type() -> void {
@@ -1571,7 +1594,7 @@ auto test_lowers_str_for_loop_yields_char() -> void {
          "expected iterating a str to yield char elements");
 }
 
-auto test_rejects_for_loop_over_option() -> void {
+auto test_lowers_option_for_loop() -> void {
   auto fixture = check_fixture("module sample\n"
                                "def sum_opt(o: option[int32]) -> int32:\n"
                                "    var total = 0\n"
@@ -1581,8 +1604,182 @@ auto test_rejects_for_loop_over_option() -> void {
   const auto &decl = find_func(*fixture.ast_file, "sum_opt");
 
   auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected `option` iteration to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 3,
+         "expected total-let, the match statement, and the return");
+  expect(function.body->stmts[1]->kind == hir::hir_node_kind::hir_expr_stmt,
+         "expected the desugared `for` to be an expression statement");
+  const auto &stmt =
+      dynamic_cast<const hir::hir_expr_stmt &>(*function.body->stmts[1]);
+  expect(stmt.expr->kind == hir::hir_node_kind::hir_match,
+         "expected `option` iteration to desugar to a hir_match, not a loop");
+  const auto &match = dynamic_cast<const hir::hir_match &>(*stmt.expr);
+  expect(match.subject->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the match subject to be a reference to `o`");
+  expect(match.arms.size() == 2, "expected exactly two match arms");
+
+  const auto &some_pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[0].pattern);
+  expect(some_pattern.variant_name == "some",
+         "expected the first arm to match `some`");
+  expect(match.arms[0].body->stmts.size() == 2,
+         "expected the synthesized `let x = <payload>` plus the guarded body");
+  const auto &x_let =
+      dynamic_cast<const hir::hir_let &>(*match.arms[0].body->stmts[0]);
+  expect(x_let.name == "x", "expected the bound name to be `x`");
+  expect(x_let.initializer->kind == hir::hir_node_kind::hir_variant_payload,
+         "expected `x` to be bound from the `some` payload");
+
+  const auto &none_pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[1].pattern);
+  expect(none_pattern.variant_name == "none",
+         "expected the second arm to match `none`");
+  expect(match.arms[1].body->stmts.empty(),
+         "expected the `none` arm to be an empty block");
+}
+
+auto test_lowers_simple_comprehension() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def squares(n: int32) -> list[int32]:\n"
+                               "    return for x in 0..n => x * x\n");
+  const auto &decl = find_func(*fixture.ast_file, "squares");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a simple comprehension to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 1,
+         "expected a single `return` statement");
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts[0]);
+  expect(ret.value != nullptr &&
+             ret.value->kind == hir::hir_node_kind::hir_block,
+         "expected the comprehension to lower to a block expression");
+  const auto &comprehension = dynamic_cast<const hir::hir_block &>(*ret.value);
+  // acc-let, then the range clause's own start/end/index lets plus its
+  // while loop (see test_lowers_range_for_loop — same shape reused here),
+  // then the trailing value.
+  expect(comprehension.stmts.size() == 6,
+         "expected acc-let, start-let, end-let, index-let, while, and the "
+         "trailing value");
+
+  const auto &acc_let =
+      dynamic_cast<const hir::hir_let &>(*comprehension.stmts[0]);
+  expect(acc_let.name == "<comprehension result>",
+         "expected a synthetic accumulator let");
+  expect(acc_let.is_mut, "expected the accumulator to be mutable");
+  expect(acc_let.initializer->kind == hir::hir_node_kind::hir_array_init,
+         "expected the accumulator to start from an empty array/list "
+         "literal");
+  const auto &empty_list =
+      dynamic_cast<const hir::hir_array_init &>(*acc_let.initializer);
+  expect(empty_list.elements.empty(),
+         "expected the initial accumulator literal to have no elements");
+
+  expect(comprehension.stmts[4]->kind == hir::hir_node_kind::hir_while,
+         "expected the range clause to lower to a hir_while loop");
+  const auto &loop =
+      dynamic_cast<const hir::hir_while &>(*comprehension.stmts[4]);
+  expect(loop.body->stmts.size() == 3,
+         "expected the loop-var let, the push, and the increment");
+  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_list_push,
+         "expected the yielded value to be appended via hir_list_push");
+  const auto &push =
+      dynamic_cast<const hir::hir_list_push &>(*loop.body->stmts[1]);
+  expect(push.target->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the push target to reference the accumulator");
+  const auto &push_target =
+      dynamic_cast<const hir::hir_local_ref &>(*push.target);
+  expect(push_target.symbol == acc_let.symbol,
+         "expected the push target to be the same accumulator symbol");
+  expect(push.value->kind == hir::hir_node_kind::hir_binary,
+         "expected the pushed value to be the yielded `x * x`");
+
+  expect(comprehension.stmts[5]->kind == hir::hir_node_kind::hir_expr_stmt,
+         "expected the block's trailing statement to be an expression "
+         "statement");
+  const auto &trailing =
+      dynamic_cast<const hir::hir_expr_stmt &>(*comprehension.stmts[5]);
+  expect(trailing.expr->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the trailing value to be the accumulator itself");
+  const auto &trailing_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*trailing.expr);
+  expect(trailing_ref.symbol == acc_let.symbol,
+         "expected the trailing reference to be the accumulator symbol");
+}
+
+auto test_lowers_comprehension_with_guard() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def evens(n: int32) -> list[int32]:\n"
+                               "    return for x in 0..n if x % 2 == 0 => x\n");
+  const auto &decl = find_func(*fixture.ast_file, "evens");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a guarded comprehension to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts[0]);
+  const auto &comprehension = dynamic_cast<const hir::hir_block &>(*ret.value);
+  const auto &loop =
+      dynamic_cast<const hir::hir_while &>(*comprehension.stmts[4]);
+
+  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_if,
+         "expected the guard to wrap the push in a hir_if");
+  const auto &guarded = dynamic_cast<const hir::hir_if &>(*loop.body->stmts[1]);
+  expect(guarded.branches.size() == 1, "expected a single guard branch");
+  expect(guarded.branches[0].body->stmts.size() == 1,
+         "expected the guarded branch to contain just the push");
+  expect(guarded.branches[0].body->stmts[0]->kind ==
+             hir::hir_node_kind::hir_list_push,
+         "expected the guarded statement to be the push");
+}
+
+auto test_lowers_nested_comprehension() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def products(n: int32, m: int32) -> list[int32]:\n"
+                    "    return for x in 0..n, y in 0..m => x * y\n");
+  const auto &decl = find_func(*fixture.ast_file, "products");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a nested comprehension to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts[0]);
+  const auto &comprehension = dynamic_cast<const hir::hir_block &>(*ret.value);
+  const auto &outer_loop =
+      dynamic_cast<const hir::hir_while &>(*comprehension.stmts[4]);
+
+  // outer loop-var let, then the inner clause's own start/end/index lets
+  // and its while (the same range-clause shape reused, nested), then the
+  // outer increment — no push at this level.
+  expect(outer_loop.body->stmts.size() == 6,
+         "expected the outer loop-var let, the inner clause's lets and "
+         "while, and the outer increment");
+  expect(outer_loop.body->stmts[4]->kind == hir::hir_node_kind::hir_while,
+         "expected the second clause to lower to a nested hir_while");
+  const auto &inner_loop =
+      dynamic_cast<const hir::hir_while &>(*outer_loop.body->stmts[4]);
+  expect(inner_loop.body->stmts.size() == 3,
+         "expected the inner loop-var let, the push, and the increment");
+  expect(inner_loop.body->stmts[1]->kind == hir::hir_node_kind::hir_list_push,
+         "expected the push to happen only at the innermost level");
+}
+
+auto test_rejects_comprehension_over_user_defined_type() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type counter = { pub value: int32 }\n"
+                               "def values(xs: counter) -> list[int32]:\n"
+                               "    return for x in xs => x\n");
+  const auto &decl = find_func(*fixture.ast_file, "values");
+
+  auto result = hir::lower_function(decl, fixture.checked);
   expect(!result.has_value(),
-         "expected `option` iteration to still be rejected");
+         "expected a comprehension over a user-defined type to be rejected");
   expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
          "expected the specific unsupported_construct error kind");
 }
@@ -1614,7 +1811,7 @@ auto main() -> int {
     test_lowers_var_and_plain_assignment();
     test_lowers_compound_assignment();
     test_lowers_while_loop();
-    test_rejects_while_let();
+    test_lowers_while_let();
     test_rejects_for_loop_over_user_defined_type();
     test_lowers_tuple_literal();
     test_lowers_array_literal();
@@ -1641,7 +1838,11 @@ auto main() -> int {
     test_lowers_list_for_loop();
     test_lowers_array_for_loop_with_static_length();
     test_lowers_str_for_loop_yields_char();
-    test_rejects_for_loop_over_option();
+    test_lowers_option_for_loop();
+    test_lowers_simple_comprehension();
+    test_lowers_comprehension_with_guard();
+    test_lowers_nested_comprehension();
+    test_rejects_comprehension_over_user_defined_type();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';

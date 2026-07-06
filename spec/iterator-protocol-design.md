@@ -1,8 +1,11 @@
 # Iterator Protocol Design Decision
 
-Status: draft, first slice implemented. This resolves the open question
-left by `spec/typed-ir-design.md`'s "Open questions to resolve before step
-5 (comprehensions)": *"What is the iterator protocol `for` comprehensions
+Status: implemented, including `for` comprehensions (item 4 below) — the
+only remaining gap is a real trait-based protocol for user-defined
+iterables, deferred until ownership/borrowing exists (see the Decision
+section). This resolves the open question left by
+`spec/typed-ir-design.md`'s "Open questions to resolve before step 5
+(comprehensions)": *"What is the iterator protocol `for` comprehensions
 lower against (a trait? a builtin fixed shape)? Not yet decided anywhere
 in `spec/`."*
 
@@ -58,7 +61,7 @@ version of this decision is revisited.
 ## Implementation scope, sliced by shape
 
 Each shape is its own increment, in roughly the order above (simplest
-first). This iteration implements the first two slices:
+first). Every item below is now implemented:
 
 1. **Range-literal `for` statements** (`for x in a..b: body`, `for x in
    a..=b: body`) — implemented. Requires the iterable to be written
@@ -78,21 +81,34 @@ first). This iteration implements the first two slices:
    as `hir_tuple_index`). `str` yields `char` elements, matching
    `element_type_of`'s existing assumption. Only a single, plain loop
    variable is supported, same restriction as (1).
-3. `option` iteration via a single match — not yet implemented.
+3. **`option` iteration** — implemented. Not a loop at all: `for x in opt:
+   body` lowers to a plain two-arm `hir_match` (`@some(_) => { let x =
+   <payload>; [guard-wrapped] body }`, `@none => {}`), reusing pattern
+   matching rather than inventing loop machinery. Only a single, plain
+   loop variable is supported, same restriction as (1) and (2).
 4. `for` **expressions** (comprehensions, `for x in a..b => expr`,
-   yielding `list[T]`) — deferred regardless of iterable shape. Building
-   the result requires constructing and mutating a fresh `list[T]` value
-   (an empty-list literal plus repeated `.push` calls), which is separate,
-   not-yet-built capability on top of whichever iterable shape backs the
-   loop. `spec/typed-ir-design.md`'s own milestone breakdown already lists
-   comprehensions last for this reason.
-5. `while let` — a related but distinct gap (see `spec/typed-ir-design.md`
-   and `src/hir/lower.cpp`'s `while_stmt` case): repeatedly re-testing a
-   pattern each iteration and falling out of the loop on the first
-   mismatch. Not needed for the range/indexed-container shapes above
-   (which use ordinary numeric comparisons, not pattern tests), but would
-   be a natural way to express iteration once a real external-iterator
-   trait exists (`while let @some(x) = it.next(): ...`).
+   yielding `list[T]`) — implemented. Builds a fresh `list[T]`
+   accumulator (a `hir_array_init` empty-list literal bound to a mutable
+   synthetic let) and appends the yielded value onto it — filtered by the
+   guard, if present — via a new dedicated node, `hir_list_push` (the
+   counterpart of `hir_container_len`: a well-defined mutating operation,
+   not a synthesized `.push()` method call). Multiple clauses
+   (`for x in a, y in b => expr`) nest: each clause reuses one of the
+   three shape lowerers above, with the next clause (or, at the innermost
+   clause, the guarded push) as what runs inside its loop body — the same
+   three lowerers `for` statements use, parameterized over what runs
+   inside the loop instead of being hardcoded to a `for` statement's own
+   AST body. Same per-clause restriction as (1)-(3): a single, plain loop
+   variable, no destructuring.
+5. **`while let`** — implemented, via a new dedicated node,
+   `hir_while_let` (see its doc comment in `src/hir/nodes.h`): each
+   iteration, re-evaluate the subject, test it against the pattern; on a
+   match, bind the pattern's names and run the body, then loop again; on a
+   mismatch, exit the loop (no `else`, matching how there's no
+   `break`/`continue` to express it any other way). `pattern` can be any
+   pattern `lower_pattern` supports — full destructuring, not just a
+   single binding — since `while let`'s surface pattern is a real
+   `ast::pattern`, unlike a `for` loop's restricted single loop variable.
 6. A `break`/`continue` requirement never arises for this design as
    written: those keywords aren't tokenized or parsed anywhere in this
    codebase today (a separate, pre-existing gap), so a `for`/`while`
@@ -141,3 +157,59 @@ A guard (`for x in a..b if cond: body`) wraps `body` in `if cond: body`
 inside the loop, rather than anything resembling `continue` — see point 6
 above for why that's sufficient. The loop variable's scope is limited to
 the loop body, matching normal block-scoping.
+
+`for x in opt: body` isn't a loop — it's a `match` (no new node kinds):
+
+```
+match opt:
+    @some(_) =>
+        let x = <the payload>
+        body                          // or: if guard: body
+    @none => unit
+```
+
+`while let pattern = expr: body` uses the one new node from this slice,
+`hir_while_let` — conceptually:
+
+```
+loop:
+    if expr matches pattern:
+        <bindings from pattern>
+        body
+    else:
+        exit loop
+```
+
+— but represented directly as one `hir_while_let { subject, subject_symbol,
+pattern, body }` node rather than a `hir_while` plus a pattern-test
+boolean expression, since there's no clean way to express "evaluate an
+expression and also retain its matched bindings" as a single boolean
+condition without inventing a shape that's really just `hir_while_let`
+again, split across two mechanisms instead of one.
+
+`for x in a..b => x * x` (a comprehension) lowers to a block expression
+building and yielding a fresh list:
+
+```
+{
+    var <comprehension result> = []
+    let <for start> = a
+    let <for end>   = b
+    var <for index> = <for start>
+    while <for index> < <for end>:
+        let x = <for index>
+        <comprehension result>.push(x * x)   // or: if guard: ...push(...)
+        <for index> += 1
+    <comprehension result>          // the block's trailing value
+}
+```
+
+— where `.push(...)` is `hir_list_push`, not a real method call (same
+reasoning as `hir_container_len`). Multiple clauses nest: `for x in a, y
+in b => x * y` puts clause `y`'s entire loop (its own lets and `hir_while`)
+where the innermost `push` sits above, and the push moves to inside `y`'s
+loop body instead. `lower_range_loop`/`lower_indexed_loop`/
+`lower_option_loop` (in `src/hir/lower.cpp`) are shared between `for`
+statements and comprehension clauses for exactly this reason — the only
+difference is what runs inside the loop body once the loop variable is
+bound.

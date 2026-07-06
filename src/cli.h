@@ -36,10 +36,11 @@ struct compiled_module {
 };
 
 /// Best-effort HIR lowering outcome for one module file (see
-/// `src/hir/lower.h`). Lowering coverage is still partial — generics, `for`,
-/// `while let`, lambdas, comprehensions, and the concurrency/compile-time
-/// forms all still reject — so this is informational only: it does not
-/// affect `compile_report::error_count` or whether metadata gets written.
+/// `src/hir/lower.h`). Lowering coverage is still partial — generics,
+/// `for`/`while let`/comprehensions over a user-defined iterable, and the
+/// concurrency/compile-time forms all still reject — so this is
+/// informational only: it does not affect `compile_report::error_count`
+/// or whether metadata gets written.
 /// A module that fails to lower is not a compilation failure yet.
 struct hir_lowering_result {
   std::string
