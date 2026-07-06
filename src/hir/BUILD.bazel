@@ -2,8 +2,10 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 cc_library(
     name = "hir",
+    srcs = ["lower.cpp"],
     hdrs = [
         "ids.h",
+        "lower.h",
         "nodes.h",
     ],
     deps = [
@@ -16,6 +18,17 @@ cc_library(
 cc_test(
     name = "nodes_test",
     srcs = ["nodes_test.cpp"],
+    deps = [
+        ":hir",
+        "//src/k-parser:k-parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "lower_test",
+    srcs = ["lower_test.cpp"],
     deps = [
         ":hir",
         "//src/k-parser:k-parser",

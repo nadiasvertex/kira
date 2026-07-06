@@ -148,7 +148,12 @@ private:
 
 /// The persisted result of type-checking one session: the interned
 /// `type_table` every `type_id` below indexes into, plus the resolved type
-/// of every expression node the checker actually visited. A node the
+/// of every expression node the checker actually visited. Two
+/// non-expression declaration nodes are recorded here too, since a later
+/// pass needs their types but they never pass through `infer_expr`: a
+/// function parameter's `pattern` node (keyed by `param.pattern.get()`) and
+/// a function's declared return-type node (keyed by
+/// `decl.return_type.get()`), both recorded in `check_function`. A node the
 /// checker never reached (inside a file already marked failing, or simply
 /// never checked) has no entry — look it up with `.find`, not `.at`. This
 /// is what a later typed-lowering pass (`spec/typed-ir-design.md`) reads

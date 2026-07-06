@@ -5157,6 +5157,11 @@ private:
         type = inferred_types[i];
       }
       if (param.pattern != nullptr) {
+        // Parameters aren't expressions, so `infer_expr`'s chokepoint never
+        // sees them; record the resolved type here so a later lowering pass
+        // (spec/typed-ir-design.md) can read a parameter's declared type
+        // without re-running `resolve_type`'s module-context machinery.
+        record_expr_type(*param.pattern, type);
         if (param.pattern->kind == ast::node_kind::binding_pattern) {
           const auto &binding =
               dynamic_cast<const ast::binding_pattern &>(*param.pattern);
@@ -5179,6 +5184,12 @@ private:
     return_type_ = return_annotated_
                        ? resolve_type(*decl.return_type, current_resolve_ctx())
                        : k_unknown_type;
+    if (decl.return_type != nullptr) {
+      // Same rationale as the parameter loop above: a declared return type
+      // is resolved from a `type_expr`, not an expression, so it needs its
+      // own persistence hook for lowering to read.
+      record_expr_type(*decl.return_type, return_type_);
+    }
 
     for (const auto &constraint : decl.where_constraints) {
       if (constraint.subject != nullptr) {

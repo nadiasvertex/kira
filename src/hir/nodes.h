@@ -151,7 +151,8 @@ struct hir_unary : hir_expr {
   ast::unary_op op;
   ptr<hir_expr> operand;
 
-  hir_unary(source_span s, type_id t, ast::unary_op o, ptr<hir_expr> operand_arg)
+  hir_unary(source_span s, type_id t, ast::unary_op o,
+            ptr<hir_expr> operand_arg)
       : hir_expr(hir_node_kind::hir_unary, s, t), op(o),
         operand(std::move(operand_arg)) {}
 };

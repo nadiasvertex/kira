@@ -26,14 +26,16 @@ auto test_builds_add_function_by_hand() -> void {
 
   auto x_ref = hir::make<hir::hir_local_ref>(span, int32_type, 0, "x");
   auto y_ref = hir::make<hir::hir_local_ref>(span, int32_type, 1, "y");
-  auto sum = hir::make<hir::hir_binary>(span, int32_type, kira::ast::binary_op::Add,
-                                        std::move(x_ref), std::move(y_ref));
+  auto sum =
+      hir::make<hir::hir_binary>(span, int32_type, kira::ast::binary_op::Add,
+                                 std::move(x_ref), std::move(y_ref));
 
   auto ret = hir::make<hir::hir_return>(span, std::move(sum));
 
   auto body_stmts = hir::ptr_vec<hir::hir_node>{};
   body_stmts.push_back(std::move(ret));
-  auto body = hir::make<hir::hir_block>(span, int32_type, std::move(body_stmts));
+  auto body =
+      hir::make<hir::hir_block>(span, int32_type, std::move(body_stmts));
 
   auto params = std::vector<hir::hir_param>{
       hir::hir_param{.symbol = 0, .name = "x", .type = int32_type},
@@ -41,7 +43,7 @@ auto test_builds_add_function_by_hand() -> void {
   };
 
   auto function = hir::make<hir::hir_function>(span, "add", std::move(params),
-                                                int32_type, std::move(body));
+                                               int32_type, std::move(body));
 
   expect(function->name == "add", "expected lowered function name to survive");
   expect(function->params.size() == 2, "expected two lowered parameters");
@@ -71,8 +73,7 @@ auto test_builds_add_function_by_hand() -> void {
          "expected the operator to be addition");
   expect(sum_expr.lhs->kind == hir::hir_node_kind::hir_local_ref,
          "expected the left operand to be a local reference");
-  const auto &lhs_ref =
-      static_cast<const hir::hir_local_ref &>(*sum_expr.lhs);
+  const auto &lhs_ref = static_cast<const hir::hir_local_ref &>(*sum_expr.lhs);
   expect(lhs_ref.symbol == 0, "expected left operand to reference symbol 0");
   expect(lhs_ref.name == "x", "expected left operand's debug name to be x");
 }
@@ -83,7 +84,8 @@ auto main() -> int {
   try {
     test_builds_add_function_by_hand();
   } catch (const std::exception &ex) {
-    std::cerr << "nodes_test failed: unhandled exception: " << ex.what() << '\n';
+    std::cerr << "nodes_test failed: unhandled exception: " << ex.what()
+              << '\n';
     std::exit(1);
   }
   return 0;
