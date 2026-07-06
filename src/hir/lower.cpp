@@ -39,6 +39,15 @@ template <typename T>
   return ptr<hir_expr>(std::move(node));
 }
 
+/// A variant-constructor expression (`@some(x)`) parses to an `ident_expr`
+/// whose span still covers the leading `@` — this must stay exactly in
+/// sync with the identically-named, identically-implemented predicate in
+/// check.cpp, which is what actually decided whether each ident here was
+/// checked as a variant constructor or an ordinary name.
+[[nodiscard]] auto is_variant_ident(const ast::ident_expr &ident) -> bool {
+  return ident.span.len() > ident.name.size();
+}
+
 /// Performs the AST-to-HIR walk for one function at a time. Not reusable
 /// across functions: `scopes_`/`global_refs_`/`next_symbol_` are lowering-
 /// local bookkeeping, reset per `lower_function` call (see the class-level
@@ -145,6 +154,8 @@ private:
   [[nodiscard]] auto lower_lambda(const ast::lambda_expr &lambda)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_where(const ast::where_expr &where)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_try(const ast::try_expr &try_expr)
       -> std::expected<ptr<hir_expr>, lowering_error>;
 
   // ------------------------------------------------------------------
@@ -289,6 +300,8 @@ auto lowerer::lower_expr(const ast::expr &expr)
     return lower_lambda(dynamic_cast<const ast::lambda_expr &>(expr));
   case ast::node_kind::where_expr:
     return lower_where(dynamic_cast<const ast::where_expr &>(expr));
+  case ast::node_kind::try_expr:
+    return lower_try(dynamic_cast<const ast::try_expr &>(expr));
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
                 std::format("expression kind {} is not lowered by the first "
@@ -311,6 +324,13 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
   auto type = checked_type_of(ident);
   if (!type.has_value()) {
     return std::unexpected(type.error());
+  }
+  if (is_variant_ident(ident)) {
+    // A bare unit-variant reference, e.g. `@none` with no call parens —
+    // still variant construction (see hir_variant_init), just with no
+    // payload arguments to lower.
+    return ok_expr(make<hir_variant_init>(ident.span, *type, ident.name,
+                                          ptr_vec<hir_expr>{}));
   }
   const auto symbol = resolve_reference(ident.name);
   return ok_expr(make<hir_local_ref>(ident.span, *type, symbol, ident.name));
@@ -366,6 +386,38 @@ auto lowerer::lower_call(const ast::call_expr &call)
     return fail(lowering_error_kind::unsupported_construct, call.span,
                 "call expression is missing its callee");
   }
+
+  // `@variant(args...)` parses as a call whose callee is the variant's
+  // ident (see `is_variant_ident`) — this is construction, not an ordinary
+  // call, so it never goes through the callee-resolution machinery below
+  // (there's no function being called, real or otherwise).
+  if (call.callee->kind == ast::node_kind::ident_expr) {
+    const auto &callee_ident =
+        dynamic_cast<const ast::ident_expr &>(*call.callee);
+    if (is_variant_ident(callee_ident)) {
+      auto args = ptr_vec<hir_expr>{};
+      args.reserve(call.args.size());
+      for (const auto &arg : call.args) {
+        if (arg.name.has_value()) {
+          return fail(lowering_error_kind::unsupported_construct, arg.span,
+                      "named arguments are not supported constructing a "
+                      "sum-type variant");
+        }
+        if (arg.value == nullptr) {
+          return fail(lowering_error_kind::unsupported_construct, arg.span,
+                      "constructor argument is missing its value");
+        }
+        auto lowered = lower_expr(*arg.value);
+        if (!lowered.has_value()) {
+          return std::unexpected(lowered.error());
+        }
+        args.push_back(std::move(*lowered));
+      }
+      return ok_expr(make<hir_variant_init>(call.span, *type, callee_ident.name,
+                                            std::move(args)));
+    }
+  }
+
   auto callee = lower_expr(*call.callee);
   if (!callee.has_value()) {
     return std::unexpected(callee.error());
@@ -740,6 +792,96 @@ auto lowerer::lower_where(const ast::where_expr &where)
       ptr<hir_node>(make<hir_expr_stmt>(where.inner->span, std::move(*inner))));
   pop_scope();
   return ok_expr(make<hir_block>(where.span, *type, std::move(stmts)));
+}
+
+auto lowerer::lower_try(const ast::try_expr &try_expr)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  // `x?` desugars to a two-arm match on the wrapper's runtime tag:
+  //   match x: @ok(_)/@some(_) => <the unwrapped payload>
+  //            @err(_)/@none  => return <x, unchanged>
+  // The failure arm returns the *original* subject value rather than
+  // reconstructing `@err(e)`/`@none` — it's already exactly that value;
+  // the checker only requires the enclosing function to also return a
+  // result/option (not that the two share the same success type), so
+  // nothing needs rebuilding here.
+  auto type = checked_type_of(try_expr);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  if (try_expr.operand == nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, try_expr.span,
+                "try expression has no operand");
+  }
+  auto operand_type = checked_type_of(*try_expr.operand);
+  if (!operand_type.has_value()) {
+    return std::unexpected(operand_type.error());
+  }
+  const auto &entry = checked_.types.entry(*operand_type);
+  const auto is_result =
+      entry.kind == type_kind::builtin_generic_kind && entry.name == "result";
+  const auto is_option =
+      entry.kind == type_kind::builtin_generic_kind && entry.name == "option";
+  if (!is_result && !is_option) {
+    return fail(lowering_error_kind::unresolved_type, try_expr.span,
+                "`?` operand did not resolve to a concrete result/option type");
+  }
+
+  auto operand = lower_expr(*try_expr.operand);
+  if (!operand.has_value()) {
+    return std::unexpected(operand.error());
+  }
+
+  const auto subject_symbol = mint_symbol();
+  const auto subject_type = *operand_type;
+  const auto subject_span = try_expr.operand->span;
+  const std::function<ptr<hir_expr>()> make_place =
+      [subject_symbol, subject_type, subject_span]() -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_local_ref>(subject_span, subject_type,
+                                             subject_symbol,
+                                             std::string("<try subject>")));
+  };
+
+  const auto success_variant = std::string(is_result ? "ok" : "some");
+  const auto failure_variant = std::string(is_result ? "err" : "none");
+
+  auto success_args = ptr_vec<hir_pattern>{};
+  success_args.push_back(
+      ptr<hir_pattern>(make<hir_wildcard_pattern>(try_expr.span)));
+  auto success_pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
+      try_expr.span, success_variant, std::move(success_args)));
+  auto success_value = ptr<hir_expr>(make<hir_variant_payload>(
+      try_expr.span, *type, make_place(), success_variant, size_t{0}));
+  auto success_stmts = ptr_vec<hir_node>{};
+  success_stmts.push_back(ptr<hir_node>(
+      make<hir_expr_stmt>(try_expr.span, std::move(success_value))));
+  auto success_arm =
+      hir_match_arm{.pattern = std::move(success_pattern),
+                    .guard = nullptr,
+                    .body = make<hir_block>(try_expr.span, k_unknown_type,
+                                            std::move(success_stmts))};
+
+  auto failure_args = ptr_vec<hir_pattern>{};
+  if (is_result) {
+    failure_args.push_back(
+        ptr<hir_pattern>(make<hir_wildcard_pattern>(try_expr.span)));
+  }
+  auto failure_pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
+      try_expr.span, failure_variant, std::move(failure_args)));
+  auto failure_stmts = ptr_vec<hir_node>{};
+  failure_stmts.push_back(
+      ptr<hir_node>(make<hir_return>(try_expr.span, make_place())));
+  auto failure_arm =
+      hir_match_arm{.pattern = std::move(failure_pattern),
+                    .guard = nullptr,
+                    .body = make<hir_block>(try_expr.span, k_unknown_type,
+                                            std::move(failure_stmts))};
+
+  auto arms = std::vector<hir_match_arm>{};
+  arms.push_back(std::move(success_arm));
+  arms.push_back(std::move(failure_arm));
+
+  return ok_expr(make<hir_match>(try_expr.span, *type, std::move(*operand),
+                                 subject_symbol, std::move(arms)));
 }
 
 auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,

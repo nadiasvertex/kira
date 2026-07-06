@@ -51,14 +51,15 @@ using semantic::type_id;
 //  argument-to-parameter mapping; see `hir::lower_call`); default
 //  parameter values are still unsupported (a call omitting a defaulted
 //  argument still rejects — the default expression's own evaluation
-//  context isn't threaded through this pass). Still explicitly
-//  unsupported: `try_expr` (needs a sum-variant-*construction* expression
-//  this project hasn't designed — the inverse of `hir_constructor_pattern`),
-//  `for`/`while let`/comprehensions (blocked on the undecided iterator
-//  protocol — see spec/typed-ir-design.md's open questions), the
-//  concurrency forms (`async`/`await`/`par`/`race`/`crew`/`on`) and
-//  compile-time forms (`quote`/`splice`/`static`), monomorphization
-//  (phase 5), and borrow/ownership metadata — all explicit Non-Goals for
+//  context isn't threaded through this pass). `hir_variant_init` (the
+//  inverse of `hir_constructor_pattern` — see its doc comment) and
+//  `try_expr` (which lowers to a synthetic two-arm `hir_match` using it)
+//  were added after that. Still explicitly unsupported: `for`/`while let`/
+//  comprehensions (blocked on the undecided iterator protocol — see
+//  spec/typed-ir-design.md's open questions), the concurrency forms
+//  (`async`/`await`/`par`/`race`/`crew`/`on`) and compile-time forms
+//  (`quote`/`splice`/`static`), monomorphization (phase 5), and
+//  borrow/ownership metadata — all explicit Non-Goals for
 //  this milestone in spec/typed-ir-design.md, not oversights.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
@@ -82,6 +83,7 @@ enum class hir_node_kind : uint8_t {
                    ///< used for both tuple slots and array/list/slice
                    ///< elements — see `hir_tuple_index`'s doc comment.
   hir_variant_payload, ///< Sum-type payload projection (pattern lowering only).
+  hir_variant_init,    ///< Sum-type variant construction `@variant(args...)`.
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,
@@ -355,6 +357,23 @@ struct hir_variant_payload : hir_expr {
                       std::string variant, size_t idx)
       : hir_expr(hir_node_kind::hir_variant_payload, s, t),
         object(std::move(obj)), variant_name(std::move(variant)), index(idx) {}
+};
+
+/// Sum-type variant construction `@variant(args...)` (empty `args` for a
+/// unit variant, e.g. `@none`) — the direct inverse of
+/// `hir_constructor_pattern`: that node *tests* a value's runtime tag,
+/// this one *creates* a value with a given tag. Covers both a
+/// user-declared sum type's variants and the prelude's `some`/`none`/
+/// `ok`/`err` (there's no separate node for those, matching how
+/// `hir_constructor_pattern` already unifies them on the pattern side).
+struct hir_variant_init : hir_expr {
+  std::string variant_name;
+  ptr_vec<hir_expr> args;
+
+  hir_variant_init(source_span s, type_id t, std::string variant,
+                   ptr_vec<hir_expr> a)
+      : hir_expr(hir_node_kind::hir_variant_init, s, t),
+        variant_name(std::move(variant)), args(std::move(a)) {}
 };
 
 /// Indentation-delimited block. In expression position its `type` is the

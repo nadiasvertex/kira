@@ -1239,6 +1239,137 @@ auto test_rejects_call_relying_on_default_argument() -> void {
          "expected the specific unsupported_construct error kind");
 }
 
+auto test_lowers_variant_construction_with_payload() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type shape = @circle(int32) | @square(int32)\n"
+                               "def make_circle(r: int32) -> shape:\n"
+                               "    return @circle(r)\n");
+  const auto &decl = find_func(*fixture.ast_file, "make_circle");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected variant construction to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_variant_init,
+         "expected the returned value to be a hir_variant_init");
+  const auto &init = dynamic_cast<const hir::hir_variant_init &>(*ret.value);
+  expect(init.variant_name == "circle",
+         "expected the constructed variant to be `circle`");
+  expect(init.args.size() == 1, "expected one payload argument");
+  expect(init.args[0]->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the payload argument to be a local reference to `r`");
+}
+
+auto test_lowers_bare_unit_variant() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def none_int() -> option[int32]:\n"
+                               "    return @none\n");
+  const auto &decl = find_func(*fixture.ast_file, "none_int");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a bare unit variant to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_variant_init,
+         "expected the returned value to be a hir_variant_init");
+  const auto &init = dynamic_cast<const hir::hir_variant_init &>(*ret.value);
+  expect(init.variant_name == "none",
+         "expected the constructed variant to be `none`");
+  expect(init.args.empty(), "expected no payload arguments for `@none`");
+}
+
+auto test_lowers_try_expr_on_result() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def parse(v: result[int32, str]) -> result[int32, str]:\n"
+                    "    let n = v?\n"
+                    "    return @ok(n)\n");
+  const auto &decl = find_func(*fixture.ast_file, "parse");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a `?` on a result to lower");
+
+  const auto &function = **result;
+  const auto &let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts.front());
+  expect(let.name == "n", "expected the let to bind `n`");
+  expect(let.initializer->kind == hir::hir_node_kind::hir_match,
+         "expected `v?` to lower to a hir_match");
+
+  const auto &match = dynamic_cast<const hir::hir_match &>(*let.initializer);
+  expect(match.subject->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the match subject to be a reference to `v`");
+  expect(match.arms.size() == 2, "expected exactly two arms (ok and err)");
+
+  const auto &ok_pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[0].pattern);
+  expect(ok_pattern.variant_name == "ok",
+         "expected the first arm's pattern to match `ok`");
+  expect(ok_pattern.args.size() == 1,
+         "expected the `ok` pattern to destructure one payload slot");
+  expect(match.arms[0].body->stmts.size() == 1,
+         "expected the success arm to hold one statement");
+  const auto &success_stmt = dynamic_cast<const hir::hir_expr_stmt &>(
+      *match.arms[0].body->stmts.front());
+  expect(success_stmt.expr->kind == hir::hir_node_kind::hir_variant_payload,
+         "expected the success arm to yield a payload projection");
+  const auto &success_payload =
+      dynamic_cast<const hir::hir_variant_payload &>(*success_stmt.expr);
+  expect(success_payload.variant_name == "ok",
+         "expected the payload projection's variant to be `ok`");
+  const auto &success_subject =
+      dynamic_cast<const hir::hir_local_ref &>(*success_payload.object);
+  expect(success_subject.symbol == match.subject_symbol,
+         "expected the payload projection to read the match subject");
+
+  const auto &err_pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[1].pattern);
+  expect(err_pattern.variant_name == "err",
+         "expected the second arm's pattern to match `err`");
+  expect(match.arms[1].body->stmts.size() == 1,
+         "expected the failure arm to hold one statement");
+  const auto &failure_stmt =
+      dynamic_cast<const hir::hir_return &>(*match.arms[1].body->stmts.front());
+  expect(failure_stmt.value->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the failure arm to return the subject unchanged");
+  const auto &failure_ref =
+      dynamic_cast<const hir::hir_local_ref &>(*failure_stmt.value);
+  expect(failure_ref.symbol == match.subject_symbol,
+         "expected the failure arm's return to reference the match subject");
+}
+
+auto test_lowers_try_expr_on_option() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def parse(v: option[int32]) -> option[int32]:\n"
+                               "    let n = v?\n"
+                               "    return @some(n)\n");
+  const auto &decl = find_func(*fixture.ast_file, "parse");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a `?` on an option to lower");
+
+  const auto &function = **result;
+  const auto &let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts.front());
+  const auto &match = dynamic_cast<const hir::hir_match &>(*let.initializer);
+
+  const auto &some_pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[0].pattern);
+  expect(some_pattern.variant_name == "some",
+         "expected the first arm's pattern to match `some`");
+
+  const auto &none_pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[1].pattern);
+  expect(none_pattern.variant_name == "none",
+         "expected the second arm's pattern to match `none`");
+  expect(none_pattern.args.empty(),
+         "expected the `none` pattern to have no payload slots");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1279,6 +1410,10 @@ auto main() -> int {
     test_lowers_call_to_named_function();
     test_lowers_named_call_arguments_in_declared_order();
     test_rejects_call_relying_on_default_argument();
+    test_lowers_variant_construction_with_payload();
+    test_lowers_bare_unit_variant();
+    test_lowers_try_expr_on_result();
+    test_lowers_try_expr_on_option();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();
     test_lowers_struct_pattern_let_destructuring();
