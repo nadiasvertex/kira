@@ -345,11 +345,23 @@ matching how `src/hir`'s lowering was built shape-by-shape:
 
 The "exact bytecode instruction set... not decided here" open question
 below is now resolved and implemented in `src/bytecode/` (`opcodes.h`,
-`value.h`, `chunk.h`/`chunk.cpp`, tested in `chunk_test.cpp`): a stack
-machine (see `opcodes.h`'s top comment for why stack over register — the
-short version is simpler compilation from an expression tree, revisit
-only if benchmarking this tier against LLVM tier-up shows it matters),
-with arithmetic/comparison/bitwise opcodes parameterized by a trailing
+`value.h`, `chunk.h`/`chunk.cpp`, tested in `chunk_test.cpp`): a **register**
+machine — every operand is an explicit register index into the current
+call frame, not an implicit stack top. This landed as a stack machine
+first, then was corrected to a register machine within the same
+increment, before any HIR-to-bytecode compiler existed to depend on the
+stack-based shape: register machines measurably win on instruction count
+(one `add dst, lhs, rhs` where a stack machine needs push/push/add/pop),
+which is exactly what Lua's VM (register-based since 5.0, replacing an
+earlier stack design) and Dalvik/ART both concluded for the same reason.
+Catching this before the compiler existed avoided the much more expensive
+alternative of writing that compiler against a stack machine and tearing
+it out later. Registers double as both locals and expression temporaries
+— there is no separate "locals" storage the way a stack machine needs a
+separate local-variable-slot area distinct from its operand stack; see
+`opcodes.h`'s top comment for the full frame model.
+
+With arithmetic/comparison/bitwise opcodes parameterized by a trailing
 `numeric_kind` immediate byte rather than one opcode per scalar width —
 a deliberate rejection of a JVM-style combinatorial opcode set, justified
 directly by `CLAUDE.md`'s stated priority ("clarity... over performance or
