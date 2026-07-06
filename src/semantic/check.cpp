@@ -744,9 +744,11 @@ private:
   std::vector<bool> &file_has_errors_;
   type_table types_;
   /// Resolved type of every expression node visited by `infer_expr`
-  /// (recorded there — see its wrapper — plus the one direct-`resolve_ident`
-  /// bypass in `check_assignment`). Handed to the caller via
-  /// `take_checked_types`.
+  /// (recorded there — see its wrapper — plus every pattern node visited by
+  /// `check_pattern`, and the two direct-`resolve_ident`-shaped bypasses in
+  /// `check_assignment`: an assignment target resolved from an existing
+  /// scope binding, and one resolved because no such binding exists).
+  /// Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::node *, type_id> node_types_;
   /// Resolved type of every non-rest `ast::field_pattern` visited by
   /// `check_pattern`'s `struct_pattern` case — needed for shorthand fields
@@ -4824,6 +4826,11 @@ private:
         const auto &ident = dynamic_cast<const ast::ident_expr &>(*stmt.target);
         if (const auto *binding = lookup_value(ident.name)) {
           target_type = binding->type;
+          // Unlike the "not found" branch below, this path resolves the
+          // target straight from the scope binding rather than through
+          // `infer_expr`, so it needs its own persistence hook — see
+          // `node_types_`'s doc comment.
+          record_expr_type(ident, target_type);
           if (binding->origin == binding_origin::let_binding ||
               binding->origin == binding_origin::pattern_binding) {
             auto diag = diagnostic(

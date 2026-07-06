@@ -811,6 +811,118 @@ auto test_lowers_let_else_fallible_destructuring() -> void {
          "expected the final statement to be `return n`");
 }
 
+auto test_lowers_var_and_plain_assignment() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def counter(start: int32) -> int32:\n"
+                               "    var total = start\n"
+                               "    total = start + 1\n"
+                               "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "counter");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a var binding plus assignment to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 3,
+         "expected the var let, the assignment, and the return");
+
+  expect(function.body->stmts[0]->kind == hir::hir_node_kind::hir_let,
+         "expected the first statement to be a hir_let");
+  const auto &var_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[0]);
+  expect(var_let.name == "total", "expected the var to bind `total`");
+  expect(var_let.is_mut, "expected a `var` binding to be marked mutable");
+
+  expect(function.body->stmts[1]->kind == hir::hir_node_kind::hir_assign,
+         "expected the second statement to be a hir_assign");
+  const auto &assign =
+      dynamic_cast<const hir::hir_assign &>(*function.body->stmts[1]);
+  expect(assign.op == kira::ast::assign_op::Assign,
+         "expected a plain `=` to lower to assign_op::Assign");
+  expect(assign.target->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the assignment target to be a local reference");
+  const auto &target = dynamic_cast<const hir::hir_local_ref &>(*assign.target);
+  expect(target.symbol == var_let.symbol,
+         "expected the assignment to target the same symbol `var` declared");
+  expect(assign.value->kind == hir::hir_node_kind::hir_binary,
+         "expected the assigned value to be a hir_binary");
+}
+
+auto test_lowers_compound_assignment() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def counter(start: int32) -> int32:\n"
+                               "    var total = start\n"
+                               "    total += 1\n"
+                               "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "counter");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a compound assignment to lower");
+
+  const auto &function = **result;
+  const auto &assign =
+      dynamic_cast<const hir::hir_assign &>(*function.body->stmts[1]);
+  expect(assign.op == kira::ast::assign_op::AddAssign,
+         "expected `+=` to lower to assign_op::AddAssign");
+}
+
+auto test_lowers_while_loop() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def count_down(n: int32) -> int32:\n"
+                               "    var x = n\n"
+                               "    while x > 0:\n"
+                               "        x = x - 1\n"
+                               "    return x\n");
+  const auto &decl = find_func(*fixture.ast_file, "count_down");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a while loop to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 3,
+         "expected the var let, the while loop, and the return");
+  expect(function.body->stmts[1]->kind == hir::hir_node_kind::hir_while,
+         "expected the second statement to be a hir_while");
+
+  const auto &while_loop =
+      dynamic_cast<const hir::hir_while &>(*function.body->stmts[1]);
+  expect(while_loop.condition->kind == hir::hir_node_kind::hir_binary,
+         "expected the loop condition to be a hir_binary comparison");
+  expect(while_loop.body->stmts.size() == 1,
+         "expected the loop body to hold the one assignment statement");
+  expect(while_loop.body->stmts.front()->kind == hir::hir_node_kind::hir_assign,
+         "expected the loop body's statement to be a hir_assign");
+}
+
+auto test_rejects_while_let() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def parse(v: option[int32]) -> int32:\n"
+                               "    while let @some(n) = v:\n"
+                               "        return n\n"
+                               "    return -1\n");
+  const auto &decl = find_func(*fixture.ast_file, "parse");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(!result.has_value(), "expected `while let` to be rejected");
+  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
+         "expected the specific unsupported_construct error kind");
+}
+
+auto test_rejects_for_loop() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def sum_list(xs: list[int32]) -> int32:\n"
+                               "    var total = 0\n"
+                               "    for x in xs:\n"
+                               "        total = total + x\n"
+                               "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "sum_list");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(!result.has_value(), "expected a `for` loop to be rejected");
+  expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
+         "expected the specific unsupported_construct error kind");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -835,6 +947,11 @@ auto main() -> int {
     test_lowers_array_pattern_destructuring();
     test_lowers_array_pattern_let_destructuring();
     test_lowers_let_else_fallible_destructuring();
+    test_lowers_var_and_plain_assignment();
+    test_lowers_compound_assignment();
+    test_lowers_while_loop();
+    test_rejects_while_let();
+    test_rejects_for_loop();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();
     test_lowers_struct_pattern_let_destructuring();

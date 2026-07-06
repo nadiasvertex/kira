@@ -35,6 +35,12 @@ using semantic::type_id;
 //  pattern exactly like `hir_tuple_pattern`, just over an indexable rather
 //  than a tuple-shaped value; any length mismatch is a runtime dispatch
 //  concern for codegen (phase 5), the same as a literal or tag comparison.
+//  `hir_assign` and `hir_while` (plain-condition form only) were added in
+//  the mutation/control-flow extension; `for` and `while let` remain
+//  unsupported — `for` needs an iterator protocol this project hasn't
+//  decided on yet (see spec/typed-ir-design.md's open questions), and
+//  `while let` needs repeated structural dispatch (re-testing a pattern
+//  every iteration) that hasn't been designed for loops.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -437,14 +443,18 @@ struct hir_range_pattern : hir_pattern {
 /// pattern alias (see `hir_match_arm`), and a `let ... else`'s bindings
 /// (see `hir_let_else`), with `initializer` referencing the relevant
 /// subject symbol instead of a source-level expression in both cases.
+/// `is_mut` is true only for a `var name = expr` binding — every synthetic
+/// or destructured use above is always an ordinary immutable `let`.
 struct hir_let : hir_stmt {
   symbol_id symbol = k_invalid_symbol_id;
   std::string name; ///< Preserved for diagnostics/debugging only.
   ptr<hir_expr> initializer;
+  bool is_mut = false;
 
-  hir_let(source_span s, symbol_id sym, std::string n, ptr<hir_expr> init)
+  hir_let(source_span s, symbol_id sym, std::string n, ptr<hir_expr> init,
+          bool mut = false)
       : hir_stmt(hir_node_kind::hir_let, s), symbol(sym), name(std::move(n)),
-        initializer(std::move(init)) {}
+        initializer(std::move(init)), is_mut(mut) {}
 };
 
 /// `let pattern = expr else: block` — a fallible destructure. `initializer`
@@ -469,6 +479,38 @@ struct hir_let_else : hir_stmt {
       : hir_stmt(hir_node_kind::hir_let_else, s), subject_symbol(sym),
         initializer(std::move(init)), pattern(std::move(pat)),
         else_body(std::move(else_b)) {}
+};
+
+/// `target op= value` (`op` is `Assign` for plain `=`); reuses `ast::assign_op`
+/// rather than reinventing operator identity (Decision 7's rationale for
+/// `ast::binary_op`/`ast::unary_op` applies equally here). `target` is
+/// whatever lvalue-shaped expression the surface assignment used — a
+/// `hir_local_ref`, `hir_field`, or `hir_index` — lowered the same way any
+/// other expression is; nothing about assignment targets is special-cased
+/// beyond that.
+struct hir_assign : hir_stmt {
+  ast::assign_op op;
+  ptr<hir_expr> target;
+  ptr<hir_expr> value;
+
+  hir_assign(source_span s, ast::assign_op o, ptr<hir_expr> t, ptr<hir_expr> v)
+      : hir_stmt(hir_node_kind::hir_assign, s), op(o), target(std::move(t)),
+        value(std::move(v)) {}
+};
+
+/// `while condition: body`. Only the plain-condition form lowers — `while
+/// let pattern = expr: body` needs to re-test `pattern` against a freshly
+/// re-evaluated `expr` every iteration and fall out of the loop the first
+/// time it fails to match, which is a different (and currently
+/// unimplemented) shape of repeated structural dispatch than anything
+/// `hir_match`/`hir_let_else` do today.
+struct hir_while : hir_stmt {
+  ptr<hir_expr> condition;
+  ptr<hir_block> body;
+
+  hir_while(source_span s, ptr<hir_expr> cond, ptr<hir_block> b)
+      : hir_stmt(hir_node_kind::hir_while, s), condition(std::move(cond)),
+        body(std::move(b)) {}
 };
 
 /// Expression evaluated for its side effect (or, as a block's trailing

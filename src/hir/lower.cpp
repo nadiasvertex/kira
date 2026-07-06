@@ -578,6 +578,65 @@ auto lowerer::lower_stmt(const ast::node &node)
     }
     return one_stmt(ptr<hir_node>(std::move(*lowered)));
   }
+  case ast::node_kind::var_stmt: {
+    const auto &var = dynamic_cast<const ast::var_stmt &>(node);
+    if (var.initializer == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, var.span,
+                  "var binding has no initializer");
+    }
+    auto initializer = lower_expr(*var.initializer);
+    if (!initializer.has_value()) {
+      return std::unexpected(initializer.error());
+    }
+    const auto symbol = declare_local(var.name);
+    return one_stmt(ptr<hir_node>(make<hir_let>(
+        var.span, symbol, var.name, std::move(*initializer), /*mut=*/true)));
+  }
+  case ast::node_kind::assign_stmt: {
+    const auto &assign = dynamic_cast<const ast::assign_stmt &>(node);
+    if (assign.target == nullptr || assign.value == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, assign.span,
+                  "assignment is missing its target or value");
+    }
+    auto target = lower_expr(*assign.target);
+    if (!target.has_value()) {
+      return std::unexpected(target.error());
+    }
+    auto value = lower_expr(*assign.value);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    return one_stmt(ptr<hir_node>(hir::make<hir_assign>(
+        assign.span, assign.op, std::move(*target), std::move(*value))));
+  }
+  case ast::node_kind::while_stmt: {
+    const auto &while_s = dynamic_cast<const ast::while_stmt &>(node);
+    if (while_s.let_pattern != nullptr || while_s.let_expr != nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, while_s.span,
+                  "`while let` is not lowered yet — it needs repeated "
+                  "structural dispatch (re-testing a pattern every "
+                  "iteration) that hasn't been designed for loops");
+    }
+    if (while_s.condition == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, while_s.span,
+                  "while loop has no condition");
+    }
+    auto condition = lower_expr(*while_s.condition);
+    if (!condition.has_value()) {
+      return std::unexpected(condition.error());
+    }
+    auto body = lower_block(while_s.body, while_s.span);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    return one_stmt(ptr<hir_node>(make<hir_while>(
+        while_s.span, std::move(*condition), std::move(*body))));
+  }
+  case ast::node_kind::for_stmt:
+    return fail(lowering_error_kind::unsupported_construct, node.span,
+                "`for` loops are not lowered yet — they need an iterator "
+                "protocol this project hasn't decided on (spec/"
+                "typed-ir-design.md's open questions)");
   default:
     return fail(lowering_error_kind::unsupported_construct, node.span,
                 std::format("statement kind {} is not lowered by the first "
