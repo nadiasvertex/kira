@@ -54,10 +54,18 @@ using semantic::type_id;
 //  context isn't threaded through this pass). `hir_variant_init` (the
 //  inverse of `hir_constructor_pattern` — see its doc comment) and
 //  `try_expr` (which lowers to a synthetic two-arm `hir_match` using it)
-//  were added after that. Still explicitly unsupported: `for`/`while let`/
-//  comprehensions (blocked on the undecided iterator protocol — see
-//  spec/typed-ir-design.md's open questions), the concurrency forms
-//  (`async`/`await`/`par`/`race`/`crew`/`on`) and compile-time forms
+//  were added after that. `for` loops resolved the open iterator-protocol
+//  question (see spec/iterator-protocol-design.md — a closed, compiler-
+//  recognized set of shapes, not a general trait, since a real protocol
+//  needs mutable iterator state and borrow/ownership semantics don't
+//  exist yet): range-literal loops came first (no new node needed, just
+//  `hir_while`), then `array`/`list`/`slice`/`slice_mut`/`str` loops,
+//  which needed one new node — `hir_container_len` — since a container's
+//  element count isn't always statically known (an `array[T, N]`'s is,
+//  and uses a plain `hir_literal` instead). Still explicitly unsupported:
+//  `option` iteration and `for` comprehensions (see that same design doc),
+//  `while let`, the concurrency forms (`async`/`await`/`par`/`race`/`crew`/
+//  `on`) and compile-time forms
 //  (`quote`/`splice`/`static`), monomorphization (phase 5), and
 //  borrow/ownership metadata — all explicit Non-Goals for
 //  this milestone in spec/typed-ir-design.md, not oversights.
@@ -84,6 +92,8 @@ enum class hir_node_kind : uint8_t {
                    ///< elements — see `hir_tuple_index`'s doc comment.
   hir_variant_payload, ///< Sum-type payload projection (pattern lowering only).
   hir_variant_init,    ///< Sum-type variant construction `@variant(args...)`.
+  hir_container_len,   ///< A container's element count (`for`-loop lowering
+                       ///< only).
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,
@@ -374,6 +384,23 @@ struct hir_variant_init : hir_expr {
                    ptr_vec<hir_expr> a)
       : hir_expr(hir_node_kind::hir_variant_init, s, t),
         variant_name(std::move(variant)), args(std::move(a)) {}
+};
+
+/// A container's element count (`type` is always `usize`) — used only by
+/// `for`-loop lowering over a `list`/`slice`/`slice_mut`/`str` (see
+/// spec/iterator-protocol-design.md): a dedicated node rather than a
+/// synthesized `.len()` method call, since there's no real call here to
+/// model (no callee to resolve, no arguments) — just like
+/// `hir_tuple_index`, there's no surface syntax this lowers *from*, only
+/// a well-defined operation lowering *needs*. An `array[T, N]`'s element
+/// count is statically known instead (`N`), so array iteration uses a
+/// plain `hir_literal` and never constructs this node at all.
+struct hir_container_len : hir_expr {
+  ptr<hir_expr> object;
+
+  hir_container_len(source_span s, type_id t, ptr<hir_expr> obj)
+      : hir_expr(hir_node_kind::hir_container_len, s, t),
+        object(std::move(obj)) {}
 };
 
 /// Indentation-delimited block. In expression position its `type` is the

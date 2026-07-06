@@ -65,13 +65,15 @@ auto append_args_key(std::string &key, const std::vector<type_id> &args)
 } // namespace
 
 /// Reserves ids 0 and 1 for `k_unknown_type` and `k_error_type`, then
-/// pre-interns `bool` (see `bool_type`'s doc comment for why).
+/// pre-interns `bool`/`usize`/`char` (see `bool_type`'s doc comment for why).
 type_table::type_table() {
   entries_.push_back(
       type_entry{.kind = type_kind::unknown_kind, .name = "<unknown>"});
   entries_.push_back(
       type_entry{.kind = type_kind::error_kind, .name = "<error>"});
   [[maybe_unused]] const auto bool_id = builtin("bool");
+  [[maybe_unused]] const auto usize_id = builtin("usize");
+  [[maybe_unused]] const auto char_id = builtin("char");
 }
 
 /// Structural interning keyed on `key`: identical keys always produce the
@@ -211,6 +213,16 @@ auto type_table::entry(type_id id) const -> const type_entry & {
 
 auto type_table::bool_type() const -> type_id {
   const auto it = interned_.find("b:bool");
+  return it != interned_.end() ? it->second : k_unknown_type;
+}
+
+auto type_table::usize_type() const -> type_id {
+  const auto it = interned_.find("b:usize");
+  return it != interned_.end() ? it->second : k_unknown_type;
+}
+
+auto type_table::char_type() const -> type_id {
+  const auto it = interned_.find("b:char");
   return it != interned_.end() ? it->second : k_unknown_type;
 }
 

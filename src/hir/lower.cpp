@@ -179,13 +179,41 @@ private:
                               const std::vector<ast::ptr<ast::node>> &else_body,
                               source_span span, type_id type)
       -> std::expected<ptr<hir_if>, lowering_error>;
-  /// Lowers `for x in a..b: body` / `for x in a..=b: body` into a counting
-  /// `hir_while` loop (see spec/iterator-protocol-design.md) — the only
-  /// iterable shape this pass recognizes yet. Any other iterable
-  /// (array/list/slice/string/option, or a range not written literally in
-  /// the loop header) rejects.
+  /// Dispatches a `for` loop to whichever iterable shape it matches (see
+  /// spec/iterator-protocol-design.md): a range literal written directly
+  /// in the loop header, or a checked `array`/`list`/`slice`/`slice_mut`/
+  /// `str` iterable. Anything else (`option`, a range value not written
+  /// literally, a user-defined iterable) rejects.
   [[nodiscard]] auto lower_for_stmt(const ast::for_stmt &for_stmt)
       -> std::expected<ptr_vec<hir_node>, lowering_error>;
+  /// The range-literal shape: `for x in a..b: body` / `for x in a..=b:
+  /// body` lowers to a counting `hir_while` loop with no new node kinds.
+  [[nodiscard]] auto lower_range_for_stmt(const ast::for_stmt &for_stmt,
+                                          const ast::binary_expr &range)
+      -> std::expected<ptr_vec<hir_node>, lowering_error>;
+  /// The indexed-container shape: `array`/`list`/`slice`/`slice_mut`/`str`
+  /// all lower to the same counting loop bounded by a length (statically
+  /// known for `array`, via `hir_container_len` otherwise) instead of a
+  /// literal bound, indexing the container at each step.
+  [[nodiscard]] auto lower_indexed_for_stmt(const ast::for_stmt &for_stmt,
+                                            type_id iterable_type)
+      -> std::expected<ptr_vec<hir_node>, lowering_error>;
+  /// Shared tail both `for`-loop shapes above need: binds the loop
+  /// variable to `loop_var_value()` at the top of the loop body, lowers
+  /// the surface body (wrapping it in `if guard: ...` when a guard is
+  /// present — see the `for_stmt` case in `lower_stmt` for why that's a
+  /// plain conditional and not a `continue`), then increments the index
+  /// by one. Returns the assembled loop body, not the loop itself — each
+  /// caller still builds its own start/end/condition and wraps the result
+  /// in a `hir_while`.
+  [[nodiscard]] auto
+  build_for_loop_body(source_span span, symbol_id index_symbol,
+                      type_id counter_type,
+                      const ast::binding_pattern &loop_var,
+                      const std::function<ptr<hir_expr>()> &loop_var_value,
+                      const ast::expr *guard_ast,
+                      const std::vector<ast::ptr<ast::node>> &body_ast)
+      -> std::expected<ptr<hir_block>, lowering_error>;
 
   // ------------------------------------------------------------------
   //  match / patterns
@@ -1173,31 +1201,36 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
     return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
                 "for loop has no iterable");
   }
-  if (for_stmt.iterable->kind != ast::node_kind::binary_expr) {
-    return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
-                "only `for x in a..b` / `for x in a..=b` range loops are "
-                "lowered yet (see spec/iterator-protocol-design.md) — "
-                "iterating arrays/lists/slices/strings/options, and any "
-                "user-defined iterable, are still unsupported");
-  }
-  const auto &range =
-      dynamic_cast<const ast::binary_expr &>(*for_stmt.iterable);
-  if (range.op != ast::binary_op::Range &&
-      range.op != ast::binary_op::RangeInclusive) {
-    return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
-                "only `for x in a..b` / `for x in a..=b` range loops are "
-                "lowered yet (see spec/iterator-protocol-design.md)");
-  }
-  if (range.lhs == nullptr || range.rhs == nullptr) {
-    return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
-                "range is missing a bound");
-  }
   if (for_stmt.patterns.size() != 1 || for_stmt.patterns.front() == nullptr ||
       for_stmt.patterns.front()->has_error ||
       for_stmt.patterns.front()->kind != ast::node_kind::binding_pattern) {
     return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
-                "only a single plain loop variable is lowered yet for "
-                "range loops (no destructuring patterns)");
+                "only a single plain loop variable is lowered yet (no "
+                "destructuring patterns)");
+  }
+
+  if (for_stmt.iterable->kind == ast::node_kind::binary_expr) {
+    const auto &range =
+        dynamic_cast<const ast::binary_expr &>(*for_stmt.iterable);
+    if (range.op == ast::binary_op::Range ||
+        range.op == ast::binary_op::RangeInclusive) {
+      return lower_range_for_stmt(for_stmt, range);
+    }
+  }
+
+  auto iterable_type = checked_type_of(*for_stmt.iterable);
+  if (!iterable_type.has_value()) {
+    return std::unexpected(iterable_type.error());
+  }
+  return lower_indexed_for_stmt(for_stmt, *iterable_type);
+}
+
+auto lowerer::lower_range_for_stmt(const ast::for_stmt &for_stmt,
+                                   const ast::binary_expr &range)
+    -> std::expected<ptr_vec<hir_node>, lowering_error> {
+  if (range.lhs == nullptr || range.rhs == nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
+                "range is missing a bound");
   }
   const auto &loop_var =
       dynamic_cast<const ast::binding_pattern &>(*for_stmt.patterns.front());
@@ -1244,26 +1277,149 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
       ptr<hir_expr>(make<hir_local_ref>(for_stmt.span, *bound_type, end_symbol,
                                         std::string("<for end>")))));
 
+  const auto span = for_stmt.span;
+  const auto element_type = *bound_type;
+  const std::function<ptr<hir_expr>()> loop_var_value =
+      [span, element_type, index_symbol]() -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_local_ref>(span, element_type, index_symbol,
+                                             std::string("<for index>")));
+  };
+  auto body_block =
+      build_for_loop_body(for_stmt.span, index_symbol, *bound_type, loop_var,
+                          loop_var_value, for_stmt.guard.get(), for_stmt.body);
+  if (!body_block.has_value()) {
+    return std::unexpected(body_block.error());
+  }
+
+  result.push_back(ptr<hir_node>(make<hir_while>(
+      for_stmt.span, std::move(condition), std::move(*body_block))));
+
+  return result;
+}
+
+auto lowerer::lower_indexed_for_stmt(const ast::for_stmt &for_stmt,
+                                     type_id iterable_type)
+    -> std::expected<ptr_vec<hir_node>, lowering_error> {
+  const auto &entry = checked_.types.entry(iterable_type);
+  auto element_type = k_unknown_type;
+  auto static_size = std::optional<uint64_t>{};
+  auto is_array = false;
+  if (entry.kind == type_kind::array_kind) {
+    element_type = entry.result;
+    static_size = entry.array_size;
+    is_array = true;
+    if (!static_size.has_value()) {
+      return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
+                  "iterating an array whose length isn't statically known "
+                  "is not lowered yet");
+    }
+  } else if (entry.kind == type_kind::builtin_generic_kind &&
+             (entry.name == "list" || entry.name == "slice" ||
+              entry.name == "slice_mut")) {
+    element_type = entry.args.empty() ? k_unknown_type : entry.args[0];
+  } else if (entry.kind == type_kind::builtin_kind && entry.name == "str") {
+    element_type = checked_.types.char_type();
+  } else {
+    return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
+                "only range loops and array/list/slice/string iteration "
+                "are lowered yet (see spec/iterator-protocol-design.md) — "
+                "`option` iteration, `for` comprehensions, and any "
+                "user-defined iterable are still unsupported");
+  }
+  if (element_type == k_unknown_type || element_type == k_error_type) {
+    return fail(lowering_error_kind::unresolved_type, for_stmt.span,
+                "the container's element type did not resolve to a "
+                "concrete type");
+  }
+
+  const auto &loop_var =
+      dynamic_cast<const ast::binding_pattern &>(*for_stmt.patterns.front());
+
+  auto container_value = lower_expr(*for_stmt.iterable);
+  if (!container_value.has_value()) {
+    return std::unexpected(container_value.error());
+  }
+
+  auto result = ptr_vec<hir_node>{};
+  const auto container_symbol = mint_symbol();
+  result.push_back(ptr<hir_node>(make<hir_let>(
+      for_stmt.iterable->span, container_symbol, std::string("<for container>"),
+      std::move(*container_value))));
+
+  const auto usize_type = checked_.types.usize_type();
+  const auto index_symbol = mint_symbol();
+  result.push_back(ptr<hir_node>(make<hir_let>(
+      for_stmt.span, index_symbol, std::string("<for index>"),
+      ptr<hir_expr>(make<hir_literal>(for_stmt.span, usize_type,
+                                      token_kind::int_lit, std::string("0"))),
+      /*mut=*/true)));
+
+  auto end_value = ptr<hir_expr>{};
+  if (is_array) {
+    end_value = ptr<hir_expr>(make<hir_literal>(for_stmt.span, usize_type,
+                                                token_kind::int_lit,
+                                                std::to_string(*static_size)));
+  } else {
+    end_value = ptr<hir_expr>(make<hir_container_len>(
+        for_stmt.span, usize_type,
+        ptr<hir_expr>(make<hir_local_ref>(for_stmt.iterable->span,
+                                          iterable_type, container_symbol,
+                                          std::string("<for container>")))));
+  }
+  auto condition = ptr<hir_expr>(hir::make<hir_binary>(
+      for_stmt.span, checked_.types.bool_type(), ast::binary_op::Lt,
+      ptr<hir_expr>(make<hir_local_ref>(for_stmt.span, usize_type, index_symbol,
+                                        std::string("<for index>"))),
+      std::move(end_value)));
+
+  const auto span = for_stmt.span;
+  const std::function<ptr<hir_expr>()> loop_var_value =
+      [span, iterable_type, element_type, container_symbol, usize_type,
+       index_symbol]() -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_index>(
+        span, element_type,
+        ptr<hir_expr>(make<hir_local_ref>(span, iterable_type, container_symbol,
+                                          std::string("<for container>"))),
+        ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
+                                          std::string("<for index>")))));
+  };
+  auto body_block =
+      build_for_loop_body(for_stmt.span, index_symbol, usize_type, loop_var,
+                          loop_var_value, for_stmt.guard.get(), for_stmt.body);
+  if (!body_block.has_value()) {
+    return std::unexpected(body_block.error());
+  }
+
+  result.push_back(ptr<hir_node>(make<hir_while>(
+      for_stmt.span, std::move(condition), std::move(*body_block))));
+
+  return result;
+}
+
+auto lowerer::build_for_loop_body(
+    source_span span, symbol_id index_symbol, type_id counter_type,
+    const ast::binding_pattern &loop_var,
+    const std::function<ptr<hir_expr>()> &loop_var_value,
+    const ast::expr *guard_ast,
+    const std::vector<ast::ptr<ast::node>> &body_ast)
+    -> std::expected<ptr<hir_block>, lowering_error> {
   push_scope();
   const auto loop_var_symbol = declare_local(loop_var.name);
   auto body_stmts = ptr_vec<hir_node>{};
-  body_stmts.push_back(
-      ptr<hir_node>(make<hir_let>(for_stmt.span, loop_var_symbol, loop_var.name,
-                                  ptr<hir_expr>(make<hir_local_ref>(
-                                      for_stmt.span, *bound_type, index_symbol,
-                                      std::string("<for index>"))))));
+  body_stmts.push_back(ptr<hir_node>(
+      make<hir_let>(span, loop_var_symbol, loop_var.name, loop_var_value())));
 
-  auto lowered_body = lower_block(for_stmt.body, for_stmt.span);
+  auto lowered_body = lower_block(body_ast, span);
   if (!lowered_body.has_value()) {
     pop_scope();
     return std::unexpected(lowered_body.error());
   }
 
-  if (for_stmt.guard != nullptr) {
+  if (guard_ast != nullptr) {
     // No `continue` exists in this language (it isn't even tokenized), so
     // "skip this iteration" is an ordinary conditional wrapping the body,
     // not a jump — see spec/iterator-protocol-design.md.
-    auto guard = lower_expr(*for_stmt.guard);
+    auto guard = lower_expr(*guard_ast);
     if (!guard.has_value()) {
       pop_scope();
       return std::unexpected(guard.error());
@@ -1271,8 +1427,8 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
     auto branches = std::vector<hir_if_branch>{};
     branches.push_back(hir_if_branch{.condition = std::move(*guard),
                                      .body = std::move(*lowered_body)});
-    body_stmts.push_back(ptr<hir_node>(make<hir_if>(
-        for_stmt.span, k_unknown_type, std::move(branches), nullptr)));
+    body_stmts.push_back(ptr<hir_node>(
+        make<hir_if>(span, k_unknown_type, std::move(branches), nullptr)));
   } else {
     for (auto &stmt_ptr : (*lowered_body)->stmts) {
       body_stmts.push_back(std::move(stmt_ptr));
@@ -1280,22 +1436,16 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   }
 
   body_stmts.push_back(ptr<hir_node>(hir::make<hir_assign>(
-      for_stmt.span, ast::assign_op::AddAssign,
-      ptr<hir_expr>(make<hir_local_ref>(for_stmt.span, *bound_type,
-                                        index_symbol,
+      span, ast::assign_op::AddAssign,
+      ptr<hir_expr>(make<hir_local_ref>(span, counter_type, index_symbol,
                                         std::string("<for index>"))),
-      ptr<hir_expr>(make<hir_literal>(for_stmt.span, *bound_type,
-                                      token_kind::int_lit,
+      ptr<hir_expr>(make<hir_literal>(span, counter_type, token_kind::int_lit,
                                       std::string("1"))))));
 
   auto body_block =
-      make<hir_block>(for_stmt.span, k_unknown_type, std::move(body_stmts));
+      make<hir_block>(span, k_unknown_type, std::move(body_stmts));
   pop_scope();
-
-  result.push_back(ptr<hir_node>(make<hir_while>(
-      for_stmt.span, std::move(condition), std::move(body_block))));
-
-  return result;
+  return body_block;
 }
 
 auto lowerer::lower_pattern(const ast::node &pattern,

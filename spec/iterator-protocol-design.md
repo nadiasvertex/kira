@@ -58,18 +58,26 @@ version of this decision is revisited.
 ## Implementation scope, sliced by shape
 
 Each shape is its own increment, in roughly the order above (simplest
-first). This iteration only implements the first slice:
+first). This iteration implements the first two slices:
 
 1. **Range-literal `for` statements** (`for x in a..b: body`, `for x in
-   a..=b: body`) — implemented now. Requires the iterable to be written
+   a..=b: body`) — implemented. Requires the iterable to be written
    as a range expression directly in the loop header (`ast::binary_expr`
    with `op` `Range`/`RangeInclusive`); a range value stored in a variable
    and iterated later is not recognized (there's no field-access path to
    its `start`/`end` yet) and still rejects. Only a single, plain
    (non-destructuring) loop variable is supported.
-2. Array/list/slice/string iteration via `.len()` + indexing — not yet
-   implemented; same counting-loop shape as (1), bounded by a method call
-   instead of a literal.
+2. **`array`/`list`/`slice`/`slice_mut`/`str` iteration** — implemented.
+   Same counting-loop shape as (1), but bounded by a length instead of a
+   literal: an `array[T, N]`'s length is statically known (`N`, from the
+   checked type itself), so it lowers to a plain `hir_literal`; the other
+   four don't have a static length, so a new dedicated node —
+   `hir_container_len` — represents "this container's element count" (not
+   a synthesized `.len()` method call: there's no callee to resolve or
+   arguments to check, just a well-defined operation, the same reasoning
+   as `hir_tuple_index`). `str` yields `char` elements, matching
+   `element_type_of`'s existing assumption. Only a single, plain loop
+   variable is supported, same restriction as (1).
 3. `option` iteration via a single match — not yet implemented.
 4. `for` **expressions** (comprehensions, `for x in a..b => expr`,
    yielding `list[T]`) — deferred regardless of iterable shape. Building
@@ -92,7 +100,7 @@ first). This iteration only implements the first slice:
    conditional wrapping the loop body, not a jump. If `break`/`continue`
    are added to the language later, revisit this.
 
-## Lowering shape for the implemented slice
+## Lowering shape for the implemented slices
 
 `for x in a..b: body` (and `..=`) lowers to (reusing only node kinds that
 already exist — `hir_let`, `hir_while`, `hir_binary`, `hir_assign`,
@@ -107,6 +115,27 @@ while <for index> < <for end>:      // <= for `..=`
     body                              // or: if guard: body
     <for index> += 1
 ```
+
+`for x in xs: body` over `array`/`list`/`slice`/`slice_mut`/`str` lowers
+the same way, just bounded by a length instead of a literal, and reading
+each element by index instead of using the index itself as the value:
+
+```
+let <for container> = xs                          // evaluated once
+var <for index>: usize = 0
+while <for index> < N:                             // array[T, N]: literal N
+                                                    // otherwise: <for container>'s
+                                                    // hir_container_len
+    let x = <for container>[<for index>]
+    body                                            // or: if guard: body
+    <for index> += 1
+```
+
+Both shapes share their loop-body assembly (the loop-variable binding,
+the guard-or-plain body, and the increment) through one helper
+(`lowerer::build_for_loop_body` in `src/hir/lower.cpp`); only how the
+start/end bounds and the per-iteration value are built differs between
+them.
 
 A guard (`for x in a..b if cond: body`) wraps `body` in `if cond: body`
 inside the loop, rather than anything resembling `continue` — see point 6

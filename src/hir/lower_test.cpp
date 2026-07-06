@@ -908,17 +908,23 @@ auto test_rejects_while_let() -> void {
          "expected the specific unsupported_construct error kind");
 }
 
-auto test_rejects_for_loop() -> void {
+auto test_rejects_for_loop_over_user_defined_type() -> void {
+  // list/array/slice/str iteration lowers now (see
+  // test_lowers_list_for_loop and friends) — a user-defined iterable is
+  // the one shape spec/iterator-protocol-design.md still defers, since it
+  // would need a real trait-based protocol this project doesn't have yet.
   auto fixture = check_fixture("module sample\n"
-                               "def sum_list(xs: list[int32]) -> int32:\n"
+                               "type counter = { pub value: int32 }\n"
+                               "def sum_counters(xs: counter) -> int32:\n"
                                "    var total = 0\n"
                                "    for x in xs:\n"
                                "        total = total + x\n"
                                "    return total\n");
-  const auto &decl = find_func(*fixture.ast_file, "sum_list");
+  const auto &decl = find_func(*fixture.ast_file, "sum_counters");
 
   auto result = hir::lower_function(decl, fixture.checked);
-  expect(!result.has_value(), "expected a `for` loop to be rejected");
+  expect(!result.has_value(),
+         "expected a `for` loop over a user-defined type to be rejected");
   expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
          "expected the specific unsupported_construct error kind");
 }
@@ -1463,7 +1469,7 @@ auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
          "expected no else branch on the guard conditional");
 }
 
-auto test_rejects_for_loop_over_non_range_iterable() -> void {
+auto test_lowers_list_for_loop() -> void {
   auto fixture = check_fixture("module sample\n"
                                "def sum_list(xs: list[int32]) -> int32:\n"
                                "    var total = 0\n"
@@ -1473,8 +1479,110 @@ auto test_rejects_for_loop_over_non_range_iterable() -> void {
   const auto &decl = find_func(*fixture.ast_file, "sum_list");
 
   auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a `for` loop over a list to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 5,
+         "expected total-let, container-let, index-let, while, return");
+
+  const auto &container_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[1]);
+  expect(container_let.name == "<for container>",
+         "expected the iterable to be bound to a synthetic let");
+  expect(container_let.initializer->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the iterable to be a reference to `xs`");
+
+  const auto &index_let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts[2]);
+  expect(index_let.name == "<for index>", "expected a synthetic index let");
+  expect(index_let.is_mut, "expected the index to be mutable");
+  const auto usize_type = fixture.checked.types.usize_type();
+  expect(index_let.initializer->type == usize_type,
+         "expected the index to start at a `usize` literal `0`");
+
+  const auto &loop =
+      dynamic_cast<const hir::hir_while &>(*function.body->stmts[3]);
+  const auto &condition =
+      dynamic_cast<const hir::hir_binary &>(*loop.condition);
+  expect(condition.op == kira::ast::binary_op::Lt,
+         "expected the bound check to be `<`");
+  expect(condition.rhs->kind == hir::hir_node_kind::hir_container_len,
+         "expected the bound to be the list's runtime length");
+  const auto &len =
+      dynamic_cast<const hir::hir_container_len &>(*condition.rhs);
+  expect(len.object->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the length projection to read the synthetic container");
+
+  const auto &loop_var_let =
+      dynamic_cast<const hir::hir_let &>(*loop.body->stmts[0]);
+  expect(loop_var_let.name == "x", "expected the loop variable to be `x`");
+  expect(loop_var_let.initializer->kind == hir::hir_node_kind::hir_index,
+         "expected the loop variable to be indexed out of the container");
+  const auto &index_expr =
+      dynamic_cast<const hir::hir_index &>(*loop_var_let.initializer);
+  expect(index_expr.object->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the index expression's object to be the container");
+}
+
+auto test_lowers_array_for_loop_with_static_length() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def sum_array(xs: array[int32, 3]) -> int32:\n"
+                               "    var total = 0\n"
+                               "    for x in xs:\n"
+                               "        total = total + x\n"
+                               "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "sum_array");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a `for` loop over an array to lower");
+
+  const auto &function = **result;
+  const auto &loop =
+      dynamic_cast<const hir::hir_while &>(*function.body->stmts[3]);
+  const auto &condition =
+      dynamic_cast<const hir::hir_binary &>(*loop.condition);
+  expect(condition.rhs->kind == hir::hir_node_kind::hir_literal,
+         "expected an array's static length to lower to a plain literal, "
+         "not a hir_container_len");
+  const auto &bound = dynamic_cast<const hir::hir_literal &>(*condition.rhs);
+  expect(bound.value == "3", "expected the literal bound to be the array's "
+                             "declared length 3");
+}
+
+auto test_lowers_str_for_loop_yields_char() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def count_chars(s: str) -> int32:\n"
+                               "    var total = 0\n"
+                               "    for c in s:\n"
+                               "        total = total + 1\n"
+                               "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "count_chars");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a `for` loop over a str to lower");
+
+  const auto &function = **result;
+  const auto &loop =
+      dynamic_cast<const hir::hir_while &>(*function.body->stmts[3]);
+  const auto &loop_var_let =
+      dynamic_cast<const hir::hir_let &>(*loop.body->stmts[0]);
+  expect(loop_var_let.name == "c", "expected the loop variable to be `c`");
+  expect(loop_var_let.initializer->type == fixture.checked.types.char_type(),
+         "expected iterating a str to yield char elements");
+}
+
+auto test_rejects_for_loop_over_option() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def sum_opt(o: option[int32]) -> int32:\n"
+                               "    var total = 0\n"
+                               "    for x in o:\n"
+                               "        total = total + x\n"
+                               "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "sum_opt");
+
+  auto result = hir::lower_function(decl, fixture.checked);
   expect(!result.has_value(),
-         "expected a `for` loop over a non-range iterable to be rejected");
+         "expected `option` iteration to still be rejected");
   expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
          "expected the specific unsupported_construct error kind");
 }
@@ -1507,7 +1615,7 @@ auto main() -> int {
     test_lowers_compound_assignment();
     test_lowers_while_loop();
     test_rejects_while_let();
-    test_rejects_for_loop();
+    test_rejects_for_loop_over_user_defined_type();
     test_lowers_tuple_literal();
     test_lowers_array_literal();
     test_lowers_array_fill_literal();
@@ -1530,7 +1638,10 @@ auto main() -> int {
     test_lowers_struct_destructuring_parameter();
     test_lowers_range_for_loop();
     test_lowers_inclusive_range_for_loop_with_guard();
-    test_rejects_for_loop_over_non_range_iterable();
+    test_lowers_list_for_loop();
+    test_lowers_array_for_loop_with_static_length();
+    test_lowers_str_for_loop_yields_char();
+    test_rejects_for_loop_over_option();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';

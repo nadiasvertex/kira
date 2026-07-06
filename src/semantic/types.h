@@ -126,6 +126,14 @@ public:
   /// type the checked program may never have happened to reference itself
   /// (lowering synthesizing a comparison for a desugared `for` loop, e.g.).
   [[nodiscard]] auto bool_type() const -> type_id;
+  /// The interned id for the builtin `usize` type, pre-interned for the
+  /// same reason and by the same mechanism as `bool_type` — used for a
+  /// desugared indexed-container `for` loop's index/length values.
+  [[nodiscard]] auto usize_type() const -> type_id;
+  /// The interned id for the builtin `char` type, pre-interned for the
+  /// same reason and by the same mechanism as `bool_type` — used as the
+  /// element type of a desugared `for` loop over a `str`.
+  [[nodiscard]] auto char_type() const -> type_id;
 
   /// Whether `id` is `unknown`, `error`, or a type parameter — anything the
   /// checker treats as "don't know, don't complain."
