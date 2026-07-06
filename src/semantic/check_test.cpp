@@ -200,6 +200,55 @@ auto test_accepts_cross_module_qualified_types() -> void {
          "expected qualified types from other session modules to resolve");
 }
 
+auto test_accepts_indexing_local_bindings() -> void {
+  const auto analyzed = analyze_one("module sample\n"
+                                    "def run() -> int32:\n"
+                                    "    let values = [10, 20, 30]\n"
+                                    "    return values[0] + values[1]\n");
+  expect(analyzed.error_count == 0,
+         "expected indexing a local list binding to check cleanly");
+}
+
+auto test_accepts_associated_type_self_output() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "trait add:\n"
+      "    type output\n"
+      "    def add(self, other: self) -> self.output\n"
+      "type vec2 = { x: float64, y: float64 }\n"
+      "impl add for vec2:\n"
+      "    type output = vec2\n"
+      "    def add(self, other: self) -> vec2:\n"
+      "        return vec2 { x: self.x + other.x, y: self.y + other.y }\n"
+      "def run() -> vec2:\n"
+      "    let a = vec2 { x: 1.0, y: 2.0 }\n"
+      "    let b = vec2 { x: 3.0, y: 4.0 }\n"
+      "    return a.add(b)\n");
+  expect(analyzed.error_count == 0,
+         "expected `self.output` associated-type return to check cleanly");
+}
+
+auto test_reports_associated_type_output_mismatch() -> void {
+  const auto analyzed = analyze_one(
+      "module sample\n"
+      "trait add:\n"
+      "    type output\n"
+      "    def add(self, other: self) -> self.output\n"
+      "type vec2 = { x: float64, y: float64 }\n"
+      "impl add for vec2:\n"
+      "    type output = vec2\n"
+      "    def add(self, other: self) -> vec2:\n"
+      "        return vec2 { x: self.x + other.x, y: self.y + other.y }\n"
+      "def run() -> unit:\n"
+      "    let a = vec2 { x: 1.0, y: 2.0 }\n"
+      "    let b = vec2 { x: 3.0, y: 4.0 }\n"
+      "    let s: str = a.add(b)\n");
+  expect(analyzed.error_count > 0,
+         "expected `self.output` to resolve to the impl's concrete type");
+  expect_diagnostic(analyzed, "expected `str`, found `vec2`",
+                    "expected the resolved associated type to drive checking");
+}
+
 // ==========================================================================
 //  Programs that must be rejected, with teaching diagnostics
 // ==========================================================================
@@ -474,6 +523,8 @@ auto main() -> int {
     test_accepts_collections_and_lambdas();
     test_accepts_option_result_flow();
     test_accepts_cross_module_qualified_types();
+    test_accepts_indexing_local_bindings();
+    test_accepts_associated_type_self_output();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
@@ -495,6 +546,7 @@ auto main() -> int {
     test_reports_unsatisfied_trait_requirement();
     test_reports_unknown_deriving();
     test_reports_impure_contract_call();
+    test_reports_associated_type_output_mismatch();
   } catch (const std::exception &ex) {
     std::cerr << "check_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);

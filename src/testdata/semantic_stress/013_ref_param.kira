@@ -1,0 +1,6 @@
+module semantic_stress.ref_parameters
+
+type point = { x: float64, y: float64 }
+
+def norm(p: &point) -> float64:
+    return p.x * p.x + p.y * p.y

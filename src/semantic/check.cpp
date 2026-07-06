@@ -180,6 +180,10 @@ private:
   std::vector<std::unordered_map<std::string, value_binding>> scopes_;
   std::vector<std::unordered_map<std::string, type_id>> type_params_;
   type_id self_type_ = k_unknown_type;
+  /// Associated-type names in scope for `self.<name>` references, valid
+  /// while checking a trait's or impl's own members (see `check_trait_decl`
+  /// and `check_impl_decl`).
+  std::unordered_map<std::string, type_id> self_assoc_types_;
   type_id return_type_ = k_unknown_type;
   bool return_annotated_ = false;
   bool in_contract_ = false;
@@ -681,6 +685,15 @@ private:
   auto resolve_named_type(const ast::named_type &named, const resolve_ctx &ctx)
       -> type_id {
     if (named.path.empty()) {
+      return k_unknown_type;
+    }
+
+    if (named.path.size() == 2 && named.path.front() == "self") {
+      // `self.output` — an associated-type reference, not a module path.
+      if (const auto it = self_assoc_types_.find(named.path.back());
+          it != self_assoc_types_.end()) {
+        return it->second;
+      }
       return k_unknown_type;
     }
 
@@ -4623,7 +4636,43 @@ private:
     }
 
     const auto saved_self = self_type_;
+    const auto saved_assoc = self_assoc_types_;
     self_type_ = target;
+    self_assoc_types_.clear();
+
+    // Populate `self.<name>` associated-type references (impl-defined first,
+    // falling back to the trait's default) before checking any method body,
+    // since a method may reference an associated type defined later in the
+    // same impl.
+    if (trait_decl != nullptr) {
+      for (const auto &item : trait_decl->items) {
+        if (item == nullptr ||
+            item->kind != ast::node_kind::associated_type_decl_node) {
+          continue;
+        }
+        const auto &assoc =
+            dynamic_cast<const ast::associated_type_decl_node &>(*item);
+        if (assoc.value.default_type != nullptr) {
+          self_assoc_types_.emplace(
+              assoc.value.name,
+              resolve_type(*assoc.value.default_type, current_resolve_ctx()));
+        }
+      }
+    }
+    for (const auto &item : decl.items) {
+      if (item == nullptr || item->has_error ||
+          item->kind != ast::node_kind::associated_type_def_node) {
+        continue;
+      }
+      const auto &assoc =
+          dynamic_cast<const ast::associated_type_def_node &>(*item);
+      const auto resolved = assoc.value.type != nullptr
+                                ? resolve_type(*assoc.value.type,
+                                              current_resolve_ctx())
+                                : k_unknown_type;
+      self_assoc_types_.insert_or_assign(assoc.value.name, resolved);
+    }
+
     for (const auto &item : decl.items) {
       if (item == nullptr || item->has_error) {
         continue;
@@ -4632,16 +4681,13 @@ private:
         check_function(dynamic_cast<const ast::func_decl &>(*item),
                        /*at_module_scope=*/false);
       } else if (item->kind == ast::node_kind::associated_type_def_node) {
-        const auto &assoc =
-            dynamic_cast<const ast::associated_type_def_node &>(*item);
-        if (assoc.value.type != nullptr) {
-          resolve_type(*assoc.value.type, current_resolve_ctx());
-        }
+        // Already resolved above.
       } else {
         check_item(*item, /*at_module_scope=*/false);
       }
     }
     self_type_ = saved_self;
+    self_assoc_types_ = saved_assoc;
     pop_type_params();
   }
 
@@ -4793,7 +4839,9 @@ private:
   auto check_trait_decl(const ast::trait_decl &decl) -> void {
     push_type_params(decl.type_params);
     const auto saved_self = self_type_;
+    const auto saved_assoc = self_assoc_types_;
     self_type_ = types_.type_param("self");
+    self_assoc_types_.clear();
 
     if (decl.requires_bound.has_value()) {
       for (const auto &term : decl.requires_bound->terms) {
@@ -4802,6 +4850,24 @@ private:
         }
       }
     }
+
+    // Populate `self.<name>` associated-type references before checking any
+    // method signature, since a method may reference an associated type
+    // declared later in the same trait body.
+    for (const auto &item : decl.items) {
+      if (item == nullptr || item->has_error ||
+          item->kind != ast::node_kind::associated_type_decl_node) {
+        continue;
+      }
+      const auto &assoc =
+          dynamic_cast<const ast::associated_type_decl_node &>(*item);
+      const auto resolved = assoc.value.default_type != nullptr
+                                ? resolve_type(*assoc.value.default_type,
+                                              current_resolve_ctx())
+                                : k_unknown_type;
+      self_assoc_types_.emplace(assoc.value.name, resolved);
+    }
+
     for (const auto &item : decl.items) {
       if (item == nullptr || item->has_error) {
         continue;
@@ -4809,16 +4875,11 @@ private:
       if (item->kind == ast::node_kind::func_decl) {
         check_function(dynamic_cast<const ast::func_decl &>(*item),
                        /*at_module_scope=*/false);
-      } else if (item->kind == ast::node_kind::associated_type_decl_node) {
-        const auto &assoc =
-            dynamic_cast<const ast::associated_type_decl_node &>(*item);
-        if (assoc.value.default_type != nullptr) {
-          resolve_type(*assoc.value.default_type, current_resolve_ctx());
-        }
       }
     }
 
     self_type_ = saved_self;
+    self_assoc_types_ = saved_assoc;
     pop_type_params();
   }
 

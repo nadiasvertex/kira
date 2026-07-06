@@ -1,0 +1,5 @@
+module semantic_stress.array_pattern
+
+def first_two(values: array[int32, 3]) -> int32:
+    match values:
+        [a, b, _] => a + b

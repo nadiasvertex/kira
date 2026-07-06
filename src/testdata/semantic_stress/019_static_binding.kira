@@ -1,0 +1,6 @@
+module semantic_stress.static_binding
+
+static max_retries: int32 = 3
+
+def under_limit(n: int32) -> bool:
+    return n < max_retries

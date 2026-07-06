@@ -1,0 +1,9 @@
+module semantic_stress.contract_purity
+
+pure def is_positive(x: int32) -> bool:
+    return x > 0
+
+def run(x: int32) -> int32
+pre is_positive(x), "must be positive"
+post is_positive(x), "stays positive"
+: x

@@ -1,0 +1,3 @@
+module semantic_stress.cross_module.tools
+
+pub type point = { pub x: float64, pub y: float64 }

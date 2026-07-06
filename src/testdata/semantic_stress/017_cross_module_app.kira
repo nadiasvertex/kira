@@ -1,0 +1,5 @@
+module semantic_stress.cross_module.app
+
+pub def flip(p: semantic_stress.cross_module.tools.point) -> semantic_stress.cross_module.tools.point:
+    let x = p.x
+    return p

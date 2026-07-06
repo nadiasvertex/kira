@@ -1,0 +1,5 @@
+module semantic_stress.tuple_pattern_destructuring
+
+def swap(pair: (int32, str)) -> (str, int32):
+    let (n, s) = pair
+    return (s, n)

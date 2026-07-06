@@ -1,0 +1,17 @@
+module semantic_stress.trait_requires_satisfied
+
+type point = { x: float64 }
+
+trait basic_eq:
+    def equal(self, other: self) -> bool
+
+trait basic_ord requires basic_eq:
+    def less(self, other: self) -> bool
+
+impl basic_eq for point:
+    def equal(self, other: self) -> bool:
+        return self.x == other.x
+
+impl basic_ord for point:
+    def less(self, other: self) -> bool:
+        return self.x < other.x

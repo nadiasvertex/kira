@@ -1,0 +1,7 @@
+module semantic_stress.generic_function
+
+def identity[T](x: T) -> T:
+    return x
+
+def run() -> int32:
+    return identity(42)

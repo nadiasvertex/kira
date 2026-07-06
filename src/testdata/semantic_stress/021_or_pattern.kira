@@ -1,0 +1,8 @@
+module semantic_stress.or_pattern
+
+type digit = @zero | @one | @two | @other(int32)
+
+def is_small(d: digit) -> bool:
+    match d:
+        @zero | @one | @two => true
+        @other(n) => n < 10

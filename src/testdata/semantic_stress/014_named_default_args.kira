@@ -1,0 +1,9 @@
+module semantic_stress.named_and_default_args
+
+def greet(name: str, loud: bool = false) -> str:
+    if loud:
+        return name
+    return name
+
+def run() -> str:
+    return greet("a", loud: true)

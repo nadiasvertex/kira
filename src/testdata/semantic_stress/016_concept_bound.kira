@@ -1,0 +1,7 @@
+module semantic_stress.generic_where_clause
+
+trait value:
+    def label(self) -> str
+
+def announce[T](x: T) -> str where T: value:
+    return x.label()

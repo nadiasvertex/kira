@@ -1,0 +1,8 @@
+module semantic_stress.indexing_and_arrays
+
+def sum_first_two(values: array[int32, 3]) -> int32:
+    return values[0] + values[1]
+
+def run() -> int32:
+    let values = [10, 20, 30]
+    return values[0] + sum_first_two([1, 2, 3])

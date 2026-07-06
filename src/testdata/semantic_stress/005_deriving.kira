@@ -1,0 +1,4 @@
+module semantic_stress.deriving_allowlist
+
+type color = @red | @green | @blue
+    deriving eq, show

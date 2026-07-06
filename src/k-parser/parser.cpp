@@ -3023,15 +3023,21 @@ auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base) -> ast::ptr<ast::exp
   }
 
   case token_kind::lbracket: {
-    // Generic call / instantiation brackets: `name[T]` or `name[n: usize]`.
+    // `name[...]` is ambiguous at parse time: it spells both real indexing
+    // (`values[0]`) and explicit generic instantiation (`identity[int32]`,
+    // `channel[str]`). Real indexing always takes exactly one unnamed key,
+    // so a single unnamed bracket argument is parsed as an `index_expr` and
+    // left to the semantic checker's `infer_index`/`ident_names_callable_decl`,
+    // which knows whether the base names a value or a function/type.
+    // Multiple or named bracket arguments can only be generic instantiation,
+    // since indexing never carries argument names or commas.
     if (base->kind == ast::node_kind::ident_expr ||
         base->kind == ast::node_kind::field_expr ||
         base->kind == ast::node_kind::module_path_expr) {
-      auto call = ast::make<ast::call_expr>();
-      call->span = base->span;
-      call->callee = std::move(base);
+      const auto start_span = base->span;
 
-      advance(); // consume `[` 
+      advance(); // consume `[`
+      auto args = std::vector<ast::call_arg>{};
       while (!at(token_kind::rbracket) && !at_eof()) {
         ast::call_arg arg;
         arg.span = peek().span;
@@ -3047,7 +3053,7 @@ auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base) -> ast::ptr<ast::exp
 
         if (arg.value) {
           arg.span.extend_to(arg.value->span);
-          call->args.push_back(std::move(arg));
+          args.push_back(std::move(arg));
         }
 
         if (!match(token_kind::comma)) {
@@ -3055,6 +3061,19 @@ auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base) -> ast::ptr<ast::exp
         }
       }
       expect(token_kind::rbracket);
+
+      if (args.size() == 1 && !args.front().name.has_value()) {
+        auto idx = ast::make<ast::index_expr>();
+        idx->span = start_span.merge(previous_span());
+        idx->object = std::move(base);
+        idx->index = std::move(args.front().value);
+        return idx;
+      }
+
+      auto call = ast::make<ast::call_expr>();
+      call->span = start_span;
+      call->callee = std::move(base);
+      call->args = std::move(args);
       call->span.extend_to(previous_span());
       return call;
     }

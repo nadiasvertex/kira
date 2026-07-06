@@ -212,8 +212,16 @@ struct semantic_walk_context {
 /// references worth resolving here; a single unqualified segment is an
 /// ordinary type name handled elsewhere.
 auto should_validate_named_type_path(const ast::named_type &type) -> bool {
-  return !type.path.empty() &&
-         (type.path.front() == "super" || type.path.size() > 1);
+  if (type.path.empty()) {
+    return false;
+  }
+  // `self.output` names an associated type on the implementing/self type,
+  // not a module-qualified path; that reference is resolved and validated
+  // by the semantic checker, which knows the enclosing trait/impl.
+  if (type.path.front() == "self") {
+    return false;
+  }
+  return type.path.front() == "super" || type.path.size() > 1;
 }
 
 /// Only a `super`-rooted or session-owned dotted path is a module

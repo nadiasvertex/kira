@@ -1,0 +1,6 @@
+module semantic_stress.type_alias
+
+type meters = float64
+
+def scale(distance: meters) -> meters:
+    return distance * 2.0

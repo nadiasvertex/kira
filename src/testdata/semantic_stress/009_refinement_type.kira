@@ -1,0 +1,6 @@
+module semantic_stress.refinement_type
+
+type positive = int32 where self > 0
+
+def check(n: positive) -> bool:
+    return n > 0

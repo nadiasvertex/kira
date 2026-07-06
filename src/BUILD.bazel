@@ -8,6 +8,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "semantic_stress_corpus",
+    srcs = glob(["testdata/semantic_stress/*.kira"]),
+    visibility = ["//visibility:public"],
+)
+
 proto_library(
     name = "module_metadata_proto",
     srcs = ["module_metadata.proto"],
@@ -53,5 +59,13 @@ cc_test(
     size = "medium",
     srcs = ["driver_stress_test.cpp"],
     data = [":parser_stress_corpus"],
+    deps = [":cli"],
+)
+
+cc_test(
+    name = "semantic_stress_test",
+    size = "medium",
+    srcs = ["semantic_stress_test.cpp"],
+    data = [":semantic_stress_corpus"],
     deps = [":cli"],
 )

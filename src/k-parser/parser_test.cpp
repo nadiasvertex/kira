@@ -788,6 +788,39 @@ auto test_parser_accepts_phase1_audit_regressions() -> void {
   expect(crew_stmt->options.empty(), "expected plain crew without options");
 }
 
+auto test_parser_disambiguates_index_from_generic_instantiation() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "def run(values, identity) -> int32:\n"
+                             "  let a = values[0]\n"
+                             "  let b = identity[int32](5)\n"
+                             "  return a\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+
+  auto *run_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected run function");
+  expect(run_decl->body_stmts.size() == 3,
+         "expected three statements in run's body");
+
+  // A single unnamed bracket argument on a bare identifier is real indexing.
+  auto *index_stmt = expect_node<kira::ast::let_stmt>(
+      run_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected indexing let binding");
+  expect_expr<kira::ast::index_expr>(
+      index_stmt->initializer.get(), kira::ast::node_kind::index_expr,
+      "expected `values[0]` to parse as an index expression");
+
+  // Bracket args immediately followed by a parenthesized call remain an
+  // (outer) call expression — explicit generic instantiation.
+  auto *call_stmt = expect_node<kira::ast::let_stmt>(
+      run_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+      "expected generic-instantiation let binding");
+  expect_expr<kira::ast::call_expr>(
+      call_stmt->initializer.get(), kira::ast::node_kind::call_expr,
+      "expected `identity[int32](5)` to parse as a call expression");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -796,7 +829,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 10> tests = {{
+  const std::array<named_test, 11> tests = {{
       {.name="lexer_indent_dedent", .fn=test_lexer_emits_indent_and_dedent},
       {.name="type_body_nodes", .fn=test_parser_builds_type_body_nodes},
       {.name="associated_types_where_aliases",
@@ -812,6 +845,8 @@ auto main(int argc, char *argv[]) -> int {
       {.name="remaining_phase1_constructs",
        .fn=test_parser_accepts_remaining_phase1_constructs},
       {.name="phase1_audit_regressions", .fn=test_parser_accepts_phase1_audit_regressions},
+      {.name="index_vs_generic_instantiation",
+       .fn=test_parser_disambiguates_index_from_generic_instantiation},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

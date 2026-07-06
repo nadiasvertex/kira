@@ -1,0 +1,21 @@
+module semantic_stress.multiple_trait_impls
+
+type point = { x: float64, y: float64 }
+
+trait show:
+    def show(self) -> str
+
+trait magnitude:
+    def magnitude(self) -> float64
+
+impl show for point:
+    def show(self) -> str:
+        return "point"
+
+impl magnitude for point:
+    def magnitude(self) -> float64:
+        return self.x * self.x + self.y * self.y
+
+def run(p: point) -> str:
+    let m = p.magnitude()
+    return p.show()

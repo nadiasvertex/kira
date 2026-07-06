@@ -1,0 +1,6 @@
+module semantic_stress.let_else_flow
+
+def parse(v: option[int32]) -> int32:
+    let @some(n) = v else:
+        return -1
+    return n

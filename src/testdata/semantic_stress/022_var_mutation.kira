@@ -1,0 +1,9 @@
+module semantic_stress.var_mutation
+
+def sum_to(n: int32) -> int32:
+    var total = 0
+    var i = 0
+    while i < n:
+        total += i
+        i += 1
+    return total
