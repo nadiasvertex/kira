@@ -1,0 +1,28 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+cc_library(
+    name = "bytecode_compiler",
+    srcs = ["compile.cpp"],
+    hdrs = ["compile.h"],
+    deps = [
+        "//src/bytecode:bytecode",
+        "//src/hir:hir",
+        "//src/k-parser:k-parser",
+        "//src/semantic:semantic",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "compile_test",
+    srcs = ["compile_test.cpp"],
+    deps = [
+        ":bytecode_compiler",
+        "//src/bytecode:bytecode",
+        "//src/bytecode:vm",
+        "//src/hir:hir",
+        "//src/k-parser:k-parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+    ],
+)

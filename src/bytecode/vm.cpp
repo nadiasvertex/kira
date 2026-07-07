@@ -471,7 +471,7 @@ constexpr size_t k_max_call_depth = 4096;
     -> slot_value {
   const auto bits = bit_width(k);
   const auto shift = load_unsigned(rhs, k);
-  if (shift >= static_cast<uint64_t>(bits)) {
+  if (std::cmp_greater_equal(shift, bits)) {
     throw panic_error(panic_reason::integer_overflow);
   }
   const auto raw = load_raw(lhs, k);
@@ -481,7 +481,7 @@ constexpr size_t k_max_call_depth = 4096;
     -> slot_value {
   const auto bits = bit_width(k);
   const auto shift = load_unsigned(rhs, k);
-  if (shift >= static_cast<uint64_t>(bits)) {
+  if (std::cmp_greater_equal(shift, bits)) {
     throw panic_error(panic_reason::integer_overflow);
   }
   if (is_signed_integer(k)) {
