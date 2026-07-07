@@ -1,0 +1,7 @@
+module sample
+def is_small(x: int32) -> bool:
+    return match x:
+        0 | 1 | 2 => true
+        _ => false
+def main() -> bool:
+    return is_small(2) and not is_small(5)

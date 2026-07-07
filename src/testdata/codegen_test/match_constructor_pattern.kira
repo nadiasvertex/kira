@@ -1,0 +1,9 @@
+module sample
+type shape = @circle(float64) | @square(float64) | @empty
+def area(s: shape) -> float64:
+    return match s:
+        @circle(r) => r * r
+        @square(side) => side * side
+        @empty => 0.0
+def main() -> float64:
+    return area(@circle(4.0)) + area(@empty)

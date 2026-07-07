@@ -1,0 +1,5 @@
+module sample
+def classify(x: int32) -> bool:
+    return x > 0 and x < 10 or x == -1
+def main() -> bool:
+    return classify(5) and classify(-1) and not classify(99)

@@ -1,0 +1,4 @@
+module sample
+def main() -> int32:
+    var y = 0
+    return 10 / y

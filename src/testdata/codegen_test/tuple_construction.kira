@@ -1,0 +1,7 @@
+module sample
+def sum3() -> int32:
+    let t = (10, 20, 12)
+    let (a, b, c) = t
+    return a + b + c
+def main() -> int32:
+    return sum3()

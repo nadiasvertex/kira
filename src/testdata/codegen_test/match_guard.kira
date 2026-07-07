@@ -1,0 +1,8 @@
+module sample
+def sign(x: int32) -> int32:
+    return match x:
+        _ if x > 0 => 1
+        _ if x < 0 => -1
+        _ => 0
+def main() -> int32:
+    return sign(-7)

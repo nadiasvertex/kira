@@ -1,0 +1,8 @@
+module sample
+def bucket(x: int32) -> int32:
+    return match x:
+        0..10 => 1
+        10..=20 => 2
+        _ => 3
+def main() -> int32:
+    return bucket(20)

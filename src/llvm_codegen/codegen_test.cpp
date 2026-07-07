@@ -18,6 +18,7 @@
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
 
 namespace {
 
@@ -26,6 +27,12 @@ using kira::testing::fail;
 namespace hir = kira::hir;
 namespace bc = kira::bytecode;
 namespace lc = kira::llvm_codegen;
+
+auto test_data_dir = kira::testing::find_test_data_dir("codegen_test");
+
+auto load_fixture(std::string_view filename) -> std::string {
+  return kira::testing::load_test_data_file(test_data_dir.string(), filename);
+}
 
 // Mirrors src/bytecode_compiler/compile_test.cpp's own fixture helper: these
 // tests exercise the real lex -> parse -> check -> lower -> codegen -> JIT
@@ -82,72 +89,42 @@ auto jit_fixture_for(const std::string &text) -> jit_fixture {
 }
 
 auto test_add_compiles_and_runs() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def main() -> int32:\n"
-                            "    return 10 + 32\n");
+  auto jf = jit_fixture_for(load_fixture("add.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42, "expected 10 + 32 == 42");
 }
 
 auto test_implicit_tail_expression_is_the_return_value() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def double(x: int32) -> int32:\n"
-                            "    x * 2\n"
-                            "def main() -> int32:\n"
-                            "    return double(21)\n");
+  auto jf = jit_fixture_for(load_fixture("implicit_tail_expression.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42, "expected 21 * 2 == 42");
 }
 
 auto test_if_expression_selects_branch_value() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def abs_val(x: int32) -> int32:\n"
-                            "    return if x < 0: -x else: x\n"
-                            "def main() -> int32:\n"
-                            "    return abs_val(-7) + abs_val(7)\n");
+  auto jf = jit_fixture_for(load_fixture("if_expression.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 14, "expected abs(-7) + abs(7) == 14");
 }
 
 auto test_while_loop_sums_one_to_n() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def sum_to_n(n: int32) -> int32:\n"
-                            "    var total = 0\n"
-                            "    var i = 1\n"
-                            "    while i <= n:\n"
-                            "        total = total + i\n"
-                            "        i = i + 1\n"
-                            "    return total\n"
-                            "def main() -> int32:\n"
-                            "    return sum_to_n(10)\n");
+  auto jf = jit_fixture_for(load_fixture("while_loop.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 55, "expected sum(1..=10) == 55");
 }
 
 auto test_recursive_call_computes_factorial() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def factorial(n: int32) -> int32:\n"
-                            "    if n <= 1:\n"
-                            "        return 1\n"
-                            "    return n * factorial(n - 1)\n"
-                            "def main() -> int32:\n"
-                            "    return factorial(5)\n");
+  auto jf = jit_fixture_for(load_fixture("recursive_factorial.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 120, "expected factorial(5) == 120");
 }
 
 auto test_and_or_short_circuit_to_correct_value() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def classify(x: int32) -> bool:\n"
-                            "    return x > 0 and x < 10 or x == -1\n"
-                            "def main() -> bool:\n"
-                            "    return classify(5) and classify(-1) and "
-                            "not classify(99)\n");
+  auto jf = jit_fixture_for(load_fixture("and_or_short_circuit.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::boolean);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 1,
@@ -155,21 +132,14 @@ auto test_and_or_short_circuit_to_correct_value() -> void {
 }
 
 auto test_cast_widens_int_to_float() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def to_float(x: int32) -> float64:\n"
-                            "    return x as float64\n"
-                            "def main() -> float64:\n"
-                            "    return to_float(21)\n");
+  auto jf = jit_fixture_for(load_fixture("cast_int_to_float.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::f64);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.f == 21.0, "expected int32(21) as float64 == 21.0");
 }
 
 auto test_checked_add_panics_on_overflow_end_to_end() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def main() -> int8:\n"
-                            "    var x: int8 = 100\n"
-                            "    return x + x\n");
+  auto jf = jit_fixture_for(load_fixture("checked_add_overflow.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i8);
   expect(!result.has_value(), "expected int8 100+100 to overflow and panic");
   expect(result.error() == bc::panic_reason::integer_overflow,
@@ -177,10 +147,7 @@ auto test_checked_add_panics_on_overflow_end_to_end() -> void {
 }
 
 auto test_checked_div_panics_on_divide_by_zero() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def main() -> int32:\n"
-                            "    var y = 0\n"
-                            "    return 10 / y\n");
+  auto jf = jit_fixture_for(load_fixture("checked_div_by_zero.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(!result.has_value(), "expected division by zero to panic");
   expect(result.error() == bc::panic_reason::integer_divide_by_zero,
@@ -193,9 +160,7 @@ auto test_string_literal_compiles_to_a_heap_value() -> void {
   // function compiles and verifies cleanly, mirroring
   // compile_test.cpp's own more thorough str test (which can read the
   // returned heap value's raw slots directly).
-  auto fixture = check_fixture("module sample\n"
-                               "def greet() -> str:\n"
-                               "    return \"hi\"\n");
+  auto fixture = check_fixture(load_fixture("string_literal.kira"));
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected fixture to lower to HIR");
   auto compiled = lc::compile_module(**module, fixture.checked.types);
@@ -211,11 +176,7 @@ auto test_sum_type_variant_construction_compiles_to_a_heap_value() -> void {
   // sum-type-returning function compiles cleanly; compile_test.cpp's sum
   // type tests read the returned heap value's raw tag/payload slots
   // directly via the bytecode VM.
-  auto fixture =
-      check_fixture("module sample\n"
-                    "type shape = @circle(float64) | @square(float64)\n"
-                    "def make(r: float64) -> shape:\n"
-                    "    return @circle(r)\n");
+  auto fixture = check_fixture(load_fixture("sum_type_variant.kira"));
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected fixture to lower to HIR");
   auto compiled = lc::compile_module(**module, fixture.checked.types);
@@ -225,13 +186,7 @@ auto test_sum_type_variant_construction_compiles_to_a_heap_value() -> void {
 }
 
 auto test_tuple_construction_and_projection() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def sum3() -> int32:\n"
-                            "    let t = (10, 20, 12)\n"
-                            "    let (a, b, c) = t\n"
-                            "    return a + b + c\n"
-                            "def main() -> int32:\n"
-                            "    return sum3()\n");
+  auto jf = jit_fixture_for(load_fixture("tuple_construction.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42,
@@ -239,37 +194,21 @@ auto test_tuple_construction_and_projection() -> void {
 }
 
 auto test_struct_literal_and_field_access() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "type point = { pub x: int32, pub y: int32 }\n"
-                            "def sum_fields(x: int32, y: int32) -> int32:\n"
-                            "    let p: point = { x: x, y: y }\n"
-                            "    return (p).x + (p).y\n"
-                            "def main() -> int32:\n"
-                            "    return sum_fields(18, 24)\n");
+  auto jf = jit_fixture_for(load_fixture("struct_field_access.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42, "expected 18 + 24 == 42 via field access");
 }
 
 auto test_fixed_array_construction_and_indexing() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def third(i: usize) -> int32:\n"
-                            "    let a: array[int32, 4] = [10, 20, 30, 40]\n"
-                            "    return a[i]\n"
-                            "def main() -> int32:\n"
-                            "    return third(2)\n");
+  auto jf = jit_fixture_for(load_fixture("fixed_array_indexing.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 30, "expected a[2] == 30");
 }
 
 auto test_array_index_out_of_bounds_panics() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def get(i: usize) -> int32:\n"
-                            "    let a: array[int32, 3] = [1, 2, 3]\n"
-                            "    return a[i]\n"
-                            "def main() -> int32:\n"
-                            "    return get(5)\n");
+  auto jf = jit_fixture_for(load_fixture("array_out_of_bounds.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(!result.has_value(), "expected a[5] on a 3-element array to panic");
   expect(result.error() == bc::panic_reason::index_out_of_bounds,
@@ -277,53 +216,28 @@ auto test_array_index_out_of_bounds_panics() -> void {
 }
 
 auto test_array_fill_form_repeats_the_same_value() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def sum_of_fives() -> int32:\n"
-                            "    let a: array[int32, 4] = [5; 4]\n"
-                            "    return a[0] + a[1] + a[2] + a[3]\n"
-                            "def main() -> int32:\n"
-                            "    return sum_of_fives()\n");
+  auto jf = jit_fixture_for(load_fixture("array_fill.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 20, "expected four 5s to sum to 20");
 }
 
 auto test_match_dispatches_on_literal_and_wildcard_patterns() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def classify(x: int32) -> int32:\n"
-                            "    return match x:\n"
-                            "        0 => 100\n"
-                            "        1 => 200\n"
-                            "        _ => 300\n"
-                            "def main() -> int32:\n"
-                            "    return classify(1)\n");
+  auto jf = jit_fixture_for(load_fixture("match_literal_wildcard.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 200, "expected classify(1) == 200");
 }
 
 auto test_match_or_pattern_matches_any_alternative() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def is_small(x: int32) -> bool:\n"
-                            "    return match x:\n"
-                            "        0 | 1 | 2 => true\n"
-                            "        _ => false\n"
-                            "def main() -> bool:\n"
-                            "    return is_small(2) and not is_small(5)\n");
+  auto jf = jit_fixture_for(load_fixture("match_or_pattern.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::boolean);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 1, "expected is_small(2) && !is_small(5)");
 }
 
 auto test_match_range_pattern() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def bucket(x: int32) -> int32:\n"
-                            "    return match x:\n"
-                            "        0..10 => 1\n"
-                            "        10..=20 => 2\n"
-                            "        _ => 3\n"
-                            "def main() -> int32:\n"
-                            "    return bucket(20)\n");
+  auto jf = jit_fixture_for(load_fixture("match_range_pattern.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 2, "expected bucket(20) == 2");
@@ -334,28 +248,14 @@ auto test_match_guard_refines_a_pattern() -> void {
   // why the guard reads the enclosing parameter `x` rather than a
   // pattern-bound name (a known pre-existing lowering gap, out of scope
   // here).
-  auto jf = jit_fixture_for("module sample\n"
-                            "def sign(x: int32) -> int32:\n"
-                            "    return match x:\n"
-                            "        _ if x > 0 => 1\n"
-                            "        _ if x < 0 => -1\n"
-                            "        _ => 0\n"
-                            "def main() -> int32:\n"
-                            "    return sign(-7)\n");
+  auto jf = jit_fixture_for(load_fixture("match_guard.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == -1, "expected sign(-7) == -1");
 }
 
 auto test_match_tuple_pattern_with_literal_and_binding() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "def describe(a: int32, b: int32) -> int32:\n"
-                            "    let t: (int32, int32) = (a, b)\n"
-                            "    return match t:\n"
-                            "        (0, y) => y\n"
-                            "        (x, y) => x + y\n"
-                            "def main() -> int32:\n"
-                            "    return describe(0, 42) + describe(18, 24)\n");
+  auto jf = jit_fixture_for(load_fixture("match_tuple_pattern.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 84,
@@ -363,16 +263,7 @@ auto test_match_tuple_pattern_with_literal_and_binding() -> void {
 }
 
 auto test_match_constructor_pattern_over_a_sum_type() -> void {
-  auto jf = jit_fixture_for(
-      "module sample\n"
-      "type shape = @circle(float64) | @square(float64) | @empty\n"
-      "def area(s: shape) -> float64:\n"
-      "    return match s:\n"
-      "        @circle(r) => r * r\n"
-      "        @square(side) => side * side\n"
-      "        @empty => 0.0\n"
-      "def main() -> float64:\n"
-      "    return area(@circle(4.0)) + area(@empty)\n");
+  auto jf = jit_fixture_for(load_fixture("match_constructor_pattern.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::f64);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.f == 16.0,
@@ -380,14 +271,7 @@ auto test_match_constructor_pattern_over_a_sum_type() -> void {
 }
 
 auto test_match_struct_pattern_destructures_named_fields() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "type point = { pub x: int32, pub y: int32 }\n"
-                            "def sum_fields(x: int32, y: int32) -> int32:\n"
-                            "    let p: point = { x: x, y: y }\n"
-                            "    return match p:\n"
-                            "        { x, y } => x + y\n"
-                            "def main() -> int32:\n"
-                            "    return sum_fields(18, 24)\n");
+  auto jf = jit_fixture_for(load_fixture("match_struct_pattern.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 42, "expected 18 + 24 == 42 via struct pattern");

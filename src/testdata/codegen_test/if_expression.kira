@@ -1,0 +1,5 @@
+module sample
+def abs_val(x: int32) -> int32:
+    return if x < 0: -x else: x
+def main() -> int32:
+    return abs_val(-7) + abs_val(7)
