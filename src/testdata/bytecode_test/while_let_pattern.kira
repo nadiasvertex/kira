@@ -1,0 +1,13 @@
+module sample
+type step = @present(int32) | @done
+def next_value(i: int32) -> step:
+    if i < 5:
+        return @present(i)
+    return @done
+def sum_while() -> int32:
+    var total = 0
+    var i = 0
+    while let @present(v) = next_value(i):
+        total = total + v
+        i = i + 1
+    return total

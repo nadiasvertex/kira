@@ -61,6 +61,16 @@ inline constexpr const char *kPanicSymbolName = "kira_codegen_panic";
 /// lookup for the JIT, ordinary static linking for `kira build`).
 inline constexpr const char *kAllocSymbolName = "kira_rt_alloc";
 
+/// The exact symbol name generated IR calls to grow a `list[T]` value and
+/// reserve its next element slot (`spec/codegen-design.md` increment 5) —
+/// defined in `src/runtime/layout.h`, resolved the same way
+/// `kAllocSymbolName` already is. Returns the address to store the pushed
+/// value at directly, rather than taking the value itself as a parameter,
+/// so the runtime side never needs to know the pushed value's concrete
+/// LLVM type (see `list_reserve_slot`'s own doc comment).
+inline constexpr const char *kListReserveSlotSymbolName =
+    "kira_rt_list_reserve_slot";
+
 /// Lowers every function in `module` into one `llvm::Module` named after
 /// `module.module_name`, resolving direct calls to other functions in the
 /// same module by declaring every function's signature up front (a first

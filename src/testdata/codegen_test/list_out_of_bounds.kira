@@ -1,0 +1,6 @@
+module sample
+def get(i: usize) -> int32:
+    let xs: list[int32] = [1, 2, 3]
+    return xs[i]
+def main() -> int32:
+    return get(5)

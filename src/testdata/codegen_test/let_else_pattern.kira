@@ -1,0 +1,8 @@
+module sample
+type maybe = @present(int32) | @absent
+def unwrap_or(v: maybe) -> int32:
+    let @present(n) = v else:
+        return -1
+    return n
+def main() -> int32:
+    return unwrap_or(@present(7)) + unwrap_or(@absent)

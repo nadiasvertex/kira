@@ -1,0 +1,6 @@
+module sample
+def third(i: usize) -> int32:
+    let xs: list[int32] = [10, 20, 30, 40]
+    return xs[i]
+def main() -> int32:
+    return third(2)

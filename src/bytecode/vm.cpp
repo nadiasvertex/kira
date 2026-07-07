@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "src/runtime/arena.h"
+#include "src/runtime/layout.h"
 
 namespace kira::bytecode {
 
@@ -934,6 +935,17 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         f.pc = ip + 3;
         break;
       }
+      case opcode::op_list_push: {
+        const uint8_t header_reg = code[ip];
+        const uint8_t value_reg = code[ip + 1];
+        auto *header = reinterpret_cast<uint64_t *>(
+            static_cast<uintptr_t>(f.registers[header_reg].u));
+        auto *slot = kira::runtime::list_reserve_slot(header);
+        *slot = f.registers[value_reg].u;
+        f.pc = ip + 2;
+        break;
+      }
+
       case opcode::op_panic_if: {
         const uint8_t cond = code[ip];
         const auto reason = static_cast<panic_reason>(code[ip + 1]);

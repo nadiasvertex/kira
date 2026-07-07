@@ -242,6 +242,20 @@ enum class opcode : uint8_t {
                      ///< this, not baked into the instruction stream.
   op_store_indexed,  ///< u8 ptr, u8 index, u8 src —
                      ///< *(reg[ptr] as slot_value* + reg[index].u) = reg[src].
+  op_list_push,      ///< u8 header_ptr, u8 value — appends reg[value] onto
+                     ///< the `list[T]` value at reg[header_ptr] (a 3-slot
+                     ///< `{ len; cap; data }` header, `src/runtime/
+                     ///< layout.h`), growing/copying to a larger `data`
+                     ///< block when already at capacity. Unlike
+                     ///< `op_load_slot`/`op_store_slot`, this is one
+                     ///< opcode rather than several composed primitives:
+                     ///< growth needs a real conditional allocate-and-copy
+                     ///< that doesn't reduce to "one flat block of 8-byte
+                     ///< slots," so this delegates to
+                     ///< `kira::runtime::list_push` (the exact same
+                     ///< function `llvm_codegen`'s generated IR calls via
+                     ///< `kira_rt_list_push`) rather than reimplementing
+                     ///< growth as a second copy of that logic here.
   op_panic_if,       ///< u8 cond, u8 panic_reason — panics with
                      ///< `static_cast<panic_reason>(panic_reason)` if
                      ///< reg[cond] (a `boolean` register) is true; otherwise

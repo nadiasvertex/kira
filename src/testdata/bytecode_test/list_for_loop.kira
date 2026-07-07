@@ -1,0 +1,9 @@
+module sample
+def sum_list(xs: list[int32]) -> int32:
+    var total = 0
+    for x in xs:
+        total = total + x
+    return total
+def run() -> int32:
+    let xs: list[int32] = [1, 2, 3, 4, 5]
+    return sum_list(xs)

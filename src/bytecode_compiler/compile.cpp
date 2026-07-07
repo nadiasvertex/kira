@@ -380,6 +380,16 @@ private:
     return *kind;
   }
 
+  /// Whether `id` is the prelude's growable `list[T]` container — as
+  /// opposed to a fixed `array[T, N]`, which shares construction/indexing
+  /// codegen for everything except sizing/length (see `compile_array_init`/
+  /// `compile_index`).
+  [[nodiscard]] auto is_list_type(type_id id) const -> bool {
+    const auto &entry = types_.entry(id);
+    return entry.kind == semantic::type_kind::builtin_generic_kind &&
+           entry.name == "list";
+  }
+
   // ------------------------------------------------------------------
   //  Expressions.
   // ------------------------------------------------------------------
@@ -473,6 +483,17 @@ private:
           dynamic_cast<const hir::hir_variant_payload &>(expr), dst);
     case hir_node_kind::hir_match:
       return compile_match(dynamic_cast<const hir::hir_match &>(expr), dst);
+    case hir_node_kind::hir_container_len:
+      return compile_container_len(
+          dynamic_cast<const hir::hir_container_len &>(expr), dst);
+    case hir_node_kind::hir_block:
+      // A block used in expression position (e.g. a comprehension's
+      // desugared accumulator block, `hir::lower_comprehension`) — its
+      // trailing statement's value is compiled directly into `dst`, the
+      // same way an `if`/`match` arm's body already is via
+      // `compile_block_as_value`.
+      return compile_block_as_value(dynamic_cast<const hir::hir_block &>(expr),
+                                    std::optional<uint8_t>(dst));
     default:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
@@ -804,6 +825,9 @@ private:
   [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init,
                                         uint8_t dst)
       -> std::expected<void, compile_error> {
+    if (is_list_type(init.type)) {
+      return compile_list_init(init, dst);
+    }
     if (init.fill_value == nullptr) {
       return compile_slots_init(init.elements, dst, init.span);
     }
@@ -846,6 +870,125 @@ private:
     return {};
   }
 
+  /// Constructs a growable `list[T]` heap value: a 3-slot header
+  /// `{ len; cap; data }` (`src/runtime/layout.h`), zero-initialized by
+  /// `op_alloc` into an empty list (`len == cap == 0`, `data == null`) and
+  /// then grown via `op_list_push` — for the explicit-elements form, one
+  /// push per literal element; for the fill form `[val; count]`, `count`
+  /// pushes of the same evaluated-once value in a runtime loop. Unlike a
+  /// fixed array's `[T, N]` (whose `N` the checker requires to be
+  /// statically known), a list's fill count may be an arbitrary runtime
+  /// `usize` expression (`infer_array` in `check.cpp` only requires the
+  /// *element* type, not the count, to be resolvable) — the push-loop
+  /// shape is the only construction strategy that works uniformly whether
+  /// `count` happens to be a literal or not.
+  [[nodiscard]] auto compile_list_init(const hir::hir_array_init &init,
+                                       uint8_t dst)
+      -> std::expected<void, compile_error> {
+    writer_.emit_opcode(opcode::op_alloc);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(3);
+
+    if (init.fill_value == nullptr) {
+      for (const auto &elem : init.elements) {
+        auto value_reg = compile_expr(*elem);
+        if (!value_reg.has_value()) {
+          return std::unexpected(value_reg.error());
+        }
+        writer_.emit_opcode(opcode::op_list_push);
+        writer_.emit_u8(dst);
+        writer_.emit_u8(*value_reg);
+      }
+      return {};
+    }
+
+    // Evaluated once, then pushed `count` times — see
+    // `compile_array_init`'s fixed-array fill form for why a side-effecting
+    // fill expression must only run once.
+    auto fill_reg = compile_expr(*init.fill_value);
+    if (!fill_reg.has_value()) {
+      return std::unexpected(fill_reg.error());
+    }
+    auto count_kind = numeric_kind_for(init.fill_count->type, init.span);
+    if (!count_kind.has_value()) {
+      return std::unexpected(count_kind.error());
+    }
+    auto count_reg = compile_expr(*init.fill_count);
+    if (!count_reg.has_value()) {
+      return std::unexpected(count_reg.error());
+    }
+
+    auto idx_reg = alloc_register(init.span);
+    if (!idx_reg.has_value()) {
+      return std::unexpected(idx_reg.error());
+    }
+    const auto zero_const = writer_.add_constant(slot_value{uint64_t{0}});
+    writer_.emit_opcode(opcode::op_load_const);
+    writer_.emit_u8(*idx_reg);
+    writer_.emit_u16(zero_const);
+
+    const auto loop_start = writer_.current_offset();
+    auto cmp_reg = alloc_register(init.span);
+    if (!cmp_reg.has_value()) {
+      return std::unexpected(cmp_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_lt);
+    writer_.emit_u8(*cmp_reg);
+    writer_.emit_u8(*idx_reg);
+    writer_.emit_u8(*count_reg);
+    writer_.emit_numeric_kind(*count_kind);
+    writer_.emit_opcode(opcode::op_jump_if_false);
+    writer_.emit_u8(*cmp_reg);
+    const auto exit_placeholder = writer_.emit_jump_placeholder();
+
+    writer_.emit_opcode(opcode::op_list_push);
+    writer_.emit_u8(dst);
+    writer_.emit_u8(*fill_reg);
+
+    const auto one_const = writer_.add_constant(slot_value{uint64_t{1}});
+    auto one_reg = alloc_register(init.span);
+    if (!one_reg.has_value()) {
+      return std::unexpected(one_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_load_const);
+    writer_.emit_u8(*one_reg);
+    writer_.emit_u16(one_const);
+    writer_.emit_opcode(opcode::op_add);
+    writer_.emit_u8(*idx_reg);
+    writer_.emit_u8(*idx_reg);
+    writer_.emit_u8(*one_reg);
+    writer_.emit_numeric_kind(*count_kind);
+
+    writer_.emit_opcode(opcode::op_jump);
+    const auto after_operand =
+        static_cast<int64_t>(writer_.current_offset()) + 4;
+    const auto back_offset =
+        static_cast<int32_t>(static_cast<int64_t>(loop_start) - after_operand);
+    writer_.emit_i32(back_offset);
+
+    writer_.patch_jump_to_here(exit_placeholder);
+    return {};
+  }
+
+  /// A container's runtime element count (`for`-loop/`while`-loop bound
+  /// checking over a `list`/`str`, whose length isn't statically known) —
+  /// both layouts (`src/runtime/layout.h`) put their length at slot 0, so
+  /// this is the same one `op_load_slot` regardless of which container
+  /// kind `node.object` actually is.
+  [[nodiscard]] auto compile_container_len(const hir::hir_container_len &node,
+                                           uint8_t dst)
+      -> std::expected<void, compile_error> {
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_load_slot);
+    writer_.emit_u8(dst);
+    writer_.emit_u8(*object_reg);
+    writer_.emit_u16(0);
+    return {};
+  }
+
   [[nodiscard]] auto compile_field(const hir::hir_field &field, uint8_t dst)
       -> std::expected<void, compile_error> {
     const auto slot = runtime::struct_field_slot(types_, field.object->type,
@@ -884,21 +1027,29 @@ private:
     return {};
   }
 
-  /// Fixed `array[T, N]` element access only — `list`/`slice`/`str`
-  /// indexing needs increment 5's growable-container support and is
-  /// rejected here for now, same as every other not-yet-scoped construct.
+  /// Fixed `array[T, N]` and growable `list[T]` element access —
+  /// `slice`/`str` indexing still needs a byte/view model this bytecode
+  /// compiler doesn't have yet and is rejected here for now. A fixed
+  /// array's elements live directly in its own heap block, so its "data
+  /// pointer" is the object itself and its length is the statically-known
+  /// `N`; a list's elements live in a separate block reached through its
+  /// 3-slot header's `data` slot (`src/runtime/layout.h`), with its length
+  /// read from the header's `len` slot at runtime — everything past that
+  /// point (the bounds check, the indexed load) is shared.
   [[nodiscard]] auto compile_index(const hir::hir_index &node, uint8_t dst)
       -> std::expected<void, compile_error> {
     const auto &object_entry = types_.entry(node.object->type);
-    if (object_entry.kind != semantic::type_kind::array_kind ||
-        !object_entry.array_size.has_value()) {
+    const bool indexing_list = is_list_type(node.object->type);
+    if (!indexing_list &&
+        (object_entry.kind != semantic::type_kind::array_kind ||
+         !object_entry.array_size.has_value())) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = node.span,
           .message = "indexing is only supported for a fixed-size array "
-                     "with a statically known length yet — list/slice/str "
-                     "indexing needs increment 5's growable-container "
-                     "support"});
+                     "with a statically known length, or a list, yet — "
+                     "slice/str indexing needs a byte/view model this "
+                     "bytecode compiler doesn't have yet"});
     }
     auto object_reg = compile_expr(*node.object);
     if (!object_reg.has_value()) {
@@ -909,15 +1060,41 @@ private:
       return std::unexpected(index_reg.error());
     }
 
-    const auto len_const = writer_.add_constant(
-        slot_value{static_cast<uint64_t>(*object_entry.array_size)});
-    auto len_reg = alloc_register(node.span);
-    if (!len_reg.has_value()) {
-      return std::unexpected(len_reg.error());
+    uint8_t len_reg;
+    uint8_t data_reg;
+    if (indexing_list) {
+      auto len_reg_exp = alloc_register(node.span);
+      if (!len_reg_exp.has_value()) {
+        return std::unexpected(len_reg_exp.error());
+      }
+      writer_.emit_opcode(opcode::op_load_slot);
+      writer_.emit_u8(*len_reg_exp);
+      writer_.emit_u8(*object_reg);
+      writer_.emit_u16(0);
+      len_reg = *len_reg_exp;
+
+      auto data_reg_exp = alloc_register(node.span);
+      if (!data_reg_exp.has_value()) {
+        return std::unexpected(data_reg_exp.error());
+      }
+      writer_.emit_opcode(opcode::op_load_slot);
+      writer_.emit_u8(*data_reg_exp);
+      writer_.emit_u8(*object_reg);
+      writer_.emit_u16(2);
+      data_reg = *data_reg_exp;
+    } else {
+      const auto len_const = writer_.add_constant(
+          slot_value{static_cast<uint64_t>(*object_entry.array_size)});
+      auto len_reg_exp = alloc_register(node.span);
+      if (!len_reg_exp.has_value()) {
+        return std::unexpected(len_reg_exp.error());
+      }
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(*len_reg_exp);
+      writer_.emit_u16(len_const);
+      len_reg = *len_reg_exp;
+      data_reg = *object_reg;
     }
-    writer_.emit_opcode(opcode::op_load_const);
-    writer_.emit_u8(*len_reg);
-    writer_.emit_u16(len_const);
 
     auto oob_reg = alloc_register(node.span);
     if (!oob_reg.has_value()) {
@@ -926,7 +1103,7 @@ private:
     writer_.emit_opcode(opcode::op_ge);
     writer_.emit_u8(*oob_reg);
     writer_.emit_u8(*index_reg);
-    writer_.emit_u8(*len_reg);
+    writer_.emit_u8(len_reg);
     writer_.emit_numeric_kind(numeric_kind::u64);
     writer_.emit_opcode(opcode::op_panic_if);
     writer_.emit_u8(*oob_reg);
@@ -935,7 +1112,7 @@ private:
 
     writer_.emit_opcode(opcode::op_load_indexed);
     writer_.emit_u8(dst);
-    writer_.emit_u8(*object_reg);
+    writer_.emit_u8(data_reg);
     writer_.emit_u8(*index_reg);
     return {};
   }
@@ -1526,14 +1703,18 @@ private:
     case hir_node_kind::hir_match:
       return compile_match(dynamic_cast<const hir::hir_match &>(node),
                            std::nullopt);
+    case hir_node_kind::hir_while_let:
+      return compile_while_let(dynamic_cast<const hir::hir_while_let &>(node));
+    case hir_node_kind::hir_let_else:
+      return compile_let_else(dynamic_cast<const hir::hir_let_else &>(node));
+    case hir_node_kind::hir_list_push:
+      return compile_list_push(dynamic_cast<const hir::hir_list_push &>(node));
     default:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = node.span,
           .message = "this statement form is outside the bytecode compiler's "
-                     "current scope — while-let, destructuring let/else, and "
-                     "comprehension pushes all need increment 5's growable-"
-                     "container support"});
+                     "current scope"});
     }
   }
 
@@ -1626,6 +1807,100 @@ private:
     writer_.emit_i32(back_offset);
 
     writer_.patch_jump_to_here(exit_placeholder);
+    return {};
+  }
+
+  /// `while let pattern = expr: body` — like `compile_while`, but the loop
+  /// condition is a fresh pattern test against a freshly re-evaluated
+  /// `subject` every iteration (see `hir_while_let`'s doc comment) rather
+  /// than a plain boolean expression; falls out of the loop the first time
+  /// the pattern fails to match, with no `else`.
+  [[nodiscard]] auto compile_while_let(const hir::hir_while_let &loop)
+      -> std::expected<void, compile_error> {
+    const auto loop_start = writer_.current_offset();
+    auto subject_reg = compile_expr(*loop.subject);
+    if (!subject_reg.has_value()) {
+      return std::unexpected(subject_reg.error());
+    }
+    locals_.insert_or_assign(loop.subject_symbol, *subject_reg);
+    const auto subject_type = std::optional<type_id>(loop.subject->type);
+
+    auto test_reg =
+        compile_pattern_test(*loop.pattern, *subject_reg, subject_type);
+    if (!test_reg.has_value()) {
+      return std::unexpected(test_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_jump_if_false);
+    writer_.emit_u8(*test_reg);
+    const auto exit_placeholder = writer_.emit_jump_placeholder();
+
+    if (auto result = compile_block_as_value(*loop.body, std::nullopt);
+        !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+
+    writer_.emit_opcode(opcode::op_jump);
+    const auto after_operand =
+        static_cast<int64_t>(writer_.current_offset()) + 4;
+    const auto back_offset =
+        static_cast<int32_t>(static_cast<int64_t>(loop_start) - after_operand);
+    writer_.emit_i32(back_offset);
+
+    writer_.patch_jump_to_here(exit_placeholder);
+    return {};
+  }
+
+  /// `let pattern = expr else: block` — evaluates `initializer` into
+  /// `subject_symbol` once, tests it against `pattern`, and runs
+  /// `else_body` when it fails to match; `pattern`'s own bindings are
+  /// ordinary `hir_let`s lowering already spliced in immediately after this
+  /// node (see `hir_let_else`'s doc comment), so this only has to compile
+  /// the test and the branch, not any binding of its own. `else_body` must
+  /// diverge — a language-level invariant the checker enforces, not
+  /// something re-verified here (mirrors the node's own doc comment).
+  [[nodiscard]] auto compile_let_else(const hir::hir_let_else &node)
+      -> std::expected<void, compile_error> {
+    auto subject_reg = compile_expr(*node.initializer);
+    if (!subject_reg.has_value()) {
+      return std::unexpected(subject_reg.error());
+    }
+    locals_.emplace(node.subject_symbol, *subject_reg);
+    const auto subject_type = std::optional<type_id>(node.initializer->type);
+
+    auto test_reg =
+        compile_pattern_test(*node.pattern, *subject_reg, subject_type);
+    if (!test_reg.has_value()) {
+      return std::unexpected(test_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_jump_if_true);
+    writer_.emit_u8(*test_reg);
+    const auto continue_placeholder = writer_.emit_jump_placeholder();
+
+    if (auto result = compile_block_as_value(*node.else_body, std::nullopt);
+        !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+
+    writer_.patch_jump_to_here(continue_placeholder);
+    return {};
+  }
+
+  /// Appends `value` onto the `list[T]` place `target` (see
+  /// `hir_list_push`'s doc comment) — the comprehension accumulator's
+  /// growth statement.
+  [[nodiscard]] auto compile_list_push(const hir::hir_list_push &node)
+      -> std::expected<void, compile_error> {
+    auto target_reg = compile_expr(*node.target);
+    if (!target_reg.has_value()) {
+      return std::unexpected(target_reg.error());
+    }
+    auto value_reg = compile_expr(*node.value);
+    if (!value_reg.has_value()) {
+      return std::unexpected(value_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_list_push);
+    writer_.emit_u8(*target_reg);
+    writer_.emit_u8(*value_reg);
     return {};
   }
 

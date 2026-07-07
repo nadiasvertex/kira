@@ -68,8 +68,8 @@ auto parse_sources(const std::vector<source_fixture> &fixtures)
 auto load_test_data_fixture(std::string_view filename) -> source_fixture {
   const auto test_data_dir =
       kira::testing::find_test_data_dir("semantic_resolution_test");
-  const auto text = kira::testing::load_test_data_file(
-      test_data_dir.string(), filename);
+  const auto text =
+      kira::testing::load_test_data_file(test_data_dir.string(), filename);
   return source_fixture{.path = std::string(filename), .text = text};
 }
 
@@ -212,8 +212,7 @@ auto test_resolve_value_name_shadowing_in_nested_blocks() -> void {
 
 auto test_resolve_function_parameters_and_locals() -> void {
   const auto parsed = parse_sources({
-      load_test_data_fixture(
-          "resolve_function_parameters_and_locals.kira"),
+      load_test_data_fixture("resolve_function_parameters_and_locals.kira"),
   });
 
   const auto session =
@@ -248,8 +247,7 @@ auto test_resolve_function_parameters_and_locals() -> void {
 
 auto test_match_arm_pattern_bindings_are_arm_local() -> void {
   const auto parsed = parse_sources({
-      load_test_data_fixture(
-          "match_arm_pattern_bindings_are_arm_local.kira"),
+      load_test_data_fixture("match_arm_pattern_bindings_are_arm_local.kira"),
   });
 
   const auto session =
@@ -283,8 +281,7 @@ auto test_match_arm_pattern_bindings_are_arm_local() -> void {
 
 auto test_lambda_parameters_shadow_outer_bindings() -> void {
   const auto parsed = parse_sources({
-      load_test_data_fixture(
-          "lambda_parameters_shadow_outer_bindings.kira"),
+      load_test_data_fixture("lambda_parameters_shadow_outer_bindings.kira"),
   });
 
   const auto session =

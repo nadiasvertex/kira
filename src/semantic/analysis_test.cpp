@@ -77,7 +77,8 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
   };
 }
 
-auto load_fixtures(std::string_view test_data_dir) -> std::vector<source_fixture> {
+auto load_fixtures(std::string_view test_data_dir)
+    -> std::vector<source_fixture> {
   auto test_dir = kira::testing::find_test_data_dir(test_data_dir);
   auto fixtures = std::vector<source_fixture>{};
 
@@ -86,7 +87,8 @@ auto load_fixtures(std::string_view test_data_dir) -> std::vector<source_fixture
       auto filename = entry.path().filename().string();
       fixtures.push_back({
           .path = filename,
-          .text = kira::testing::load_test_data_file(test_dir.string(), filename),
+          .text =
+              kira::testing::load_test_data_file(test_dir.string(), filename),
       });
     }
   }
@@ -95,7 +97,8 @@ auto load_fixtures(std::string_view test_data_dir) -> std::vector<source_fixture
 }
 
 auto test_validate_semantics_accepts_clean_session() -> void {
-  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/clean_session"));
+  const auto analyzed =
+      analyze_sources(load_fixtures("semantic_analysis_test/clean_session"));
 
   expect(analyzed.error_count == 0, "expected clean session to validate");
   expect(analyzed.diagnostics.empty(),
@@ -103,7 +106,8 @@ auto test_validate_semantics_accepts_clean_session() -> void {
 }
 
 auto test_validate_semantics_reports_duplicate_module_paths() -> void {
-  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/duplicate_module_paths"));
+  const auto analyzed = analyze_sources(
+      load_fixtures("semantic_analysis_test/duplicate_module_paths"));
 
   expect(analyzed.error_count > 0,
          "expected duplicate module paths to fail semantic validation");
@@ -114,7 +118,8 @@ auto test_validate_semantics_reports_duplicate_module_paths() -> void {
 
 auto test_validate_semantics_reports_missing_parent_module_declaration()
     -> void {
-  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/missing_parent_declaration"));
+  const auto analyzed = analyze_sources(
+      load_fixtures("semantic_analysis_test/missing_parent_declaration"));
 
   expect(analyzed.error_count > 0,
          "expected missing parent declaration to fail semantic validation");
@@ -125,7 +130,8 @@ auto test_validate_semantics_reports_missing_parent_module_declaration()
 }
 
 auto test_validate_semantics_reports_unresolved_session_import() -> void {
-  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/unresolved_session_import"));
+  const auto analyzed = analyze_sources(
+      load_fixtures("semantic_analysis_test/unresolved_session_import"));
 
   expect(analyzed.error_count > 0,
          "expected unresolved session import to fail semantic validation");
@@ -136,7 +142,8 @@ auto test_validate_semantics_reports_unresolved_session_import() -> void {
 }
 
 auto test_validate_semantics_reports_duplicate_module_scope_symbol() -> void {
-  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/duplicate_module_scope_symbol"));
+  const auto analyzed = analyze_sources(
+      load_fixtures("semantic_analysis_test/duplicate_module_scope_symbol"));
 
   expect(analyzed.error_count > 0,
          "expected duplicate module-scope symbol to fail semantic validation");
@@ -147,7 +154,8 @@ auto test_validate_semantics_reports_duplicate_module_scope_symbol() -> void {
 }
 
 auto test_validate_semantics_reports_unresolved_qualified_type_path() -> void {
-  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/unresolved_qualified_type_path"));
+  const auto analyzed = analyze_sources(
+      load_fixtures("semantic_analysis_test/unresolved_qualified_type_path"));
 
   expect(analyzed.error_count > 0,
          "expected unresolved qualified type path to fail semantic validation");
@@ -159,7 +167,8 @@ auto test_validate_semantics_reports_unresolved_qualified_type_path() -> void {
 
 auto test_validate_semantics_reports_unresolved_module_qualified_reference()
     -> void {
-  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/unresolved_module_qualified_reference"));
+  const auto analyzed = analyze_sources(load_fixtures(
+      "semantic_analysis_test/unresolved_module_qualified_reference"));
 
   expect(analyzed.error_count > 0, "expected unresolved module-qualified "
                                    "reference to fail semantic validation");

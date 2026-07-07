@@ -1,6 +1,10 @@
 #include "src/runtime/layout.h"
 
+#include <algorithm>
+#include <cstdint>
+
 #include "src/parser/ast.h"
+#include "src/runtime/arena.h"
 
 namespace kira::runtime {
 
@@ -117,6 +121,30 @@ auto sum_max_payload_slots(const type_table &types, semantic::type_id id)
     }
   }
   return max_slots;
+}
+
+auto list_reserve_slot(uint64_t *header) -> uint64_t * {
+  const auto len = header[0];
+  auto cap = header[1];
+  if (len >= cap) {
+    const auto new_cap = cap == 0 ? uint64_t{4} : cap * 2;
+    auto *new_data = static_cast<uint64_t *>(
+        global_arena().allocate(new_cap * sizeof(uint64_t)));
+    if (cap > 0) {
+      auto *old_data =
+          reinterpret_cast<uint64_t *>(static_cast<uintptr_t>(header[2]));
+      std::copy(old_data, old_data + len, new_data);
+    }
+    header[1] = new_cap;
+    header[2] = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(new_data));
+  }
+  auto *data = reinterpret_cast<uint64_t *>(static_cast<uintptr_t>(header[2]));
+  header[0] = len + 1;
+  return data + len;
+}
+
+extern "C" auto kira_rt_list_reserve_slot(uint64_t *header) -> uint64_t * {
+  return list_reserve_slot(header);
 }
 
 } // namespace kira::runtime

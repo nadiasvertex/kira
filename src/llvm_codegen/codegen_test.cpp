@@ -8,12 +8,12 @@
 #include "src/bytecode/value.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
+#include "src/llvm_codegen/codegen.h"
+#include "src/llvm_codegen/jit_support.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
 #include "src/parser/source_location.h"
-#include "src/llvm_codegen/codegen.h"
-#include "src/llvm_codegen/jit_support.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
@@ -277,6 +277,58 @@ auto test_match_struct_pattern_destructures_named_fields() -> void {
   expect(result->value.i == 42, "expected 18 + 24 == 42 via struct pattern");
 }
 
+auto test_list_literal_construction_and_indexing() -> void {
+  auto jf = jit_fixture_for(load_fixture("list_literal_indexing.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 30, "expected xs[2] == 30");
+}
+
+auto test_list_index_out_of_bounds_panics() -> void {
+  auto jf = jit_fixture_for(load_fixture("list_out_of_bounds.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(!result.has_value(), "expected xs[5] on a 3-element list to panic");
+  expect(result.error() == bc::panic_reason::index_out_of_bounds,
+         "expected the panic reason to be index_out_of_bounds");
+}
+
+auto test_list_fill_form_grows_to_a_runtime_count() -> void {
+  auto jf = jit_fixture_for(load_fixture("list_fill.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 20,
+         "expected four 5s (a runtime fill count) to sum to 20");
+}
+
+auto test_list_for_loop_sums_every_element() -> void {
+  auto jf = jit_fixture_for(load_fixture("list_for_loop.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 15, "expected 1+2+3+4+5 == 15");
+}
+
+auto test_while_let_loops_until_the_pattern_stops_matching() -> void {
+  auto jf = jit_fixture_for(load_fixture("while_let_pattern.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 10, "expected 0+1+2+3+4 == 10");
+}
+
+auto test_let_else_diverges_on_a_failed_pattern() -> void {
+  auto jf = jit_fixture_for(load_fixture("let_else_pattern.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 6,
+         "expected unwrap_or(@present(7)) + unwrap_or(@absent) == 7 + -1");
+}
+
+auto test_list_comprehension_builds_and_reads_back_a_list() -> void {
+  auto jf = jit_fixture_for(load_fixture("list_comprehension.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 14, "expected 0^2+1^2+2^2+3^2 == 14");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -304,6 +356,13 @@ auto main() -> int {
     test_match_tuple_pattern_with_literal_and_binding();
     test_match_constructor_pattern_over_a_sum_type();
     test_match_struct_pattern_destructures_named_fields();
+    test_list_literal_construction_and_indexing();
+    test_list_index_out_of_bounds_panics();
+    test_list_fill_form_grows_to_a_runtime_count();
+    test_list_for_loop_sums_every_element();
+    test_while_let_loops_until_the_pattern_stops_matching();
+    test_let_else_diverges_on_a_failed_pattern();
+    test_list_comprehension_builds_and_reads_back_a_list();
   } catch (const std::exception &ex) {
     std::cerr << "codegen_test failed: unhandled exception: " << ex.what()
               << '\n';

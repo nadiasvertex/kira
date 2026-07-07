@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -126,12 +127,42 @@ auto test_sum_variant_tags_and_payload_arity() -> void {
          "expected the widest variant (rectangle) to size the payload area");
 }
 
+auto test_list_reserve_slot_grows_and_preserves_existing_elements() -> void {
+  uint64_t header[3] = {0, 0, 0};
+
+  auto *slot0 = runtime::list_reserve_slot(header);
+  expect(header[0] == 1, "expected len to become 1 after the first reserve");
+  expect(header[1] == 4, "expected the first growth to start at capacity 4");
+  *slot0 = 10;
+
+  auto *slot1 = runtime::list_reserve_slot(header);
+  auto *slot2 = runtime::list_reserve_slot(header);
+  auto *slot3 = runtime::list_reserve_slot(header);
+  *slot1 = 20;
+  *slot2 = 30;
+  *slot3 = 40;
+  expect(header[0] == 4, "expected len == 4 after four reserves");
+  expect(header[1] == 4, "expected cap to still be 4 (exactly filled)");
+
+  // A fifth reserve exceeds capacity 4, forcing growth to 8 and copying
+  // every existing element across.
+  auto *slot4 = runtime::list_reserve_slot(header);
+  *slot4 = 50;
+  expect(header[0] == 5, "expected len == 5 after the growth-triggering push");
+  expect(header[1] == 8, "expected capacity to double to 8");
+  auto *data = reinterpret_cast<uint64_t *>(static_cast<uintptr_t>(header[2]));
+  expect(data[0] == 10 && data[1] == 20 && data[2] == 30 && data[3] == 40 &&
+             data[4] == 50,
+         "expected every element to survive the growth copy in order");
+}
+
 } // namespace
 
 auto main() -> int {
   try {
     test_struct_field_slots_match_declaration_order();
     test_sum_variant_tags_and_payload_arity();
+    test_list_reserve_slot_grows_and_preserves_existing_elements();
   } catch (const std::exception &ex) {
     std::cerr << "layout_test failed: unhandled exception: " << ex.what()
               << '\n';

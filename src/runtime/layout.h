@@ -78,4 +78,30 @@ namespace kira::runtime {
 [[nodiscard]] auto sum_max_payload_slots(const semantic::type_table &types,
                                          semantic::type_id id) -> size_t;
 
+/// Grows (if necessary) the `list[T]` value whose 3-slot header
+/// `{ u64 len; u64 cap; T* data; }` (this file's top comment) begins at
+/// `header` so it has room for one more element, bumps `len`, and returns a
+/// pointer to the newly-reserved slot at the old `len` index — the caller
+/// stores its own 8-byte payload there directly. Growth allocates a fresh,
+/// larger `data` block via `global_arena()` (copying every existing element
+/// across) when the list is already at capacity — starting capacity 4,
+/// doubling thereafter, the same "simplest thing that works" placeholder
+/// growth strategy `bump_arena` itself already uses. Returning a slot
+/// address for the caller to store through (rather than taking the value as
+/// a parameter here) mirrors how every other heap write in this codebase —
+/// `str`/tuple/struct/sum-payload construction — is a plain store at a
+/// computed address, never a value-passing runtime call: it means this
+/// function doesn't need to know or care whether the pushed value is a
+/// scalar bit pattern or a heap pointer, only how many bytes it is. A plain
+/// C++ function so `bytecode::vm` can call it directly with no ABI boundary
+/// to cross (mirrors `global_arena()`'s own doc comment in `arena.h`);
+/// `kira_rt_list_reserve_slot` below is the `extern "C"` wrapper generated
+/// IR calls instead.
+[[nodiscard]] auto list_reserve_slot(uint64_t *header) -> uint64_t *;
+
+/// `extern "C"` wrapper around `list_reserve_slot` for generated IR to call
+/// by name (`src/llvm_codegen/codegen.h`'s `kListReserveSlotSymbolName`) —
+/// mirrors `kira_rt_alloc` (`arena.h`)'s JIT/AOT-boundary rationale exactly.
+extern "C" auto kira_rt_list_reserve_slot(uint64_t *header) -> uint64_t *;
+
 } // namespace kira::runtime

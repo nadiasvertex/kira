@@ -383,6 +383,71 @@ auto test_match_struct_pattern_destructures_named_fields() -> void {
   expect(result->value.i == 42, "expected 18 + 24 == 42 via struct pattern");
 }
 
+auto test_list_literal_construction_and_indexing() -> void {
+  auto module = compile_fixture(load_fixture("list_literal_indexing.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "third"),
+                       std::array{bc::slot_value{uint64_t{2}}});
+  expect(result.has_value(), "expected third(2) to succeed");
+  expect(result->value.i == 30, "expected xs[2] == 30");
+}
+
+auto test_list_index_out_of_bounds_panics() -> void {
+  auto module = compile_fixture(load_fixture("list_out_of_bounds.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "get"),
+                       std::array{bc::slot_value{uint64_t{5}}});
+  expect(!result.has_value(), "expected xs[5] on a 3-element list to panic");
+  expect(result.error() == bc::panic_reason::index_out_of_bounds,
+         "expected the panic reason to be index_out_of_bounds");
+}
+
+auto test_list_fill_form_grows_to_a_runtime_count() -> void {
+  auto module = compile_fixture(load_fixture("list_fill.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "sum_of_fives"),
+                       std::array{bc::slot_value{uint64_t{4}}});
+  expect(result.has_value(), "expected sum_of_fives(4) to succeed");
+  expect(result->value.i == 20,
+         "expected four 5s (a runtime fill count) to sum to 20");
+}
+
+auto test_list_for_loop_sums_every_element() -> void {
+  auto module = compile_fixture(load_fixture("list_for_loop.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "run"), {});
+  expect(result.has_value(), "expected run() to succeed");
+  expect(result->value.i == 15, "expected 1+2+3+4+5 == 15");
+}
+
+auto test_while_let_loops_until_the_pattern_stops_matching() -> void {
+  auto module = compile_fixture(load_fixture("while_let_pattern.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "sum_while"), {});
+  expect(result.has_value(), "expected sum_while() to succeed");
+  expect(result->value.i == 10, "expected 0+1+2+3+4 == 10");
+}
+
+auto test_let_else_diverges_on_a_failed_pattern() -> void {
+  auto module = compile_fixture(load_fixture("let_else_pattern.kira"));
+  const auto vm = bc::vm{module};
+  auto some_result = vm.run(function_index(module, "some_case"), {});
+  expect(some_result.has_value(), "expected some_case() to succeed");
+  expect(some_result->value.i == 7, "expected unwrap_or(@some(7)) == 7");
+  auto none_result = vm.run(function_index(module, "none_case"), {});
+  expect(none_result.has_value(), "expected none_case() to succeed");
+  expect(none_result->value.i == -1, "expected unwrap_or(@none) == -1");
+}
+
+auto test_list_comprehension_builds_and_reads_back_a_list() -> void {
+  auto module = compile_fixture(load_fixture("list_comprehension.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "sum_squares"),
+                       std::array{bc::slot_value{int64_t{4}}});
+  expect(result.has_value(), "expected sum_squares(4) to succeed");
+  expect(result->value.i == 14, "expected 0^2+1^2+2^2+3^2 == 14");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -411,6 +476,13 @@ auto main() -> int {
     test_match_tuple_pattern_with_literal_and_binding();
     test_match_constructor_pattern_over_a_sum_type();
     test_match_struct_pattern_destructures_named_fields();
+    test_list_literal_construction_and_indexing();
+    test_list_index_out_of_bounds_panics();
+    test_list_fill_form_grows_to_a_runtime_count();
+    test_list_for_loop_sums_every_element();
+    test_while_let_loops_until_the_pattern_stops_matching();
+    test_let_else_diverges_on_a_failed_pattern();
+    test_list_comprehension_builds_and_reads_back_a_list();
   } catch (const std::exception &ex) {
     std::cerr << "compile_test failed: unhandled exception: " << ex.what()
               << '\n';

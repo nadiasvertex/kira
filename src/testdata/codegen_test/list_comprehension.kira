@@ -1,0 +1,11 @@
+module sample
+def squares(n: int32) -> list[int32]:
+    return for x in 0..n => x * x
+def sum_squares(n: int32) -> int32:
+    let xs = squares(n)
+    var total = 0
+    for x in xs:
+        total = total + x
+    return total
+def main() -> int32:
+    return sum_squares(4)

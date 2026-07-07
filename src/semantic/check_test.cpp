@@ -94,8 +94,8 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
 auto analyze_test_data_file(std::string_view filename) -> analyzed_session {
   const auto test_data_dir =
       kira::testing::find_test_data_dir("semantic_check_test");
-  const auto text = kira::testing::load_test_data_file(
-      test_data_dir.string(), filename);
+  const auto text =
+      kira::testing::load_test_data_file(test_data_dir.string(), filename);
   return analyze_sources({{.path = std::string(filename), .text = text}});
 }
 
@@ -230,8 +230,7 @@ auto test_reports_undefined_name_with_suggestion() -> void {
 }
 
 auto test_reports_undefined_type() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_undefined_type.kira");
+  const auto analyzed = analyze_test_data_file("report_undefined_type.kira");
   expect(analyzed.error_count > 0, "expected undefined type to fail");
   expect_diagnostic(analyzed, "undefined type `pont`",
                     "expected undefined-type diagnostic");
@@ -388,8 +387,7 @@ auto test_reports_unsatisfied_trait_requirement() -> void {
 }
 
 auto test_reports_unknown_deriving() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_unknown_deriving.kira");
+  const auto analyzed = analyze_test_data_file("report_unknown_deriving.kira");
   expect(analyzed.error_count > 0, "expected unknown deriving to fail");
   expect_diagnostic(analyzed, "cannot derive `serialize` for `color`",
                     "expected deriving diagnostic");
@@ -478,8 +476,8 @@ auto test_bare_literal_never_forces_a_concrete_param_type() -> void {
   // against a bare literal must never collapse `x` to whichever type the
   // literal happens to default to (int32). Both an int and a float call
   // must be accepted.
-  const auto analyzed =
-      analyze_test_data_file("bare_literal_never_forces_concrete_param_type.kira");
+  const auto analyzed = analyze_test_data_file(
+      "bare_literal_never_forces_concrete_param_type.kira");
   expect(analyzed.error_count == 0,
          "expected `double` to stay generic over every numeric type, not "
          "collapse to whichever type the literal `2` defaults to");
@@ -528,8 +526,8 @@ auto test_infers_param_type_from_struct_field_type() -> void {
 }
 
 auto test_infers_param_type_from_struct_field_shorthand() -> void {
-  const auto analyzed =
-      analyze_test_data_file("infer_param_type_from_struct_field_shorthand.kira");
+  const auto analyzed = analyze_test_data_file(
+      "infer_param_type_from_struct_field_shorthand.kira");
   expect(analyzed.error_count > 0,
          "expected `make`'s `x` to be inferred as `int32` from `point`'s "
          "`x` field via shorthand initialization");
@@ -539,8 +537,8 @@ auto test_infers_param_type_from_struct_field_shorthand() -> void {
 }
 
 auto test_infers_param_type_from_annotated_let_binding() -> void {
-  const auto analyzed =
-      analyze_test_data_file("infer_param_type_from_annotated_let_binding.kira");
+  const auto analyzed = analyze_test_data_file(
+      "infer_param_type_from_annotated_let_binding.kira");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the "
          "explicitly annotated local `y`");
@@ -550,8 +548,8 @@ auto test_infers_param_type_from_annotated_let_binding() -> void {
 }
 
 auto test_infers_param_type_from_annotated_var_binding() -> void {
-  const auto analyzed =
-      analyze_test_data_file("infer_param_type_from_annotated_var_binding.kira");
+  const auto analyzed = analyze_test_data_file(
+      "infer_param_type_from_annotated_var_binding.kira");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the "
          "explicitly annotated local `var y`");

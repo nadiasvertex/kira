@@ -368,9 +368,11 @@ public:
   function_compiler(
       llvm::LLVMContext &ctx, const type_table &types,
       const std::unordered_map<std::string, llvm::Function *> &functions,
-      llvm::Function *panic_fn, llvm::Function *alloc_fn)
+      llvm::Function *panic_fn, llvm::Function *alloc_fn,
+      llvm::Function *list_reserve_slot_fn)
       : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
-        alloc_fn_(alloc_fn), builder_(ctx) {}
+        alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
+        builder_(ctx) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn,
                              llvm::Function *llvm_fn)
@@ -507,6 +509,16 @@ private:
                                  types_.display(id))});
     }
     return *ty;
+  }
+
+  /// Whether `id` is the prelude's growable `list[T]` container — as
+  /// opposed to a fixed `array[T, N]`, which shares construction/indexing
+  /// codegen for everything except sizing/length (see `compile_array_init`/
+  /// `compile_index`).
+  [[nodiscard]] auto is_list_type(type_id id) const -> bool {
+    const auto &entry = types_.entry(id);
+    return entry.kind == semantic::type_kind::builtin_generic_kind &&
+           entry.name == "list";
   }
 
   // ------------------------------------------------------------------
@@ -659,6 +671,26 @@ private:
       // See hir_if's own scope note just above: every stress corpus match
       // expression keeps every arm value-producing, not diverging.
       return builder_.CreateLoad(*ty, result, "match.value");
+    }
+    case hir_node_kind::hir_container_len:
+      return compile_container_len(
+          dynamic_cast<const hir::hir_container_len &>(expr));
+    case hir_node_kind::hir_block: {
+      // A block used in expression position (e.g. a comprehension's
+      // desugared accumulator block, `hir::lower_comprehension`) — mirrors
+      // the `hir_match`/`hir_if` expression cases just above: alloca a
+      // result slot, compile the block's statements into it, load it back.
+      const auto &node = dynamic_cast<const hir::hir_block &>(expr);
+      auto ty = storage_type_for(expr.type, expr.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
+      }
+      auto *result = create_local_alloca(*ty, "block.result");
+      auto terminated = compile_block_as_value(node, result);
+      if (!terminated.has_value()) {
+        return std::unexpected(terminated.error());
+      }
+      return builder_.CreateLoad(*ty, result, "block.value");
     }
     default:
       return std::unexpected(codegen_error{
@@ -1209,6 +1241,9 @@ private:
 
   [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init)
       -> std::expected<llvm::Value *, codegen_error> {
+    if (is_list_type(init.type)) {
+      return compile_list_init(init);
+    }
     if (init.fill_value == nullptr) {
       return compile_slots_init(init.elements);
     }
@@ -1234,6 +1269,82 @@ private:
       builder_.CreateStore(*fill_value, slot_address(block, i));
     }
     return block;
+  }
+
+  /// Constructs a growable `list[T]` heap value: an empty 3-slot header
+  /// `{ len; cap; data }` (`src/runtime/layout.h`) grown one element at a
+  /// time via `list_reserve_slot_fn_` (which returns the address to store
+  /// each pushed value at directly — see that function's own doc comment
+  /// for why the runtime never takes the value itself as a parameter). The
+  /// explicit-elements form pushes each literal element in turn; the fill
+  /// form `[val; count]` evaluates its value once and pushes it `count`
+  /// times in a runtime loop — unlike a fixed array's statically-required
+  /// `N`, a list's fill count may be an arbitrary runtime `usize`
+  /// expression (`infer_array` in `check.cpp` only requires the *element*
+  /// type, not the count, to be resolvable), so a loop is the only
+  /// construction strategy that works uniformly either way.
+  [[nodiscard]] auto compile_list_init(const hir::hir_array_init &init)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto *header = compile_heap_alloc(3);
+
+    if (init.fill_value == nullptr) {
+      for (const auto &elem : init.elements) {
+        auto value = compile_expr(*elem);
+        if (!value.has_value()) {
+          return std::unexpected(value.error());
+        }
+        auto *slot = builder_.CreateCall(list_reserve_slot_fn_, {header});
+        builder_.CreateStore(*value, slot);
+      }
+      return header;
+    }
+
+    // Evaluated once, then pushed `count` times — see
+    // `compile_array_init`'s fixed-array fill form for why a
+    // side-effecting fill expression must only run once.
+    auto fill_value = compile_expr(*init.fill_value);
+    if (!fill_value.has_value()) {
+      return std::unexpected(fill_value.error());
+    }
+    auto count_kind = numeric_kind_for(init.fill_count->type, init.span);
+    if (!count_kind.has_value()) {
+      return std::unexpected(count_kind.error());
+    }
+    auto count_value = compile_expr(*init.fill_count);
+    if (!count_value.has_value()) {
+      return std::unexpected(count_value.error());
+    }
+    auto *count64 =
+        builder_.CreateIntCast(*count_value, llvm::Type::getInt64Ty(ctx_),
+                               is_signed_integer(*count_kind), "count.i64");
+
+    auto *idx_alloca =
+        create_local_alloca(llvm::Type::getInt64Ty(ctx_), "list.fill.idx");
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0), idx_alloca);
+
+    auto *cond_bb =
+        llvm::BasicBlock::Create(ctx_, "list.fill.cond", current_fn_);
+    auto *body_bb =
+        llvm::BasicBlock::Create(ctx_, "list.fill.body", current_fn_);
+    auto *end_bb = llvm::BasicBlock::Create(ctx_, "list.fill.end", current_fn_);
+
+    builder_.CreateBr(cond_bb);
+    builder_.SetInsertPoint(cond_bb);
+    auto *idx = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_), idx_alloca);
+    auto *cond = builder_.CreateICmpULT(idx, count64, "list.fill.test");
+    builder_.CreateCondBr(cond, body_bb, end_bb);
+
+    builder_.SetInsertPoint(body_bb);
+    auto *slot = builder_.CreateCall(list_reserve_slot_fn_, {header});
+    builder_.CreateStore(*fill_value, slot);
+    auto *next_idx = builder_.CreateAdd(
+        idx, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1));
+    builder_.CreateStore(next_idx, idx_alloca);
+    builder_.CreateBr(cond_bb);
+
+    builder_.SetInsertPoint(end_bb);
+    return header;
   }
 
   [[nodiscard]] auto compile_field(const hir::hir_field &field)
@@ -1273,21 +1384,29 @@ private:
     return builder_.CreateLoad(*elem_ty, slot_address(*object, node.index));
   }
 
-  /// Fixed `array[T, N]` element access only — see
-  /// `bytecode_compiler::compile_index`'s doc comment for why `list`/
-  /// `slice`/`str` indexing is out of scope until increment 5.
+  /// Fixed `array[T, N]` and growable `list[T]` element access —
+  /// `slice`/`str` indexing still needs a byte/view model this backend
+  /// doesn't have yet. A fixed array's elements live directly in its own
+  /// heap block (so its "data pointer" is the object itself, and its
+  /// length is the statically-known `N`); a list's elements live in a
+  /// separate block reached through its 3-slot header's `data` slot
+  /// (`src/runtime/layout.h`), with its length read from the header's
+  /// `len` slot at runtime — everything past that point (the bounds check,
+  /// the indexed load) is shared.
   [[nodiscard]] auto compile_index(const hir::hir_index &node)
       -> std::expected<llvm::Value *, codegen_error> {
     const auto &object_entry = types_.entry(node.object->type);
-    if (object_entry.kind != semantic::type_kind::array_kind ||
-        !object_entry.array_size.has_value()) {
+    const bool indexing_list = is_list_type(node.object->type);
+    if (!indexing_list &&
+        (object_entry.kind != semantic::type_kind::array_kind ||
+         !object_entry.array_size.has_value())) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = node.span,
           .message = "indexing is only supported for a fixed-size array "
-                     "with a statically known length yet — list/slice/str "
-                     "indexing needs increment 5's growable-container "
-                     "support"});
+                     "with a statically known length, or a list, yet — "
+                     "slice/str indexing needs a byte/view model this "
+                     "backend doesn't have yet"});
     }
     auto object = compile_expr(*node.object);
     if (!object.has_value()) {
@@ -1305,8 +1424,18 @@ private:
         builder_.CreateIntCast(*index_value, llvm::Type::getInt64Ty(ctx_),
                                is_signed_integer(*index_kind), "index.i64");
 
-    auto *len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
-                                       *object_entry.array_size);
+    llvm::Value *len = nullptr;
+    llvm::Value *data = nullptr;
+    if (indexing_list) {
+      len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                                slot_address(*object, size_t{0}), "list.len");
+      data = builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
+                                 slot_address(*object, size_t{2}), "list.data");
+    } else {
+      len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+                                   *object_entry.array_size);
+      data = *object;
+    }
     auto *out_of_bounds = builder_.CreateICmpUGE(index64, len, "index.oob");
     guard_panic(out_of_bounds, panic_reason::index_out_of_bounds);
 
@@ -1314,7 +1443,23 @@ private:
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
     }
-    return builder_.CreateLoad(*elem_ty, slot_address(*object, index64));
+    return builder_.CreateLoad(*elem_ty, slot_address(data, index64));
+  }
+
+  /// A container's runtime element count (`for`/`while` loop bound
+  /// checking over a `list`/`str`, whose length isn't statically known) —
+  /// both layouts (`src/runtime/layout.h`) put their length at slot 0, so
+  /// this is the same one load regardless of which container kind
+  /// `node.object` actually is.
+  [[nodiscard]] auto compile_container_len(const hir::hir_container_len &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    return builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                               slot_address(*object, size_t{0}),
+                               "container.len");
   }
 
   /// Sum-type variant construction `@variant(args...)` — mirrors
@@ -1804,14 +1949,18 @@ private:
     }
     case hir_node_kind::hir_match:
       return compile_match(dynamic_cast<const hir::hir_match &>(node), nullptr);
+    case hir_node_kind::hir_while_let:
+      return compile_while_let(dynamic_cast<const hir::hir_while_let &>(node));
+    case hir_node_kind::hir_let_else:
+      return compile_let_else(dynamic_cast<const hir::hir_let_else &>(node));
+    case hir_node_kind::hir_list_push:
+      return compile_list_push(dynamic_cast<const hir::hir_list_push &>(node));
     default:
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = node.span,
           .message = "this statement form is outside llvm_codegen's current "
-                     "scope — while-let, destructuring let/else, and "
-                     "comprehension pushes all need increment 5's growable-"
-                     "container support"});
+                     "scope"});
     }
   }
 
@@ -1974,11 +2123,129 @@ private:
     return false;
   }
 
+  /// `while let pattern = expr: body` — like `compile_while`, but the loop
+  /// condition is a fresh pattern test against a freshly re-evaluated
+  /// `subject` every iteration (see `hir_while_let`'s doc comment) rather
+  /// than a plain boolean expression; falls out of the loop the first time
+  /// the pattern fails to match, with no `else`.
+  [[nodiscard]] auto compile_while_let(const hir::hir_while_let &loop)
+      -> std::expected<bool, codegen_error> {
+    auto subject_ty = storage_type_for(loop.subject->type, loop.span);
+    if (!subject_ty.has_value()) {
+      return std::unexpected(subject_ty.error());
+    }
+    auto *subject_alloca =
+        create_local_alloca(*subject_ty, "while_let.subject");
+    locals_.emplace(loop.subject_symbol, subject_alloca);
+    const auto subject_type = std::optional<type_id>(loop.subject->type);
+
+    auto *cond_bb =
+        llvm::BasicBlock::Create(ctx_, "while_let.cond", current_fn_);
+    auto *body_bb =
+        llvm::BasicBlock::Create(ctx_, "while_let.body", current_fn_);
+    auto *end_bb = llvm::BasicBlock::Create(ctx_, "while_let.end", current_fn_);
+
+    builder_.CreateBr(cond_bb);
+    builder_.SetInsertPoint(cond_bb);
+    auto subject_value = compile_expr(*loop.subject);
+    if (!subject_value.has_value()) {
+      return std::unexpected(subject_value.error());
+    }
+    builder_.CreateStore(*subject_value, subject_alloca);
+    auto test =
+        compile_pattern_test(*loop.pattern, *subject_value, subject_type);
+    if (!test.has_value()) {
+      return std::unexpected(test.error());
+    }
+    builder_.CreateCondBr(*test, body_bb, end_bb);
+
+    builder_.SetInsertPoint(body_bb);
+    auto terminated = compile_block_as_value(*loop.body, nullptr);
+    if (!terminated.has_value()) {
+      return std::unexpected(terminated.error());
+    }
+    if (!*terminated) {
+      builder_.CreateBr(cond_bb);
+    }
+
+    builder_.SetInsertPoint(end_bb);
+    return false;
+  }
+
+  /// `let pattern = expr else: block` — evaluates `initializer` into
+  /// `subject_symbol` once, tests it against `pattern`, and runs
+  /// `else_body` when it fails to match; `pattern`'s own bindings are
+  /// ordinary `hir_let`s lowering already spliced in immediately after this
+  /// node (see `hir_let_else`'s doc comment), so this only has to compile
+  /// the test and the branch, not any binding of its own. `else_body` must
+  /// diverge — a language-level invariant the checker enforces; the
+  /// trailing `guard_panic` is a defensive fallback for that invariant,
+  /// mirroring `compile_match`'s own "no arm matched" guard.
+  [[nodiscard]] auto compile_let_else(const hir::hir_let_else &node)
+      -> std::expected<bool, codegen_error> {
+    auto subject_ty = storage_type_for(node.initializer->type, node.span);
+    if (!subject_ty.has_value()) {
+      return std::unexpected(subject_ty.error());
+    }
+    auto value = compile_expr(*node.initializer);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto *subject_alloca = create_local_alloca(*subject_ty, "let_else.subject");
+    builder_.CreateStore(*value, subject_alloca);
+    locals_.emplace(node.subject_symbol, subject_alloca);
+    const auto subject_type = std::optional<type_id>(node.initializer->type);
+
+    auto test = compile_pattern_test(*node.pattern, *value, subject_type);
+    if (!test.has_value()) {
+      return std::unexpected(test.error());
+    }
+
+    auto *else_bb =
+        llvm::BasicBlock::Create(ctx_, "let_else.else", current_fn_);
+    auto *continue_bb =
+        llvm::BasicBlock::Create(ctx_, "let_else.continue", current_fn_);
+    builder_.CreateCondBr(*test, continue_bb, else_bb);
+
+    builder_.SetInsertPoint(else_bb);
+    auto terminated = compile_block_as_value(*node.else_body, nullptr);
+    if (!terminated.has_value()) {
+      return std::unexpected(terminated.error());
+    }
+    if (!*terminated) {
+      guard_panic(llvm::ConstantInt::getTrue(ctx_),
+                  panic_reason::explicit_panic);
+      builder_.CreateBr(continue_bb);
+    }
+
+    builder_.SetInsertPoint(continue_bb);
+    return false;
+  }
+
+  /// Appends `value` onto the `list[T]` place `target` (see
+  /// `hir_list_push`'s doc comment) — the comprehension accumulator's
+  /// growth statement.
+  [[nodiscard]] auto compile_list_push(const hir::hir_list_push &node)
+      -> std::expected<bool, codegen_error> {
+    auto target = compile_expr(*node.target);
+    if (!target.has_value()) {
+      return std::unexpected(target.error());
+    }
+    auto value = compile_expr(*node.value);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto *slot = builder_.CreateCall(list_reserve_slot_fn_, {*target});
+    builder_.CreateStore(*value, slot);
+    return false;
+  }
+
   llvm::LLVMContext &ctx_;
   const type_table &types_;
   const std::unordered_map<std::string, llvm::Function *> &functions_;
   llvm::Function *panic_fn_;
   llvm::Function *alloc_fn_;
+  llvm::Function *list_reserve_slot_fn_;
   llvm::IRBuilder<> builder_;
   llvm::Function *current_fn_ = nullptr;
   llvm::AllocaInst *alloca_marker_ = nullptr;
@@ -2012,6 +2279,12 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
                               {llvm::Type::getInt64Ty(ctx)},
                               /*isVarArg=*/false),
       llvm::Function::ExternalLinkage, kAllocSymbolName, llvm_module);
+
+  auto *list_reserve_slot_fn = llvm::Function::Create(
+      llvm::FunctionType::get(llvm::PointerType::get(ctx, 0),
+                              {llvm::PointerType::get(ctx, 0)},
+                              /*isVarArg=*/false),
+      llvm::Function::ExternalLinkage, kListReserveSlotSymbolName, llvm_module);
 
   // Every function's signature is declared before any body is compiled, so
   // a call (forward-referenced, recursive, or mutually recursive) always
@@ -2061,8 +2334,8 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
 
   for (const auto &fn : module.functions) {
     auto *llvm_fn = functions.at(fn->name);
-    auto compiler =
-        function_compiler(ctx, types, functions, panic_fn, alloc_fn);
+    auto compiler = function_compiler(ctx, types, functions, panic_fn, alloc_fn,
+                                      list_reserve_slot_fn);
     auto compiled = compiler.compile(*fn, llvm_fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
