@@ -288,6 +288,111 @@ auto test_array_fill_form_repeats_the_same_value() -> void {
   expect(result->value.i == 20, "expected four 5s to sum to 20");
 }
 
+auto test_match_dispatches_on_literal_and_wildcard_patterns() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "def classify(x: int32) -> int32:\n"
+                            "    return match x:\n"
+                            "        0 => 100\n"
+                            "        1 => 200\n"
+                            "        _ => 300\n"
+                            "def main() -> int32:\n"
+                            "    return classify(1)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 200, "expected classify(1) == 200");
+}
+
+auto test_match_or_pattern_matches_any_alternative() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "def is_small(x: int32) -> bool:\n"
+                            "    return match x:\n"
+                            "        0 | 1 | 2 => true\n"
+                            "        _ => false\n"
+                            "def main() -> bool:\n"
+                            "    return is_small(2) and not is_small(5)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::boolean);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 1, "expected is_small(2) && !is_small(5)");
+}
+
+auto test_match_range_pattern() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "def bucket(x: int32) -> int32:\n"
+                            "    return match x:\n"
+                            "        0..10 => 1\n"
+                            "        10..=20 => 2\n"
+                            "        _ => 3\n"
+                            "def main() -> int32:\n"
+                            "    return bucket(20)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 2, "expected bucket(20) == 2");
+}
+
+auto test_match_guard_refines_a_pattern() -> void {
+  // See bytecode_compiler/compile_test.cpp's own version of this test for
+  // why the guard reads the enclosing parameter `x` rather than a
+  // pattern-bound name (a known pre-existing lowering gap, out of scope
+  // here).
+  auto jf = jit_fixture_for("module sample\n"
+                            "def sign(x: int32) -> int32:\n"
+                            "    return match x:\n"
+                            "        _ if x > 0 => 1\n"
+                            "        _ if x < 0 => -1\n"
+                            "        _ => 0\n"
+                            "def main() -> int32:\n"
+                            "    return sign(-7)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == -1, "expected sign(-7) == -1");
+}
+
+auto test_match_tuple_pattern_with_literal_and_binding() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "def describe(a: int32, b: int32) -> int32:\n"
+                            "    let t: (int32, int32) = (a, b)\n"
+                            "    return match t:\n"
+                            "        (0, y) => y\n"
+                            "        (x, y) => x + y\n"
+                            "def main() -> int32:\n"
+                            "    return describe(0, 42) + describe(18, 24)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 84,
+         "expected describe(0, 42) + describe(18, 24) == 84");
+}
+
+auto test_match_constructor_pattern_over_a_sum_type() -> void {
+  auto jf = jit_fixture_for(
+      "module sample\n"
+      "type shape = @circle(float64) | @square(float64) | @empty\n"
+      "def area(s: shape) -> float64:\n"
+      "    return match s:\n"
+      "        @circle(r) => r * r\n"
+      "        @square(side) => side * side\n"
+      "        @empty => 0.0\n"
+      "def main() -> float64:\n"
+      "    return area(@circle(4.0)) + area(@empty)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::f64);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.f == 16.0,
+         "expected area(@circle(4.0)) + area(@empty) == 16.0");
+}
+
+auto test_match_struct_pattern_destructures_named_fields() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "type point = { pub x: int32, pub y: int32 }\n"
+                            "def sum_fields(x: int32, y: int32) -> int32:\n"
+                            "    let p: point = { x: x, y: y }\n"
+                            "    return match p:\n"
+                            "        { x, y } => x + y\n"
+                            "def main() -> int32:\n"
+                            "    return sum_fields(18, 24)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 42, "expected 18 + 24 == 42 via struct pattern");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -308,6 +413,13 @@ auto main() -> int {
     test_fixed_array_construction_and_indexing();
     test_array_index_out_of_bounds_panics();
     test_array_fill_form_repeats_the_same_value();
+    test_match_dispatches_on_literal_and_wildcard_patterns();
+    test_match_or_pattern_matches_any_alternative();
+    test_match_range_pattern();
+    test_match_guard_refines_a_pattern();
+    test_match_tuple_pattern_with_literal_and_binding();
+    test_match_constructor_pattern_over_a_sum_type();
+    test_match_struct_pattern_destructures_named_fields();
   } catch (const std::exception &ex) {
     std::cerr << "codegen_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -340,6 +340,135 @@ auto test_sum_type_unit_variant_encodes_its_tag() -> void {
   expect(slots[0].i == 1, "expected @empty to encode as tag 1");
 }
 
+auto test_match_dispatches_on_literal_and_wildcard_patterns() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "def classify(x: int32) -> int32:\n"
+                                "    return match x:\n"
+                                "        0 => 100\n"
+                                "        1 => 200\n"
+                                "        _ => 300\n");
+  const auto vm = bc::vm{module};
+  const auto idx = function_index(module, "classify");
+  auto r0 = vm.run(idx, std::array{bc::slot_value{int64_t{0}}});
+  expect(r0.has_value() && r0->value.i == 100, "expected classify(0) == 100");
+  auto r1 = vm.run(idx, std::array{bc::slot_value{int64_t{1}}});
+  expect(r1.has_value() && r1->value.i == 200, "expected classify(1) == 200");
+  auto r2 = vm.run(idx, std::array{bc::slot_value{int64_t{9}}});
+  expect(r2.has_value() && r2->value.i == 300, "expected classify(9) == 300");
+}
+
+auto test_match_or_pattern_matches_any_alternative() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "def is_small(x: int32) -> bool:\n"
+                                "    return match x:\n"
+                                "        0 | 1 | 2 => true\n"
+                                "        _ => false\n");
+  const auto vm = bc::vm{module};
+  const auto idx = function_index(module, "is_small");
+  auto r1 = vm.run(idx, std::array{bc::slot_value{int64_t{1}}});
+  expect(r1.has_value() && r1->value.i == 1, "expected is_small(1) == true");
+  auto r5 = vm.run(idx, std::array{bc::slot_value{int64_t{5}}});
+  expect(r5.has_value() && r5->value.i == 0, "expected is_small(5) == false");
+}
+
+auto test_match_range_pattern() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "def bucket(x: int32) -> int32:\n"
+                                "    return match x:\n"
+                                "        0..10 => 1\n"
+                                "        10..=20 => 2\n"
+                                "        _ => 3\n");
+  const auto vm = bc::vm{module};
+  const auto idx = function_index(module, "bucket");
+  auto r5 = vm.run(idx, std::array{bc::slot_value{int64_t{5}}});
+  expect(r5.has_value() && r5->value.i == 1, "expected bucket(5) == 1");
+  auto r20 = vm.run(idx, std::array{bc::slot_value{int64_t{20}}});
+  expect(r20.has_value() && r20->value.i == 2, "expected bucket(20) == 2");
+  auto r99 = vm.run(idx, std::array{bc::slot_value{int64_t{99}}});
+  expect(r99.has_value() && r99->value.i == 3, "expected bucket(99) == 3");
+}
+
+auto test_match_guard_refines_a_pattern() -> void {
+  // The guard references `x` (the enclosing function parameter, already
+  // bound before the `match` starts) rather than a name the pattern itself
+  // introduces — a guard that reads a pattern-bound name is a known
+  // pre-existing lowering gap (`hir_match_arm.guard` is lowered before the
+  // pattern's synthetic `hir_let` bindings, which only live in `body`), out
+  // of scope for this increment's bytecode_compiler/llvm_codegen work.
+  auto module = compile_fixture("module sample\n"
+                                "def sign(x: int32) -> int32:\n"
+                                "    return match x:\n"
+                                "        _ if x > 0 => 1\n"
+                                "        _ if x < 0 => -1\n"
+                                "        _ => 0\n");
+  const auto vm = bc::vm{module};
+  const auto idx = function_index(module, "sign");
+  auto rpos = vm.run(idx, std::array{bc::slot_value{int64_t{7}}});
+  expect(rpos.has_value() && rpos->value.i == 1, "expected sign(7) == 1");
+  auto rneg = vm.run(idx, std::array{bc::slot_value{int64_t{-7}}});
+  expect(rneg.has_value() && rneg->value.i == -1, "expected sign(-7) == -1");
+  auto rzero = vm.run(idx, std::array{bc::slot_value{int64_t{0}}});
+  expect(rzero.has_value() && rzero->value.i == 0, "expected sign(0) == 0");
+}
+
+auto test_match_tuple_pattern_with_literal_and_binding() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "def describe(a: int32, b: int32) -> int32:\n"
+                                "    let t: (int32, int32) = (a, b)\n"
+                                "    return match t:\n"
+                                "        (0, y) => y\n"
+                                "        (x, y) => x + y\n");
+  const auto vm = bc::vm{module};
+  const auto idx = function_index(module, "describe");
+  auto r_zero_first = vm.run(
+      idx, std::array{bc::slot_value{int64_t{0}}, bc::slot_value{int64_t{42}}});
+  expect(r_zero_first.has_value() && r_zero_first->value.i == 42,
+         "expected describe(0, 42) == 42 via the first arm's binding");
+  auto r_general = vm.run(idx, std::array{bc::slot_value{int64_t{18}},
+                                          bc::slot_value{int64_t{24}}});
+  expect(r_general.has_value() && r_general->value.i == 42,
+         "expected describe(18, 24) == 42 via the second arm");
+}
+
+auto test_match_constructor_pattern_over_a_sum_type() -> void {
+  auto module = compile_fixture(
+      "module sample\n"
+      "type shape = @circle(float64) | @square(float64) | @empty\n"
+      "def area(s: shape) -> float64:\n"
+      "    return match s:\n"
+      "        @circle(r) => r * r\n"
+      "        @square(side) => side * side\n"
+      "        @empty => 0.0\n"
+      "def circle_area(r: float64) -> float64:\n"
+      "    return area(@circle(r))\n"
+      "def empty_area() -> float64:\n"
+      "    return area(@empty)\n");
+  const auto vm = bc::vm{module};
+  auto circle_result = vm.run(function_index(module, "circle_area"),
+                              std::array{bc::slot_value{4.0}});
+  expect(circle_result.has_value(), "expected circle_area(4.0) to succeed");
+  expect(circle_result->value.f == 16.0, "expected area(@circle(4.0)) == 16.0");
+
+  auto empty_result = vm.run(function_index(module, "empty_area"), {});
+  expect(empty_result.has_value(), "expected empty_area() to succeed");
+  expect(empty_result->value.f == 0.0, "expected area(@empty) == 0.0");
+}
+
+auto test_match_struct_pattern_destructures_named_fields() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "type point = { pub x: int32, pub y: int32 }\n"
+                                "def sum_fields(x: int32, y: int32) -> int32:\n"
+                                "    let p: point = { x: x, y: y }\n"
+                                "    return match p:\n"
+                                "        { x, y } => x + y\n");
+  const auto vm = bc::vm{module};
+  const auto args =
+      std::array{bc::slot_value{int64_t{18}}, bc::slot_value{int64_t{24}}};
+  auto result = vm.run(function_index(module, "sum_fields"), args);
+  expect(result.has_value(), "expected sum_fields() to succeed");
+  expect(result->value.i == 42, "expected 18 + 24 == 42 via struct pattern");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -361,6 +490,13 @@ auto main() -> int {
     test_array_fill_form_repeats_the_same_value();
     test_sum_type_variant_with_payload_encodes_tag_and_slot();
     test_sum_type_unit_variant_encodes_its_tag();
+    test_match_dispatches_on_literal_and_wildcard_patterns();
+    test_match_or_pattern_matches_any_alternative();
+    test_match_range_pattern();
+    test_match_guard_refines_a_pattern();
+    test_match_tuple_pattern_with_literal_and_binding();
+    test_match_constructor_pattern_over_a_sum_type();
+    test_match_struct_pattern_destructures_named_fields();
   } catch (const std::exception &ex) {
     std::cerr << "compile_test failed: unhandled exception: " << ex.what()
               << '\n';

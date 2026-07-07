@@ -321,58 +321,57 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
 /// `infer_literal`'s defaulting) rather than re-validating fit or
 /// defaulting rules here — this only has to reproduce the *bit pattern*,
 /// not re-derive which type the literal ended up with.
-[[nodiscard]] auto encode_literal(const hir::hir_literal &lit,
-                                  numeric_kind kind)
+[[nodiscard]] auto encode_literal(token_kind lit_kind, std::string_view value,
+                                  source_span span, numeric_kind kind)
     -> std::expected<slot_value, compile_error> {
-  switch (lit.lit_kind) {
+  switch (lit_kind) {
   case token_kind::kw_true:
     return slot_value{uint64_t{1}};
   case token_kind::kw_false:
     return slot_value{uint64_t{0}};
   case token_kind::int_lit: {
-    const auto value = parse_uint_literal(lit.value);
-    if (!value.has_value()) {
+    const auto parsed = parse_uint_literal(value);
+    if (!parsed.has_value()) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
-          .span = lit.span,
+          .span = span,
           .message =
-              std::format("could not parse integer literal `{}`", lit.value)});
+              std::format("could not parse integer literal `{}`", value)});
     }
     if (bytecode::is_float(kind)) {
-      const auto as_double = static_cast<double>(*value);
+      const auto as_double = static_cast<double>(*parsed);
       return kind == numeric_kind::f32
                  ? encode_f32(static_cast<float>(as_double))
                  : slot_value{as_double};
     }
-    return slot_value{*value};
+    return slot_value{*parsed};
   }
   case token_kind::float_lit: {
-    const auto value = parse_float_literal(lit.value);
-    if (!value.has_value()) {
+    const auto parsed = parse_float_literal(value);
+    if (!parsed.has_value()) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
-          .span = lit.span,
-          .message =
-              std::format("could not parse float literal `{}`", lit.value)});
+          .span = span,
+          .message = std::format("could not parse float literal `{}`", value)});
     }
-    return kind == numeric_kind::f32 ? encode_f32(static_cast<float>(*value))
-                                     : slot_value{*value};
+    return kind == numeric_kind::f32 ? encode_f32(static_cast<float>(*parsed))
+                                     : slot_value{*parsed};
   }
   case token_kind::char_lit: {
-    const auto value = decode_char_literal(lit.value);
-    if (!value.has_value()) {
+    const auto parsed = decode_char_literal(value);
+    if (!parsed.has_value()) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
-          .span = lit.span,
-          .message = std::format("could not decode character literal `{}`",
-                                 lit.value)});
+          .span = span,
+          .message =
+              std::format("could not decode character literal `{}`", value)});
     }
-    return slot_value{static_cast<uint64_t>(*value)};
+    return slot_value{static_cast<uint64_t>(*parsed)};
   }
   default:
     return std::unexpected(compile_error{
         .kind = compile_error_kind::unsupported_construct,
-        .span = lit.span,
+        .span = span,
         .message = "string literals and other non-scalar literal kinds are not "
                    "supported by the bytecode VM yet (heap types land in "
                    "spec/codegen-design.md increment 6)"});
@@ -616,7 +615,7 @@ private:
       if (!kind.has_value()) {
         return std::unexpected(kind.error());
       }
-      auto value = encode_literal(lit, *kind);
+      auto value = encode_literal(lit.lit_kind, lit.value, lit.span, *kind);
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
@@ -679,12 +678,14 @@ private:
     case hir_node_kind::hir_variant_payload:
       return compile_variant_payload(
           dynamic_cast<const hir::hir_variant_payload &>(expr), dst);
+    case hir_node_kind::hir_match:
+      return compile_match(dynamic_cast<const hir::hir_match &>(expr), dst);
     default:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = expr.span,
           .message = "this expression form is outside the bytecode compiler's "
-                     "current scope — match and lambdas still need work "
+                     "current scope — lambdas still need work "
                      "spec/codegen-design.md's later increments haven't landed "
                      "yet"});
     }
@@ -1229,6 +1230,442 @@ private:
   }
 
   // ------------------------------------------------------------------
+  //  match + patterns (spec/codegen-design.md increment 4). Every pattern
+  //  kind compiles to a boolean register: a scalar comparison for literals,
+  //  a runtime tag check for a constructor pattern, or `op_bitand`/
+  //  `op_bitor`-combined sub-tests for the structural kinds (tuple/array/
+  //  or). `op_bitand`/`op_bitor` — not short-circuit jumps — are used to
+  //  combine sub-tests because every structural pattern's sub-positions are
+  //  always safe to test unconditionally (arity is already checker-
+  //  verified; see each pattern struct's own doc comment in hir/nodes.h),
+  //  so there is no side effect or safety reason to avoid evaluating all of
+  //  them.
+  //
+  //  `value_type` is the statically-tracked type of the value being tested,
+  //  when known. Tuple/array element types come straight from the
+  //  subject's own interned `type_entry` (`args`/`result`), needing no
+  //  further resolution. Struct field types and sum-variant payload types
+  //  are *not* tracked this increment — `runtime::layout.h` deliberately
+  //  only exposes field/variant *order*, not resolved field *types* (see
+  //  its own doc comment), and resolving them would need
+  //  `semantic::check.cpp`'s private, generic-substitution-aware
+  //  `struct_field_type`/`variant_payload_types`, which isn't exposed
+  //  outside the checker. So a struct/constructor sub-pattern is only
+  //  supported when it's a wildcard/binding (`hir_wildcard_pattern` — the
+  //  common case, e.g. `{x, y}` or `@some(x)`); anything else at that
+  //  position (a literal, a nested pattern) is rejected with a clear
+  //  "not supported yet" error rather than silently mistyped.
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto compile_pattern_test(const hir::hir_pattern &pattern,
+                                          uint8_t value_reg,
+                                          std::optional<type_id> value_type)
+      -> std::expected<uint8_t, compile_error> {
+    switch (pattern.kind) {
+    case hir_node_kind::hir_wildcard_pattern: {
+      auto reg = alloc_register(pattern.span);
+      if (!reg.has_value()) {
+        return std::unexpected(reg.error());
+      }
+      const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(*reg);
+      writer_.emit_u16(idx);
+      return *reg;
+    }
+    case hir_node_kind::hir_literal_pattern: {
+      const auto &lit = dynamic_cast<const hir::hir_literal_pattern &>(pattern);
+      if (!value_type.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = pattern.span,
+            .message = "a literal pattern here needs a statically tracked "
+                       "subject type, which this position doesn't have "
+                       "yet (see compile_pattern_test's doc comment)"});
+      }
+      if (lit.lit_kind == token_kind::string_lit) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = pattern.span,
+            .message = "string literal patterns need increment 5's "
+                       "growable-string comparison, not supported yet"});
+      }
+      auto kind = numeric_kind_for(*value_type, pattern.span);
+      if (!kind.has_value()) {
+        return std::unexpected(kind.error());
+      }
+      auto encoded =
+          encode_literal(lit.lit_kind, lit.value, pattern.span, *kind);
+      if (!encoded.has_value()) {
+        return std::unexpected(encoded.error());
+      }
+      auto const_reg = alloc_register(pattern.span);
+      if (!const_reg.has_value()) {
+        return std::unexpected(const_reg.error());
+      }
+      const auto idx = writer_.add_constant(*encoded);
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(*const_reg);
+      writer_.emit_u16(idx);
+      auto result_reg = alloc_register(pattern.span);
+      if (!result_reg.has_value()) {
+        return std::unexpected(result_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_eq);
+      writer_.emit_u8(*result_reg);
+      writer_.emit_u8(value_reg);
+      writer_.emit_u8(*const_reg);
+      writer_.emit_numeric_kind(*kind);
+      return *result_reg;
+    }
+    case hir_node_kind::hir_or_pattern: {
+      const auto &or_pat = dynamic_cast<const hir::hir_or_pattern &>(pattern);
+      if (or_pat.alternatives.empty()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = pattern.span,
+            .message = "an `or` pattern needs at least one alternative"});
+      }
+      auto result =
+          compile_pattern_test(*or_pat.alternatives[0], value_reg, value_type);
+      if (!result.has_value()) {
+        return std::unexpected(result.error());
+      }
+      const auto result_reg = *result;
+      for (size_t i = 1; i < or_pat.alternatives.size(); ++i) {
+        auto alt = compile_pattern_test(*or_pat.alternatives[i], value_reg,
+                                        value_type);
+        if (!alt.has_value()) {
+          return std::unexpected(alt.error());
+        }
+        writer_.emit_opcode(opcode::op_bitor);
+        writer_.emit_u8(result_reg);
+        writer_.emit_u8(result_reg);
+        writer_.emit_u8(*alt);
+        writer_.emit_numeric_kind(numeric_kind::boolean);
+      }
+      return result_reg;
+    }
+    case hir_node_kind::hir_tuple_pattern: {
+      const auto &tup = dynamic_cast<const hir::hir_tuple_pattern &>(pattern);
+      if (!value_type.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = pattern.span,
+            .message = "a tuple pattern here needs a statically tracked "
+                       "subject type, which this position doesn't have yet"});
+      }
+      const auto &entry = types_.entry(*value_type);
+      auto result_reg = std::optional<uint8_t>{};
+      for (size_t i = 0; i < tup.elements.size(); ++i) {
+        auto elem_reg = alloc_register(pattern.span);
+        if (!elem_reg.has_value()) {
+          return std::unexpected(elem_reg.error());
+        }
+        writer_.emit_opcode(opcode::op_load_slot);
+        writer_.emit_u8(*elem_reg);
+        writer_.emit_u8(value_reg);
+        writer_.emit_u16(static_cast<uint16_t>(i));
+        const auto elem_type = i < entry.args.size()
+                                   ? std::optional<type_id>(entry.args[i])
+                                   : std::nullopt;
+        auto sub = compile_pattern_test(*tup.elements[i], *elem_reg, elem_type);
+        if (!sub.has_value()) {
+          return std::unexpected(sub.error());
+        }
+        if (!result_reg.has_value()) {
+          result_reg = *sub;
+        } else {
+          writer_.emit_opcode(opcode::op_bitand);
+          writer_.emit_u8(*result_reg);
+          writer_.emit_u8(*result_reg);
+          writer_.emit_u8(*sub);
+          writer_.emit_numeric_kind(numeric_kind::boolean);
+        }
+      }
+      if (!result_reg.has_value()) {
+        auto reg = alloc_register(pattern.span);
+        if (!reg.has_value()) {
+          return std::unexpected(reg.error());
+        }
+        const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
+        writer_.emit_opcode(opcode::op_load_const);
+        writer_.emit_u8(*reg);
+        writer_.emit_u16(idx);
+        return *reg;
+      }
+      return *result_reg;
+    }
+    case hir_node_kind::hir_array_pattern: {
+      const auto &arr = dynamic_cast<const hir::hir_array_pattern &>(pattern);
+      if (!value_type.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = pattern.span,
+            .message = "an array pattern here needs a statically tracked "
+                       "subject type, which this position doesn't have yet"});
+      }
+      const auto &entry = types_.entry(*value_type);
+      auto result_reg = std::optional<uint8_t>{};
+      for (size_t i = 0; i < arr.elements.size(); ++i) {
+        auto elem_reg = alloc_register(pattern.span);
+        if (!elem_reg.has_value()) {
+          return std::unexpected(elem_reg.error());
+        }
+        writer_.emit_opcode(opcode::op_load_slot);
+        writer_.emit_u8(*elem_reg);
+        writer_.emit_u8(value_reg);
+        writer_.emit_u16(static_cast<uint16_t>(i));
+        auto sub = compile_pattern_test(*arr.elements[i], *elem_reg,
+                                        std::optional<type_id>(entry.result));
+        if (!sub.has_value()) {
+          return std::unexpected(sub.error());
+        }
+        if (!result_reg.has_value()) {
+          result_reg = *sub;
+        } else {
+          writer_.emit_opcode(opcode::op_bitand);
+          writer_.emit_u8(*result_reg);
+          writer_.emit_u8(*result_reg);
+          writer_.emit_u8(*sub);
+          writer_.emit_numeric_kind(numeric_kind::boolean);
+        }
+      }
+      if (!result_reg.has_value()) {
+        auto reg = alloc_register(pattern.span);
+        if (!reg.has_value()) {
+          return std::unexpected(reg.error());
+        }
+        const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
+        writer_.emit_opcode(opcode::op_load_const);
+        writer_.emit_u8(*reg);
+        writer_.emit_u16(idx);
+        return *reg;
+      }
+      return *result_reg;
+    }
+    case hir_node_kind::hir_struct_pattern: {
+      const auto &st = dynamic_cast<const hir::hir_struct_pattern &>(pattern);
+      for (const auto &field : st.fields) {
+        if (field.pattern->kind != hir_node_kind::hir_wildcard_pattern) {
+          return std::unexpected(compile_error{
+              .kind = compile_error_kind::unsupported_construct,
+              .span = pattern.span,
+              .message = std::format(
+                  "struct field pattern `{}` needs a non-wildcard "
+                  "sub-pattern, which needs struct field type tracking "
+                  "this increment doesn't support yet — only plain "
+                  "bindings (`{{{}}}`) are supported for struct field "
+                  "patterns",
+                  field.name, field.name)});
+        }
+      }
+      auto reg = alloc_register(pattern.span);
+      if (!reg.has_value()) {
+        return std::unexpected(reg.error());
+      }
+      const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(*reg);
+      writer_.emit_u16(idx);
+      return *reg;
+    }
+    case hir_node_kind::hir_constructor_pattern: {
+      const auto &ctor =
+          dynamic_cast<const hir::hir_constructor_pattern &>(pattern);
+      if (!value_type.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = pattern.span,
+            .message = "a constructor pattern here needs a statically "
+                       "tracked subject type, which this position doesn't "
+                       "have yet"});
+      }
+      const auto tag =
+          runtime::sum_variant_tag(types_, *value_type, ctor.variant_name);
+      if (!tag.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = pattern.span,
+            .message = std::format(
+                "variant `{}` does not resolve to a declared sum-type "
+                "variant — this should have been rejected by the type "
+                "checker",
+                ctor.variant_name)});
+      }
+      for (const auto &arg : ctor.args) {
+        if (arg->kind != hir_node_kind::hir_wildcard_pattern) {
+          return std::unexpected(compile_error{
+              .kind = compile_error_kind::unsupported_construct,
+              .span = pattern.span,
+              .message = std::format(
+                  "variant `{}`'s payload pattern needs a non-wildcard "
+                  "sub-pattern, which needs sum-type payload type "
+                  "tracking this increment doesn't support yet — only "
+                  "plain bindings (`@{}(x)`) are supported for payload "
+                  "patterns",
+                  ctor.variant_name, ctor.variant_name)});
+        }
+      }
+      auto tag_reg = alloc_register(pattern.span);
+      if (!tag_reg.has_value()) {
+        return std::unexpected(tag_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_load_slot);
+      writer_.emit_u8(*tag_reg);
+      writer_.emit_u8(value_reg);
+      writer_.emit_u16(0);
+      auto const_reg = alloc_register(pattern.span);
+      if (!const_reg.has_value()) {
+        return std::unexpected(const_reg.error());
+      }
+      const auto idx =
+          writer_.add_constant(slot_value{static_cast<int64_t>(*tag)});
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(*const_reg);
+      writer_.emit_u16(idx);
+      auto result_reg = alloc_register(pattern.span);
+      if (!result_reg.has_value()) {
+        return std::unexpected(result_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_eq);
+      writer_.emit_u8(*result_reg);
+      writer_.emit_u8(*tag_reg);
+      writer_.emit_u8(*const_reg);
+      writer_.emit_numeric_kind(numeric_kind::i64);
+      return *result_reg;
+    }
+    case hir_node_kind::hir_range_pattern: {
+      const auto &range = dynamic_cast<const hir::hir_range_pattern &>(pattern);
+      if (!value_type.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = pattern.span,
+            .message = "a range pattern here needs a statically tracked "
+                       "subject type, which this position doesn't have yet"});
+      }
+      auto kind = numeric_kind_for(*value_type, pattern.span);
+      if (!kind.has_value()) {
+        return std::unexpected(kind.error());
+      }
+      auto result_reg = std::optional<uint8_t>{};
+      if (range.start != nullptr) {
+        auto start_reg = compile_expr(*range.start);
+        if (!start_reg.has_value()) {
+          return std::unexpected(start_reg.error());
+        }
+        auto cmp_reg = alloc_register(pattern.span);
+        if (!cmp_reg.has_value()) {
+          return std::unexpected(cmp_reg.error());
+        }
+        writer_.emit_opcode(opcode::op_ge);
+        writer_.emit_u8(*cmp_reg);
+        writer_.emit_u8(value_reg);
+        writer_.emit_u8(*start_reg);
+        writer_.emit_numeric_kind(*kind);
+        result_reg = *cmp_reg;
+      }
+      if (range.end != nullptr) {
+        auto end_reg = compile_expr(*range.end);
+        if (!end_reg.has_value()) {
+          return std::unexpected(end_reg.error());
+        }
+        auto cmp_reg = alloc_register(pattern.span);
+        if (!cmp_reg.has_value()) {
+          return std::unexpected(cmp_reg.error());
+        }
+        writer_.emit_opcode(range.inclusive ? opcode::op_le : opcode::op_lt);
+        writer_.emit_u8(*cmp_reg);
+        writer_.emit_u8(value_reg);
+        writer_.emit_u8(*end_reg);
+        writer_.emit_numeric_kind(*kind);
+        if (result_reg.has_value()) {
+          writer_.emit_opcode(opcode::op_bitand);
+          writer_.emit_u8(*result_reg);
+          writer_.emit_u8(*result_reg);
+          writer_.emit_u8(*cmp_reg);
+          writer_.emit_numeric_kind(numeric_kind::boolean);
+        } else {
+          result_reg = *cmp_reg;
+        }
+      }
+      if (!result_reg.has_value()) {
+        auto reg = alloc_register(pattern.span);
+        if (!reg.has_value()) {
+          return std::unexpected(reg.error());
+        }
+        const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
+        writer_.emit_opcode(opcode::op_load_const);
+        writer_.emit_u8(*reg);
+        writer_.emit_u16(idx);
+        return *reg;
+      }
+      return *result_reg;
+    }
+    default:
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = pattern.span,
+          .message = "this pattern form is not supported by the bytecode "
+                     "compiler yet"});
+    }
+  }
+
+  /// `match`, usable as either a statement (`want_result == nullopt`) or an
+  /// expression (`want_result` names the destination register) — mirrors
+  /// `compile_if`'s own shape. Each arm compiles to "test the pattern (and
+  /// guard, if any, short-circuited exactly like `and`), jump past the body
+  /// if it fails, else run the body and jump to the end." A trailing
+  /// `op_panic` guards the (checker-guaranteed-unreachable) case where no
+  /// arm matched, the same defense-in-depth role `op_panic_if` plays for
+  /// array bounds.
+  [[nodiscard]] auto compile_match(const hir::hir_match &match,
+                                   std::optional<uint8_t> want_result)
+      -> std::expected<void, compile_error> {
+    auto subject_reg = compile_expr(*match.subject);
+    if (!subject_reg.has_value()) {
+      return std::unexpected(subject_reg.error());
+    }
+    locals_.emplace(match.subject_symbol, *subject_reg);
+    const auto subject_type = std::optional<type_id>(match.subject->type);
+
+    auto end_placeholders = std::vector<size_t>{};
+    for (const auto &arm : match.arms) {
+      auto test_reg =
+          compile_pattern_test(*arm.pattern, *subject_reg, subject_type);
+      if (!test_reg.has_value()) {
+        return std::unexpected(test_reg.error());
+      }
+      if (arm.guard != nullptr) {
+        writer_.emit_opcode(opcode::op_jump_if_false);
+        writer_.emit_u8(*test_reg);
+        const auto guard_skip = writer_.emit_jump_placeholder();
+        if (auto result = compile_expr_into(*arm.guard, *test_reg);
+            !result.has_value()) {
+          return std::unexpected(result.error());
+        }
+        writer_.patch_jump_to_here(guard_skip);
+      }
+      writer_.emit_opcode(opcode::op_jump_if_false);
+      writer_.emit_u8(*test_reg);
+      const auto next_arm = writer_.emit_jump_placeholder();
+
+      if (auto result = compile_block_as_value(*arm.body, want_result);
+          !result.has_value()) {
+        return std::unexpected(result.error());
+      }
+      writer_.emit_opcode(opcode::op_jump);
+      end_placeholders.push_back(writer_.emit_jump_placeholder());
+      writer_.patch_jump_to_here(next_arm);
+    }
+    writer_.emit_opcode(opcode::op_panic);
+    for (const auto placeholder : end_placeholders) {
+      writer_.patch_jump_to_here(placeholder);
+    }
+    return {};
+  }
+
+  // ------------------------------------------------------------------
   //  Statements and blocks.
   // ------------------------------------------------------------------
 
@@ -1293,16 +1730,17 @@ private:
       return compile_while(dynamic_cast<const hir::hir_while &>(node));
     case hir_node_kind::hir_if:
       return compile_if(dynamic_cast<const hir::hir_if &>(node), std::nullopt);
+    case hir_node_kind::hir_match:
+      return compile_match(dynamic_cast<const hir::hir_match &>(node),
+                           std::nullopt);
     default:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = node.span,
-          .message =
-              "this statement form is outside the bytecode compiler's "
-              "scalar/control-flow scope (spec/codegen-design.md increment 1) "
-              "— match, while-let, destructuring let/else, and comprehension "
-              "pushes all need a heap/aggregate representation increment 6 "
-              "hasn't landed yet"});
+          .message = "this statement form is outside the bytecode compiler's "
+                     "current scope — while-let, destructuring let/else, and "
+                     "comprehension pushes all need increment 5's growable-"
+                     "container support"});
     }
   }
 
