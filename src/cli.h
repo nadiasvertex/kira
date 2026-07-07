@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -13,6 +14,9 @@ namespace kira {
 inline constexpr std::string_view kDefaultMetadataDir =
     "kira-out/module-metadata";
 
+/// Default entry-point function name executed by `--run`.
+inline constexpr std::string_view kDefaultRunFunction = "main";
+
 /// Parsed command-line inputs for one `kira` invocation.
 struct cli_config {
   std::string program_name; ///< Executable name shown in usage and diagnostics.
@@ -23,6 +27,12 @@ struct cli_config {
   bool show_help = false; ///< True when argument parsing requested help output.
   bool parse_only = false; ///< Skip name resolution and type checking
                            ///< (parser-focused drivers).
+  bool run = false;        ///< Compile to bytecode and execute `run_function`
+                           ///< via the tier-0 VM (`src/bytecode/vm.h`) after a
+                           ///< successful compile.
+  std::string run_function =
+      std::string(kDefaultRunFunction); ///< Zero-argument function to
+                                        ///< execute when `run` is set.
 };
 
 /// Metadata artifact written for one successfully compiled module file.
@@ -50,6 +60,20 @@ struct hir_lowering_result {
   std::string error; ///< Lowering error message; empty when `lowered` is true.
 };
 
+/// Outcome of executing `cli_config::run_function` when `cli_config::run` is
+/// set. Bytecode compilation only covers `spec/codegen-design.md` increment
+/// 1's narrow scalar/control-flow subset (see
+/// `src/bytecode_compiler/compile.h`), so this is a distinct, best-effort
+/// step layered on top of `compile_report::hir_modules` rather than folded
+/// into `error_count` — a program that compiles and lowers cleanly may still
+/// be unrunnable yet (heap types, generics, ...).
+struct run_outcome {
+  bool succeeded = false; ///< True when the function was found, compiled, and
+                          ///< ran to completion without panicking.
+  std::string message;    ///< Rendered return value on success; the reason
+                          ///< execution didn't happen or panicked otherwise.
+};
+
 /// Aggregate result of compiling all requested source files.
 struct compile_report {
   std::vector<compiled_module>
@@ -59,6 +83,8 @@ struct compile_report {
       0; ///< Total error count across parsing and driver validation.
   std::vector<hir_lowering_result>
       hir_modules; ///< Per-module HIR lowering outcomes.
+  std::optional<run_outcome>
+      run; ///< Populated only when `cli_config::run` was set.
 };
 
 /// Parse command-line arguments into driver configuration.

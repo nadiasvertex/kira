@@ -1,6 +1,7 @@
 #include "cli.h"
 
 #include <algorithm>
+#include <bit>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -15,6 +16,10 @@
 #include <variant>
 
 #include "k-parser/parser.h"
+#include "src/bytecode/panic.h"
+#include "src/bytecode/value.h"
+#include "src/bytecode/vm.h"
+#include "src/bytecode_compiler/compile.h"
 #include "src/hir/lower.h"
 #include "src/module_metadata.pb.h"
 #include "src/semantic/analysis.h"
@@ -3294,6 +3299,122 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
 
 #endif
 
+/// Renders a VM return value for `--run`'s output, using the function's
+/// checked return type to pick how `slot_value`'s untagged union should be
+/// read back (mirrors `bytecode_compiler::encode_literal`'s reverse
+/// direction).
+///
+/// @param types Checked type table the function's `return_type` indexes
+/// into.
+/// @param return_type Checked return type of the executed function.
+/// @param value Raw VM result to render.
+[[nodiscard]] auto render_run_value(const semantic::type_table &types,
+                                    semantic::type_id return_type,
+                                    const bytecode::slot_value &value)
+    -> std::string {
+  const auto kind = bytecode::numeric_kind_of(types, return_type);
+  if (!kind) {
+    return "<unsupported return type>";
+  }
+
+  switch (*kind) {
+  case bytecode::numeric_kind::i8:
+  case bytecode::numeric_kind::i16:
+  case bytecode::numeric_kind::i32:
+  case bytecode::numeric_kind::i64:
+    return std::format("{}", value.i);
+  case bytecode::numeric_kind::u8:
+  case bytecode::numeric_kind::u16:
+  case bytecode::numeric_kind::u32:
+  case bytecode::numeric_kind::u64:
+    return std::format("{}", value.u);
+  case bytecode::numeric_kind::f32:
+    return std::format("{}",
+                       std::bit_cast<float>(static_cast<uint32_t>(value.u)));
+  case bytecode::numeric_kind::f64:
+    return std::format("{}", value.f);
+  case bytecode::numeric_kind::boolean:
+    return value.i != 0 ? "true" : "false";
+  case bytecode::numeric_kind::character:
+    return std::format("U+{:04X}", value.u);
+  }
+  return {};
+}
+
+/// Compiles `module` to bytecode and executes `function_name` with no
+/// arguments, producing the `--run` outcome shown in the CLI summary.
+/// `--run` targets exactly `spec/codegen-design.md` increment 1's subset —
+/// this project has no CLI-level argument-marshalling story yet, so only
+/// zero-parameter functions are runnable — and fails closed (a message, not
+/// a crash) on every other reason execution can't proceed.
+///
+/// @param hir_module Lowered module to compile and run.
+/// @param types Checked type table the module's HIR indexes into.
+/// @param function_name Name of the zero-argument function to execute.
+[[nodiscard]] auto run_hir_module(const hir::hir_module &hir_module,
+                                  const semantic::type_table &types,
+                                  std::string_view function_name)
+    -> run_outcome {
+  const auto *target = static_cast<const hir::hir_function *>(nullptr);
+  for (const auto &fn : hir_module.functions) {
+    if (fn != nullptr && fn->name == function_name) {
+      target = fn.get();
+      break;
+    }
+  }
+
+  if (target == nullptr) {
+    return run_outcome{.succeeded = false,
+                       .message =
+                           std::format("module `{}` has no function named `{}`",
+                                       hir_module.module_name, function_name)};
+  }
+
+  if (!target->params.empty()) {
+    return run_outcome{
+        .succeeded = false,
+        .message = std::format(
+            "cannot run `{}`: --run only supports zero-parameter functions",
+            function_name)};
+  }
+
+  auto compiled = bytecode_compiler::compile_module(hir_module, types);
+  if (!compiled) {
+    return run_outcome{.succeeded = false,
+                       .message = std::format("failed to compile `{}` to "
+                                              "bytecode: {}",
+                                              function_name,
+                                              compiled.error().message)};
+  }
+
+  auto index = uint16_t{0};
+  for (; index < compiled->functions.size(); ++index) {
+    if (compiled->functions[index].name == function_name) {
+      break;
+    }
+  }
+
+  const auto vm = bytecode::vm{*compiled};
+  auto result = vm.run(index, std::span<const bytecode::slot_value>{});
+  if (!result) {
+    return run_outcome{
+        .succeeded = false,
+        .message = std::format("`{}` panicked: {}", function_name,
+                               bytecode::panic_reason_message(result.error()))};
+  }
+
+  if (!result->has_value) {
+    return run_outcome{.succeeded = true,
+                       .message = std::format("{}() -> ()", function_name)};
+  }
+
+  return run_outcome{
+      .succeeded = true,
+      .message = std::format(
+          "{}() -> {}", function_name,
+          render_run_value(types, target->return_type, result->value))};
+}
+
 } // namespace
 
 /// Parse CLI arguments into the compile driver's configuration structure.
@@ -3347,6 +3468,33 @@ auto parse_args(std::span<char *const> argv)
       continue;
     }
 
+    if (parse_options && arg == "--run") {
+      cfg.run = true;
+      continue;
+    }
+
+    if (parse_options && arg == "--run-function") {
+      if (i + 1 >= argv.size()) {
+        return std::unexpected{"missing name after --run-function"};
+      }
+      cfg.run = true;
+      cfg.run_function = argv[++i];
+      if (cfg.run_function.empty()) {
+        return std::unexpected{"--run-function requires a non-empty name"};
+      }
+      continue;
+    }
+
+    if (parse_options && arg.starts_with("--run-function=")) {
+      cfg.run = true;
+      cfg.run_function =
+          std::string(arg.substr(std::string_view{"--run-function="}.size()));
+      if (cfg.run_function.empty()) {
+        return std::unexpected{"--run-function requires a non-empty name"};
+      }
+      continue;
+    }
+
     if (parse_options && arg.starts_with('-') && arg != "-") {
       return std::unexpected{std::format("unknown option: {}", arg)};
     }
@@ -3361,13 +3509,19 @@ auto parse_args(std::span<char *const> argv)
 ///
 /// @param program_name Executable name to display in the usage line.
 auto render_help(std::string_view program_name) -> std::string {
-  return std::format("Usage: {} [OPTIONS] SOURCES...\n\n"
-                     "Kira - Parse source files and emit module metadata\n\n"
-                     "Options:\n"
-                     "  -h, --help          Show this help message and exit\n"
-                     "  --metadata-dir PATH Write module metadata under PATH\n"
-                     "                     (default: {})",
-                     program_name, kDefaultMetadataDir);
+  return std::format(
+      "Usage: {} [OPTIONS] SOURCES...\n\n"
+      "Kira - Parse source files and emit module metadata\n\n"
+      "Options:\n"
+      "  -h, --help             Show this help message and exit\n"
+      "  --metadata-dir PATH    Write module metadata under PATH\n"
+      "                        (default: {})\n"
+      "  --run                  Compile to bytecode and execute `{}` via the\n"
+      "                        tier-0 VM (increment 1's scalar/control-flow\n"
+      "                        subset only; see src/bytecode_compiler)\n"
+      "  --run-function NAME    Like --run, but execute NAME instead of `{}`",
+      program_name, kDefaultMetadataDir, kDefaultRunFunction,
+      kDefaultRunFunction);
 }
 
 /// Parse, validate, and emit metadata for each requested source file.
@@ -3453,6 +3607,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       report.diagnostics,
       diagnostic_renderer(sources, use_color).render_all(session_diagnostics));
 
+  auto lowered_modules = hir::ptr_vec<hir::hir_module>{};
+
   for (const auto &input : parsed_inputs) {
     if (static_cast<size_t>(input.file_id) < file_has_errors.size() &&
         file_has_errors[input.file_id]) {
@@ -3491,6 +3647,38 @@ auto compile_sources(const cli_config &cfg, bool use_color)
               : hir_lowering_result{.module_path = module_name,
                                     .lowered = false,
                                     .error = lowered.error().message});
+      if (lowered.has_value()) {
+        lowered_modules.push_back(std::move(*lowered));
+      }
+    }
+  }
+
+  if (cfg.run) {
+    const auto *target_module = static_cast<const hir::hir_module *>(nullptr);
+    for (const auto &module : lowered_modules) {
+      if (module == nullptr) {
+        continue;
+      }
+      const auto has_target =
+          std::any_of(module->functions.begin(), module->functions.end(),
+                      [&cfg](const auto &fn) {
+                        return fn != nullptr && fn->name == cfg.run_function;
+                      });
+      if (has_target) {
+        target_module = module.get();
+        break;
+      }
+    }
+
+    if (target_module == nullptr) {
+      report.run = run_outcome{
+          .succeeded = false,
+          .message = std::format("no compiled module defines a function "
+                                 "named `{}`",
+                                 cfg.run_function)};
+    } else {
+      report.run =
+          run_hir_module(*target_module, checked.types, cfg.run_function);
     }
   }
 
@@ -3518,6 +3706,11 @@ auto render_compile_summary(const compile_report &report) -> std::string {
         [](const auto &result) -> auto { return result.lowered; });
     out += std::format("\nLowered {}/{} module(s) to HIR.", lowered_count,
                        report.hir_modules.size());
+  }
+  if (report.run.has_value()) {
+    out += report.run->succeeded
+               ? std::format("\n{}", report.run->message)
+               : std::format("\nrun failed: {}", report.run->message);
   }
   if (report.error_count > 0) {
     out += std::format("\nEncountered {} error(s).", report.error_count);

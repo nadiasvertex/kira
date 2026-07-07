@@ -42,7 +42,8 @@ auto main(int argc, char *argv[]) -> int {
     }
 
     std::println("{}", kira::render_compile_summary(*report));
-    return report->error_count == 0 ? 0 : 1;
+    const auto run_failed = report->run.has_value() && !report->run->succeeded;
+    return report->error_count == 0 && !run_failed ? 0 : 1;
   } catch (const std::exception &ex) {
     // Avoid std::format/std::println here: they can themselves throw, and a
     // throw from within this handler would escape main() uncaught.
