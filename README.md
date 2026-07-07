@@ -6,8 +6,9 @@ The repository currently contains:
 
 - A language reference and grammar under `spec/`
 - A hand-written lexer and recursive-descent parser under `src/parser/`
-- A CLI compile driver under `src/`
-- Protobuf-backed module metadata emitted after successful parses
+- A semantic analysis pipeline under `src/semantic/` (module graph, name resolution, type checking)
+- A CLI compile driver under `src/` that emits protobuf-backed module metadata
+- Regression test corpora under `src/testdata/`
 
 ## Build
 
@@ -52,13 +53,18 @@ Current project-owned tests cover:
 - `src/module_metadata.proto`: protobuf schema for persisted module metadata
 - `src/main.cpp`: binary entrypoint
 - `src/parser/`: lexer, parser, diagnostics, AST, and parser tests
+- `src/semantic/`: module graph, name resolution, scope and symbol tables, type checking
+- `src/testdata/`: regression test corpora
 - `spec/kira-reference.md`: language reference
 - `spec/kira-grammar.ebnf`: grammar sketch
 - `spec/CONVENTIONS.md`: project C++ conventions
 
 ## Status
 
-The parser library builds and has project-owned Bazel tests.
-The current CLI is a frontend compile driver: it parses source files, reports
-diagnostics, and emits protobuf-backed module metadata. Type checking, lowering,
-and LLVM code generation still remain to be built.
+The compiler implements a complete parse-and-analyze frontend:
+
+- Parsing: lexer + recursive-descent parser with error recovery
+- Semantic analysis: module graph construction, name resolution, type checking, and diagnostics
+- Output: protobuf-backed module metadata for each compiled module
+
+There is no typed IR, LLVM lowering, or executable linker yet.
