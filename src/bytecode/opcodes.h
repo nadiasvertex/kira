@@ -206,15 +206,20 @@ enum class opcode : uint8_t {
                    ///< to hand back (the callee's return type is `unit`).
 
   // --- Diagnostics ---------------------------------------------------------
-  op_panic, ///< u16 message_const_index — abort execution; the checked-
-            ///< arithmetic opcodes above (`op_add` et al., `op_div`/
-            ///< `op_mod`'s divide-by-zero case) trigger the same
-            ///< underlying panic path on failure without going through
-            ///< this opcode explicitly — `op_panic` itself is for panics
-            ///< with a source-level trigger (e.g. an unreachable-match
-            ///< arm), not something increment 1's compiler emits yet, but
-            ///< reserved now so the VM (increment 2) has one panic
-            ///< mechanism to implement, not two.
+  op_panic, ///< (no operands) — panics with `panic_reason::explicit_panic`
+            ///< (see `panic.h`). Originally specced with a
+            ///< `u16 message_const_index` into the constant pool, but
+            ///< `slot_value` (value.h) has no string representation and
+            ///< heap types are deferred to increment 6 — rather than add a
+            ///< string-table side channel just for this, every VM panic
+            ///< (this opcode's, and the checked-arithmetic opcodes' above)
+            ///< reports one of a small fixed `panic_reason` set instead of
+            ///< an arbitrary message; revisit once increment 6 lands real
+            ///< strings. `op_panic` itself is for panics with a
+            ///< source-level trigger (e.g. an unreachable-match arm), not
+            ///< something increment 1's compiler emits yet, but reserved
+            ///< now so the VM (increment 2) has one panic mechanism to
+            ///< implement, not two.
 };
 
 } // namespace kira::bytecode

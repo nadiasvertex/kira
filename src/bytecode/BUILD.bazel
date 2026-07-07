@@ -4,15 +4,27 @@ cc_library(
     name = "bytecode",
     srcs = [
         "chunk.cpp",
+        "panic.cpp",
         "value.cpp",
     ],
     hdrs = [
         "chunk.h",
         "opcodes.h",
+        "panic.h",
         "value.h",
     ],
     deps = [
         "//src/semantic:semantic",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "vm",
+    srcs = ["vm.cpp"],
+    hdrs = ["vm.h"],
+    deps = [
+        ":bytecode",
     ],
     visibility = ["//visibility:public"],
 )
@@ -23,6 +35,16 @@ cc_test(
     deps = [
         ":bytecode",
         "//src/semantic:semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "vm_test",
+    srcs = ["vm_test.cpp"],
+    deps = [
+        ":bytecode",
+        ":vm",
         "//src/testing",
     ],
 )
