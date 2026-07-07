@@ -30,7 +30,7 @@ namespace hir = kira::hir;
 namespace bc = kira::bytecode;
 namespace bcc = kira::bytecode_compiler;
 
-auto test_data_dir = kira::testing::find_test_data_dir("bytecode_compile");
+auto test_data_dir = kira::testing::find_test_data_dir("bytecode_test");
 
 auto load_fixture(std::string_view filename) -> std::string {
   return kira::testing::load_test_data_file(test_data_dir.string(), filename);
