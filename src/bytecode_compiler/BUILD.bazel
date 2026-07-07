@@ -17,6 +17,8 @@ cc_library(
 cc_test(
     name = "compile_test",
     srcs = ["compile_test.cpp"],
+    data = ["//src:bytecode_compile_corpus"],
+    tags = ["no-sandbox"],
     deps = [
         ":bytecode_compiler",
         "//src/bytecode:bytecode",

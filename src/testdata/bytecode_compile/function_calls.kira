@@ -1,0 +1,5 @@
+module sample
+def square(x: int32) -> int32:
+    return x * x
+def sum_of_squares(a: int32, b: int32) -> int32:
+    return square(a) + square(b)

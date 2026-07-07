@@ -20,6 +20,7 @@
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
 
 namespace {
 
@@ -28,6 +29,12 @@ using kira::testing::fail;
 namespace hir = kira::hir;
 namespace bc = kira::bytecode;
 namespace bcc = kira::bytecode_compiler;
+
+auto test_data_dir = kira::testing::find_test_data_dir("bytecode_compile");
+
+auto load_fixture(std::string_view filename) -> std::string {
+  return kira::testing::load_test_data_file(test_data_dir.string(), filename);
+}
 
 // Parses and checks one fixture source, mirroring src/hir/lower_test.cpp's
 // own fixture helper — this compiler's tests exercise the real
@@ -87,9 +94,7 @@ auto function_index(const bc::bytecode_module &module, std::string_view name)
 }
 
 auto test_add_compiles_and_runs() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def add(x: int32, y: int32) -> int32:\n"
-                                "    return x + y\n");
+  auto module = compile_fixture(load_fixture("add.kira"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{10}}, bc::slot_value{int64_t{32}}};
@@ -104,9 +109,7 @@ auto test_implicit_tail_expression_is_the_return_value() -> void {
   // result (spec/typed-ir-design.md's Rust-like trailing-expression rule,
   // enforced by check_function; see check.cpp's "mismatched final
   // expression" diagnostic).
-  auto module = compile_fixture("module sample\n"
-                                "def double(x: int32) -> int32:\n"
-                                "    x * 2\n");
+  auto module = compile_fixture(load_fixture("implicit_tail_expression.kira"));
   const auto vm = bc::vm{module};
   const auto args = std::array{bc::slot_value{int64_t{21}}};
   auto result = vm.run(function_index(module, "double"), args);
@@ -115,9 +118,7 @@ auto test_implicit_tail_expression_is_the_return_value() -> void {
 }
 
 auto test_if_expression_selects_branch_value() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def abs_val(x: int32) -> int32:\n"
-                                "    return if x < 0: -x else: x\n");
+  auto module = compile_fixture(load_fixture("if_expression.kira"));
   const auto vm = bc::vm{module};
 
   const auto neg_args = std::array{bc::slot_value{int64_t{-7}}};
@@ -132,14 +133,7 @@ auto test_if_expression_selects_branch_value() -> void {
 }
 
 auto test_while_loop_sums_one_to_n() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def sum_to_n(n: int32) -> int32:\n"
-                                "    var total = 0\n"
-                                "    var i = 1\n"
-                                "    while i <= n:\n"
-                                "        total = total + i\n"
-                                "        i = i + 1\n"
-                                "    return total\n");
+  auto module = compile_fixture(load_fixture("while_loop.kira"));
   const auto vm = bc::vm{module};
   const auto args = std::array{bc::slot_value{int64_t{10}}};
   auto result = vm.run(function_index(module, "sum_to_n"), args);
@@ -148,11 +142,7 @@ auto test_while_loop_sums_one_to_n() -> void {
 }
 
 auto test_recursive_call_computes_factorial() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def factorial(n: int32) -> int32:\n"
-                                "    if n <= 1:\n"
-                                "        return 1\n"
-                                "    return n * factorial(n - 1)\n");
+  auto module = compile_fixture(load_fixture("recursive_factorial.kira"));
   const auto vm = bc::vm{module};
   const auto index = function_index(module, "factorial");
 
@@ -166,12 +156,7 @@ auto test_recursive_call_computes_factorial() -> void {
 }
 
 auto test_calls_another_function_in_the_same_module() -> void {
-  auto module =
-      compile_fixture("module sample\n"
-                      "def square(x: int32) -> int32:\n"
-                      "    return x * x\n"
-                      "def sum_of_squares(a: int32, b: int32) -> int32:\n"
-                      "    return square(a) + square(b)\n");
+  auto module = compile_fixture(load_fixture("function_calls.kira"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{3}}, bc::slot_value{int64_t{4}}};
@@ -181,9 +166,7 @@ auto test_calls_another_function_in_the_same_module() -> void {
 }
 
 auto test_and_or_short_circuit_to_correct_value() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def classify(x: int32) -> bool:\n"
-                                "    return x > 0 and x < 10 or x == -1\n");
+  auto module = compile_fixture(load_fixture("and_or_short_circuit.kira"));
   const auto vm = bc::vm{module};
   const auto index = function_index(module, "classify");
 
@@ -201,9 +184,7 @@ auto test_and_or_short_circuit_to_correct_value() -> void {
 }
 
 auto test_cast_widens_int_to_float() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def to_float(x: int32) -> float64:\n"
-                                "    return x as float64\n");
+  auto module = compile_fixture(load_fixture("cast_int_to_float.kira"));
   const auto vm = bc::vm{module};
   const auto args = std::array{bc::slot_value{int64_t{21}}};
   auto result = vm.run(function_index(module, "to_float"), args);
@@ -212,9 +193,7 @@ auto test_cast_widens_int_to_float() -> void {
 }
 
 auto test_checked_add_panics_on_overflow_end_to_end() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def add8(x: int8, y: int8) -> int8:\n"
-                                "    return x + y\n");
+  auto module = compile_fixture(load_fixture("checked_add_overflow.kira"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{100}}, bc::slot_value{int64_t{100}}};
@@ -228,9 +207,7 @@ auto test_string_literal_len_reads_the_heap_header() -> void {
   // No surface `.len()` yet — reads the heap `str` value's own length slot
   // directly via a hand-assembled op_load_slot, mirroring vm_test.cpp's
   // own str test, just compiled from real source this time.
-  auto module = compile_fixture("module sample\n"
-                                "def greet() -> str:\n"
-                                "    return \"hello\"\n");
+  auto module = compile_fixture(load_fixture("string_literal.kira"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "greet"), {});
   expect(result.has_value(), "expected greet() to succeed");
@@ -245,9 +222,7 @@ auto test_string_literal_len_reads_the_heap_header() -> void {
 }
 
 auto test_tuple_construction_and_projection() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def make() -> (int32, int32, int32):\n"
-                                "    return (10, 20, 12)\n");
+  auto module = compile_fixture(load_fixture("tuple_construction.kira"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "make"), {});
   expect(result.has_value(), "expected make() to succeed");
@@ -258,11 +233,7 @@ auto test_tuple_construction_and_projection() -> void {
 }
 
 auto test_struct_literal_and_field_access() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "type point = { pub x: int32, pub y: int32 }\n"
-                                "def sum_fields(x: int32, y: int32) -> int32:\n"
-                                "    let p: point = { x: x, y: y }\n"
-                                "    return (p).x + (p).y\n");
+  auto module = compile_fixture(load_fixture("struct_field_access.kira"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{18}}, bc::slot_value{int64_t{24}}};
@@ -272,11 +243,7 @@ auto test_struct_literal_and_field_access() -> void {
 }
 
 auto test_fixed_array_construction_and_indexing() -> void {
-  auto module =
-      compile_fixture("module sample\n"
-                      "def third(i: usize) -> int32:\n"
-                      "    let a: array[int32, 4] = [10, 20, 30, 40]\n"
-                      "    return a[i]\n");
+  auto module = compile_fixture(load_fixture("fixed_array_indexing.kira"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "third"),
                        std::array{bc::slot_value{uint64_t{2}}});
@@ -285,10 +252,7 @@ auto test_fixed_array_construction_and_indexing() -> void {
 }
 
 auto test_array_index_out_of_bounds_panics() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def get(i: usize) -> int32:\n"
-                                "    let a: array[int32, 3] = [1, 2, 3]\n"
-                                "    return a[i]\n");
+  auto module = compile_fixture(load_fixture("array_out_of_bounds.kira"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "get"),
                        std::array{bc::slot_value{uint64_t{5}}});
@@ -298,10 +262,7 @@ auto test_array_index_out_of_bounds_panics() -> void {
 }
 
 auto test_array_fill_form_repeats_the_same_value() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def sum_of_fives() -> int32:\n"
-                                "    let a: array[int32, 4] = [5; 4]\n"
-                                "    return a[0] + a[1] + a[2] + a[3]\n");
+  auto module = compile_fixture(load_fixture("array_fill.kira"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_of_fives"), {});
   expect(result.has_value(), "expected sum_of_fives() to succeed");
@@ -312,11 +273,7 @@ auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
   // No `match` yet (increment 4), so this reads the heap block's raw
   // {tag; payload} slots directly, mirroring how
   // test_string_literal_len_reads_the_heap_header reads a str's header.
-  auto module =
-      compile_fixture("module sample\n"
-                      "type shape = @circle(float64) | @square(float64)\n"
-                      "def make(r: float64) -> shape:\n"
-                      "    return @circle(r)\n");
+  auto module = compile_fixture(load_fixture("sum_type_variant.kira"));
   const auto vm = bc::vm{module};
   auto result =
       vm.run(function_index(module, "make"), std::array{bc::slot_value{3.5}});
@@ -328,10 +285,7 @@ auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
 }
 
 auto test_sum_type_unit_variant_encodes_its_tag() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "type shape = @circle(float64) | @empty\n"
-                                "def make_empty() -> shape:\n"
-                                "    return @empty\n");
+  auto module = compile_fixture(load_fixture("sum_type_unit_variant.kira"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "make_empty"), {});
   expect(result.has_value(), "expected make_empty() to succeed");
@@ -341,12 +295,7 @@ auto test_sum_type_unit_variant_encodes_its_tag() -> void {
 }
 
 auto test_match_dispatches_on_literal_and_wildcard_patterns() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def classify(x: int32) -> int32:\n"
-                                "    return match x:\n"
-                                "        0 => 100\n"
-                                "        1 => 200\n"
-                                "        _ => 300\n");
+  auto module = compile_fixture(load_fixture("match_literal_wildcard.kira"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "classify");
   auto r0 = vm.run(idx, std::array{bc::slot_value{int64_t{0}}});
@@ -358,11 +307,7 @@ auto test_match_dispatches_on_literal_and_wildcard_patterns() -> void {
 }
 
 auto test_match_or_pattern_matches_any_alternative() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def is_small(x: int32) -> bool:\n"
-                                "    return match x:\n"
-                                "        0 | 1 | 2 => true\n"
-                                "        _ => false\n");
+  auto module = compile_fixture(load_fixture("match_or_pattern.kira"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "is_small");
   auto r1 = vm.run(idx, std::array{bc::slot_value{int64_t{1}}});
@@ -372,12 +317,7 @@ auto test_match_or_pattern_matches_any_alternative() -> void {
 }
 
 auto test_match_range_pattern() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def bucket(x: int32) -> int32:\n"
-                                "    return match x:\n"
-                                "        0..10 => 1\n"
-                                "        10..=20 => 2\n"
-                                "        _ => 3\n");
+  auto module = compile_fixture(load_fixture("match_range_pattern.kira"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "bucket");
   auto r5 = vm.run(idx, std::array{bc::slot_value{int64_t{5}}});
@@ -395,12 +335,7 @@ auto test_match_guard_refines_a_pattern() -> void {
   // pre-existing lowering gap (`hir_match_arm.guard` is lowered before the
   // pattern's synthetic `hir_let` bindings, which only live in `body`), out
   // of scope for this increment's bytecode_compiler/llvm_codegen work.
-  auto module = compile_fixture("module sample\n"
-                                "def sign(x: int32) -> int32:\n"
-                                "    return match x:\n"
-                                "        _ if x > 0 => 1\n"
-                                "        _ if x < 0 => -1\n"
-                                "        _ => 0\n");
+  auto module = compile_fixture(load_fixture("match_guard.kira"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "sign");
   auto rpos = vm.run(idx, std::array{bc::slot_value{int64_t{7}}});
@@ -412,12 +347,7 @@ auto test_match_guard_refines_a_pattern() -> void {
 }
 
 auto test_match_tuple_pattern_with_literal_and_binding() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "def describe(a: int32, b: int32) -> int32:\n"
-                                "    let t: (int32, int32) = (a, b)\n"
-                                "    return match t:\n"
-                                "        (0, y) => y\n"
-                                "        (x, y) => x + y\n");
+  auto module = compile_fixture(load_fixture("match_tuple_pattern.kira"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "describe");
   auto r_zero_first = vm.run(
@@ -431,18 +361,7 @@ auto test_match_tuple_pattern_with_literal_and_binding() -> void {
 }
 
 auto test_match_constructor_pattern_over_a_sum_type() -> void {
-  auto module = compile_fixture(
-      "module sample\n"
-      "type shape = @circle(float64) | @square(float64) | @empty\n"
-      "def area(s: shape) -> float64:\n"
-      "    return match s:\n"
-      "        @circle(r) => r * r\n"
-      "        @square(side) => side * side\n"
-      "        @empty => 0.0\n"
-      "def circle_area(r: float64) -> float64:\n"
-      "    return area(@circle(r))\n"
-      "def empty_area() -> float64:\n"
-      "    return area(@empty)\n");
+  auto module = compile_fixture(load_fixture("match_constructor_pattern.kira"));
   const auto vm = bc::vm{module};
   auto circle_result = vm.run(function_index(module, "circle_area"),
                               std::array{bc::slot_value{4.0}});
@@ -455,12 +374,7 @@ auto test_match_constructor_pattern_over_a_sum_type() -> void {
 }
 
 auto test_match_struct_pattern_destructures_named_fields() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "type point = { pub x: int32, pub y: int32 }\n"
-                                "def sum_fields(x: int32, y: int32) -> int32:\n"
-                                "    let p: point = { x: x, y: y }\n"
-                                "    return match p:\n"
-                                "        { x, y } => x + y\n");
+  auto module = compile_fixture(load_fixture("match_struct_pattern.kira"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{18}}, bc::slot_value{int64_t{24}}};

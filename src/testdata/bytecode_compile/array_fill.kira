@@ -1,0 +1,4 @@
+module sample
+def sum_of_fives() -> int32:
+    let a: array[int32, 4] = [5; 4]
+    return a[0] + a[1] + a[2] + a[3]

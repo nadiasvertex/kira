@@ -20,6 +20,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "bytecode_compile_corpus",
+    srcs = glob(["testdata/bytecode_compile/*.kira"]),
+    visibility = ["//visibility:public"],
+)
+
 proto_library(
     name = "module_metadata_proto",
     srcs = ["module_metadata.proto"],

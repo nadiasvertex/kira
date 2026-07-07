@@ -1,0 +1,6 @@
+module sample
+type point = { pub x: int32, pub y: int32 }
+def sum_fields(x: int32, y: int32) -> int32:
+    let p: point = { x: x, y: y }
+    return match p:
+        { x, y } => x + y

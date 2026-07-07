@@ -1,0 +1,3 @@
+module sample
+def double(x: int32) -> int32:
+    x * 2

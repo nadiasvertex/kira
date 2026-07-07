@@ -1,0 +1,6 @@
+module sample
+def describe(a: int32, b: int32) -> int32:
+    let t: (int32, int32) = (a, b)
+    return match t:
+        (0, y) => y
+        (x, y) => x + y

@@ -2,6 +2,9 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
     name = "testing",
-    hdrs = ["test_assert.h"],
+    hdrs = [
+        "test_assert.h",
+        "test_data.h",
+    ],
     visibility = ["//visibility:public"],
 )
