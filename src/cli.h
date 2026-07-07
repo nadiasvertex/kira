@@ -33,6 +33,16 @@ struct cli_config {
   std::string run_function =
       std::string(kDefaultRunFunction); ///< Zero-argument function to
                                         ///< execute when `run` is set.
+  bool build = false;                   ///< Compile to a native object file via
+                      ///< `src/llvm_codegen`, link it against Kira's AOT
+                      ///< runtime support library, and produce a standalone
+                      ///< executable (`spec/codegen-design.md` increment 4).
+  std::string build_function =
+      std::string(kDefaultRunFunction); ///< Zero-argument function to use as
+                                        ///< the executable's entry point
+                                        ///< when `build` is set.
+  std::string build_output; ///< Output executable path; empty derives one
+                            ///< from the first source file's stem.
 };
 
 /// Metadata artifact written for one successfully compiled module file.
@@ -74,6 +84,17 @@ struct run_outcome {
                           ///< execution didn't happen or panicked otherwise.
 };
 
+/// Outcome of building `cli_config::build_function` into a standalone
+/// executable when `cli_config::build` is set. Like `run_outcome`, this is a
+/// distinct, best-effort step layered on top of HIR lowering — the same
+/// scalar/control-flow subset restriction applies, now via
+/// `src/llvm_codegen` rather than `src/bytecode_compiler`.
+struct build_outcome {
+  bool succeeded = false; ///< True when a standalone executable was produced.
+  std::string message;    ///< The output executable's path on success; the
+                          ///< reason the build didn't happen otherwise.
+};
+
 /// Aggregate result of compiling all requested source files.
 struct compile_report {
   std::vector<compiled_module>
@@ -85,6 +106,8 @@ struct compile_report {
       hir_modules; ///< Per-module HIR lowering outcomes.
   std::optional<run_outcome>
       run; ///< Populated only when `cli_config::run` was set.
+  std::optional<build_outcome>
+      build; ///< Populated only when `cli_config::build` was set.
 };
 
 /// Parse command-line arguments into driver configuration.

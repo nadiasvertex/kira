@@ -459,6 +459,44 @@ produces it — `|` lexes to the pipe operator instead). Both are pre-
 existing gaps, not something this pass introduced, and are called out
 here rather than silently worked around.
 
+## Increment 4 status: `kira build` produces real standalone executables
+
+`src/llvm_codegen/aot.{h,cpp}` adds `emit_object_file`: given a
+`compile_module` result and an entry-function name (the same "zero-
+argument, matching `--run`'s convention" scope limit as increment 3's JIT
+path), it synthesizes a real C-ABI `int main(void)` that calls the entry
+function and translates its result into a process exit code (`unit` -> 0,
+`bool`/an integer kind -> widened/truncated `int`, a float return type
+rejected outright as not a sensible exit status), then runs
+`TargetMachine::addPassesToEmitFile` to write a native relocatable object
+file — no JIT, no `LLJIT`, involved at all.
+
+`kira`'s CLI driver gained `--build`/`--build-function`/`--build-output`
+(`cli.cpp`), which compile the requested entry function, emit its object
+file, and shell out to the system `cc` to link it against
+`//src/llvm_codegen:aot_runtime` — a from-scratch, non-throwing
+`kira_codegen_panic` (`aot_runtime.cpp`) that prints a message and calls
+`exit(101)`, since a standalone binary has no C++ exception handler
+waiting at the top of the process the way `jit_support.h`'s in-process
+JIT execution does; this is a deliberately separate implementation from
+`runtime.cpp`'s throwing one used by JIT tests, never linked into the
+same binary (both define the same C symbol). Confirmed end to end,
+including via `otool -L` on the linked output showing no LLVM or
+Kira-runtime shared-library dependency leaked in (Decision 5's own
+stated check) — only `libSystem`/libc — and confirmed the panic path
+reaches the process exit code correctly (`aot_test.cpp`).
+
+Two gaps against Decision 4/5's fuller ambition, left for later
+increments rather than solved here: the runtime archive is located via
+Bazel runfiles (`find_aot_runtime_archive`, cli.cpp) with no installed-
+location story yet, so `--build` only works when `kira` itself is run
+from inside the Bazel workspace that built it (`bazelisk run //src:kira`
+or `bazel-bin/src/kira`) — `just package`'s release archives don't bundle
+the runtime archive yet. And the runtime substrate is still the
+libc-backed placeholder Decision 5 explicitly allows for this increment
+(`std::fprintf`/`std::exit`) — swapping it for Decision 6's direct-
+syscall substrate is increment 8's job, not this one's.
+
 ## Explicitly deferred / open questions
 - Real memory management strategy (refcounting vs. ownership-based drop
   vs. tracing GC) is blocked on Kira's ownership/borrow model, per

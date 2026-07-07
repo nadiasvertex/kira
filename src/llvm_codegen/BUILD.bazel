@@ -21,11 +21,36 @@ cc_library(
     hdrs = ["codegen.h"],
     tags = ["no-sandbox"],
     deps = [
-        ":runtime",
         "//src/bytecode:bytecode",
         "//src/hir:hir",
         "//src/k-parser:k-parser",
         "//src/semantic:semantic",
+        "@llvm//:llvm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# `kira build`'s panic runtime: prints and exits instead of `runtime.cc`'s
+# throwing implementation, since a standalone AOT binary has no exception
+# handler waiting at the top of the process the way JIT execution does.
+# Never link this in the same binary as `:runtime` — both define the same
+# `kira_codegen_panic` C symbol; exactly one belongs in any given binary.
+cc_library(
+    name = "aot_runtime",
+    srcs = ["aot_runtime.cpp"],
+    hdrs = ["runtime.h"],
+    alwayslink = True,
+    deps = ["//src/bytecode:bytecode"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "aot",
+    srcs = ["aot.cpp"],
+    hdrs = ["aot.h"],
+    tags = ["no-sandbox"],
+    deps = [
+        ":codegen",
         "@llvm//:llvm",
     ],
     visibility = ["//visibility:public"],
@@ -44,6 +69,20 @@ cc_library(
         "@llvm//:llvm",
     ],
     visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "aot_test",
+    srcs = ["aot_test.cpp"],
+    tags = ["no-sandbox"],
+    deps = [
+        ":aot",
+        ":codegen",
+        "//src/hir:hir",
+        "//src/k-parser:k-parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+    ],
 )
 
 cc_test(

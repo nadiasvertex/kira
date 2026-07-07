@@ -24,7 +24,6 @@
 #include "src/hir/ids.h"
 #include "src/k-parser/ast.h"
 #include "src/k-parser/token.h"
-#include "src/llvm_codegen/runtime.h"
 
 namespace kira::llvm_codegen {
 

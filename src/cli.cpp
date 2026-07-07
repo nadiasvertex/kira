@@ -1,7 +1,10 @@
 #include "cli.h"
 
+#include <unistd.h>
+
 #include <algorithm>
 #include <bit>
+#include <cstdlib>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -21,6 +24,8 @@
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/compile.h"
 #include "src/hir/lower.h"
+#include "src/llvm_codegen/aot.h"
+#include "src/llvm_codegen/codegen.h"
 #include "src/module_metadata.pb.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/types.h"
@@ -3415,6 +3420,108 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
           render_run_value(types, target->return_type, result->value))};
 }
 
+/// Locates Kira's AOT panic runtime archive
+/// (`src/llvm_codegen/aot_runtime.cpp`, built as
+/// `//src/llvm_codegen:aot_runtime`) so `--build` can hand it to the system
+/// linker. There is no installed-location story yet (`just package` doesn't
+/// bundle it) — this only finds the archive when `kira` itself is run from
+/// within the Bazel workspace that built it (via `bazelisk run
+/// //src:kira` or directly from `bazel-bin`), mirroring how
+/// `driver_stress_test.cpp`/`semantic_stress_test.cpp` locate their own test
+/// corpora through Bazel runfiles.
+///
+/// @param program_name `argv[0]` this process was invoked with.
+[[nodiscard]] auto find_aot_runtime_archive(std::string_view program_name)
+    -> std::optional<fs::path> {
+  auto candidates = std::vector<fs::path>{};
+  // Bazel names an `alwayslink = True` cc_library's archive `.lo`, not
+  // `.a` (still an ordinary `ar` archive under the hood) — check both
+  // since that's an implementation detail of the Bazel version in use, not
+  // something this driver should hardcode a single answer for.
+  for (const auto *extension : {"lo", "a"}) {
+    if (!program_name.empty()) {
+      candidates.emplace_back(
+          fs::path(std::format("{}.runfiles", program_name)) / "_main" / "src" /
+          "llvm_codegen" / std::format("libaot_runtime.{}", extension));
+    }
+    candidates.emplace_back(
+        std::format("bazel-bin/src/llvm_codegen/libaot_runtime.{}", extension));
+  }
+
+  for (const auto &candidate : candidates) {
+    auto ec = std::error_code{};
+    if (fs::exists(candidate, ec)) {
+      return candidate;
+    }
+  }
+  return std::nullopt;
+}
+
+/// Compiles `hir_module` to a native object file via `src/llvm_codegen`,
+/// then links it against Kira's AOT runtime support library into a
+/// standalone executable at `output_path` — `--build`'s counterpart to
+/// `run_hir_module`, using the same "zero-argument entry function" scope
+/// limit (`llvm_codegen::emit_object_file`'s own doc comment) and the same
+/// fail-closed-with-a-message discipline.
+///
+/// @param hir_module Lowered module to compile and link.
+/// @param types Checked type table the module's HIR indexes into.
+/// @param function_name Name of the zero-argument function to use as the
+/// executable's entry point.
+/// @param output_path Destination path for the linked executable.
+/// @param program_name `argv[0]`, used to locate the AOT runtime archive.
+[[nodiscard]] auto build_hir_module(const hir::hir_module &hir_module,
+                                    const semantic::type_table &types,
+                                    std::string_view function_name,
+                                    const fs::path &output_path,
+                                    std::string_view program_name)
+    -> build_outcome {
+  auto compiled = llvm_codegen::compile_module(hir_module, types);
+  if (!compiled) {
+    return build_outcome{
+        .succeeded = false,
+        .message = std::format("failed to compile `{}` to native code: {}",
+                               function_name, compiled.error().message)};
+  }
+
+  const auto object_path =
+      fs::temp_directory_path() /
+      std::format("kira-build-{}.o", static_cast<long>(::getpid()));
+  auto emitted = llvm_codegen::emit_object_file(
+      std::move(*compiled), function_name, object_path.string());
+  if (!emitted) {
+    return build_outcome{.succeeded = false,
+                         .message = std::format("failed to emit an object "
+                                                "file for `{}`: {}",
+                                                function_name,
+                                                emitted.error().message)};
+  }
+
+  const auto runtime_archive = find_aot_runtime_archive(program_name);
+  if (!runtime_archive) {
+    return build_outcome{
+        .succeeded = false,
+        .message = "could not locate Kira's AOT runtime support library "
+                   "(libaot_runtime.a) — run `kira` via `bazelisk run "
+                   "//src:kira` or from `bazel-bin/src/kira` inside the "
+                   "workspace that built it"};
+  }
+
+  const auto link_command =
+      std::format("cc \"{}\" \"{}\" -o \"{}\"", object_path.string(),
+                  runtime_archive->string(), output_path.string());
+  const auto link_status = std::system(link_command.c_str());
+  auto ec = std::error_code{};
+  fs::remove(object_path, ec);
+  if (link_status != 0) {
+    return build_outcome{
+        .succeeded = false,
+        .message = std::format("linking failed (exit status {})", link_status)};
+  }
+
+  return build_outcome{.succeeded = true, .message = output_path.string()};
+}
+
 } // namespace
 
 /// Parse CLI arguments into the compile driver's configuration structure.
@@ -3495,6 +3602,55 @@ auto parse_args(std::span<char *const> argv)
       continue;
     }
 
+    if (parse_options && arg == "--build") {
+      cfg.build = true;
+      continue;
+    }
+
+    if (parse_options && arg == "--build-function") {
+      if (i + 1 >= argv.size()) {
+        return std::unexpected{"missing name after --build-function"};
+      }
+      cfg.build = true;
+      cfg.build_function = argv[++i];
+      if (cfg.build_function.empty()) {
+        return std::unexpected{"--build-function requires a non-empty name"};
+      }
+      continue;
+    }
+
+    if (parse_options && arg.starts_with("--build-function=")) {
+      cfg.build = true;
+      cfg.build_function =
+          std::string(arg.substr(std::string_view{"--build-function="}.size()));
+      if (cfg.build_function.empty()) {
+        return std::unexpected{"--build-function requires a non-empty name"};
+      }
+      continue;
+    }
+
+    if (parse_options && arg == "--build-output") {
+      if (i + 1 >= argv.size()) {
+        return std::unexpected{"missing path after --build-output"};
+      }
+      cfg.build = true;
+      cfg.build_output = argv[++i];
+      if (cfg.build_output.empty()) {
+        return std::unexpected{"--build-output requires a non-empty path"};
+      }
+      continue;
+    }
+
+    if (parse_options && arg.starts_with("--build-output=")) {
+      cfg.build = true;
+      cfg.build_output =
+          std::string(arg.substr(std::string_view{"--build-output="}.size()));
+      if (cfg.build_output.empty()) {
+        return std::unexpected{"--build-output requires a non-empty path"};
+      }
+      continue;
+    }
+
     if (parse_options && arg.starts_with('-') && arg != "-") {
       return std::unexpected{std::format("unknown option: {}", arg)};
     }
@@ -3519,9 +3675,14 @@ auto render_help(std::string_view program_name) -> std::string {
       "  --run                  Compile to bytecode and execute `{}` via the\n"
       "                        tier-0 VM (increment 1's scalar/control-flow\n"
       "                        subset only; see src/bytecode_compiler)\n"
-      "  --run-function NAME    Like --run, but execute NAME instead of `{}`",
+      "  --run-function NAME    Like --run, but execute NAME instead of `{}`\n"
+      "  --build                Compile `{}` to native code via LLVM, link a\n"
+      "                        standalone executable (same scalar/control-\n"
+      "                        flow subset; see src/llvm_codegen)\n"
+      "  --build-function NAME  Like --build, but use NAME as the entry point\n"
+      "  --build-output PATH    Write the linked executable to PATH",
       program_name, kDefaultMetadataDir, kDefaultRunFunction,
-      kDefaultRunFunction);
+      kDefaultRunFunction, kDefaultRunFunction);
 }
 
 /// Parse, validate, and emit metadata for each requested source file.
@@ -3682,6 +3843,40 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     }
   }
 
+  if (cfg.build) {
+    const auto *target_module = static_cast<const hir::hir_module *>(nullptr);
+    for (const auto &module : lowered_modules) {
+      if (module == nullptr) {
+        continue;
+      }
+      const auto has_target =
+          std::any_of(module->functions.begin(), module->functions.end(),
+                      [&cfg](const auto &fn) {
+                        return fn != nullptr && fn->name == cfg.build_function;
+                      });
+      if (has_target) {
+        target_module = module.get();
+        break;
+      }
+    }
+
+    if (target_module == nullptr) {
+      report.build = build_outcome{
+          .succeeded = false,
+          .message = std::format("no compiled module defines a function "
+                                 "named `{}`",
+                                 cfg.build_function)};
+    } else {
+      const auto output_path =
+          cfg.build_output.empty()
+              ? fs::path(source_stem_or_default(fs::path(cfg.sources.front())))
+              : fs::path(cfg.build_output);
+      report.build =
+          build_hir_module(*target_module, checked.types, cfg.build_function,
+                           output_path, cfg.program_name);
+    }
+  }
+
   return report;
 }
 
@@ -3711,6 +3906,11 @@ auto render_compile_summary(const compile_report &report) -> std::string {
     out += report.run->succeeded
                ? std::format("\n{}", report.run->message)
                : std::format("\nrun failed: {}", report.run->message);
+  }
+  if (report.build.has_value()) {
+    out += report.build->succeeded
+               ? std::format("\nBuilt executable: {}", report.build->message)
+               : std::format("\nbuild failed: {}", report.build->message);
   }
   if (report.error_count > 0) {
     out += std::format("\nEncountered {} error(s).", report.error_count);
