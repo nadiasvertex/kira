@@ -177,10 +177,10 @@ using semantic::type_table;
     }
     const auto hex = inner.substr(3, inner.size() - 4);
     auto value = uint32_t{0};
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
     const char *hex_end = hex.data() + hex.size();
     const auto result = std::from_chars(hex.data(), hex_end, value, 16);
-    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
     if (result.ec != std::errc{} || result.ptr != hex_end) {
       return std::nullopt;
     }
@@ -276,10 +276,10 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
       }
       const auto hex = inner.substr(pos + 3, close - (pos + 3));
       auto value = uint32_t{0};
-      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
       const char *hex_end = hex.data() + hex.size();
       const auto result = std::from_chars(hex.data(), hex_end, value, 16);
-      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
       if (result.ec != std::errc{} || result.ptr != hex_end) {
         return std::nullopt;
       }
@@ -378,11 +378,11 @@ public:
     current_fn_ = llvm_fn;
     return_is_unit_ = types_.is_unit(fn.return_type);
     if (!return_is_unit_) {
-      auto kind = numeric_kind_for(fn.return_type, fn.span);
-      if (!kind.has_value()) {
-        return std::unexpected(kind.error());
+      auto ty = storage_type_for(fn.return_type, fn.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
       }
-      return_llvm_type_ = llvm_type_for(ctx_, *kind);
+      return_llvm_type_ = *ty;
     }
 
     auto *entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_fn);
@@ -399,12 +399,11 @@ public:
 
     for (size_t i = 0; i < fn.params.size(); ++i) {
       const auto &param = fn.params[i];
-      auto kind = numeric_kind_for(param.type, fn.span);
-      if (!kind.has_value()) {
-        return std::unexpected(kind.error());
+      auto ty = storage_type_for(param.type, fn.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
       }
-      auto *alloca =
-          create_local_alloca(llvm_type_for(ctx_, *kind), param.name);
+      auto *alloca = create_local_alloca(*ty, param.name);
       builder_.CreateStore(llvm_fn->getArg(static_cast<unsigned>(i)), alloca);
       locals_.emplace(param.symbol, alloca);
     }
