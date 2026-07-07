@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "src/k-parser/diagnostic.h"
+#include "src/parser/diagnostic.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/types.h"
 

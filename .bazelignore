@@ -6,7 +6,7 @@ bazel-testlogs
 external
 dist
 kira-out
-src/k-parser/bazel-bin
-src/k-parser/bazel-k-parser
-src/k-parser/bazel-out
-src/k-parser/bazel-testlogs
+src/parser/bazel-bin
+src/parser/bazel-parser
+src/parser/bazel-out
+src/parser/bazel-testlogs

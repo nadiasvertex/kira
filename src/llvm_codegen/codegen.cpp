@@ -22,8 +22,8 @@
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
 #include "src/hir/ids.h"
-#include "src/k-parser/ast.h"
-#include "src/k-parser/token.h"
+#include "src/parser/ast.h"
+#include "src/parser/token.h"
 #include "src/runtime/layout.h"
 
 namespace kira::llvm_codegen {

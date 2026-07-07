@@ -9,7 +9,7 @@ cc_library(
         "nodes.h",
     ],
     deps = [
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/semantic:semantic",
     ],
     visibility = ["//visibility:public"],
@@ -20,7 +20,7 @@ cc_test(
     srcs = ["nodes_test.cpp"],
     deps = [
         ":hir",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/testing",
     ],
@@ -31,7 +31,7 @@ cc_test(
     srcs = ["lower_test.cpp"],
     deps = [
         ":hir",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/testing",
     ],

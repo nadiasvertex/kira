@@ -11,7 +11,7 @@
 
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
-#include "src/k-parser/ast.h"
+#include "src/parser/ast.h"
 #include "src/semantic/types.h"
 
 namespace kira::hir {

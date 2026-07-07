@@ -19,7 +19,7 @@ just format     # regenerate compile_commands.json, run clang-tidy --fix over sr
 Run a single test target directly with bazel/bazelisk, e.g.:
 
 ```sh
-bazelisk test //src/k-parser:parser_test
+bazelisk test //src/parser:parser_test
 bazelisk test //src/semantic:check_test
 bazelisk test //src:cli_test
 ```
@@ -37,7 +37,7 @@ Tests are hand-rolled binaries (no gtest) using `kira::testing::expect`/`fail` f
 
 The compiler above all is meant to teach the user how to use the language. Friendliness and clarity of diagnostics are prioritized over performance or cleverness.
 
-- `src/k-parser/`: lexer, recursive-descent parser, AST, diagnostics, source locations. The lexer produces a flat, eagerly-materialized token stream (INDENT/DEDENT/NEWLINE synthesized from Python-style indentation; newlines suppressed inside balanced brackets). Tokens carry `string_view`s into the original source buffer — no per-token allocation. The parser never aborts on the first error: it inserts `error_node`s (`error_expr`, `error_pattern`, `error_stmt`) and resynchronizes at likely construct boundaries (keywords, DEDENT/NEWLINE) so downstream phases still see a structurally valid tree.
+- `src/parser/`: lexer, recursive-descent parser, AST, diagnostics, source locations. The lexer produces a flat, eagerly-materialized token stream (INDENT/DEDENT/NEWLINE synthesized from Python-style indentation; newlines suppressed inside balanced brackets). Tokens carry `string_view`s into the original source buffer — no per-token allocation. The parser never aborts on the first error: it inserts `error_node`s (`error_expr`, `error_pattern`, `error_stmt`) and resynchronizes at likely construct boundaries (keywords, DEDENT/NEWLINE) so downstream phases still see a structurally valid tree.
 - `src/semantic/`: runs after parsing, over an in-memory set of `parsed_module` (file_id + borrowed AST pointer). Pipeline stages, roughly in order:
   - `analysis.cpp` / `resolution.cpp`: builds the cross-file module graph (`module_index.h`), detects duplicate/conflicting module paths, validates parent/child module boundaries, validates `use` imports and qualified path references.
   - `scopes.cpp` / `symbols.cpp` / `session.cpp`: builds the scope tree (`semantic_scope`, kinds like `module_scope`, `impl_scope`, `function_body_scope`, `match_arm_scope`, ...) and interned symbol table (`semantic_symbol`, namespaced by `symbol_namespace` — types/traits/submodules, values, type parameters, and associated types are looked up in separate namespaces so a type and value may share a spelling).

@@ -83,7 +83,7 @@ src/hir/
   lower_test.cpp
 ```
 
-The AST (`src/k-parser/ast.h`) is left untouched. Lowering consumes
+The AST (`src/parser/ast.h`) is left untouched. Lowering consumes
 `const ast::*` nodes plus the `semantic_session`/`type_table` and
 produces new, owned HIR nodes. This matches "Keep the parser AST and
 typed IR separate" in the roadmap's Architectural Guidance, and avoids

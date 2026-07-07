@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "src/k-parser/diagnostic.h"
+#include "src/parser/diagnostic.h"
 #include "src/semantic/module_index.h"
 
 namespace kira::semantic {

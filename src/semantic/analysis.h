@@ -2,9 +2,9 @@
 
 #include <vector>
 
-#include "src/k-parser/ast.h"
-#include "src/k-parser/diagnostic.h"
-#include "src/k-parser/source_location.h"
+#include "src/parser/ast.h"
+#include "src/parser/diagnostic.h"
+#include "src/parser/source_location.h"
 
 namespace kira::semantic {
 

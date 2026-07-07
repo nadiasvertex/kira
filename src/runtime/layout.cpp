@@ -1,6 +1,6 @@
 #include "src/runtime/layout.h"
 
-#include "src/k-parser/ast.h"
+#include "src/parser/ast.h"
 
 namespace kira::runtime {
 

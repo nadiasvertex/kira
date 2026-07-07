@@ -9,7 +9,7 @@
 #include <llvm/IR/Module.h>
 
 #include "src/hir/nodes.h"
-#include "src/k-parser/source_location.h"
+#include "src/parser/source_location.h"
 #include "src/semantic/types.h"
 
 namespace kira::llvm_codegen {

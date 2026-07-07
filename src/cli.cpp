@@ -18,7 +18,7 @@
 #include <utility>
 #include <variant>
 
-#include "k-parser/parser.h"
+#include "parser/parser.h"
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"

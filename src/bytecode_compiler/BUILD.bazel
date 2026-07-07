@@ -7,7 +7,7 @@ cc_library(
     deps = [
         "//src/bytecode:bytecode",
         "//src/hir:hir",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/runtime",
         "//src/semantic:semantic",
     ],
@@ -24,7 +24,7 @@ cc_test(
         "//src/bytecode:bytecode",
         "//src/bytecode:vm",
         "//src/hir:hir",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/testing",
     ],

@@ -7,9 +7,9 @@
 #include <vector>
 
 #include "src/hir/ids.h"
-#include "src/k-parser/ast.h"
-#include "src/k-parser/source_location.h"
-#include "src/k-parser/token.h"
+#include "src/parser/ast.h"
+#include "src/parser/source_location.h"
+#include "src/parser/token.h"
 #include "src/semantic/types.h"
 
 namespace kira::hir {

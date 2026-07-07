@@ -18,7 +18,7 @@ This document is for LLMs and new contributors who need a fast, high-signal map 
 ## High-Signal Directories
 
 - `src/`: top-level CLI code, protobuf schema, and the current binary entrypoint.
-- `src/k-parser/`: lexer, parser, AST, diagnostics, and parser regression tests.
+- `src/parser/`: lexer, parser, AST, diagnostics, and parser regression tests.
 - `spec/`: language reference, grammar sketch, coding conventions, and planning docs.
 - `third_party/`: vendored code. Avoid it unless the task is explicitly about dependency maintenance.
 - `bazel-*`, `external/`, `.cache/`, and `dist/`: generated or tool-owned outputs. Do not edit them by hand.
@@ -29,14 +29,14 @@ This document is for LLMs and new contributors who need a fast, high-signal map 
 
 1. `spec/kira-reference.md`
 2. `spec/kira-grammar.ebnf`
-3. `src/k-parser/token.h`
-4. `src/k-parser/lexer.h`
-5. `src/k-parser/source_location.h`
-6. `src/k-parser/diagnostic.h`
-7. `src/k-parser/ast.h`
-8. `src/k-parser/parser.h`
-9. `src/k-parser/parser.cpp`
-10. `src/k-parser/parser_test.cpp`
+3. `src/parser/token.h`
+4. `src/parser/lexer.h`
+5. `src/parser/source_location.h`
+6. `src/parser/diagnostic.h`
+7. `src/parser/ast.h`
+8. `src/parser/parser.h`
+9. `src/parser/parser.cpp`
+10. `src/parser/parser_test.cpp`
 
 ### CLI or driver work
 
@@ -61,7 +61,7 @@ This document is for LLMs and new contributors who need a fast, high-signal map 
 - Keep diagnostics explicit: expected item, found item, explanation, and a useful fix.
 - Do not assume vendored `third_party/argparse` is part of the active CLI path. The active CLI lives in `src/cli.cpp`.
 - Module metadata persistence is protobuf-backed; evolve schemas additively for forward compatibility.
-- Ignore the nested Bazel output directories under `src/k-parser/`; they are generated artifacts, not source-of-truth files.
+- Ignore the nested Bazel output directories under `src/parser/`; they are generated artifacts, not source-of-truth files.
 
 ## Verification Commands
 
@@ -72,8 +72,8 @@ This document is for LLMs and new contributors who need a fast, high-signal map 
 
 ## Current Anchors
 
-- `src/k-parser/parser.cpp`: main parser implementation and the most active file for syntax work.
-- `src/k-parser/parser_test.cpp`: named parser regressions and the best place to confirm intended behavior.
+- `src/parser/parser.cpp`: main parser implementation and the most active file for syntax work.
+- `src/parser/parser_test.cpp`: named parser regressions and the best place to confirm intended behavior.
 - `src/cli.cpp`: project-owned compile driver, diagnostics aggregation, and metadata writing.
 - `src/module_metadata.proto`: persisted module metadata schema.
 - `.justfile`: developer automation and packaging entrypoint.

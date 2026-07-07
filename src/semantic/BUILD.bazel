@@ -24,7 +24,7 @@ cc_library(
         "types.h",
     ],
     deps = [
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
     ],
     visibility = ["//visibility:public"],
 )
@@ -37,7 +37,7 @@ cc_test(
     ],
     deps = [
         ":semantic",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/testing",
     ],
 )
@@ -50,7 +50,7 @@ cc_test(
     ],
     deps = [
         ":semantic",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/testing",
     ],
 )
@@ -63,7 +63,7 @@ cc_test(
     ],
     deps = [
         ":semantic",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/testing",
     ],
 )

@@ -7,8 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "src/k-parser/ast.h"
-#include "src/k-parser/source_location.h"
+#include "src/parser/ast.h"
+#include "src/parser/source_location.h"
 #include "src/semantic/analysis.h"
 
 namespace kira::semantic {

@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "analysis.h"
-#include "src/k-parser/parser.h"
+#include "src/parser/parser.h"
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"

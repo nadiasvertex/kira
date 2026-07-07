@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 cc_library(
-    name = "k-parser",
+    name = "parser",
     srcs = [
         "parser.cpp",
         "text_escape.cpp",
@@ -25,7 +25,7 @@ cc_test(
     name = "parser_test",
     srcs = ["parser_test.cpp"],
     deps = [
-        ":k-parser",
+        ":parser",
         "//src/testing",
     ],
 )

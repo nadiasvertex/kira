@@ -75,7 +75,7 @@ cc_library(
         "//src/hir:hir",
         "//src/llvm_codegen:aot",
         "//src/semantic:semantic",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
     ],
     visibility = ["//visibility:public"],
 )
@@ -131,7 +131,7 @@ cc_test(
         "//src/bytecode:vm",
         "//src/bytecode_compiler:bytecode_compiler",
         "//src/hir:hir",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/llvm_codegen:codegen",
         "//src/llvm_codegen:jit_support",
         "//src/semantic:semantic",

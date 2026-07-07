@@ -16,9 +16,9 @@
 #include "src/bytecode/value.h"
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
-#include "src/k-parser/ast.h"
-#include "src/k-parser/text_escape.h"
-#include "src/k-parser/token.h"
+#include "src/parser/ast.h"
+#include "src/parser/text_escape.h"
+#include "src/parser/token.h"
 #include "src/runtime/layout.h"
 
 namespace kira::bytecode_compiler {
@@ -38,7 +38,7 @@ using semantic::type_table;
 // ==========================================================================
 //  Literal decoding — numeric and text escape handling.
 //  Text escape decoding (decode_char_literal, decode_string_literal) is
-//  exposed from `src/k-parser/text_escape.h` to avoid duplication across
+//  exposed from `src/parser/text_escape.h` to avoid duplication across
 //  modules — the lexer only *validates* escapes, leaving actual decoding to
 //  downstream consumers.
 // ==========================================================================

@@ -7,7 +7,7 @@
 
 #include "src/bytecode/chunk.h"
 #include "src/hir/nodes.h"
-#include "src/k-parser/source_location.h"
+#include "src/parser/source_location.h"
 #include "src/semantic/types.h"
 
 namespace kira::bytecode_compiler {

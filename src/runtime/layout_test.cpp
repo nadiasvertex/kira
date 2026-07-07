@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-#include "src/k-parser/diagnostic.h"
-#include "src/k-parser/lexer.h"
-#include "src/k-parser/parser.h"
-#include "src/k-parser/source_location.h"
+#include "src/parser/diagnostic.h"
+#include "src/parser/lexer.h"
+#include "src/parser/parser.h"
+#include "src/parser/source_location.h"
 #include "src/runtime/layout.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"

@@ -18,7 +18,7 @@ cc_library(
     ],
     alwayslink = True,
     deps = [
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/semantic:semantic",
     ],
     visibility = ["//visibility:public"],
@@ -38,7 +38,7 @@ cc_test(
     srcs = ["layout_test.cpp"],
     deps = [
         ":runtime",
-        "//src/k-parser:k-parser",
+        "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/testing",
     ],

@@ -9,7 +9,7 @@
 
 #include "src/semantic/module_index.h"
 
-#include "src/k-parser/parser.h"
+#include "src/parser/parser.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
 

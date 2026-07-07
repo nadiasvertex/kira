@@ -5,14 +5,14 @@ Kira is an early-stage language and compiler project.
 The repository currently contains:
 
 - A language reference and grammar under `spec/`
-- A hand-written lexer and recursive-descent parser under `src/k-parser/`
+- A hand-written lexer and recursive-descent parser under `src/parser/`
 - A CLI compile driver under `src/`
 - Protobuf-backed module metadata emitted after successful parses
 
 ## Build
 
 ```sh
-bazel build //src:kira //src/k-parser:k-parser
+bazel build //src:kira //src/parser:parser
 ```
 
 ## Test
@@ -51,7 +51,7 @@ Current project-owned tests cover:
 - `src/cli.*`: CLI parsing and rendering helpers
 - `src/module_metadata.proto`: protobuf schema for persisted module metadata
 - `src/main.cpp`: binary entrypoint
-- `src/k-parser/`: lexer, parser, diagnostics, AST, and parser tests
+- `src/parser/`: lexer, parser, diagnostics, AST, and parser tests
 - `spec/kira-reference.md`: language reference
 - `spec/kira-grammar.ebnf`: grammar sketch
 - `spec/CONVENTIONS.md`: project C++ conventions
