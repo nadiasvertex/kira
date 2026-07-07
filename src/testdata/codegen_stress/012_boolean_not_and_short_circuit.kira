@@ -1,0 +1,8 @@
+module codegen_stress.boolean_not_and_short_circuit
+
+def would_panic_if_evaluated(x: int32) -> bool:
+    return x / 0 == 0
+
+def main() -> bool:
+    var x = 5
+    return not false and (x > 0 or would_panic_if_evaluated(x)) and (x < 0 and would_panic_if_evaluated(x) or true)

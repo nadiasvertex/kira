@@ -1,0 +1,6 @@
+module codegen_stress.float_arithmetic
+
+def main() -> float64:
+    var a = 3.5
+    var b = 2.0
+    return (a + b) * (a - b) / b

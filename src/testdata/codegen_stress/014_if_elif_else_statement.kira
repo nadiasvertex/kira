@@ -1,0 +1,14 @@
+module codegen_stress.if_elif_else_statement
+
+def grade(score: int32) -> int32:
+    if score >= 90:
+        return 4
+    elif score >= 80:
+        return 3
+    elif score >= 70:
+        return 2
+    else:
+        return 1
+
+def main() -> int32:
+    return grade(95) * 1000 + grade(85) * 100 + grade(72) * 10 + grade(40)

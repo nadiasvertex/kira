@@ -1,0 +1,7 @@
+module codegen_stress.cast_float_conversions
+
+def main() -> float64:
+    var x: int32 = 21
+    var as_f32 = x as float32
+    var as_f64 = as_f32 as float64
+    return as_f64 * 2.0

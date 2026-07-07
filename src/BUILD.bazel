@@ -14,6 +14,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "codegen_stress_corpus",
+    srcs = glob(["testdata/codegen_stress/*.kira"]),
+    visibility = ["//visibility:public"],
+)
+
 proto_library(
     name = "module_metadata_proto",
     srcs = ["module_metadata.proto"],
@@ -72,4 +78,22 @@ cc_test(
     srcs = ["semantic_stress_test.cpp"],
     data = [":semantic_stress_corpus"],
     deps = [":cli"],
+)
+
+cc_test(
+    name = "codegen_stress_test",
+    size = "medium",
+    srcs = ["codegen_stress_test.cpp"],
+    data = [":codegen_stress_corpus"],
+    tags = ["no-sandbox"],
+    deps = [
+        "//src/bytecode:bytecode",
+        "//src/bytecode:vm",
+        "//src/bytecode_compiler:bytecode_compiler",
+        "//src/hir:hir",
+        "//src/k-parser:k-parser",
+        "//src/llvm_codegen:codegen",
+        "//src/llvm_codegen:jit_support",
+        "//src/semantic:semantic",
+    ],
 )

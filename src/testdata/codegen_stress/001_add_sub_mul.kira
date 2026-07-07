@@ -1,0 +1,4 @@
+module codegen_stress.add_sub_mul
+
+def main() -> int32:
+    return (10 + 20 - 5) * 3

@@ -1,0 +1,6 @@
+module codegen_stress.wrapping_arithmetic
+
+def main() -> int8:
+    var x: int8 = 100
+    var y: int8 = 100
+    return x +% y

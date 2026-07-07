@@ -7,3 +7,6 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.4")
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "wolfd_bazel_compile_commands", version = "0.5.2")
+
+llvm = use_extension("//third_party/llvm:repo.bzl", "llvm_extension")
+use_repo(llvm, "llvm")

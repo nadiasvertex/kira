@@ -1,0 +1,14 @@
+module codegen_stress.mutual_recursion_even_odd
+
+def is_even(n: int32) -> bool:
+    if n == 0:
+        return true
+    return is_odd(n - 1)
+
+def is_odd(n: int32) -> bool:
+    if n == 0:
+        return false
+    return is_even(n - 1)
+
+def main() -> bool:
+    return is_even(20) and is_odd(7) and not is_even(13)

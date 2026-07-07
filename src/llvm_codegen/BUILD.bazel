@@ -1,0 +1,62 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+# `alwayslink`: nothing in this repo's own C++ *calls*
+# `kira_codegen_panic` (only JIT-compiled IR does, via `codegen.h`'s
+# `kPanicSymbolName`, resolved at JIT time through process-symbol lookup —
+# see jit_support.h). Without `alwayslink`, the linker would never pull this
+# object out of the archive, since nothing appears to reference it, and the
+# JIT's symbol lookup would then fail at runtime.
+cc_library(
+    name = "runtime",
+    srcs = ["runtime.cpp"],
+    hdrs = ["runtime.h"],
+    alwayslink = True,
+    deps = ["//src/bytecode:bytecode"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "codegen",
+    srcs = ["codegen.cpp"],
+    hdrs = ["codegen.h"],
+    tags = ["no-sandbox"],
+    deps = [
+        ":runtime",
+        "//src/bytecode:bytecode",
+        "//src/hir:hir",
+        "//src/k-parser:k-parser",
+        "//src/semantic:semantic",
+        "@llvm//:llvm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "jit_support",
+    testonly = True,
+    srcs = ["jit_support.cpp"],
+    hdrs = ["jit_support.h"],
+    tags = ["no-sandbox"],
+    deps = [
+        ":codegen",
+        ":runtime",
+        "//src/bytecode:bytecode",
+        "@llvm//:llvm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "codegen_test",
+    srcs = ["codegen_test.cpp"],
+    tags = ["no-sandbox"],
+    deps = [
+        ":codegen",
+        ":jit_support",
+        "//src/bytecode:bytecode",
+        "//src/hir:hir",
+        "//src/k-parser:k-parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+    ],
+)

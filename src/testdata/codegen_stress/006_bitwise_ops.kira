@@ -1,0 +1,6 @@
+module codegen_stress.bitwise_ops
+
+def main() -> int32:
+    var a = 0b1100
+    var b = 0b1010
+    return (a & b) + (a ^ b)

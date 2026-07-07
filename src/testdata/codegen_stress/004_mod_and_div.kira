@@ -1,0 +1,6 @@
+module codegen_stress.mod_and_div
+
+def main() -> int32:
+    var a = 47
+    var b = 6
+    return (a / b) * 100 + a % b

@@ -1,0 +1,6 @@
+module codegen_stress.shift_overflow_panics
+
+def main() -> int32:
+    var a = 1
+    var shift_amount = 32
+    return a << shift_amount

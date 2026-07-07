@@ -1,0 +1,5 @@
+module codegen_stress.integer_overflow_panics
+
+def main() -> int8:
+    var x: int8 = 100
+    return x + x

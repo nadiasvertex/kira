@@ -1,0 +1,7 @@
+module codegen_stress.cast_int_widen_narrow
+
+def main() -> int32:
+    var big: int64 = 1000
+    var narrow = big as int8
+    var widened = narrow as int32
+    return widened

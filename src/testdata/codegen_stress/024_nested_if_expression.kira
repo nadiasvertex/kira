@@ -1,0 +1,7 @@
+module codegen_stress.nested_if_expression
+
+def classify(x: int32) -> int32:
+    return if x < 0: -1 elif x == 0: 0 else: if x < 100: 1 else: 2
+
+def main() -> int32:
+    return classify(-5) * 1000 + classify(0) * 100 + classify(50) * 10 + classify(500)

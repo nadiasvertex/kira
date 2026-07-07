@@ -1,0 +1,6 @@
+module codegen_stress.comparisons
+
+def main() -> bool:
+    var a = 5
+    var b = 9
+    return a < b and b <= 9 and a != b and not (a > b) and a == 5 and b >= 9

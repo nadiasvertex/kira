@@ -1,0 +1,7 @@
+module codegen_stress.char_and_bool_literals
+
+def main() -> int32:
+    var c = 'A'
+    var flag = true
+    var code = c as int32
+    return if flag: code else: 0

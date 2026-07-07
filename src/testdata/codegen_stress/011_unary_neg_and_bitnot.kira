@@ -1,0 +1,6 @@
+module codegen_stress.unary_neg
+
+def main() -> int32:
+    var x = 7
+    var y = -3
+    return -x + -y

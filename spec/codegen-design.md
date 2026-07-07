@@ -416,10 +416,48 @@ conditional check predication was meant to eliminate). A narrow, branchless
 future addition — it doesn't hit either problem above — but isn't in the
 enum yet, pending the compiler reaching `hir_if`-as-expression lowering.
 
-Still pending within increment 1: the actual HIR-to-bytecode compiler
-(walking `hir_function`/`hir_block` and emitting these opcodes) hasn't
-been written yet — this pass only landed the instruction set, value
-representation, and chunk/writer format it will target.
+Increment 1 is now complete: the HIR-to-bytecode compiler
+(`src/bytecode_compiler/`) walks `hir_function`/`hir_block` and emits
+these opcodes for the scalar/control-flow subset, tested end to end
+(lex -> parse -> check -> lower -> compile -> run) in
+`src/bytecode_compiler/compile_test.cpp`.
+
+## Increment 3 status: `llvm_codegen` landed, plus enough JIT to run it
+
+`src/llvm_codegen/` lowers the same increment-1 scalar/control-flow HIR
+subset into a real `llvm::Module` (`codegen.h`/`codegen.cpp`), covering
+checked/wrapping/saturating arithmetic (via LLVM's `*.with.overflow`/
+`*_sat` intrinsics), comparisons, casts, `if`/`while`, short-circuit
+`and`/`or`, and direct/recursive/mutually-recursive calls — deliberately
+the exact same scope `bytecode_compiler` targets, so the two lowering
+passes are directly comparable from the same HIR. Locating LLVM went
+through the `llvm-config`-shelling-out repository rule Decision 2
+anticipated (`third_party/llvm/repo.bzl`), confirmed against a real
+LLVM 22 install before any codegen code was written, per that decision's
+"prerequisite spike" note.
+
+Beyond increment 3's own stated bar ("prove the lowering is correct... by
+hand"), this also built enough `llvm::orc::LLJIT` plumbing
+(`jit_support.h`, explicitly test-only — not increment 5's tier-up
+wiring) to actually *run* the compiled output, so correctness could be
+checked by execution rather than by-hand `.ll` inspection alone:
+`codegen_test.cpp` unit-tests `llvm_codegen` directly, and
+`src/codegen_stress_test.cpp` cross-checks a 24-program corpus
+(`src/testdata/codegen_stress/`) by compiling and running each program
+through *both* the bytecode VM and the LLVM JIT from the same lowered
+HIR and asserting the two tiers agree — including agreeing on *which*
+panic, not just matching values on the non-panicking path. Neither tier
+is the oracle for the other; agreement between two independently written
+lowering passes is itself the property under test.
+
+Two operators bytecode_compiler supports are not yet reachable from this
+corpus/pass: saturating multiply (`*|`, no direct LLVM intrinsic; would
+need a widen-then-clamp implementation `bytecode::vm`'s host-`__builtin_
+*_overflow` approach gets for free) and bitwise-or (`ast::binary_op::BitOr`
+is checked/lowered but the parser has no surface token that currently
+produces it — `|` lexes to the pipe operator instead). Both are pre-
+existing gaps, not something this pass introduced, and are called out
+here rather than silently worked around.
 
 ## Explicitly deferred / open questions
 - Real memory management strategy (refcounting vs. ownership-based drop

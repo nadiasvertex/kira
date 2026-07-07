@@ -1,0 +1,6 @@
+module codegen_stress.unsigned_arithmetic
+
+def main() -> uint32:
+    var a: uint32 = 10
+    var b: uint32 = 3
+    return a / b * 100 + a % b

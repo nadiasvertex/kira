@@ -1,0 +1,12 @@
+module codegen_stress.while_loop_accumulate
+
+def sum_to_n(n: int32) -> int32:
+    var total = 0
+    var i = 1
+    while i <= n:
+        total = total + i
+        i = i + 1
+    return total
+
+def main() -> int32:
+    return sum_to_n(100)
