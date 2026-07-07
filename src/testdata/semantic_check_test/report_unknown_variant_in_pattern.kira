@@ -1,0 +1,6 @@
+module sample
+type shape = @circle(float64) | @point
+def check(s: shape) -> bool:
+    match s:
+        @square(n) => true
+        _ => false

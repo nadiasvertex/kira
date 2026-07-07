@@ -1,0 +1,10 @@
+module sample
+type point = { x: float64 }
+trait show2:
+    def show(self) -> str
+impl show2 for point:
+    def show(self) -> str:
+        return "a"
+impl show2 for point:
+    def show(self) -> str:
+        return "b"

@@ -1,0 +1,5 @@
+module sample
+def combine(a, b: int32):
+    return (a + b).to_uppercase()
+def bad():
+    return combine("oops", 1)

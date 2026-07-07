@@ -1,0 +1,5 @@
+module sample
+type point = { x: float64, y: float64 }
+def run() -> unit:
+    let a = point { x: 1.0, z: 2.0 }
+    let b = point { x: 1.0 }

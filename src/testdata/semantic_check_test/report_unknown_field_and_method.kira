@@ -1,0 +1,5 @@
+module sample
+type point = { x: float64, y: float64 }
+def run(p: point) -> unit:
+    let a = p.z
+    p.normalize()

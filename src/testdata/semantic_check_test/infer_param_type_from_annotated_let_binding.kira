@@ -1,0 +1,6 @@
+module sample
+def relay(x):
+    let y: int32 = x
+    return y
+def bad():
+    return relay("oops")

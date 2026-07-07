@@ -1,0 +1,5 @@
+module sample
+type shape = @circle(float64) | @rect(float64, float64) | @point
+def area(s: shape) -> float64:
+    match s:
+        @circle(r) => r

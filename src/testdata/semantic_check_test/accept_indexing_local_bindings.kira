@@ -1,0 +1,4 @@
+module sample
+def run() -> int32:
+    let values = [10, 20, 30]
+    return values[0] + values[1]

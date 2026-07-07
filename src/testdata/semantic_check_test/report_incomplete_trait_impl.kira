@@ -1,0 +1,10 @@
+module sample
+type point = { x: float64 }
+trait shape2:
+    def area(self) -> float64
+    def name(self) -> str
+impl shape2 for point:
+    def area(self) -> float64:
+        return self.x
+    def extra(self) -> str:
+        return "?"

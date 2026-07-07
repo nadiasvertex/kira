@@ -1,0 +1,7 @@
+module sample
+type point = { x: float64, y: float64 }
+extend point:
+    def scaled(self, factor: float64) -> float64:
+        return self.x * factor
+def run(p: point) -> float64:
+    return p.scaled()

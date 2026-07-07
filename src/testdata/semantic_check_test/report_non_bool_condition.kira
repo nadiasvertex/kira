@@ -1,0 +1,4 @@
+module sample
+def run(n: int32) -> unit:
+    if n:
+        println("yes")

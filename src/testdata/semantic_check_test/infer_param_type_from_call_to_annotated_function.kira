@@ -1,0 +1,7 @@
+module sample
+def sink(y: int32) -> unit:
+    return unit
+def relay(x):
+    return sink(x)
+def bad():
+    return relay("oops")

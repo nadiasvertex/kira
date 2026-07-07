@@ -1,0 +1,7 @@
+module sample
+def identity(x):
+    return x
+def run():
+    let a = identity(1)
+    let b = identity("s")
+    return unit

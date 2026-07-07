@@ -1,0 +1,8 @@
+module sample
+def fact(n):
+    if n <= 1:
+        return 1
+    return n * fact(n - 1)
+def run():
+    let a = fact(5)
+    return unit

@@ -1,0 +1,5 @@
+module sample
+def add(x, y: int32):
+    return x + y
+def bad():
+    return add("oops", 1)

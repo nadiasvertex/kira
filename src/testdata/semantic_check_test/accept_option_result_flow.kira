@@ -1,0 +1,13 @@
+module sample
+type app_error = @not_found | @bad_input(str)
+def find(id: int32) -> option[int32]:
+    if id > 0:
+        return @some(id)
+    return @none
+def load(id: int32) -> result[int32, app_error]:
+    match find(id):
+        @some(v) => @ok(v)
+        @none => @err(@not_found)
+def total(id: int32) -> result[int32, app_error]:
+    let value = load(id)?
+    return @ok(value + 1)

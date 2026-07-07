@@ -1,0 +1,7 @@
+module sample
+def double(x):
+    return x * 2
+def run():
+    let a = double(3)
+    let b = double(3.5)
+    return unit

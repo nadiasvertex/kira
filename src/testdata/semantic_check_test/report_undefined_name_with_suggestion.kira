@@ -1,0 +1,4 @@
+module sample
+def run() -> int32:
+    let total = 1
+    return totl

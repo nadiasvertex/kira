@@ -1,0 +1,3 @@
+module sample
+type color = @red | @green | @blue
+    deriving eq, serialize

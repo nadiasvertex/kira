@@ -1,0 +1,19 @@
+module sample
+type shape = @circle(float64) | @rect(float64, float64) | @point
+def area(s: shape) -> float64:
+    match s:
+        @circle(r) if r <= 0.0 => 0.0
+        @circle(r) => 3.14159 * r * r
+        @rect(w, h) => w * h
+        @point => 0.0
+def describe(score: int32) -> str:
+    if score > 90:
+        return "excellent"
+    elif score > 70:
+        return "good"
+    else:
+        return "needs work"
+def main() -> unit:
+    let s = @circle(2.0)
+    let a = area(s)
+    println("area {a}")

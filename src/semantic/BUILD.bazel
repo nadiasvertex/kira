@@ -42,6 +42,9 @@ cc_test(
 cc_test(
     name = "check_test",
     srcs = ["check_test.cpp"],
+    data = [
+        "//src:semantic_check_test_files",
+    ],
     deps = [
         ":semantic",
         "//src/k-parser:k-parser",

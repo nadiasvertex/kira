@@ -1,0 +1,7 @@
+module sample
+type point = { x: float64, y: float64 }
+extend point:
+    def manhattan(self) -> float64:
+        return self.x + self.y
+def run(p: point) -> float64:
+    return p.manhattan()

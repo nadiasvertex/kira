@@ -1,0 +1,7 @@
+module sample
+type point = { x: int32, y: int32 }
+def make(x):
+    let y = 0
+    return point { x, y }
+def bad():
+    return make("oops")

@@ -1,0 +1,13 @@
+module sample
+trait add:
+    type output
+    def add(self, other: self) -> self.output
+type vec2 = { x: float64, y: float64 }
+impl add for vec2:
+    type output = vec2
+    def add(self, other: self) -> vec2:
+        return vec2 { x: self.x + other.x, y: self.y + other.y }
+def run() -> vec2:
+    let a = vec2 { x: 1.0, y: 2.0 }
+    let b = vec2 { x: 3.0, y: 4.0 }
+    return a.add(b)

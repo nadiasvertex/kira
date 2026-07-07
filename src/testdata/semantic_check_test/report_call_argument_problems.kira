@@ -1,0 +1,8 @@
+module sample
+def greet(name: str, loud: bool = false) -> str:
+    return name
+def run() -> unit:
+    greet("a", "b", "c")
+    greet("a", volume: true)
+    greet()
+    greet(1)

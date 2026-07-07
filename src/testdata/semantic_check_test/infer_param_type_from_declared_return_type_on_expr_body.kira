@@ -1,0 +1,4 @@
+module sample
+def identity(x) -> int32: x
+def bad():
+    return identity("oops")

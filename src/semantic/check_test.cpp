@@ -11,6 +11,7 @@
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
 
 namespace {
 
@@ -90,8 +91,35 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
   };
 }
 
-auto analyze_one(const std::string &text) -> analyzed_session {
-  return analyze_sources({{.path = "sample.kira", .text = text}});
+auto analyze_test_data_file(std::string_view filename) -> analyzed_session {
+  const auto test_data_dir =
+      kira::testing::find_test_data_dir("semantic_check_test");
+  const auto text = kira::testing::load_test_data_file(
+      test_data_dir.string(), filename);
+  return analyze_sources({{.path = std::string(filename), .text = text}});
+}
+
+auto analyze_test_data_directory(std::string_view dirname) -> analyzed_session {
+  const auto test_data_dir =
+      kira::testing::find_test_data_dir("semantic_check_test");
+  const auto subdir = test_data_dir / dirname;
+  auto fixtures = std::vector<source_fixture>{};
+
+  for (const auto &entry : kira::testing::fs::directory_iterator(subdir)) {
+    if (entry.is_regular_file() &&
+        entry.path().extension().string() == ".kira") {
+      const auto filename = entry.path().filename().string();
+      const auto path = kira::testing::fs::path(dirname) / filename;
+      const auto text = kira::testing::load_test_data_file(
+          test_data_dir.string(), path.string());
+      fixtures.push_back(source_fixture{
+          .path = path.string(),
+          .text = text,
+      });
+    }
+  }
+
+  return analyze_sources(fixtures);
 }
 
 // ==========================================================================
@@ -99,162 +127,71 @@ auto analyze_one(const std::string &text) -> analyzed_session {
 // ==========================================================================
 
 auto test_accepts_typed_core_program() -> void {
-  const auto analyzed = analyze_one(
-      "module sample\n"
-      "type shape = @circle(float64) | @rect(float64, float64) | @point\n"
-      "def area(s: shape) -> float64:\n"
-      "    match s:\n"
-      "        @circle(r) if r <= 0.0 => 0.0\n"
-      "        @circle(r) => 3.14159 * r * r\n"
-      "        @rect(w, h) => w * h\n"
-      "        @point => 0.0\n"
-      "def describe(score: int32) -> str:\n"
-      "    if score > 90:\n"
-      "        return \"excellent\"\n"
-      "    elif score > 70:\n"
-      "        return \"good\"\n"
-      "    else:\n"
-      "        return \"needs work\"\n"
-      "def main() -> unit:\n"
-      "    let s = @circle(2.0)\n"
-      "    let a = area(s)\n"
-      "    println(\"area {a}\")\n");
+  const auto analyzed =
+      analyze_test_data_file("accept_typed_core_program.kira");
   expect(analyzed.error_count == 0,
          "expected typed core program to check cleanly");
 }
 
 auto test_accepts_structs_and_methods() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: float64, y: float64 }\n"
-                                    "trait show:\n"
-                                    "    def show(self) -> str\n"
-                                    "impl show for point:\n"
-                                    "    def show(self) -> str:\n"
-                                    "        return \"({self.x}, {self.y})\"\n"
-                                    "def run() -> str:\n"
-                                    "    let p = point { x: 1.0, y: 2.0 }\n"
-                                    "    let d = p.x * p.x + p.y * p.y\n"
-                                    "    return p.show()\n");
+  const auto analyzed =
+      analyze_test_data_file("accept_structs_and_methods.kira");
   expect(analyzed.error_count == 0,
          "expected struct/impl program to check cleanly");
 }
 
 auto test_accepts_collections_and_lambdas() -> void {
   const auto analyzed =
-      analyze_one("module sample\n"
-                  "def run() -> unit:\n"
-                  "    let numbers = [1, 2, 3, 4, 5]\n"
-                  "    let doubled = numbers.filter(x => x > 2)\n"
-                  "    var total = 0\n"
-                  "    for n in numbers:\n"
-                  "        total += n\n"
-                  "    let squares = for x in 0..5 => x * x\n"
-                  "    while total > 0:\n"
-                  "        total -= 1\n"
-                  "    println(\"{total}\")\n");
+      analyze_test_data_file("accept_collections_and_lambdas.kira");
   expect(analyzed.error_count == 0,
          "expected collection/lambda program to check cleanly");
 }
 
 auto test_accepts_option_result_flow() -> void {
   const auto analyzed =
-      analyze_one("module sample\n"
-                  "type app_error = @not_found | @bad_input(str)\n"
-                  "def find(id: int32) -> option[int32]:\n"
-                  "    if id > 0:\n"
-                  "        return @some(id)\n"
-                  "    return @none\n"
-                  "def load(id: int32) -> result[int32, app_error]:\n"
-                  "    match find(id):\n"
-                  "        @some(v) => @ok(v)\n"
-                  "        @none => @err(@not_found)\n"
-                  "def total(id: int32) -> result[int32, app_error]:\n"
-                  "    let value = load(id)?\n"
-                  "    return @ok(value + 1)\n");
+      analyze_test_data_file("accept_option_result_flow.kira");
   expect(analyzed.error_count == 0,
          "expected option/result program to check cleanly");
 }
 
 auto test_accepts_cross_module_qualified_types() -> void {
-  const auto analyzed = analyze_sources({
-      {
-          .path = "app.kira",
-          .text = "module app\n"
-                  "module tools\n"
-                  "pub def flip(p: app.tools.point) -> app.tools.point:\n"
-                  "    let x = p.x\n"
-                  "    return p\n",
-      },
-      {
-          .path = "app_tools.kira",
-          .text = "module app.tools\n"
-                  "pub type point = { pub x: float64, pub y: float64 }\n",
-      },
-  });
+  const auto analyzed =
+      analyze_test_data_directory("accept_cross_module_qualified_types");
   expect(analyzed.error_count == 0,
          "expected qualified types from other session modules to resolve");
 }
 
 auto test_accepts_indexing_local_bindings() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def run() -> int32:\n"
-                                    "    let values = [10, 20, 30]\n"
-                                    "    return values[0] + values[1]\n");
+  const auto analyzed =
+      analyze_test_data_file("accept_indexing_local_bindings.kira");
   expect(analyzed.error_count == 0,
          "expected indexing a local list binding to check cleanly");
 }
 
 auto test_accepts_associated_type_self_output() -> void {
-  const auto analyzed = analyze_one(
-      "module sample\n"
-      "trait add:\n"
-      "    type output\n"
-      "    def add(self, other: self) -> self.output\n"
-      "type vec2 = { x: float64, y: float64 }\n"
-      "impl add for vec2:\n"
-      "    type output = vec2\n"
-      "    def add(self, other: self) -> vec2:\n"
-      "        return vec2 { x: self.x + other.x, y: self.y + other.y }\n"
-      "def run() -> vec2:\n"
-      "    let a = vec2 { x: 1.0, y: 2.0 }\n"
-      "    let b = vec2 { x: 3.0, y: 4.0 }\n"
-      "    return a.add(b)\n");
+  const auto analyzed =
+      analyze_test_data_file("accept_associated_type_self_output.kira");
   expect(analyzed.error_count == 0,
          "expected `self.output` associated-type return to check cleanly");
 }
 
 auto test_accepts_extend_on_builtin_type() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "extend str:\n"
-                                    "    def is_palindrome(self) -> bool:\n"
-                                    "        return self == self.reversed()\n"
-                                    "def run() -> bool:\n"
-                                    "    return \"racecar\".is_palindrome()\n");
+  const auto analyzed =
+      analyze_test_data_file("accept_extend_on_builtin_type.kira");
   expect(analyzed.error_count == 0,
          "expected an extend block on a builtin type to check cleanly");
 }
 
 auto test_accepts_extend_on_user_type() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: float64, y: float64 }\n"
-                                    "extend point:\n"
-                                    "    def manhattan(self) -> float64:\n"
-                                    "        return self.x + self.y\n"
-                                    "def run(p: point) -> float64:\n"
-                                    "    return p.manhattan()\n");
+  const auto analyzed =
+      analyze_test_data_file("accept_extend_on_user_type.kira");
   expect(analyzed.error_count == 0,
          "expected an extend block on a user type to check cleanly");
 }
 
 auto test_reports_extend_method_arity_mismatch() -> void {
   const auto analyzed =
-      analyze_one("module sample\n"
-                  "type point = { x: float64, y: float64 }\n"
-                  "extend point:\n"
-                  "    def scaled(self, factor: float64) -> float64:\n"
-                  "        return self.x * factor\n"
-                  "def run(p: point) -> float64:\n"
-                  "    return p.scaled()\n");
+      analyze_test_data_file("report_extend_method_arity_mismatch.kira");
   expect(analyzed.error_count > 0,
          "expected an extend method call to be checked like a real function");
   expect_diagnostic(analyzed, "missing argument `factor`",
@@ -262,38 +199,16 @@ auto test_reports_extend_method_arity_mismatch() -> void {
 }
 
 auto test_impl_method_takes_priority_over_extend() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: float64 }\n"
-                                    "trait show:\n"
-                                    "    def show(self) -> str\n"
-                                    "impl show for point:\n"
-                                    "    def show(self) -> str:\n"
-                                    "        return \"impl\"\n"
-                                    "extend point:\n"
-                                    "    def show(self) -> str:\n"
-                                    "        return \"extend\"\n"
-                                    "def run(p: point) -> str:\n"
-                                    "    return p.show()\n");
+  const auto analyzed =
+      analyze_test_data_file("accept_impl_method_priority_over_extend.kira");
   expect(analyzed.error_count == 0,
          "expected impl/extend method name collision to check cleanly, "
          "with the impl method winning");
 }
 
 auto test_reports_associated_type_output_mismatch() -> void {
-  const auto analyzed = analyze_one(
-      "module sample\n"
-      "trait add:\n"
-      "    type output\n"
-      "    def add(self, other: self) -> self.output\n"
-      "type vec2 = { x: float64, y: float64 }\n"
-      "impl add for vec2:\n"
-      "    type output = vec2\n"
-      "    def add(self, other: self) -> vec2:\n"
-      "        return vec2 { x: self.x + other.x, y: self.y + other.y }\n"
-      "def run() -> unit:\n"
-      "    let a = vec2 { x: 1.0, y: 2.0 }\n"
-      "    let b = vec2 { x: 3.0, y: 4.0 }\n"
-      "    let s: str = a.add(b)\n");
+  const auto analyzed =
+      analyze_test_data_file("report_associated_type_output_mismatch.kira");
   expect(analyzed.error_count > 0,
          "expected `self.output` to resolve to the impl's concrete type");
   expect_diagnostic(analyzed, "expected `str`, found `vec2`",
@@ -305,10 +220,8 @@ auto test_reports_associated_type_output_mismatch() -> void {
 // ==========================================================================
 
 auto test_reports_undefined_name_with_suggestion() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def run() -> int32:\n"
-                                    "    let total = 1\n"
-                                    "    return totl\n");
+  const auto analyzed =
+      analyze_test_data_file("report_undefined_name_with_suggestion.kira");
   expect(analyzed.error_count > 0, "expected undefined name to fail");
   expect_diagnostic(analyzed, "undefined name `totl`",
                     "expected undefined-name diagnostic");
@@ -317,27 +230,24 @@ auto test_reports_undefined_name_with_suggestion() -> void {
 }
 
 auto test_reports_undefined_type() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def run(x: pont) -> unit:\n"
-                                    "    println(\"{x}\")\n");
+  const auto analyzed =
+      analyze_test_data_file("report_undefined_type.kira");
   expect(analyzed.error_count > 0, "expected undefined type to fail");
   expect_diagnostic(analyzed, "undefined type `pont`",
                     "expected undefined-type diagnostic");
 }
 
 auto test_reports_annotation_mismatch() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def run() -> unit:\n"
-                                    "    let x: int32 = \"hello\"\n");
+  const auto analyzed =
+      analyze_test_data_file("report_annotation_mismatch.kira");
   expect(analyzed.error_count > 0, "expected annotation mismatch to fail");
   expect_diagnostic(analyzed, "expected `int32`, found `str`",
                     "expected annotation type-mismatch diagnostic");
 }
 
 auto test_reports_integer_literal_overflow() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def run() -> unit:\n"
-                                    "    let c: uint8 = 300\n");
+  const auto analyzed =
+      analyze_test_data_file("report_integer_literal_overflow.kira");
   expect(analyzed.error_count > 0, "expected literal overflow to fail");
   expect_diagnostic(analyzed, "integer literal `300` does not fit in `uint8`",
                     "expected literal-fit diagnostic");
@@ -345,38 +255,31 @@ auto test_reports_integer_literal_overflow() -> void {
 
 auto test_reports_mixed_numeric_types() -> void {
   const auto analyzed =
-      analyze_one("module sample\n"
-                  "def run(a: int32, b: float64) -> float64:\n"
-                  "    return a + b\n");
+      analyze_test_data_file("report_mixed_numeric_types.kira");
   expect(analyzed.error_count > 0, "expected mixed numerics to fail");
   expect_diagnostic(analyzed, "mismatched numeric types `int32` and `float64`",
                     "expected mixed-numeric diagnostic");
 }
 
 auto test_reports_non_bool_condition() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def run(n: int32) -> unit:\n"
-                                    "    if n:\n"
-                                    "        println(\"yes\")\n");
+  const auto analyzed =
+      analyze_test_data_file("report_non_bool_condition.kira");
   expect(analyzed.error_count > 0, "expected non-bool condition to fail");
   expect_diagnostic(analyzed, "must be `bool`, found `int32`",
                     "expected bool-condition diagnostic");
 }
 
 auto test_reports_assignment_to_immutable() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def run() -> unit:\n"
-                                    "    let count = 0\n"
-                                    "    count = count + 1\n");
+  const auto analyzed =
+      analyze_test_data_file("report_assignment_to_immutable.kira");
   expect(analyzed.error_count > 0, "expected immutable assignment to fail");
   expect_diagnostic(analyzed, "cannot assign to immutable binding `count`",
                     "expected immutable-assignment diagnostic");
 }
 
 auto test_reports_return_type_mismatch() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def run() -> str:\n"
-                                    "    return 42\n");
+  const auto analyzed =
+      analyze_test_data_file("report_return_type_mismatch.kira");
   expect(analyzed.error_count > 0, "expected return mismatch to fail");
   expect_diagnostic(analyzed, "return type mismatch: expected `str`",
                     "expected return-mismatch diagnostic");
@@ -384,14 +287,7 @@ auto test_reports_return_type_mismatch() -> void {
 
 auto test_reports_call_argument_problems() -> void {
   const auto analyzed =
-      analyze_one("module sample\n"
-                  "def greet(name: str, loud: bool = false) -> str:\n"
-                  "    return name\n"
-                  "def run() -> unit:\n"
-                  "    greet(\"a\", \"b\", \"c\")\n"
-                  "    greet(\"a\", volume: true)\n"
-                  "    greet()\n"
-                  "    greet(1)\n");
+      analyze_test_data_file("report_call_argument_problems.kira");
   expect(analyzed.error_count > 0, "expected call problems to fail");
   expect_diagnostic(analyzed, "too many arguments to `greet`",
                     "expected arity diagnostic");
@@ -404,11 +300,8 @@ auto test_reports_call_argument_problems() -> void {
 }
 
 auto test_reports_struct_literal_problems() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: float64, y: float64 }\n"
-                                    "def run() -> unit:\n"
-                                    "    let a = point { x: 1.0, z: 2.0 }\n"
-                                    "    let b = point { x: 1.0 }\n");
+  const auto analyzed =
+      analyze_test_data_file("report_struct_literal_problems.kira");
   expect(analyzed.error_count > 0, "expected struct literal problems to fail");
   expect_diagnostic(analyzed, "unknown field `z` in struct literal for `point`",
                     "expected unknown-field diagnostic");
@@ -417,11 +310,8 @@ auto test_reports_struct_literal_problems() -> void {
 }
 
 auto test_reports_unknown_field_and_method() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: float64, y: float64 }\n"
-                                    "def run(p: point) -> unit:\n"
-                                    "    let a = p.z\n"
-                                    "    p.normalize()\n");
+  const auto analyzed =
+      analyze_test_data_file("report_unknown_field_and_method.kira");
   expect(analyzed.error_count > 0, "expected member problems to fail");
   expect_diagnostic(analyzed, "no field `z` on struct `point`",
                     "expected unknown-field diagnostic");
@@ -430,12 +320,8 @@ auto test_reports_unknown_field_and_method() -> void {
 }
 
 auto test_reports_non_exhaustive_match() -> void {
-  const auto analyzed = analyze_one(
-      "module sample\n"
-      "type shape = @circle(float64) | @rect(float64, float64) | @point\n"
-      "def area(s: shape) -> float64:\n"
-      "    match s:\n"
-      "        @circle(r) => r\n");
+  const auto analyzed =
+      analyze_test_data_file("report_non_exhaustive_match.kira");
   expect(analyzed.error_count > 0, "expected non-exhaustive match to fail");
   expect_diagnostic(analyzed,
                     "non-exhaustive match on `shape`: `@rect`, `@point` not "
@@ -444,24 +330,16 @@ auto test_reports_non_exhaustive_match() -> void {
 }
 
 auto test_reports_unknown_variant_in_pattern() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type shape = @circle(float64) | @point\n"
-                                    "def check(s: shape) -> bool:\n"
-                                    "    match s:\n"
-                                    "        @square(n) => true\n"
-                                    "        _ => false\n");
+  const auto analyzed =
+      analyze_test_data_file("report_unknown_variant_in_pattern.kira");
   expect(analyzed.error_count > 0, "expected unknown variant to fail");
   expect_diagnostic(analyzed, "unknown variant `@square` for sum type `shape`",
                     "expected unknown-variant diagnostic");
 }
 
 auto test_reports_try_in_plain_function() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def find(id: int32) -> option[int32]:\n"
-                                    "    return @some(id)\n"
-                                    "def run(id: int32) -> int32:\n"
-                                    "    let v = find(id)?\n"
-                                    "    return v\n");
+  const auto analyzed =
+      analyze_test_data_file("report_try_in_plain_function.kira");
   expect(analyzed.error_count > 0, "expected `?` misuse to fail");
   expect_diagnostic(analyzed,
                     "cannot use `?` in a function that returns `int32`",
@@ -469,9 +347,8 @@ auto test_reports_try_in_plain_function() -> void {
 }
 
 auto test_reports_unannotated_pub_function() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "pub def run(x):\n"
-                                    "    return x\n");
+  const auto analyzed =
+      analyze_test_data_file("report_unannotated_pub_function.kira");
   expect(analyzed.error_count > 0, "expected unannotated pub fn to fail");
   expect_diagnostic(analyzed,
                     "public function `run` must annotate its parameters and "
@@ -480,16 +357,8 @@ auto test_reports_unannotated_pub_function() -> void {
 }
 
 auto test_reports_duplicate_trait_impl() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: float64 }\n"
-                                    "trait show2:\n"
-                                    "    def show(self) -> str\n"
-                                    "impl show2 for point:\n"
-                                    "    def show(self) -> str:\n"
-                                    "        return \"a\"\n"
-                                    "impl show2 for point:\n"
-                                    "    def show(self) -> str:\n"
-                                    "        return \"b\"\n");
+  const auto analyzed =
+      analyze_test_data_file("report_duplicate_trait_impl.kira");
   expect(analyzed.error_count > 0, "expected duplicate impl to fail");
   expect_diagnostic(analyzed,
                     "duplicate implementation of trait `show2` for `point`",
@@ -497,16 +366,8 @@ auto test_reports_duplicate_trait_impl() -> void {
 }
 
 auto test_reports_incomplete_trait_impl() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: float64 }\n"
-                                    "trait shape2:\n"
-                                    "    def area(self) -> float64\n"
-                                    "    def name(self) -> str\n"
-                                    "impl shape2 for point:\n"
-                                    "    def area(self) -> float64:\n"
-                                    "        return self.x\n"
-                                    "    def extra(self) -> str:\n"
-                                    "        return \"?\"\n");
+  const auto analyzed =
+      analyze_test_data_file("report_incomplete_trait_impl.kira");
   expect(analyzed.error_count > 0, "expected incomplete impl to fail");
   expect_diagnostic(analyzed,
                     "implementation of trait `shape2` for `point` is missing "
@@ -517,15 +378,8 @@ auto test_reports_incomplete_trait_impl() -> void {
 }
 
 auto test_reports_unsatisfied_trait_requirement() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: float64 }\n"
-                                    "trait basic_eq:\n"
-                                    "    def equal(self, other: self) -> bool\n"
-                                    "trait basic_ord requires basic_eq:\n"
-                                    "    def less(self, other: self) -> bool\n"
-                                    "impl basic_ord for point:\n"
-                                    "    def less(self, other: self) -> bool:\n"
-                                    "        return true\n");
+  const auto analyzed =
+      analyze_test_data_file("report_unsatisfied_trait_requirement.kira");
   expect(analyzed.error_count > 0, "expected unsatisfied requires to fail");
   expect_diagnostic(analyzed,
                     "trait `basic_ord` requires `basic_eq`, but `point` does "
@@ -534,22 +388,16 @@ auto test_reports_unsatisfied_trait_requirement() -> void {
 }
 
 auto test_reports_unknown_deriving() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type color = @red | @green | @blue\n"
-                                    "    deriving eq, serialize\n");
+  const auto analyzed =
+      analyze_test_data_file("report_unknown_deriving.kira");
   expect(analyzed.error_count > 0, "expected unknown deriving to fail");
   expect_diagnostic(analyzed, "cannot derive `serialize` for `color`",
                     "expected deriving diagnostic");
 }
 
 auto test_reports_impure_contract_call() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def log_it(x: int32) -> bool:\n"
-                                    "    println(\"{x}\")\n"
-                                    "    return true\n"
-                                    "def run(x: int32) -> int32\n"
-                                    "pre log_it(x)\n"
-                                    ": x\n");
+  const auto analyzed =
+      analyze_test_data_file("report_impure_contract_call.kira");
   expect(analyzed.error_count > 0, "expected impure contract call to fail");
   expect_diagnostic(analyzed,
                     "contract conditions may only call pure functions",
@@ -570,10 +418,11 @@ auto test_check_program_persists_expression_types() -> void {
   auto diag = kira::diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
 
-  const auto file_id =
-      sources.add_file("sample.kira", "module sample\n"
-                                      "def add(x: int32, y: int32) -> int32:\n"
-                                      "    return x + y\n");
+  const auto test_data_dir =
+      kira::testing::find_test_data_dir("semantic_check_test");
+  const auto text = kira::testing::load_test_data_file(
+      test_data_dir.string(), "check_program_persists_expression_types.kira");
+  const auto file_id = sources.add_file("sample.kira", text);
   expect(file_id.has_value(), "expected fixture source to register");
   file_has_errors.resize(static_cast<size_t>(*file_id) + 1, false);
 
@@ -629,24 +478,16 @@ auto test_bare_literal_never_forces_a_concrete_param_type() -> void {
   // against a bare literal must never collapse `x` to whichever type the
   // literal happens to default to (int32). Both an int and a float call
   // must be accepted.
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def double(x):\n"
-                                    "    return x * 2\n"
-                                    "def run():\n"
-                                    "    let a = double(3)\n"
-                                    "    let b = double(3.5)\n"
-                                    "    return unit\n");
+  const auto analyzed =
+      analyze_test_data_file("bare_literal_never_forces_concrete_param_type.kira");
   expect(analyzed.error_count == 0,
          "expected `double` to stay generic over every numeric type, not "
          "collapse to whichever type the literal `2` defaults to");
 }
 
 auto test_infers_param_type_from_annotated_sibling() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def add(x, y: int32):\n"
-                                    "    return x + y\n"
-                                    "def bad():\n"
-                                    "    return add(\"oops\", 1)\n");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_type_from_annotated_sibling.kira");
   expect(analyzed.error_count > 0,
          "expected `x` to be inferred as `int32` from unifying with the "
          "annotated `y`");
@@ -656,13 +497,8 @@ auto test_infers_param_type_from_annotated_sibling() -> void {
 }
 
 auto test_infers_param_type_from_call_to_annotated_function() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def sink(y: int32) -> unit:\n"
-                                    "    return unit\n"
-                                    "def relay(x):\n"
-                                    "    return sink(x)\n"
-                                    "def bad():\n"
-                                    "    return relay(\"oops\")\n");
+  const auto analyzed = analyze_test_data_file(
+      "infer_param_type_from_call_to_annotated_function.kira");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the call to "
          "`sink`");
@@ -672,13 +508,8 @@ auto test_infers_param_type_from_call_to_annotated_function() -> void {
 }
 
 auto test_pass_through_param_stays_unannotated() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def identity(x):\n"
-                                    "    return x\n"
-                                    "def run():\n"
-                                    "    let a = identity(1)\n"
-                                    "    let b = identity(\"s\")\n"
-                                    "    return unit\n");
+  const auto analyzed =
+      analyze_test_data_file("pass_through_param_stays_unannotated.kira");
   expect(analyzed.error_count == 0,
          "a parameter with no recognizable usage constraint must stay "
          "compatible with any argument type, exactly as it was before "
@@ -686,12 +517,8 @@ auto test_pass_through_param_stays_unannotated() -> void {
 }
 
 auto test_infers_param_type_from_struct_field_type() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: int32, y: int32 }\n"
-                                    "def make(x):\n"
-                                    "    return point { x: x, y: 0 }\n"
-                                    "def bad():\n"
-                                    "    return make(\"oops\")\n");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_type_from_struct_field_type.kira");
   expect(analyzed.error_count > 0,
          "expected `make`'s `x` to be inferred as `int32` from `point`'s "
          "`x` field");
@@ -701,13 +528,8 @@ auto test_infers_param_type_from_struct_field_type() -> void {
 }
 
 auto test_infers_param_type_from_struct_field_shorthand() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "type point = { x: int32, y: int32 }\n"
-                                    "def make(x):\n"
-                                    "    let y = 0\n"
-                                    "    return point { x, y }\n"
-                                    "def bad():\n"
-                                    "    return make(\"oops\")\n");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_type_from_struct_field_shorthand.kira");
   expect(analyzed.error_count > 0,
          "expected `make`'s `x` to be inferred as `int32` from `point`'s "
          "`x` field via shorthand initialization");
@@ -717,12 +539,8 @@ auto test_infers_param_type_from_struct_field_shorthand() -> void {
 }
 
 auto test_infers_param_type_from_annotated_let_binding() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def relay(x):\n"
-                                    "    let y: int32 = x\n"
-                                    "    return y\n"
-                                    "def bad():\n"
-                                    "    return relay(\"oops\")\n");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_type_from_annotated_let_binding.kira");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the "
          "explicitly annotated local `y`");
@@ -732,12 +550,8 @@ auto test_infers_param_type_from_annotated_let_binding() -> void {
 }
 
 auto test_infers_param_type_from_annotated_var_binding() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def relay(x):\n"
-                                    "    var y: int32 = x\n"
-                                    "    return y\n"
-                                    "def bad():\n"
-                                    "    return relay(\"oops\")\n");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_type_from_annotated_var_binding.kira");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the "
          "explicitly annotated local `var y`");
@@ -747,11 +561,8 @@ auto test_infers_param_type_from_annotated_var_binding() -> void {
 }
 
 auto test_infers_param_type_from_declared_return_type() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def identity(x) -> int32:\n"
-                                    "    return x\n"
-                                    "def bad():\n"
-                                    "    return identity(\"oops\")\n");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_type_from_declared_return_type.kira");
   expect(analyzed.error_count > 0,
          "expected `identity`'s `x` to be inferred as `int32` from its own "
          "declared return type");
@@ -761,10 +572,8 @@ auto test_infers_param_type_from_declared_return_type() -> void {
 }
 
 auto test_infers_param_type_from_declared_return_type_on_expr_body() -> void {
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def identity(x) -> int32: x\n"
-                                    "def bad():\n"
-                                    "    return identity(\"oops\")\n");
+  const auto analyzed = analyze_test_data_file(
+      "infer_param_type_from_declared_return_type_on_expr_body.kira");
   expect(analyzed.error_count > 0,
          "expected `identity`'s `x` to be inferred as `int32` from its own "
          "declared return type on a compact expression body");
@@ -780,11 +589,8 @@ auto test_method_call_receiver_subexpr_still_inferred() -> void {
   // link between `a` and the annotated `b` lives inside that receiver
   // subtree and must still be walked, not silently skipped because the
   // call's callee isn't a plain name.
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def combine(a, b: int32):\n"
-                                    "    return (a + b).to_uppercase()\n"
-                                    "def bad():\n"
-                                    "    return combine(\"oops\", 1)\n");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_in_method_call_receiver.kira");
   expect(analyzed.error_count > 0,
          "expected `combine`'s `a` to be inferred as `int32` via arithmetic "
          "with `b` inside a method-call receiver expression");
@@ -798,14 +604,8 @@ auto test_recursive_function_param_inference_terminates() -> void {
   // must stay generic (no anchor forces it to `int32`); this test exists to
   // confirm inference over a self-recursive call doesn't hang or crash, not
   // that `n` gets pinned to one type.
-  const auto analyzed = analyze_one("module sample\n"
-                                    "def fact(n):\n"
-                                    "    if n <= 1:\n"
-                                    "        return 1\n"
-                                    "    return n * fact(n - 1)\n"
-                                    "def run():\n"
-                                    "    let a = fact(5)\n"
-                                    "    return unit\n");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_recursive_function.kira");
   expect(analyzed.error_count == 0,
          "expected self-recursive parameter inference to terminate cleanly "
          "without wrongly narrowing `n`");

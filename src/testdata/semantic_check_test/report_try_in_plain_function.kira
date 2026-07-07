@@ -1,0 +1,6 @@
+module sample
+def find(id: int32) -> option[int32]:
+    return @some(id)
+def run(id: int32) -> int32:
+    let v = find(id)?
+    return v

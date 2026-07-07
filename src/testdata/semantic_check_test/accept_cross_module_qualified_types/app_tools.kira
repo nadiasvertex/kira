@@ -1,0 +1,2 @@
+module app.tools
+pub type point = { pub x: float64, pub y: float64 }

@@ -1,0 +1,11 @@
+module sample
+type point = { x: float64, y: float64 }
+trait show:
+    def show(self) -> str
+impl show for point:
+    def show(self) -> str:
+        return "({self.x}, {self.y})"
+def run() -> str:
+    let p = point { x: 1.0, y: 2.0 }
+    let d = p.x * p.x + p.y * p.y
+    return p.show()

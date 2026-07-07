@@ -1,0 +1,5 @@
+module app
+module tools
+pub def flip(p: app.tools.point) -> app.tools.point:
+    let x = p.x
+    return p

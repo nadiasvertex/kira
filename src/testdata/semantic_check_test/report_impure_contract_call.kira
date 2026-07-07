@@ -1,0 +1,7 @@
+module sample
+def log_it(x: int32) -> bool:
+    println("{x}")
+    return true
+def run(x: int32) -> int32
+pre log_it(x)
+: x

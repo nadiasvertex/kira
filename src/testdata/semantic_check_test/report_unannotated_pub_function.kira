@@ -1,0 +1,3 @@
+module sample
+pub def run(x):
+    return x
