@@ -204,6 +204,26 @@ auto test_string_literal_compiles_to_a_heap_value() -> void {
          "are supported");
 }
 
+auto test_sum_type_variant_construction_compiles_to_a_heap_value() -> void {
+  // No `match` yet (increment 4) to project the payload back out through a
+  // scalar-returning wrapper, so — mirroring
+  // test_string_literal_compiles_to_a_heap_value — this only proves the
+  // sum-type-returning function compiles cleanly; compile_test.cpp's sum
+  // type tests read the returned heap value's raw tag/payload slots
+  // directly via the bytecode VM.
+  auto fixture =
+      check_fixture("module sample\n"
+                    "type shape = @circle(float64) | @square(float64)\n"
+                    "def make(r: float64) -> shape:\n"
+                    "    return @circle(r)\n");
+  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(module.has_value(), "expected fixture to lower to HIR");
+  auto compiled = lc::compile_module(**module, fixture.checked.types);
+  expect(compiled.has_value(),
+         "expected a shape-returning function to compile now that sum "
+         "types are supported");
+}
+
 auto test_tuple_construction_and_projection() -> void {
   auto jf = jit_fixture_for("module sample\n"
                             "def sum3() -> int32:\n"
@@ -282,6 +302,7 @@ auto main() -> int {
     test_checked_add_panics_on_overflow_end_to_end();
     test_checked_div_panics_on_divide_by_zero();
     test_string_literal_compiles_to_a_heap_value();
+    test_sum_type_variant_construction_compiles_to_a_heap_value();
     test_tuple_construction_and_projection();
     test_struct_literal_and_field_access();
     test_fixed_array_construction_and_indexing();

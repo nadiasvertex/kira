@@ -639,14 +639,20 @@ private:
     case hir_node_kind::hir_tuple_index:
       return compile_tuple_index(
           dynamic_cast<const hir::hir_tuple_index &>(expr));
+    case hir_node_kind::hir_variant_init:
+      return compile_variant_init(
+          dynamic_cast<const hir::hir_variant_init &>(expr));
+    case hir_node_kind::hir_variant_payload:
+      return compile_variant_payload(
+          dynamic_cast<const hir::hir_variant_payload &>(expr));
     default:
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = expr.span,
           .message =
               "this expression form is outside llvm_codegen's current scope "
-              "— match, lambdas, and sum-type variants still need work "
-              "spec/codegen-design.md's later increments haven't landed yet"});
+              "— match and lambdas still need work spec/codegen-design.md's "
+              "later increments haven't landed yet"});
     }
   }
 
@@ -1282,6 +1288,71 @@ private:
       return std::unexpected(elem_ty.error());
     }
     return builder_.CreateLoad(*elem_ty, slot_address(*object, index64));
+  }
+
+  /// Sum-type variant construction `@variant(args...)` — mirrors
+  /// `bytecode_compiler::compile_variant_init`: allocates a block sized to
+  /// the widest variant's payload (slot 0 is the tag, so any variant of
+  /// this sum type can later be reinterpreted from the same block), stores
+  /// the tag, then each argument at its 1-based payload slot.
+  [[nodiscard]] auto compile_variant_init(const hir::hir_variant_init &init)
+      -> std::expected<llvm::Value *, codegen_error> {
+    const auto tag =
+        runtime::sum_variant_tag(types_, init.type, init.variant_name);
+    if (!tag.has_value()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = init.span,
+          .message = std::format(
+              "variant `{}` does not resolve to a declared sum-type "
+              "variant — this should have been rejected by the type "
+              "checker",
+              init.variant_name)});
+    }
+    const auto payload_slots =
+        runtime::sum_max_payload_slots(types_, init.type);
+    auto *block = compile_heap_alloc(1 + payload_slots);
+    builder_.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+                                                static_cast<uint64_t>(*tag)),
+                         slot_address(block, size_t{0}));
+    for (size_t i = 0; i < init.args.size(); ++i) {
+      auto value = compile_expr(*init.args[i]);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      builder_.CreateStore(*value, slot_address(block, 1 + i));
+    }
+    return block;
+  }
+
+  /// Sum-type payload projection: well-defined only where a
+  /// `hir_constructor_pattern` has already confirmed the runtime tag
+  /// matches `variant_name` (see the node's own doc comment) — codegen
+  /// just reads the corresponding payload slot without re-checking the tag.
+  [[nodiscard]] auto
+  compile_variant_payload(const hir::hir_variant_payload &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    const auto slot = runtime::sum_variant_payload_slots(
+        types_, node.object->type, node.variant_name);
+    if (!slot.has_value() || node.index >= *slot) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = std::format(
+              "variant `{}` does not resolve to a declared sum-type "
+              "variant with a payload at index {} — this should have "
+              "been rejected by the type checker",
+              node.variant_name, node.index)});
+    }
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto elem_ty = storage_type_for(node.type, node.span);
+    if (!elem_ty.has_value()) {
+      return std::unexpected(elem_ty.error());
+    }
+    return builder_.CreateLoad(*elem_ty, slot_address(*object, 1 + node.index));
   }
 
   // ------------------------------------------------------------------

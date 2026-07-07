@@ -308,6 +308,38 @@ auto test_array_fill_form_repeats_the_same_value() -> void {
   expect(result->value.i == 20, "expected four 5s to sum to 20");
 }
 
+auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
+  // No `match` yet (increment 4), so this reads the heap block's raw
+  // {tag; payload} slots directly, mirroring how
+  // test_string_literal_len_reads_the_heap_header reads a str's header.
+  auto module =
+      compile_fixture("module sample\n"
+                      "type shape = @circle(float64) | @square(float64)\n"
+                      "def make(r: float64) -> shape:\n"
+                      "    return @circle(r)\n");
+  const auto vm = bc::vm{module};
+  auto result =
+      vm.run(function_index(module, "make"), std::array{bc::slot_value{3.5}});
+  expect(result.has_value(), "expected make() to succeed");
+  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+      static_cast<uintptr_t>(result->value.u));
+  expect(slots[0].i == 0, "expected @circle to encode as tag 0");
+  expect(slots[1].f == 3.5, "expected the payload slot to hold 3.5");
+}
+
+auto test_sum_type_unit_variant_encodes_its_tag() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "type shape = @circle(float64) | @empty\n"
+                                "def make_empty() -> shape:\n"
+                                "    return @empty\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "make_empty"), {});
+  expect(result.has_value(), "expected make_empty() to succeed");
+  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+      static_cast<uintptr_t>(result->value.u));
+  expect(slots[0].i == 1, "expected @empty to encode as tag 1");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -327,6 +359,8 @@ auto main() -> int {
     test_fixed_array_construction_and_indexing();
     test_array_index_out_of_bounds_panics();
     test_array_fill_form_repeats_the_same_value();
+    test_sum_type_variant_with_payload_encodes_tag_and_slot();
+    test_sum_type_unit_variant_encodes_its_tag();
   } catch (const std::exception &ex) {
     std::cerr << "compile_test failed: unhandled exception: " << ex.what()
               << '\n';

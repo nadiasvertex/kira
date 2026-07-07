@@ -185,10 +185,10 @@ using semantic::type_table;
     }
     const auto hex = inner.substr(3, inner.size() - 4);
     auto value = uint32_t{0};
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
     const char *hex_end = hex.data() + hex.size();
     const auto result = std::from_chars(hex.data(), hex_end, value, 16);
-    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
     if (result.ec != std::errc{} || result.ptr != hex_end) {
       return std::nullopt;
     }
@@ -294,10 +294,10 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
       }
       const auto hex = inner.substr(pos + 3, close - (pos + 3));
       auto value = uint32_t{0};
-      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
       const char *hex_end = hex.data() + hex.size();
       const auto result = std::from_chars(hex.data(), hex_end, value, 16);
-      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
       if (result.ec != std::errc{} || result.ptr != hex_end) {
         return std::nullopt;
       }
@@ -673,15 +673,20 @@ private:
     case hir_node_kind::hir_tuple_index:
       return compile_tuple_index(
           dynamic_cast<const hir::hir_tuple_index &>(expr), dst);
+    case hir_node_kind::hir_variant_init:
+      return compile_variant_init(
+          dynamic_cast<const hir::hir_variant_init &>(expr), dst);
+    case hir_node_kind::hir_variant_payload:
+      return compile_variant_payload(
+          dynamic_cast<const hir::hir_variant_payload &>(expr), dst);
     default:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = expr.span,
-          .message =
-              "this expression form is outside the bytecode compiler's "
-              "current scope — match, lambdas, and sum-type variants still "
-              "need work spec/codegen-design.md's later increments haven't "
-              "landed yet"});
+          .message = "this expression form is outside the bytecode compiler's "
+                     "current scope — match and lambdas still need work "
+                     "spec/codegen-design.md's later increments haven't landed "
+                     "yet"});
     }
   }
 
@@ -1138,6 +1143,88 @@ private:
     writer_.emit_u8(dst);
     writer_.emit_u8(*object_reg);
     writer_.emit_u8(*index_reg);
+    return {};
+  }
+
+  /// Sum-type variant construction `@variant(args...)`: allocates a heap
+  /// block sized to the widest variant's payload (so a later `match` can
+  /// safely reinterpret it as any variant), stores the runtime tag at
+  /// slot 0, then each argument at its 1-based payload slot.
+  [[nodiscard]] auto compile_variant_init(const hir::hir_variant_init &init,
+                                          uint8_t dst)
+      -> std::expected<void, compile_error> {
+    const auto tag =
+        runtime::sum_variant_tag(types_, init.type, init.variant_name);
+    if (!tag.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = init.span,
+          .message = std::format(
+              "variant `{}` does not resolve to a declared sum-type "
+              "variant — this should have been rejected by the type "
+              "checker",
+              init.variant_name)});
+    }
+    const auto payload_slots =
+        runtime::sum_max_payload_slots(types_, init.type);
+    writer_.emit_opcode(opcode::op_alloc);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(static_cast<uint16_t>(1 + payload_slots));
+
+    const auto tag_const =
+        writer_.add_constant(slot_value{static_cast<int64_t>(*tag)});
+    auto tag_reg = alloc_register(init.span);
+    if (!tag_reg.has_value()) {
+      return std::unexpected(tag_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_load_const);
+    writer_.emit_u8(*tag_reg);
+    writer_.emit_u16(tag_const);
+    writer_.emit_opcode(opcode::op_store_slot);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(0);
+    writer_.emit_u8(*tag_reg);
+
+    for (size_t i = 0; i < init.args.size(); ++i) {
+      auto value_reg = compile_expr(*init.args[i]);
+      if (!value_reg.has_value()) {
+        return std::unexpected(value_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_store_slot);
+      writer_.emit_u8(dst);
+      writer_.emit_u16(static_cast<uint16_t>(1 + i));
+      writer_.emit_u8(*value_reg);
+    }
+    return {};
+  }
+
+  /// Sum-type payload projection: well-defined only where a
+  /// `hir_constructor_pattern` has already confirmed the runtime tag
+  /// matches `variant_name` (see the node's own doc comment) — codegen
+  /// just reads the corresponding payload slot without re-checking the tag.
+  [[nodiscard]] auto
+  compile_variant_payload(const hir::hir_variant_payload &node, uint8_t dst)
+      -> std::expected<void, compile_error> {
+    const auto slot = runtime::sum_variant_payload_slots(
+        types_, node.object->type, node.variant_name);
+    if (!slot.has_value() || node.index >= *slot) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = std::format(
+              "variant `{}` does not resolve to a declared sum-type "
+              "variant with a payload at index {} — this should have "
+              "been rejected by the type checker",
+              node.variant_name, node.index)});
+    }
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_load_slot);
+    writer_.emit_u8(dst);
+    writer_.emit_u8(*object_reg);
+    writer_.emit_u16(static_cast<uint16_t>(1 + node.index));
     return {};
   }
 
