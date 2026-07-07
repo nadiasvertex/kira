@@ -17,6 +17,7 @@
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
 #include "src/k-parser/ast.h"
+#include "src/k-parser/text_escape.h"
 #include "src/k-parser/token.h"
 #include "src/runtime/layout.h"
 
@@ -35,18 +36,15 @@ using semantic::type_id;
 using semantic::type_table;
 
 // ==========================================================================
-//  Literal decoding — text/escape handling this compiler owns for itself.
-//
-//  `semantic::check.cpp` already has an integer-literal parser
-//  (`parse_integer_literal`), but it's a local, unexported free function in
-//  an anonymous namespace there, not a shared utility — reimplemented here
-//  rather than exporting it across an unrelated module boundary for one
-//  caller. Char-literal escape decoding has no existing implementation
-//  anywhere (the lexer only *validates* escapes, it never needs the decoded
-//  scalar value itself), so this is genuinely new, kept intentionally small
-//  and mirroring exactly the escape set `src/k-parser/lexer.h`'s
-//  `scan_escape_sequence` accepts.
+//  Literal decoding — numeric and text escape handling.
+//  Text escape decoding (decode_char_literal, decode_string_literal) is
+//  exposed from `src/k-parser/text_escape.h` to avoid duplication across
+//  modules — the lexer only *validates* escapes, leaving actual decoding to
+//  downstream consumers.
 // ==========================================================================
+
+using kira::decode_char_literal;
+using kira::decode_string_literal;
 
 [[nodiscard]] auto parse_uint_literal(std::string_view text)
     -> std::optional<uint64_t> {
@@ -107,211 +105,6 @@ using semantic::type_table;
 /// scanning already relies on to know where a multi-byte character ends —
 /// this just also computes the resulting code point instead of only
 /// skipping past it.
-[[nodiscard]] auto decode_utf8_scalar(std::string_view text, size_t &pos)
-    -> std::optional<uint32_t> {
-  if (pos >= text.size()) {
-    return std::nullopt;
-  }
-  const auto first = static_cast<unsigned char>(text[pos]);
-  if ((first & 0x80) == 0) {
-    ++pos;
-    return static_cast<uint32_t>(first);
-  }
-  auto extra_bytes = 0;
-  auto value = uint32_t{0};
-  if ((first & 0xE0) == 0xC0) {
-    extra_bytes = 1;
-    value = static_cast<uint32_t>(first & 0x1F);
-  } else if ((first & 0xF0) == 0xE0) {
-    extra_bytes = 2;
-    value = static_cast<uint32_t>(first & 0x0F);
-  } else if ((first & 0xF8) == 0xF0) {
-    extra_bytes = 3;
-    value = static_cast<uint32_t>(first & 0x07);
-  } else {
-    return std::nullopt;
-  }
-  ++pos;
-  for (auto i = 0; i < extra_bytes; ++i) {
-    if (pos >= text.size()) {
-      return std::nullopt;
-    }
-    const auto cont = static_cast<unsigned char>(text[pos]);
-    value = (value << 6) | static_cast<uint32_t>(cont & 0x3F);
-    ++pos;
-  }
-  return value;
-}
-
-/// Decodes a `char_lit` token's raw text (quotes and all, e.g. `'a'`,
-/// `'\n'`, `'\u{1F600}'`) into the Unicode scalar value it names.
-[[nodiscard]] auto decode_char_literal(std::string_view text)
-    -> std::optional<uint32_t> {
-  if (text.size() < 2 || text.front() != '\'' || text.back() != '\'') {
-    return std::nullopt;
-  }
-  const auto inner = text.substr(1, text.size() - 2);
-  if (inner.empty()) {
-    return std::nullopt;
-  }
-  if (inner.front() != '\\') {
-    auto pos = size_t{0};
-    return decode_utf8_scalar(inner, pos);
-  }
-  if (inner.size() < 2) {
-    return std::nullopt;
-  }
-  switch (inner[1]) {
-  case 'n':
-    return static_cast<uint32_t>('\n');
-  case 't':
-    return static_cast<uint32_t>('\t');
-  case 'r':
-    return static_cast<uint32_t>('\r');
-  case '"':
-    return static_cast<uint32_t>('"');
-  case '\'':
-    return static_cast<uint32_t>('\'');
-  case '\\':
-    return static_cast<uint32_t>('\\');
-  case '{':
-    return static_cast<uint32_t>('{');
-  case '}':
-    return static_cast<uint32_t>('}');
-  case 'u': {
-    // `\u{XXXX}`.
-    if (inner.size() < 5 || inner[2] != '{' || inner.back() != '}') {
-      return std::nullopt;
-    }
-    const auto hex = inner.substr(3, inner.size() - 4);
-    auto value = uint32_t{0};
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-    const char *hex_end = hex.data() + hex.size();
-    const auto result = std::from_chars(hex.data(), hex_end, value, 16);
-    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-    if (result.ec != std::errc{} || result.ptr != hex_end) {
-      return std::nullopt;
-    }
-    return value;
-  }
-  default:
-    return std::nullopt;
-  }
-}
-
-/// Appends `scalar`'s UTF-8 encoding to `out` — the encode-side counterpart
-/// to `decode_utf8_scalar` above, needed once a string literal's `\u{...}`
-/// escape has to be turned back into bytes for the heap `str` value's data.
-auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
-  if (scalar < 0x80) {
-    out.push_back(static_cast<char>(scalar));
-  } else if (scalar < 0x800) {
-    out.push_back(static_cast<char>(0xC0U | (scalar >> 6)));
-    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
-  } else if (scalar < 0x10000) {
-    out.push_back(static_cast<char>(0xE0U | (scalar >> 12)));
-    out.push_back(static_cast<char>(0x80U | ((scalar >> 6) & 0x3FU)));
-    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
-  } else {
-    out.push_back(static_cast<char>(0xF0U | (scalar >> 18)));
-    out.push_back(static_cast<char>(0x80U | ((scalar >> 12) & 0x3FU)));
-    out.push_back(static_cast<char>(0x80U | ((scalar >> 6) & 0x3FU)));
-    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
-  }
-}
-
-/// Decodes a `string_lit` token's raw text (opening/closing quotes and all)
-/// into the UTF-8 byte content the runtime `str` value should hold. Source
-/// bytes that aren't part of an escape sequence are copied through
-/// unchanged (multi-byte UTF-8 sequences already in the source need no
-/// re-decoding, unlike `decode_char_literal`, which has to produce a single
-/// scalar value rather than a byte range) — only `\...` escapes need
-/// translating, mirroring the same escape set `decode_char_literal` accepts.
-/// String interpolation (`"...{expr}..."`) is not handled here: nothing
-/// downstream of the lexer currently splits interpolation into separate
-/// expressions (confirmed by grepping `hir::lower.cpp`/`semantic::check.cpp`
-/// for any interpolation handling — there is none yet), so a `{`/`}` in the
-/// source is treated as a literal character, same as the lexer's own
-/// `scan_string` currently does upstream of this pass.
-[[nodiscard]] auto decode_string_literal(std::string_view text)
-    -> std::optional<std::string> {
-  if (text.size() < 2 || text.front() != '"' || text.back() != '"') {
-    return std::nullopt;
-  }
-  const auto inner = text.substr(1, text.size() - 2);
-  auto out = std::string{};
-  out.reserve(inner.size());
-  size_t pos = 0;
-  while (pos < inner.size()) {
-    if (inner[pos] != '\\') {
-      out.push_back(inner[pos]);
-      ++pos;
-      continue;
-    }
-    if (pos + 1 >= inner.size()) {
-      return std::nullopt;
-    }
-    switch (inner[pos + 1]) {
-    case 'n':
-      out.push_back('\n');
-      pos += 2;
-      break;
-    case 't':
-      out.push_back('\t');
-      pos += 2;
-      break;
-    case 'r':
-      out.push_back('\r');
-      pos += 2;
-      break;
-    case '"':
-      out.push_back('"');
-      pos += 2;
-      break;
-    case '\'':
-      out.push_back('\'');
-      pos += 2;
-      break;
-    case '\\':
-      out.push_back('\\');
-      pos += 2;
-      break;
-    case '{':
-      out.push_back('{');
-      pos += 2;
-      break;
-    case '}':
-      out.push_back('}');
-      pos += 2;
-      break;
-    case 'u': {
-      if (pos + 2 >= inner.size() || inner[pos + 2] != '{') {
-        return std::nullopt;
-      }
-      const auto close = inner.find('}', pos + 3);
-      if (close == std::string_view::npos) {
-        return std::nullopt;
-      }
-      const auto hex = inner.substr(pos + 3, close - (pos + 3));
-      auto value = uint32_t{0};
-      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-      const char *hex_end = hex.data() + hex.size();
-      const auto result = std::from_chars(hex.data(), hex_end, value, 16);
-      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-      if (result.ec != std::errc{} || result.ptr != hex_end) {
-        return std::nullopt;
-      }
-      encode_utf8_scalar(value, out);
-      pos = close + 1;
-      break;
-    }
-    default:
-      return std::nullopt;
-    }
-  }
-  return out;
-}
-
 [[nodiscard]] auto encode_f32(float v) -> slot_value {
   return slot_value{static_cast<uint64_t>(std::bit_cast<uint32_t>(v))};
 }

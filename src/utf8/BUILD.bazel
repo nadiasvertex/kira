@@ -1,0 +1,8 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "utf8",
+    srcs = ["utf8.cpp"],
+    hdrs = ["utf8.h"],
+    visibility = ["//visibility:public"],
+)

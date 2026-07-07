@@ -2,14 +2,21 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 cc_library(
     name = "k-parser",
-    srcs = ["parser.cpp"],
+    srcs = [
+        "parser.cpp",
+        "text_escape.cpp",
+    ],
     hdrs = [
         "ast.h",
         "diagnostic.h",
         "lexer.h",
         "parser.h",
         "source_location.h",
+        "text_escape.h",
         "token.h",
+    ],
+    deps = [
+        "//src/utf8",
     ],
     visibility = ["//visibility:public"],
 )
