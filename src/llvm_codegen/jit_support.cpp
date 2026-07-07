@@ -19,7 +19,7 @@ using bytecode::panic_error;
 using bytecode::slot_value;
 
 auto ensure_native_target_initialized() -> void {
-  static const auto initialized = [] {
+  static const auto initialized = [] -> bool {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     return true;
@@ -111,28 +111,28 @@ auto jit_module::run(std::string_view name,
     }
     switch (*return_kind) {
     case numeric_kind::i8:
-      return jit_result{true, call_and_pack<int8_t>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<int8_t>(addr)};
     case numeric_kind::i16:
-      return jit_result{true, call_and_pack<int16_t>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<int16_t>(addr)};
     case numeric_kind::i32:
-      return jit_result{true, call_and_pack<int32_t>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<int32_t>(addr)};
     case numeric_kind::i64:
-      return jit_result{true, call_and_pack<int64_t>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<int64_t>(addr)};
     case numeric_kind::u8:
-      return jit_result{true, call_and_pack<uint8_t>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<uint8_t>(addr)};
     case numeric_kind::u16:
-      return jit_result{true, call_and_pack<uint16_t>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<uint16_t>(addr)};
     case numeric_kind::u32:
     case numeric_kind::character:
-      return jit_result{true, call_and_pack<uint32_t>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<uint32_t>(addr)};
     case numeric_kind::u64:
-      return jit_result{true, call_and_pack<uint64_t>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<uint64_t>(addr)};
     case numeric_kind::f32:
-      return jit_result{true, call_and_pack<float>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<float>(addr)};
     case numeric_kind::f64:
-      return jit_result{true, call_and_pack<double>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<double>(addr)};
     case numeric_kind::boolean:
-      return jit_result{true, call_and_pack<bool>(addr)};
+      return jit_result{.has_value=true, .value=call_and_pack<bool>(addr)};
     }
     throw std::runtime_error("jit_module::run: unhandled numeric_kind");
   } catch (const panic_error &ex) {

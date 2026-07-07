@@ -3508,7 +3508,7 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
   }
 
   const auto link_command =
-      std::format("cc \"{}\" \"{}\" -o \"{}\"", object_path.string(),
+      std::format(R"(cc "{}" "{}" -o "{}")", object_path.string(),
                   runtime_archive->string(), output_path.string());
   const auto link_status = std::system(link_command.c_str());
   auto ec = std::error_code{};
@@ -3822,7 +3822,7 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       }
       const auto has_target =
           std::any_of(module->functions.begin(), module->functions.end(),
-                      [&cfg](const auto &fn) {
+                      [&cfg](const auto &fn) -> auto {
                         return fn != nullptr && fn->name == cfg.run_function;
                       });
       if (has_target) {
@@ -3851,7 +3851,7 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       }
       const auto has_target =
           std::any_of(module->functions.begin(), module->functions.end(),
-                      [&cfg](const auto &fn) {
+                      [&cfg](const auto &fn) -> auto {
                         return fn != nullptr && fn->name == cfg.build_function;
                       });
       if (has_target) {

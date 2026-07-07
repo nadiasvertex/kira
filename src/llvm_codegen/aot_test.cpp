@@ -111,7 +111,7 @@ auto build_and_run(const fs::path &dir, const std::string &kira_source) -> int {
                         "}\n");
 
   const auto link_command =
-      std::format("cc \"{}\" \"{}\" -o \"{}\"", object_path.string(),
+      std::format(R"(cc "{}" "{}" -o "{}")", object_path.string(),
                   stub_path.string(), output_path.string());
   expect(std::system(link_command.c_str()) == 0,
          std::format("expected linking to succeed: `{}`", link_command));

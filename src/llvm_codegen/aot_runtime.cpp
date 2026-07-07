@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <print>
 
 #include "src/bytecode/panic.h"
 
@@ -37,6 +38,6 @@ extern "C" [[noreturn]] void kira_codegen_panic(uint8_t reason) {
     message = "stack overflow";
     break;
   }
-  std::fprintf(stderr, "panic: %s\n", message);
+  std::println(stderr, "panic: {}", message);
   std::exit(101);
 }
