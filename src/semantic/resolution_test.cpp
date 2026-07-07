@@ -11,6 +11,7 @@
 
 #include "src/k-parser/parser.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
 
 namespace {
 
@@ -62,6 +63,14 @@ auto parse_sources(const std::vector<source_fixture> &fixtures)
   expect(parsed.diag.error_count() == 0,
          "expected resolution test fixtures to parse cleanly");
   return parsed;
+}
+
+auto load_test_data_fixture(std::string_view filename) -> source_fixture {
+  const auto test_data_dir =
+      kira::testing::find_test_data_dir("semantic_resolution_test");
+  const auto text = kira::testing::load_test_data_file(
+      test_data_dir.string(), filename);
+  return source_fixture{.path = std::string(filename), .text = text};
 }
 
 auto expect_expr_stmt(const kira::ast::node *node)
@@ -130,17 +139,10 @@ auto find_node_scope_or_fail(const kira::semantic::semantic_session &session,
 }
 
 auto test_build_semantic_session_indexes_module_symbols() -> void {
-  const auto parsed = parse_sources({{
-      .path = "sample_tools.kira",
-      .text = "module sample.tools\n"
-              "type point = int32\n"
-              "trait show:\n"
-              "  def show(self) -> str\n"
-              "module inner\n"
-              "pub def run():\n"
-              "  return 1\n"
-              "static limit = 4\n",
-  }});
+  const auto parsed = parse_sources({
+      load_test_data_fixture(
+          "build_semantic_session_indexes_module_symbols.kira"),
+  });
 
   const auto session =
       kira::semantic::build_semantic_session(parsed.parsed_modules);
@@ -177,16 +179,10 @@ auto test_build_semantic_session_indexes_module_symbols() -> void {
 }
 
 auto test_resolve_value_name_shadowing_in_nested_blocks() -> void {
-  const auto parsed = parse_sources({{
-      .path = "sample.kira",
-      .text = "module sample\n"
-              "def run():\n"
-              "  let value = 1\n"
-              "  if true:\n"
-              "    value\n"
-              "  let value = 2\n"
-              "  value\n",
-  }});
+  const auto parsed = parse_sources({
+      load_test_data_fixture(
+          "resolve_value_name_shadowing_in_nested_blocks.kira"),
+  });
 
   const auto session =
       kira::semantic::build_semantic_session(parsed.parsed_modules);
@@ -215,13 +211,10 @@ auto test_resolve_value_name_shadowing_in_nested_blocks() -> void {
 }
 
 auto test_resolve_function_parameters_and_locals() -> void {
-  const auto parsed = parse_sources({{
-      .path = "sample.kira",
-      .text = "module sample\n"
-              "def run(input):\n"
-              "  let current = input\n"
-              "  current\n",
-  }});
+  const auto parsed = parse_sources({
+      load_test_data_fixture(
+          "resolve_function_parameters_and_locals.kira"),
+  });
 
   const auto session =
       kira::semantic::build_semantic_session(parsed.parsed_modules);
@@ -254,15 +247,10 @@ auto test_resolve_function_parameters_and_locals() -> void {
 }
 
 auto test_match_arm_pattern_bindings_are_arm_local() -> void {
-  const auto parsed = parse_sources({{
-      .path = "sample.kira",
-      .text = "module sample\n"
-              "type option[T] = @some(T) | @none\n"
-              "def run(value):\n"
-              "  match value:\n"
-              "    @some(found) => found\n"
-              "    @none => value\n",
-  }});
+  const auto parsed = parse_sources({
+      load_test_data_fixture(
+          "match_arm_pattern_bindings_are_arm_local.kira"),
+  });
 
   const auto session =
       kira::semantic::build_semantic_session(parsed.parsed_modules);
@@ -294,14 +282,10 @@ auto test_match_arm_pattern_bindings_are_arm_local() -> void {
 }
 
 auto test_lambda_parameters_shadow_outer_bindings() -> void {
-  const auto parsed = parse_sources({{
-      .path = "sample.kira",
-      .text = "module sample\n"
-              "def run():\n"
-              "  let value = 1\n"
-              "  let reader = value => value\n"
-              "  reader\n",
-  }});
+  const auto parsed = parse_sources({
+      load_test_data_fixture(
+          "lambda_parameters_shadow_outer_bindings.kira"),
+  });
 
   const auto session =
       kira::semantic::build_semantic_session(parsed.parsed_modules);

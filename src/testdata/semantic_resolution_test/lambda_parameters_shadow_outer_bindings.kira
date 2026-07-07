@@ -1,0 +1,5 @@
+module sample
+def run():
+  let value = 1
+  let reader = value => value
+  reader

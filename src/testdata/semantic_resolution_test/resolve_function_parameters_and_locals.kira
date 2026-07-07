@@ -1,0 +1,4 @@
+module sample
+def run(input):
+  let current = input
+  current

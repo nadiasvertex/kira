@@ -1,0 +1,6 @@
+module sample
+type option[T] = @some(T) | @none
+def run(value):
+  match value:
+    @some(found) => found
+    @none => value

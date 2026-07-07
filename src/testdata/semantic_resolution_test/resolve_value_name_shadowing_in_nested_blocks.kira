@@ -1,0 +1,7 @@
+module sample
+def run():
+  let value = 1
+  if true:
+    value
+  let value = 2
+  value

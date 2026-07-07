@@ -1,0 +1,8 @@
+module sample.tools
+type point = int32
+trait show:
+  def show(self) -> str
+module inner
+pub def run():
+  return 1
+static limit = 4

@@ -58,6 +58,9 @@ cc_test(
 cc_test(
     name = "resolution_test",
     srcs = ["resolution_test.cpp"],
+    data = [
+        "//src:semantic_resolution_test_files",
+    ],
     deps = [
         ":semantic",
         "//src/k-parser:k-parser",
