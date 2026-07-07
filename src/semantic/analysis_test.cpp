@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -10,11 +11,14 @@
 #include "src/k-parser/parser.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
 
 namespace {
 
 using kira::testing::expect;
 using kira::testing::fail;
+
+namespace fs = std::filesystem;
 
 struct source_fixture {
   std::string path;
@@ -64,7 +68,7 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
     ast_files.push_back(std::move(ast_file));
   }
 
-  [[maybe_unused]] const auto checked =
+  [[maybe_unused]] const auto _checked =
       kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
 
   return analyzed_session{
@@ -73,23 +77,25 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
   };
 }
 
+auto load_fixtures(std::string_view test_data_dir) -> std::vector<source_fixture> {
+  auto test_dir = kira::testing::find_test_data_dir(test_data_dir);
+  auto fixtures = std::vector<source_fixture>{};
+
+  for (const auto &entry : fs::directory_iterator(test_dir)) {
+    if (entry.is_regular_file() && entry.path().extension() == ".kira") {
+      auto filename = entry.path().filename().string();
+      fixtures.push_back({
+          .path = filename,
+          .text = kira::testing::load_test_data_file(test_dir.string(), filename),
+      });
+    }
+  }
+
+  return fixtures;
+}
+
 auto test_validate_semantics_accepts_clean_session() -> void {
-  const auto analyzed = analyze_sources({
-      {
-          .path = "geometry.kira",
-          .text = "module geometry\n"
-                  "module shapes:\n"
-                  "  pub type circle = { pub radius: float64 }\n"
-                  "module transform\n",
-      },
-      {
-          .path = "geometry_transform.kira",
-          .text =
-              "module geometry.transform\n"
-              "pub def rotate(p: super.shapes.circle) -> super.shapes.circle:\n"
-              "  return p\n",
-      },
-  });
+  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/clean_session"));
 
   expect(analyzed.error_count == 0, "expected clean session to validate");
   expect(analyzed.diagnostics.empty(),
@@ -97,20 +103,7 @@ auto test_validate_semantics_accepts_clean_session() -> void {
 }
 
 auto test_validate_semantics_reports_duplicate_module_paths() -> void {
-  const auto analyzed = analyze_sources({
-      {
-          .path = "first.kira",
-          .text = "module sample.tools\n"
-                  "pub def run():\n"
-                  "  return 1\n",
-      },
-      {
-          .path = "second.kira",
-          .text = "module sample.tools\n"
-                  "pub def build():\n"
-                  "  return 2\n",
-      },
-  });
+  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/duplicate_module_paths"));
 
   expect(analyzed.error_count > 0,
          "expected duplicate module paths to fail semantic validation");
@@ -121,20 +114,7 @@ auto test_validate_semantics_reports_duplicate_module_paths() -> void {
 
 auto test_validate_semantics_reports_missing_parent_module_declaration()
     -> void {
-  const auto analyzed = analyze_sources({
-      {
-          .path = "geometry.kira",
-          .text = "module geometry\n"
-                  "pub def run():\n"
-                  "  return 1\n",
-      },
-      {
-          .path = "transform.kira",
-          .text = "module geometry.transform\n"
-                  "pub def rotate():\n"
-                  "  return 2\n",
-      },
-  });
+  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/missing_parent_declaration"));
 
   expect(analyzed.error_count > 0,
          "expected missing parent declaration to fail semantic validation");
@@ -145,25 +125,7 @@ auto test_validate_semantics_reports_missing_parent_module_declaration()
 }
 
 auto test_validate_semantics_reports_unresolved_session_import() -> void {
-  const auto analyzed = analyze_sources({
-      {
-          .path = "package.kira",
-          .text = "module package\n"
-                  "module tools\n",
-      },
-      {
-          .path = "package_tools.kira",
-          .text = "module package.tools\n"
-                  "module app\n",
-      },
-      {
-          .path = "package_tools_app.kira",
-          .text = "module package.tools.app\n"
-                  "use package.tools.missing\n"
-                  "pub def run():\n"
-                  "  return 1\n",
-      },
-  });
+  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/unresolved_session_import"));
 
   expect(analyzed.error_count > 0,
          "expected unresolved session import to fail semantic validation");
@@ -174,15 +136,7 @@ auto test_validate_semantics_reports_unresolved_session_import() -> void {
 }
 
 auto test_validate_semantics_reports_duplicate_module_scope_symbol() -> void {
-  const auto analyzed = analyze_sources({
-      {
-          .path = "sample_tools.kira",
-          .text = "module sample.tools\n"
-                  "type point = int32\n"
-                  "trait point:\n"
-                  "  def show(self) -> str\n",
-      },
-  });
+  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/duplicate_module_scope_symbol"));
 
   expect(analyzed.error_count > 0,
          "expected duplicate module-scope symbol to fail semantic validation");
@@ -193,24 +147,7 @@ auto test_validate_semantics_reports_duplicate_module_scope_symbol() -> void {
 }
 
 auto test_validate_semantics_reports_unresolved_qualified_type_path() -> void {
-  const auto analyzed = analyze_sources({
-      {
-          .path = "package.kira",
-          .text = "module package\n"
-                  "module tools\n",
-      },
-      {
-          .path = "package_tools.kira",
-          .text = "module package.tools\n"
-                  "module app\n",
-      },
-      {
-          .path = "package_tools_app.kira",
-          .text = "module package.tools.app\n"
-                  "pub def run(value: package.tools.missing) -> int:\n"
-                  "  return 1\n",
-      },
-  });
+  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/unresolved_qualified_type_path"));
 
   expect(analyzed.error_count > 0,
          "expected unresolved qualified type path to fail semantic validation");
@@ -222,25 +159,7 @@ auto test_validate_semantics_reports_unresolved_qualified_type_path() -> void {
 
 auto test_validate_semantics_reports_unresolved_module_qualified_reference()
     -> void {
-  const auto analyzed = analyze_sources({
-      {
-          .path = "package.kira",
-          .text = "module package\n"
-                  "module tools\n",
-      },
-      {
-          .path = "package_tools.kira",
-          .text = "module package.tools\n"
-                  "module app\n",
-      },
-      {
-          .path = "package_tools_app.kira",
-          .text = "module package.tools.app\n"
-                  "pub def run() -> int:\n"
-                  "  package.tools.missing\n"
-                  "  return 1\n",
-      },
-  });
+  const auto analyzed = analyze_sources(load_fixtures("semantic_analysis_test/unresolved_module_qualified_reference"));
 
   expect(analyzed.error_count > 0, "expected unresolved module-qualified "
                                    "reference to fail semantic validation");

@@ -1,0 +1,3 @@
+module sample.tools
+pub def build():
+  return 2

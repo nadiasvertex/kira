@@ -32,6 +32,9 @@ cc_library(
 cc_test(
     name = "analysis_test",
     srcs = ["analysis_test.cpp"],
+    data = [
+        "//src:semantic_analysis_test_files",
+    ],
     deps = [
         ":semantic",
         "//src/k-parser:k-parser",

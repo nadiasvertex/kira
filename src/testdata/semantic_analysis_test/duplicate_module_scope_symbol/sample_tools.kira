@@ -1,0 +1,4 @@
+module sample.tools
+type point = int32
+trait point:
+  def show(self) -> str

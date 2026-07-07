@@ -1,0 +1,4 @@
+module package.tools.app
+use package.tools.missing
+pub def run():
+  return 1
