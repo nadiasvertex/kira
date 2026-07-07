@@ -205,6 +205,54 @@ enum class opcode : uint8_t {
   op_return_unit,  ///< (no operands) — pop the current frame with no value
                    ///< to hand back (the callee's return type is `unit`).
 
+  // --- Heap values (spec/codegen-design.md increment 6) -------------------
+  //
+  //  Every non-scalar Kira value (`str`, `list[T]`, fixed `array[T, N]`,
+  //  tuple, struct, sum-type payload, closure) is a single pointer into
+  //  `src/runtime/arena.h`'s bump allocator (Decision 3); `slot_value`'s
+  //  existing `u` field holds it, reinterpreted as an address — no new
+  //  union member needed, the same way `numeric_kind` already lets one
+  //  untagged 8-byte slot mean different things depending on which opcode
+  //  (and which static type the compiler already knows) touches it. Rather
+  //  than one opcode per aggregate kind (tuple-get, struct-get, variant-
+  //  payload-get, closure-env-get, ...), these three are deliberately
+  //  generic over "a flat block of 8-byte slots" (`src/runtime/layout.h`),
+  //  matching the same "parameterize, don't combinatorially enumerate"
+  //  choice `numeric_kind` already made for arithmetic.
+  op_alloc,          ///< u8 dst, u16 slot_count — reg[dst] = a fresh, zeroed
+                     ///< `slot_count * 8`-byte block from the arena.
+  op_load_slot,      ///< u8 dst, u8 ptr, u16 slot_index — reg[dst] =
+                     ///< *(reg[ptr] as slot_value* + slot_index).
+  op_store_slot,     ///< u8 ptr, u16 slot_index, u8 src —
+                     ///< *(reg[ptr] as slot_value* + slot_index) = reg[src].
+  op_load_str_const, ///< u8 dst, u16 string_const_index — reg[dst] = a
+                     ///< fresh 2-slot `str` heap value `{ len; data_ptr }`
+                     ///< whose `data_ptr` points directly at
+                     ///< `bytecode_function::string_constants[idx]`'s own
+                     ///< bytes (no arena copy — the function outlives the
+                     ///< run, so this is safe, and literal string bytes are
+                     ///< never mutated through a `str` value).
+  op_load_indexed,   ///< u8 dst, u8 ptr, u8 index — reg[dst] =
+                     ///< *(reg[ptr] as slot_value* + reg[index].u). The
+                     ///< runtime-indexed counterpart to `op_load_slot`'s
+                     ///< compile-time-constant slot index — used for fixed
+                     ///< `array[T, N]` element access, where the index is an
+                     ///< ordinary runtime value the compiler bounds-checks
+                     ///< itself (via `op_ge`/`op_panic_if`) before emitting
+                     ///< this, not baked into the instruction stream.
+  op_store_indexed,  ///< u8 ptr, u8 index, u8 src —
+                     ///< *(reg[ptr] as slot_value* + reg[index].u) = reg[src].
+  op_panic_if,       ///< u8 cond, u8 panic_reason — panics with
+                     ///< `static_cast<panic_reason>(panic_reason)` if
+                     ///< reg[cond] (a `boolean` register) is true; otherwise
+                     ///< falls through. The bytecode-level building block a
+                     ///< compiler-emitted bounds check (or any other
+                     ///< source-triggered panic condition that isn't one of
+                     ///< the checked-arithmetic opcodes' own built-in panics)
+                     ///< composes from — mirrors `llvm_codegen`'s
+                     ///< `guard_panic` helper, just reified as one opcode
+                     ///< instead of a conditional branch to a call.
+
   // --- Diagnostics ---------------------------------------------------------
   op_panic, ///< (no operands) — panics with `panic_reason::explicit_panic`
             ///< (see `panic.h`). Originally specced with a

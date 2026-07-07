@@ -187,18 +187,85 @@ auto test_checked_div_panics_on_divide_by_zero() -> void {
          "expected the panic reason to be integer_divide_by_zero");
 }
 
-auto test_string_literal_is_unsupported_type() -> void {
+auto test_string_literal_compiles_to_a_heap_value() -> void {
+  // No surface `.len()` yet and jit_support.h's marshaling only unpacks
+  // scalar numeric_kind returns, so this only proves the `str`-returning
+  // function compiles and verifies cleanly, mirroring
+  // compile_test.cpp's own more thorough str test (which can read the
+  // returned heap value's raw slots directly).
   auto fixture = check_fixture("module sample\n"
                                "def greet() -> str:\n"
                                "    return \"hi\"\n");
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected fixture to lower to HIR");
   auto compiled = lc::compile_module(**module, fixture.checked.types);
-  expect(!compiled.has_value(),
-         "expected a str-returning function to fail llvm_codegen — heap "
-         "types are increment 6, not this increment");
-  expect(compiled.error().kind == lc::codegen_error_kind::unsupported_type,
-         "expected the failure reason to be unsupported_type");
+  expect(compiled.has_value(),
+         "expected a str-returning function to compile now that heap types "
+         "are supported");
+}
+
+auto test_tuple_construction_and_projection() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "def sum3() -> int32:\n"
+                            "    let t = (10, 20, 12)\n"
+                            "    let (a, b, c) = t\n"
+                            "    return a + b + c\n"
+                            "def main() -> int32:\n"
+                            "    return sum3()\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 42,
+         "expected the tuple's three elements to sum to 42");
+}
+
+auto test_struct_literal_and_field_access() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "type point = { pub x: int32, pub y: int32 }\n"
+                            "def sum_fields(x: int32, y: int32) -> int32:\n"
+                            "    let p: point = { x: x, y: y }\n"
+                            "    return (p).x + (p).y\n"
+                            "def main() -> int32:\n"
+                            "    return sum_fields(18, 24)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 42, "expected 18 + 24 == 42 via field access");
+}
+
+auto test_fixed_array_construction_and_indexing() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "def third(i: usize) -> int32:\n"
+                            "    let a: array[int32, 4] = [10, 20, 30, 40]\n"
+                            "    return a[i]\n"
+                            "def main() -> int32:\n"
+                            "    return third(2)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 30, "expected a[2] == 30");
+}
+
+auto test_array_index_out_of_bounds_panics() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "def get(i: usize) -> int32:\n"
+                            "    let a: array[int32, 3] = [1, 2, 3]\n"
+                            "    return a[i]\n"
+                            "def main() -> int32:\n"
+                            "    return get(5)\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(!result.has_value(), "expected a[5] on a 3-element array to panic");
+  expect(result.error() == bc::panic_reason::index_out_of_bounds,
+         "expected the panic reason to be index_out_of_bounds");
+}
+
+auto test_array_fill_form_repeats_the_same_value() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "def sum_of_fives() -> int32:\n"
+                            "    let a: array[int32, 4] = [5; 4]\n"
+                            "    return a[0] + a[1] + a[2] + a[3]\n"
+                            "def main() -> int32:\n"
+                            "    return sum_of_fives()\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 20, "expected four 5s to sum to 20");
 }
 
 } // namespace
@@ -214,7 +281,12 @@ auto main() -> int {
     test_cast_widens_int_to_float();
     test_checked_add_panics_on_overflow_end_to_end();
     test_checked_div_panics_on_divide_by_zero();
-    test_string_literal_is_unsupported_type();
+    test_string_literal_compiles_to_a_heap_value();
+    test_tuple_construction_and_projection();
+    test_struct_literal_and_field_access();
+    test_fixed_array_construction_and_indexing();
+    test_array_index_out_of_bounds_panics();
+    test_array_fill_form_repeats_the_same_value();
   } catch (const std::exception &ex) {
     std::cerr << "codegen_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -24,6 +24,7 @@
 #include "src/hir/ids.h"
 #include "src/k-parser/ast.h"
 #include "src/k-parser/token.h"
+#include "src/runtime/layout.h"
 
 namespace kira::llvm_codegen {
 
@@ -190,6 +191,130 @@ using semantic::type_table;
   }
 }
 
+/// Appends `scalar`'s UTF-8 encoding to `out` — duplicated from
+/// `bytecode_compiler/compile.cpp`'s own `encode_utf8_scalar`, same
+/// duplication precedent as `decode_char_literal` above.
+auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
+  if (scalar < 0x80) {
+    out.push_back(static_cast<char>(scalar));
+  } else if (scalar < 0x800) {
+    out.push_back(static_cast<char>(0xC0U | (scalar >> 6)));
+    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
+  } else if (scalar < 0x10000) {
+    out.push_back(static_cast<char>(0xE0U | (scalar >> 12)));
+    out.push_back(static_cast<char>(0x80U | ((scalar >> 6) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
+  } else {
+    out.push_back(static_cast<char>(0xF0U | (scalar >> 18)));
+    out.push_back(static_cast<char>(0x80U | ((scalar >> 12) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | ((scalar >> 6) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
+  }
+}
+
+/// Decodes a `string_lit` token's raw text into UTF-8 byte content —
+/// duplicated from `bytecode_compiler/compile.cpp`'s `decode_string_literal`
+/// (see its doc comment for why interpolation isn't handled here either).
+[[nodiscard]] auto decode_string_literal(std::string_view text)
+    -> std::optional<std::string> {
+  if (text.size() < 2 || text.front() != '"' || text.back() != '"') {
+    return std::nullopt;
+  }
+  const auto inner = text.substr(1, text.size() - 2);
+  auto out = std::string{};
+  out.reserve(inner.size());
+  size_t pos = 0;
+  while (pos < inner.size()) {
+    if (inner[pos] != '\\') {
+      out.push_back(inner[pos]);
+      ++pos;
+      continue;
+    }
+    if (pos + 1 >= inner.size()) {
+      return std::nullopt;
+    }
+    switch (inner[pos + 1]) {
+    case 'n':
+      out.push_back('\n');
+      pos += 2;
+      break;
+    case 't':
+      out.push_back('\t');
+      pos += 2;
+      break;
+    case 'r':
+      out.push_back('\r');
+      pos += 2;
+      break;
+    case '"':
+      out.push_back('"');
+      pos += 2;
+      break;
+    case '\'':
+      out.push_back('\'');
+      pos += 2;
+      break;
+    case '\\':
+      out.push_back('\\');
+      pos += 2;
+      break;
+    case '{':
+      out.push_back('{');
+      pos += 2;
+      break;
+    case '}':
+      out.push_back('}');
+      pos += 2;
+      break;
+    case 'u': {
+      if (pos + 2 >= inner.size() || inner[pos + 2] != '{') {
+        return std::nullopt;
+      }
+      const auto close = inner.find('}', pos + 3);
+      if (close == std::string_view::npos) {
+        return std::nullopt;
+      }
+      const auto hex = inner.substr(pos + 3, close - (pos + 3));
+      auto value = uint32_t{0};
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      const char *hex_end = hex.data() + hex.size();
+      const auto result = std::from_chars(hex.data(), hex_end, value, 16);
+      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      if (result.ec != std::errc{} || result.ptr != hex_end) {
+        return std::nullopt;
+      }
+      encode_utf8_scalar(value, out);
+      pos = close + 1;
+      break;
+    }
+    default:
+      return std::nullopt;
+    }
+  }
+  return out;
+}
+
+/// Whether `id` is one of the heap-backed representations
+/// `src/runtime/layout.h` describes (`str`, `list`/`option`/`result` and
+/// other prelude generics, tuple, fixed array, struct, sum type) — every
+/// such value is a single opaque pointer, as opposed to the closed scalar
+/// set `numeric_kind_of` maps directly to an LLVM integer/float type.
+[[nodiscard]] auto is_heap_type(const type_table &types, type_id id) -> bool {
+  const auto &entry = types.entry(id);
+  switch (entry.kind) {
+  case semantic::type_kind::tuple_kind:
+  case semantic::type_kind::array_kind:
+  case semantic::type_kind::struct_kind:
+  case semantic::type_kind::sum_kind:
+  case semantic::type_kind::builtin_generic_kind:
+    return true;
+  case semantic::type_kind::builtin_kind:
+    return entry.name == "str";
+  default:
+    return false;
+  }
+}
+
 // ==========================================================================
 //  numeric_kind <-> llvm::Type.
 // ==========================================================================
@@ -212,6 +337,26 @@ using semantic::type_table;
   }
 }
 
+/// Maps `id` to the LLVM type a value of that type is stored/passed as: the
+/// scalar `numeric_kind` mapping for scalars, an opaque `ptr` for anything
+/// `is_heap_type` recognizes, or `nullopt` for the (currently) genuinely
+/// unrepresentable remainder (128-bit scalars). Shared by `compile_module`'s
+/// function-signature builder and `function_compiler::storage_type_for` so
+/// parameter/return/local storage typing is computed the same way in both
+/// places.
+[[nodiscard]] auto storage_llvm_type(const type_table &types,
+                                     llvm::LLVMContext &ctx, type_id id)
+    -> std::optional<llvm::Type *> {
+  const auto kind = numeric_kind_of(types, id);
+  if (kind.has_value()) {
+    return llvm_type_for(ctx, *kind);
+  }
+  if (is_heap_type(types, id)) {
+    return llvm::PointerType::get(ctx, 0);
+  }
+  return std::nullopt;
+}
+
 // ==========================================================================
 //  module_compiler — declares every function's signature up front (so
 //  direct/recursive/mutually-recursive calls always find a real
@@ -223,9 +368,9 @@ public:
   function_compiler(
       llvm::LLVMContext &ctx, const type_table &types,
       const std::unordered_map<std::string, llvm::Function *> &functions,
-      llvm::Function *panic_fn)
+      llvm::Function *panic_fn, llvm::Function *alloc_fn)
       : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
-        builder_(ctx) {}
+        alloc_fn_(alloc_fn), builder_(ctx) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn,
                              llvm::Function *llvm_fn)
@@ -345,6 +490,26 @@ private:
     return *kind;
   }
 
+  /// Like `numeric_kind_for`, but also accepts heap-backed types
+  /// (`is_heap_type`), returning an opaque `ptr` for those instead of
+  /// failing closed — used anywhere a local/field/element's LLVM storage
+  /// type is needed (locals, aggregate slot loads), as opposed to
+  /// `numeric_kind_for`'s call sites, which are genuinely scalar-only
+  /// (arithmetic/comparison operands, casts).
+  [[nodiscard]] auto storage_type_for(type_id id, source_span span)
+      -> std::expected<llvm::Type *, codegen_error> {
+    const auto ty = storage_llvm_type(types_, ctx_, id);
+    if (!ty.has_value()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_type,
+          .span = span,
+          .message = std::format("type `{}` has no scalar or heap-value "
+                                 "llvm_codegen representation yet",
+                                 types_.display(id))});
+    }
+    return *ty;
+  }
+
   // ------------------------------------------------------------------
   //  Panics — every checked-arithmetic guard funnels through this, so a
   //  panic always looks like: compute a bool "should panic" condition,
@@ -365,6 +530,45 @@ private:
                                                 static_cast<uint8_t>(reason))});
     builder_.CreateUnreachable();
     builder_.SetInsertPoint(ok_bb);
+  }
+
+  // ------------------------------------------------------------------
+  //  Heap values (spec/codegen-design.md increment 6) — src/runtime/
+  //  layout.h's flat "N 8-byte slots" representation, shared byte-for-byte
+  //  with bytecode::vm's op_alloc/op_load_slot/op_store_slot (Decision 3).
+  //  Opaque pointers make this simple: a slot's address is just a byte
+  //  offset GEP off the block's base pointer, and `CreateLoad`/`CreateStore`
+  //  can target that address with whatever concrete LLVM type the caller
+  //  needs (i64/double/ptr) with no bitcast — the same "reinterpret raw
+  //  bytes per the statically-known kind" approach `bytecode::vm`'s
+  //  `slot_value` union already takes.
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto compile_heap_alloc(size_t slot_count) -> llvm::Value * {
+    auto *size =
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), slot_count * 8);
+    return builder_.CreateCall(alloc_fn_, {size});
+  }
+
+  [[nodiscard]] auto slot_address(llvm::Value *block_ptr, size_t slot_index)
+      -> llvm::Value * {
+    auto *offset =
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), slot_index * 8);
+    return builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), block_ptr, offset);
+  }
+
+  /// The runtime-indexed counterpart above — used for fixed `array[T, N]`
+  /// element access, where the index is an ordinary runtime value the
+  /// compiler bounds-checks itself (via `guard_panic`) before emitting this,
+  /// not a compile-time constant.
+  [[nodiscard]] auto slot_address(llvm::Value *block_ptr,
+                                  llvm::Value *dynamic_slot_index)
+      -> llvm::Value * {
+    auto *byte_offset = builder_.CreateMul(
+        dynamic_slot_index,
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 8));
+    return builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), block_ptr,
+                              byte_offset);
   }
 
   // ------------------------------------------------------------------
@@ -420,21 +624,38 @@ private:
       return builder_.CreateLoad(result->getAllocatedType(), result,
                                  "if.value");
     }
+    case hir_node_kind::hir_tuple:
+      return compile_slots_init(
+          dynamic_cast<const hir::hir_tuple &>(expr).elements);
+    case hir_node_kind::hir_struct_init:
+      return compile_struct_init(
+          dynamic_cast<const hir::hir_struct_init &>(expr));
+    case hir_node_kind::hir_array_init:
+      return compile_array_init(
+          dynamic_cast<const hir::hir_array_init &>(expr));
+    case hir_node_kind::hir_field:
+      return compile_field(dynamic_cast<const hir::hir_field &>(expr));
+    case hir_node_kind::hir_index:
+      return compile_index(dynamic_cast<const hir::hir_index &>(expr));
+    case hir_node_kind::hir_tuple_index:
+      return compile_tuple_index(
+          dynamic_cast<const hir::hir_tuple_index &>(expr));
     default:
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = expr.span,
           .message =
-              "this expression form is outside llvm_codegen's scalar/"
-              "control-flow scope (spec/codegen-design.md increment 3) — "
-              "match, tuples, structs, arrays, lambdas, field/index access, "
-              "and sum-type variants all need a heap-value representation "
-              "increment 6 hasn't landed yet"});
+              "this expression form is outside llvm_codegen's current scope "
+              "— match, lambdas, and sum-type variants still need work "
+              "spec/codegen-design.md's later increments haven't landed yet"});
     }
   }
 
   [[nodiscard]] auto compile_literal(const hir::hir_literal &lit)
       -> std::expected<llvm::Value *, codegen_error> {
+    if (lit.lit_kind == token_kind::string_lit) {
+      return compile_string_literal(lit);
+    }
     auto kind = numeric_kind_for(lit.type, lit.span);
     if (!kind.has_value()) {
       return std::unexpected(kind.error());
@@ -885,6 +1106,186 @@ private:
   }
 
   // ------------------------------------------------------------------
+  //  Heap values (spec/codegen-design.md increment 6) — same flat "N
+  //  8-byte slots" representation as bytecode::vm's op_alloc/op_load_slot/
+  //  op_store_slot (Decision 3), built from `compile_heap_alloc`/
+  //  `slot_address` above.
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto compile_string_literal(const hir::hir_literal &lit)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto text = decode_string_literal(lit.value);
+    if (!text.has_value()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = lit.span,
+          .message =
+              std::format("could not decode string literal `{}`", lit.value)});
+    }
+    auto *data_ptr = builder_.CreateGlobalString(*text, "str.lit");
+    auto *header = compile_heap_alloc(2);
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), text->size()),
+        slot_address(header, size_t{0}));
+    builder_.CreateStore(data_ptr, slot_address(header, size_t{1}));
+    return header;
+  }
+
+  /// Allocates a `values.size()`-slot heap block and stores each element's
+  /// compiled value at its corresponding slot, in order — the shared shape
+  /// behind tuple construction and the explicit-list form of an array
+  /// literal, mirroring `bytecode_compiler::compile_slots_init`.
+  [[nodiscard]] auto
+  compile_slots_init(const hir::ptr_vec<hir::hir_expr> &values)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto *block = compile_heap_alloc(values.size());
+    for (size_t i = 0; i < values.size(); ++i) {
+      auto value = compile_expr(*values[i]);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      builder_.CreateStore(*value, slot_address(block, i));
+    }
+    return block;
+  }
+
+  [[nodiscard]] auto compile_struct_init(const hir::hir_struct_init &init)
+      -> std::expected<llvm::Value *, codegen_error> {
+    const auto field_count =
+        runtime::struct_field_names(types_, init.type).size();
+    auto *block = compile_heap_alloc(field_count);
+    for (const auto &field : init.fields) {
+      const auto slot =
+          runtime::struct_field_slot(types_, init.type, field.name);
+      if (!slot.has_value()) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = init.span,
+            .message = std::format(
+                "field `{}` does not resolve to a declared struct field — "
+                "this should have been rejected by the type checker",
+                field.name)});
+      }
+      auto value = compile_expr(*field.value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      builder_.CreateStore(*value, slot_address(block, *slot));
+    }
+    return block;
+  }
+
+  [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init)
+      -> std::expected<llvm::Value *, codegen_error> {
+    if (init.fill_value == nullptr) {
+      return compile_slots_init(init.elements);
+    }
+    const auto &array_entry = types_.entry(init.type);
+    if (!array_entry.array_size.has_value()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = init.span,
+          .message = "this array literal's fill count is not statically "
+                     "known, which llvm_codegen needs to size its heap "
+                     "allocation"});
+    }
+    const auto count = *array_entry.array_size;
+    auto *block = compile_heap_alloc(count);
+    // Evaluated once, then its bits are stored into every element slot —
+    // see bytecode_compiler::compile_array_init's doc comment for why this
+    // is correct (and required) rather than re-evaluating per element.
+    auto fill_value = compile_expr(*init.fill_value);
+    if (!fill_value.has_value()) {
+      return std::unexpected(fill_value.error());
+    }
+    for (uint64_t i = 0; i < count; ++i) {
+      builder_.CreateStore(*fill_value, slot_address(block, i));
+    }
+    return block;
+  }
+
+  [[nodiscard]] auto compile_field(const hir::hir_field &field)
+      -> std::expected<llvm::Value *, codegen_error> {
+    const auto slot = runtime::struct_field_slot(types_, field.object->type,
+                                                 field.field_name);
+    if (!slot.has_value()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = field.span,
+          .message = std::format(
+              "field access `.{}` is only supported on struct values by "
+              "llvm_codegen yet",
+              field.field_name)});
+    }
+    auto object = compile_expr(*field.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto elem_ty = storage_type_for(field.type, field.span);
+    if (!elem_ty.has_value()) {
+      return std::unexpected(elem_ty.error());
+    }
+    return builder_.CreateLoad(*elem_ty, slot_address(*object, *slot));
+  }
+
+  [[nodiscard]] auto compile_tuple_index(const hir::hir_tuple_index &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto elem_ty = storage_type_for(node.type, node.span);
+    if (!elem_ty.has_value()) {
+      return std::unexpected(elem_ty.error());
+    }
+    return builder_.CreateLoad(*elem_ty, slot_address(*object, node.index));
+  }
+
+  /// Fixed `array[T, N]` element access only — see
+  /// `bytecode_compiler::compile_index`'s doc comment for why `list`/
+  /// `slice`/`str` indexing is out of scope until increment 5.
+  [[nodiscard]] auto compile_index(const hir::hir_index &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    const auto &object_entry = types_.entry(node.object->type);
+    if (object_entry.kind != semantic::type_kind::array_kind ||
+        !object_entry.array_size.has_value()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "indexing is only supported for a fixed-size array "
+                     "with a statically known length yet — list/slice/str "
+                     "indexing needs increment 5's growable-container "
+                     "support"});
+    }
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto index_kind = numeric_kind_for(node.index->type, node.span);
+    if (!index_kind.has_value()) {
+      return std::unexpected(index_kind.error());
+    }
+    auto index_value = compile_expr(*node.index);
+    if (!index_value.has_value()) {
+      return std::unexpected(index_value.error());
+    }
+    auto *index64 =
+        builder_.CreateIntCast(*index_value, llvm::Type::getInt64Ty(ctx_),
+                               is_signed_integer(*index_kind), "index.i64");
+
+    auto *len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+                                       *object_entry.array_size);
+    auto *out_of_bounds = builder_.CreateICmpUGE(index64, len, "index.oob");
+    guard_panic(out_of_bounds, panic_reason::index_out_of_bounds);
+
+    auto elem_ty = storage_type_for(node.type, node.span);
+    if (!elem_ty.has_value()) {
+      return std::unexpected(elem_ty.error());
+    }
+    return builder_.CreateLoad(*elem_ty, slot_address(*object, index64));
+  }
+
+  // ------------------------------------------------------------------
   //  Statements and blocks. Every statement/block compiler returns whether
   //  it left the current block terminated (a `ret` was emitted, or an `if`
   //  where every branch terminated) — callers stop compiling further
@@ -977,15 +1378,15 @@ private:
 
   [[nodiscard]] auto compile_let(const hir::hir_let &let)
       -> std::expected<bool, codegen_error> {
-    auto kind = numeric_kind_for(let.initializer->type, let.span);
-    if (!kind.has_value()) {
-      return std::unexpected(kind.error());
+    auto ty = storage_type_for(let.initializer->type, let.span);
+    if (!ty.has_value()) {
+      return std::unexpected(ty.error());
     }
     auto value = compile_expr(*let.initializer);
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    auto *alloca = create_local_alloca(llvm_type_for(ctx_, *kind), let.name);
+    auto *alloca = create_local_alloca(*ty, let.name);
     builder_.CreateStore(*value, alloca);
     locals_.emplace(let.symbol, alloca);
     return false;
@@ -1138,6 +1539,7 @@ private:
   const type_table &types_;
   const std::unordered_map<std::string, llvm::Function *> &functions_;
   llvm::Function *panic_fn_;
+  llvm::Function *alloc_fn_;
   llvm::IRBuilder<> builder_;
   llvm::Function *current_fn_ = nullptr;
   llvm::AllocaInst *alloca_marker_ = nullptr;
@@ -1166,6 +1568,12 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
       llvm::Function::ExternalLinkage, kPanicSymbolName, llvm_module);
   panic_fn->setDoesNotReturn();
 
+  auto *alloc_fn = llvm::Function::Create(
+      llvm::FunctionType::get(llvm::PointerType::get(ctx, 0),
+                              {llvm::Type::getInt64Ty(ctx)},
+                              /*isVarArg=*/false),
+      llvm::Function::ExternalLinkage, kAllocSymbolName, llvm_module);
+
   // Every function's signature is declared before any body is compiled, so
   // a call (forward-referenced, recursive, or mutually recursive) always
   // finds a real `llvm::Function*` — see codegen.h's doc comment.
@@ -1175,33 +1583,34 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
     auto param_types = std::vector<llvm::Type *>{};
     param_types.reserve(fn->params.size());
     for (const auto &param : fn->params) {
-      const auto kind = numeric_kind_of(types, param.type);
-      if (!kind.has_value()) {
+      const auto ty = storage_llvm_type(types, ctx, param.type);
+      if (!ty.has_value()) {
         return std::unexpected(codegen_error{
             .kind = codegen_error_kind::unsupported_type,
             .span = fn->span,
-            .message =
-                std::format("parameter `{}` of `{}` has no scalar llvm_codegen "
-                            "representation yet",
-                            param.name, fn->name)});
+            .message = std::format("parameter `{}` of `{}` has no scalar or "
+                                   "heap-value llvm_codegen representation "
+                                   "yet",
+                                   param.name, fn->name)});
       }
-      param_types.push_back(llvm_type_for(ctx, *kind));
+      param_types.push_back(*ty);
     }
 
     llvm::Type *return_ty = nullptr;
     if (types.is_unit(fn->return_type)) {
       return_ty = llvm::Type::getVoidTy(ctx);
     } else {
-      const auto kind = numeric_kind_of(types, fn->return_type);
-      if (!kind.has_value()) {
+      const auto ty = storage_llvm_type(types, ctx, fn->return_type);
+      if (!ty.has_value()) {
         return std::unexpected(codegen_error{
             .kind = codegen_error_kind::unsupported_type,
             .span = fn->span,
-            .message = std::format("return type of `{}` has no scalar "
-                                   "llvm_codegen representation yet",
+            .message = std::format("return type of `{}` has no scalar or "
+                                   "heap-value llvm_codegen representation "
+                                   "yet",
                                    fn->name)});
       }
-      return_ty = llvm_type_for(ctx, *kind);
+      return_ty = *ty;
     }
 
     auto *fn_type = llvm::FunctionType::get(return_ty, param_types,
@@ -1213,7 +1622,8 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
 
   for (const auto &fn : module.functions) {
     auto *llvm_fn = functions.at(fn->name);
-    auto compiler = function_compiler(ctx, types, functions, panic_fn);
+    auto compiler =
+        function_compiler(ctx, types, functions, panic_fn, alloc_fn);
     auto compiled = compiler.compile(*fn, llvm_fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());

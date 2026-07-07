@@ -334,6 +334,91 @@ auto test_explicit_panic_opcode() -> void {
          "expected the panic reason to be explicit_panic");
 }
 
+auto test_alloc_and_slot_roundtrip_a_two_field_heap_block() -> void {
+  // fn() -> i32 {
+  //   let block = alloc(2 slots)
+  //   store_slot(block, 0, 11)
+  //   store_slot(block, 1, 31)
+  //   return load_slot(block, 0) + load_slot(block, 1)
+  // }
+  auto writer = bc::chunk_writer{};
+  const auto c11 = writer.add_constant(bc::slot_value{int64_t{11}});
+  const auto c31 = writer.add_constant(bc::slot_value{int64_t{31}});
+
+  writer.emit_opcode(bc::opcode::op_alloc);
+  writer.emit_u8(0); // dst = block ptr
+  writer.emit_u16(2);
+
+  writer.emit_opcode(bc::opcode::op_load_const);
+  writer.emit_u8(1);
+  writer.emit_u16(c11);
+  writer.emit_opcode(bc::opcode::op_store_slot);
+  writer.emit_u8(0);
+  writer.emit_u16(0);
+  writer.emit_u8(1);
+
+  writer.emit_opcode(bc::opcode::op_load_const);
+  writer.emit_u8(2);
+  writer.emit_u16(c31);
+  writer.emit_opcode(bc::opcode::op_store_slot);
+  writer.emit_u8(0);
+  writer.emit_u16(1);
+  writer.emit_u8(2);
+
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(3);
+  writer.emit_u8(0);
+  writer.emit_u16(0);
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(4);
+  writer.emit_u8(0);
+  writer.emit_u16(1);
+  writer.emit_opcode(bc::opcode::op_add);
+  writer.emit_u8(5);
+  writer.emit_u8(3);
+  writer.emit_u8(4);
+  writer.emit_numeric_kind(bc::numeric_kind::i32);
+  writer.emit_opcode(bc::opcode::op_return_value);
+  writer.emit_u8(5);
+
+  auto function = std::move(writer).finish("heap_roundtrip", 0, 6);
+
+  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
+  module.functions.push_back(std::move(function));
+
+  auto result = bc::vm{module}.run(0, {});
+
+  expect(result.has_value(), "expected the heap roundtrip not to panic");
+  expect(result->value.i == 42, "expected 11 + 31 == 42 read back from slots");
+}
+
+auto test_load_str_const_produces_len_and_data_slots() -> void {
+  // fn() -> u64 { return len("hi!") } — reads the heap `str` value's own
+  // length slot (slot 0) directly, since increment 2 hasn't wired up a
+  // surface-syntax `.len()` yet.
+  auto writer = bc::chunk_writer{};
+  const auto idx = writer.add_string_constant("hi!");
+  writer.emit_opcode(bc::opcode::op_load_str_const);
+  writer.emit_u8(0);
+  writer.emit_u16(idx);
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(1);
+  writer.emit_u8(0);
+  writer.emit_u16(0);
+  writer.emit_opcode(bc::opcode::op_return_value);
+  writer.emit_u8(1);
+
+  auto function = std::move(writer).finish("str_len", 0, 2);
+
+  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
+  module.functions.push_back(std::move(function));
+
+  auto result = bc::vm{module}.run(0, {});
+
+  expect(result.has_value(), "expected loading a string constant not to panic");
+  expect(result->value.u == 3, "expected \"hi!\" to report length 3");
+}
+
 auto test_return_unit_produces_no_value() -> void {
   auto writer = bc::chunk_writer{};
   writer.emit_opcode(bc::opcode::op_return_unit);
@@ -363,6 +448,8 @@ auto main() -> int {
     test_recursive_call_computes_factorial();
     test_unbounded_recursion_panics_with_stack_overflow();
     test_explicit_panic_opcode();
+    test_alloc_and_slot_roundtrip_a_two_field_heap_block();
+    test_load_str_const_produces_len_and_data_slots();
     test_return_unit_produces_no_value();
   } catch (const std::exception &ex) {
     std::cerr << "vm_test failed: unhandled exception: " << ex.what() << '\n';

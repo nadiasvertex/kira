@@ -1,8 +1,10 @@
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "src/bytecode/value.h"
@@ -222,18 +224,88 @@ auto test_checked_add_panics_on_overflow_end_to_end() -> void {
          "expected the panic reason to be integer_overflow");
 }
 
-auto test_string_literal_is_unsupported_construct() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def greet() -> str:\n"
-                               "    return \"hi\"\n");
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = bcc::compile_module(**module, fixture.checked.types);
-  expect(!compiled.has_value(),
-         "expected a str-returning function to fail bytecode compilation — "
-         "heap types are increment 6, not this increment");
-  expect(compiled.error().kind == bcc::compile_error_kind::unsupported_type,
-         "expected the failure reason to be unsupported_type");
+auto test_string_literal_len_reads_the_heap_header() -> void {
+  // No surface `.len()` yet — reads the heap `str` value's own length slot
+  // directly via a hand-assembled op_load_slot, mirroring vm_test.cpp's
+  // own str test, just compiled from real source this time.
+  auto module = compile_fixture("module sample\n"
+                                "def greet() -> str:\n"
+                                "    return \"hello\"\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "greet"), {});
+  expect(result.has_value(), "expected greet() to succeed");
+  expect(result->has_value, "expected greet() to produce a value");
+  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+      static_cast<uintptr_t>(result->value.u));
+  expect(slots[0].u == 5, "expected \"hello\" to report length 5");
+  const auto *data =
+      reinterpret_cast<const char *>(static_cast<uintptr_t>(slots[1].u));
+  expect(std::string_view(data, 5) == "hello",
+         "expected the str's data slot to point at \"hello\"'s bytes");
+}
+
+auto test_tuple_construction_and_projection() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "def make() -> (int32, int32, int32):\n"
+                                "    return (10, 20, 12)\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "make"), {});
+  expect(result.has_value(), "expected make() to succeed");
+  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+      static_cast<uintptr_t>(result->value.u));
+  expect(slots[0].i + slots[1].i + slots[2].i == 42,
+         "expected the tuple's three elements to sum to 42");
+}
+
+auto test_struct_literal_and_field_access() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "type point = { pub x: int32, pub y: int32 }\n"
+                                "def sum_fields(x: int32, y: int32) -> int32:\n"
+                                "    let p: point = { x: x, y: y }\n"
+                                "    return (p).x + (p).y\n");
+  const auto vm = bc::vm{module};
+  const auto args =
+      std::array{bc::slot_value{int64_t{18}}, bc::slot_value{int64_t{24}}};
+  auto result = vm.run(function_index(module, "sum_fields"), args);
+  expect(result.has_value(), "expected sum_fields() to succeed");
+  expect(result->value.i == 42, "expected 18 + 24 == 42 via field access");
+}
+
+auto test_fixed_array_construction_and_indexing() -> void {
+  auto module =
+      compile_fixture("module sample\n"
+                      "def third(i: usize) -> int32:\n"
+                      "    let a: array[int32, 4] = [10, 20, 30, 40]\n"
+                      "    return a[i]\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "third"),
+                       std::array{bc::slot_value{uint64_t{2}}});
+  expect(result.has_value(), "expected third(2) to succeed");
+  expect(result->value.i == 30, "expected a[2] == 30");
+}
+
+auto test_array_index_out_of_bounds_panics() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "def get(i: usize) -> int32:\n"
+                                "    let a: array[int32, 3] = [1, 2, 3]\n"
+                                "    return a[i]\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "get"),
+                       std::array{bc::slot_value{uint64_t{5}}});
+  expect(!result.has_value(), "expected a[5] on a 3-element array to panic");
+  expect(result.error() == bc::panic_reason::index_out_of_bounds,
+         "expected the panic reason to be index_out_of_bounds");
+}
+
+auto test_array_fill_form_repeats_the_same_value() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "def sum_of_fives() -> int32:\n"
+                                "    let a: array[int32, 4] = [5; 4]\n"
+                                "    return a[0] + a[1] + a[2] + a[3]\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "sum_of_fives"), {});
+  expect(result.has_value(), "expected sum_of_fives() to succeed");
+  expect(result->value.i == 20, "expected four 5s to sum to 20");
 }
 
 } // namespace
@@ -249,7 +321,12 @@ auto main() -> int {
     test_and_or_short_circuit_to_correct_value();
     test_cast_widens_int_to_float();
     test_checked_add_panics_on_overflow_end_to_end();
-    test_string_literal_is_unsupported_construct();
+    test_string_literal_len_reads_the_heap_header();
+    test_tuple_construction_and_projection();
+    test_struct_literal_and_field_access();
+    test_fixed_array_construction_and_indexing();
+    test_array_index_out_of_bounds_panics();
+    test_array_fill_form_repeats_the_same_value();
   } catch (const std::exception &ex) {
     std::cerr << "compile_test failed: unhandled exception: " << ex.what()
               << '\n';

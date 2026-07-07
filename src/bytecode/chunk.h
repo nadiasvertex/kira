@@ -27,6 +27,13 @@ struct bytecode_function {
   uint16_t register_count = 0;
   std::vector<uint8_t> code;
   std::vector<slot_value> constants;
+  /// String-literal bytes referenced by `op_load_str_const` (opcodes.h).
+  /// Kept separate from `constants` (which only holds scalar `slot_value`s)
+  /// since a string's bytes have no fixed width — this function outlives
+  /// any VM run built from it, so `op_load_str_const` can point a heap
+  /// `str` value's data slot directly at one of these entries without
+  /// copying its bytes into the arena.
+  std::vector<std::string> string_constants;
 };
 
 /// One compiled module: every function lowered from it, in an order that
@@ -87,6 +94,11 @@ public:
   /// before calling this; this class only owns encoding, not policy.
   [[nodiscard]] auto add_constant(slot_value value) -> uint16_t;
 
+  /// Appends `text` to this function's string-constant table, returning its
+  /// index for `op_load_str_const`. Never deduplicates, for the same reason
+  /// `add_constant` doesn't.
+  [[nodiscard]] auto add_string_constant(std::string text) -> uint16_t;
+
   [[nodiscard]] auto current_offset() const noexcept -> size_t {
     return code_.size();
   }
@@ -99,6 +111,7 @@ public:
 private:
   std::vector<uint8_t> code_;
   std::vector<slot_value> constants_;
+  std::vector<std::string> string_constants_;
 };
 
 } // namespace kira::bytecode

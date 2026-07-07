@@ -3420,18 +3420,19 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
           render_run_value(types, target->return_type, result->value))};
 }
 
-/// Locates Kira's AOT panic runtime archive
-/// (`src/llvm_codegen/aot_runtime.cpp`, built as
-/// `//src/llvm_codegen:aot_runtime`) so `--build` can hand it to the system
-/// linker. There is no installed-location story yet (`just package` doesn't
-/// bundle it) — this only finds the archive when `kira` itself is run from
-/// within the Bazel workspace that built it (via `bazelisk run
-/// //src:kira` or directly from `bazel-bin`), mirroring how
-/// `driver_stress_test.cpp`/`semantic_stress_test.cpp` locate their own test
-/// corpora through Bazel runfiles.
+/// Locates one `alwayslink = True` cc_library's archive under `bazel_package`
+/// (e.g. `src/llvm_codegen`) named `library_name` (e.g. `aot_runtime`), so
+/// `--build` can hand it to the system linker. There is no installed-location
+/// story yet (`just package` doesn't bundle these) — this only finds an
+/// archive when `kira` itself is run from within the Bazel workspace that
+/// built it (via `bazelisk run //src:kira` or directly from `bazel-bin`),
+/// mirroring how `driver_stress_test.cpp`/`semantic_stress_test.cpp` locate
+/// their own test corpora through Bazel runfiles.
 ///
 /// @param program_name `argv[0]` this process was invoked with.
-[[nodiscard]] auto find_aot_runtime_archive(std::string_view program_name)
+[[nodiscard]] auto find_bazel_archive(std::string_view program_name,
+                                      std::string_view bazel_package,
+                                      std::string_view library_name)
     -> std::optional<fs::path> {
   auto candidates = std::vector<fs::path>{};
   // Bazel names an `alwayslink = True` cc_library's archive `.lo`, not
@@ -3439,13 +3440,13 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
   // since that's an implementation detail of the Bazel version in use, not
   // something this driver should hardcode a single answer for.
   for (const auto *extension : {"lo", "a"}) {
+    const auto filename = std::format("lib{}.{}", library_name, extension);
     if (!program_name.empty()) {
       candidates.emplace_back(
-          fs::path(std::format("{}.runfiles", program_name)) / "_main" / "src" /
-          "llvm_codegen" / std::format("libaot_runtime.{}", extension));
+          fs::path(std::format("{}.runfiles", program_name)) / "_main" /
+          bazel_package / filename);
     }
-    candidates.emplace_back(
-        std::format("bazel-bin/src/llvm_codegen/libaot_runtime.{}", extension));
+    candidates.emplace_back(fs::path("bazel-bin") / bazel_package / filename);
   }
 
   for (const auto &candidate : candidates) {
@@ -3497,19 +3498,36 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
                                                 emitted.error().message)};
   }
 
-  const auto runtime_archive = find_aot_runtime_archive(program_name);
-  if (!runtime_archive) {
+  const auto panic_archive =
+      find_bazel_archive(program_name, "src/llvm_codegen", "aot_runtime");
+  if (!panic_archive) {
     return build_outcome{
         .succeeded = false,
-        .message = "could not locate Kira's AOT runtime support library "
-                   "(libaot_runtime.a) — run `kira` via `bazelisk run "
+        .message = "could not locate Kira's AOT panic runtime support "
+                   "library (libaot_runtime.a) — run `kira` via `bazelisk "
+                   "run //src:kira` or from `bazel-bin/src/kira` inside the "
+                   "workspace that built it"};
+  }
+  // Statically links the same bump-arena heap allocator (`kira_rt_alloc`,
+  // src/runtime/arena.h) `llvm_codegen`-compiled IR calls for every
+  // non-scalar value (spec/codegen-design.md Decision 3) — an AOT binary
+  // has no libLLVM/bytecode-VM dependency (Decision 5), but it does still
+  // need this one small runtime support library, the same as the panic
+  // archive above.
+  const auto heap_archive =
+      find_bazel_archive(program_name, "src/runtime", "runtime");
+  if (!heap_archive) {
+    return build_outcome{
+        .succeeded = false,
+        .message = "could not locate Kira's heap runtime support library "
+                   "(libruntime.a) — run `kira` via `bazelisk run "
                    "//src:kira` or from `bazel-bin/src/kira` inside the "
                    "workspace that built it"};
   }
 
-  const auto link_command =
-      std::format(R"(cc "{}" "{}" -o "{}")", object_path.string(),
-                  runtime_archive->string(), output_path.string());
+  const auto link_command = std::format(
+      R"(cc "{}" "{}" "{}" -o "{}")", object_path.string(),
+      panic_archive->string(), heap_archive->string(), output_path.string());
   const auto link_status = std::system(link_command.c_str());
   auto ec = std::error_code{};
   fs::remove(object_path, ec);

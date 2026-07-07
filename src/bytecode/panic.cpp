@@ -14,6 +14,8 @@ auto panic_reason_message(panic_reason reason) noexcept -> std::string_view {
     return "explicit panic";
   case panic_reason::stack_overflow:
     return "stack overflow";
+  case panic_reason::index_out_of_bounds:
+    return "index out of bounds";
   }
   return "unknown panic";
 }

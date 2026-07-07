@@ -12,11 +12,13 @@
 #include <vector>
 
 #include "src/bytecode/opcodes.h"
+#include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
 #include "src/k-parser/ast.h"
 #include "src/k-parser/token.h"
+#include "src/runtime/layout.h"
 
 namespace kira::bytecode_compiler {
 
@@ -195,6 +197,119 @@ using semantic::type_table;
   default:
     return std::nullopt;
   }
+}
+
+/// Appends `scalar`'s UTF-8 encoding to `out` — the encode-side counterpart
+/// to `decode_utf8_scalar` above, needed once a string literal's `\u{...}`
+/// escape has to be turned back into bytes for the heap `str` value's data.
+auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
+  if (scalar < 0x80) {
+    out.push_back(static_cast<char>(scalar));
+  } else if (scalar < 0x800) {
+    out.push_back(static_cast<char>(0xC0U | (scalar >> 6)));
+    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
+  } else if (scalar < 0x10000) {
+    out.push_back(static_cast<char>(0xE0U | (scalar >> 12)));
+    out.push_back(static_cast<char>(0x80U | ((scalar >> 6) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
+  } else {
+    out.push_back(static_cast<char>(0xF0U | (scalar >> 18)));
+    out.push_back(static_cast<char>(0x80U | ((scalar >> 12) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | ((scalar >> 6) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
+  }
+}
+
+/// Decodes a `string_lit` token's raw text (opening/closing quotes and all)
+/// into the UTF-8 byte content the runtime `str` value should hold. Source
+/// bytes that aren't part of an escape sequence are copied through
+/// unchanged (multi-byte UTF-8 sequences already in the source need no
+/// re-decoding, unlike `decode_char_literal`, which has to produce a single
+/// scalar value rather than a byte range) — only `\...` escapes need
+/// translating, mirroring the same escape set `decode_char_literal` accepts.
+/// String interpolation (`"...{expr}..."`) is not handled here: nothing
+/// downstream of the lexer currently splits interpolation into separate
+/// expressions (confirmed by grepping `hir::lower.cpp`/`semantic::check.cpp`
+/// for any interpolation handling — there is none yet), so a `{`/`}` in the
+/// source is treated as a literal character, same as the lexer's own
+/// `scan_string` currently does upstream of this pass.
+[[nodiscard]] auto decode_string_literal(std::string_view text)
+    -> std::optional<std::string> {
+  if (text.size() < 2 || text.front() != '"' || text.back() != '"') {
+    return std::nullopt;
+  }
+  const auto inner = text.substr(1, text.size() - 2);
+  auto out = std::string{};
+  out.reserve(inner.size());
+  size_t pos = 0;
+  while (pos < inner.size()) {
+    if (inner[pos] != '\\') {
+      out.push_back(inner[pos]);
+      ++pos;
+      continue;
+    }
+    if (pos + 1 >= inner.size()) {
+      return std::nullopt;
+    }
+    switch (inner[pos + 1]) {
+    case 'n':
+      out.push_back('\n');
+      pos += 2;
+      break;
+    case 't':
+      out.push_back('\t');
+      pos += 2;
+      break;
+    case 'r':
+      out.push_back('\r');
+      pos += 2;
+      break;
+    case '"':
+      out.push_back('"');
+      pos += 2;
+      break;
+    case '\'':
+      out.push_back('\'');
+      pos += 2;
+      break;
+    case '\\':
+      out.push_back('\\');
+      pos += 2;
+      break;
+    case '{':
+      out.push_back('{');
+      pos += 2;
+      break;
+    case '}':
+      out.push_back('}');
+      pos += 2;
+      break;
+    case 'u': {
+      if (pos + 2 >= inner.size() || inner[pos + 2] != '{') {
+        return std::nullopt;
+      }
+      const auto close = inner.find('}', pos + 3);
+      if (close == std::string_view::npos) {
+        return std::nullopt;
+      }
+      const auto hex = inner.substr(pos + 3, close - (pos + 3));
+      auto value = uint32_t{0};
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      const char *hex_end = hex.data() + hex.size();
+      const auto result = std::from_chars(hex.data(), hex_end, value, 16);
+      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      if (result.ec != std::errc{} || result.ptr != hex_end) {
+        return std::nullopt;
+      }
+      encode_utf8_scalar(value, out);
+      pos = close + 1;
+      break;
+    }
+    default:
+      return std::nullopt;
+    }
+  }
+  return out;
 }
 
 [[nodiscard]] auto encode_f32(float v) -> slot_value {
@@ -494,6 +609,9 @@ private:
     switch (expr.kind) {
     case hir_node_kind::hir_literal: {
       const auto &lit = dynamic_cast<const hir::hir_literal &>(expr);
+      if (lit.lit_kind == token_kind::string_lit) {
+        return compile_string_literal(lit, dst);
+      }
       auto kind = numeric_kind_for(expr.type, expr.span);
       if (!kind.has_value()) {
         return std::unexpected(kind.error());
@@ -538,16 +656,32 @@ private:
       return compile_call(dynamic_cast<const hir::hir_call &>(expr), dst);
     case hir_node_kind::hir_if:
       return compile_if(dynamic_cast<const hir::hir_if &>(expr), dst);
+    case hir_node_kind::hir_tuple: {
+      const auto &tup = dynamic_cast<const hir::hir_tuple &>(expr);
+      return compile_slots_init(tup.elements, dst, tup.span);
+    }
+    case hir_node_kind::hir_struct_init:
+      return compile_struct_init(
+          dynamic_cast<const hir::hir_struct_init &>(expr), dst);
+    case hir_node_kind::hir_array_init:
+      return compile_array_init(dynamic_cast<const hir::hir_array_init &>(expr),
+                                dst);
+    case hir_node_kind::hir_field:
+      return compile_field(dynamic_cast<const hir::hir_field &>(expr), dst);
+    case hir_node_kind::hir_index:
+      return compile_index(dynamic_cast<const hir::hir_index &>(expr), dst);
+    case hir_node_kind::hir_tuple_index:
+      return compile_tuple_index(
+          dynamic_cast<const hir::hir_tuple_index &>(expr), dst);
     default:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = expr.span,
           .message =
               "this expression form is outside the bytecode compiler's "
-              "scalar/control-flow scope (spec/codegen-design.md increment 1) "
-              "— match, tuples, structs, arrays, lambdas, field/index access, "
-              "and sum-type variants all need a heap-value representation "
-              "increment 6 hasn't landed yet"});
+              "current scope — match, lambdas, and sum-type variants still "
+              "need work spec/codegen-design.md's later increments haven't "
+              "landed yet"});
     }
   }
 
@@ -774,6 +908,236 @@ private:
     for (const auto placeholder : end_placeholders) {
       writer_.patch_jump_to_here(placeholder);
     }
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Heap values (spec/codegen-design.md increment 6): `str` literals,
+  //  fixed `array[T, N]`/tuple/struct construction, and field/element
+  //  reads — every non-scalar value is a single pointer into
+  //  `src/runtime/arena.h`'s bump allocator, and every aggregate is a flat
+  //  block of 8-byte slots (`src/runtime/layout.h`), so construction is
+  //  always "alloc N slots, store each element/field," and reading is
+  //  always one `op_load_slot`/`op_load_indexed`.
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto compile_string_literal(const hir::hir_literal &lit,
+                                            uint8_t dst)
+      -> std::expected<void, compile_error> {
+    auto text = decode_string_literal(lit.value);
+    if (!text.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = lit.span,
+          .message =
+              std::format("could not decode string literal `{}`", lit.value)});
+    }
+    const auto index = writer_.add_string_constant(std::move(*text));
+    writer_.emit_opcode(opcode::op_load_str_const);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(index);
+    return {};
+  }
+
+  /// Allocates a `values.size()`-slot heap block into `dst` and stores each
+  /// element's compiled value at its corresponding slot, in order — the
+  /// shared shape behind tuple construction, the explicit-list form of an
+  /// array literal, and (via `compile_struct_init`) struct construction.
+  [[nodiscard]] auto
+  compile_slots_init(const hir::ptr_vec<hir::hir_expr> &values, uint8_t dst,
+                     source_span span) -> std::expected<void, compile_error> {
+    if (values.size() > 0xFFFF) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::register_limit_exceeded,
+          .span = span,
+          .message = "this literal has more than 65535 elements/fields, "
+                     "which this bytecode format's u16 slot-count operand "
+                     "cannot address"});
+    }
+    writer_.emit_opcode(opcode::op_alloc);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(static_cast<uint16_t>(values.size()));
+    for (size_t i = 0; i < values.size(); ++i) {
+      auto value_reg = compile_expr(*values[i]);
+      if (!value_reg.has_value()) {
+        return std::unexpected(value_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_store_slot);
+      writer_.emit_u8(dst);
+      writer_.emit_u16(static_cast<uint16_t>(i));
+      writer_.emit_u8(*value_reg);
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto compile_struct_init(const hir::hir_struct_init &init,
+                                         uint8_t dst)
+      -> std::expected<void, compile_error> {
+    const auto field_count =
+        runtime::struct_field_names(types_, init.type).size();
+    writer_.emit_opcode(opcode::op_alloc);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(static_cast<uint16_t>(field_count));
+    for (const auto &field : init.fields) {
+      const auto slot =
+          runtime::struct_field_slot(types_, init.type, field.name);
+      if (!slot.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = init.span,
+            .message = std::format(
+                "field `{}` does not resolve to a declared struct field — "
+                "this should have been rejected by the type checker",
+                field.name)});
+      }
+      auto value_reg = compile_expr(*field.value);
+      if (!value_reg.has_value()) {
+        return std::unexpected(value_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_store_slot);
+      writer_.emit_u8(dst);
+      writer_.emit_u16(static_cast<uint16_t>(*slot));
+      writer_.emit_u8(*value_reg);
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init,
+                                        uint8_t dst)
+      -> std::expected<void, compile_error> {
+    if (init.fill_value == nullptr) {
+      return compile_slots_init(init.elements, dst, init.span);
+    }
+    const auto &array_entry = types_.entry(init.type);
+    if (!array_entry.array_size.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = init.span,
+          .message = "this array literal's fill count is not statically "
+                     "known, which the bytecode compiler needs to size its "
+                     "heap allocation"});
+    }
+    const auto count = *array_entry.array_size;
+    if (count > 0xFFFF) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::register_limit_exceeded,
+          .span = init.span,
+          .message = "this array literal has more than 65535 elements, "
+                     "which this bytecode format's u16 slot-count operand "
+                     "cannot address"});
+    }
+    writer_.emit_opcode(opcode::op_alloc);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(static_cast<uint16_t>(count));
+    // Evaluated once, then its slot bits are copied into every element —
+    // aliasing rather than re-evaluating `fill_value` per element, correct
+    // for value semantics and the only sane choice if `fill_value` has a
+    // side effect (a `[f(); n]` literal must call `f()` exactly once, the
+    // same way every mainstream language with fill-array syntax works).
+    auto fill_reg = compile_expr(*init.fill_value);
+    if (!fill_reg.has_value()) {
+      return std::unexpected(fill_reg.error());
+    }
+    for (uint64_t i = 0; i < count; ++i) {
+      writer_.emit_opcode(opcode::op_store_slot);
+      writer_.emit_u8(dst);
+      writer_.emit_u16(static_cast<uint16_t>(i));
+      writer_.emit_u8(*fill_reg);
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto compile_field(const hir::hir_field &field, uint8_t dst)
+      -> std::expected<void, compile_error> {
+    const auto slot = runtime::struct_field_slot(types_, field.object->type,
+                                                 field.field_name);
+    if (!slot.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = field.span,
+          .message = std::format(
+              "field access `.{}` is only supported on struct values by "
+              "the bytecode compiler yet",
+              field.field_name)});
+    }
+    auto object_reg = compile_expr(*field.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_load_slot);
+    writer_.emit_u8(dst);
+    writer_.emit_u8(*object_reg);
+    writer_.emit_u16(static_cast<uint16_t>(*slot));
+    return {};
+  }
+
+  [[nodiscard]] auto compile_tuple_index(const hir::hir_tuple_index &node,
+                                         uint8_t dst)
+      -> std::expected<void, compile_error> {
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_load_slot);
+    writer_.emit_u8(dst);
+    writer_.emit_u8(*object_reg);
+    writer_.emit_u16(static_cast<uint16_t>(node.index));
+    return {};
+  }
+
+  /// Fixed `array[T, N]` element access only — `list`/`slice`/`str`
+  /// indexing needs increment 5's growable-container support and is
+  /// rejected here for now, same as every other not-yet-scoped construct.
+  [[nodiscard]] auto compile_index(const hir::hir_index &node, uint8_t dst)
+      -> std::expected<void, compile_error> {
+    const auto &object_entry = types_.entry(node.object->type);
+    if (object_entry.kind != semantic::type_kind::array_kind ||
+        !object_entry.array_size.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "indexing is only supported for a fixed-size array "
+                     "with a statically known length yet — list/slice/str "
+                     "indexing needs increment 5's growable-container "
+                     "support"});
+    }
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    auto index_reg = compile_expr(*node.index);
+    if (!index_reg.has_value()) {
+      return std::unexpected(index_reg.error());
+    }
+
+    const auto len_const = writer_.add_constant(
+        slot_value{static_cast<uint64_t>(*object_entry.array_size)});
+    auto len_reg = alloc_register(node.span);
+    if (!len_reg.has_value()) {
+      return std::unexpected(len_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_load_const);
+    writer_.emit_u8(*len_reg);
+    writer_.emit_u16(len_const);
+
+    auto oob_reg = alloc_register(node.span);
+    if (!oob_reg.has_value()) {
+      return std::unexpected(oob_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_ge);
+    writer_.emit_u8(*oob_reg);
+    writer_.emit_u8(*index_reg);
+    writer_.emit_u8(*len_reg);
+    writer_.emit_numeric_kind(numeric_kind::u64);
+    writer_.emit_opcode(opcode::op_panic_if);
+    writer_.emit_u8(*oob_reg);
+    writer_.emit_u8(
+        static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
+
+    writer_.emit_opcode(opcode::op_load_indexed);
+    writer_.emit_u8(dst);
+    writer_.emit_u8(*object_reg);
+    writer_.emit_u8(*index_reg);
     return {};
   }
 

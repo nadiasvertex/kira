@@ -21,6 +21,7 @@ enum class panic_reason : uint8_t {
   integer_divide_by_zero,
   explicit_panic,
   stack_overflow,
+  index_out_of_bounds,
 };
 
 [[nodiscard]] auto panic_reason_message(panic_reason reason) noexcept

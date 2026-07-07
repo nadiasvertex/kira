@@ -1,0 +1,45 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+# `alwayslink`: `kira_rt_alloc` (arena.cpp) is only ever called from
+# generated IR (JIT or AOT), never directly by this repo's own C++ — the
+# same reason `//src/llvm_codegen:runtime`/`:aot_runtime` need it for
+# `kira_codegen_panic`. Without it, a binary that only reaches this library
+# transitively (jit_support, aot) would have the linker drop the object
+# that defines the symbol, and JIT/AOT symbol resolution would fail.
+cc_library(
+    name = "runtime",
+    srcs = [
+        "arena.cpp",
+        "layout.cpp",
+    ],
+    hdrs = [
+        "arena.h",
+        "layout.h",
+    ],
+    alwayslink = True,
+    deps = [
+        "//src/k-parser:k-parser",
+        "//src/semantic:semantic",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "arena_test",
+    srcs = ["arena_test.cpp"],
+    deps = [
+        ":runtime",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "layout_test",
+    srcs = ["layout_test.cpp"],
+    deps = [
+        ":runtime",
+        "//src/k-parser:k-parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+    ],
+)

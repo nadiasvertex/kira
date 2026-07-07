@@ -8,6 +8,7 @@ cc_library(
         "//src/bytecode:bytecode",
         "//src/hir:hir",
         "//src/k-parser:k-parser",
+        "//src/runtime",
         "//src/semantic:semantic",
     ],
     visibility = ["//visibility:public"],

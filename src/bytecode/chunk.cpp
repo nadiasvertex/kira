@@ -68,13 +68,19 @@ auto chunk_writer::add_constant(slot_value value) -> uint16_t {
   return static_cast<uint16_t>(constants_.size() - 1);
 }
 
+auto chunk_writer::add_string_constant(std::string text) -> uint16_t {
+  string_constants_.push_back(std::move(text));
+  return static_cast<uint16_t>(string_constants_.size() - 1);
+}
+
 auto chunk_writer::finish(std::string name, uint16_t param_count,
                           uint16_t register_count) && -> bytecode_function {
   return bytecode_function{.name = std::move(name),
                            .param_count = param_count,
                            .register_count = register_count,
                            .code = std::move(code_),
-                           .constants = std::move(constants_)};
+                           .constants = std::move(constants_),
+                           .string_constants = std::move(string_constants_)};
 }
 
 } // namespace kira::bytecode

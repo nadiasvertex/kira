@@ -37,6 +37,9 @@ extern "C" [[noreturn]] void kira_codegen_panic(uint8_t reason) {
   case kira::bytecode::panic_reason::stack_overflow:
     message = "stack overflow";
     break;
+  case kira::bytecode::panic_reason::index_out_of_bounds:
+    message = "index out of bounds";
+    break;
   }
   std::println(stderr, "panic: {}", message);
   std::exit(101);

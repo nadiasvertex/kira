@@ -25,6 +25,7 @@ cc_library(
     hdrs = ["vm.h"],
     deps = [
         ":bytecode",
+        "//src/runtime",
     ],
     visibility = ["//visibility:public"],
 )

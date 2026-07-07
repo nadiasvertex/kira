@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include "src/runtime/arena.h"
+
 namespace kira::bytecode {
 
 namespace {
@@ -681,6 +683,20 @@ constexpr size_t k_max_call_depth = 4096;
 }
 
 // ---------------------------------------------------------------------------
+// Heap-value slot access (op_alloc/op_load_slot/op_store_slot) —
+// src/runtime/layout.h's flat "N 8-byte slots" representation shared with
+// llvm_codegen. A slot_value's u64 field doubles as a pointer here, the
+// same untagged-reinterpretation approach numeric_kind already relies on.
+// ---------------------------------------------------------------------------
+
+[[nodiscard]] auto slots_of(slot_value ptr) -> slot_value * {
+  return reinterpret_cast<slot_value *>(static_cast<uintptr_t>(ptr.u));
+}
+[[nodiscard]] auto ptr_to_slot(void *raw) -> slot_value {
+  return slot_value{static_cast<uint64_t>(reinterpret_cast<uintptr_t>(raw))};
+}
+
+// ---------------------------------------------------------------------------
 // Call frames — see vm.h's doc comment for why this is an explicit
 // std::vector<frame> rather than C++ call-stack recursion.
 // ---------------------------------------------------------------------------
@@ -858,6 +874,74 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
           return vm_result{.has_value = false, .value = slot_value{}};
         }
         continue;
+      }
+
+      case opcode::op_alloc: {
+        const uint8_t dst = code[ip];
+        const uint16_t slot_count = read_u16(code, ip + 1);
+        auto *raw = kira::runtime::global_arena().allocate(
+            static_cast<size_t>(slot_count) * sizeof(slot_value));
+        f.registers[dst] = ptr_to_slot(raw);
+        f.pc = ip + 3;
+        break;
+      }
+      case opcode::op_load_slot: {
+        const uint8_t dst = code[ip];
+        const uint8_t ptr_reg = code[ip + 1];
+        const uint16_t slot_index = read_u16(code, ip + 2);
+        f.registers[dst] = slots_of(f.registers[ptr_reg])[slot_index];
+        f.pc = ip + 4;
+        break;
+      }
+      case opcode::op_store_slot: {
+        const uint8_t ptr_reg = code[ip];
+        const uint16_t slot_index = read_u16(code, ip + 1);
+        const uint8_t src = code[ip + 3];
+        slots_of(f.registers[ptr_reg])[slot_index] = f.registers[src];
+        f.pc = ip + 4;
+        break;
+      }
+
+      case opcode::op_load_str_const: {
+        const uint8_t dst = code[ip];
+        const uint16_t idx = read_u16(code, ip + 1);
+        const auto &text = f.function->string_constants[idx];
+        auto *header =
+            kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+        auto *slots = static_cast<slot_value *>(header);
+        slots[0] = slot_value{static_cast<uint64_t>(text.size())};
+        slots[1] = ptr_to_slot(const_cast<char *>(text.data()));
+        f.registers[dst] = ptr_to_slot(header);
+        f.pc = ip + 3;
+        break;
+      }
+
+      case opcode::op_load_indexed: {
+        const uint8_t dst = code[ip];
+        const uint8_t ptr_reg = code[ip + 1];
+        const uint8_t index_reg = code[ip + 2];
+        const auto index = f.registers[index_reg].u;
+        f.registers[dst] = slots_of(f.registers[ptr_reg])[index];
+        f.pc = ip + 3;
+        break;
+      }
+      case opcode::op_store_indexed: {
+        const uint8_t ptr_reg = code[ip];
+        const uint8_t index_reg = code[ip + 1];
+        const uint8_t src = code[ip + 2];
+        const auto index = f.registers[index_reg].u;
+        slots_of(f.registers[ptr_reg])[index] = f.registers[src];
+        f.pc = ip + 3;
+        break;
+      }
+      case opcode::op_panic_if: {
+        const uint8_t cond = code[ip];
+        const auto reason = static_cast<panic_reason>(code[ip + 1]);
+        if ((f.registers[cond].u & 1U) != 0U) {
+          throw panic_error(reason);
+        }
+        f.pc = ip + 2;
+        break;
       }
 
       case opcode::op_panic:

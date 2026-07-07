@@ -53,6 +53,14 @@ struct compiled_module {
 /// symbols — see `jit_support.h` for the execution side of this contract.
 inline constexpr const char *kPanicSymbolName = "kira_codegen_panic";
 
+/// The exact symbol name generated IR calls to allocate a heap value
+/// (`spec/codegen-design.md` Decision 3/increment 6) — every non-scalar
+/// value (`str`, `list[T]`, tuple/struct/sum-type/closure) is allocated
+/// through this one entry point, defined in `src/runtime/arena.h` and
+/// resolved the same way `kPanicSymbolName` already is (process-symbol
+/// lookup for the JIT, ordinary static linking for `kira build`).
+inline constexpr const char *kAllocSymbolName = "kira_rt_alloc";
+
 /// Lowers every function in `module` into one `llvm::Module` named after
 /// `module.module_name`, resolving direct calls to other functions in the
 /// same module by declaring every function's signature up front (a first
