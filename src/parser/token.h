@@ -240,7 +240,7 @@ enum class token_kind : uint8_t {
   star_pipe_eq,  ///< Saturating multiply assignment.
 
   // Keep this last — table walks and iteration bounds depend on it.
-  _count,
+  count,
 };
 
 // ==========================================================================
@@ -1041,7 +1041,7 @@ struct token {
   case token_kind::star_pipe_eq:
     return "`*|=`";
 
-  case token_kind::_count:
+  case token_kind::count:
     return "<invalid>";
   }
   return "<unknown>";

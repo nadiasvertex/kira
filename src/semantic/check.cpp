@@ -318,7 +318,7 @@ private:
       unify(operand, types_.builtin("bool"));
       return types_.builtin("bool");
     }
-    if (unary.op == ast::unary_op::Neg || unary.op == ast::unary_op::BitNot) {
+    if (unary.op == ast::unary_op::neg || unary.op == ast::unary_op::BitNot) {
       return operand;
     }
     return k_unknown_type;
@@ -343,11 +343,11 @@ private:
     case ast::binary_op::GtEq:
       unify(lhs, rhs);
       return types_.builtin("bool");
-    case ast::binary_op::Add:
-    case ast::binary_op::Sub:
-    case ast::binary_op::Mul:
-    case ast::binary_op::Div:
-    case ast::binary_op::Mod:
+    case ast::binary_op::add:
+    case ast::binary_op::sub:
+    case ast::binary_op::mul:
+    case ast::binary_op::div:
+    case ast::binary_op::mod:
     case ast::binary_op::AddWrap:
     case ast::binary_op::SubWrap:
     case ast::binary_op::MulWrap:
@@ -832,7 +832,7 @@ private:
   }
 
   /// Emits a single-label error at `span` in the current file.
-  auto error(source_span span, std::string message, std::string label) -> void {
+  auto error(source_span span, const std::string& message, const std::string& label) -> void {
     auto diag =
         diagnostic(diagnostic_level::error, std::move(message), file_id_);
     diag.with_label(span, std::move(label));
@@ -841,8 +841,8 @@ private:
   }
 
   /// Emits a single-label error with an attached help suggestion.
-  auto error_with_help(source_span span, std::string message, std::string label,
-                       std::string help) -> void {
+  auto error_with_help(source_span span, const std::string& message, const std::string& label,
+                       const std::string& help) -> void {
     auto diag =
         diagnostic(diagnostic_level::error, std::move(message), file_id_);
     diag.with_label(span, std::move(label));

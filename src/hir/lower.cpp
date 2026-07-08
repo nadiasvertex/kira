@@ -80,7 +80,7 @@ private:
 
   [[nodiscard]] auto declare_local(std::string_view name) -> symbol_id {
     const auto id = next_symbol_++;
-    scopes.back().emplace(std::string(name), id);
+    scopes_.back().emplace(std::string(name), id);
     return id;
   }
 
@@ -90,19 +90,19 @@ private:
   [[nodiscard]] auto mint_symbol() -> symbol_id { return next_symbol_++; }
 
   [[nodiscard]] auto resolve_reference(std::string_view name) -> symbol_id {
-    for (auto &scope : std::views::reverse(scopes)) {
+    for (auto &scope : std::views::reverse(scopes_)) {
       if (const auto found = scope.find(std::string(name));
           found != scope.end()) {
         return found->second;
       }
     }
     auto key = std::string(name);
-    if (const auto found = global_refs.find(key);
-        found != global_refs.end()) {
+    if (const auto found = global_refs_.find(key);
+        found != global_refs_.end()) {
       return found->second;
     }
     const auto id = next_symbol_++;
-    global_refs.emplace(std::move(key), id);
+    global_refs_.emplace(std::move(key), id);
     return id;
   }
 
@@ -699,8 +699,8 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
     // `{x: x}` (see hir_struct_init's doc comment), so lowering builds the
     // implied `x` reference itself rather than recursing through
     // lower_expr on a node that doesn't exist.
-    const auto found = checked.struct_literal_field_types.find(&field);
-    if (found == checked.struct_literal_field_types.end() ||
+    const auto found = checked_.struct_literal_field_types.find(&field);
+    if (found == checked_.struct_literal_field_types.end() ||
         found->second == k_unknown_type || found->second == k_error_type) {
       return fail(lowering_error_kind::unresolved_type, field.span,
                   "no concrete checked type is available for this struct "
@@ -1270,8 +1270,8 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   if (for_stmt.iterable->kind == ast::node_kind::binary_expr) {
     const auto &range =
         dynamic_cast<const ast::binary_expr &>(*for_stmt.iterable);
-    if (range.op == ast::binary_op::Range ||
-        range.op == ast::binary_op::RangeInclusive) {
+    if (range.op == ast::binary_op::range ||
+        range.op == ast::binary_op::range_inclusive) {
       return lower_range_loop(for_stmt.span, range, loop_var, inner_stmts);
     }
   }
@@ -1362,7 +1362,7 @@ auto lowerer::lower_range_loop(
                                         std::string("<for start>"))),
       /*mut=*/true)));
 
-  const auto condition_op = range.op == ast::binary_op::RangeInclusive
+  const auto condition_op = range.op == ast::binary_op::range_inclusive
                                 ? ast::binary_op::LtEq
                                 : ast::binary_op::Lt;
   auto condition = ptr<hir_expr>(hir::make<hir_binary>(
@@ -1506,7 +1506,7 @@ auto lowerer::build_for_loop_body(
   }
 
   body_stmts.push_back(ptr<hir_node>(hir::make<hir_assign>(
-      span, ast::assign_op::AddAssign,
+      span, ast::assign_op::add_assign,
       ptr<hir_expr>(make<hir_local_ref>(span, counter_type, index_symbol,
                                         std::string("<for index>"))),
       ptr<hir_expr>(make<hir_literal>(span, counter_type, token_kind::int_lit,
@@ -1710,8 +1710,8 @@ auto lowerer::lower_comprehension_clause(
   if (clause.iterable->kind == ast::node_kind::binary_expr) {
     const auto &range =
         dynamic_cast<const ast::binary_expr &>(*clause.iterable);
-    if (range.op == ast::binary_op::Range ||
-        range.op == ast::binary_op::RangeInclusive) {
+    if (range.op == ast::binary_op::range ||
+        range.op == ast::binary_op::range_inclusive) {
       return lower_range_loop(span, range, loop_var, nested);
     }
   }
@@ -1921,7 +1921,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       // so its type lives in the dedicated `struct_pattern_field_types` map
       // instead (see checked_types's doc comment). Desugars exactly like a
       // plain binding: a wildcard structural match plus a synthetic let.
-      const auto found = checked.struct_pattern_field_types.find(&field);
+      const auto found = checked_.struct_pattern_field_types.find(&field);
       if (found == checked.struct_pattern_field_types.end() ||
           found->second == k_unknown_type || found->second == k_error_type) {
         return fail(lowering_error_kind::unresolved_type, field_span,

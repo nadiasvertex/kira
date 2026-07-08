@@ -260,11 +260,11 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
 [[nodiscard]] auto selector_kind_to_proto(ast::use_selector_kind kind)
     -> metadata::v1::ImportSelectorKind {
   switch (kind) {
-  case ast::use_selector_kind::Single:
+  case ast::use_selector_kind::single:
     return metadata::v1::IMPORT_SELECTOR_KIND_SINGLE;
-  case ast::use_selector_kind::Group:
+  case ast::use_selector_kind::group:
     return metadata::v1::IMPORT_SELECTOR_KIND_GROUP;
-  case ast::use_selector_kind::Wildcard:
+  case ast::use_selector_kind::wildcard:
     return metadata::v1::IMPORT_SELECTOR_KIND_WILDCARD;
   }
   return metadata::v1::IMPORT_SELECTOR_KIND_UNSPECIFIED;
@@ -3555,7 +3555,7 @@ auto parse_args(std::span<char *const> argv)
   auto cfg = cli_config{
       .program_name = argv[0],
       .sources = {},
-      .metadata_dir = std::string(kDefaultMetadataDir),
+      .metadata_dir = std::string(k_default_metadata_dir),
       .show_help = false,
   };
 
@@ -3699,8 +3699,8 @@ auto render_help(std::string_view program_name) -> std::string {
       "                        flow subset; see src/llvm_codegen)\n"
       "  --build-function NAME  Like --build, but use NAME as the entry point\n"
       "  --build-output PATH    Write the linked executable to PATH",
-      program_name, kDefaultMetadataDir, kDefaultRunFunction,
-      kDefaultRunFunction, kDefaultRunFunction);
+      program_name, k_default_metadata_dir, k_default_run_function,
+      k_default_run_function, k_default_run_function);
 }
 
 /// Parse, validate, and emit metadata for each requested source file.

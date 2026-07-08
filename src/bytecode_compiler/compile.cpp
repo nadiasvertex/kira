@@ -196,15 +196,15 @@ using kira::decode_string_literal;
     return opcode::op_gt;
   case ast::binary_op::GtEq:
     return opcode::op_ge;
-  case ast::binary_op::Add:
+  case ast::binary_op::add:
     return opcode::op_add;
-  case ast::binary_op::Sub:
+  case ast::binary_op::sub:
     return opcode::op_sub;
-  case ast::binary_op::Mul:
+  case ast::binary_op::mul:
     return opcode::op_mul;
-  case ast::binary_op::Div:
+  case ast::binary_op::div:
     return opcode::op_div;
-  case ast::binary_op::Mod:
+  case ast::binary_op::mod:
     return opcode::op_mod;
   case ast::binary_op::AddWrap:
     return opcode::op_add_wrap;

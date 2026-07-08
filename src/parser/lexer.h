@@ -1115,7 +1115,7 @@ private:
             "\\\\ (backslash), \\{ \\} (braces), \\u{XXXX} (Unicode).");
       }
 
-      diag_.emit(std::move(diag));
+      diag_.emit(diag);
       return;
     }
     }

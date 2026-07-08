@@ -27,7 +27,7 @@ auto test_builds_add_function_by_hand() -> void {
   auto x_ref = hir::make<hir::hir_local_ref>(span, int32_type, 0, "x");
   auto y_ref = hir::make<hir::hir_local_ref>(span, int32_type, 1, "y");
   auto sum =
-      hir::make<hir::hir_binary>(span, int32_type, kira::ast::binary_op::Add,
+      hir::make<hir::hir_binary>(span, int32_type, kira::ast::binary_op::add,
                                  std::move(x_ref), std::move(y_ref));
 
   auto ret = hir::make<hir::hir_return>(span, std::move(sum));
@@ -69,7 +69,7 @@ auto test_builds_add_function_by_hand() -> void {
 
   const auto &sum_expr =
       dynamic_cast<const hir::hir_binary &>(*return_stmt.value);
-  expect(sum_expr.op == kira::ast::binary_op::Add,
+  expect(sum_expr.op == kira::ast::binary_op::add,
          "expected the operator to be addition");
   expect(sum_expr.lhs->kind == hir::hir_node_kind::hir_local_ref,
          "expected the left operand to be a local reference");

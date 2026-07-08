@@ -41,7 +41,7 @@ auto emit_duplicate_module_scope_symbol(
   duplicate.with_help("Give each type, trait, concept, and submodule in a "
                       "module scope a unique "
                       "name before semantic analysis continues.");
-  diag.emit(std::move(duplicate));
+  diag.emit(duplicate);
   mark_file_has_error(file_has_errors, current.location.file_id);
 }
 
@@ -73,7 +73,7 @@ auto emit_unresolved_import(const module_session_index &index,
       std::format("Load module `{}` into this compilation session, or change "
                   "the import to reference an external module namespace.",
                   imported_module_name));
-  diag.emit(std::move(unresolved));
+  diag.emit(unresolved);
   mark_file_has_error(file_has_errors, import_record.file_id);
 }
 
@@ -101,7 +101,7 @@ auto emit_inaccessible_import(const submodule_declaration_record &declaration,
                       "restricted module declaration"));
   inaccessible.with_help(
       visibility_help(declaration.visibility, declaration.parent_module_name));
-  diag.emit(std::move(inaccessible));
+  diag.emit(inaccessible);
   mark_file_has_error(file_has_errors, import_record.file_id);
 }
 
@@ -433,7 +433,7 @@ auto emit_invalid_super_path(std::string_view kind_name,
   invalid.with_label(location.span, "`super` has no parent module here");
   invalid.with_help("Use a session-owned module path, or remove the "
                     "parent-qualified prefix.");
-  diag.emit(std::move(invalid));
+  diag.emit(invalid);
   mark_file_has_error(file_has_errors, location.file_id);
 }
 
@@ -485,7 +485,7 @@ auto emit_unresolved_qualified_path(
   unresolved.with_help(
       "Declare the referenced symbol in that module, or change the path to one "
       "that exists in this compilation session.");
-  diag.emit(std::move(unresolved));
+  diag.emit(unresolved);
   mark_file_has_error(file_has_errors, location.file_id);
 }
 
@@ -518,7 +518,7 @@ auto emit_non_type_qualified_path(std::string_view path_text,
               std::format("{} declaration", resolution.symbol->kind_name)));
   wrong_kind.with_help("Type positions currently accept types, traits, "
                        "concepts, and modules only.");
-  diag.emit(std::move(wrong_kind));
+  diag.emit(wrong_kind);
   mark_file_has_error(file_has_errors, location.file_id);
 }
 
@@ -1859,7 +1859,7 @@ auto detect_duplicate_module_paths(const std::vector<parsed_module> &inputs,
       duplicate.with_help(
           "Give each source file a unique module path before compiling them "
           "together.");
-      diag.emit(std::move(duplicate));
+      diag.emit(duplicate);
 
       mark_file_has_error(file_has_errors, current_location.file_id);
       mark_file_has_error(file_has_errors, previous->location.file_id);
@@ -1912,7 +1912,7 @@ auto validate_module_boundaries(const module_session_index &index,
           "module.",
           module_file.child_name, parent->module_name,
           module_file.module_name));
-      diag.emit(std::move(missing));
+      diag.emit(missing);
 
       mark_file_has_error(file_has_errors, module_file.file_id);
       mark_file_has_error(file_has_errors, parent->file_id);
@@ -1943,7 +1943,7 @@ auto validate_module_boundaries(const module_session_index &index,
         "Keep `module {}:` inline in `{}` or move it to its own file, but "
         "not both.",
         module_file.child_name, parent->module_name));
-    diag.emit(std::move(conflict));
+    diag.emit(conflict);
 
     mark_file_has_error(file_has_errors, module_file.file_id);
     mark_file_has_error(file_has_errors, declaration->location.file_id);
@@ -1984,7 +1984,7 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
       continue;
     }
 
-    if (decl.selector->kind == ast::use_selector_kind::Wildcard) {
+    if (decl.selector->kind == ast::use_selector_kind::wildcard) {
       continue;
     }
 

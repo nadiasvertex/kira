@@ -345,7 +345,7 @@ private:
   void emit_unexpected(std::string_view expected_description);
 
   /// @brief Forwards a fully constructed diagnostic into the shared bag.
-  void emit(diagnostic diag) { diag_.emit(std::move(diag)); }
+  void emit(const diagnostic& diag) { diag_.emit(diag); }
 
   /// @brief Creates an error diagnostic anchored to the current file.
   ///

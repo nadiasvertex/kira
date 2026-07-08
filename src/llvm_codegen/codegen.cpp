@@ -374,7 +374,7 @@ public:
       llvm::Function *list_reserve_slot_fn)
       : ctx_(ctx), types_(types), functions(functions), panic_fn_(panic_fn),
         alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
-        builder(ctx) {}
+        builder_(ctx) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn,
                              llvm::Function *llvm_fn)
@@ -390,7 +390,7 @@ public:
     }
 
     auto *entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_fn);
-    builder.SetInsertPoint(entry);
+    builder_.SetInsertPoint(entry);
     // Every local (parameter or `let`) gets an alloca inserted here, at the
     // very front of the entry block, regardless of where in the function
     // body it's lexically declared — the usual "alloca marker" trick (also
@@ -398,7 +398,7 @@ public:
     // repeatedly (e.g. one lexically inside a `while` body) must not be
     // emitted at that repeated program point, or it dynamically grows the
     // stack once per loop iteration instead of naming one fixed frame slot.
-    alloca_marker = builder.CreateAlloca(llvm::Type::getInt1Ty(ctx), nullptr,
+    alloca_marker_ = builder_.CreateAlloca(llvm::Type::getInt1Ty(ctx_), nullptr,
                                            "alloca.marker");
 
     for (size_t i = 0; i < fn.params.size(); ++i) {
@@ -408,8 +408,8 @@ public:
         return std::unexpected(ty.error());
       }
       auto *alloca = create_local_alloca(*ty, param.name);
-      builder.CreateStore(llvm_fn->getArg(static_cast<unsigned>(i)), alloca);
-      locals.emplace(param.symbol, alloca);
+      builder_.CreateStore(llvm_fn->getArg(static_cast<unsigned>(i)), alloca);
+      locals_.emplace(param.symbol, alloca);
     }
 
     const auto &stmts = fn.body->stmts;
@@ -424,7 +424,7 @@ public:
 
     if (!terminated) {
       if (stmts.empty()) {
-        builder.CreateRetVoid();
+        builder_.CreateRetVoid();
       } else {
         const auto &last = *stmts.back();
         if (last.kind == hir_node_kind::hir_expr_stmt) {
@@ -435,13 +435,13 @@ public:
             if (!value.has_value()) {
               return std::unexpected(value.error());
             }
-            builder.CreateRetVoid();
+            builder_.CreateRetVoid();
           } else {
             auto value = compile_expr(*expr_stmt.expr);
             if (!value.has_value()) {
               return std::unexpected(value.error());
             }
-            builder.CreateRet(*value);
+            builder_.CreateRet(*value);
           }
         } else {
           auto result = compile_stmt(last);
@@ -449,7 +449,7 @@ public:
             return std::unexpected(result.error());
           }
           if (!*result) {
-            builder.CreateRetVoid();
+            builder_.CreateRetVoid();
           }
         }
       }
@@ -467,14 +467,14 @@ private:
   [[nodiscard]] auto create_local_alloca(llvm::Type *ty,
                                          const std::string &name)
       -> llvm::AllocaInst * {
-    auto tmp = llvm::IRBuilder<>(alloca_marker);
+    auto tmp = llvm::IRBuilder<>(alloca_marker_);
     return tmp.CreateAlloca(ty, nullptr, name);
   }
 
   [[nodiscard]] auto lookup_local(hir::symbol_id symbol) const
       -> llvm::AllocaInst * {
-    const auto found = locals.find(symbol);
-    return found == locals.end() ? nullptr : found->second;
+    const auto found = locals_.find(symbol);
+    return found == locals_.end() ? nullptr : found->second;
   }
 
   [[nodiscard]] auto numeric_kind_for(type_id id, source_span span)
@@ -501,7 +501,7 @@ private:
   /// (arithmetic/comparison operands, casts).
   [[nodiscard]] auto storage_type_for(type_id id, source_span span)
       -> std::expected<llvm::Type *, codegen_error> {
-    const auto ty = storage_llvm_type(types, ctx, id);
+    const auto ty = storage_llvm_type(types_, ctx, id);
     if (!ty.has_value()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_type,
@@ -1205,8 +1205,8 @@ private:
   compile_slots_init(const hir::ptr_vec<hir::hir_expr> &values)
       -> std::expected<llvm::Value *, codegen_error> {
     auto *block = compile_heap_alloc(values.size());
-    for (size_t i = 0; i < values.size(); ++i) {
-      auto value = compile_expr(*values[i]);
+    for (const auto & i : values) {
+      auto value = compile_expr(*i);
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
@@ -1489,8 +1489,8 @@ private:
     builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx),
                                                 static_cast<uint64_t>(*tag)),
                          slot_address(block, size_t{0}));
-    for (size_t i = 0; i < init.args.size(); ++i) {
-      auto value = compile_expr(*init.args[i]);
+    for (const auto & arg : init.args) {
+      auto value = compile_expr(*arg);
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
@@ -1653,9 +1653,9 @@ private:
         return std::unexpected(elem_ty.error());
       }
       llvm::Value *acc = nullptr;
-      for (size_t i = 0; i < arr.elements.size(); ++i) {
+      for (const auto & element : arr.elements) {
         auto *elem_val = builder.CreateLoad(*elem_ty, slot_address(value, i));
-        auto sub = compile_pattern_test(*arr.elements[i], elem_val,
+        auto sub = compile_pattern_test(*element, elem_val,
                                         std::optional<type_id>(entry.result));
         if (!sub.has_value()) {
           return std::unexpected(sub.error());

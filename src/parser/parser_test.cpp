@@ -215,7 +215,7 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
   auto *option_pattern = expect_pattern<kira::ast::option_pattern>(
       aliased_pattern->inner.get(), kira::ast::node_kind::option_pattern,
       "expected inner pattern to remain the original option pattern");
-  expect(option_pattern->option_kind == kira::ast::option_result_kind::Some,
+  expect(option_pattern->option_kind == kira::ast::option_result_kind::some,
          "expected some-pattern to preserve its kind");
 
   auto *return_stmt = expect_node<kira::ast::return_stmt>(
@@ -525,7 +525,7 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
          "expected aliased import to produce a selector");
   if (use_decl->selector.has_value()) {
     const auto &selector = *use_decl->selector;
-    expect(selector.kind == kira::ast::use_selector_kind::Single,
+    expect(selector.kind == kira::ast::use_selector_kind::single,
            "expected aliased import selector kind");
     expect(selector.items.size() == 1,
            "expected one imported item in aliased import");
@@ -548,7 +548,7 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
       concept_decl->constraints[0].bound_or_expr.get(),
       kira::ast::node_kind::binary_expr,
       "expected concept value constraint expression");
-  expect(concept_expr->op == kira::ast::binary_op::Add,
+  expect(concept_expr->op == kira::ast::binary_op::add,
          "expected concept value constraint to preserve addition");
 
   auto *static_decl = expect_node<kira::ast::static_decl>(

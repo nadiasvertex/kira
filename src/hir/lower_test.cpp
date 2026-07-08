@@ -837,7 +837,7 @@ auto test_lowers_var_and_plain_assignment() -> void {
          "expected the second statement to be a hir_assign");
   const auto &assign =
       dynamic_cast<const hir::hir_assign &>(*function.body->stmts[1]);
-  expect(assign.op == kira::ast::assign_op::Assign,
+  expect(assign.op == kira::ast::assign_op::assign,
          "expected a plain `=` to lower to assign_op::Assign");
   expect(assign.target->kind == hir::hir_node_kind::hir_local_ref,
          "expected the assignment target to be a local reference");
@@ -862,7 +862,7 @@ auto test_lowers_compound_assignment() -> void {
   const auto &function = **result;
   const auto &assign =
       dynamic_cast<const hir::hir_assign &>(*function.body->stmts[1]);
-  expect(assign.op == kira::ast::assign_op::AddAssign,
+  expect(assign.op == kira::ast::assign_op::add_assign,
          "expected `+=` to lower to assign_op::AddAssign");
 }
 
@@ -1456,7 +1456,7 @@ auto test_lowers_range_for_loop() -> void {
          "expected the loop body's statement to be the assignment to `total`");
   const auto &increment =
       dynamic_cast<const hir::hir_assign &>(*loop.body->stmts[2]);
-  expect(increment.op == kira::ast::assign_op::AddAssign,
+  expect(increment.op == kira::ast::assign_op::add_assign,
          "expected the index increment to be a compound `+=`");
 }
 

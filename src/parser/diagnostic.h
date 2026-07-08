@@ -340,7 +340,7 @@ public:
     if (diag.is_warning()) {
       ++warning_count_;
     }
-    diagnostics_.push_back(std::move(diag));
+    diagnostics_.push_back(diag);
   }
 
   /// @brief Convenience helper for emitting a single-span error.
@@ -361,7 +361,7 @@ public:
     } else {
       diag.with_label(span, "here");
     }
-    emit(std::move(diag));
+    emit(diag);
   }
 
   /// @brief Convenience helper for emitting a single-span warning.
@@ -379,7 +379,7 @@ public:
     } else {
       diag.with_label(span, "here");
     }
-    emit(std::move(diag));
+    emit(diag);
   }
 
   // -- Queries --

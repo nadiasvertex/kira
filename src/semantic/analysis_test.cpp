@@ -68,7 +68,7 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
     ast_files.push_back(std::move(ast_file));
   }
 
-  [[maybe_unused]] const auto _checked =
+  [[maybe_unused]] const auto checked =
       kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
 
   return analyzed_session{
