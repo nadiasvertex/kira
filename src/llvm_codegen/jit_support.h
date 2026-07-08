@@ -59,6 +59,18 @@ public:
       std::optional<bytecode::numeric_kind> return_kind) const
       -> std::expected<jit_result, bytecode::panic_reason>;
 
+  /// Like `run`, but for a zero-argument function whose checked return type
+  /// is heap-backed (`str`, `list[T]`, tuple, fixed array, struct, sum type,
+  /// or a closure) rather than a scalar `numeric_kind` — its native ABI
+  /// return type is a plain `ptr` (every heap value is one pointer,
+  /// `src/runtime/layout.h`), so there's no per-kind marshaling to dispatch
+  /// on the way `run` needs. The returned pointer is a real, dereferenceable
+  /// address in this process (the JIT runs in-process), suitable for the
+  /// stress harness's deep-equality walk against the bytecode VM's own
+  /// heap value.
+  [[nodiscard]] auto run_ptr_result(std::string_view name) const
+      -> std::expected<jit_result, bytecode::panic_reason>;
+
 private:
   explicit jit_module(std::unique_ptr<llvm::orc::LLJIT> jit)
       : jit_(std::move(jit)) {}

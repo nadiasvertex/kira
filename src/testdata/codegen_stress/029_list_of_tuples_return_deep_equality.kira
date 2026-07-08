@@ -1,0 +1,7 @@
+module codegen_stress.list_of_tuples_return_deep_equality
+
+def pairs(n: int32) -> list[(int32, int32)]:
+    return for x in 0..n => (x, x * x)
+
+def main() -> list[(int32, int32)]:
+    return pairs(5)

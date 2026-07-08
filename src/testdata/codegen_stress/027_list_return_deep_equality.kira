@@ -1,0 +1,7 @@
+module codegen_stress.list_return_deep_equality
+
+def squares(n: int32) -> list[int32]:
+    return for x in 0..n => x * x
+
+def main() -> list[int32]:
+    return squares(6)

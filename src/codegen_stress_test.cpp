@@ -8,7 +8,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <format>
@@ -151,7 +153,11 @@ auto check_source(const std::string &text, const fs::path &path)
 // panic reason, or a value's raw bit pattern (comparing the union's `u`
 // field compares bits regardless of which member the producer actually
 // wrote through, which is exactly what "the two tiers computed the same
-// answer" needs, including for floating-point results).
+// answer" needs, including for floating-point results). For a heap-typed
+// result, `bits` is instead a real process pointer into one tier's own
+// arena — never equal to the other tier's pointer bit-for-bit even when the
+// two values are equal, so callers compare those via `values_equal` (below)
+// instead of raw `bits` equality.
 struct outcome {
   bool panicked = false;
   bc::panic_reason panic{};
@@ -159,15 +165,30 @@ struct outcome {
   uint64_t bits = 0;
 };
 
-auto bytecode_outcome(const fs::path &path, const hir::hir_module &module,
-                      const kira::semantic::type_table &types) -> outcome {
+// A heap-typed `outcome.bits` is a real pointer into memory owned by the
+// tier's own compiled artifact (the bytecode module's `string_constants`
+// table for a `str` literal; a JIT-compiled module's global-string data,
+// owned by the `LLJIT` instance, for the LLVM tier's equivalent). Once
+// `values_equal` needs to dereference that pointer (for deep equality,
+// unlike the old raw-`bits` scalar comparison, which never dereferenced
+// anything), whatever owns that memory must outlive the comparison — so
+// each side's compiled artifact is returned to `run_one` and kept alive
+// there for as long as its `outcome.bits` might still be read, rather than
+// destroyed the moment the compiling function returns.
+struct bytecode_run {
+  bc::bytecode_module module;
+  outcome result;
+};
+
+auto run_bytecode(const fs::path &path, const hir::hir_module &module,
+                  const kira::semantic::type_table &types) -> bytecode_run {
   auto compiled = bcc::compile_module(module, types);
   expect(compiled.has_value(),
          std::format("`{}`: expected bytecode_compiler to accept this "
                      "corpus file: {}",
                      path.string(), compiled.error().message));
 
-  auto index = uint16_t{0};
+  auto index = size_t{0};
   for (; index < compiled->functions.size(); ++index) {
     if (compiled->functions[index].name == "main") {
       break;
@@ -177,16 +198,26 @@ auto bytecode_outcome(const fs::path &path, const hir::hir_module &module,
          std::format("`{}`: expected a `main` function", path.string()));
 
   const auto vm = bc::vm{*compiled};
-  auto result = vm.run(index, std::array<bc::slot_value, 0>{});
-  if (!result.has_value()) {
-    return outcome{.panicked = true, .panic = result.error()};
-  }
-  return outcome{.has_value = result->has_value, .bits = result->value.u};
+  auto run =
+      vm.run(static_cast<uint16_t>(index), std::array<bc::slot_value, 0>{});
+  auto result = run.has_value()
+                    ? outcome{.has_value = run->has_value, .bits = run->value.u}
+                    : outcome{.panicked = true, .panic = run.error()};
+  return bytecode_run{.module = std::move(*compiled), .result = result};
 }
 
-auto llvm_outcome(const fs::path &path, const hir::hir_module &module,
-                  const kira::semantic::type_table &types,
-                  std::optional<bc::numeric_kind> return_kind) -> outcome {
+struct llvm_run {
+  lc::jit_module jit;
+  outcome result;
+};
+
+// `as_ptr` selects `jit_module::run_ptr_result` (heap-typed `main`) over
+// `jit_module::run` with `return_kind` (scalar/unit `main`) — mirrors
+// `run_one`'s own `is_heap_result` classification.
+auto run_llvm(const fs::path &path, const hir::hir_module &module,
+              const kira::semantic::type_table &types,
+              std::optional<bc::numeric_kind> return_kind, bool as_ptr)
+    -> llvm_run {
   auto compiled = lc::compile_module(module, types);
   expect(
       compiled.has_value(),
@@ -199,11 +230,131 @@ auto llvm_outcome(const fs::path &path, const hir::hir_module &module,
                      "successfully: {}",
                      path.string(), jit.error()));
 
-  auto result = jit->run("main", return_kind);
-  if (!result.has_value()) {
-    return outcome{.panicked = true, .panic = result.error()};
+  auto run =
+      as_ptr ? jit->run_ptr_result("main") : jit->run("main", return_kind);
+  auto result = run.has_value()
+                    ? outcome{.has_value = run->has_value, .bits = run->value.u}
+                    : outcome{.panicked = true, .panic = run.error()};
+  return llvm_run{.jit = std::move(*jit), .result = result};
+}
+
+// ==========================================================================
+//  Structural (deep) equality for heap-typed results.
+//
+//  A heap-typed `main` result is a real process pointer (both tiers run
+//  in-process — the bytecode VM's arena and the JIT's native heap are just
+//  two independent allocators in the same address space), so it's always
+//  safe to dereference either one directly; the two tiers' pointers
+//  themselves are never expected to be equal (different allocators), only
+//  the values they point at. `src/runtime/layout.h`'s "every non-scalar
+//  value is one pointer, every field/element is one 8-byte slot regardless
+//  of whether it itself holds a scalar or another heap pointer" layout means
+//  no width/alignment bookkeeping is needed here — only, per `type_id`,
+//  how many slots there are and what each one recursively means.
+//
+//  Deliberately scoped to `str`/`list[T]`/tuple/fixed `array[T, N]` (see
+//  `is_deep_comparable`): a struct/sum type's *field* types require the
+//  same generic-substitution-aware resolution `semantic::check.cpp`'s
+//  private `struct_field_type`/`variant_payload_types` perform, which isn't
+//  exposed for reuse outside the checker session that produced them — the
+//  same gap `spec/codegen-design.md`'s planning notes already flagged.
+//  Extending deep equality to those is future scope, not a soundness
+//  shortcut taken here: `is_deep_comparable` fails closed, and `run_one`
+//  falls back to today's scalar-only comparison whenever it does.
+// ==========================================================================
+
+[[nodiscard]] auto read_slot(uint64_t base, size_t slot_index) -> uint64_t {
+  const auto *slots =
+      reinterpret_cast<const uint64_t *>(static_cast<uintptr_t>(base));
+  return slots[slot_index];
+}
+
+[[nodiscard]] auto is_deep_comparable(const kira::semantic::type_table &types,
+                                      kira::semantic::type_id id) -> bool {
+  if (bc::numeric_kind_of(types, id).has_value()) {
+    return true;
   }
-  return outcome{.has_value = result->has_value, .bits = result->value.u};
+  const auto &entry = types.entry(id);
+  switch (entry.kind) {
+  case kira::semantic::type_kind::builtin_kind:
+    return entry.name == "str";
+  case kira::semantic::type_kind::builtin_generic_kind:
+    return entry.name == "list" && entry.args.size() == 1 &&
+           is_deep_comparable(types, entry.args.front());
+  case kira::semantic::type_kind::tuple_kind:
+    return std::ranges::all_of(entry.args, [&](kira::semantic::type_id arg) {
+      return is_deep_comparable(types, arg);
+    });
+  case kira::semantic::type_kind::array_kind:
+    return entry.array_size.has_value() &&
+           is_deep_comparable(types, entry.result);
+  default:
+    return false;
+  }
+}
+
+[[nodiscard]] auto values_equal(const kira::semantic::type_table &types,
+                                kira::semantic::type_id id, uint64_t a_bits,
+                                uint64_t b_bits) -> bool {
+  if (bc::numeric_kind_of(types, id).has_value()) {
+    return a_bits == b_bits;
+  }
+  const auto &entry = types.entry(id);
+  switch (entry.kind) {
+  case kira::semantic::type_kind::builtin_kind: {
+    // `str`: { u64 len; u8* data; } — compare length, then raw bytes.
+    const auto len_a = read_slot(a_bits, 0);
+    const auto len_b = read_slot(b_bits, 0);
+    if (len_a != len_b) {
+      return false;
+    }
+    const auto *data_a = reinterpret_cast<const char *>(
+        static_cast<uintptr_t>(read_slot(a_bits, 1)));
+    const auto *data_b = reinterpret_cast<const char *>(
+        static_cast<uintptr_t>(read_slot(b_bits, 1)));
+    return std::memcmp(data_a, data_b, len_a) == 0;
+  }
+  case kira::semantic::type_kind::builtin_generic_kind: {
+    // `list[T]`: { u64 len; u64 cap; T* data; } — compare length, then
+    // every element (each one slot, per this file's own top comment).
+    const auto len_a = read_slot(a_bits, 0);
+    const auto len_b = read_slot(b_bits, 0);
+    if (len_a != len_b) {
+      return false;
+    }
+    const auto data_a = read_slot(a_bits, 2);
+    const auto data_b = read_slot(b_bits, 2);
+    const auto elem_type = entry.args.front();
+    for (uint64_t i = 0; i < len_a; ++i) {
+      if (!values_equal(types, elem_type, read_slot(data_a, i),
+                        read_slot(data_b, i))) {
+        return false;
+      }
+    }
+    return true;
+  }
+  case kira::semantic::type_kind::tuple_kind:
+    for (size_t i = 0; i < entry.args.size(); ++i) {
+      if (!values_equal(types, entry.args[i], read_slot(a_bits, i),
+                        read_slot(b_bits, i))) {
+        return false;
+      }
+    }
+    return true;
+  case kira::semantic::type_kind::array_kind: {
+    const auto count = entry.array_size.value_or(0);
+    for (uint64_t i = 0; i < count; ++i) {
+      if (!values_equal(types, entry.result, read_slot(a_bits, i),
+                        read_slot(b_bits, i))) {
+        return false;
+      }
+    }
+    return true;
+  }
+  default:
+    // `is_deep_comparable` must be checked before ever reaching here.
+    return a_bits == b_bits;
+  }
 }
 
 auto run_one(const fs::path &path) -> void {
@@ -236,20 +387,25 @@ auto run_one(const fs::path &path) -> void {
   expect(main_fn != nullptr,
          std::format("`{}`: expected a `main` function", path.string()));
 
+  const auto &types = fixture.checked.types;
+  const auto is_unit = types.is_unit(main_fn->return_type);
   const auto return_kind =
-      fixture.checked.types.is_unit(main_fn->return_type)
-          ? std::nullopt
-          : bc::numeric_kind_of(fixture.checked.types, main_fn->return_type);
-  expect(return_kind.has_value() ||
-             fixture.checked.types.is_unit(main_fn->return_type),
-         std::format("`{}`: `main`'s return type has no scalar "
-                     "representation",
+      is_unit ? std::nullopt : bc::numeric_kind_of(types, main_fn->return_type);
+  const auto is_heap_result = !is_unit && !return_kind.has_value() &&
+                              is_deep_comparable(types, main_fn->return_type);
+  expect(is_unit || return_kind.has_value() || is_heap_result,
+         std::format("`{}`: `main`'s return type has no scalar or "
+                     "deep-comparable heap representation",
                      path.string()));
 
-  const auto vm_result =
-      bytecode_outcome(path, **lowered, fixture.checked.types);
-  const auto jit_result =
-      llvm_outcome(path, **lowered, fixture.checked.types, return_kind);
+  // Kept alive for the whole function (not just the compile-and-run call
+  // above) since a heap-typed result's `bits` may point into memory either
+  // one owns — see `bytecode_run`/`llvm_run`'s doc comment.
+  auto bc_run = run_bytecode(path, **lowered, fixture.checked.types);
+  auto llvm_run_result = run_llvm(path, **lowered, fixture.checked.types,
+                                  return_kind, is_heap_result);
+  const auto &vm_result = bc_run.result;
+  const auto &jit_result = llvm_run_result.result;
 
   if (vm_result.panicked || jit_result.panicked) {
     expect(vm_result.panicked && jit_result.panicked,
@@ -267,7 +423,11 @@ auto run_one(const fs::path &path) -> void {
                      "value",
                      path.string()));
   if (vm_result.has_value) {
-    expect(vm_result.bits == jit_result.bits,
+    const auto agree = is_heap_result
+                           ? values_equal(types, main_fn->return_type,
+                                          vm_result.bits, jit_result.bits)
+                           : vm_result.bits == jit_result.bits;
+    expect(agree,
            std::format("`{}`: bytecode VM and LLVM JIT disagree on `main`'s "
                        "result",
                        path.string()));

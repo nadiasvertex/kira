@@ -156,4 +156,24 @@ auto jit_module::run(std::string_view name,
   }
 }
 
+auto jit_module::run_ptr_result(std::string_view name) const
+    -> std::expected<jit_result, bytecode::panic_reason> {
+  auto symbol = jit_->lookup(name);
+  if (!symbol) {
+    throw std::runtime_error(
+        std::format("jit_module::run_ptr_result: symbol `{}` not found: {}",
+                    name, llvm::toString(symbol.takeError())));
+  }
+  auto *addr = symbol->toPtr<void *>();
+
+  try {
+    auto *result = reinterpret_cast<void *(*)()>(addr)();
+    return jit_result{.has_value = true,
+                      .value = slot_value{static_cast<uint64_t>(
+                          reinterpret_cast<uintptr_t>(result))}};
+  } catch (const panic_error &ex) {
+    return std::unexpected(ex.reason());
+  }
+}
+
 } // namespace kira::llvm_codegen

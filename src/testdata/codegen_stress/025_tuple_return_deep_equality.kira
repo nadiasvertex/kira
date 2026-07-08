@@ -1,0 +1,7 @@
+module codegen_stress.tuple_return_deep_equality
+
+def make_point(x: int32, y: int32) -> (int32, int32, bool):
+    return (x, y, x < y)
+
+def main() -> (int32, int32, bool):
+    return make_point(3, 7)
