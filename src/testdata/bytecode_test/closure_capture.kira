@@ -1,0 +1,13 @@
+module sample
+
+def make_adder(n: int32) -> fn(int32) -> int32:
+    let f = pure (x: int32) -> int32 => x + n
+    return f
+
+def run() -> int32:
+    let add5 = make_adder(5)
+    return add5(3)
+
+def run_noncapturing() -> int32:
+    let f = pure (x: int32) -> int32 => x * 2
+    return f(21)

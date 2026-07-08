@@ -329,6 +329,21 @@ auto test_list_comprehension_builds_and_reads_back_a_list() -> void {
   expect(result->value.i == 14, "expected 0^2+1^2+2^2+3^2 == 14");
 }
 
+auto test_closure_captures_an_outer_parameter_and_is_called_indirectly()
+    -> void {
+  auto jf = jit_fixture_for(load_fixture("closure_capture.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 8, "expected make_adder(5)(3) == 8");
+}
+
+auto test_non_capturing_closure_is_called_indirectly() -> void {
+  auto jf = jit_fixture_for(load_fixture("closure_noncapture.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 42, "expected (x => x * 2)(21) == 42");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -363,6 +378,8 @@ auto main() -> int {
     test_while_let_loops_until_the_pattern_stops_matching();
     test_let_else_diverges_on_a_failed_pattern();
     test_list_comprehension_builds_and_reads_back_a_list();
+    test_closure_captures_an_outer_parameter_and_is_called_indirectly();
+    test_non_capturing_closure_is_called_indirectly();
   } catch (const std::exception &ex) {
     std::cerr << "codegen_test failed: unhandled exception: " << ex.what()
               << '\n';

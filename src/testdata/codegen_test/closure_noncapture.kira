@@ -1,0 +1,5 @@
+module sample
+
+def main() -> int32:
+    let f = pure (x: int32) -> int32 => x * 2
+    return f(21)

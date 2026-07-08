@@ -448,6 +448,23 @@ auto test_list_comprehension_builds_and_reads_back_a_list() -> void {
   expect(result->value.i == 14, "expected 0^2+1^2+2^2+3^2 == 14");
 }
 
+auto test_closure_captures_an_outer_parameter_and_is_called_indirectly()
+    -> void {
+  auto module = compile_fixture(load_fixture("closure_capture.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "run"), {});
+  expect(result.has_value(), "expected run() to succeed");
+  expect(result->value.i == 8, "expected make_adder(5)(3) == 8");
+}
+
+auto test_non_capturing_closure_is_called_indirectly() -> void {
+  auto module = compile_fixture(load_fixture("closure_capture.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "run_noncapturing"), {});
+  expect(result.has_value(), "expected run_noncapturing() to succeed");
+  expect(result->value.i == 42, "expected (x => x * 2)(21) == 42");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -483,6 +500,8 @@ auto main() -> int {
     test_while_let_loops_until_the_pattern_stops_matching();
     test_let_else_diverges_on_a_failed_pattern();
     test_list_comprehension_builds_and_reads_back_a_list();
+    test_closure_captures_an_outer_parameter_and_is_called_indirectly();
+    test_non_capturing_closure_is_called_indirectly();
   } catch (const std::exception &ex) {
     std::cerr << "compile_test failed: unhandled exception: " << ex.what()
               << '\n';

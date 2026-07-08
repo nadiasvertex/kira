@@ -28,6 +28,7 @@
 
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
+#include "src/hir/captures.h"
 #include "src/hir/ids.h"
 #include "src/parser/ast.h"
 #include "src/parser/token.h"
@@ -419,7 +420,66 @@ public:
       locals_.emplace(param.symbol, alloca);
     }
 
-    const auto &stmts = fn.body->stmts;
+    return compile_body_and_finish(*fn.body);
+  }
+
+  /// Compiles a lambda's body into a freshly-created `llvm::Function`
+  /// (`llvm_fn`, already declared by `compile_lambda_value` with the
+  /// closure calling convention's signature: env `ptr` first, then the
+  /// lambda's own declared params), loading each entry in `free_vars` back
+  /// out of the env argument's slots (`capture_types[i]` is the exact LLVM
+  /// type `compile_lambda_value` stored at slot `i`, computed from the
+  /// captured variable's own alloca in the *enclosing* function) before the
+  /// body runs — mirrors `compile`, just with a different argument-to-local
+  /// binding prelude.
+  [[nodiscard]] auto
+  compile_lambda_body(const hir::hir_lambda &lambda,
+                      const std::vector<hir::symbol_id> &free_vars,
+                      const std::vector<llvm::Type *> &capture_types,
+                      llvm::Function *llvm_fn)
+      -> std::expected<void, codegen_error> {
+    current_fn_ = llvm_fn;
+    return_is_unit_ = types_.is_unit(lambda.return_type);
+    if (!return_is_unit_) {
+      auto ty = storage_type_for(lambda.return_type, lambda.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
+      }
+      return_llvm_type_ = *ty;
+    }
+
+    auto *entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_fn);
+    builder_.SetInsertPoint(entry);
+    alloca_marker_ = builder_.CreateAlloca(llvm::Type::getInt1Ty(ctx_), nullptr,
+                                           "alloca.marker");
+
+    auto *env_arg = llvm_fn->getArg(0);
+    for (size_t i = 0; i < lambda.params.size(); ++i) {
+      const auto &param = lambda.params[i];
+      auto ty = storage_type_for(param.type, lambda.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
+      }
+      auto *alloca = create_local_alloca(*ty, param.name);
+      builder_.CreateStore(llvm_fn->getArg(static_cast<unsigned>(i + 1)),
+                           alloca);
+      locals_.emplace(param.symbol, alloca);
+    }
+    for (size_t i = 0; i < free_vars.size(); ++i) {
+      auto *alloca = create_local_alloca(capture_types[i], "capture");
+      auto *loaded = builder_.CreateLoad(capture_types[i],
+                                         slot_address(env_arg, i), "capture");
+      builder_.CreateStore(loaded, alloca);
+      locals_.emplace(free_vars[i], alloca);
+    }
+
+    return compile_body_and_finish(*lambda.body);
+  }
+
+private:
+  [[nodiscard]] auto compile_body_and_finish(const hir::hir_block &body)
+      -> std::expected<void, codegen_error> {
+    const auto &stmts = body.stmts;
     auto terminated = false;
     for (size_t i = 0; i + 1 < stmts.size() && !terminated; ++i) {
       auto result = compile_stmt(*stmts[i]);
@@ -465,8 +525,6 @@ public:
     alloca_marker_->eraseFromParent();
     return {};
   }
-
-private:
   // ------------------------------------------------------------------
   //  Locals and types.
   // ------------------------------------------------------------------
@@ -624,6 +682,8 @@ private:
       return compile_cast(dynamic_cast<const hir::hir_cast &>(expr));
     case hir_node_kind::hir_call:
       return compile_call(dynamic_cast<const hir::hir_call &>(expr));
+    case hir_node_kind::hir_lambda:
+      return compile_lambda_value(dynamic_cast<const hir::hir_lambda &>(expr));
     case hir_node_kind::hir_if: {
       const auto &node = dynamic_cast<const hir::hir_if &>(expr);
       auto kind = numeric_kind_for(expr.type, expr.span);
@@ -705,10 +765,8 @@ private:
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = expr.span,
-          .message =
-              "this expression form is outside llvm_codegen's current scope "
-              "— lambdas still need work spec/codegen-design.md's later "
-              "increments haven't landed yet"});
+          .message = "this expression form is outside llvm_codegen's current "
+                     "scope"});
     }
   }
 
@@ -787,7 +845,8 @@ private:
 
   [[nodiscard]] auto compile_binary(const hir::hir_binary &bin)
       -> std::expected<llvm::Value *, codegen_error> {
-    if (bin.op == ast::binary_op::logical_and || bin.op == ast::binary_op::logical_or) {
+    if (bin.op == ast::binary_op::logical_and ||
+        bin.op == ast::binary_op::logical_or) {
       return compile_short_circuit(bin);
     }
 
@@ -1071,36 +1130,75 @@ private:
 
   [[nodiscard]] auto compile_call(const hir::hir_call &call)
       -> std::expected<llvm::Value *, codegen_error> {
-    if (call.callee->kind != hir_node_kind::hir_local_ref) {
-      return std::unexpected(codegen_error{
-          .kind = codegen_error_kind::unsupported_construct,
-          .span = call.span,
-          .message = "only direct calls to a named function are supported "
-                     "yet — calling through a computed callee expression is "
-                     "not"});
+    // Direct call to a named module-level function, resolved at compile
+    // time to a real `llvm::Function*` — the common case.
+    if (call.callee->kind == hir_node_kind::hir_local_ref) {
+      const auto &ref = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
+      if (lookup_local(ref.symbol) == nullptr) {
+        const auto found = functions_.find(ref.name);
+        if (found == functions_.end()) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unknown_callee,
+              .span = call.span,
+              .message = std::format("call to `{}` could not be resolved to "
+                                     "a function in this compiled module",
+                                     ref.name)});
+        }
+        auto args = std::vector<llvm::Value *>{};
+        args.reserve(call.args.size());
+        for (const auto &arg : call.args) {
+          auto value = compile_expr(*arg);
+          if (!value.has_value()) {
+            return std::unexpected(value.error());
+          }
+          args.push_back(*value);
+        }
+        return builder_.CreateCall(found->second, args);
+      }
     }
-    const auto &ref = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
-    if (lookup_local(ref.symbol) != nullptr) {
-      return std::unexpected(codegen_error{
-          .kind = codegen_error_kind::unsupported_construct,
-          .span = call.span,
-          .message = std::format(
-              "calling `{}`, a function value held in a local variable, is "
-              "not supported yet — only direct calls to a named module "
-              "function are",
-              ref.name)});
+
+    // Indirect call — the callee is a closure value (a local variable
+    // holding a `fn(...)`-typed value, an immediately-invoked lambda
+    // literal, or any other computed callee expression). The callee's
+    // static `fn_kind` type (`call.callee->type`) tells us its declared
+    // signature, since the closure heap value itself carries no type
+    // information at runtime — matches `op_call_indirect`'s bytecode-side
+    // convention: the environment pointer is the callee's hidden first
+    // argument, ahead of the declared args.
+    const auto &callee_entry = types_.entry(call.callee->type);
+    auto param_types =
+        std::vector<llvm::Type *>{llvm::PointerType::get(ctx_, 0)};
+    param_types.reserve(1 + callee_entry.args.size());
+    for (const auto arg_type : callee_entry.args) {
+      auto ty = storage_type_for(arg_type, call.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
+      }
+      param_types.push_back(*ty);
     }
-    const auto found = functions_.find(ref.name);
-    if (found == functions_.end()) {
-      return std::unexpected(codegen_error{
-          .kind = codegen_error_kind::unknown_callee,
-          .span = call.span,
-          .message = std::format("call to `{}` could not be resolved to a "
-                                 "function in this compiled module",
-                                 ref.name)});
+    llvm::Type *ret_ty = llvm::Type::getVoidTy(ctx_);
+    if (!types_.is_unit(callee_entry.result)) {
+      auto ty = storage_type_for(callee_entry.result, call.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
+      }
+      ret_ty = *ty;
     }
-    auto args = std::vector<llvm::Value *>{};
-    args.reserve(call.args.size());
+    auto *fn_type = llvm::FunctionType::get(ret_ty, param_types,
+                                            /*isVarArg=*/false);
+
+    auto closure = compile_expr(*call.callee);
+    if (!closure.has_value()) {
+      return std::unexpected(closure.error());
+    }
+    auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto *fn_ptr = builder_.CreateLoad(
+        ptr_ty, slot_address(*closure, size_t{0}), "closure.fn");
+    auto *env_ptr = builder_.CreateLoad(
+        ptr_ty, slot_address(*closure, size_t{1}), "closure.env");
+
+    auto args = std::vector<llvm::Value *>{env_ptr};
+    args.reserve(1 + call.args.size());
     for (const auto &arg : call.args) {
       auto value = compile_expr(*arg);
       if (!value.has_value()) {
@@ -1108,7 +1206,84 @@ private:
       }
       args.push_back(*value);
     }
-    return builder_.CreateCall(found->second, args);
+    return builder_.CreateCall(fn_type, fn_ptr, args);
+  }
+
+  /// Compiles a lambda literal into a closure heap value `{ fn_ptr; env_ptr
+  /// }`: allocates and populates an environment block from every free
+  /// variable `hir::free_variables` finds (loaded out of the *enclosing*
+  /// function's own locals), synthesizes a fresh `llvm::Function` for the
+  /// lambda's body (env `ptr` first parameter, then the lambda's declared
+  /// params) and compiles it immediately via a nested `function_compiler`
+  /// (safe to reference from a call before this expression returns, unlike
+  /// top-level functions, since nothing else can call an anonymous lambda
+  /// before it's constructed), then ties the two together.
+  [[nodiscard]] auto compile_lambda_value(const hir::hir_lambda &lambda)
+      -> std::expected<llvm::Value *, codegen_error> {
+    const auto free_vars = hir::free_variables(lambda);
+
+    auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+    llvm::Value *env_ptr = nullptr;
+    auto capture_types = std::vector<llvm::Type *>{};
+    if (free_vars.empty()) {
+      env_ptr = llvm::ConstantPointerNull::get(ptr_ty);
+    } else {
+      auto *env_block = compile_heap_alloc(free_vars.size());
+      capture_types.reserve(free_vars.size());
+      for (size_t i = 0; i < free_vars.size(); ++i) {
+        auto *alloca = lookup_local(free_vars[i]);
+        if (alloca == nullptr) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_construct,
+              .span = lambda.span,
+              .message = "a captured variable could not be found among this "
+                         "function's locals — capture analysis and codegen "
+                         "have gotten out of sync"});
+        }
+        auto *ty = alloca->getAllocatedType();
+        capture_types.push_back(ty);
+        auto *value = builder_.CreateLoad(ty, alloca, "capture");
+        builder_.CreateStore(value, slot_address(env_block, i));
+      }
+      env_ptr = env_block;
+    }
+
+    auto param_types = std::vector<llvm::Type *>{ptr_ty};
+    param_types.reserve(1 + lambda.params.size());
+    for (const auto &param : lambda.params) {
+      auto ty = storage_type_for(param.type, lambda.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
+      }
+      param_types.push_back(*ty);
+    }
+    llvm::Type *ret_ty = llvm::Type::getVoidTy(ctx_);
+    if (!types_.is_unit(lambda.return_type)) {
+      auto ty = storage_type_for(lambda.return_type, lambda.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
+      }
+      ret_ty = *ty;
+    }
+    auto *fn_type = llvm::FunctionType::get(ret_ty, param_types,
+                                            /*isVarArg=*/false);
+    auto *lambda_fn = llvm::Function::Create(
+        fn_type, llvm::Function::InternalLinkage,
+        std::format("lambda.{}", reinterpret_cast<uintptr_t>(&lambda)),
+        current_fn_->getParent());
+
+    auto nested = function_compiler(ctx_, types_, functions_, panic_fn_,
+                                    alloc_fn_, list_reserve_slot_fn_);
+    auto compiled =
+        nested.compile_lambda_body(lambda, free_vars, capture_types, lambda_fn);
+    if (!compiled.has_value()) {
+      return std::unexpected(compiled.error());
+    }
+
+    auto *closure_block = compile_heap_alloc(2);
+    builder_.CreateStore(lambda_fn, slot_address(closure_block, size_t{0}));
+    builder_.CreateStore(env_ptr, slot_address(closure_block, size_t{1}));
+    return closure_block;
   }
 
   /// Compiles an `if`/`elif`/`else` chain. `want_result`, when non-null, is
@@ -1213,7 +1388,7 @@ private:
       -> std::expected<llvm::Value *, codegen_error> {
     auto *block = compile_heap_alloc(values.size());
     for (std::size_t i = 0; i < values.size(); ++i) {
-      const auto & elem = values[i];
+      const auto &elem = values[i];
       auto value = compile_expr(*elem);
       if (!value.has_value()) {
         return std::unexpected(value.error());
@@ -1498,7 +1673,7 @@ private:
                                                 static_cast<uint64_t>(*tag)),
                          slot_address(block, size_t{0}));
     for (std::size_t i = 0; i < init.args.size(); ++i) {
-      const auto & arg = init.args[i];
+      const auto &arg = init.args[i];
       auto value = compile_expr(*arg);
       if (!value.has_value()) {
         return std::unexpected(value.error());
@@ -1663,7 +1838,7 @@ private:
       }
       llvm::Value *acc = nullptr;
       for (std::size_t i = 0; i < arr.elements.size(); ++i) {
-        const auto & element = arr.elements[i];
+        const auto &element = arr.elements[i];
         auto *elem_val = builder_.CreateLoad(*elem_ty, slot_address(value, i));
         auto sub = compile_pattern_test(*element, elem_val,
                                         std::optional<type_id>(entry.result));

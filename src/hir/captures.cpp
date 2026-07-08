@@ -152,7 +152,8 @@ struct walker {
       walk_expr(*dynamic_cast<const hir_variant_payload &>(expr).object);
       return;
     case hir_node_kind::hir_variant_init:
-      for (const auto &arg : dynamic_cast<const hir_variant_init &>(expr).args) {
+      for (const auto &arg :
+           dynamic_cast<const hir_variant_init &>(expr).args) {
         walk_expr(*arg);
       }
       return;

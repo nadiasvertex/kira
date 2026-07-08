@@ -958,6 +958,37 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
 
       case opcode::op_panic:
         throw panic_error(panic_reason::explicit_panic);
+
+      case opcode::op_make_closure: {
+        const uint8_t dst = code[ip];
+        const uint16_t fn_idx = read_u16(code, ip + 1);
+        const uint8_t env_reg = code[ip + 3];
+        f.pc = ip + 4;
+        auto *header =
+            kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+        auto *slots = static_cast<slot_value *>(header);
+        slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
+        slots[1] = f.registers[env_reg];
+        f.registers[dst] = ptr_to_slot(header);
+        break;
+      }
+      case opcode::op_call_indirect: {
+        const uint8_t dst = code[ip];
+        const uint8_t closure_reg = code[ip + 1];
+        const uint8_t first_arg = code[ip + 2];
+        const uint8_t argc = code[ip + 3];
+        f.pc = ip + 4;
+        const auto *closure = slots_of(f.registers[closure_reg]);
+        const auto fn_idx = static_cast<uint16_t>(closure[0].u);
+        const auto env_ptr = closure[1];
+        std::vector<slot_value> call_args;
+        call_args.reserve(static_cast<size_t>(argc) + 1);
+        call_args.push_back(env_ptr);
+        call_args.insert(call_args.end(), f.registers.begin() + first_arg,
+                         f.registers.begin() + first_arg + argc);
+        push_frame(frames, module_.functions.at(fn_idx), call_args, true, dst);
+        continue; // `f` is invalidated by push_frame's push_back.
+      }
       }
     }
   } catch (const panic_error &err) {

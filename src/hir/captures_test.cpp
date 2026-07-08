@@ -81,8 +81,8 @@ struct lowered_lambda {
   const hir::hir_lambda *lambda = nullptr;
 };
 
-auto lower_first_lambda(const checked_fixture &fixture, std::string_view fn_name)
-    -> lowered_lambda {
+auto lower_first_lambda(const checked_fixture &fixture,
+                        std::string_view fn_name) -> lowered_lambda {
   const auto &decl = find_func(*fixture.ast_file, fn_name);
   auto result = hir::lower_function(decl, fixture.checked);
   expect(result.has_value(), "expected the fixture function to lower");
@@ -94,11 +94,10 @@ auto lower_first_lambda(const checked_fixture &fixture, std::string_view fn_name
 }
 
 auto test_non_capturing_lambda_has_no_free_variables() -> void {
-  auto fixture = check_fixture(
-      "module sample\n"
-      "def make() -> fn(int32) -> int32:\n"
-      "    let f = pure (x: int32) -> int32 => x * 2\n"
-      "    return f\n");
+  auto fixture = check_fixture("module sample\n"
+                               "def make() -> fn(int32) -> int32:\n"
+                               "    let f = pure (x: int32) -> int32 => x * 2\n"
+                               "    return f\n");
   const auto lowered = lower_first_lambda(fixture, "make");
   const auto free = hir::free_variables(*lowered.lambda);
   expect(free.empty(), "expected a lambda using only its own parameter to "
@@ -106,11 +105,11 @@ auto test_non_capturing_lambda_has_no_free_variables() -> void {
 }
 
 auto test_lambda_captures_an_outer_parameter() -> void {
-  auto fixture = check_fixture(
-      "module sample\n"
-      "def make_adder(n: int32) -> fn(int32) -> int32:\n"
-      "    let f = pure (x: int32) -> int32 => x + n\n"
-      "    return f\n");
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def make_adder(n: int32) -> fn(int32) -> int32:\n"
+                    "    let f = pure (x: int32) -> int32 => x + n\n"
+                    "    return f\n");
   const auto lowered = lower_first_lambda(fixture, "make_adder");
 
   const auto free = hir::free_variables(*lowered.lambda);
@@ -125,13 +124,13 @@ auto test_lambda_captures_an_outer_parameter() -> void {
 }
 
 auto test_locally_bound_names_are_not_captured() -> void {
-  auto fixture = check_fixture(
-      "module sample\n"
-      "def make_adder(n: int32) -> fn(int32) -> int32:\n"
-      "    let f = pure (x: int32) -> int32 =>:\n"
-      "        let y = x + 1\n"
-      "        y + n\n"
-      "    return f\n");
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def make_adder(n: int32) -> fn(int32) -> int32:\n"
+                    "    let f = pure (x: int32) -> int32 =>:\n"
+                    "        let y = x + 1\n"
+                    "        y + n\n"
+                    "    return f\n");
   const auto lowered = lower_first_lambda(fixture, "make_adder");
   const auto free = hir::free_variables(*lowered.lambda);
   expect(free.size() == 1,

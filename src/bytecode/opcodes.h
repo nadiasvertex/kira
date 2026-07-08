@@ -282,6 +282,28 @@ enum class opcode : uint8_t {
             ///< something increment 1's compiler emits yet, but reserved
             ///< now so the VM (increment 2) has one panic mechanism to
             ///< implement, not two.
+
+  // --- Closures (spec/codegen-design.md increment 6) -----------------------
+  op_make_closure,  ///< u8 dst, u16 function_index, u8 env_ptr —
+                    ///< reg[dst] = a fresh 2-slot heap block
+                    ///< `{ function_index; reg[env_ptr] }` (`src/runtime/
+                    ///< layout.h`'s closure layout). `env_ptr` is a plain
+                    ///< heap pointer to the capture block (itself a flat
+                    ///< `op_alloc`'d slot block, one slot per free variable,
+                    ///< populated via `op_store_slot`), or the sentinel `0`
+                    ///< when the lambda captures nothing.
+  op_call_indirect, ///< u8 dst, u8 closure, u8 first_arg, u8 argc — reads
+                    ///< `{ function_index; env_ptr }` out of reg[closure],
+                    ///< then calls that function exactly like `op_call`
+                    ///< except with `env_ptr` prepended as the callee's
+                    ///< hidden register-0 argument ahead of the `argc`
+                    ///< declared arguments starting at reg[first_arg] — the
+                    ///< indirect counterpart to `op_call`'s compile-time-
+                    ///< resolved `function_index` operand, used whenever the
+                    ///< callee isn't a direct reference to a named
+                    ///< module-level function (a closure value held in a
+                    ///< local, an immediately-invoked lambda literal, or any
+                    ///< other computed callee expression).
 };
 
 } // namespace kira::bytecode

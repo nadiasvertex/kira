@@ -502,7 +502,8 @@ auto add_symbol_metadata(const ast::node &node,
     for (size_t i = 0; i + 1 < file.module_decl->path.size(); ++i) {
       relative /= file.module_decl->path[i];
     }
-    relative /= file.module_decl->path.back() + std::string(k_metadata_extension);
+    relative /=
+        file.module_decl->path.back() + std::string(k_metadata_extension);
     return metadata_root / relative;
   }
 

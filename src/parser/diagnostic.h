@@ -319,7 +319,7 @@ public:
   /// noise.
   ///
   /// @param diag Diagnostic to retain.
-  void emit(const diagnostic& diag) {
+  void emit(const diagnostic &diag) {
     if (diag.is_error()) {
       ++error_count_;
       if (error_count_ > max_errors_ && !cascade_reported_) {

@@ -232,7 +232,7 @@ enum class node_kind : uint8_t {
   literal_expr,     ///< Literal expression.
   binary_expr,      ///< Binary operator expression.
   unary_expr,       ///< Unary operator expression.
-  postfix_expr,      ///< Reserved historical tag for postfix expressions.
+  postfix_expr,     ///< Reserved historical tag for postfix expressions.
   call_expr,        ///< Call expression.
   index_expr,       ///< Indexing expression.
   field_expr,       ///< Field access expression.
@@ -641,11 +641,11 @@ enum class binary_op : uint8_t {
   // Comparison
   eq_eq,   ///< Equality comparison.
   bang_eq, ///< Inequality comparison.
-  lt,     ///< Less-than comparison.
+  lt,      ///< Less-than comparison.
   lt_eq,   ///< Less-than-or-equal comparison.
-  gt,     ///< Greater-than comparison.
+  gt,      ///< Greater-than comparison.
   gt_eq,   ///< Greater-than-or-equal comparison.
-  in,     ///< Membership comparison.
+  in,      ///< Membership comparison.
   not_in,  ///< Negated membership comparison.
   // Arithmetic
   add, ///< Addition.
@@ -669,7 +669,7 @@ enum class binary_op : uint8_t {
   bit_or,  ///< Bitwise disjunction.
   bit_xor, ///< Bitwise exclusive-or.
   // Range (used in patterns)
-  range,          ///< Half-open range operator.
+  range,           ///< Half-open range operator.
   range_inclusive, ///< Inclusive range operator.
 };
 
@@ -755,12 +755,12 @@ struct binary_expr : expr {
 
 /// @brief Normalized unary operators.
 enum class unary_op : uint8_t {
-  neg,       ///< Arithmetic negation.
-  bit_not,    ///< Bitwise inversion.
-  deref,     ///< Indirection / dereference.
-  addr_of,    ///< Address-of or borrow.
+  neg,         ///< Arithmetic negation.
+  bit_not,     ///< Bitwise inversion.
+  deref,       ///< Indirection / dereference.
+  addr_of,     ///< Address-of or borrow.
   addr_of_mut, ///< Mutable address-of or borrow.
-  logical_not,       ///< Logical negation.
+  logical_not, ///< Logical negation.
 };
 
 /// @brief Returns the canonical surface spelling for a unary operator.
@@ -1243,17 +1243,17 @@ struct var_stmt : stmt {
 
 /// @brief Normalized assignment operators.
 enum class assign_op : uint8_t {
-  assign,        ///< Plain assignment `=`.
-  add_assign,     ///< Compound add assignment `+=`.
-  sub_assign,     ///< Compound subtract assignment `-=`.
-  mul_assign,     ///< Compound multiply assignment `*=`.
-  div_assign,     ///< Compound divide assignment `/=`.
-  mod_assign,     ///< Compound remainder assignment `%=`.
-  and_assign,     ///< Compound bitwise-and assignment `&=`.
-  or_assign,      ///< Compound bitwise-or assignment `|=`.
-  xor_assign,     ///< Compound bitwise-xor assignment `^=`.
-  shl_assign,     ///< Compound left-shift assignment `<<=`.
-  shr_assign,     ///< Compound right-shift assignment `>>=`.
+  assign,          ///< Plain assignment `=`.
+  add_assign,      ///< Compound add assignment `+=`.
+  sub_assign,      ///< Compound subtract assignment `-=`.
+  mul_assign,      ///< Compound multiply assignment `*=`.
+  div_assign,      ///< Compound divide assignment `/=`.
+  mod_assign,      ///< Compound remainder assignment `%=`.
+  and_assign,      ///< Compound bitwise-and assignment `&=`.
+  or_assign,       ///< Compound bitwise-or assignment `|=`.
+  xor_assign,      ///< Compound bitwise-xor assignment `^=`.
+  shl_assign,      ///< Compound left-shift assignment `<<=`.
+  shr_assign,      ///< Compound right-shift assignment `>>=`.
   add_wrap_assign, ///< Compound wrapping add assignment `+%=`.
   sub_wrap_assign, ///< Compound wrapping subtract assignment `-%=`.
   mul_wrap_assign, ///< Compound wrapping multiply assignment `*%=`.

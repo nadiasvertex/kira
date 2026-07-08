@@ -32,15 +32,15 @@ struct cli_config {
                            ///< successful compile.
   std::string run_function =
       std::string(k_default_run_function); ///< Zero-argument function to
-                                        ///< execute when `run` is set.
-  bool build = false;                   ///< Compile to a native object file via
+                                           ///< execute when `run` is set.
+  bool build = false; ///< Compile to a native object file via
                       ///< `src/llvm_codegen`, link it against Kira's AOT
                       ///< runtime support library, and produce a standalone
                       ///< executable (`spec/codegen-design.md` increment 4).
   std::string build_function =
       std::string(k_default_run_function); ///< Zero-argument function to use as
-                                        ///< the executable's entry point
-                                        ///< when `build` is set.
+                                           ///< the executable's entry point
+                                           ///< when `build` is set.
   std::string build_output; ///< Output executable path; empty derives one
                             ///< from the first source file's stem.
 };

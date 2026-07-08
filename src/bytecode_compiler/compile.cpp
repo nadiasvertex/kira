@@ -14,6 +14,7 @@
 #include "src/bytecode/opcodes.h"
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
+#include "src/hir/captures.h"
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
 #include "src/parser/ast.h"
@@ -285,8 +286,12 @@ using kira::decode_string_literal;
 class function_compiler {
 public:
   function_compiler(const type_table &types,
-                    const std::unordered_map<std::string, uint16_t> &functions)
-      : types_(types), functions_(functions) {}
+                    const std::unordered_map<std::string, uint16_t> &functions,
+                    std::vector<bytecode::bytecode_function> &lambda_functions,
+                    size_t function_table_base)
+      : types_(types), functions_(functions),
+        lambda_functions_(lambda_functions),
+        function_table_base_(function_table_base) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn)
       -> std::expected<bytecode::bytecode_function, compile_error> {
@@ -297,8 +302,54 @@ public:
       }
       locals_.emplace(param.symbol, *reg);
     }
+    return compile_body_and_finish(*fn.body, fn.span, fn.name,
+                                   static_cast<uint16_t>(fn.params.size()));
+  }
 
-    const auto &stmts = fn.body->stmts;
+  /// Compiles a lambda's body into its own `bytecode_function`, using the
+  /// closure calling convention: register 0 is always the (possibly-null)
+  /// environment pointer, declared params occupy the registers right after
+  /// it, and every captured free variable in `free_vars` is loaded out of
+  /// the environment block (via `op_load_slot`) before the body runs — see
+  /// `compile_lambda_value`, which builds that environment block and emits
+  /// the matching `op_make_closure`.
+  [[nodiscard]] auto
+  compile_lambda_body(const hir::hir_lambda &lambda,
+                      const std::vector<hir::symbol_id> &free_vars)
+      -> std::expected<bytecode::bytecode_function, compile_error> {
+    const auto env_reg = alloc_register(lambda.span);
+    if (!env_reg.has_value()) {
+      return std::unexpected(env_reg.error());
+    }
+    for (const auto &param : lambda.params) {
+      const auto reg = alloc_register(lambda.span);
+      if (!reg.has_value()) {
+        return std::unexpected(reg.error());
+      }
+      locals_.emplace(param.symbol, *reg);
+    }
+    for (size_t i = 0; i < free_vars.size(); ++i) {
+      const auto reg = alloc_register(lambda.span);
+      if (!reg.has_value()) {
+        return std::unexpected(reg.error());
+      }
+      writer_.emit_opcode(opcode::op_load_slot);
+      writer_.emit_u8(*reg);
+      writer_.emit_u8(*env_reg);
+      writer_.emit_u16(static_cast<uint16_t>(i));
+      locals_.emplace(free_vars[i], *reg);
+    }
+    return compile_body_and_finish(
+        *lambda.body, lambda.span, "<lambda>",
+        static_cast<uint16_t>(1 + lambda.params.size()));
+  }
+
+private:
+  [[nodiscard]] auto
+  compile_body_and_finish(const hir::hir_block &body, source_span span,
+                          const std::string &name, uint16_t param_count)
+      -> std::expected<bytecode::bytecode_function, compile_error> {
+    const auto &stmts = body.stmts;
     for (size_t i = 0; i + 1 < stmts.size(); ++i) {
       if (auto result = compile_stmt(*stmts[i]); !result.has_value()) {
         return std::unexpected(result.error());
@@ -327,18 +378,15 @@ public:
     if (next_register_ > 256) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::register_limit_exceeded,
-          .span = fn.span,
+          .span = span,
           .message = std::format("function `{}` needs more than 256 "
                                  "registers, which this bytecode format's "
                                  "u8 register operands cannot address",
-                                 fn.name)});
+                                 name)});
     }
-    return std::move(writer_).finish(fn.name,
-                                     static_cast<uint16_t>(fn.params.size()),
+    return std::move(writer_).finish(name, param_count,
                                      static_cast<uint16_t>(next_register_));
   }
-
-private:
   // ------------------------------------------------------------------
   //  Registers and locals.
   // ------------------------------------------------------------------
@@ -456,6 +504,9 @@ private:
       return compile_cast(dynamic_cast<const hir::hir_cast &>(expr), dst);
     case hir_node_kind::hir_call:
       return compile_call(dynamic_cast<const hir::hir_call &>(expr), dst);
+    case hir_node_kind::hir_lambda:
+      return compile_lambda_value(dynamic_cast<const hir::hir_lambda &>(expr),
+                                  dst);
     case hir_node_kind::hir_if:
       return compile_if(dynamic_cast<const hir::hir_if &>(expr), dst);
     case hir_node_kind::hir_tuple: {
@@ -499,15 +550,14 @@ private:
           .kind = compile_error_kind::unsupported_construct,
           .span = expr.span,
           .message = "this expression form is outside the bytecode compiler's "
-                     "current scope — lambdas still need work "
-                     "spec/codegen-design.md's later increments haven't landed "
-                     "yet"});
+                     "current scope"});
     }
   }
 
   [[nodiscard]] auto compile_binary(const hir::hir_binary &bin, uint8_t dst)
       -> std::expected<void, compile_error> {
-    if (bin.op == ast::binary_op::logical_and || bin.op == ast::binary_op::logical_or) {
+    if (bin.op == ast::binary_op::logical_and ||
+        bin.op == ast::binary_op::logical_or) {
       // Short-circuit via jumps (opcodes.h's documented backend-only
       // choice) — evaluate lhs into dst, skip rhs (leaving dst as the
       // final result) exactly when short-circuiting applies.
@@ -617,35 +667,6 @@ private:
 
   [[nodiscard]] auto compile_call(const hir::hir_call &call, uint8_t dst)
       -> std::expected<void, compile_error> {
-    if (call.callee->kind != hir_node_kind::hir_local_ref) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::unsupported_construct,
-          .span = call.span,
-          .message =
-              "only direct calls to a named function are supported yet — "
-              "calling through a computed callee expression is not"});
-    }
-    const auto &ref = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
-    if (lookup_local(ref.symbol).has_value()) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::unsupported_construct,
-          .span = call.span,
-          .message =
-              std::format("calling `{}`, a function value held in a local "
-                          "variable, is not supported yet — only direct calls "
-                          "to a named module function are",
-                          ref.name)});
-    }
-    const auto found = functions_.find(ref.name);
-    if (found == functions_.end()) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::unknown_callee,
-          .span = call.span,
-          .message =
-              std::format("call to `{}` could not be resolved to a function in "
-                          "this compiled module",
-                          ref.name)});
-    }
     if (call.args.size() > 255) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
@@ -655,6 +676,64 @@ private:
               "format's u8 argument-count operand"});
     }
     const auto argc = call.args.size();
+
+    // Direct call to a named module-level function, resolved at compile
+    // time to a fixed function-table index — the common case, and the only
+    // shape `op_call` (rather than `op_call_indirect`) can express.
+    if (call.callee->kind == hir_node_kind::hir_local_ref) {
+      const auto &ref = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
+      if (!lookup_local(ref.symbol).has_value()) {
+        const auto found = functions_.find(ref.name);
+        if (found == functions_.end()) {
+          return std::unexpected(compile_error{
+              .kind = compile_error_kind::unknown_callee,
+              .span = call.span,
+              .message = std::format(
+                  "call to `{}` could not be resolved to a function in this "
+                  "compiled module",
+                  ref.name)});
+        }
+        if (next_register_ + argc > 256) {
+          return std::unexpected(compile_error{
+              .kind = compile_error_kind::register_limit_exceeded,
+              .span = call.span,
+              .message = "this function needs more than 256 registers, which "
+                         "this bytecode format's u8 register operands cannot "
+                         "address"});
+        }
+        // Reserve a contiguous register block up front (before compiling
+        // any argument subexpression) so op_call's "argc consecutive
+        // registers" precondition holds regardless of how many temporaries
+        // each argument expression needs internally — those get allocated
+        // after this block automatically, since next_register_ has already
+        // moved past it.
+        const auto first_arg_reg = static_cast<uint8_t>(next_register_);
+        next_register_ += argc;
+        for (size_t i = 0; i < call.args.size(); ++i) {
+          const auto arg_reg = static_cast<uint8_t>(first_arg_reg + i);
+          if (auto result = compile_expr_into(*call.args[i], arg_reg);
+              !result.has_value()) {
+            return std::unexpected(result.error());
+          }
+        }
+        writer_.emit_opcode(opcode::op_call);
+        writer_.emit_u8(dst);
+        writer_.emit_u16(found->second);
+        writer_.emit_u8(first_arg_reg);
+        writer_.emit_u8(static_cast<uint8_t>(argc));
+        return {};
+      }
+    }
+
+    // Indirect call — the callee is a closure value: a local variable
+    // holding a `fn(...)`-typed value, an immediately-invoked lambda
+    // literal, or any other computed callee expression. Compile the callee
+    // generically and dispatch through `op_call_indirect`, which reads the
+    // `{ function_index; env_ptr }` pair out of the resulting heap value.
+    const auto closure_reg = compile_expr(*call.callee);
+    if (!closure_reg.has_value()) {
+      return std::unexpected(closure_reg.error());
+    }
     if (next_register_ + argc > 256) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::register_limit_exceeded,
@@ -662,11 +741,6 @@ private:
           .message = "this function needs more than 256 registers, which this "
                      "bytecode format's u8 register operands cannot address"});
     }
-    // Reserve a contiguous register block up front (before compiling any
-    // argument subexpression) so op_call's "argc consecutive registers"
-    // precondition holds regardless of how many temporaries each argument
-    // expression needs internally — those get allocated after this block
-    // automatically, since next_register_ has already moved past it.
     const auto first_arg_reg = static_cast<uint8_t>(next_register_);
     next_register_ += argc;
     for (size_t i = 0; i < call.args.size(); ++i) {
@@ -676,11 +750,76 @@ private:
         return std::unexpected(result.error());
       }
     }
-    writer_.emit_opcode(opcode::op_call);
+    writer_.emit_opcode(opcode::op_call_indirect);
     writer_.emit_u8(dst);
-    writer_.emit_u16(found->second);
+    writer_.emit_u8(*closure_reg);
     writer_.emit_u8(first_arg_reg);
     writer_.emit_u8(static_cast<uint8_t>(argc));
+    return {};
+  }
+
+  /// Compiles a lambda literal into a closure heap value: allocates (and
+  /// populates) an environment block holding every free variable
+  /// `hir::free_variables` finds, compiles the lambda's body into its own
+  /// `bytecode_function` (appended to `lambda_functions_`, see
+  /// `compile_lambda_body`), and emits `op_make_closure` to tie the two
+  /// together at `dst`.
+  [[nodiscard]] auto compile_lambda_value(const hir::hir_lambda &lambda,
+                                          uint8_t dst)
+      -> std::expected<void, compile_error> {
+    const auto free_vars = hir::free_variables(lambda);
+
+    uint8_t env_reg = 0;
+    if (free_vars.empty()) {
+      const auto reg = alloc_register(lambda.span);
+      if (!reg.has_value()) {
+        return std::unexpected(reg.error());
+      }
+      env_reg = *reg;
+      const auto index = writer_.add_constant(slot_value{uint64_t{0}});
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(env_reg);
+      writer_.emit_u16(index);
+    } else {
+      const auto reg = alloc_register(lambda.span);
+      if (!reg.has_value()) {
+        return std::unexpected(reg.error());
+      }
+      env_reg = *reg;
+      writer_.emit_opcode(opcode::op_alloc);
+      writer_.emit_u8(env_reg);
+      writer_.emit_u16(static_cast<uint16_t>(free_vars.size()));
+      for (size_t i = 0; i < free_vars.size(); ++i) {
+        const auto src = lookup_local(free_vars[i]);
+        if (!src.has_value()) {
+          return std::unexpected(compile_error{
+              .kind = compile_error_kind::unsupported_construct,
+              .span = lambda.span,
+              .message = "a captured variable could not be found among this "
+                         "function's locals — capture analysis and register "
+                         "allocation have gotten out of sync"});
+        }
+        writer_.emit_opcode(opcode::op_store_slot);
+        writer_.emit_u8(env_reg);
+        writer_.emit_u16(static_cast<uint16_t>(i));
+        writer_.emit_u8(*src);
+      }
+    }
+
+    auto compiled = function_compiler(types_, functions_, lambda_functions_,
+                                      function_table_base_)
+                        .compile_lambda_body(lambda, free_vars);
+    if (!compiled.has_value()) {
+      return std::unexpected(compiled.error());
+    }
+    lambda_functions_.push_back(std::move(*compiled));
+    const auto fn_index = static_cast<uint16_t>(function_table_base_ +
+                                                lambda_functions_.size() - 1);
+
+    writer_.emit_opcode(opcode::op_make_closure);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(fn_index);
+    writer_.emit_u8(env_reg);
     return {};
   }
 
@@ -1906,6 +2045,16 @@ private:
 
   const type_table &types_;
   const std::unordered_map<std::string, uint16_t> &functions_;
+  /// Every lambda compiled anywhere in the current module (by this function
+  /// or any nested lambda within it) is appended here, shared by reference
+  /// across every `function_compiler` instance for the module — lambdas get
+  /// stable function-table indices starting right after the module's named
+  /// top-level functions (`function_table_base_`), assigned once each
+  /// lambda finishes compiling (see `compile_lambda_value`), and
+  /// `compile_module` appends this vector to the module's function table
+  /// after every top-level function has compiled.
+  std::vector<bytecode::bytecode_function> &lambda_functions_;
+  size_t function_table_base_;
   chunk_writer writer_;
   std::unordered_map<hir::symbol_id, uint8_t> locals_;
   size_t next_register_ = 0;
@@ -1917,7 +2066,8 @@ auto compile_function(
     const hir::hir_function &fn, const type_table &types,
     const std::unordered_map<std::string, uint16_t> &function_index)
     -> std::expected<bytecode::bytecode_function, compile_error> {
-  auto compiler = function_compiler(types, function_index);
+  auto lambda_functions = std::vector<bytecode::bytecode_function>{};
+  auto compiler = function_compiler(types, function_index, lambda_functions, 1);
   return compiler.compile(fn);
 }
 
@@ -1929,15 +2079,27 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
     function_index.emplace(module.functions[i]->name, static_cast<uint16_t>(i));
   }
 
+  // Every lambda encountered while compiling any top-level function (or any
+  // lambda nested within one) is appended here and given a stable
+  // function-table index starting right after the module's named top-level
+  // functions — see `function_compiler::lambda_functions_`'s doc comment.
+  auto lambda_functions = std::vector<bytecode::bytecode_function>{};
+  const auto function_table_base = module.functions.size();
+
   auto result = bytecode::bytecode_module{.module_name = module.module_name,
                                           .functions = {}};
   result.functions.reserve(module.functions.size());
   for (const auto &fn : module.functions) {
-    auto compiled = compile_function(*fn, types, function_index);
+    auto compiler = function_compiler(types, function_index, lambda_functions,
+                                      function_table_base);
+    auto compiled = compiler.compile(*fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
     }
     result.functions.push_back(std::move(*compiled));
+  }
+  for (auto &lambda_fn : lambda_functions) {
+    result.functions.push_back(std::move(lambda_fn));
   }
   return result;
 }
