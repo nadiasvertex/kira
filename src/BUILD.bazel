@@ -96,6 +96,10 @@ cc_test(
     name = "cli_test",
     srcs = ["cli_test.cpp"],
     tags = ["no-sandbox"],
+    data = [
+        "//src/llvm_codegen:aot_runtime",
+        "//src/runtime:runtime",
+    ],
     deps = [
         ":cli",
         ":module_metadata_cc_proto",
