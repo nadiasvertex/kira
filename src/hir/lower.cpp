@@ -1862,7 +1862,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
     auto elements = ptr_vec<hir_pattern>{};
     elements.reserve(tuple.elements.size());
-    for (const auto & element_ast : tuple.elements) {
+    for (std::size_t i = 0; i < tuple.elements.size(); ++i) {
+      const auto & element_ast = tuple.elements[i];
       if (element_ast == nullptr) {
         return fail(lowering_error_kind::unsupported_construct, pattern.span,
                     "tuple pattern has a missing element");
@@ -2057,7 +2058,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
     auto elements = ptr_vec<hir_pattern>{};
     elements.reserve(array.elements.size());
-    for (const auto & element_ast : array.elements) {
+    for (std::size_t i = 0; i < array.elements.size(); ++i) {
+      const auto & element_ast = array.elements[i];
       if (element_ast == nullptr) {
         return fail(lowering_error_kind::unsupported_construct, pattern.span,
                     "array pattern has a missing element");

@@ -314,11 +314,11 @@ private:
   auto walk_unary(const ast::unary_expr &unary) -> type_id {
     const auto operand =
         unary.operand != nullptr ? walk_expr(*unary.operand) : k_unknown_type;
-    if (unary.op == ast::unary_op::Not) {
+    if (unary.op == ast::unary_op::logical_not) {
       unify(operand, types_.builtin("bool"));
       return types_.builtin("bool");
     }
-    if (unary.op == ast::unary_op::neg || unary.op == ast::unary_op::BitNot) {
+    if (unary.op == ast::unary_op::neg || unary.op == ast::unary_op::bit_not) {
       return operand;
     }
     return k_unknown_type;
@@ -330,17 +330,17 @@ private:
     const auto rhs =
         binary.rhs != nullptr ? walk_expr(*binary.rhs) : k_unknown_type;
     switch (binary.op) {
-    case ast::binary_op::And:
-    case ast::binary_op::Or:
+    case ast::binary_op::logical_and:
+    case ast::binary_op::logical_or:
       unify(lhs, types_.builtin("bool"));
       unify(rhs, types_.builtin("bool"));
       return types_.builtin("bool");
-    case ast::binary_op::EqEq:
-    case ast::binary_op::BangEq:
-    case ast::binary_op::Lt:
-    case ast::binary_op::LtEq:
-    case ast::binary_op::Gt:
-    case ast::binary_op::GtEq:
+    case ast::binary_op::eq_eq:
+    case ast::binary_op::bang_eq:
+    case ast::binary_op::lt:
+    case ast::binary_op::lt_eq:
+    case ast::binary_op::gt:
+    case ast::binary_op::gt_eq:
       unify(lhs, rhs);
       return types_.builtin("bool");
     case ast::binary_op::add:
@@ -2366,21 +2366,21 @@ private:
   /// string for operators with no overload trait.
   auto operator_trait_for(ast::binary_op op) -> std::string_view {
     switch (op) {
-    case ast::binary_op::Add:
-    case ast::binary_op::AddWrap:
-    case ast::binary_op::AddSat:
+    case ast::binary_op::add:
+    case ast::binary_op::add_wrap:
+    case ast::binary_op::add_sat:
       return "add";
-    case ast::binary_op::Sub:
-    case ast::binary_op::SubWrap:
-    case ast::binary_op::SubSat:
+    case ast::binary_op::sub:
+    case ast::binary_op::sub_wrap:
+    case ast::binary_op::sub_sat:
       return "sub";
-    case ast::binary_op::Mul:
-    case ast::binary_op::MulWrap:
-    case ast::binary_op::MulSat:
+    case ast::binary_op::mul:
+    case ast::binary_op::mul_wrap:
+    case ast::binary_op::mul_sat:
       return "mul";
-    case ast::binary_op::Div:
+    case ast::binary_op::div:
       return "div";
-    case ast::binary_op::Mod:
+    case ast::binary_op::mod:
       return "rem";
     default:
       return {};
@@ -2529,30 +2529,30 @@ private:
   auto infer_binary(const ast::binary_expr &binary, type_id expected)
       -> type_id {
     switch (binary.op) {
-    case ast::binary_op::Add:
-    case ast::binary_op::Sub:
-    case ast::binary_op::Mul:
-    case ast::binary_op::Div:
-    case ast::binary_op::Mod:
-    case ast::binary_op::AddWrap:
-    case ast::binary_op::SubWrap:
-    case ast::binary_op::MulWrap:
-    case ast::binary_op::AddSat:
-    case ast::binary_op::SubSat:
-    case ast::binary_op::MulSat:
+    case ast::binary_op::add:
+    case ast::binary_op::sub:
+    case ast::binary_op::mul:
+    case ast::binary_op::div:
+    case ast::binary_op::mod:
+    case ast::binary_op::add_wrap:
+    case ast::binary_op::sub_wrap:
+    case ast::binary_op::mul_wrap:
+    case ast::binary_op::add_sat:
+    case ast::binary_op::sub_sat:
+    case ast::binary_op::mul_sat:
       return infer_arithmetic(binary, expected);
 
-    case ast::binary_op::EqEq:
-    case ast::binary_op::BangEq:
+    case ast::binary_op::eq_eq:
+    case ast::binary_op::bang_eq:
       return infer_comparison(binary, true);
-    case ast::binary_op::Lt:
-    case ast::binary_op::LtEq:
-    case ast::binary_op::Gt:
-    case ast::binary_op::GtEq:
+    case ast::binary_op::lt:
+    case ast::binary_op::lt_eq:
+    case ast::binary_op::gt:
+    case ast::binary_op::gt_eq:
       return infer_comparison(binary, false);
 
-    case ast::binary_op::And:
-    case ast::binary_op::Or:
+    case ast::binary_op::logical_and:
+    case ast::binary_op::logical_or:
       if (binary.lhs != nullptr) {
         require_bool(*binary.lhs, "the left operand of a logical operator");
       }
@@ -2561,10 +2561,10 @@ private:
       }
       return types_.builtin("bool");
 
-    case ast::binary_op::Shl:
-    case ast::binary_op::Shr:
-    case ast::binary_op::BitAnd:
-    case ast::binary_op::BitXor: {
+    case ast::binary_op::shl:
+    case ast::binary_op::shr:
+    case ast::binary_op::bit_and:
+    case ast::binary_op::bit_xor: {
       const auto lhs = binary.lhs != nullptr
                            ? strip_refs(infer_expr(*binary.lhs, expected))
                            : k_unknown_type;
@@ -2585,8 +2585,8 @@ private:
       return types_.is_integer(lhs) ? lhs : rhs;
     }
 
-    case ast::binary_op::In:
-    case ast::binary_op::NotIn: {
+    case ast::binary_op::in:
+    case ast::binary_op::not_in: {
       if (binary.lhs != nullptr) {
         infer_expr(*binary.lhs, k_unknown_type);
       }
@@ -2596,8 +2596,8 @@ private:
       return types_.builtin("bool");
     }
 
-    case ast::binary_op::Range:
-    case ast::binary_op::RangeInclusive: {
+    case ast::binary_op::range:
+    case ast::binary_op::range_inclusive: {
       const auto lhs = binary.lhs != nullptr
                            ? strip_refs(infer_expr(*binary.lhs, k_unknown_type))
                            : k_unknown_type;
@@ -2610,8 +2610,8 @@ private:
       return types_.builtin_generic("range", {element});
     }
 
-    case ast::binary_op::Pipe:
-    case ast::binary_op::BitOr: {
+    case ast::binary_op::pipe:
+    case ast::binary_op::bit_or: {
       const auto lhs = binary.lhs != nullptr
                            ? strip_refs(infer_expr(*binary.lhs, expected))
                            : k_unknown_type;
@@ -2634,14 +2634,14 @@ private:
   auto infer_unary(const ast::unary_expr &unary, type_id expected) -> type_id {
     const auto operand =
         unary.operand != nullptr
-            ? infer_expr(*unary.operand, unary.op == ast::unary_op::Neg
+            ? infer_expr(*unary.operand, unary.op == ast::unary_op::neg
                                              ? expected
                                              : k_unknown_type)
             : k_unknown_type;
     const auto stripped = strip_refs(operand);
 
     switch (unary.op) {
-    case ast::unary_op::Neg:
+    case ast::unary_op::neg:
       if (!types_.is_unknown(stripped) && !types_.is_numeric(stripped)) {
         error(unary.span,
               std::format("unary `-` requires a numeric operand, found `{}`",
@@ -2650,7 +2650,7 @@ private:
         return k_error_type;
       }
       return stripped;
-    case ast::unary_op::Not:
+    case ast::unary_op::logical_not:
       if (!types_.is_unknown(stripped) && !types_.is_boolean(stripped)) {
         error(unary.span,
               std::format("`not` requires a `bool` operand, found `{}`",
@@ -2658,7 +2658,7 @@ private:
               "expected `bool` here");
       }
       return types_.builtin("bool");
-    case ast::unary_op::BitNot:
+    case ast::unary_op::bit_not:
       if (!types_.is_unknown(stripped) && !types_.is_integer(stripped)) {
         error(unary.span,
               std::format("`~` requires an integer operand, found `{}`",
@@ -2666,7 +2666,7 @@ private:
               "not an integer value");
       }
       return stripped;
-    case ast::unary_op::Deref: {
+    case ast::unary_op::deref: {
       const auto &entry = types_.entry(operand);
       if (entry.kind == type_kind::ptr_kind ||
           entry.kind == type_kind::ref_kind) {
@@ -2674,9 +2674,9 @@ private:
       }
       return k_unknown_type;
     }
-    case ast::unary_op::AddrOf:
+    case ast::unary_op::addr_of:
       return types_.ref_to(stripped, false);
-    case ast::unary_op::AddrOfMut:
+    case ast::unary_op::addr_of_mut:
       return types_.ref_to(stripped, true);
     }
     return k_unknown_type;
@@ -4408,7 +4408,7 @@ private:
       if (entry.kind == type_kind::builtin_generic_kind &&
           entry.name == "result") {
         const auto slot =
-            result.result_kind == ast::option_result_kind::Err ? 1u : 0u;
+            result.result_kind == ast::option_result_kind::err ? 1u : 0u;
         if (slot < entry.args.size()) {
           inner = entry.args[slot];
         }
@@ -4635,14 +4635,14 @@ private:
     case ast::node_kind::option_pattern:
       covered.insert(
           dynamic_cast<const ast::option_pattern &>(pattern).option_kind ==
-                  ast::option_result_kind::Some
+                  ast::option_result_kind::some
               ? "some"
               : "none");
       return;
     case ast::node_kind::result_pattern:
       covered.insert(
           dynamic_cast<const ast::result_pattern &>(pattern).result_kind ==
-                  ast::option_result_kind::Err
+                  ast::option_result_kind::err
               ? "err"
               : "ok");
       return;
@@ -4931,7 +4931,7 @@ private:
     }
 
     const auto stripped = strip_refs(target_type);
-    if (stmt.op != ast::assign_op::Assign && !types_.is_unknown(stripped) &&
+    if (stmt.op != ast::assign_op::assign && !types_.is_unknown(stripped) &&
         !types_.is_numeric(stripped)) {
       error(stmt.span,
             std::format("compound assignment requires a numeric target, "
@@ -4942,7 +4942,7 @@ private:
 
     if (stmt.value != nullptr) {
       const auto found = infer_expr(*stmt.value, stripped);
-      if (stmt.op == ast::assign_op::Assign) {
+      if (stmt.op == ast::assign_op::assign) {
         type_mismatch(stmt.value->span, stripped, found,
                       "from the assignment target");
       }
