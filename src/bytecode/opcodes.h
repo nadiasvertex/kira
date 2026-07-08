@@ -205,6 +205,19 @@ enum class opcode : uint8_t {
   op_return_unit,  ///< (no operands) — pop the current frame with no value
                    ///< to hand back (the callee's return type is `unit`).
 
+  op_call_intrinsic, ///< u8 dst, u8 intrinsic_id, u8 first_arg_reg, u8 argc
+                     ///< — calls the native implementation of the intrinsic
+                     ///< at index `intrinsic_id` into
+                     ///< `kira::known_intrinsic_names` (src/intrinsics.h)
+                     ///< with `argc` consecutive registers starting at
+                     ///< `first_arg_reg`, writing its result into `dst`. No
+                     ///< frame is pushed — an intrinsic is a direct C++
+                     ///< call inside the VM's own dispatch loop, not
+                     ///< another `bytecode_function`. Parameterized by
+                     ///< intrinsic id rather than one opcode per intrinsic,
+                     ///< the same "parameterize, don't enumerate" choice
+                     ///< `numeric_kind` already makes for arithmetic.
+
   // --- Heap values (spec/codegen-design.md increment 6) -------------------
   //
   //  Every non-scalar Kira value (`str`, `list[T]`, fixed `array[T, N]`,

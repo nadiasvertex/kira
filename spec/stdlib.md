@@ -257,14 +257,31 @@ This is the checklist of compiler work they depend on, grouped by phase.
 
 ### Bytecode compiler / VM
 
-- [ ] New opcode `op_call_intrinsic` (`u8 dst, u16 intrinsic_index, u8
+- [x] New opcode `op_call_intrinsic` (`u8 dst, u8 intrinsic_id, u8
       first_arg_reg, u8 argc`), parameterized the same way `op_add` is
       parameterized by `numeric_kind` rather than combinatorially enumerated
-      per intrinsic.
-- [ ] Bytecode compiler emits `op_call_intrinsic` (not `op_call`) for calls
-      to intrinsic-declared functions.
-- [ ] VM dispatch table (`src/bytecode/vm.cpp`) implementing each of the
-      eight intrinsics with C++ standard library / POSIX calls.
+      per intrinsic. `intrinsic_id` indexes `kira::known_intrinsic_names`
+      (`src/intrinsics.h`).
+- [x] `hir::lower_module` skips `intrinsic def` items (no body to lower);
+      the bytecode compiler's `compile_call` recognizes a call to a known
+      intrinsic name by itself and emits `op_call_intrinsic` instead of
+      falling back to the ordinary `functions_`-table `op_call` path.
+- [x] VM dispatch table (`src/bytecode/vm.cpp`) implementing all eight
+      intrinsics with real POSIX calls (`::open`/`::close`/`::read`/
+      `::write`), tested against a real pipe and a real missing-file error
+      (`src/bytecode/vm_test.cpp`, `src/bytecode_compiler/compile_test.cpp`).
+      **Known limitation, discovered while implementing this:** this
+      backend does not yet construct `option`/`result` values for the
+      builtin generic types — only user-declared sum types have a
+      construction convention (`runtime::sum_variant_tag` requires an
+      AST-backed `type_decl`, which `result`/`option` don't have). Until
+      generic option/result construction exists, `rt_open`/`rt_close`/
+      `rt_read`/`rt_write`/`rt_flush` panic with the new
+      `panic_reason::io_failure` on an OS-level error instead of returning
+      `@err` — this is a real gap in the bytecode backend, not specific to
+      intrinsics, and blocks any Kira code (not just `std.io`) from
+      constructing a `result`/`option` value in this tier. Tracked here
+      since it's the first place the gap became load-bearing.
 
 ### LLVM codegen / AOT runtime
 

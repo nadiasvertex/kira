@@ -25,6 +25,7 @@ cc_library(
     hdrs = ["vm.h"],
     deps = [
         ":bytecode",
+        "//src:intrinsics",
         "//src/runtime",
     ],
     visibility = ["//visibility:public"],
@@ -46,6 +47,7 @@ cc_test(
     deps = [
         ":bytecode",
         ":vm",
+        "//src:intrinsics",
         "//src/testing",
     ],
 )

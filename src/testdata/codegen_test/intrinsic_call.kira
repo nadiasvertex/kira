@@ -1,0 +1,11 @@
+module sample
+
+type raw_fd = { value: int64 }
+
+intrinsic def rt_stdout() -> raw_fd
+
+def get_stdout_fd() -> int64:
+    return rt_stdout().value
+
+def main() -> int64:
+    return get_stdout_fd()

@@ -125,6 +125,28 @@ auto test_add_compiles_and_runs() -> void {
   expect(main_result->value.i == 42, "expected main()'s add(10, 32) == 42");
 }
 
+auto test_intrinsic_call_compiles_to_op_call_intrinsic() -> void {
+  // `intrinsic def rt_stdout() -> raw_fd` has no body — hir::lower_module
+  // skips it, and this compiler recognizes the call by name (src/
+  // intrinsics.h) and emits `op_call_intrinsic` instead of `op_call`. This
+  // fixture proves that end to end: real Kira source, through name
+  // resolution/typechecking, HIR lowering, bytecode compilation, and the
+  // VM's native `rt_stdout` implementation (vm.cpp), which returns fd 1.
+  auto module = compile_fixture(load_fixture("intrinsic_call.kira"));
+
+  // `intrinsic def` never gets a `bytecode_function` entry of its own.
+  for (const auto &fn : module.functions) {
+    expect(fn.name != "rt_stdout",
+           "expected `intrinsic def rt_stdout` not to compile to a "
+           "bytecode_function");
+  }
+
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() to succeed");
+  expect(main_result->value.i == 1,
+         "expected main()'s rt_stdout().value to be 1");
+}
+
 auto test_implicit_tail_expression_is_the_return_value() -> void {
   // No explicit `return` — the last statement's value is the function's
   // result (spec/typed-ir-design.md's Rust-like trailing-expression rule,
@@ -645,6 +667,7 @@ auto test_non_capturing_closure_is_called_indirectly() -> void {
 auto main() -> int {
   try {
     test_add_compiles_and_runs();
+    test_intrinsic_call_compiles_to_op_call_intrinsic();
     test_implicit_tail_expression_is_the_return_value();
     test_if_expression_selects_branch_value();
     test_while_loop_sums_one_to_n();

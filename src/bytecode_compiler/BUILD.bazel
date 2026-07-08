@@ -5,6 +5,7 @@ cc_library(
     srcs = ["compile.cpp"],
     hdrs = ["compile.h"],
     deps = [
+        "//src:intrinsics",
         "//src/bytecode:bytecode",
         "//src/hir:hir",
         "//src/parser:parser",

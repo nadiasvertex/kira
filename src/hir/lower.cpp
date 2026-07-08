@@ -2327,8 +2327,15 @@ auto lower_module(const ast::file &file, std::string module_name,
     if (item == nullptr || item->kind != ast::node_kind::func_decl) {
       continue;
     }
-    auto lowered =
-        lower_function(dynamic_cast<const ast::func_decl &>(*item), checked);
+    const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
+    if (decl.modifiers.is_intrinsic) {
+      // No body to lower — the bytecode compiler recognizes calls to a
+      // known intrinsic name by itself (src/intrinsics.h) and emits
+      // `op_call_intrinsic` directly, so this function never needs an entry
+      // in the module's `hir_function` table.
+      continue;
+    }
+    auto lowered = lower_function(decl, checked);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }

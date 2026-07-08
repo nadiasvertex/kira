@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <optional>
 #include <string_view>
 
 namespace kira {
@@ -38,6 +40,20 @@ inline constexpr std::array<std::string_view, 8> known_intrinsic_names = {{
                              [name](std::string_view known) {
                                return known == name;
                              });
+}
+
+/// @brief Returns `name`'s index into `known_intrinsic_names`, the same
+/// index `op_call_intrinsic` (src/bytecode/opcodes.h) encodes as its
+/// `intrinsic_id` operand and the VM's native dispatch table
+/// (src/bytecode/vm.cpp) is ordered by.
+[[nodiscard]] inline auto intrinsic_index_of(std::string_view name) noexcept
+    -> std::optional<uint8_t> {
+  for (size_t i = 0; i < known_intrinsic_names.size(); ++i) {
+    if (known_intrinsic_names[i] == name) {
+      return static_cast<uint8_t>(i);
+    }
+  }
+  return std::nullopt;
 }
 
 } // namespace kira

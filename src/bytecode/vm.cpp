@@ -1,10 +1,16 @@
 #include "src/bytecode/vm.h"
 
+#include <array>
 #include <bit>
 #include <cstdint>
+#include <fcntl.h>
+#include <span>
+#include <string>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
+#include "src/intrinsics.h"
 #include "src/runtime/arena.h"
 #include "src/runtime/layout.h"
 
@@ -728,6 +734,164 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   frames.push_back(std::move(f));
 }
 
+// ---------------------------------------------------------------------------
+// Intrinsics (src/intrinsics.h). Per spec/stdlib.md, this tier's native
+// implementation of every intrinsic is straight C++ standard library/POSIX
+// calls — the AOT/LLVM tier instead links against a native runtime library
+// implementing the same fixed schema. Every intrinsic here follows the heap
+// conventions already established elsewhere in this file: a struct is a
+// flat N-slot block in field-declaration order (`op_alloc`/`op_store_slot`),
+// and a `str`/slice value is a 2-slot `{ len; data_ptr }` header
+// (`op_load_str_const`).
+//
+// Provisional scope: `rt_open`/`rt_close`/`rt_read`/`rt_write`/`rt_flush`
+// are specced (spec/stdlib.md) to return `result[T, io_errno]`, but this
+// backend does not yet construct `option`/`result` values for the builtin
+// generic types — only user-declared sum types have a construction
+// convention today (`runtime::sum_variant_tag` requires an AST-backed
+// `type_decl`, which the builtin `result`/`option` don't have). Until
+// generic option/result construction lands, these intrinsics panic with
+// `panic_reason::io_failure` on an OS-level error instead of returning
+// `@err` — a complete, tested behavior for this increment, not a stub, just
+// not yet the final `result`-returning contract spec/stdlib.md specifies.
+// ---------------------------------------------------------------------------
+
+[[nodiscard]] auto alloc_struct(std::span<const slot_value> fields)
+    -> slot_value {
+  auto *raw = kira::runtime::global_arena().allocate(fields.size() *
+                                                      sizeof(slot_value));
+  auto *slots = static_cast<slot_value *>(raw);
+  for (size_t i = 0; i < fields.size(); ++i) {
+    slots[i] = fields[i];
+  }
+  return ptr_to_slot(raw);
+}
+
+/// Reads the `value` field out of a heap `raw_fd { value: int64 }` struct.
+[[nodiscard]] auto raw_fd_of(slot_value fd_struct) -> int {
+  return static_cast<int>(slots_of(fd_struct)[0].i);
+}
+
+/// Allocates a heap `raw_fd { value: int64 }` struct holding `fd`.
+[[nodiscard]] auto make_raw_fd(int64_t fd) -> slot_value {
+  const auto field = slot_value{fd};
+  return alloc_struct(std::span<const slot_value>(&field, 1));
+}
+
+/// Decodes a heap `str`/`slice[byte]`/`slice_mut[byte]` `{ len; data_ptr }`
+/// header into a raw byte span over its bytes.
+[[nodiscard]] auto bytes_of(slot_value header) -> std::span<char> {
+  const auto *slots = slots_of(header);
+  auto *data = reinterpret_cast<char *>(static_cast<uintptr_t>(slots[1].u));
+  return {data, static_cast<size_t>(slots[0].u)};
+}
+
+[[nodiscard]] auto intrinsic_rt_stdin(std::span<const slot_value>)
+    -> slot_value {
+  return make_raw_fd(0);
+}
+[[nodiscard]] auto intrinsic_rt_stdout(std::span<const slot_value>)
+    -> slot_value {
+  return make_raw_fd(1);
+}
+[[nodiscard]] auto intrinsic_rt_stderr(std::span<const slot_value>)
+    -> slot_value {
+  return make_raw_fd(2);
+}
+
+[[nodiscard]] auto intrinsic_rt_open(std::span<const slot_value> args)
+    -> slot_value {
+  // args[0]: str `{ len; data_ptr }` path.
+  // args[1]: `open_options { read; write; append; create; truncate }`.
+  const auto path_bytes = bytes_of(args[0]);
+  const auto path = std::string(path_bytes.data(), path_bytes.size());
+  const auto *opts = slots_of(args[1]);
+  const bool want_read = opts[0].u != 0;
+  const bool want_write = opts[1].u != 0;
+  const bool append = opts[2].u != 0;
+  const bool create = opts[3].u != 0;
+  const bool truncate = opts[4].u != 0;
+
+  int flags = O_RDONLY;
+  if (want_read && want_write) {
+    flags = O_RDWR;
+  } else if (want_write) {
+    flags = O_WRONLY;
+  }
+  if (append) {
+    flags |= O_APPEND;
+  }
+  if (create) {
+    flags |= O_CREAT;
+  }
+  if (truncate) {
+    flags |= O_TRUNC;
+  }
+
+  const int fd = ::open(path.c_str(), flags, 0644); // NOLINT
+  if (fd < 0) {
+    throw panic_error(panic_reason::io_failure);
+  }
+  return make_raw_fd(fd);
+}
+
+[[nodiscard]] auto intrinsic_rt_close(std::span<const slot_value> args)
+    -> slot_value {
+  if (::close(raw_fd_of(args[0])) != 0) {
+    throw panic_error(panic_reason::io_failure);
+  }
+  return slot_value{};
+}
+
+[[nodiscard]] auto intrinsic_rt_read(std::span<const slot_value> args)
+    -> slot_value {
+  const auto buf = bytes_of(args[1]);
+  const auto n = ::read(raw_fd_of(args[0]), buf.data(), buf.size());
+  if (n < 0) {
+    throw panic_error(panic_reason::io_failure);
+  }
+  return slot_value{static_cast<uint64_t>(n)};
+}
+
+[[nodiscard]] auto intrinsic_rt_write(std::span<const slot_value> args)
+    -> slot_value {
+  const auto buf = bytes_of(args[1]);
+  const auto n = ::write(raw_fd_of(args[0]), buf.data(), buf.size());
+  if (n < 0) {
+    throw panic_error(panic_reason::io_failure);
+  }
+  return slot_value{static_cast<uint64_t>(n)};
+}
+
+[[nodiscard]] auto intrinsic_rt_flush(std::span<const slot_value>)
+    -> slot_value {
+  // Every read/write above goes straight through the raw ::read/::write
+  // syscalls with no userspace buffering layer, so there is nothing for
+  // this tier to flush.
+  return slot_value{};
+}
+
+using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
+
+/// Indexed by `op_call_intrinsic`'s `intrinsic_id` operand — must stay in
+/// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
+/// which is also the order the semantic checker validated `intrinsic def`
+/// names against.
+constexpr std::array<intrinsic_fn, 8> k_intrinsics = {{
+    intrinsic_rt_stdin,
+    intrinsic_rt_stdout,
+    intrinsic_rt_stderr,
+    intrinsic_rt_open,
+    intrinsic_rt_close,
+    intrinsic_rt_read,
+    intrinsic_rt_write,
+    intrinsic_rt_flush,
+}};
+
+static_assert(k_intrinsics.size() == kira::known_intrinsic_names.size(),
+             "every known intrinsic needs exactly one native implementation, "
+             "in the same order");
+
 } // namespace
 
 auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
@@ -875,6 +1039,18 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
           return vm_result{.has_value = false, .value = slot_value{}};
         }
         continue;
+      }
+
+      case opcode::op_call_intrinsic: {
+        const uint8_t dst = code[ip];
+        const uint8_t intrinsic_id = code[ip + 1];
+        const uint8_t first_arg = code[ip + 2];
+        const uint8_t argc = code[ip + 3];
+        f.pc = ip + 4;
+        const std::span<const slot_value> call_args(
+            f.registers.data() + first_arg, argc);
+        f.registers[dst] = k_intrinsics.at(intrinsic_id)(call_args);
+        break;
       }
 
       case opcode::op_alloc: {

@@ -17,6 +17,7 @@
 #include "src/hir/captures.h"
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
+#include "src/intrinsics.h"
 #include "src/parser/ast.h"
 #include "src/parser/text_escape.h"
 #include "src/parser/token.h"
@@ -683,6 +684,37 @@ private:
     if (call.callee->kind == hir_node_kind::hir_local_ref) {
       const auto &ref = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
       if (!lookup_local(ref.symbol).has_value()) {
+        // `intrinsic def` declarations never enter `functions_` (hir::
+        // lower_module skips them — there is no body to lower), so a call
+        // to a known intrinsic name is recognized here instead and compiled
+        // to `op_call_intrinsic` rather than `op_call`.
+        if (const auto intrinsic_id = kira::intrinsic_index_of(ref.name);
+            intrinsic_id.has_value()) {
+          if (next_register_ + argc > 256) {
+            return std::unexpected(compile_error{
+                .kind = compile_error_kind::register_limit_exceeded,
+                .span = call.span,
+                .message =
+                    "this call needs more than 256 registers, which this "
+                    "bytecode format's u8 register operands cannot address"});
+          }
+          const auto first_arg_reg = static_cast<uint8_t>(next_register_);
+          next_register_ += argc;
+          for (size_t i = 0; i < call.args.size(); ++i) {
+            const auto arg_reg = static_cast<uint8_t>(first_arg_reg + i);
+            if (auto result = compile_expr_into(*call.args[i], arg_reg);
+                !result.has_value()) {
+              return std::unexpected(result.error());
+            }
+          }
+          writer_.emit_opcode(opcode::op_call_intrinsic);
+          writer_.emit_u8(dst);
+          writer_.emit_u8(*intrinsic_id);
+          writer_.emit_u8(first_arg_reg);
+          writer_.emit_u8(static_cast<uint8_t>(argc));
+          return {};
+        }
+
         const auto found = functions_.find(ref.name);
         if (found == functions_.end()) {
           return std::unexpected(compile_error{
