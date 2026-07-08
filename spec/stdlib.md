@@ -383,26 +383,33 @@ This is the checklist of compiler work they depend on, grouped by phase.
       `test_intrinsic_result_constructs_and_matches_through_real_syntax`) —
       both reuse the existing `intrinsic_call.kira`/`intrinsic_result.kira`
       fixtures already proven against the bytecode backend.
-- [ ] **Newly discovered, out of scope — a pre-existing `--build` CLI
-      linking gap, not specific to intrinsics.** `cli.cpp`'s link command
-      invokes the plain C linker driver (`cc "<obj>" "<panic_archive>"
-      "<heap_archive>" -o "<out>"`, `cli.cpp:3529-3532`) rather than a C++-
-      aware one (`c++`/`clang++`, or explicit `-lc++`) — any program whose
-      generated object file actually references a symbol from either
-      archive (any heap type: struct/string/list/sum type/intrinsic call,
-      or any checked-arithmetic panic path) fails to link with pages of
-      undefined `std::__1::*`/`operator new`/`__cxa_*` symbols, since
+- [x] **Resolved — a pre-existing `--build` CLI linking gap, not specific to
+      intrinsics.** `cli.cpp`'s link command invoked the plain C linker
+      driver (`cc "<obj>" "<panic_archive>" "<heap_archive>" -o "<out>"`)
+      rather than a C++-aware one — any program whose generated object file
+      actually referenced a symbol from either archive (any heap type:
+      struct/string/list/sum type/intrinsic call, or any checked-arithmetic
+      panic path) failed to link with pages of undefined
+      `std::__1::*`/`operator new`/`__cxa_*` symbols, since
       `arena.cpp`/`aot_runtime.cpp`/`io.cpp` all use the C++ standard
-      library internally. Reproduces with zero relation to this session's
-      work — confirmed with a two-line `add.kira` (no heap types, no
-      intrinsics) via `kira --build`. A pure-scalar program (e.g. `def
-      main() -> int32: return 42`) links fine only because nothing in it
-      references either archive, so the linker never pulls in the object
-      files that need libc++. `src/llvm_codegen/aot_test.cpp`'s own passing
-      `--build`-equivalent test never exercises this path — it deliberately
+      library internally. Reproduced with zero relation to intrinsics —
+      confirmed with a two-line `add.kira`. A pure-scalar program (e.g.
+      `def main() -> int32: return 42`) linked fine only because nothing in
+      it referenced either archive, so the linker never pulled in the
+      object files that needed libc++. Fixed by switching the link command
+      to `c++` (`cli.cpp`). Also fixed `find_bazel_archive` to additionally
+      search via the `TEST_SRCDIR`/`TEST_WORKSPACE` convention
+      `src/testing/test_data.h`'s `candidate_test_data_dirs` already uses,
+      so this path is testable hermetically under `bazel test`, not just
+      `bazelisk run`/direct `bazel-bin` invocation. Regression test:
+      `src/cli_test.cpp`'s `test_build_links_and_runs_a_heap_using_program`
+      — builds a struct-returning program through the real `--build` flow,
+      actually runs the produced executable as a child process, and checks
+      its exit code. `src/llvm_codegen/aot_test.cpp`'s own passing
+      `--build`-equivalent test never exercised this path — it deliberately
       links against a hand-written, dependency-free C stub instead of the
       real `aot_runtime`/`runtime` archives (see its own top-of-file
-      comment), so this gap has never been end-to-end tested before.
+      comment), so this gap had never been end-to-end tested before.
 
 ### Stdlib source
 

@@ -3426,9 +3426,13 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
 /// `--build` can hand it to the system linker. There is no installed-location
 /// story yet (`just package` doesn't bundle these) — this only finds an
 /// archive when `kira` itself is run from within the Bazel workspace that
-/// built it (via `bazelisk run //src:kira` or directly from `bazel-bin`),
-/// mirroring how `driver_stress_test.cpp`/`semantic_stress_test.cpp` locate
-/// their own test corpora through Bazel runfiles.
+/// built it (via `bazelisk run //src:kira`, directly from `bazel-bin`, or —
+/// so this same lookup is testable under `bazel test` — from a `cc_test`
+/// that declares the archive as a `data` dependency): mirrors how
+/// `driver_stress_test.cpp`/`semantic_stress_test.cpp` locate their own test
+/// corpora through Bazel runfiles (`src/testing/test_data.h`'s
+/// `candidate_test_data_dirs`, same `TEST_SRCDIR`/`TEST_WORKSPACE`
+/// convention).
 ///
 /// @param program_name `argv[0]` this process was invoked with.
 [[nodiscard]] auto find_bazel_archive(std::string_view program_name,
@@ -3446,6 +3450,15 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
       candidates.emplace_back(
           fs::path(std::format("{}.runfiles", program_name)) / "_main" /
           bazel_package / filename);
+    }
+    if (const auto *srcdir = std::getenv("TEST_SRCDIR"); srcdir != nullptr) {
+      if (const auto *workspace = std::getenv("TEST_WORKSPACE");
+          workspace != nullptr && *workspace != '\0') {
+        candidates.emplace_back(fs::path(srcdir) / workspace / bazel_package /
+                                filename);
+      }
+      candidates.emplace_back(fs::path(srcdir) / "_main" / bazel_package /
+                              filename);
     }
     candidates.emplace_back(fs::path("bazel-bin") / bazel_package / filename);
   }
