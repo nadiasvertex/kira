@@ -1363,8 +1363,8 @@ auto lowerer::lower_range_loop(
       /*mut=*/true)));
 
   const auto condition_op = range.op == ast::binary_op::range_inclusive
-                                ? ast::binary_op::LtEq
-                                : ast::binary_op::Lt;
+                                ? ast::binary_op::lt_eq
+                                : ast::binary_op::lt;
   auto condition = ptr<hir_expr>(hir::make<hir_binary>(
       span, checked_.types.bool_type(), condition_op,
       ptr<hir_expr>(make<hir_local_ref>(span, *bound_type, index_symbol,
@@ -1457,7 +1457,7 @@ auto lowerer::lower_indexed_loop(
                                           std::string("<for container>")))));
   }
   auto condition = ptr<hir_expr>(hir::make<hir_binary>(
-      span, checked_.types.bool_type(), ast::binary_op::Lt,
+      span, checked_.types.bool_type(), ast::binary_op::lt,
       ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
                                         std::string("<for index>"))),
       std::move(end_value)));
@@ -1922,7 +1922,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       // instead (see checked_types's doc comment). Desugars exactly like a
       // plain binding: a wildcard structural match plus a synthetic let.
       const auto found = checked_.struct_pattern_field_types.find(&field);
-      if (found == checked.struct_pattern_field_types.end() ||
+      if (found == checked_.struct_pattern_field_types.end() ||
           found->second == k_unknown_type || found->second == k_error_type) {
         return fail(lowering_error_kind::unresolved_type, field_span,
                     "no concrete checked type is available for this struct "
@@ -2002,7 +2002,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
   }
   case ast::node_kind::result_pattern: {
     const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
-    const auto variant = result.result_kind == ast::option_result_kind::Err
+    const auto variant = result.result_kind == ast::option_result_kind::err
                              ? std::string("err")
                              : std::string("ok");
     auto args = ptr_vec<hir_pattern>{};
