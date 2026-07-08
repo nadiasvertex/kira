@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -818,38 +819,91 @@ struct parsed_input {
   return build_outcome{.succeeded = true, .message = output_path.string()};
 }
 
-/// Helper for --flag VALUE / --flag=VALUE consumers.
-///
-/// Tries to consume the option and advance `idx` if found.
-///
-/// @param arg Current argv element.
-/// @param option Exact option name (e.g. `"--compile-output"`).
-/// @param missing Error text when the VALUE slot is absent.
-/// @param sorter Called with the value. Signature: `(std::string value) ->
-/// void`.
-/// @param idx Iterator into argv; advanced when the value slot is consumed.
-/// @param argv Full argv for the VALUE form reader.
-/// @return `true` when the argument was consumed by this call.
-auto try_flag_value(std::string_view arg, std::string_view option,
-                    std::string_view missing, auto sorter, size_t &idx,
-                    std::span<char *const> argv)
-    -> std::expected<bool, std::string> {
-  if (arg == option) {
-    if (idx + 1 >= argv.size()) {
-      return std::unexpected{std::string{missing}};
-    }
-    sorter(argv[++idx]);
-    return true;
-  }
-  // --option=VALUE form.
-  auto eq_option = std::string{option};
-  eq_option += '=';
-  if (arg.starts_with(eq_option)) {
-    sorter(std::string{arg.substr(eq_option.size())});
-    return true;
-  }
-  return false; // does not match this option.
-}
+/// Handler for a parsed CLI option.
+struct cli_converter {
+  /// Flag name that triggers this converter (e.g. `"--metadata-dir"`).
+  std::string_view name;
+
+  /// Whether the flag expects a separate value argument.
+  bool needs_value = false;
+
+  /// Action to take when the flag is matched and its value resolved or
+  /// supplied inline.  Returns an error if the action should abort parsing.
+  std::function<std::expected<std::monostate, std::string>(cli_config &cfg,
+                                                           std::string_view)>
+      apply = nullptr;
+};
+
+/// Registry of all accepted flags.
+static const cli_converter k_flag_converters[] = {
+    {"-h", false,
+     +[](cli_config &cfg,
+         std::string_view) -> std::expected<std::monostate, std::string> {
+       cfg.show_help = true;
+       return std::monostate{};
+     }},
+    {"--help", false,
+     +[](cli_config &cfg,
+         std::string_view) -> std::expected<std::monostate, std::string> {
+       cfg.show_help = true;
+       return std::monostate{};
+     }},
+    {"--metadata-dir", true,
+     +[](cli_config &cfg,
+         std::string_view value) -> std::expected<std::monostate, std::string> {
+       if (value.empty()) {
+         return std::unexpected{
+             std::string{"--metadata-dir requires a non-empty path"}};
+       }
+       cfg.metadata_dir = std::string{value};
+       return std::monostate{};
+     }},
+    {"--run", false,
+     +[](cli_config &cfg,
+         std::string_view) -> std::expected<std::monostate, std::string> {
+       cfg.run = true;
+       return std::monostate{};
+     }},
+    {"--run-function", true,
+     +[](cli_config &cfg,
+         std::string_view value) -> std::expected<std::monostate, std::string> {
+       if (value.empty()) {
+         return std::unexpected{
+             std::string{"--run-function requires a non-empty name"}};
+       }
+       cfg.run = true;
+       cfg.run_function = std::string{value};
+       return std::monostate{};
+     }},
+    {"--compile", false,
+     +[](cli_config &cfg,
+         std::string_view) -> std::expected<std::monostate, std::string> {
+       cfg.build = true;
+       return std::monostate{};
+     }},
+    {"--compile-function", true,
+     +[](cli_config &cfg,
+         std::string_view value) -> std::expected<std::monostate, std::string> {
+       if (value.empty()) {
+         return std::unexpected{
+             std::string{"--compile-function requires a non-empty name"}};
+       }
+       cfg.build = true;
+       cfg.build_function = std::string{value};
+       return std::monostate{};
+     }},
+    {"--compile-output", true,
+     +[](cli_config &cfg,
+         std::string_view value) -> std::expected<std::monostate, std::string> {
+       if (value.empty()) {
+         return std::unexpected{
+             std::string{"--compile-output requires a non-empty path"}};
+       }
+       cfg.build = true;
+       cfg.build_output = std::string{value};
+       return std::monostate{};
+     }},
+};
 
 } // namespace
 
@@ -870,105 +924,55 @@ auto parse_args(std::span<char *const> argv)
       .show_help = false,
   };
 
+  // Track whether the `--` end-of-options marker has been seen.
   bool parse_options = true;
   for (size_t i = 1; i < argv.size(); ++i) {
     std::string_view arg = argv[i];
 
-    if (parse_options && arg == "--") {
+    if (!parse_options) {
+      cfg.sources.emplace_back(arg);
+      continue;
+    }
+
+    if (arg == "--") {
       parse_options = false;
       continue;
     }
 
-    if (parse_options && (arg == "-h" || arg == "--help")) {
-      cfg.show_help = true;
+    bool matched_flag = false;
+    std::string_view value{};
+    const cli_converter *matched_converter = nullptr;
+    for (const auto &c : k_flag_converters) {
+      if (arg == c.name) {
+        matched_flag = true;
+        matched_converter = &c;
+        if (c.needs_value) {
+          if (i + 1 >= argv.size()) {
+            return std::unexpected{
+                std::format("missing value for `{}`", std::string{arg})};
+          }
+          value = argv[i + 1];
+          ++i;
+        }
+        break;
+      }
+      // --flag=value form.
+      if (c.needs_value && arg.starts_with(std::string{c.name} + '=')) {
+        matched_flag = true;
+        matched_converter = &c;
+        value = arg.substr(c.name.size() + 1);
+        break;
+      }
+    }
+    if (matched_flag) {
+      auto r = matched_converter->apply(cfg, value);
+      if (!r) {
+        return std::unexpected{r.error()};
+      }
       continue;
     }
 
-    if (parse_options && arg == "--metadata-dir") {
-      auto r = try_flag_value(
-          arg, "--metadata-dir", "missing path after --metadata-dir",
-          [&cfg](std::string value) { cfg.metadata_dir = std::move(value); }, i,
-          argv);
-      if (!r.has_value()) {
-        return std::unexpected{r.error()};
-      }
-      if (r.value()) {
-        if (cfg.metadata_dir.empty()) {
-          return std::unexpected{"--metadata-dir requires a non-empty path"};
-        }
-        continue;
-      }
-    }
-
-    if (parse_options && arg == "--run") {
-      cfg.run = true;
-      continue;
-    }
-
-    if (parse_options && arg == "--run-function") {
-      auto r = try_flag_value(
-          arg, "--run-function", "missing name after --run-function",
-          [&cfg](std::string value) {
-            cfg.run = true;
-            cfg.run_function = std::move(value);
-          },
-          i, argv);
-      if (!r.has_value()) {
-        return std::unexpected{r.error()};
-      }
-      if (r.value()) {
-        if (cfg.run_function.empty()) {
-          return std::unexpected{"--run-function requires a non-empty name"};
-        }
-        continue;
-      }
-    }
-
-    if (parse_options && arg == "--compile") {
-      cfg.build = true;
-      continue;
-    }
-
-    if (parse_options && arg == "--compile-function") {
-      auto r = try_flag_value(
-          arg, "--compile-function", "missing name after --compile-function",
-          [&cfg](std::string value) {
-            cfg.build = true;
-            cfg.build_function = std::move(value);
-          },
-          i, argv);
-      if (!r.has_value()) {
-        return std::unexpected{r.error()};
-      }
-      if (r.value()) {
-        if (cfg.build_function.empty()) {
-          return std::unexpected{
-              "--compile-function requires a non-empty name"};
-        }
-        continue;
-      }
-    }
-
-    if (parse_options && arg == "--compile-output") {
-      auto r = try_flag_value(
-          arg, "--compile-output", "missing path after --compile-output",
-          [&cfg](std::string value) {
-            cfg.build = true;
-            cfg.build_output = std::move(value);
-          },
-          i, argv);
-      if (!r.has_value()) {
-        return std::unexpected{r.error()};
-      }
-      if (r.value()) {
-        if (cfg.build_output.empty()) {
-          return std::unexpected{"--compile-output requires a non-empty path"};
-        }
-        continue;
-      }
-    }
-
-    if (parse_options && arg.starts_with('-') && arg != "-") {
+    if (arg.starts_with('-') && arg != "-") {
       return std::unexpected{std::format("unknown option: {}", arg)};
     }
 
