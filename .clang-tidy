@@ -41,5 +41,28 @@ CheckOptions:
     value: lower_case
   - key: readability-identifier-naming.MacroDefinitionCase
     value: UPPER_CASE
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypeTemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.TemplateTemplateParameterCase
+    value: CamelCase
+
+  # Private member variables
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.PrivateMemberIgnoredRegexp
+    value: '^[a-z0-9_]+_$'
+
+  # Protected member variables
+  - key: readability-identifier-naming.ProtectedMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberIgnoredRegexp
+    value: '^[a-z0-9_]+_$'
+
   - key: readability-identifier-naming.IgnoreMainLikeFunctions
     value: '1'
