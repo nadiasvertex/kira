@@ -14,7 +14,8 @@ namespace kira {
 inline constexpr std::string_view k_default_metadata_dir =
     "kira-out/module-metadata";
 
-/// Default entry-point function name executed by `--run`.
+/// Default entry-point function name executed by default (or via
+/// `--compile`).
 inline constexpr std::string_view k_default_run_function = "main";
 
 /// Parsed command-line inputs for one `kira` invocation.
@@ -29,7 +30,10 @@ struct cli_config {
                            ///< (parser-focused drivers).
   bool run = false;        ///< Compile to bytecode and execute `run_function`
                            ///< via the tier-0 VM (`src/bytecode/vm.h`) after a
-                           ///< successful compile.
+                           ///< successful compile. `parse_args` defaults this
+                           ///< to true whenever `--compile` was not
+                           ///< requested, so plain `kira SOURCE` runs it
+                           ///< without needing an explicit `--run`.
   std::string run_function =
       std::string(k_default_run_function); ///< Zero-argument function to
                                            ///< execute when `run` is set.
@@ -37,6 +41,7 @@ struct cli_config {
                       ///< `src/llvm_codegen`, link it against Kira's AOT
                       ///< runtime support library, and produce a standalone
                       ///< executable (`spec/codegen-design.md` increment 4).
+                      ///< Requested via `--compile`.
   std::string build_function =
       std::string(k_default_run_function); ///< Zero-argument function to use as
                                            ///< the executable's entry point

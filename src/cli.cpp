@@ -3423,7 +3423,7 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
 
 /// Locates one `alwayslink = True` cc_library's archive under `bazel_package`
 /// (e.g. `src/llvm_codegen`) named `library_name` (e.g. `aot_runtime`), so
-/// `--build` can hand it to the system linker. There is no installed-location
+/// `--compile` can hand it to the system linker. There is no installed-location
 /// story yet (`just package` doesn't bundle these) — this only finds an
 /// archive when `kira` itself is run from within the Bazel workspace that
 /// built it (via `bazelisk run //src:kira`, directly from `bazel-bin`, or —
@@ -3474,7 +3474,7 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
 
 /// Compiles `hir_module` to a native object file via `src/llvm_codegen`,
 /// then links it against Kira's AOT runtime support library into a
-/// standalone executable at `output_path` — `--build`'s counterpart to
+/// standalone executable at `output_path` — `--compile`'s counterpart to
 /// `run_hir_module`, using the same "zero-argument entry function" scope
 /// limit (`llvm_codegen::emit_object_file`'s own doc comment) and the same
 /// fail-closed-with-a-message discipline.
@@ -3640,51 +3640,51 @@ auto parse_args(std::span<char *const> argv)
       continue;
     }
 
-    if (parse_options && arg == "--build") {
+    if (parse_options && arg == "--compile") {
       cfg.build = true;
       continue;
     }
 
-    if (parse_options && arg == "--build-function") {
+    if (parse_options && arg == "--compile-function") {
       if (i + 1 >= argv.size()) {
-        return std::unexpected{"missing name after --build-function"};
+        return std::unexpected{"missing name after --compile-function"};
       }
       cfg.build = true;
       cfg.build_function = argv[++i];
       if (cfg.build_function.empty()) {
-        return std::unexpected{"--build-function requires a non-empty name"};
+        return std::unexpected{"--compile-function requires a non-empty name"};
       }
       continue;
     }
 
-    if (parse_options && arg.starts_with("--build-function=")) {
+    if (parse_options && arg.starts_with("--compile-function=")) {
       cfg.build = true;
-      cfg.build_function =
-          std::string(arg.substr(std::string_view{"--build-function="}.size()));
+      cfg.build_function = std::string(
+          arg.substr(std::string_view{"--compile-function="}.size()));
       if (cfg.build_function.empty()) {
-        return std::unexpected{"--build-function requires a non-empty name"};
+        return std::unexpected{"--compile-function requires a non-empty name"};
       }
       continue;
     }
 
-    if (parse_options && arg == "--build-output") {
+    if (parse_options && arg == "--compile-output") {
       if (i + 1 >= argv.size()) {
-        return std::unexpected{"missing path after --build-output"};
+        return std::unexpected{"missing path after --compile-output"};
       }
       cfg.build = true;
       cfg.build_output = argv[++i];
       if (cfg.build_output.empty()) {
-        return std::unexpected{"--build-output requires a non-empty path"};
+        return std::unexpected{"--compile-output requires a non-empty path"};
       }
       continue;
     }
 
-    if (parse_options && arg.starts_with("--build-output=")) {
+    if (parse_options && arg.starts_with("--compile-output=")) {
       cfg.build = true;
       cfg.build_output =
-          std::string(arg.substr(std::string_view{"--build-output="}.size()));
+          std::string(arg.substr(std::string_view{"--compile-output="}.size()));
       if (cfg.build_output.empty()) {
-        return std::unexpected{"--build-output requires a non-empty path"};
+        return std::unexpected{"--compile-output requires a non-empty path"};
       }
       continue;
     }
@@ -3694,6 +3694,14 @@ auto parse_args(std::span<char *const> argv)
     }
 
     cfg.sources.emplace_back(arg);
+  }
+
+  // Running is the default mode: `kira SOURCE` alone executes it via the
+  // tier-0 VM without needing an explicit `--run`. `--compile` opts into
+  // AOT compilation instead; pair it with an explicit `--run`/`--run-function`
+  // to do both.
+  if (!cfg.build && !cfg.run) {
+    cfg.run = true;
   }
 
   return cfg;
@@ -3707,18 +3715,22 @@ auto render_help(std::string_view program_name) -> std::string {
       "Usage: {} [OPTIONS] SOURCES...\n\n"
       "Kira - Parse source files and emit module metadata\n\n"
       "Options:\n"
-      "  -h, --help             Show this help message and exit\n"
-      "  --metadata-dir PATH    Write module metadata under PATH\n"
-      "                        (default: {})\n"
-      "  --run                  Compile to bytecode and execute `{}` via the\n"
-      "                        tier-0 VM (increment 1's scalar/control-flow\n"
-      "                        subset only; see src/bytecode_compiler)\n"
-      "  --run-function NAME    Like --run, but execute NAME instead of `{}`\n"
-      "  --build                Compile `{}` to native code via LLVM, link a\n"
-      "                        standalone executable (same scalar/control-\n"
-      "                        flow subset; see src/llvm_codegen)\n"
-      "  --build-function NAME  Like --build, but use NAME as the entry point\n"
-      "  --build-output PATH    Write the linked executable to PATH",
+      "  -h, --help               Show this help message and exit\n"
+      "  --metadata-dir PATH      Write module metadata under PATH\n"
+      "                          (default: {})\n"
+      "  (default)                Compile to bytecode and execute `{}` via\n"
+      "                          the tier-0 VM (increment 1's scalar/\n"
+      "                          control-flow subset only; see\n"
+      "                          src/bytecode_compiler) — no flag needed\n"
+      "  --run-function NAME      Like the default run, but execute NAME\n"
+      "                          instead of `{}`\n"
+      "  --compile                Compile `{}` to native code via LLVM, link\n"
+      "                          a standalone executable instead of running\n"
+      "                          it (same scalar/control-flow subset; see\n"
+      "                          src/llvm_codegen)\n"
+      "  --compile-function NAME  Like --compile, but use NAME as the entry\n"
+      "                          point\n"
+      "  --compile-output PATH    Write the linked executable to PATH",
       program_name, k_default_metadata_dir, k_default_run_function,
       k_default_run_function, k_default_run_function);
 }
