@@ -82,8 +82,8 @@ package:
     fi
 
 # Run the kira binary
-run:
-    bazelisk run //src:kira
+run source_file:
+    bazelisk run //src:kira -- {source_file}
 
 # Generate compile_commands.json
 compile-commands:
