@@ -1,5 +1,7 @@
 #include "cli.h"
 
+#include <sys/wait.h>
+
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -872,6 +874,59 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
          "expected related declaration label");
 }
 
+/// `--build` links its object file against the AOT panic/heap runtime
+/// archives (`find_bazel_archive`, `cli.cpp`) with a plain `cc "<obj>"
+/// "<panic_archive>" "<heap_archive>" -o "<out>"` invocation — `cc` alone
+/// doesn't pull in libc++, so any program whose object file actually
+/// references a symbol from either archive (any heap type, checked-
+/// arithmetic panic, or intrinsic call) used to fail to link with pages of
+/// undefined `std::__1::*`/`operator new`/`__cxa_*` symbols. Regression
+/// test for switching that invocation to `c++`: builds a struct-returning
+/// program (forces a real `kira_rt_alloc` reference, so this is a
+/// meaningful link, not one the linker trivially no-ops because nothing in
+/// the object file needs either archive), then actually runs the produced
+/// executable as a real child process and checks its exit code — proving
+/// this is a real, linkable, runnable native binary, not just that
+/// `--build` reported success.
+auto test_build_links_and_runs_a_heap_using_program() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_struct.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_struct_bin";
+
+  write_file(source_path, "module sample\n"
+                          "type point = { x: int32, y: int32 }\n"
+                          "def main() -> int32:\n"
+                          "  let p = point { x: 1, y: 41 }\n"
+                          "  return p.x + p.y\n");
+
+  kira::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+
+  auto report = kira::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0, "expected valid source to compile cleanly");
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  const auto exit_status = std::system(output_path.string().c_str());
+  expect(exit_status != -1, "expected the linked executable to launch");
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(exit_status) == 42,
+         "expected main()'s point{x:1,y:41}.x + .y == 42");
+#endif
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -901,6 +956,7 @@ auto main() -> int {
     test_compile_sources_reports_unresolved_module_qualified_reference();
     test_compile_sources_reports_unresolved_session_import();
     test_compile_sources_reports_inaccessible_session_import();
+    test_build_links_and_runs_a_heap_using_program();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;
