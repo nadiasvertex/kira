@@ -4,8 +4,10 @@ cc_library(
     name = "semantic",
     srcs = [
         "analysis.cpp",
+        "binding_walk.cpp",
         "check.cpp",
         "module_index.cpp",
+        "move_check.cpp",
         "resolution.cpp",
         "scopes.cpp",
         "session.cpp",
@@ -14,9 +16,11 @@ cc_library(
     ],
     hdrs = [
         "analysis.h",
+        "binding_walk.h",
         "check.h",
         "ids.h",
         "module_index.h",
+        "move_check.h",
         "resolution.h",
         "scopes.h",
         "session.h",

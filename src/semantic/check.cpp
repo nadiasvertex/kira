@@ -5051,6 +5051,11 @@ private:
         if (stmt.pattern->kind == ast::node_kind::binding_pattern) {
           const auto &binding =
               dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
+          // Bypasses check_pattern (which records this itself at its own
+          // call site), so record explicitly: a later pass (the move
+          // checker) needs every plain `let` binding's type keyed by its
+          // pattern node, the same way a destructured binding's is.
+          record_expr_type(*stmt.pattern, binding_type);
           bind_value(binding.name, binding_type, binding_origin::let_binding,
                      binding.span);
         } else {
@@ -5074,8 +5079,14 @@ private:
                         "from the annotation");
         }
       }
-      bind_value(stmt.name, stmt.type_annotation != nullptr ? declared : found,
-                 binding_origin::var_binding, stmt.span);
+      const auto binding_type =
+          stmt.type_annotation != nullptr ? declared : found;
+      // `var` has no pattern node to key against, so key on the statement
+      // itself — a later pass (the move checker) needs this binding's type
+      // and node_types is keyed generically by `const ast::node *`.
+      record_expr_type(stmt, binding_type);
+      bind_value(stmt.name, binding_type, binding_origin::var_binding,
+                 stmt.span);
       return unit;
     }
 

@@ -4,6 +4,7 @@
 #include <ranges>
 #include <utility>
 
+#include "src/semantic/binding_walk.h"
 #include "src/semantic/module_index.h"
 
 namespace kira::semantic {
@@ -75,136 +76,21 @@ auto record_node_scope(semantic_session &session, const ast::node *node,
   session.node_scopes.emplace(node, scope);
 }
 
-/// Recursively collects every name a pattern would bind (including nested
-/// tuple/struct/constructor/array subpatterns and group-pattern aliases),
-/// appending each to `out` in the order the pattern would bind them.
+/// Collects every name a pattern would bind, in the order the pattern would
+/// bind them, via the shared `kira::semantic::collect_pattern_bindings`
+/// (`binding_walk.h`) — appending each as a `pattern_binding_spec` tagged
+/// with `file_id` so callers here don't need to carry it separately.
 auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
                               std::vector<pattern_binding_spec> &out) -> void {
-  switch (pattern.kind) {
-  case ast::node_kind::binding_pattern: {
-    const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
-    if (!binding.name.empty()) {
-      out.push_back(pattern_binding_spec{
-          .name = binding.name,
-          .location =
-              source_location{
-                  .file_id = file_id,
-                  .span = binding.span,
-              },
-      });
-    }
-    return;
-  }
-
-  case ast::node_kind::tuple_pattern: {
-    const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
-    for (const auto &element : tuple.elements) {
-      if (element != nullptr) {
-        collect_pattern_bindings(*element, file_id, out);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::constructor_pattern: {
-    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
-    for (const auto &arg : ctor.args) {
-      if (arg != nullptr) {
-        collect_pattern_bindings(*arg, file_id, out);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::struct_pattern: {
-    const auto &struct_pattern =
-        dynamic_cast<const ast::struct_pattern &>(pattern);
-    for (const auto &field : struct_pattern.fields) {
-      if (field.is_rest) {
-        continue;
-      }
-      if (field.pattern != nullptr) {
-        collect_pattern_bindings(*field.pattern, file_id, out);
-        continue;
-      }
-      if (!field.name.empty()) {
-        out.push_back(pattern_binding_spec{
-            .name = field.name,
-            .location =
-                source_location{
-                    .file_id = file_id,
-                    .span = field.span,
-                },
-        });
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::array_pattern: {
-    const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
-    for (const auto &element : array.elements) {
-      if (element != nullptr) {
-        collect_pattern_bindings(*element, file_id, out);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::option_pattern: {
-    const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
-    if (option.inner != nullptr) {
-      collect_pattern_bindings(*option.inner, file_id, out);
-    }
-    return;
-  }
-
-  case ast::node_kind::result_pattern: {
-    const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
-    if (result.inner != nullptr) {
-      collect_pattern_bindings(*result.inner, file_id, out);
-    }
-    return;
-  }
-
-  case ast::node_kind::ref_pattern: {
-    const auto &ref = dynamic_cast<const ast::ref_pattern &>(pattern);
-    if (ref.inner != nullptr) {
-      collect_pattern_bindings(*ref.inner, file_id, out);
-    }
-    return;
-  }
-
-  case ast::node_kind::or_pattern: {
-    const auto &or_pattern = dynamic_cast<const ast::or_pattern &>(pattern);
-    for (const auto &alternative : or_pattern.alternatives) {
-      if (alternative != nullptr) {
-        collect_pattern_bindings(*alternative, file_id, out);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
-    if (group.inner != nullptr) {
-      collect_pattern_bindings(*group.inner, file_id, out);
-    }
-    if (group.alias.has_value()) {
-      out.push_back(pattern_binding_spec{
-          .name = *group.alias,
-          .location =
-              source_location{
-                  .file_id = file_id,
-                  .span = group.span,
-              },
-      });
-    }
-    return;
-  }
-
-  default:
-    return;
+  for (const auto &binding : kira::semantic::collect_pattern_bindings(pattern)) {
+    out.push_back(pattern_binding_spec{
+        .name = binding.name,
+        .location =
+            source_location{
+                .file_id = file_id,
+                .span = binding.span,
+            },
+    });
   }
 }
 
