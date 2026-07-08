@@ -348,17 +348,17 @@ private:
     case ast::binary_op::mul:
     case ast::binary_op::div:
     case ast::binary_op::mod:
-    case ast::binary_op::AddWrap:
-    case ast::binary_op::SubWrap:
-    case ast::binary_op::MulWrap:
-    case ast::binary_op::AddSat:
-    case ast::binary_op::SubSat:
-    case ast::binary_op::MulSat:
-    case ast::binary_op::BitAnd:
-    case ast::binary_op::BitOr:
-    case ast::binary_op::BitXor:
-    case ast::binary_op::Shl:
-    case ast::binary_op::Shr: {
+    case ast::binary_op::add_wrap:
+    case ast::binary_op::sub_wrap:
+    case ast::binary_op::mul_wrap:
+    case ast::binary_op::add_sat:
+    case ast::binary_op::sub_sat:
+    case ast::binary_op::mul_sat:
+    case ast::binary_op::bit_and:
+    case ast::binary_op::bit_or:
+    case ast::binary_op::bit_xor:
+    case ast::binary_op::shl:
+    case ast::binary_op::shr: {
       unify(lhs, rhs);
       const auto left_root = find(lhs);
       const auto left_is_open =
