@@ -34,7 +34,9 @@ This document is a planning snapshot for LLMs and contributors. It describes wha
   instantiation beyond direct type-parameter positions.
 - Typed lowering IR between the parser and backend.
 - LLVM IR generation.
-- Runtime and standard library integration.
+- Runtime and standard library integration. See `spec/stdlib.md` for the
+  `io`/`format`/`console` design and its own compiler-work checklist
+  (intrinsic declarations, `op_call_intrinsic`, native runtime library).
 - Object generation, linking, and executable production.
 
 ## Suggested Phase Order

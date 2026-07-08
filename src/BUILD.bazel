@@ -57,6 +57,12 @@ cc_proto_library(
 )
 
 cc_library(
+    name = "intrinsics",
+    hdrs = ["intrinsics.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "cli",
     srcs = ["cli.cpp"],
     hdrs = ["cli.h"],

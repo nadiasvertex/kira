@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/intrinsics.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/types.h"
 
@@ -5219,6 +5220,66 @@ private:
   //  Declarations
   // ==========================================================================
 
+  /// Checks an `intrinsic def` declaration: its name must be one the
+  /// compiler's backends actually implement (see `src/intrinsics.h` and
+  /// `spec/stdlib.md`), it must sit at module scope rather than inside a
+  /// trait/impl, and — since there is no body to infer from — every
+  /// parameter and the return type must be explicitly annotated.
+  auto check_intrinsic_decl(const ast::func_decl &decl, bool at_module_scope)
+      -> void {
+    if (!at_module_scope) {
+      error_with_help(
+          decl.span,
+          std::format("`intrinsic def {}` must be a module-level declaration",
+                      decl.name),
+          "intrinsic declarations cannot be a trait or impl member",
+          "Move this declaration to module scope. A trait or impl method "
+          "can call a module-level intrinsic from its body instead.");
+    }
+
+    if (!is_known_intrinsic(decl.name)) {
+      auto candidates = std::vector<std::string>{};
+      candidates.reserve(known_intrinsic_names.size());
+      for (const auto known : known_intrinsic_names) {
+        candidates.emplace_back(known);
+      }
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("`{}` is not a recognized intrinsic", decl.name),
+          file_id_);
+      diag.with_label(decl.span, "no backend implements this name");
+      if (const auto suggestion = best_suggestion(decl.name, candidates)) {
+        diag.with_help(std::format("did you mean `{}`?", *suggestion));
+      } else {
+        diag.with_help(
+            "see spec/stdlib.md for the list of recognized intrinsics");
+      }
+      diag_.emit(std::move(diag));
+      mark_error();
+    }
+
+    for (const auto &param : decl.params) {
+      if (param.type_annotation == nullptr) {
+        error_with_help(
+            param.span,
+            std::format("intrinsic `{}` must annotate every parameter",
+                        decl.name),
+            "missing type annotation",
+            "An intrinsic has no body for the compiler to infer types "
+            "from — every parameter needs an explicit type.");
+      }
+    }
+    if (decl.return_type == nullptr) {
+      error_with_help(
+          decl.span,
+          std::format("intrinsic `{}` must annotate its return type",
+                      decl.name),
+          "missing return type",
+          "An intrinsic has no body for the compiler to infer a return "
+          "type from — add `-> Type`.");
+    }
+  }
+
   /// Checks a function/method declaration end to end: enforces the
   /// `pub`-must-annotate rule (`at_module_scope`), binds type parameters
   /// and value parameters (including a leading `self` typed from
@@ -5251,6 +5312,10 @@ private:
             "An exported function is a contract other code depends on; "
             "inference is for code inside your module.");
       }
+    }
+
+    if (decl.modifiers.is_intrinsic) {
+      check_intrinsic_decl(decl, at_module_scope);
     }
 
     push_type_params(decl.type_params);

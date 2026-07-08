@@ -1,0 +1,3 @@
+module sample
+
+intrinsic def rt_read(fd, buf: slice_mut[byte]) -> usize

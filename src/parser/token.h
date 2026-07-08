@@ -68,6 +68,8 @@ enum class token_kind : uint8_t {
   kw_async,   ///< Function or expression modifier introducing async execution.
   kw_machine, ///< Function modifier opting into machine-level arithmetic
               ///< semantics.
+  kw_intrinsic, ///< Function modifier marking a signature-only declaration
+                ///< backed by a native implementation per backend.
 
   // ------------------------------------------------------------------
   //  Visibility keywords
@@ -326,7 +328,8 @@ struct token {
   /// @brief Returns whether this token is a function-level modifier keyword.
   [[nodiscard]] constexpr auto is_func_modifier() const noexcept -> bool {
     return kind == token_kind::kw_pure || kind == token_kind::kw_async ||
-           kind == token_kind::kw_machine || kind == token_kind::kw_static;
+           kind == token_kind::kw_machine || kind == token_kind::kw_static ||
+           kind == token_kind::kw_intrinsic;
   }
 
   /// @brief Returns whether this token can form an assignment statement
@@ -454,6 +457,7 @@ struct token {
     case token_kind::kw_pure:
     case token_kind::kw_async:
     case token_kind::kw_machine:
+    case token_kind::kw_intrinsic:
     case token_kind::tilde:
     case token_kind::newline:
       return true;
@@ -485,6 +489,7 @@ struct token {
     case token_kind::kw_pure:
     case token_kind::kw_async:
     case token_kind::kw_machine:
+    case token_kind::kw_intrinsic:
     case token_kind::tilde:
     case token_kind::newline:
       return true;
@@ -605,6 +610,9 @@ struct token {
     }
     if (text == "invariant") {
       return token_kind::kw_invariant;
+    }
+    if (text == "intrinsic") {
+      return token_kind::kw_intrinsic;
     }
     break;
   case 'l':
@@ -815,6 +823,8 @@ struct token {
     return "`async`";
   case token_kind::kw_machine:
     return "`machine`";
+  case token_kind::kw_intrinsic:
+    return "`intrinsic`";
 
   case token_kind::kw_pub:
     return "`pub`";

@@ -669,6 +669,32 @@ auto test_accepts_state_machine_match() -> void {
          "required to check cleanly");
 }
 
+auto test_accepts_intrinsic_decl() -> void {
+  const auto analyzed = analyze_test_data_file("accept_intrinsic_decl.kira");
+  expect(analyzed.error_count == 0,
+         "expected recognized, fully-annotated intrinsic decls to check "
+         "cleanly");
+}
+
+auto test_reports_unknown_intrinsic() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_unknown_intrinsic.kira");
+  expect(analyzed.error_count > 0, "expected unknown intrinsic to fail");
+  expect_diagnostic(analyzed, "is not a recognized intrinsic",
+                    "expected unknown-intrinsic diagnostic");
+  expect_diagnostic(analyzed, "did you mean `rt_write`?",
+                    "expected a did-you-mean suggestion for `rt_writ`");
+}
+
+auto test_reports_unannotated_intrinsic() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_unannotated_intrinsic.kira");
+  expect(analyzed.error_count > 0,
+         "expected unannotated intrinsic parameter to fail");
+  expect_diagnostic(analyzed, "must annotate every parameter",
+                    "expected missing-annotation diagnostic");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -683,6 +709,7 @@ auto main() -> int {
     test_accepts_extend_on_builtin_type();
     test_accepts_extend_on_user_type();
     test_impl_method_takes_priority_over_extend();
+    test_accepts_intrinsic_decl();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
@@ -698,6 +725,8 @@ auto main() -> int {
     test_reports_non_exhaustive_match();
     test_reports_unknown_variant_in_pattern();
     test_reports_try_in_plain_function();
+    test_reports_unknown_intrinsic();
+    test_reports_unannotated_intrinsic();
     test_reports_unannotated_pub_function();
     test_reports_duplicate_trait_impl();
     test_reports_incomplete_trait_impl();

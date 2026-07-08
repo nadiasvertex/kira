@@ -834,6 +834,45 @@ auto test_parser_accepts_extend_block() -> void {
       "expected extend member to be a function declaration");
 }
 
+auto test_parser_accepts_intrinsic_def() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "intrinsic def rt_write(fd: raw_fd, buf: slice[byte]) -> "
+      "result[usize, io_errno]\n"
+      "pub intrinsic def rt_stdout() -> raw_fd\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 2, "expected two intrinsic decls");
+
+  auto *rt_write = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected rt_write to parse as a function declaration");
+  expect(rt_write->modifiers.is_intrinsic,
+         "expected rt_write to carry the intrinsic modifier");
+  expect(rt_write->body_expr == nullptr && rt_write->body_stmts.empty(),
+         "expected intrinsic declaration to have no body");
+  expect(rt_write->params.size() == 2, "expected two rt_write parameters");
+  expect(rt_write->return_type != nullptr,
+         "expected rt_write to carry a return type");
+
+  auto *rt_stdout = expect_node<kira::ast::func_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+      "expected rt_stdout to parse as a function declaration");
+  expect(rt_stdout->modifiers.is_intrinsic,
+         "expected rt_stdout to carry the intrinsic modifier");
+  expect(rt_stdout->visibility == kira::ast::visibility::pub,
+         "expected pub intrinsic def to preserve visibility");
+}
+
+auto test_parser_rejects_intrinsic_def_with_body() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "intrinsic def rt_noop() -> unit:\n"
+                             "  unit\n");
+
+  expect(parsed.error_count > 0,
+         "expected a body on an intrinsic def to be reported as an error");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -842,7 +881,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 12> tests = {{
+  const std::array<named_test, 14> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -864,6 +903,9 @@ auto main(int argc, char *argv[]) -> int {
       {.name = "index_vs_generic_instantiation",
        .fn = test_parser_disambiguates_index_from_generic_instantiation},
       {.name = "extend_block", .fn = test_parser_accepts_extend_block},
+      {.name = "intrinsic_def", .fn = test_parser_accepts_intrinsic_def},
+      {.name = "intrinsic_def_rejects_body",
+       .fn = test_parser_rejects_intrinsic_def_with_body},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

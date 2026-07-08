@@ -838,6 +838,30 @@ let worker_config = config.clone()
 
 `shared` values are *atomically* reference-counted, so a single `shared` type is always safe to hand to another task. A `shared` handle gives **read-only** access to what it points at — it never yields `&mut` — so any number of tasks may hold and read the same `shared` value at once without a data race. To *mutate* data behind a `shared`, wrap it in a synchronized cell such as `mutex[T]` (see Data-Race Freedom). `shared` carries a small runtime cost; prefer single ownership, and prefer scoped borrowing — which is free — whenever you can.
 
+### Destructors: `drop`
+
+A type that owns a resource — a file handle, a socket, a lock — can implement `drop` to release it automatically:
+
+```kira
+trait drop:
+    def drop(mut self) -> unit
+
+type file = { fd: raw_fd }
+
+impl drop for file:
+    def drop(mut self) -> unit:
+        close_fd(self.fd)
+```
+
+`drop()` runs when a value's single owner goes out of scope — no `use`/`with`/`defer` block needed, and nothing is added to types that do not implement `drop`, so the feature is zero-cost when unused. A handful of rules keep it predictable:
+
+- A binding that was **moved from** never drops — ownership already transferred, so there is nothing left to release.
+- Within one scope, values drop in **reverse declaration order** — the same order C++ uses, and the order that makes "the inner resource outlives the outer one" reasoning work.
+- A struct or sum type made of fields that implement `drop` gets an implicit field-wise drop for free: the type's own `drop()` (if it has one) runs first, then each field drops in declaration order. A type only writes `drop()` for the resource it directly owns, never to manually recurse into its fields.
+- `shared[T]` drops the pointee when the atomic reference count reaches zero, not when any single handle goes out of scope.
+- There is no direct `x.drop()` call — calling it explicitly and then letting scope exit call it again would double-drop. To release a value early, use the prelude function `drop(x)`, which moves `x` in and drops it.
+- A panic **unwinds through drops**: every live destructor on the panicking path still runs, the same as it would on an ordinary early return. A lock guard or open file is released even when the code holding it panics.
+
 ---
 
 ## Traits
@@ -1786,11 +1810,11 @@ The following are available in every module without any `use` declaration:
 
 **Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types, `array`, `slice`, `slice_mut`, `option`, `result`, `list`, `box`
 
-**Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `neg`, and the other arithmetic operator traits
+**Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `neg`, `drop`, and the other arithmetic operator traits
 
 **Concepts:** `send`, `share`
 
-**Functions:** `println`, `print`, `panic`, `assert`, `size_of`, `args`, `env`
+**Functions:** `println`, `print`, `panic`, `assert`, `size_of`, `args`, `env`, `drop`
 
 To opt out of the prelude entirely (for low-level or embedded work):
 

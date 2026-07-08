@@ -714,7 +714,8 @@ auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
 
   case token_kind::kw_pure:
   case token_kind::kw_async:
-  case token_kind::kw_machine: {
+  case token_kind::kw_machine:
+  case token_kind::kw_intrinsic: {
     auto mods = parse_func_modifiers();
     if (at(token_kind::kw_def)) {
       return parse_func_decl(vis, std::move(mods));
@@ -1950,6 +1951,15 @@ auto parser::parse_func_modifiers() -> ast::func_modifiers {
       mods.is_static = true;
       advance();
       break;
+    case token_kind::kw_intrinsic:
+      if (mods.is_intrinsic) {
+        emit(diagnostic(diagnostic_level::warning,
+                        "duplicate `intrinsic` modifier", file_id_)
+                 .with_label(peek().span, "redundant"));
+      }
+      mods.is_intrinsic = true;
+      advance();
+      break;
     default:
       keep_going = false;
       break;
@@ -2013,11 +2023,27 @@ auto parser::parse_func_decl(ast::visibility vis, ast::func_modifiers mods,
     }
   }
 
-  if (allow_bodyless &&
+  // `intrinsic def` is signature-only regardless of the surrounding
+  // context's default — it names a native implementation, not a body.
+  bool bodyless_ok = allow_bodyless || decl->modifiers.is_intrinsic;
+
+  if (bodyless_ok &&
       at_any(token_kind::newline, token_kind::dedent, token_kind::eof)) {
     expect_newline();
     decl->span = start.merge(previous_span());
     return decl;
+  }
+
+  if (decl->modifiers.is_intrinsic) {
+    emit(diagnostic(diagnostic_level::error,
+                    "`intrinsic` function `" + decl->name +
+                        "` cannot have a body",
+                    file_id_)
+             .with_label(peek().span,
+                         "unexpected body — intrinsic functions are "
+                         "implemented natively, per backend")
+             .with_help("remove the body, or drop the `intrinsic` modifier "
+                        "if this function has real Kira code"));
   }
 
   // Function body.

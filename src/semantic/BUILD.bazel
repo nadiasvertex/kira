@@ -24,6 +24,7 @@ cc_library(
         "types.h",
     ],
     deps = [
+        "//src:intrinsics",
         "//src/parser:parser",
     ],
     visibility = ["//visibility:public"],

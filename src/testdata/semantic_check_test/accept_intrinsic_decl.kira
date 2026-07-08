@@ -1,0 +1,7 @@
+module sample
+
+type raw_fd = { value: int64 }
+type io_errno = { code: int32 }
+
+intrinsic def rt_stdout() -> raw_fd
+intrinsic def rt_write(fd: raw_fd, buf: slice[byte]) -> result[usize, io_errno]

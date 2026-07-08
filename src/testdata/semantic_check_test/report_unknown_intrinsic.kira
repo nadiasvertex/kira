@@ -1,0 +1,3 @@
+module sample
+
+intrinsic def rt_writ(fd: int64, buf: slice[byte]) -> usize

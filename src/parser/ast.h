@@ -1534,6 +1534,9 @@ struct func_modifiers {
   bool is_machine = false; ///< Whether machine-mode arithmetic semantics apply.
   bool is_static =
       false; ///< Whether the function is static rather than instance-oriented.
+  bool is_intrinsic = false; ///< Whether this is a signature-only
+                              ///< declaration backed by a native
+                              ///< implementation per backend, not a body.
   ptr<type_expr> async_context; ///< Optional explicit async context type.
 };
 
