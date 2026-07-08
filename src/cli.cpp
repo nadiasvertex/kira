@@ -834,80 +834,90 @@ struct cli_converter {
 };
 
 /// Registry of all accepted flags.
-static const cli_converter k_flag_converters[] = {
-    {"-h", false,
-     +[](cli_config &cfg,
-         std::string_view) -> std::expected<std::monostate, std::string> {
-       cfg.show_help = true;
-       return std::monostate{};
-     }},
-    {"--help", false,
-     +[](cli_config &cfg,
-         std::string_view) -> std::expected<std::monostate, std::string> {
-       cfg.show_help = true;
-       return std::monostate{};
-     }},
-    {"--metadata-dir", true,
-     +[](cli_config &cfg,
-         std::string_view value) -> std::expected<std::monostate, std::string> {
-       if (value.empty()) {
-         return std::unexpected{
-             std::string{"--metadata-dir requires a non-empty path"}};
-       }
-       cfg.metadata_dir = std::string{value};
-       return std::monostate{};
-     }},
-    {"--run", false,
-     +[](cli_config &cfg,
-         std::string_view) -> std::expected<std::monostate, std::string> {
-       cfg.run = true;
-       return std::monostate{};
-     }},
-    {"--run-function", true,
-     +[](cli_config &cfg,
-         std::string_view value) -> std::expected<std::monostate, std::string> {
-       if (value.empty()) {
-         return std::unexpected{
-             std::string{"--run-function requires a non-empty name"}};
-       }
-       cfg.run = true;
-       cfg.run_function = std::string{value};
-       return std::monostate{};
-     }},
-    {"--compile", false,
-     +[](cli_config &cfg,
-         std::string_view) -> std::expected<std::monostate, std::string> {
-       cfg.build = true;
-       return std::monostate{};
-     }},
-    {"--compile-function", true,
-     +[](cli_config &cfg,
-         std::string_view value) -> std::expected<std::monostate, std::string> {
-       if (value.empty()) {
-         return std::unexpected{
-             std::string{"--compile-function requires a non-empty name"}};
-       }
-       cfg.build = true;
-       cfg.build_function = std::string{value};
-       return std::monostate{};
-     }},
-    {"--compile-output", true,
-     +[](cli_config &cfg,
-         std::string_view value) -> std::expected<std::monostate, std::string> {
-       if (value.empty()) {
-         return std::unexpected{
-             std::string{"--compile-output requires a non-empty path"}};
-       }
-       cfg.build = true;
-       cfg.build_output = std::string{value};
-       return std::monostate{};
-     }},
-    {"--parse-only", false,
-     +[](cli_config &cfg,
-         std::string_view) -> std::expected<std::monostate, std::string> {
-       cfg.parse_only = true;
-       return std::monostate{};
-     }},
+static const std::unordered_map<std::string_view, cli_converter>
+    k_flag_converters = {
+        {"-h",
+         {"-h", false,
+          +[](cli_config &cfg,
+              std::string_view) -> std::expected<std::monostate, std::string> {
+            cfg.show_help = true;
+            return std::monostate{};
+          }}},
+        {"--help",
+         {"--help", false,
+          +[](cli_config &cfg,
+              std::string_view) -> std::expected<std::monostate, std::string> {
+            cfg.show_help = true;
+            return std::monostate{};
+          }}},
+        {"--metadata-dir",
+         {"--metadata-dir", true,
+          +[](cli_config &cfg, std::string_view value)
+              -> std::expected<std::monostate, std::string> {
+            if (value.empty()) {
+              return std::unexpected{
+                  std::string{"--metadata-dir requires a non-empty path"}};
+            }
+            cfg.metadata_dir = std::string{value};
+            return std::monostate{};
+          }}},
+        {"--run",
+         {"--run", false,
+          +[](cli_config &cfg,
+              std::string_view) -> std::expected<std::monostate, std::string> {
+            cfg.run = true;
+            return std::monostate{};
+          }}},
+        {"--run-function",
+         {"--run-function", true,
+          +[](cli_config &cfg, std::string_view value)
+              -> std::expected<std::monostate, std::string> {
+            if (value.empty()) {
+              return std::unexpected{
+                  std::string{"--run-function requires a non-empty name"}};
+            }
+            cfg.run = true;
+            cfg.run_function = std::string{value};
+            return std::monostate{};
+          }}},
+        {"--compile",
+         {"--compile", false,
+          +[](cli_config &cfg,
+              std::string_view) -> std::expected<std::monostate, std::string> {
+            cfg.build = true;
+            return std::monostate{};
+          }}},
+        {"--compile-function",
+         {"--compile-function", true,
+          +[](cli_config &cfg, std::string_view value)
+              -> std::expected<std::monostate, std::string> {
+            if (value.empty()) {
+              return std::unexpected{
+                  std::string{"--compile-function requires a non-empty name"}};
+            }
+            cfg.build = true;
+            cfg.build_function = std::string{value};
+            return std::monostate{};
+          }}},
+        {"--compile-output",
+         {"--compile-output", true,
+          +[](cli_config &cfg, std::string_view value)
+              -> std::expected<std::monostate, std::string> {
+            if (value.empty()) {
+              return std::unexpected{
+                  std::string{"--compile-output requires a non-empty path"}};
+            }
+            cfg.build = true;
+            cfg.build_output = std::string{value};
+            return std::monostate{};
+          }}},
+        {"--parse-only",
+         {"--parse-only", false,
+          +[](cli_config &cfg,
+              std::string_view) -> std::expected<std::monostate, std::string> {
+            cfg.parse_only = true;
+            return std::monostate{};
+          }}},
 };
 
 } // namespace
@@ -947,26 +957,27 @@ auto parse_args(std::span<char *const> argv)
     bool matched_flag = false;
     std::string_view value{};
     const cli_converter *matched_converter = nullptr;
-    for (const auto &c : k_flag_converters) {
-      if (arg == c.name) {
-        matched_flag = true;
-        matched_converter = &c;
-        if (c.needs_value) {
-          if (i + 1 >= argv.size()) {
-            return std::unexpected{
-                std::format("missing value for `{}`", std::string{arg})};
-          }
-          value = argv[i + 1];
-          ++i;
+    if (auto it = k_flag_converters.find(arg); it != k_flag_converters.end()) {
+      matched_flag = true;
+      matched_converter = &it->second;
+      if (it->second.needs_value) {
+        if (i + 1 >= argv.size()) {
+          return std::unexpected{
+              std::format("missing value for `{}`", std::string{arg})};
         }
-        break;
+        value = argv[i + 1];
+        ++i;
       }
+    } else {
       // --flag=value form.
-      if (c.needs_value && arg.starts_with(std::string{c.name} + '=')) {
-        matched_flag = true;
-        matched_converter = &c;
-        value = arg.substr(c.name.size() + 1);
-        break;
+      if (auto eq_pos = arg.find('='); eq_pos != std::string_view::npos) {
+        std::string_view flag_key = arg.substr(0, eq_pos);
+        if (auto eq_it = k_flag_converters.find(flag_key);
+            eq_it != k_flag_converters.end() && eq_it->second.needs_value) {
+          matched_flag = true;
+          matched_converter = &eq_it->second;
+          value = arg.substr(eq_pos + 1);
+        }
       }
     }
     if (matched_flag) {
