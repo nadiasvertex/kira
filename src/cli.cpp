@@ -3526,8 +3526,14 @@ auto validate_qualified_paths(const std::vector<parsed_input> &inputs,
                    "workspace that built it"};
   }
 
+  // `c++` (not `cc`) deliberately — `arena.cpp`/`aot_runtime.cpp`/`io.cpp`
+  // all use the C++ standard library internally (std::vector, std::format,
+  // exceptions), so any program whose object file actually references a
+  // symbol from either archive (any heap type, any checked-arithmetic
+  // panic path, any intrinsic call) needs libc++/libc++abi linked in.
+  // Plain `cc` doesn't do that automatically; `c++`/`clang++` does.
   const auto link_command = std::format(
-      R"(cc "{}" "{}" "{}" -o "{}")", object_path.string(),
+      R"(c++ "{}" "{}" "{}" -o "{}")", object_path.string(),
       panic_archive->string(), heap_archive->string(), output_path.string());
   const auto link_status = std::system(link_command.c_str());
   auto ec = std::error_code{};
