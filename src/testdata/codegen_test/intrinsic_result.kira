@@ -1,0 +1,16 @@
+module sample
+
+type raw_fd = { value: int64 }
+type io_errno = { code: int32 }
+type open_options = { read: bool, write: bool, append: bool, create: bool, truncate: bool }
+
+intrinsic def rt_open(path: str, opts: open_options) -> result[raw_fd, io_errno]
+
+def open_marker(path: str) -> int32:
+    let opts = open_options { read: true, write: false, append: false, create: false, truncate: false }
+    return match rt_open(path, opts):
+        @ok(fd) => 1
+        @err(e) => 2
+
+def main() -> int32:
+    return open_marker("/definitely/does/not/exist/kira-codegen-test.kira")

@@ -147,6 +147,33 @@ auto test_intrinsic_call_compiles_to_op_call_intrinsic() -> void {
          "expected main()'s rt_stdout().value to be 1");
 }
 
+auto test_intrinsic_result_constructs_and_matches_through_real_syntax()
+    -> void {
+  // Exercises the fix to `runtime::layout.cpp`'s `sum_variants_of`: before
+  // it, `result[T, io_errno]` (a builtin generic, not a user-declared sum
+  // type) had no variant/tag metadata, so `rt_open`'s `result[raw_fd,
+  // io_errno]` return value could be typechecked but never actually
+  // constructed or matched by this backend. This fixture opens a
+  // guaranteed-missing file through the real `intrinsic def rt_open` and
+  // real `match @ok(fd)/@err(e)` syntax, proving `@ok`/`@err` construction
+  // and dispatch work end to end for a builtin generic, not just that the
+  // metadata lookup returns something.
+  //
+  // Deliberately does not read a field off the bound payload (`e.code`):
+  // that hits a separate, pre-existing gap — field access on a variant
+  // payload binding fails to lower for *any* sum type (confirmed with a
+  // plain user-declared sum type too), unrelated to this fix. Out of scope
+  // here; `src/bytecode/vm_test.cpp`'s hand-assembled intrinsic tests
+  // already exercise the `io_errno.code` payload directly without going
+  // through that lowering path.
+  auto module = compile_fixture(load_fixture("intrinsic_result.kira"));
+
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() not to panic");
+  expect(main_result->value.i == 2,
+         "expected main() to match the `@err(e)` arm for a missing file");
+}
+
 auto test_implicit_tail_expression_is_the_return_value() -> void {
   // No explicit `return` — the last statement's value is the function's
   // result (spec/typed-ir-design.md's Rust-like trailing-expression rule,
@@ -668,6 +695,7 @@ auto main() -> int {
   try {
     test_add_compiles_and_runs();
     test_intrinsic_call_compiles_to_op_call_intrinsic();
+    test_intrinsic_result_constructs_and_matches_through_real_syntax();
     test_implicit_tail_expression_is_the_return_value();
     test_if_expression_selects_branch_value();
     test_while_loop_sums_one_to_n();

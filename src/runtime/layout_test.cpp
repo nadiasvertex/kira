@@ -127,6 +127,57 @@ auto test_sum_variant_tags_and_payload_arity() -> void {
          "expected the widest variant (rectangle) to size the payload area");
 }
 
+auto test_option_variant_tags_and_payload_arity() -> void {
+  // `option[T]`/`result[T, E]` are builtin generics with no backing
+  // `ast::type_decl` — layout.cpp hardcodes their variant shape (see its
+  // `builtin_generic_variants_of`) rather than reading it back from a
+  // declaration the way a user sum type's variants are read. This is the
+  // regression test for that hardcoded table.
+  auto fixture = check_fixture("module sample\n"
+                               "def main() -> option[int32]:\n"
+                               "    return @some(1)\n");
+  const auto id = struct_or_sum_type_of_main_return(fixture);
+  const auto names = runtime::sum_variant_names(fixture.checked.types, id);
+  expect(names.size() == 2, "expected two option variants");
+  expect(names[0] == "some" && names[1] == "none",
+         "expected option variants in `some`, `none` order");
+  expect(runtime::sum_variant_tag(fixture.checked.types, id, "some") == 0,
+         "expected `some` to have tag 0");
+  expect(runtime::sum_variant_tag(fixture.checked.types, id, "none") == 1,
+         "expected `none` to have tag 1");
+  expect(runtime::sum_variant_payload_slots(fixture.checked.types, id,
+                                            "some") == 1,
+         "expected `some` to have one payload slot");
+  expect(runtime::sum_variant_payload_slots(fixture.checked.types, id,
+                                            "none") == 0,
+         "expected `none` to have zero payload slots");
+  expect(runtime::sum_max_payload_slots(fixture.checked.types, id) == 1,
+         "expected option's payload area to be sized for `some`");
+}
+
+auto test_result_variant_tags_and_payload_arity() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def main() -> result[int32, str]:\n"
+                               "    return @ok(1)\n");
+  const auto id = struct_or_sum_type_of_main_return(fixture);
+  const auto names = runtime::sum_variant_names(fixture.checked.types, id);
+  expect(names.size() == 2, "expected two result variants");
+  expect(names[0] == "ok" && names[1] == "err",
+         "expected result variants in `ok`, `err` order");
+  expect(runtime::sum_variant_tag(fixture.checked.types, id, "ok") == 0,
+         "expected `ok` to have tag 0");
+  expect(runtime::sum_variant_tag(fixture.checked.types, id, "err") == 1,
+         "expected `err` to have tag 1");
+  expect(runtime::sum_variant_payload_slots(fixture.checked.types, id,
+                                            "ok") == 1,
+         "expected `ok` to have one payload slot");
+  expect(runtime::sum_variant_payload_slots(fixture.checked.types, id,
+                                            "err") == 1,
+         "expected `err` to have one payload slot");
+  expect(runtime::sum_max_payload_slots(fixture.checked.types, id) == 1,
+         "expected result's payload area to be sized for one payload slot");
+}
+
 auto test_list_reserve_slot_grows_and_preserves_existing_elements() -> void {
   uint64_t header[3] = {0, 0, 0};
 
@@ -162,6 +213,8 @@ auto main() -> int {
   try {
     test_struct_field_slots_match_declaration_order();
     test_sum_variant_tags_and_payload_arity();
+    test_option_variant_tags_and_payload_arity();
+    test_result_variant_tags_and_payload_arity();
     test_list_reserve_slot_grows_and_preserves_existing_elements();
   } catch (const std::exception &ex) {
     std::cerr << "layout_test failed: unhandled exception: " << ex.what()

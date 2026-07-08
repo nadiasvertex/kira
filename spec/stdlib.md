@@ -270,18 +270,42 @@ This is the checklist of compiler work they depend on, grouped by phase.
       intrinsics with real POSIX calls (`::open`/`::close`/`::read`/
       `::write`), tested against a real pipe and a real missing-file error
       (`src/bytecode/vm_test.cpp`, `src/bytecode_compiler/compile_test.cpp`).
-      **Known limitation, discovered while implementing this:** this
-      backend does not yet construct `option`/`result` values for the
-      builtin generic types — only user-declared sum types have a
-      construction convention (`runtime::sum_variant_tag` requires an
-      AST-backed `type_decl`, which `result`/`option` don't have). Until
-      generic option/result construction exists, `rt_open`/`rt_close`/
-      `rt_read`/`rt_write`/`rt_flush` panic with the new
-      `panic_reason::io_failure` on an OS-level error instead of returning
-      `@err` — this is a real gap in the bytecode backend, not specific to
-      intrinsics, and blocks any Kira code (not just `std.io`) from
-      constructing a `result`/`option` value in this tier. Tracked here
-      since it's the first place the gap became load-bearing.
+- [x] **Resolved:** `option[T]`/`result[T, E]` construction/matching in the
+      bytecode backend. The gap was that `runtime::layout.cpp`'s
+      `sum_variants_of` required an AST-backed `type_decl` for variant/tag
+      metadata, which the builtin generics `option`/`result` don't have
+      (they're `type_kind::builtin_generic_kind`, not `sum_kind`) — so
+      `@some(x)`/`@ok(x)`/etc. typechecked and lowered to HIR fine but
+      failed to *compile*, with "variant `some` does not resolve to a
+      declared sum-type variant." Fixed by hardcoding a static variant
+      table for `option` (`some`→tag 0/1 slot, `none`→tag 1/0 slots) and
+      `result` (`ok`→tag 0/1 slot, `err`→tag 1/1 slot) in
+      `builtin_generic_variants_of` (`src/runtime/layout.cpp`), matching
+      the order `semantic::check.cpp`'s own hardcoded `option`/`result`
+      handling already used. This fix lives in the file both the bytecode
+      compiler and the LLVM/AOT codegen backend share, so it resolves the
+      gap for both, not just the bytecode tier. `rt_open`/`rt_close`/
+      `rt_read`/`rt_write`/`rt_flush` now construct real `@ok`/`@err`
+      values instead of panicking; `panic_reason::io_failure` was removed
+      as no longer needed. Regression tests: `src/runtime/layout_test.cpp`
+      (variant metadata), `src/bytecode/vm_test.cpp` (intrinsics returning
+      `@ok`/`@err`), `src/bytecode_compiler/compile_test.cpp` (real
+      `intrinsic def rt_open` + real `match @ok(fd)/@err(e)` syntax, end to
+      end).
+- [ ] **Newly discovered, out of scope for the fix above — two separate
+      pre-existing bugs surfaced while testing it:**
+      1. `match` used as an *implicit* tail expression (function body ends
+         with a bare `match ...`, no `return`) silently returns a
+         zero/unit value instead of the matched arm's value; only
+         `return match ...` works correctly. Reproduces with any type, not
+         just `option`/`result` — e.g. `def f(x: bool) -> int32: match x: /
+         true => 111 / false => 222` returns `0` either way via `--run`.
+      2. Field access on a variant-payload-bound pattern variable (`@err(e)
+         => e.code`) fails to lower ("expression kind ... is not lowered by
+         the first milestone"), for *any* sum type, user-declared or
+         builtin. Both are real correctness/diagnostics gaps — the first
+         silently produces a wrong answer with no error — and deserve their
+         own follow-up.
 
 ### LLVM codegen / AOT runtime
 

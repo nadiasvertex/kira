@@ -1,4 +1,5 @@
 #include <array>
+#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -475,10 +476,17 @@ auto test_intrinsic_rt_stdout_returns_fd_one() -> void {
 }
 
 auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
-  // fn(write_fd, read_fd, len, write_ptr, read_ptr) -> u64 {
-  //   rt_write({value: write_fd}, {len; write_ptr})
-  //   return rt_read({value: read_fd}, {len; read_ptr})
+  // fn(write_fd, read_fd, len, write_ptr, read_ptr) -> i64 {
+  //   let w = rt_write({value: write_fd}, {len; write_ptr})   // result[usize, io_errno]
+  //   let r = rt_read({value: read_fd}, {len; read_ptr})       // result[usize, io_errno]
+  //   return w.tag * 1000000 + r.tag * 10000 + r.payload
   // }
+  // Encodes both results' tags plus the byte count into one return value so
+  // this test can confirm *both* intrinsics returned `@ok(...)` (tag 0) —
+  // not just that some payload came back — without needing branchy
+  // unwrap-or-panic bytecode; the real `@ok`/`@err` unwrap path is exercised
+  // through real Kira `match` syntax in
+  // src/bytecode_compiler/compile_test.cpp instead.
   int fds[2] = {-1, -1};
   expect(::pipe(fds) == 0, "expected pipe() to succeed");
 
@@ -538,9 +546,53 @@ auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
   writer.emit_u8(intrinsic_id("rt_read"));
   writer.emit_u8(8);
   writer.emit_u8(2);
-  writer.emit_opcode(bc::opcode::op_return_value);
+  // r11 = w.tag (r7[0]), r12 = r.tag (r10[0]), r13 = r.payload (r10[1])
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(11);
+  writer.emit_u8(7);
+  writer.emit_u16(0);
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(12);
   writer.emit_u8(10);
-  auto function = std::move(writer).finish("pipe_roundtrip", 5, 11);
+  writer.emit_u16(0);
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(13);
+  writer.emit_u8(10);
+  writer.emit_u16(1);
+  // r14 = 1000000, r15 = 10000
+  const auto million_idx = writer.add_constant(bc::slot_value{int64_t{1000000}});
+  writer.emit_opcode(bc::opcode::op_load_const);
+  writer.emit_u8(14);
+  writer.emit_u16(million_idx);
+  const auto ten_k_idx = writer.add_constant(bc::slot_value{int64_t{10000}});
+  writer.emit_opcode(bc::opcode::op_load_const);
+  writer.emit_u8(15);
+  writer.emit_u16(ten_k_idx);
+  // r16 = w.tag * 1000000, r17 = r.tag * 10000
+  writer.emit_opcode(bc::opcode::op_mul);
+  writer.emit_u8(16);
+  writer.emit_u8(11);
+  writer.emit_u8(14);
+  writer.emit_numeric_kind(bc::numeric_kind::i64);
+  writer.emit_opcode(bc::opcode::op_mul);
+  writer.emit_u8(17);
+  writer.emit_u8(12);
+  writer.emit_u8(15);
+  writer.emit_numeric_kind(bc::numeric_kind::i64);
+  // r18 = r16 + r17, r19 = r18 + r.payload
+  writer.emit_opcode(bc::opcode::op_add);
+  writer.emit_u8(18);
+  writer.emit_u8(16);
+  writer.emit_u8(17);
+  writer.emit_numeric_kind(bc::numeric_kind::i64);
+  writer.emit_opcode(bc::opcode::op_add);
+  writer.emit_u8(19);
+  writer.emit_u8(18);
+  writer.emit_u8(13);
+  writer.emit_numeric_kind(bc::numeric_kind::i64);
+  writer.emit_opcode(bc::opcode::op_return_value);
+  writer.emit_u8(19);
+  auto function = std::move(writer).finish("pipe_roundtrip", 5, 20);
 
   auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
   module.functions.push_back(std::move(function));
@@ -561,13 +613,16 @@ auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
 
   expect(result.has_value(), "expected the rt_write/rt_read round trip to "
                              "succeed against a real pipe");
-  expect(result->value.u == 2, "expected rt_read() to read exactly 2 bytes");
+  expect(result->value.i == 2,
+         "expected both rt_write() and rt_read() to return `@ok(...)` (tag "
+         "0) and rt_read() to read exactly 2 bytes — encoded as "
+         "write_tag*1e6 + read_tag*1e4 + read_payload");
   expect(read_buf[0] == 'h' && read_buf[1] == 'i',
          "expected the bytes rt_write() wrote to be the bytes rt_read() "
          "read back");
 }
 
-auto test_intrinsic_rt_close_succeeds_on_a_valid_fd() -> void {
+auto test_intrinsic_rt_close_returns_ok_on_a_valid_fd() -> void {
   const int duped = ::dup(0);
   expect(duped >= 0, "expected dup(0) to produce a closable fd");
 
@@ -584,21 +639,30 @@ auto test_intrinsic_rt_close_succeeds_on_a_valid_fd() -> void {
   writer.emit_u8(intrinsic_id("rt_close"));
   writer.emit_u8(1);
   writer.emit_u8(1);
-  writer.emit_opcode(bc::opcode::op_return_unit);
-  auto function = std::move(writer).finish("close_fd", 1, 3);
+  // dst(3) = close_result.tag
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(3);
+  writer.emit_u8(2);
+  writer.emit_u16(0);
+  writer.emit_opcode(bc::opcode::op_return_value);
+  writer.emit_u8(3);
+  auto function = std::move(writer).finish("close_fd", 1, 4);
 
   auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
   module.functions.push_back(std::move(function));
 
   const auto args = std::array{bc::slot_value{int64_t{duped}}};
   auto result = bc::vm{module}.run(0, args);
-  expect(result.has_value(), "expected rt_close() on a valid fd to succeed");
+  expect(result.has_value(), "expected rt_close() not to panic");
+  expect(result->value.i == 0,
+         "expected rt_close() on a valid fd to return `@ok(...)` (tag 0)");
 }
 
-auto test_intrinsic_rt_open_panics_on_a_missing_file() -> void {
-  // fn(path_len, path_ptr, read, write, append, create, truncate) -> int64 {
-  //   let fd = rt_open({len; path_ptr}, {read; write; append; create;
-  //   truncate}) return fd.value
+auto test_intrinsic_rt_open_returns_err_on_a_missing_file() -> void {
+  // fn(path_len, path_ptr, read, write, append, create, truncate) -> i64 {
+  //   let r = rt_open({len; path_ptr}, {read; write; append; create;
+  //                    truncate})           // result[raw_fd, io_errno]
+  //   return r.tag * 1000000 + r.payload.code
   // }
   const std::string path = "/definitely/does/not/exist/kira-vm-test.kira";
 
@@ -631,9 +695,38 @@ auto test_intrinsic_rt_open_panics_on_a_missing_file() -> void {
   writer.emit_u8(intrinsic_id("rt_open"));
   writer.emit_u8(7);
   writer.emit_u8(2);
-  writer.emit_opcode(bc::opcode::op_return_value);
+  // r10 = r9.tag, r11 = r9.payload (an `io_errno` struct pointer for @err)
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(10);
   writer.emit_u8(9);
-  auto function = std::move(writer).finish("open_missing", 7, 10);
+  writer.emit_u16(0);
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(11);
+  writer.emit_u8(9);
+  writer.emit_u16(1);
+  // r12 = r11.code
+  writer.emit_opcode(bc::opcode::op_load_slot);
+  writer.emit_u8(12);
+  writer.emit_u8(11);
+  writer.emit_u16(0);
+  // r13 = 1000000, r14 = r10 * r13, r15 = r14 + r12
+  const auto million_idx = writer.add_constant(bc::slot_value{int64_t{1000000}});
+  writer.emit_opcode(bc::opcode::op_load_const);
+  writer.emit_u8(13);
+  writer.emit_u16(million_idx);
+  writer.emit_opcode(bc::opcode::op_mul);
+  writer.emit_u8(14);
+  writer.emit_u8(10);
+  writer.emit_u8(13);
+  writer.emit_numeric_kind(bc::numeric_kind::i64);
+  writer.emit_opcode(bc::opcode::op_add);
+  writer.emit_u8(15);
+  writer.emit_u8(14);
+  writer.emit_u8(12);
+  writer.emit_numeric_kind(bc::numeric_kind::i64);
+  writer.emit_opcode(bc::opcode::op_return_value);
+  writer.emit_u8(15);
+  auto function = std::move(writer).finish("open_missing", 7, 16);
 
   auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
   module.functions.push_back(std::move(function));
@@ -650,10 +743,12 @@ auto test_intrinsic_rt_open_panics_on_a_missing_file() -> void {
   };
   auto result = bc::vm{module}.run(0, args);
 
-  expect(!result.has_value(),
-         "expected rt_open() on a nonexistent, non-`create` path to panic");
-  expect(result.error() == bc::panic_reason::io_failure,
-         "expected the panic reason to be io_failure");
+  expect(result.has_value(),
+         "expected rt_open() on a missing file not to panic, only to "
+         "return `@err(...)`");
+  expect(result->value.i == 1000000 + ENOENT,
+         "expected rt_open() to return `@err({ code: ENOENT })` (tag 1) for "
+         "a nonexistent, non-`create` path");
 }
 
 } // namespace
@@ -675,8 +770,8 @@ auto main() -> int {
     test_return_unit_produces_no_value();
     test_intrinsic_rt_stdout_returns_fd_one();
     test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe();
-    test_intrinsic_rt_close_succeeds_on_a_valid_fd();
-    test_intrinsic_rt_open_panics_on_a_missing_file();
+    test_intrinsic_rt_close_returns_ok_on_a_valid_fd();
+    test_intrinsic_rt_open_returns_err_on_a_missing_file();
   } catch (const std::exception &ex) {
     std::cerr << "vm_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);

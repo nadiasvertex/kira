@@ -2,6 +2,7 @@
 
 #include <array>
 #include <bit>
+#include <cerrno>
 #include <cstdint>
 #include <fcntl.h>
 #include <span>
@@ -741,19 +742,12 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 // implementing the same fixed schema. Every intrinsic here follows the heap
 // conventions already established elsewhere in this file: a struct is a
 // flat N-slot block in field-declaration order (`op_alloc`/`op_store_slot`),
-// and a `str`/slice value is a 2-slot `{ len; data_ptr }` header
-// (`op_load_str_const`).
-//
-// Provisional scope: `rt_open`/`rt_close`/`rt_read`/`rt_write`/`rt_flush`
-// are specced (spec/stdlib.md) to return `result[T, io_errno]`, but this
-// backend does not yet construct `option`/`result` values for the builtin
-// generic types — only user-declared sum types have a construction
-// convention today (`runtime::sum_variant_tag` requires an AST-backed
-// `type_decl`, which the builtin `result`/`option` don't have). Until
-// generic option/result construction lands, these intrinsics panic with
-// `panic_reason::io_failure` on an OS-level error instead of returning
-// `@err` — a complete, tested behavior for this increment, not a stub, just
-// not yet the final `result`-returning contract spec/stdlib.md specifies.
+// a `str`/slice value is a 2-slot `{ len; data_ptr }` header
+// (`op_load_str_const`), and — since `runtime::layout.cpp` now gives
+// `option`/`result` the same tag/payload-slot convention a user sum type
+// gets — a `result[T, io_errno]` value is a 2-slot `{ tag; payload }` block
+// with `tag == 0` for `@ok(payload)` and `tag == 1` for `@err(payload)`,
+// matching `sum_variant_tag`'s hardcoded order for these two builtins.
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] auto alloc_struct(std::span<const slot_value> fields)
@@ -784,6 +778,22 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   const auto *slots = slots_of(header);
   auto *data = reinterpret_cast<char *>(static_cast<uintptr_t>(slots[1].u));
   return {data, static_cast<size_t>(slots[0].u)};
+}
+
+/// Builds `@ok(payload)` as `result[T, io_errno]`'s runtime shape.
+[[nodiscard]] auto make_result_ok(slot_value payload) -> slot_value {
+  const std::array<slot_value, 2> fields = {slot_value{int64_t{0}}, payload};
+  return alloc_struct(fields);
+}
+
+/// Builds `@err({ code: errno })` as `result[T, io_errno]`'s runtime shape.
+[[nodiscard]] auto make_result_err(int errno_code) -> slot_value {
+  const auto code_field = slot_value{int64_t{errno_code}};
+  const auto io_errno_struct =
+      alloc_struct(std::span<const slot_value>(&code_field, 1));
+  const std::array<slot_value, 2> fields = {slot_value{int64_t{1}},
+                                            io_errno_struct};
+  return alloc_struct(fields);
 }
 
 [[nodiscard]] auto intrinsic_rt_stdin(std::span<const slot_value>)
@@ -830,17 +840,17 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 
   const int fd = ::open(path.c_str(), flags, 0644); // NOLINT
   if (fd < 0) {
-    throw panic_error(panic_reason::io_failure);
+    return make_result_err(errno);
   }
-  return make_raw_fd(fd);
+  return make_result_ok(make_raw_fd(fd));
 }
 
 [[nodiscard]] auto intrinsic_rt_close(std::span<const slot_value> args)
     -> slot_value {
   if (::close(raw_fd_of(args[0])) != 0) {
-    throw panic_error(panic_reason::io_failure);
+    return make_result_err(errno);
   }
-  return slot_value{};
+  return make_result_ok(slot_value{});
 }
 
 [[nodiscard]] auto intrinsic_rt_read(std::span<const slot_value> args)
@@ -848,9 +858,9 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   const auto buf = bytes_of(args[1]);
   const auto n = ::read(raw_fd_of(args[0]), buf.data(), buf.size());
   if (n < 0) {
-    throw panic_error(panic_reason::io_failure);
+    return make_result_err(errno);
   }
-  return slot_value{static_cast<uint64_t>(n)};
+  return make_result_ok(slot_value{static_cast<uint64_t>(n)});
 }
 
 [[nodiscard]] auto intrinsic_rt_write(std::span<const slot_value> args)
@@ -858,9 +868,9 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   const auto buf = bytes_of(args[1]);
   const auto n = ::write(raw_fd_of(args[0]), buf.data(), buf.size());
   if (n < 0) {
-    throw panic_error(panic_reason::io_failure);
+    return make_result_err(errno);
   }
-  return slot_value{static_cast<uint64_t>(n)};
+  return make_result_ok(slot_value{static_cast<uint64_t>(n)});
 }
 
 [[nodiscard]] auto intrinsic_rt_flush(std::span<const slot_value>)
@@ -868,7 +878,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   // Every read/write above goes straight through the raw ::read/::write
   // syscalls with no userspace buffering layer, so there is nothing for
   // this tier to flush.
-  return slot_value{};
+  return make_result_ok(slot_value{});
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);

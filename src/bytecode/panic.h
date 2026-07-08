@@ -22,13 +22,6 @@ enum class panic_reason : uint8_t {
   explicit_panic,
   stack_overflow,
   index_out_of_bounds,
-  io_failure, ///< An intrinsic's underlying OS call failed. Provisional:
-              ///< `std.io`'s intrinsics are specced (spec/stdlib.md) to
-              ///< return `result[T, io_errno]`, but generic `option`/
-              ///< `result` construction isn't implemented in this bytecode
-              ///< backend yet (see spec/stdlib.md's checklist) — until it
-              ///< is, an OS-level I/O failure panics here instead of
-              ///< propagating as `@err`.
 };
 
 [[nodiscard]] auto panic_reason_message(panic_reason reason) noexcept

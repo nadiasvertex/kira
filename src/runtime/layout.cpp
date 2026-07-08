@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <utility>
 
 #include "src/parser/ast.h"
 #include "src/runtime/arena.h"
@@ -25,8 +26,66 @@ using semantic::type_table;
               .body.fields;
 }
 
+/// Builds a variant descriptor whose payload arity is `payload_slots` —
+/// `payload_types`' *elements* are deliberately left null: nothing in this
+/// file (or its callers in `bytecode_compiler`/`llvm_codegen`) ever resolves
+/// a payload's type through this path, only its slot *count* (see this
+/// file's top comment), so a null placeholder per slot is enough.
+[[nodiscard]] auto make_variant(std::string name, size_t payload_slots)
+    -> ast::sum_variant {
+  ast::sum_variant variant;
+  variant.name = std::move(name);
+  variant.payload_types.resize(payload_slots);
+  return variant;
+}
+
+/// `option[T]`/`result[T, E]` are builtin generics (`type_kind::
+/// builtin_generic_kind`) with no backing `ast::type_decl` for
+/// `sum_variants_of` below to walk — unlike a user sum type, their variant
+/// shape isn't part of any declaration syntax to read back, so it's
+/// hardcoded here instead. Declaration order and payload slots match
+/// `semantic::check.cpp`'s own hardcoded handling of these two builtins
+/// (`check_prelude_variant`, `check_constructor_pattern`,
+/// `check_match_exhaustiveness`): `some`/`ok` carry the first generic
+/// argument as a 1-slot payload, `err` carries the second, `none` carries
+/// nothing.
+[[nodiscard]] auto make_two_variants(std::string first_name,
+                                     size_t first_payload_slots,
+                                     std::string second_name,
+                                     size_t second_payload_slots)
+    -> std::vector<ast::sum_variant> {
+  // `ast::sum_variant` holds a `vector<ptr<type_expr>>` and so is move-only
+  // — build this with `push_back`/`std::move` rather than a
+  // `std::initializer_list` braced-init, which would need to copy.
+  auto variants = std::vector<ast::sum_variant>{};
+  variants.push_back(make_variant(std::move(first_name), first_payload_slots));
+  variants.push_back(
+      make_variant(std::move(second_name), second_payload_slots));
+  return variants;
+}
+
+[[nodiscard]] auto builtin_generic_variants_of(const type_entry &instance)
+    -> const std::vector<ast::sum_variant> * {
+  if (instance.kind != type_kind::builtin_generic_kind) {
+    return nullptr;
+  }
+  static const auto option_variants = make_two_variants("some", 1, "none", 0);
+  static const auto result_variants = make_two_variants("ok", 1, "err", 1);
+  if (instance.name == "option") {
+    return &option_variants;
+  }
+  if (instance.name == "result") {
+    return &result_variants;
+  }
+  return nullptr;
+}
+
 [[nodiscard]] auto sum_variants_of(const type_entry &instance)
     -> const std::vector<ast::sum_variant> * {
+  if (const auto *builtin = builtin_generic_variants_of(instance);
+      builtin != nullptr) {
+    return builtin;
+  }
   if (instance.kind != type_kind::sum_kind || instance.decl == nullptr ||
       instance.decl->definition == nullptr ||
       instance.decl->definition->kind != ast::node_kind::sum_type_def) {
