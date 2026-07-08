@@ -184,17 +184,17 @@ using kira::decode_string_literal;
 [[nodiscard]] auto binary_opcode_for(ast::binary_op op)
     -> std::optional<opcode> {
   switch (op) {
-  case ast::binary_op::EqEq:
+  case ast::binary_op::eq_eq:
     return opcode::op_eq;
-  case ast::binary_op::BangEq:
+  case ast::binary_op::bang_eq:
     return opcode::op_ne;
-  case ast::binary_op::Lt:
+  case ast::binary_op::lt:
     return opcode::op_lt;
-  case ast::binary_op::LtEq:
+  case ast::binary_op::lt_eq:
     return opcode::op_le;
-  case ast::binary_op::Gt:
+  case ast::binary_op::gt:
     return opcode::op_gt;
-  case ast::binary_op::GtEq:
+  case ast::binary_op::gt_eq:
     return opcode::op_ge;
   case ast::binary_op::add:
     return opcode::op_add;
@@ -206,27 +206,27 @@ using kira::decode_string_literal;
     return opcode::op_div;
   case ast::binary_op::mod:
     return opcode::op_mod;
-  case ast::binary_op::AddWrap:
+  case ast::binary_op::add_wrap:
     return opcode::op_add_wrap;
-  case ast::binary_op::SubWrap:
+  case ast::binary_op::sub_wrap:
     return opcode::op_sub_wrap;
-  case ast::binary_op::MulWrap:
+  case ast::binary_op::mul_wrap:
     return opcode::op_mul_wrap;
-  case ast::binary_op::AddSat:
+  case ast::binary_op::add_sat:
     return opcode::op_add_sat;
-  case ast::binary_op::SubSat:
+  case ast::binary_op::sub_sat:
     return opcode::op_sub_sat;
-  case ast::binary_op::MulSat:
+  case ast::binary_op::mul_sat:
     return opcode::op_mul_sat;
   case ast::binary_op::shl:
     return opcode::op_shl;
   case ast::binary_op::shr:
     return opcode::op_shr;
-  case ast::binary_op::BitAnd:
+  case ast::binary_op::bit_and:
     return opcode::op_bitand;
-  case ast::binary_op::BitOr:
+  case ast::binary_op::bit_or:
     return opcode::op_bitor;
-  case ast::binary_op::BitXor:
+  case ast::binary_op::bit_xor:
     return opcode::op_bitxor;
   default:
     return std::nullopt;
@@ -238,39 +238,39 @@ using kira::decode_string_literal;
 [[nodiscard]] auto compound_assign_opcode_for(ast::assign_op op)
     -> std::optional<opcode> {
   switch (op) {
-  case ast::assign_op::AddAssign:
+  case ast::assign_op::add_assign:
     return opcode::op_add;
-  case ast::assign_op::SubAssign:
+  case ast::assign_op::sub_assign:
     return opcode::op_sub;
-  case ast::assign_op::MulAssign:
+  case ast::assign_op::mul_assign:
     return opcode::op_mul;
-  case ast::assign_op::DivAssign:
+  case ast::assign_op::div_assign:
     return opcode::op_div;
-  case ast::assign_op::ModAssign:
+  case ast::assign_op::mod_assign:
     return opcode::op_mod;
-  case ast::assign_op::AndAssign:
+  case ast::assign_op::and_assign:
     return opcode::op_bitand;
-  case ast::assign_op::OrAssign:
+  case ast::assign_op::or_assign:
     return opcode::op_bitor;
-  case ast::assign_op::XorAssign:
+  case ast::assign_op::xor_assign:
     return opcode::op_bitxor;
-  case ast::assign_op::ShlAssign:
+  case ast::assign_op::shl_assign:
     return opcode::op_shl;
-  case ast::assign_op::ShrAssign:
+  case ast::assign_op::shr_assign:
     return opcode::op_shr;
-  case ast::assign_op::AddWrapAssign:
+  case ast::assign_op::add_wrap_assign:
     return opcode::op_add_wrap;
-  case ast::assign_op::SubWrapAssign:
+  case ast::assign_op::sub_wrap_assign:
     return opcode::op_sub_wrap;
-  case ast::assign_op::MulWrapAssign:
+  case ast::assign_op::mul_wrap_assign:
     return opcode::op_mul_wrap;
-  case ast::assign_op::AddSatAssign:
+  case ast::assign_op::add_sat_assign:
     return opcode::op_add_sat;
-  case ast::assign_op::SubSatAssign:
+  case ast::assign_op::sub_sat_assign:
     return opcode::op_sub_sat;
-  case ast::assign_op::MulSatAssign:
+  case ast::assign_op::mul_sat_assign:
     return opcode::op_mul_sat;
-  case ast::assign_op::Assign:
+  case ast::assign_op::assign:
     return std::nullopt;
   }
   return std::nullopt;
@@ -507,14 +507,14 @@ private:
 
   [[nodiscard]] auto compile_binary(const hir::hir_binary &bin, uint8_t dst)
       -> std::expected<void, compile_error> {
-    if (bin.op == ast::binary_op::And || bin.op == ast::binary_op::Or) {
+    if (bin.op == ast::binary_op::logical_and || bin.op == ast::binary_op::logical_or) {
       // Short-circuit via jumps (opcodes.h's documented backend-only
       // choice) — evaluate lhs into dst, skip rhs (leaving dst as the
       // final result) exactly when short-circuiting applies.
       if (auto result = compile_expr_into(*bin.lhs, dst); !result.has_value()) {
         return std::unexpected(result.error());
       }
-      writer_.emit_opcode(bin.op == ast::binary_op::And
+      writer_.emit_opcode(bin.op == ast::binary_op::logical_and
                               ? opcode::op_jump_if_false
                               : opcode::op_jump_if_true);
       writer_.emit_u8(dst);
@@ -558,7 +558,7 @@ private:
 
   [[nodiscard]] auto compile_unary(const hir::hir_unary &un, uint8_t dst)
       -> std::expected<void, compile_error> {
-    if (un.op == ast::unary_op::Not) {
+    if (un.op == ast::unary_op::logical_not) {
       auto src = compile_expr(*un.operand);
       if (!src.has_value()) {
         return std::unexpected(src.error());
@@ -568,7 +568,7 @@ private:
       writer_.emit_u8(*src);
       return {};
     }
-    if (un.op != ast::unary_op::Neg && un.op != ast::unary_op::BitNot) {
+    if (un.op != ast::unary_op::neg && un.op != ast::unary_op::bit_not) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = un.span,
@@ -585,7 +585,7 @@ private:
     if (!src.has_value()) {
       return std::unexpected(src.error());
     }
-    writer_.emit_opcode(un.op == ast::unary_op::Neg ? opcode::op_neg
+    writer_.emit_opcode(un.op == ast::unary_op::neg ? opcode::op_neg
                                                     : opcode::op_bitnot);
     writer_.emit_u8(dst);
     writer_.emit_u8(*src);
@@ -1755,7 +1755,7 @@ private:
                           "variable",
                           target.name)});
     }
-    if (assign.op == ast::assign_op::Assign) {
+    if (assign.op == ast::assign_op::assign) {
       return compile_expr_into(*assign.value, *reg);
     }
     const auto op = compound_assign_opcode_for(assign.op);
