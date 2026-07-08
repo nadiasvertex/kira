@@ -15,7 +15,6 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <utility>
 #include <variant>
 
 #include "parser/parser.h"
@@ -901,6 +900,12 @@ static const cli_converter k_flag_converters[] = {
        }
        cfg.build = true;
        cfg.build_output = std::string{value};
+       return std::monostate{};
+     }},
+    {"--parse-only", false,
+     +[](cli_config &cfg,
+         std::string_view) -> std::expected<std::monostate, std::string> {
+       cfg.parse_only = true;
        return std::monostate{};
      }},
 };
