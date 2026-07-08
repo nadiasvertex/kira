@@ -181,7 +181,7 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
   case ast::visibility::priv:
     return "priv";
   }
-  return "internal";
+  return "__unspecified__";
 }
 
 /// Explain how to make an import valid after a visibility failure.
