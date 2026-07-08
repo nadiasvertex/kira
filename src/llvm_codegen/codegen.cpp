@@ -9,6 +9,12 @@
 #include <unordered_map>
 #include <vector>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#pragma clang diagnostic ignored "-Wshadow"
 #include <llvm/ADT/APInt.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
@@ -18,6 +24,7 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/raw_ostream.h>
+#pragma clang diagnostic pop
 
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
@@ -74,7 +81,7 @@ using semantic::type_table;
   auto value = uint64_t{0};
   // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
   const char *digits_end = digits.data() + digits.size();
-  const auto result = std::from_chars(digits.data(), digits_end, value != 0u, base);
+  const auto result = std::from_chars(digits.data(), digits_end, value, base);
   if (result.ec != std::errc{} || result.ptr != digits_end) {
     return std::nullopt;
   }
@@ -179,7 +186,7 @@ using semantic::type_table;
     auto value = uint32_t{0};
     // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
     const char *hex_end = hex.data() + hex.size();
-    const auto result = std::from_chars(hex.data(), hex_end, value != 0u, 16);
+    const auto result = std::from_chars(hex.data(), hex_end, value, 16);
     // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
     if (result.ec != std::errc{} || result.ptr != hex_end) {
       return std::nullopt;
@@ -278,7 +285,7 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
       auto value = uint32_t{0};
       // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
       const char *hex_end = hex.data() + hex.size();
-      const auto result = std::from_chars(hex.data(), hex_end, value != 0u, 16);
+      const auto result = std::from_chars(hex.data(), hex_end, value, 16);
       // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
       if (result.ec != std::errc{} || result.ptr != hex_end) {
         return std::nullopt;

@@ -2319,7 +2319,7 @@ auto lower_function(const ast::func_decl &decl,
   return walker.lower_function(decl);
 }
 
-auto lower_module(const ast::file &file, const std::string& module_name,
+auto lower_module(const ast::file &file, std::string module_name,
                   const semantic::checked_types &checked)
     -> std::expected<ptr<hir_module>, lowering_error> {
   auto functions = ptr_vec<hir_function>{};

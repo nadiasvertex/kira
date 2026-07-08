@@ -1442,7 +1442,7 @@ auto test_lowers_range_for_loop() -> void {
          "expected the loop condition to be a comparison");
   const auto &condition =
       dynamic_cast<const hir::hir_binary &>(*loop.condition);
-  expect(condition.op == kira::ast::binary_op::Lt,
+  expect(condition.op == kira::ast::binary_op::lt,
          "expected `..` to lower to a `<` bound check");
   expect(condition.type == fixture.checked.types.bool_type(),
          "expected the condition's type to be bool");
@@ -1478,7 +1478,7 @@ auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
       dynamic_cast<const hir::hir_while &>(*function.body->stmts[4]);
   const auto &condition =
       dynamic_cast<const hir::hir_binary &>(*loop.condition);
-  expect(condition.op == kira::ast::binary_op::LtEq,
+  expect(condition.op == kira::ast::binary_op::lt_eq,
          "expected `..=` to lower to a `<=` bound check");
 
   expect(loop.body->stmts.size() == 3,
@@ -1527,7 +1527,7 @@ auto test_lowers_list_for_loop() -> void {
       dynamic_cast<const hir::hir_while &>(*function.body->stmts[3]);
   const auto &condition =
       dynamic_cast<const hir::hir_binary &>(*loop.condition);
-  expect(condition.op == kira::ast::binary_op::Lt,
+  expect(condition.op == kira::ast::binary_op::lt,
          "expected the bound check to be `<`");
   expect(condition.rhs->kind == hir::hir_node_kind::hir_container_len,
          "expected the bound to be the list's runtime length");
