@@ -646,7 +646,7 @@ private:
         auto sp = source_span{.start = line_begin,
                               .end = static_cast<byte_offset>(pos_)};
         diag_.emit(
-            diagnostic(diagnostic_level::Error,
+            diagnostic(diagnostic_level::error,
                        "inconsistent indentation — this line's indentation "
                        "doesn't match any previous indentation level",
                        file_id_)
@@ -821,7 +821,7 @@ private:
         auto sp = source_span{.start = bad_start,
                               .end = static_cast<byte_offset>(pos_)};
         diag_.emit(
-            diagnostic(diagnostic_level::Error,
+            diagnostic(diagnostic_level::error,
                        std::format("the digit `{}` is not valid in an octal "
                                    "literal — octal digits are 0 through 7",
                                    source_[bad_start]),
@@ -851,7 +851,7 @@ private:
         auto sp = source_span{.start = bad_start,
                               .end = static_cast<byte_offset>(pos_)};
         diag_.emit(
-            diagnostic(diagnostic_level::Error,
+            diagnostic(diagnostic_level::error,
                        std::format("the digit `{}` is not valid in a binary "
                                    "literal — only `0` and `1` are allowed",
                                    source_[bad_start]),
@@ -878,7 +878,7 @@ private:
     }
     if (at_end() || !is_digit(peek())) {
       auto pos = static_cast<byte_offset>(pos_);
-      diag_.emit(diagnostic(diagnostic_level::Error,
+      diag_.emit(diagnostic(diagnostic_level::error,
                             "expected digits after the exponent `e` in a float "
                             "literal — for example, `1.5e10` or `2.0e-3`",
                             file_id_)
@@ -916,7 +916,7 @@ private:
       if (c == '\n') {
         // Unterminated string at end of line.
         diag_.emit(
-            diagnostic(diagnostic_level::Error,
+            diagnostic(diagnostic_level::error,
                        "unterminated string literal — the string started here "
                        "but the line ended before a closing `\"` was found",
                        file_id_)
@@ -970,7 +970,7 @@ private:
         }
         if (depth > 0) {
           diag_.emit(
-              diagnostic(diagnostic_level::Error,
+              diagnostic(diagnostic_level::error,
                          "unterminated string interpolation — the `{` inside "
                          "this string was never closed with a matching `}`",
                          file_id_)
@@ -989,7 +989,7 @@ private:
 
     // Reached EOF without closing quote.
     diag_.emit(
-        diagnostic(diagnostic_level::Error,
+        diagnostic(diagnostic_level::error,
                    "unterminated string literal — reached end of file without "
                    "finding a closing `\"`",
                    file_id_)
@@ -1006,7 +1006,7 @@ private:
   void scan_escape_sequence([[maybe_unused]] byte_offset string_start) {
     if (at_end()) {
       diag_.emit(
-          diagnostic(diagnostic_level::Error,
+          diagnostic(diagnostic_level::error,
                      "incomplete escape sequence at end of file — a `\\` was "
                      "found but nothing follows it",
                      file_id_)
@@ -1038,7 +1038,7 @@ private:
       if (!match('{')) {
         diag_.emit(
             diagnostic(
-                diagnostic_level::Error,
+                diagnostic_level::error,
                 "expected `{` after `\\u` in Unicode escape — the "
                 "correct syntax is `\\u{XXXX}` where XXXX are hex digits",
                 file_id_)
@@ -1052,7 +1052,7 @@ private:
       }
       if (at_end() || !is_hex_digit(peek())) {
         diag_.emit(
-            diagnostic(diagnostic_level::Error,
+            diagnostic(diagnostic_level::error,
                        "expected hex digits inside `\\u{...}` Unicode escape",
                        file_id_)
                 .with_label(
@@ -1071,7 +1071,7 @@ private:
       }
       if (!match('}')) {
         diag_.emit(
-            diagnostic(diagnostic_level::Error,
+            diagnostic(diagnostic_level::error,
                        "expected closing `}` for Unicode escape `\\u{...}`",
                        file_id_)
                 .with_label(source_span{.start = static_cast<byte_offset>(
@@ -1092,7 +1092,7 @@ private:
       msg += c;
       msg += "`";
 
-      auto diag = diagnostic(diagnostic_level::Error, msg, file_id_)
+      auto diag = diagnostic(diagnostic_level::error, msg, file_id_)
                       .with_label(esc_span, "not a recognized escape");
 
       // Suggest common mistakes.
@@ -1136,7 +1136,7 @@ private:
     // We've already consumed the opening `'`.
     if (at_end()) {
       diag_.emit(
-          diagnostic(diagnostic_level::Error,
+          diagnostic(diagnostic_level::error,
                      "unterminated character literal — expected a character "
                      "and closing `'`",
                      file_id_)
@@ -1152,7 +1152,7 @@ private:
     if (peek() == '\'') {
       // Empty character literal.
       advance();
-      diag_.emit(diagnostic(diagnostic_level::Error,
+      diag_.emit(diagnostic(diagnostic_level::error,
                             "empty character literal — character literals must "
                             "contain exactly one character",
                             file_id_)
@@ -1168,7 +1168,7 @@ private:
       scan_escape_sequence(start);
     } else if (peek() == '\n') {
       diag_.emit(
-          diagnostic(diagnostic_level::Error,
+          diagnostic(diagnostic_level::error,
                      "unterminated character literal — the line ended before "
                      "the closing `'` was found",
                      file_id_)
@@ -1210,7 +1210,7 @@ private:
         }
 
         diag_.emit(
-            diagnostic(diagnostic_level::Error,
+            diagnostic(diagnostic_level::error,
                        "character literal contains more than one character",
                        file_id_)
                 .with_label(span_from(start), "this is too long for a `char`")
@@ -1222,7 +1222,7 @@ private:
       }
 
       diag_.emit(
-          diagnostic(diagnostic_level::Error,
+          diagnostic(diagnostic_level::error,
                      "unterminated character literal — expected a closing `'`",
                      file_id_)
               .with_label(source_span{.start = start,

@@ -36,10 +36,10 @@ namespace {
 namespace fs = std::filesystem;
 
 /// File extension used for serialized module metadata artifacts.
-constexpr std::string_view kMetadataExtension = ".kmeta.pb";
+constexpr std::string_view k_metadata_extension = ".kmeta.pb";
 
 /// Schema version embedded in every emitted module metadata payload.
-constexpr uint32_t kModuleMetadataSchemaVersion = 1;
+constexpr uint32_t k_module_metadata_schema_version = 1;
 
 /// Append text to a diagnostic buffer, inserting a separating newline when
 /// needed.
@@ -453,7 +453,7 @@ auto add_symbol_metadata(const ast::node &node,
                                          const fs::path &source_path)
     -> metadata::v1::ModuleMetadata {
   auto metadata = metadata::v1::ModuleMetadata{};
-  metadata.set_schema_version(kModuleMetadataSchemaVersion);
+  metadata.set_schema_version(k_module_metadata_schema_version);
   metadata.set_source_path(normalize_path(source_path));
   metadata.set_no_prelude(file.no_prelude);
   metadata.set_parser_error_count(0);
@@ -502,12 +502,12 @@ auto add_symbol_metadata(const ast::node &node,
     for (size_t i = 0; i + 1 < file.module_decl->path.size(); ++i) {
       relative /= file.module_decl->path[i];
     }
-    relative /= file.module_decl->path.back() + std::string(kMetadataExtension);
+    relative /= file.module_decl->path.back() + std::string(k_metadata_extension);
     return metadata_root / relative;
   }
 
   relative /=
-      source_stem_or_default(source_path) + std::string(kMetadataExtension);
+      source_stem_or_default(source_path) + std::string(k_metadata_extension);
   return metadata_root / relative;
 }
 

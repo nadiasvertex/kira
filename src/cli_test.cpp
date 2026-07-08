@@ -48,7 +48,7 @@ auto test_parse_args_accepts_sources() -> void {
   expect(result->sources.size() == 2, "expected two source arguments");
   expect(result->sources[0] == "main.kira", "expected first source path");
   expect(result->sources[1] == "lib.kira", "expected second source path");
-  expect(result->metadata_dir == kira::kDefaultMetadataDir,
+  expect(result->metadata_dir == kira::k_default_metadata_dir,
          "expected default metadata directory");
 }
 

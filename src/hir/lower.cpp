@@ -80,7 +80,7 @@ private:
 
   [[nodiscard]] auto declare_local(std::string_view name) -> symbol_id {
     const auto id = next_symbol_++;
-    scopes_.back().emplace(std::string(name), id);
+    scopes.back().emplace(std::string(name), id);
     return id;
   }
 
@@ -90,19 +90,19 @@ private:
   [[nodiscard]] auto mint_symbol() -> symbol_id { return next_symbol_++; }
 
   [[nodiscard]] auto resolve_reference(std::string_view name) -> symbol_id {
-    for (auto &scope : std::views::reverse(scopes_)) {
+    for (auto &scope : std::views::reverse(scopes)) {
       if (const auto found = scope.find(std::string(name));
           found != scope.end()) {
         return found->second;
       }
     }
     auto key = std::string(name);
-    if (const auto found = global_refs_.find(key);
-        found != global_refs_.end()) {
+    if (const auto found = global_refs.find(key);
+        found != global_refs.end()) {
       return found->second;
     }
     const auto id = next_symbol_++;
-    global_refs_.emplace(std::move(key), id);
+    global_refs.emplace(std::move(key), id);
     return id;
   }
 
@@ -699,8 +699,8 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
     // `{x: x}` (see hir_struct_init's doc comment), so lowering builds the
     // implied `x` reference itself rather than recursing through
     // lower_expr on a node that doesn't exist.
-    const auto found = checked_.struct_literal_field_types.find(&field);
-    if (found == checked_.struct_literal_field_types.end() ||
+    const auto found = checked.struct_literal_field_types.find(&field);
+    if (found == checked.struct_literal_field_types.end() ||
         found->second == k_unknown_type || found->second == k_error_type) {
       return fail(lowering_error_kind::unresolved_type, field.span,
                   "no concrete checked type is available for this struct "
@@ -1862,8 +1862,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
     auto elements = ptr_vec<hir_pattern>{};
     elements.reserve(tuple.elements.size());
-    for (size_t i = 0; i < tuple.elements.size(); ++i) {
-      const auto &element_ast = tuple.elements[i];
+    for (const auto & element_ast : tuple.elements) {
       if (element_ast == nullptr) {
         return fail(lowering_error_kind::unsupported_construct, pattern.span,
                     "tuple pattern has a missing element");
@@ -1922,8 +1921,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       // so its type lives in the dedicated `struct_pattern_field_types` map
       // instead (see checked_types's doc comment). Desugars exactly like a
       // plain binding: a wildcard structural match plus a synthetic let.
-      const auto found = checked_.struct_pattern_field_types.find(&field);
-      if (found == checked_.struct_pattern_field_types.end() ||
+      const auto found = checked.struct_pattern_field_types.find(&field);
+      if (found == checked.struct_pattern_field_types.end() ||
           found->second == k_unknown_type || found->second == k_error_type) {
         return fail(lowering_error_kind::unresolved_type, field_span,
                     "no concrete checked type is available for this struct "
@@ -2058,8 +2057,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
     auto elements = ptr_vec<hir_pattern>{};
     elements.reserve(array.elements.size());
-    for (size_t i = 0; i < array.elements.size(); ++i) {
-      const auto &element_ast = array.elements[i];
+    for (const auto & element_ast : array.elements) {
       if (element_ast == nullptr) {
         return fail(lowering_error_kind::unsupported_construct, pattern.span,
                     "array pattern has a missing element");
@@ -2319,7 +2317,7 @@ auto lower_function(const ast::func_decl &decl,
   return walker.lower_function(decl);
 }
 
-auto lower_module(const ast::file &file, std::string module_name,
+auto lower_module(const ast::file &file, const std::string& module_name,
                   const semantic::checked_types &checked)
     -> std::expected<ptr<hir_module>, lowering_error> {
   auto functions = ptr_vec<hir_function>{};

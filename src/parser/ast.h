@@ -95,7 +95,7 @@ struct ident_expr;
 struct literal_expr;
 struct binary_expr;
 struct unary_expr;
-struct PostfixExpr;
+struct postfix_expr;
 struct call_expr;
 struct index_expr;
 struct field_expr;
@@ -232,7 +232,7 @@ enum class node_kind : uint8_t {
   literal_expr,     ///< Literal expression.
   binary_expr,      ///< Binary operator expression.
   unary_expr,       ///< Unary operator expression.
-  PostfixExpr,      ///< Reserved historical tag for postfix expressions.
+  postfix_expr,      ///< Reserved historical tag for postfix expressions.
   call_expr,        ///< Call expression.
   index_expr,       ///< Indexing expression.
   field_expr,       ///< Field access expression.
@@ -634,43 +634,43 @@ struct literal_expr : expr {
 /// semantics without carrying token kinds around.
 enum class binary_op : uint8_t {
   // Pipe
-  Pipe, ///< Pipeline or low-precedence `|` operator.
+  pipe, ///< Pipeline or low-precedence `|` operator.
   // Logical
-  Or,  ///< Logical disjunction.
-  And, ///< Logical conjunction.
+  logical_or,  ///< Logical disjunction.
+  logical_and, ///< Logical conjunction.
   // Comparison
-  EqEq,   ///< Equality comparison.
-  BangEq, ///< Inequality comparison.
-  Lt,     ///< Less-than comparison.
-  LtEq,   ///< Less-than-or-equal comparison.
-  Gt,     ///< Greater-than comparison.
-  GtEq,   ///< Greater-than-or-equal comparison.
-  In,     ///< Membership comparison.
-  NotIn,  ///< Negated membership comparison.
+  eq_eq,   ///< Equality comparison.
+  bang_eq, ///< Inequality comparison.
+  lt,     ///< Less-than comparison.
+  lt_eq,   ///< Less-than-or-equal comparison.
+  gt,     ///< Greater-than comparison.
+  gt_eq,   ///< Greater-than-or-equal comparison.
+  in,     ///< Membership comparison.
+  not_in,  ///< Negated membership comparison.
   // Arithmetic
-  Add, ///< Addition.
-  Sub, ///< Subtraction.
-  Mul, ///< Multiplication.
-  Div, ///< Division.
-  Mod, ///< Remainder.
+  add, ///< Addition.
+  sub, ///< Subtraction.
+  mul, ///< Multiplication.
+  div, ///< Division.
+  mod, ///< Remainder.
   // Wrapping
-  AddWrap, ///< Wrapping addition.
-  SubWrap, ///< Wrapping subtraction.
-  MulWrap, ///< Wrapping multiplication.
+  add_wrap, ///< Wrapping addition.
+  sub_wrap, ///< Wrapping subtraction.
+  mul_wrap, ///< Wrapping multiplication.
   // Saturating
-  AddSat, ///< Saturating addition.
-  SubSat, ///< Saturating subtraction.
-  MulSat, ///< Saturating multiplication.
+  add_sat, ///< Saturating addition.
+  sub_sat, ///< Saturating subtraction.
+  mul_sat, ///< Saturating multiplication.
   // Shifts
-  Shl, ///< Left shift.
-  Shr, ///< Right shift.
+  shl, ///< Left shift.
+  shr, ///< Right shift.
   // Bitwise
-  BitAnd, ///< Bitwise conjunction.
-  BitOr,  ///< Bitwise disjunction.
-  BitXor, ///< Bitwise exclusive-or.
+  bit_and, ///< Bitwise conjunction.
+  bit_or,  ///< Bitwise disjunction.
+  bit_xor, ///< Bitwise exclusive-or.
   // Range (used in patterns)
-  Range,          ///< Half-open range operator.
-  RangeInclusive, ///< Inclusive range operator.
+  range,          ///< Half-open range operator.
+  range_inclusive, ///< Inclusive range operator.
 };
 
 /// @brief Returns the canonical surface spelling for a binary operator.
@@ -682,63 +682,63 @@ enum class binary_op : uint8_t {
 [[nodiscard]] inline auto binary_op_name(binary_op op) noexcept
     -> std::string_view {
   switch (op) {
-  case binary_op::Pipe:
+  case binary_op::pipe:
     return "|";
-  case binary_op::Or:
+  case binary_op::logical_or:
     return "or";
-  case binary_op::And:
+  case binary_op::logical_and:
     return "and";
-  case binary_op::EqEq:
+  case binary_op::eq_eq:
     return "==";
-  case binary_op::BangEq:
+  case binary_op::bang_eq:
     return "!=";
-  case binary_op::Lt:
+  case binary_op::lt:
     return "<";
-  case binary_op::LtEq:
+  case binary_op::lt_eq:
     return "<=";
-  case binary_op::Gt:
+  case binary_op::gt:
     return ">";
-  case binary_op::GtEq:
+  case binary_op::gt_eq:
     return ">=";
-  case binary_op::In:
+  case binary_op::in:
     return "in";
-  case binary_op::NotIn:
+  case binary_op::not_in:
     return "not in";
-  case binary_op::Add:
+  case binary_op::add:
     return "+";
-  case binary_op::Sub:
+  case binary_op::sub:
     return "-";
-  case binary_op::Mul:
+  case binary_op::mul:
     return "*";
-  case binary_op::Div:
+  case binary_op::div:
     return "/";
-  case binary_op::Mod:
+  case binary_op::mod:
     return "%";
-  case binary_op::AddWrap:
+  case binary_op::add_wrap:
     return "+%";
-  case binary_op::SubWrap:
+  case binary_op::sub_wrap:
     return "-%";
-  case binary_op::MulWrap:
+  case binary_op::mul_wrap:
     return "*%";
-  case binary_op::AddSat:
+  case binary_op::add_sat:
     return "+|";
-  case binary_op::SubSat:
+  case binary_op::sub_sat:
     return "-|";
-  case binary_op::MulSat:
+  case binary_op::mul_sat:
     return "*|";
-  case binary_op::Shl:
+  case binary_op::shl:
     return "<<";
-  case binary_op::Shr:
+  case binary_op::shr:
     return ">>";
-  case binary_op::BitAnd:
+  case binary_op::bit_and:
     return "&";
-  case binary_op::BitOr:
+  case binary_op::bit_or:
     return "|";
-  case binary_op::BitXor:
+  case binary_op::bit_xor:
     return "^";
-  case binary_op::Range:
+  case binary_op::range:
     return "..";
-  case binary_op::RangeInclusive:
+  case binary_op::range_inclusive:
     return "..=";
   }
   return "<?>";
@@ -755,12 +755,12 @@ struct binary_expr : expr {
 
 /// @brief Normalized unary operators.
 enum class unary_op : uint8_t {
-  Neg,       ///< Arithmetic negation.
-  BitNot,    ///< Bitwise inversion.
-  Deref,     ///< Indirection / dereference.
-  AddrOf,    ///< Address-of or borrow.
-  AddrOfMut, ///< Mutable address-of or borrow.
-  Not,       ///< Logical negation.
+  neg,       ///< Arithmetic negation.
+  bit_not,    ///< Bitwise inversion.
+  deref,     ///< Indirection / dereference.
+  addr_of,    ///< Address-of or borrow.
+  addr_of_mut, ///< Mutable address-of or borrow.
+  logical_not,       ///< Logical negation.
 };
 
 /// @brief Returns the canonical surface spelling for a unary operator.
@@ -769,17 +769,17 @@ enum class unary_op : uint8_t {
 [[nodiscard]] inline auto unary_op_name(unary_op op) noexcept
     -> std::string_view {
   switch (op) {
-  case unary_op::Neg:
+  case unary_op::neg:
     return "-";
-  case unary_op::BitNot:
+  case unary_op::bit_not:
     return "~";
-  case unary_op::Deref:
+  case unary_op::deref:
     return "*";
-  case unary_op::AddrOf:
+  case unary_op::addr_of:
     return "&";
-  case unary_op::AddrOfMut:
+  case unary_op::addr_of_mut:
     return "&mut";
-  case unary_op::Not:
+  case unary_op::logical_not:
     return "not";
   }
   return "<?>";
@@ -1154,9 +1154,9 @@ struct range_pattern : pattern {
 /// `some(pattern)`, `ok(pattern)`, `err(pattern)`
 /// @brief Shared discriminator for option/result wrapper patterns.
 enum class option_result_kind : uint8_t {
-  Some, ///< Option success/presence wrapper.
-  Ok,   ///< Result success wrapper.
-  Err,  ///< Result failure wrapper.
+  some, ///< Option success/presence wrapper.
+  ok,   ///< Result success wrapper.
+  err,  ///< Result failure wrapper.
 };
 
 /// @brief Pattern matching the option `some(...)` wrapper form.
@@ -1243,23 +1243,23 @@ struct var_stmt : stmt {
 
 /// @brief Normalized assignment operators.
 enum class assign_op : uint8_t {
-  Assign,        ///< Plain assignment `=`.
-  AddAssign,     ///< Compound add assignment `+=`.
-  SubAssign,     ///< Compound subtract assignment `-=`.
-  MulAssign,     ///< Compound multiply assignment `*=`.
-  DivAssign,     ///< Compound divide assignment `/=`.
-  ModAssign,     ///< Compound remainder assignment `%=`.
-  AndAssign,     ///< Compound bitwise-and assignment `&=`.
-  OrAssign,      ///< Compound bitwise-or assignment `|=`.
-  XorAssign,     ///< Compound bitwise-xor assignment `^=`.
-  ShlAssign,     ///< Compound left-shift assignment `<<=`.
-  ShrAssign,     ///< Compound right-shift assignment `>>=`.
-  AddWrapAssign, ///< Compound wrapping add assignment `+%=`.
-  SubWrapAssign, ///< Compound wrapping subtract assignment `-%=`.
-  MulWrapAssign, ///< Compound wrapping multiply assignment `*%=`.
-  AddSatAssign,  ///< Compound saturating add assignment `+|=`.
-  SubSatAssign,  ///< Compound saturating subtract assignment `-|=`.
-  MulSatAssign,  ///< Compound saturating multiply assignment `*|=`.
+  assign,        ///< Plain assignment `=`.
+  add_assign,     ///< Compound add assignment `+=`.
+  sub_assign,     ///< Compound subtract assignment `-=`.
+  mul_assign,     ///< Compound multiply assignment `*=`.
+  div_assign,     ///< Compound divide assignment `/=`.
+  mod_assign,     ///< Compound remainder assignment `%=`.
+  and_assign,     ///< Compound bitwise-and assignment `&=`.
+  or_assign,      ///< Compound bitwise-or assignment `|=`.
+  xor_assign,     ///< Compound bitwise-xor assignment `^=`.
+  shl_assign,     ///< Compound left-shift assignment `<<=`.
+  shr_assign,     ///< Compound right-shift assignment `>>=`.
+  add_wrap_assign, ///< Compound wrapping add assignment `+%=`.
+  sub_wrap_assign, ///< Compound wrapping subtract assignment `-%=`.
+  mul_wrap_assign, ///< Compound wrapping multiply assignment `*%=`.
+  add_sat_assign,  ///< Compound saturating add assignment `+|=`.
+  sub_sat_assign,  ///< Compound saturating subtract assignment `-|=`.
+  mul_sat_assign,  ///< Compound saturating multiply assignment `*|=`.
 };
 
 /// @brief Assignment statement with a normalized operator.
@@ -1375,9 +1375,9 @@ struct use_item {
 
 /// @brief Shape of the selector portion of a `use` declaration.
 enum class use_selector_kind : uint8_t {
-  Single,   ///< Import exactly one trailing item, optionally renamed.
-  Group,    ///< Import an explicit brace-delimited item set.
-  Wildcard, ///< Import every visible item from the path prefix.
+  single,   ///< Import exactly one trailing item, optionally renamed.
+  group,    ///< Import an explicit brace-delimited item set.
+  wildcard, ///< Import every visible item from the path prefix.
 };
 
 /// @brief Parsed selector detail for a `use` declaration.

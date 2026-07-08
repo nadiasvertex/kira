@@ -24,27 +24,22 @@ enum class diagnostic_level : uint8_t {
   /// A fatal error that prevents further analysis of the current construct.
   /// The parser will attempt error recovery, but the AST node will be
   /// marked as containing errors.
-  Error,
-  error = Error, ///< Lowercase spelling used by most call sites and switches.
+  error,
 
   /// A problem that doesn't prevent parsing from continuing but indicates
   /// something that will fail in a later compilation phase. For example,
   /// using a modifier in the wrong position.
-  Warning,
-  warning =
-      Warning, ///< Lowercase spelling used by most call sites and switches.
+  warning,
 
   /// Additional context attached to a preceding Error or Warning.
   /// Notes point at related locations ("this `{` was opened here",
   /// "previous definition was here", etc.).
-  Note,
-  note = Note, ///< Lowercase spelling for attached context diagnostics.
+  note,
 
   /// A concrete suggestion for how to fix the problem. This is the
   /// cooperative part — we don't just complain, we show the user what
   /// to do. Help messages may include suggested replacement text.
-  Help,
-  help = Help, ///< Lowercase spelling for fix-oriented follow-up messages.
+  help,
 };
 
 /// @brief Returns the stable textual label shown to users for `level`.
@@ -71,26 +66,26 @@ diagnostic_level_name(diagnostic_level level) noexcept -> std::string_view {
 /// They live in a dedicated namespace so formatting code can opt into color
 /// without mixing escape literals into the higher-level rendering logic.
 namespace ansi {
-constexpr std::string_view Reset = "\033[0m"; ///< Clear all active formatting.
-constexpr std::string_view Bold = "\033[1m";  ///< Emphasize severity headings.
-constexpr std::string_view Dim =
+constexpr std::string_view reset = "\033[0m"; ///< Clear all active formatting.
+constexpr std::string_view bold = "\033[1m";  ///< Emphasize severity headings.
+constexpr std::string_view dim =
     "\033[2m"; ///< Reserved for lower-emphasis text.
-constexpr std::string_view Red = "\033[31m";     ///< Base error color.
-constexpr std::string_view Yellow = "\033[33m";  ///< Base warning color.
-constexpr std::string_view Blue = "\033[34m";    ///< Base note color.
-constexpr std::string_view Magenta = "\033[35m"; ///< Reserved accent color.
-constexpr std::string_view Cyan = "\033[36m";    ///< Reserved accent color.
-constexpr std::string_view BoldRed =
+constexpr std::string_view red = "\033[31m";     ///< Base error color.
+constexpr std::string_view yellow = "\033[33m";  ///< Base warning color.
+constexpr std::string_view blue = "\033[34m";    ///< Base note color.
+constexpr std::string_view magenta = "\033[35m"; ///< Reserved accent color.
+constexpr std::string_view cyan = "\033[36m";    ///< Reserved accent color.
+constexpr std::string_view bold_red =
     "\033[1;31m"; ///< Error headline and underline color.
-constexpr std::string_view BoldYellow =
+constexpr std::string_view bold_yellow =
     "\033[1;33m"; ///< Warning headline and underline color.
-constexpr std::string_view BoldBlue =
+constexpr std::string_view bold_blue =
     "\033[1;34m"; ///< Note headline and gutter color.
-constexpr std::string_view BoldMagenta =
+constexpr std::string_view bold_magenta =
     "\033[1;35m"; ///< Reserved bold accent color.
-constexpr std::string_view BoldCyan =
+constexpr std::string_view bold_cyan =
     "\033[1;36m"; ///< Reserved bold accent color.
-constexpr std::string_view BoldGreen =
+constexpr std::string_view bold_green =
     "\033[1;32m"; ///< Help and fix-preview color.
 } // namespace ansi
 
@@ -102,15 +97,15 @@ constexpr std::string_view BoldGreen =
 diagnostic_level_color(diagnostic_level level) noexcept -> std::string_view {
   switch (level) {
   case diagnostic_level::error:
-    return ansi::BoldRed;
+    return ansi::bold_red;
   case diagnostic_level::warning:
-    return ansi::BoldYellow;
+    return ansi::bold_yellow;
   case diagnostic_level::note:
-    return ansi::BoldBlue;
+    return ansi::bold_blue;
   case diagnostic_level::help:
-    return ansi::BoldGreen;
+    return ansi::bold_green;
   }
-  return ansi::Reset;
+  return ansi::reset;
 }
 
 // ==========================================================================
@@ -303,7 +298,7 @@ struct diagnostic {
 // ==========================================================================
 class diagnostic_bag {
 public:
-  static constexpr uint32_t kDefaultMaxErrors =
+  static constexpr uint32_t k_default_max_errors =
       50; ///< Default cascade cut-off.
 
   /// @brief Creates a diagnostic collector with an optional error budget.
@@ -312,7 +307,7 @@ public:
   /// problems instead of phase-local fragments.
   ///
   /// @param max_errors Maximum number of primary errors before throttling.
-  explicit diagnostic_bag(uint32_t max_errors = kDefaultMaxErrors)
+  explicit diagnostic_bag(uint32_t max_errors = k_default_max_errors)
       : max_errors_(max_errors) {}
 
   // -- Reporting --
@@ -324,7 +319,7 @@ public:
   /// noise.
   ///
   /// @param diag Diagnostic to retain.
-  void emit(diagnostic diag) {
+  void emit(const diagnostic& diag) {
     if (diag.is_error()) {
       ++error_count_;
       if (error_count_ > max_errors_ && !cascade_reported_) {
@@ -509,11 +504,11 @@ private:
       out += prefix;
       out += diagnostic_level_color(diag.level);
       out += diagnostic_level_name(diag.level);
-      out += ansi::Reset;
-      out += ansi::Bold;
+      out += ansi::reset;
+      out += ansi::bold;
       out += ": ";
       out += diag.message;
-      out += ansi::Reset;
+      out += ansi::reset;
       out += '\n';
     } else {
       out += prefix;
@@ -548,8 +543,8 @@ private:
       return; // Dummy span — nothing to render.
     }
 
-    std::string arrow_color = use_color_ ? std::string(ansi::BoldBlue) : "";
-    std::string reset = use_color_ ? std::string(ansi::Reset) : "";
+    std::string arrow_color = use_color_ ? std::string(ansi::bold_blue) : "";
+    std::string reset = use_color_ ? std::string(ansi::reset) : "";
 
     if (file == nullptr) {
       out += prefix;
@@ -588,7 +583,7 @@ private:
     // Source line(s) with underline.
     // For simplicity we render single-line labels with a caret underline.
     // Multi-line labels get a vertical bar in the margin.
-    std::string line_color = use_color_ ? std::string(ansi::BoldBlue) : "";
+    std::string line_color = use_color_ ? std::string(ansi::bold_blue) : "";
     std::string underline_color =
         use_color_ ? std::string(diagnostic_level_color(label.level)) : "";
 
@@ -706,8 +701,8 @@ private:
   /// Renders a suggested source edit preview below a diagnostic.
   void render_fix(std::string &out, const suggested_fix &fix,
                   const std::string &prefix, const source_file *file) const {
-    std::string help_color = use_color_ ? std::string(ansi::BoldGreen) : "";
-    std::string reset = use_color_ ? std::string(ansi::Reset) : "";
+    std::string help_color = use_color_ ? std::string(ansi::bold_green) : "";
+    std::string reset = use_color_ ? std::string(ansi::reset) : "";
 
     out += prefix;
     out += "  ";

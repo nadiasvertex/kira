@@ -11,11 +11,11 @@
 namespace kira {
 
 /// Default output directory for serialized module metadata artifacts.
-inline constexpr std::string_view kDefaultMetadataDir =
+inline constexpr std::string_view k_default_metadata_dir =
     "kira-out/module-metadata";
 
 /// Default entry-point function name executed by `--run`.
-inline constexpr std::string_view kDefaultRunFunction = "main";
+inline constexpr std::string_view k_default_run_function = "main";
 
 /// Parsed command-line inputs for one `kira` invocation.
 struct cli_config {
@@ -23,7 +23,7 @@ struct cli_config {
   std::vector<std::string>
       sources; ///< Source file paths to compile in this session.
   std::string metadata_dir =
-      std::string(kDefaultMetadataDir); ///< Output root for metadata files.
+      std::string(k_default_metadata_dir); ///< Output root for metadata files.
   bool show_help = false; ///< True when argument parsing requested help output.
   bool parse_only = false; ///< Skip name resolution and type checking
                            ///< (parser-focused drivers).
@@ -31,14 +31,14 @@ struct cli_config {
                            ///< via the tier-0 VM (`src/bytecode/vm.h`) after a
                            ///< successful compile.
   std::string run_function =
-      std::string(kDefaultRunFunction); ///< Zero-argument function to
+      std::string(k_default_run_function); ///< Zero-argument function to
                                         ///< execute when `run` is set.
   bool build = false;                   ///< Compile to a native object file via
                       ///< `src/llvm_codegen`, link it against Kira's AOT
                       ///< runtime support library, and produce a standalone
                       ///< executable (`spec/codegen-design.md` increment 4).
   std::string build_function =
-      std::string(kDefaultRunFunction); ///< Zero-argument function to use as
+      std::string(k_default_run_function); ///< Zero-argument function to use as
                                         ///< the executable's entry point
                                         ///< when `build` is set.
   std::string build_output; ///< Output executable path; empty derives one

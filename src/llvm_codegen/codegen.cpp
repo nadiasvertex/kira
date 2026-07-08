@@ -74,7 +74,7 @@ using semantic::type_table;
   auto value = uint64_t{0};
   // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
   const char *digits_end = digits.data() + digits.size();
-  const auto result = std::from_chars(digits.data(), digits_end, value, base);
+  const auto result = std::from_chars(digits.data(), digits_end, value != 0u, base);
   if (result.ec != std::errc{} || result.ptr != digits_end) {
     return std::nullopt;
   }
@@ -179,7 +179,7 @@ using semantic::type_table;
     auto value = uint32_t{0};
     // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
     const char *hex_end = hex.data() + hex.size();
-    const auto result = std::from_chars(hex.data(), hex_end, value, 16);
+    const auto result = std::from_chars(hex.data(), hex_end, value != 0u, 16);
     // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
     if (result.ec != std::errc{} || result.ptr != hex_end) {
       return std::nullopt;
@@ -278,7 +278,7 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
       auto value = uint32_t{0};
       // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
       const char *hex_end = hex.data() + hex.size();
-      const auto result = std::from_chars(hex.data(), hex_end, value, 16);
+      const auto result = std::from_chars(hex.data(), hex_end, value != 0u, 16);
       // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
       if (result.ec != std::errc{} || result.ptr != hex_end) {
         return std::nullopt;
@@ -296,9 +296,10 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
 
 /// Whether `id` is one of the heap-backed representations
 /// `src/runtime/layout.h` describes (`str`, `list`/`option`/`result` and
-/// other prelude generics, tuple, fixed array, struct, sum type) — every
-/// such value is a single opaque pointer, as opposed to the closed scalar
-/// set `numeric_kind_of` maps directly to an LLVM integer/float type.
+/// other prelude generics, tuple, fixed array, struct, sum type, and now
+/// `fn(...)` — a lambda/closure value, per increment 6) — every such value
+/// is a single opaque pointer, as opposed to the closed scalar set
+/// `numeric_kind_of` maps directly to an LLVM integer/float type.
 [[nodiscard]] auto is_heap_type(const type_table &types, type_id id) -> bool {
   const auto &entry = types.entry(id);
   switch (entry.kind) {
@@ -307,6 +308,7 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
   case semantic::type_kind::struct_kind:
   case semantic::type_kind::sum_kind:
   case semantic::type_kind::builtin_generic_kind:
+  case semantic::type_kind::fn_kind:
     return true;
   case semantic::type_kind::builtin_kind:
     return entry.name == "str";
@@ -370,9 +372,9 @@ public:
       const std::unordered_map<std::string, llvm::Function *> &functions,
       llvm::Function *panic_fn, llvm::Function *alloc_fn,
       llvm::Function *list_reserve_slot_fn)
-      : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
+      : ctx_(ctx), types_(types), functions(functions), panic_fn_(panic_fn),
         alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
-        builder_(ctx) {}
+        builder(ctx) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn,
                              llvm::Function *llvm_fn)
@@ -388,7 +390,7 @@ public:
     }
 
     auto *entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_fn);
-    builder_.SetInsertPoint(entry);
+    builder.SetInsertPoint(entry);
     // Every local (parameter or `let`) gets an alloca inserted here, at the
     // very front of the entry block, regardless of where in the function
     // body it's lexically declared — the usual "alloca marker" trick (also
@@ -396,7 +398,7 @@ public:
     // repeatedly (e.g. one lexically inside a `while` body) must not be
     // emitted at that repeated program point, or it dynamically grows the
     // stack once per loop iteration instead of naming one fixed frame slot.
-    alloca_marker_ = builder_.CreateAlloca(llvm::Type::getInt1Ty(ctx_), nullptr,
+    alloca_marker = builder.CreateAlloca(llvm::Type::getInt1Ty(ctx), nullptr,
                                            "alloca.marker");
 
     for (size_t i = 0; i < fn.params.size(); ++i) {
@@ -406,8 +408,8 @@ public:
         return std::unexpected(ty.error());
       }
       auto *alloca = create_local_alloca(*ty, param.name);
-      builder_.CreateStore(llvm_fn->getArg(static_cast<unsigned>(i)), alloca);
-      locals_.emplace(param.symbol, alloca);
+      builder.CreateStore(llvm_fn->getArg(static_cast<unsigned>(i)), alloca);
+      locals.emplace(param.symbol, alloca);
     }
 
     const auto &stmts = fn.body->stmts;
@@ -422,7 +424,7 @@ public:
 
     if (!terminated) {
       if (stmts.empty()) {
-        builder_.CreateRetVoid();
+        builder.CreateRetVoid();
       } else {
         const auto &last = *stmts.back();
         if (last.kind == hir_node_kind::hir_expr_stmt) {
@@ -433,13 +435,13 @@ public:
             if (!value.has_value()) {
               return std::unexpected(value.error());
             }
-            builder_.CreateRetVoid();
+            builder.CreateRetVoid();
           } else {
             auto value = compile_expr(*expr_stmt.expr);
             if (!value.has_value()) {
               return std::unexpected(value.error());
             }
-            builder_.CreateRet(*value);
+            builder.CreateRet(*value);
           }
         } else {
           auto result = compile_stmt(last);
@@ -447,7 +449,7 @@ public:
             return std::unexpected(result.error());
           }
           if (!*result) {
-            builder_.CreateRetVoid();
+            builder.CreateRetVoid();
           }
         }
       }
@@ -465,14 +467,14 @@ private:
   [[nodiscard]] auto create_local_alloca(llvm::Type *ty,
                                          const std::string &name)
       -> llvm::AllocaInst * {
-    auto tmp = llvm::IRBuilder<>(alloca_marker_);
+    auto tmp = llvm::IRBuilder<>(alloca_marker);
     return tmp.CreateAlloca(ty, nullptr, name);
   }
 
   [[nodiscard]] auto lookup_local(hir::symbol_id symbol) const
       -> llvm::AllocaInst * {
-    const auto found = locals_.find(symbol);
-    return found == locals_.end() ? nullptr : found->second;
+    const auto found = locals.find(symbol);
+    return found == locals.end() ? nullptr : found->second;
   }
 
   [[nodiscard]] auto numeric_kind_for(type_id id, source_span span)
@@ -499,7 +501,7 @@ private:
   /// (arithmetic/comparison operands, casts).
   [[nodiscard]] auto storage_type_for(type_id id, source_span span)
       -> std::expected<llvm::Type *, codegen_error> {
-    const auto ty = storage_llvm_type(types_, ctx_, id);
+    const auto ty = storage_llvm_type(types, ctx, id);
     if (!ty.has_value()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_type,
@@ -534,13 +536,13 @@ private:
   auto guard_panic(llvm::Value *panic_if_true, panic_reason reason) -> void {
     auto *panic_bb = llvm::BasicBlock::Create(ctx_, "panic", current_fn_);
     auto *ok_bb = llvm::BasicBlock::Create(ctx_, "ok", current_fn_);
-    builder_.CreateCondBr(panic_if_true, panic_bb, ok_bb);
-    builder_.SetInsertPoint(panic_bb);
-    builder_.CreateCall(panic_fn_,
-                        {llvm::ConstantInt::get(llvm::Type::getInt8Ty(ctx_),
+    builder.CreateCondBr(panic_if_true, panic_bb, ok_bb);
+    builder.SetInsertPoint(panic_bb);
+    builder.CreateCall(panic_fn,
+                        {llvm::ConstantInt::get(llvm::Type::getInt8Ty(ctx),
                                                 static_cast<uint8_t>(reason))});
-    builder_.CreateUnreachable();
-    builder_.SetInsertPoint(ok_bb);
+    builder.CreateUnreachable();
+    builder.SetInsertPoint(ok_bb);
   }
 
   // ------------------------------------------------------------------
@@ -558,14 +560,14 @@ private:
   [[nodiscard]] auto compile_heap_alloc(size_t slot_count) -> llvm::Value * {
     auto *size =
         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), slot_count * 8);
-    return builder_.CreateCall(alloc_fn_, {size});
+    return builder.CreateCall(alloc_fn, {size});
   }
 
   [[nodiscard]] auto slot_address(llvm::Value *block_ptr, size_t slot_index)
       -> llvm::Value * {
     auto *offset =
         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), slot_index * 8);
-    return builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), block_ptr, offset);
+    return builder.CreateGEP(llvm::Type::getInt8Ty(ctx), block_ptr, offset);
   }
 
   /// The runtime-indexed counterpart above — used for fixed `array[T, N]`
@@ -575,10 +577,10 @@ private:
   [[nodiscard]] auto slot_address(llvm::Value *block_ptr,
                                   llvm::Value *dynamic_slot_index)
       -> llvm::Value * {
-    auto *byte_offset = builder_.CreateMul(
+    auto *byte_offset = builder.CreateMul(
         dynamic_slot_index,
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 8));
-    return builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), block_ptr,
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), 8));
+    return builder.CreateGEP(llvm::Type::getInt8Ty(ctx), block_ptr,
                               byte_offset);
   }
 
@@ -605,7 +607,7 @@ private:
                 "value used outside of call position is not supported yet",
                 ref.name)});
       }
-      return builder_.CreateLoad(alloca->getAllocatedType(), alloca, ref.name);
+      return builder.CreateLoad(alloca->getAllocatedType(), alloca, ref.name);
     }
     case hir_node_kind::hir_binary:
       return compile_binary(dynamic_cast<const hir::hir_binary &>(expr));
@@ -632,7 +634,7 @@ private:
       // expression position the way `hir_if`-as-statement can. Every stress
       // corpus program keeps an if-expression's branches value-producing,
       // not diverging, so `result` is always written before this load runs.
-      return builder_.CreateLoad(result->getAllocatedType(), result,
+      return builder.CreateLoad(result->getAllocatedType(), result,
                                  "if.value");
     }
     case hir_node_kind::hir_tuple:
@@ -670,7 +672,7 @@ private:
       }
       // See hir_if's own scope note just above: every stress corpus match
       // expression keeps every arm value-producing, not diverging.
-      return builder_.CreateLoad(*ty, result, "match.value");
+      return builder.CreateLoad(*ty, result, "match.value");
     }
     case hir_node_kind::hir_container_len:
       return compile_container_len(
@@ -690,7 +692,7 @@ private:
       if (!terminated.has_value()) {
         return std::unexpected(terminated.error());
       }
-      return builder_.CreateLoad(*ty, result, "block.value");
+      return builder.CreateLoad(*ty, result, "block.value");
     }
     default:
       return std::unexpected(codegen_error{
@@ -805,26 +807,26 @@ private:
     if (!lhs.has_value()) {
       return std::unexpected(lhs.error());
     }
-    builder_.CreateStore(*lhs, result);
+    builder.CreateStore(*lhs, result);
 
     auto *rhs_bb = llvm::BasicBlock::Create(ctx_, "sc.rhs", current_fn_);
     auto *merge_bb = llvm::BasicBlock::Create(ctx_, "sc.end", current_fn_);
     if (bin.op == ast::binary_op::And) {
-      builder_.CreateCondBr(*lhs, rhs_bb, merge_bb);
+      builder.CreateCondBr(*lhs, rhs_bb, merge_bb);
     } else {
-      builder_.CreateCondBr(*lhs, merge_bb, rhs_bb);
+      builder.CreateCondBr(*lhs, merge_bb, rhs_bb);
     }
 
-    builder_.SetInsertPoint(rhs_bb);
+    builder.SetInsertPoint(rhs_bb);
     auto rhs = compile_expr(*bin.rhs);
     if (!rhs.has_value()) {
       return std::unexpected(rhs.error());
     }
-    builder_.CreateStore(*rhs, result);
-    builder_.CreateBr(merge_bb);
+    builder.CreateStore(*rhs, result);
+    builder.CreateBr(merge_bb);
 
-    builder_.SetInsertPoint(merge_bb);
-    return builder_.CreateLoad(llvm::Type::getInt1Ty(ctx_), result, "sc.value");
+    builder.SetInsertPoint(merge_bb);
+    return builder.CreateLoad(llvm::Type::getInt1Ty(ctx), result, "sc.value");
   }
 
   [[nodiscard]] auto compile_binary_op(const hir::hir_binary &bin,
@@ -837,78 +839,78 @@ private:
 
     switch (bin.op) {
     case binary_op::EqEq:
-      return is_float(kind) ? builder_.CreateFCmpOEQ(lhs, rhs)
-                            : builder_.CreateICmpEQ(lhs, rhs);
+      return is_float(kind) ? builder.CreateFCmpOEQ(lhs, rhs)
+                            : builder.CreateICmpEQ(lhs, rhs);
     case binary_op::BangEq:
-      return is_float(kind) ? builder_.CreateFCmpONE(lhs, rhs)
-                            : builder_.CreateICmpNE(lhs, rhs);
+      return is_float(kind) ? builder.CreateFCmpONE(lhs, rhs)
+                            : builder.CreateICmpNE(lhs, rhs);
     case binary_op::Lt:
       if (is_float(kind)) {
-        return builder_.CreateFCmpOLT(lhs, rhs);
+        return builder.CreateFCmpOLT(lhs, rhs);
       }
-      return signed_kind ? builder_.CreateICmpSLT(lhs, rhs)
-                         : builder_.CreateICmpULT(lhs, rhs);
+      return signed_kind ? builder.CreateICmpSLT(lhs, rhs)
+                         : builder.CreateICmpULT(lhs, rhs);
     case binary_op::LtEq:
       if (is_float(kind)) {
-        return builder_.CreateFCmpOLE(lhs, rhs);
+        return builder.CreateFCmpOLE(lhs, rhs);
       }
-      return signed_kind ? builder_.CreateICmpSLE(lhs, rhs)
-                         : builder_.CreateICmpULE(lhs, rhs);
+      return signed_kind ? builder.CreateICmpSLE(lhs, rhs)
+                         : builder.CreateICmpULE(lhs, rhs);
     case binary_op::Gt:
       if (is_float(kind)) {
-        return builder_.CreateFCmpOGT(lhs, rhs);
+        return builder.CreateFCmpOGT(lhs, rhs);
       }
-      return signed_kind ? builder_.CreateICmpSGT(lhs, rhs)
-                         : builder_.CreateICmpUGT(lhs, rhs);
+      return signed_kind ? builder.CreateICmpSGT(lhs, rhs)
+                         : builder.CreateICmpUGT(lhs, rhs);
     case binary_op::GtEq:
       if (is_float(kind)) {
-        return builder_.CreateFCmpOGE(lhs, rhs);
+        return builder.CreateFCmpOGE(lhs, rhs);
       }
-      return signed_kind ? builder_.CreateICmpSGE(lhs, rhs)
-                         : builder_.CreateICmpUGE(lhs, rhs);
+      return signed_kind ? builder.CreateICmpSGE(lhs, rhs)
+                         : builder.CreateICmpUGE(lhs, rhs);
     case binary_op::Add:
       if (is_float(kind)) {
-        return builder_.CreateFAdd(lhs, rhs);
+        return builder.CreateFAdd(lhs, rhs);
       }
       return checked_arith(signed_kind ? llvm::Intrinsic::sadd_with_overflow
                                        : llvm::Intrinsic::uadd_with_overflow,
                            lhs, rhs);
     case binary_op::Sub:
       if (is_float(kind)) {
-        return builder_.CreateFSub(lhs, rhs);
+        return builder.CreateFSub(lhs, rhs);
       }
       return checked_arith(signed_kind ? llvm::Intrinsic::ssub_with_overflow
                                        : llvm::Intrinsic::usub_with_overflow,
                            lhs, rhs);
     case binary_op::Mul:
       if (is_float(kind)) {
-        return builder_.CreateFMul(lhs, rhs);
+        return builder.CreateFMul(lhs, rhs);
       }
       return checked_arith(signed_kind ? llvm::Intrinsic::smul_with_overflow
                                        : llvm::Intrinsic::umul_with_overflow,
                            lhs, rhs);
     case binary_op::Div:
       if (is_float(kind)) {
-        return builder_.CreateFDiv(lhs, rhs);
+        return builder.CreateFDiv(lhs, rhs);
       }
       return checked_div(signed_kind, bits, lhs, rhs, /*is_mod=*/false);
     case binary_op::Mod:
       if (is_float(kind)) {
-        return builder_.CreateFRem(lhs, rhs);
+        return builder.CreateFRem(lhs, rhs);
       }
       return checked_div(signed_kind, bits, lhs, rhs, /*is_mod=*/true);
     case binary_op::AddWrap:
-      return builder_.CreateAdd(lhs, rhs);
+      return builder.CreateAdd(lhs, rhs);
     case binary_op::SubWrap:
-      return builder_.CreateSub(lhs, rhs);
+      return builder.CreateSub(lhs, rhs);
     case binary_op::MulWrap:
-      return builder_.CreateMul(lhs, rhs);
+      return builder.CreateMul(lhs, rhs);
     case binary_op::AddSat:
-      return builder_.CreateBinaryIntrinsic(
+      return builder.CreateBinaryIntrinsic(
           signed_kind ? llvm::Intrinsic::sadd_sat : llvm::Intrinsic::uadd_sat,
           lhs, rhs);
     case binary_op::SubSat:
-      return builder_.CreateBinaryIntrinsic(
+      return builder.CreateBinaryIntrinsic(
           signed_kind ? llvm::Intrinsic::ssub_sat : llvm::Intrinsic::usub_sat,
           lhs, rhs);
     case binary_op::Shl:
@@ -916,11 +918,11 @@ private:
       return checked_shift(bin.op == binary_op::Shl, signed_kind, bits, lhs,
                            rhs);
     case binary_op::BitAnd:
-      return builder_.CreateAnd(lhs, rhs);
+      return builder.CreateAnd(lhs, rhs);
     case binary_op::BitOr:
-      return builder_.CreateOr(lhs, rhs);
+      return builder.CreateOr(lhs, rhs);
     case binary_op::BitXor:
-      return builder_.CreateXor(lhs, rhs);
+      return builder.CreateXor(lhs, rhs);
     default:
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
@@ -933,9 +935,9 @@ private:
 
   [[nodiscard]] auto checked_arith(llvm::Intrinsic::ID id, llvm::Value *lhs,
                                    llvm::Value *rhs) -> llvm::Value * {
-    auto *pair = builder_.CreateBinaryIntrinsic(id, lhs, rhs);
-    auto *value = builder_.CreateExtractValue(pair, 0);
-    auto *overflowed = builder_.CreateExtractValue(pair, 1);
+    auto *pair = builder.CreateBinaryIntrinsic(id, lhs, rhs);
+    auto *value = builder.CreateExtractValue(pair, 0);
+    auto *overflowed = builder.CreateExtractValue(pair, 1);
     guard_panic(overflowed, panic_reason::integer_overflow);
     return value;
   }
@@ -945,22 +947,22 @@ private:
       -> llvm::Value * {
     auto *ty = lhs->getType();
     auto *zero = llvm::ConstantInt::get(ty, 0);
-    guard_panic(builder_.CreateICmpEQ(rhs, zero),
+    guard_panic(builder.CreateICmpEQ(rhs, zero),
                 panic_reason::integer_divide_by_zero);
     if (is_signed) {
       auto *min_value = llvm::ConstantInt::get(
           ty, llvm::APInt::getSignedMinValue(static_cast<unsigned>(bits)));
       auto *neg_one = llvm::ConstantInt::get(ty, static_cast<uint64_t>(-1),
                                              /*isSigned=*/true);
-      auto *is_min = builder_.CreateICmpEQ(lhs, min_value);
-      auto *is_neg_one = builder_.CreateICmpEQ(rhs, neg_one);
-      guard_panic(builder_.CreateAnd(is_min, is_neg_one),
+      auto *is_min = builder.CreateICmpEQ(lhs, min_value);
+      auto *is_neg_one = builder.CreateICmpEQ(rhs, neg_one);
+      guard_panic(builder.CreateAnd(is_min, is_neg_one),
                   panic_reason::integer_overflow);
-      return is_mod ? builder_.CreateSRem(lhs, rhs)
-                    : builder_.CreateSDiv(lhs, rhs);
+      return is_mod ? builder.CreateSRem(lhs, rhs)
+                    : builder.CreateSDiv(lhs, rhs);
     }
-    return is_mod ? builder_.CreateURem(lhs, rhs)
-                  : builder_.CreateUDiv(lhs, rhs);
+    return is_mod ? builder.CreateURem(lhs, rhs)
+                  : builder.CreateUDiv(lhs, rhs);
   }
 
   [[nodiscard]] auto checked_shift(bool is_shl, bool is_signed, int bits,
@@ -968,13 +970,13 @@ private:
       -> llvm::Value * {
     auto *bits_const =
         llvm::ConstantInt::get(rhs->getType(), static_cast<uint64_t>(bits));
-    guard_panic(builder_.CreateICmpUGE(rhs, bits_const),
+    guard_panic(builder.CreateICmpUGE(rhs, bits_const),
                 panic_reason::integer_overflow);
     if (is_shl) {
-      return builder_.CreateShl(lhs, rhs);
+      return builder.CreateShl(lhs, rhs);
     }
-    return is_signed ? builder_.CreateAShr(lhs, rhs)
-                     : builder_.CreateLShr(lhs, rhs);
+    return is_signed ? builder.CreateAShr(lhs, rhs)
+                     : builder.CreateLShr(lhs, rhs);
   }
 
   [[nodiscard]] auto compile_unary(const hir::hir_unary &un)
@@ -984,7 +986,7 @@ private:
       if (!src.has_value()) {
         return std::unexpected(src.error());
       }
-      return builder_.CreateNot(*src);
+      return builder.CreateNot(*src);
     }
     if (un.op != ast::unary_op::Neg && un.op != ast::unary_op::BitNot) {
       return std::unexpected(codegen_error{
@@ -1004,22 +1006,22 @@ private:
       return std::unexpected(src.error());
     }
     if (un.op == ast::unary_op::BitNot) {
-      return builder_.CreateNot(*src);
+      return builder.CreateNot(*src);
     }
     // Neg: float negates plainly; signed integer negation panics exactly
     // when negating the type's minimum value (mirrors `vm.cpp`'s
     // `checked_neg_signed` — the checker guarantees `Neg` never reaches an
     // unsigned operand, matching `exec_neg`'s own precondition comment).
     if (is_float(*kind)) {
-      return builder_.CreateFNeg(*src);
+      return builder.CreateFNeg(*src);
     }
     const auto bits = bit_width(*kind);
     auto *min_value = llvm::ConstantInt::get(
         (*src)->getType(),
         llvm::APInt::getSignedMinValue(static_cast<unsigned>(bits)));
-    guard_panic(builder_.CreateICmpEQ(*src, min_value),
+    guard_panic(builder.CreateICmpEQ(*src, min_value),
                 panic_reason::integer_overflow);
-    return builder_.CreateNeg(*src);
+    return builder.CreateNeg(*src);
   }
 
   [[nodiscard]] auto compile_cast(const hir::hir_cast &cast)
@@ -1041,23 +1043,23 @@ private:
     const auto to_float = is_float(*to_kind);
 
     if (from_float && to_float) {
-      return *to_kind == numeric_kind::f32 ? builder_.CreateFPTrunc(*src, to_ty)
-                                           : builder_.CreateFPExt(*src, to_ty);
+      return *to_kind == numeric_kind::f32 ? builder.CreateFPTrunc(*src, to_ty)
+                                           : builder.CreateFPExt(*src, to_ty);
     }
     if (from_float) {
-      return is_signed_integer(*to_kind) ? builder_.CreateFPToSI(*src, to_ty)
-                                         : builder_.CreateFPToUI(*src, to_ty);
+      return is_signed_integer(*to_kind) ? builder.CreateFPToSI(*src, to_ty)
+                                         : builder.CreateFPToUI(*src, to_ty);
     }
     if (to_float) {
-      return is_signed_integer(*from_kind) ? builder_.CreateSIToFP(*src, to_ty)
-                                           : builder_.CreateUIToFP(*src, to_ty);
+      return is_signed_integer(*from_kind) ? builder.CreateSIToFP(*src, to_ty)
+                                           : builder.CreateUIToFP(*src, to_ty);
     }
     // Integer-to-integer: sign-extend if the *source* was signed, zero-
     // extend otherwise, then truncate to the destination width — matches
     // `bytecode::vm`'s `exec_cast` exactly.
     return is_signed_integer(*from_kind)
-               ? builder_.CreateSExtOrTrunc(*src, to_ty)
-               : builder_.CreateZExtOrTrunc(*src, to_ty);
+               ? builder.CreateSExtOrTrunc(*src, to_ty)
+               : builder.CreateZExtOrTrunc(*src, to_ty);
   }
 
   [[nodiscard]] auto compile_call(const hir::hir_call &call)
@@ -1081,8 +1083,8 @@ private:
               "function are",
               ref.name)});
     }
-    const auto found = functions_.find(ref.name);
-    if (found == functions_.end()) {
+    const auto found = functions.find(ref.name);
+    if (found == functions.end()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unknown_callee,
           .span = call.span,
@@ -1099,7 +1101,7 @@ private:
       }
       args.push_back(*value);
     }
-    return builder_.CreateCall(found->second, args);
+    return builder.CreateCall(found->second, args);
   }
 
   /// Compiles an `if`/`elif`/`else` chain. `want_result`, when non-null, is
@@ -1127,7 +1129,7 @@ private:
       auto *next_bb =
           has_more ? llvm::BasicBlock::Create(ctx_, "if.next", current_fn_)
                    : merge_bb;
-      builder_.CreateCondBr(*cond, then_bb, next_bb);
+      builder.CreateCondBr(*cond, then_bb, next_bb);
       if (next_bb == merge_bb) {
         // No more conditions and no `else`: the condition's false edge is
         // an implicit "do nothing" arm that lands directly on `merge_bb`,
@@ -1135,17 +1137,17 @@ private:
         any_reaches_merge = true;
       }
 
-      builder_.SetInsertPoint(then_bb);
+      builder.SetInsertPoint(then_bb);
       auto terminated = compile_block_as_value(*branch.body, want_result);
       if (!terminated.has_value()) {
         return std::unexpected(terminated.error());
       }
       if (!*terminated) {
-        builder_.CreateBr(merge_bb);
+        builder.CreateBr(merge_bb);
         any_reaches_merge = true;
       }
 
-      builder_.SetInsertPoint(next_bb);
+      builder.SetInsertPoint(next_bb);
       if (next_bb == merge_bb) {
         break;
       }
@@ -1157,14 +1159,14 @@ private:
         return std::unexpected(terminated.error());
       }
       if (!*terminated) {
-        builder_.CreateBr(merge_bb);
+        builder.CreateBr(merge_bb);
         any_reaches_merge = true;
       }
-      builder_.SetInsertPoint(merge_bb);
+      builder.SetInsertPoint(merge_bb);
     }
 
     if (!any_reaches_merge) {
-      builder_.CreateUnreachable();
+      builder.CreateUnreachable();
     }
     return !any_reaches_merge;
   }
@@ -1186,12 +1188,12 @@ private:
           .message =
               std::format("could not decode string literal `{}`", lit.value)});
     }
-    auto *data_ptr = builder_.CreateGlobalString(*text, "str.lit");
+    auto *data_ptr = builder.CreateGlobalString(*text, "str.lit");
     auto *header = compile_heap_alloc(2);
-    builder_.CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), text->size()),
+    builder.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), text->size()),
         slot_address(header, size_t{0}));
-    builder_.CreateStore(data_ptr, slot_address(header, size_t{1}));
+    builder.CreateStore(data_ptr, slot_address(header, size_t{1}));
     return header;
   }
 
@@ -1208,7 +1210,7 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      builder_.CreateStore(*value, slot_address(block, i));
+      builder.CreateStore(*value, slot_address(block, i));
     }
     return block;
   }
@@ -1220,7 +1222,7 @@ private:
     auto *block = compile_heap_alloc(field_count);
     for (const auto &field : init.fields) {
       const auto slot =
-          runtime::struct_field_slot(types_, init.type, field.name);
+          runtime::struct_field_slot(types, init.type, field.name);
       if (!slot.has_value()) {
         return std::unexpected(codegen_error{
             .kind = codegen_error_kind::unsupported_construct,
@@ -1234,7 +1236,7 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      builder_.CreateStore(*value, slot_address(block, *slot));
+      builder.CreateStore(*value, slot_address(block, *slot));
     }
     return block;
   }
@@ -1266,7 +1268,7 @@ private:
       return std::unexpected(fill_value.error());
     }
     for (uint64_t i = 0; i < count; ++i) {
-      builder_.CreateStore(*fill_value, slot_address(block, i));
+      builder.CreateStore(*fill_value, slot_address(block, i));
     }
     return block;
   }
@@ -1293,8 +1295,8 @@ private:
         if (!value.has_value()) {
           return std::unexpected(value.error());
         }
-        auto *slot = builder_.CreateCall(list_reserve_slot_fn_, {header});
-        builder_.CreateStore(*value, slot);
+        auto *slot = builder.CreateCall(list_reserve_slot_fn, {header});
+        builder.CreateStore(*value, slot);
       }
       return header;
     }
@@ -1315,13 +1317,13 @@ private:
       return std::unexpected(count_value.error());
     }
     auto *count64 =
-        builder_.CreateIntCast(*count_value, llvm::Type::getInt64Ty(ctx_),
+        builder.CreateIntCast(*count_value, llvm::Type::getInt64Ty(ctx),
                                is_signed_integer(*count_kind), "count.i64");
 
     auto *idx_alloca =
         create_local_alloca(llvm::Type::getInt64Ty(ctx_), "list.fill.idx");
-    builder_.CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0), idx_alloca);
+    builder.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), 0), idx_alloca);
 
     auto *cond_bb =
         llvm::BasicBlock::Create(ctx_, "list.fill.cond", current_fn_);
@@ -1329,21 +1331,21 @@ private:
         llvm::BasicBlock::Create(ctx_, "list.fill.body", current_fn_);
     auto *end_bb = llvm::BasicBlock::Create(ctx_, "list.fill.end", current_fn_);
 
-    builder_.CreateBr(cond_bb);
-    builder_.SetInsertPoint(cond_bb);
-    auto *idx = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_), idx_alloca);
-    auto *cond = builder_.CreateICmpULT(idx, count64, "list.fill.test");
-    builder_.CreateCondBr(cond, body_bb, end_bb);
+    builder.CreateBr(cond_bb);
+    builder.SetInsertPoint(cond_bb);
+    auto *idx = builder.CreateLoad(llvm::Type::getInt64Ty(ctx), idx_alloca);
+    auto *cond = builder.CreateICmpULT(idx, count64, "list.fill.test");
+    builder.CreateCondBr(cond, body_bb, end_bb);
 
-    builder_.SetInsertPoint(body_bb);
-    auto *slot = builder_.CreateCall(list_reserve_slot_fn_, {header});
-    builder_.CreateStore(*fill_value, slot);
-    auto *next_idx = builder_.CreateAdd(
-        idx, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1));
-    builder_.CreateStore(next_idx, idx_alloca);
-    builder_.CreateBr(cond_bb);
+    builder.SetInsertPoint(body_bb);
+    auto *slot = builder.CreateCall(list_reserve_slot_fn, {header});
+    builder.CreateStore(*fill_value, slot);
+    auto *next_idx = builder.CreateAdd(
+        idx, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), 1));
+    builder.CreateStore(next_idx, idx_alloca);
+    builder.CreateBr(cond_bb);
 
-    builder_.SetInsertPoint(end_bb);
+    builder.SetInsertPoint(end_bb);
     return header;
   }
 
@@ -1368,7 +1370,7 @@ private:
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
     }
-    return builder_.CreateLoad(*elem_ty, slot_address(*object, *slot));
+    return builder.CreateLoad(*elem_ty, slot_address(*object, *slot));
   }
 
   [[nodiscard]] auto compile_tuple_index(const hir::hir_tuple_index &node)
@@ -1381,7 +1383,7 @@ private:
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
     }
-    return builder_.CreateLoad(*elem_ty, slot_address(*object, node.index));
+    return builder.CreateLoad(*elem_ty, slot_address(*object, node.index));
   }
 
   /// Fixed `array[T, N]` and growable `list[T]` element access —
@@ -1421,29 +1423,29 @@ private:
       return std::unexpected(index_value.error());
     }
     auto *index64 =
-        builder_.CreateIntCast(*index_value, llvm::Type::getInt64Ty(ctx_),
+        builder.CreateIntCast(*index_value, llvm::Type::getInt64Ty(ctx),
                                is_signed_integer(*index_kind), "index.i64");
 
     llvm::Value *len = nullptr;
     llvm::Value *data = nullptr;
     if (indexing_list) {
-      len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+      len = builder.CreateLoad(llvm::Type::getInt64Ty(ctx),
                                 slot_address(*object, size_t{0}), "list.len");
-      data = builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
+      data = builder.CreateLoad(llvm::PointerType::get(ctx, 0),
                                  slot_address(*object, size_t{2}), "list.data");
     } else {
       len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
                                    *object_entry.array_size);
       data = *object;
     }
-    auto *out_of_bounds = builder_.CreateICmpUGE(index64, len, "index.oob");
+    auto *out_of_bounds = builder.CreateICmpUGE(index64, len, "index.oob");
     guard_panic(out_of_bounds, panic_reason::index_out_of_bounds);
 
     auto elem_ty = storage_type_for(node.type, node.span);
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
     }
-    return builder_.CreateLoad(*elem_ty, slot_address(data, index64));
+    return builder.CreateLoad(*elem_ty, slot_address(data, index64));
   }
 
   /// A container's runtime element count (`for`/`while` loop bound
@@ -1457,7 +1459,7 @@ private:
     if (!object.has_value()) {
       return std::unexpected(object.error());
     }
-    return builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+    return builder.CreateLoad(llvm::Type::getInt64Ty(ctx),
                                slot_address(*object, size_t{0}),
                                "container.len");
   }
@@ -1484,7 +1486,7 @@ private:
     const auto payload_slots =
         runtime::sum_max_payload_slots(types_, init.type);
     auto *block = compile_heap_alloc(1 + payload_slots);
-    builder_.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+    builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx),
                                                 static_cast<uint64_t>(*tag)),
                          slot_address(block, size_t{0}));
     for (size_t i = 0; i < init.args.size(); ++i) {
@@ -1492,7 +1494,7 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      builder_.CreateStore(*value, slot_address(block, 1 + i));
+      builder.CreateStore(*value, slot_address(block, 1 + i));
     }
     return block;
   }
@@ -1524,7 +1526,7 @@ private:
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
     }
-    return builder_.CreateLoad(*elem_ty, slot_address(*object, 1 + node.index));
+    return builder.CreateLoad(*elem_ty, slot_address(*object, 1 + node.index));
   }
 
   // ------------------------------------------------------------------
@@ -1574,8 +1576,8 @@ private:
         return std::unexpected(constant.error());
       }
       return is_float(*kind)
-                 ? builder_.CreateFCmpOEQ(value, *constant, "pat.eq")
-                 : builder_.CreateICmpEQ(value, *constant, "pat.eq");
+                 ? builder.CreateFCmpOEQ(value, *constant, "pat.eq")
+                 : builder.CreateICmpEQ(value, *constant, "pat.eq");
     }
     case hir_node_kind::hir_or_pattern: {
       const auto &or_pat = dynamic_cast<const hir::hir_or_pattern &>(pattern);
@@ -1597,7 +1599,7 @@ private:
         if (!alt.has_value()) {
           return std::unexpected(alt.error());
         }
-        acc = builder_.CreateOr(acc, *alt, "pat.or");
+        acc = builder.CreateOr(acc, *alt, "pat.or");
       }
       return acc;
     }
@@ -1627,12 +1629,12 @@ private:
         if (!elem_ty.has_value()) {
           return std::unexpected(elem_ty.error());
         }
-        auto *elem_val = builder_.CreateLoad(*elem_ty, slot_address(value, i));
+        auto *elem_val = builder.CreateLoad(*elem_ty, slot_address(value, i));
         auto sub = compile_pattern_test(*tup.elements[i], elem_val, elem_type);
         if (!sub.has_value()) {
           return std::unexpected(sub.error());
         }
-        acc = acc == nullptr ? *sub : builder_.CreateAnd(acc, *sub, "pat.and");
+        acc = acc == nullptr ? *sub : builder.CreateAnd(acc, *sub, "pat.and");
       }
       return acc == nullptr ? llvm::ConstantInt::getTrue(ctx_) : acc;
     }
@@ -1652,13 +1654,13 @@ private:
       }
       llvm::Value *acc = nullptr;
       for (size_t i = 0; i < arr.elements.size(); ++i) {
-        auto *elem_val = builder_.CreateLoad(*elem_ty, slot_address(value, i));
+        auto *elem_val = builder.CreateLoad(*elem_ty, slot_address(value, i));
         auto sub = compile_pattern_test(*arr.elements[i], elem_val,
                                         std::optional<type_id>(entry.result));
         if (!sub.has_value()) {
           return std::unexpected(sub.error());
         }
-        acc = acc == nullptr ? *sub : builder_.CreateAnd(acc, *sub, "pat.and");
+        acc = acc == nullptr ? *sub : builder.CreateAnd(acc, *sub, "pat.and");
       }
       return acc == nullptr ? llvm::ConstantInt::getTrue(ctx_) : acc;
     }
@@ -1717,11 +1719,11 @@ private:
                   ctor.variant_name, ctor.variant_name)});
         }
       }
-      auto *tag_val = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+      auto *tag_val = builder.CreateLoad(llvm::Type::getInt64Ty(ctx),
                                           slot_address(value, size_t{0}));
       auto *tag_const = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
                                                static_cast<uint64_t>(*tag));
-      return builder_.CreateICmpEQ(tag_val, tag_const, "pat.tag_eq");
+      return builder.CreateICmpEQ(tag_val, tag_const, "pat.tag_eq");
     }
     case hir_node_kind::hir_range_pattern: {
       const auto &range = dynamic_cast<const hir::hir_range_pattern &>(pattern);
@@ -1744,10 +1746,10 @@ private:
           return std::unexpected(start.error());
         }
         acc = is_float(*kind)
-                  ? builder_.CreateFCmpOGE(value, *start, "pat.range.ge")
+                  ? builder.CreateFCmpOGE(value, *start, "pat.range.ge")
               : signed_int
-                  ? builder_.CreateICmpSGE(value, *start, "pat.range.ge")
-                  : builder_.CreateICmpUGE(value, *start, "pat.range.ge");
+                  ? builder.CreateICmpSGE(value, *start, "pat.range.ge")
+                  : builder.CreateICmpUGE(value, *start, "pat.range.ge");
       }
       if (range.end != nullptr) {
         auto end = compile_expr(*range.end);
@@ -1757,18 +1759,18 @@ private:
         llvm::Value *cmp = nullptr;
         if (is_float(*kind)) {
           cmp = range.inclusive
-                    ? builder_.CreateFCmpOLE(value, *end, "pat.range.le")
-                    : builder_.CreateFCmpOLT(value, *end, "pat.range.lt");
+                    ? builder.CreateFCmpOLE(value, *end, "pat.range.le")
+                    : builder.CreateFCmpOLT(value, *end, "pat.range.lt");
         } else if (signed_int) {
           cmp = range.inclusive
-                    ? builder_.CreateICmpSLE(value, *end, "pat.range.le")
-                    : builder_.CreateICmpSLT(value, *end, "pat.range.lt");
+                    ? builder.CreateICmpSLE(value, *end, "pat.range.le")
+                    : builder.CreateICmpSLT(value, *end, "pat.range.lt");
         } else {
           cmp = range.inclusive
-                    ? builder_.CreateICmpULE(value, *end, "pat.range.le")
-                    : builder_.CreateICmpULT(value, *end, "pat.range.lt");
+                    ? builder.CreateICmpULE(value, *end, "pat.range.le")
+                    : builder.CreateICmpULT(value, *end, "pat.range.lt");
         }
-        acc = acc == nullptr ? cmp : builder_.CreateAnd(acc, cmp, "pat.and");
+        acc = acc == nullptr ? cmp : builder.CreateAnd(acc, cmp, "pat.and");
       }
       return acc == nullptr ? llvm::ConstantInt::getTrue(ctx_) : acc;
     }
@@ -1799,8 +1801,8 @@ private:
       return std::unexpected(subject_ty.error());
     }
     auto *subject_alloca = create_local_alloca(*subject_ty, "match.subject");
-    builder_.CreateStore(*subject, subject_alloca);
-    locals_.emplace(match.subject_symbol, subject_alloca);
+    builder.CreateStore(*subject, subject_alloca);
+    locals.emplace(match.subject_symbol, subject_alloca);
     const auto subject_type = std::optional<type_id>(match.subject->type);
 
     auto *merge_bb = llvm::BasicBlock::Create(ctx_, "match.end", current_fn_);
@@ -1814,57 +1816,57 @@ private:
       auto *cond = *test;
       if (arm.guard != nullptr) {
         auto *guard_bb =
-            llvm::BasicBlock::Create(ctx_, "match.guard", current_fn_);
+            llvm::BasicBlock::Create(ctx, "match.guard", current_fn);
         auto *skip_guard_bb =
-            llvm::BasicBlock::Create(ctx_, "match.next", current_fn_);
-        builder_.CreateCondBr(cond, guard_bb, skip_guard_bb);
-        builder_.SetInsertPoint(guard_bb);
+            llvm::BasicBlock::Create(ctx, "match.next", current_fn);
+        builder.CreateCondBr(cond, guard_bb, skip_guard_bb);
+        builder.SetInsertPoint(guard_bb);
         auto guard_value = compile_expr(*arm.guard);
         if (!guard_value.has_value()) {
           return std::unexpected(guard_value.error());
         }
         auto *then_bb =
-            llvm::BasicBlock::Create(ctx_, "match.then", current_fn_);
-        builder_.CreateCondBr(*guard_value, then_bb, skip_guard_bb);
+            llvm::BasicBlock::Create(ctx, "match.then", current_fn);
+        builder.CreateCondBr(*guard_value, then_bb, skip_guard_bb);
 
-        builder_.SetInsertPoint(then_bb);
+        builder.SetInsertPoint(then_bb);
         auto terminated = compile_block_as_value(*arm.body, want_result);
         if (!terminated.has_value()) {
           return std::unexpected(terminated.error());
         }
         if (!*terminated) {
-          builder_.CreateBr(merge_bb);
+          builder.CreateBr(merge_bb);
           any_reaches_merge = true;
         }
-        builder_.SetInsertPoint(skip_guard_bb);
+        builder.SetInsertPoint(skip_guard_bb);
         continue;
       }
 
-      auto *then_bb = llvm::BasicBlock::Create(ctx_, "match.then", current_fn_);
-      auto *next_bb = llvm::BasicBlock::Create(ctx_, "match.next", current_fn_);
-      builder_.CreateCondBr(cond, then_bb, next_bb);
+      auto *then_bb = llvm::BasicBlock::Create(ctx, "match.then", current_fn);
+      auto *next_bb = llvm::BasicBlock::Create(ctx, "match.next", current_fn);
+      builder.CreateCondBr(cond, then_bb, next_bb);
 
-      builder_.SetInsertPoint(then_bb);
+      builder.SetInsertPoint(then_bb);
       auto terminated = compile_block_as_value(*arm.body, want_result);
       if (!terminated.has_value()) {
         return std::unexpected(terminated.error());
       }
       if (!*terminated) {
-        builder_.CreateBr(merge_bb);
+        builder.CreateBr(merge_bb);
         any_reaches_merge = true;
       }
-      builder_.SetInsertPoint(next_bb);
+      builder.SetInsertPoint(next_bb);
     }
 
     // Exhaustiveness is checker-guaranteed; this is a defensive fallback,
     // not an expected runtime path.
     guard_panic(llvm::ConstantInt::getTrue(ctx_), panic_reason::explicit_panic);
-    builder_.CreateBr(merge_bb);
+    builder.CreateBr(merge_bb);
     any_reaches_merge = true;
 
-    builder_.SetInsertPoint(merge_bb);
+    builder.SetInsertPoint(merge_bb);
     if (!any_reaches_merge) {
-      builder_.CreateUnreachable();
+      builder.CreateUnreachable();
     }
     return !any_reaches_merge;
   }
@@ -1891,7 +1893,7 @@ private:
         if (!value.has_value()) {
           return std::unexpected(value.error());
         }
-        builder_.CreateStore(*value, want_result);
+        builder.CreateStore(*value, want_result);
         return false;
       }
       auto result = compile_stmt(stmt);
@@ -1923,7 +1925,7 @@ private:
     case hir_node_kind::hir_return: {
       const auto &ret = dynamic_cast<const hir::hir_return &>(node);
       if (ret.value == nullptr) {
-        builder_.CreateRetVoid();
+        builder.CreateRetVoid();
         return true;
       }
       auto value = compile_expr(*ret.value);
@@ -1931,9 +1933,9 @@ private:
         return std::unexpected(value.error());
       }
       if (return_is_unit_) {
-        builder_.CreateRetVoid();
+        builder.CreateRetVoid();
       } else {
-        builder_.CreateRet(*value);
+        builder.CreateRet(*value);
       }
       return true;
     }
@@ -1975,8 +1977,8 @@ private:
       return std::unexpected(value.error());
     }
     auto *alloca = create_local_alloca(*ty, let.name);
-    builder_.CreateStore(*value, alloca);
-    locals_.emplace(let.symbol, alloca);
+    builder.CreateStore(*value, alloca);
+    locals.emplace(let.symbol, alloca);
     return false;
   }
 
@@ -2007,7 +2009,7 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      builder_.CreateStore(*value, alloca);
+      builder.CreateStore(*value, alloca);
       return false;
     }
 
@@ -2020,12 +2022,12 @@ private:
       return std::unexpected(rhs.error());
     }
     auto *current =
-        builder_.CreateLoad(alloca->getAllocatedType(), alloca, target.name);
+        builder.CreateLoad(alloca->getAllocatedType(), alloca, target.name);
     auto new_value = compound_assign_value(assign, *kind, current, *rhs);
     if (!new_value.has_value()) {
       return std::unexpected(new_value.error());
     }
-    builder_.CreateStore(*new_value, alloca);
+    builder.CreateStore(*new_value, alloca);
     return false;
   }
 
@@ -2102,24 +2104,24 @@ private:
     auto *body_bb = llvm::BasicBlock::Create(ctx_, "while.body", current_fn_);
     auto *end_bb = llvm::BasicBlock::Create(ctx_, "while.end", current_fn_);
 
-    builder_.CreateBr(cond_bb);
-    builder_.SetInsertPoint(cond_bb);
+    builder.CreateBr(cond_bb);
+    builder.SetInsertPoint(cond_bb);
     auto cond = compile_expr(*loop.condition);
     if (!cond.has_value()) {
       return std::unexpected(cond.error());
     }
-    builder_.CreateCondBr(*cond, body_bb, end_bb);
+    builder.CreateCondBr(*cond, body_bb, end_bb);
 
-    builder_.SetInsertPoint(body_bb);
+    builder.SetInsertPoint(body_bb);
     auto terminated = compile_block_as_value(*loop.body, nullptr);
     if (!terminated.has_value()) {
       return std::unexpected(terminated.error());
     }
     if (!*terminated) {
-      builder_.CreateBr(cond_bb);
+      builder.CreateBr(cond_bb);
     }
 
-    builder_.SetInsertPoint(end_bb);
+    builder.SetInsertPoint(end_bb);
     return false;
   }
 
@@ -2136,7 +2138,7 @@ private:
     }
     auto *subject_alloca =
         create_local_alloca(*subject_ty, "while_let.subject");
-    locals_.emplace(loop.subject_symbol, subject_alloca);
+    locals.emplace(loop.subject_symbol, subject_alloca);
     const auto subject_type = std::optional<type_id>(loop.subject->type);
 
     auto *cond_bb =
@@ -2145,30 +2147,30 @@ private:
         llvm::BasicBlock::Create(ctx_, "while_let.body", current_fn_);
     auto *end_bb = llvm::BasicBlock::Create(ctx_, "while_let.end", current_fn_);
 
-    builder_.CreateBr(cond_bb);
-    builder_.SetInsertPoint(cond_bb);
+    builder.CreateBr(cond_bb);
+    builder.SetInsertPoint(cond_bb);
     auto subject_value = compile_expr(*loop.subject);
     if (!subject_value.has_value()) {
       return std::unexpected(subject_value.error());
     }
-    builder_.CreateStore(*subject_value, subject_alloca);
+    builder.CreateStore(*subject_value, subject_alloca);
     auto test =
         compile_pattern_test(*loop.pattern, *subject_value, subject_type);
     if (!test.has_value()) {
       return std::unexpected(test.error());
     }
-    builder_.CreateCondBr(*test, body_bb, end_bb);
+    builder.CreateCondBr(*test, body_bb, end_bb);
 
-    builder_.SetInsertPoint(body_bb);
+    builder.SetInsertPoint(body_bb);
     auto terminated = compile_block_as_value(*loop.body, nullptr);
     if (!terminated.has_value()) {
       return std::unexpected(terminated.error());
     }
     if (!*terminated) {
-      builder_.CreateBr(cond_bb);
+      builder.CreateBr(cond_bb);
     }
 
-    builder_.SetInsertPoint(end_bb);
+    builder.SetInsertPoint(end_bb);
     return false;
   }
 
@@ -2192,8 +2194,8 @@ private:
       return std::unexpected(value.error());
     }
     auto *subject_alloca = create_local_alloca(*subject_ty, "let_else.subject");
-    builder_.CreateStore(*value, subject_alloca);
-    locals_.emplace(node.subject_symbol, subject_alloca);
+    builder.CreateStore(*value, subject_alloca);
+    locals.emplace(node.subject_symbol, subject_alloca);
     const auto subject_type = std::optional<type_id>(node.initializer->type);
 
     auto test = compile_pattern_test(*node.pattern, *value, subject_type);
@@ -2205,9 +2207,9 @@ private:
         llvm::BasicBlock::Create(ctx_, "let_else.else", current_fn_);
     auto *continue_bb =
         llvm::BasicBlock::Create(ctx_, "let_else.continue", current_fn_);
-    builder_.CreateCondBr(*test, continue_bb, else_bb);
+    builder.CreateCondBr(*test, continue_bb, else_bb);
 
-    builder_.SetInsertPoint(else_bb);
+    builder.SetInsertPoint(else_bb);
     auto terminated = compile_block_as_value(*node.else_body, nullptr);
     if (!terminated.has_value()) {
       return std::unexpected(terminated.error());
@@ -2215,10 +2217,10 @@ private:
     if (!*terminated) {
       guard_panic(llvm::ConstantInt::getTrue(ctx_),
                   panic_reason::explicit_panic);
-      builder_.CreateBr(continue_bb);
+      builder.CreateBr(continue_bb);
     }
 
-    builder_.SetInsertPoint(continue_bb);
+    builder.SetInsertPoint(continue_bb);
     return false;
   }
 
@@ -2235,8 +2237,8 @@ private:
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    auto *slot = builder_.CreateCall(list_reserve_slot_fn_, {*target});
-    builder_.CreateStore(*value, slot);
+    auto *slot = builder.CreateCall(list_reserve_slot_fn, {*target});
+    builder.CreateStore(*value, slot);
     return false;
   }
 
