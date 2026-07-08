@@ -753,7 +753,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 [[nodiscard]] auto alloc_struct(std::span<const slot_value> fields)
     -> slot_value {
   auto *raw = kira::runtime::global_arena().allocate(fields.size() *
-                                                      sizeof(slot_value));
+                                                     sizeof(slot_value));
   auto *slots = static_cast<slot_value *>(raw);
   for (size_t i = 0; i < fields.size(); ++i) {
     slots[i] = fields[i];
@@ -899,8 +899,8 @@ constexpr std::array<intrinsic_fn, 8> k_intrinsics = {{
 }};
 
 static_assert(k_intrinsics.size() == kira::known_intrinsic_names.size(),
-             "every known intrinsic needs exactly one native implementation, "
-             "in the same order");
+              "every known intrinsic needs exactly one native implementation, "
+              "in the same order");
 
 } // namespace
 

@@ -49,10 +49,9 @@ using semantic::type_table;
 /// `check_match_exhaustiveness`): `some`/`ok` carry the first generic
 /// argument as a 1-slot payload, `err` carries the second, `none` carries
 /// nothing.
-[[nodiscard]] auto make_two_variants(std::string first_name,
-                                     size_t first_payload_slots,
-                                     std::string second_name,
-                                     size_t second_payload_slots)
+[[nodiscard]] auto
+make_two_variants(std::string first_name, size_t first_payload_slots,
+                  std::string second_name, size_t second_payload_slots)
     -> std::vector<ast::sum_variant> {
   // `ast::sum_variant` holds a `vector<ptr<type_expr>>` and so is move-only
   // — build this with `push_back`/`std::move` rather than a

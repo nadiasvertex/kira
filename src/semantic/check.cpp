@@ -5122,17 +5122,42 @@ private:
     }
 
     case ast::node_kind::if_stmt: {
+      // Mirrors `infer_if_expr` (used for `if` in ordinary expression
+      // position, e.g. `return if cond: a else: b`) rather than always
+      // typing to `unit`: an `if` used as a block's tail statement is
+      // exactly as value-producing as `match` already is below — join each
+      // branch's tail type against `expected_tail` the same way. When
+      // `expected_tail` is `k_unknown_type` (this `if` is a genuine
+      // mid-body statement, not a tail — see `check_body_nodes`, which
+      // only ever passes a real `expected_tail` to the *last* item), this
+      // still ends up `unit` exactly like before.
       const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
+      auto result = expected_tail;
       for (const auto &branch : stmt.branches) {
         check_if_branch_header(branch);
         push_scope();
-        check_body_nodes(branch.body, k_unknown_type);
+        if (branch.let_pattern != nullptr && branch.let_expr == nullptr) {
+          check_pattern(dynamic_cast<const ast::pattern &>(*branch.let_pattern),
+                        k_unknown_type);
+        }
+        const auto branch_type = check_body_nodes(branch.body, expected_tail);
         pop_scope();
+        result = join_branch_type(result, branch_type,
+                                  branch.body.empty() ||
+                                          branch.body.back() == nullptr
+                                      ? branch.span
+                                      : branch.body.back()->span,
+                                  "`if`");
       }
       if (!stmt.else_body.empty()) {
-        check_body_nodes(stmt.else_body, k_unknown_type);
+        const auto else_type = check_body_nodes(stmt.else_body, expected_tail);
+        result = join_branch_type(result, else_type,
+                                  stmt.else_body.back() != nullptr
+                                      ? stmt.else_body.back()->span
+                                      : stmt.span,
+                                  "`if`");
       }
-      return unit;
+      return result != k_unknown_type ? result : unit;
     }
 
     case ast::node_kind::while_stmt: {

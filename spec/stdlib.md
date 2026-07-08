@@ -292,20 +292,70 @@ This is the checklist of compiler work they depend on, grouped by phase.
       `@ok`/`@err`), `src/bytecode_compiler/compile_test.cpp` (real
       `intrinsic def rt_open` + real `match @ok(fd)/@err(e)` syntax, end to
       end).
-- [ ] **Newly discovered, out of scope for the fix above — two separate
-      pre-existing bugs surfaced while testing it:**
-      1. `match` used as an *implicit* tail expression (function body ends
-         with a bare `match ...`, no `return`) silently returns a
-         zero/unit value instead of the matched arm's value; only
-         `return match ...` works correctly. Reproduces with any type, not
-         just `option`/`result` — e.g. `def f(x: bool) -> int32: match x: /
-         true => 111 / false => 222` returns `0` either way via `--run`.
-      2. Field access on a variant-payload-bound pattern variable (`@err(e)
-         => e.code`) fails to lower ("expression kind ... is not lowered by
-         the first milestone"), for *any* sum type, user-declared or
-         builtin. Both are real correctness/diagnostics gaps — the first
-         silently produces a wrong answer with no error — and deserve their
-         own follow-up.
+- [x] **Resolved — two bugs discovered while testing the fix above, both
+      now fixed:**
+      1. `match`/`if` used as an *implicit* tail expression (function body
+         ends with a bare `match ...`/`if ...`, no `return`) silently
+         returned a zero/unit value instead of the matched/branch value;
+         only `return match ...`/`return if ...` worked. Root cause:
+         `hir::lower_block` always lowered a trailing `match_stmt`/`if_stmt`
+         with `k_unknown_type` and never wrapped it in `hir_expr_stmt` (the
+         node kind that marks "this is the tail value" for
+         `compile_body_and_finish`/`compile_block_as_value` in both
+         backends) — unlike an ordinary trailing `expr_stmt`, which always
+         got that treatment. `if_stmt` additionally needed a
+         `semantic::check.cpp` fix: unlike `match_stmt`, it never threaded
+         `expected_tail` through its branches, always typing itself `unit`
+         regardless of position. Fixed by: `lower_block` detecting the last
+         non-null statement and, if it's `if_stmt`/`match_stmt`, lowering it
+         via a new `lower_tail_control_flow_stmt` with the block's real
+         target type, `hir_expr_stmt`-wrapped; the same target type is now
+         threaded into `lower_function`/lambda bodies/match-arm bodies/`if`
+         branch-and-else bodies, all of which had the identical gap;
+         `check_body_node`'s `if_stmt` case now joins branch tail types
+         against `expected_tail` the same way `infer_if_expr` (ordinary
+         `if`-expression position) already did. Fixing this also exposed a
+         second, LLVM-codegen-only bug: `compile_expr`'s `hir_if`/
+         `hir_match`/`hir_block` cases, and `compile_body_and_finish`/
+         `compile_block_as_value`, unconditionally loaded/stored/returned a
+         value after `compile_if`/`compile_match`/`compile_block_as_value`
+         had already closed the current block with `unreachable` (every
+         branch/arm diverges via `return`) — tripping LLVM's verifier
+         ("Terminator found in the middle of a basic block"). Fixed by
+         checking `terminated`/`builder_.GetInsertBlock()->getTerminator()`
+         before emitting anything further, mirroring how the bytecode
+         backend already handled this. Regression tests:
+         `src/testdata/codegen_test/implicit_tail_match_and_if.kira`,
+         exercised through both `src/bytecode_compiler/compile_test.cpp`
+         and `src/llvm_codegen/codegen_test.cpp` (the latter specifically
+         covers the all-branches-diverge codegen bug); the pre-existing
+         `src/testdata/codegen_stress/014_if_elif_else_statement.kira` also
+         now passes (it was the stress-corpus file that caught the
+         `llvm_codegen` regression).
+      2. Field access on a local (`x.field`) failed to lower for *any*
+         local — not just a variant-payload binding, confirmed with a plain
+         `let` too — with "expression kind ... is not lowered by the first
+         milestone." Root cause: `a.b` always parses as
+         `ast::module_path_expr` when `a` is a bare leading identifier
+         (`parser.cpp` can't yet tell "value" from "module path" without
+         symbol info); `semantic::check.cpp`'s `infer_module_path` already
+         disambiguates this correctly for typing, but `hir::lower_expr` had
+         no case for `module_path_expr` at all, so it always fell through
+         to "unsupported." Fixed by adding `lowerer::lower_module_path`,
+         which resolves a two-segment `root.field` path the same way the
+         checker does (root must be a local binding currently in scope) and
+         lowers it as an ordinary `hir_field` over `hir_local_ref` — which
+         required teaching the lowerer to track each local's checked type
+         at `declare_local` (previously untracked; every call site already
+         had the type in hand, either directly or via its already-lowered
+         initializer/pattern expression's own `.type`). Longer chains
+         (`a.b.c`) and genuine module-qualified paths remain unsupported —
+         intermediate segment types aren't recoverable from anything
+         lowering can reach, and a longer chain is left `unsupported_construct`
+         rather than guessed at. Regression test:
+         `src/testdata/codegen_test/field_access_on_local.kira`
+         (`src/bytecode_compiler/compile_test.cpp`), covering both a plain
+         `let` and a variant-payload binding.
 
 ### LLVM codegen / AOT runtime
 

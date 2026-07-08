@@ -6,46 +6,6 @@
 namespace kira::semantic {
 namespace {
 
-/// Recursively records one `module_scope_record` per module/submodule scope
-/// found in `items` (a file's top-level items or a submodule's inline body),
-/// with the direct symbol ids declared in each scope.
-auto collect_module_scopes(const std::vector<ast::ptr<ast::node>> &items,
-                           std::string_view module_name, file_id_type file_id,
-                           std::vector<module_scope_record> &out) -> void {
-  auto scope = module_scope_record{
-      .module_name = std::string(module_name),
-      .file_id = file_id,
-      .scope = k_invalid_scope_id,
-      .symbols = {},
-  };
-
-  for (const auto &item : items) {
-    if (item == nullptr || item->has_error) {
-      continue;
-    }
-    if (const auto symbol = module_scope_symbol(*item, file_id)) {
-      scope.symbols.push_back(symbol->id);
-    }
-  }
-
-  out.push_back(std::move(scope));
-
-  for (const auto &item : items) {
-    if (item == nullptr || item->has_error ||
-        item->kind != ast::node_kind::sub_module_decl) {
-      continue;
-    }
-
-    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
-    if (decl.items.empty()) {
-      continue;
-    }
-
-    const auto child_module_name = append_module_name(module_name, decl.name);
-    collect_module_scopes(decl.items, child_module_name, file_id, out);
-  }
-}
-
 /// Builds one `module_file_record` per input file that has a valid `module`
 /// declaration, deriving its parent module path from all but the last
 /// dotted segment.

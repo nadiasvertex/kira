@@ -460,8 +460,8 @@ auto test_intrinsic_rt_stdout_returns_fd_one() -> void {
   writer.emit_u8(0); // first_arg_reg (unused — argc is 0)
   writer.emit_u8(0); // argc
   writer.emit_opcode(bc::opcode::op_load_slot);
-  writer.emit_u8(1); // dst
-  writer.emit_u8(0); // ptr reg
+  writer.emit_u8(1);  // dst
+  writer.emit_u8(0);  // ptr reg
   writer.emit_u16(0); // slot_index — raw_fd's only field
   writer.emit_opcode(bc::opcode::op_return_value);
   writer.emit_u8(1);
@@ -477,9 +477,10 @@ auto test_intrinsic_rt_stdout_returns_fd_one() -> void {
 
 auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
   // fn(write_fd, read_fd, len, write_ptr, read_ptr) -> i64 {
-  //   let w = rt_write({value: write_fd}, {len; write_ptr})   // result[usize, io_errno]
-  //   let r = rt_read({value: read_fd}, {len; read_ptr})       // result[usize, io_errno]
-  //   return w.tag * 1000000 + r.tag * 10000 + r.payload
+  //   let w = rt_write({value: write_fd}, {len; write_ptr})   // result[usize,
+  //   io_errno] let r = rt_read({value: read_fd}, {len; read_ptr})       //
+  //   result[usize, io_errno] return w.tag * 1000000 + r.tag * 10000 +
+  //   r.payload
   // }
   // Encodes both results' tags plus the byte count into one return value so
   // this test can confirm *both* intrinsics returned `@ok(...)` (tag 0) —
@@ -560,7 +561,8 @@ auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
   writer.emit_u8(10);
   writer.emit_u16(1);
   // r14 = 1000000, r15 = 10000
-  const auto million_idx = writer.add_constant(bc::slot_value{int64_t{1000000}});
+  const auto million_idx =
+      writer.add_constant(bc::slot_value{int64_t{1000000}});
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_u8(14);
   writer.emit_u16(million_idx);
@@ -710,7 +712,8 @@ auto test_intrinsic_rt_open_returns_err_on_a_missing_file() -> void {
   writer.emit_u8(11);
   writer.emit_u16(0);
   // r13 = 1000000, r14 = r10 * r13, r15 = r14 + r12
-  const auto million_idx = writer.add_constant(bc::slot_value{int64_t{1000000}});
+  const auto million_idx =
+      writer.add_constant(bc::slot_value{int64_t{1000000}});
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_u8(13);
   writer.emit_u16(million_idx);

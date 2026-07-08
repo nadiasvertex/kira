@@ -1,0 +1,17 @@
+module sample
+
+type inner = { code: int32 }
+type wrapper = @has(inner) | @nothing
+
+def read_plain_let(x: int32) -> int32:
+    let e = inner { code: x }
+    return e.code
+
+def read_variant_payload(x: int32) -> int32:
+    let w = @has(inner { code: x })
+    return match w:
+        @has(e) => e.code
+        @nothing => 0
+
+def main() -> int32:
+    return read_plain_let(20) + read_variant_payload(22)

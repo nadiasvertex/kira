@@ -497,18 +497,23 @@ private:
         if (last.kind == hir_node_kind::hir_expr_stmt) {
           const auto &expr_stmt =
               dynamic_cast<const hir::hir_expr_stmt &>(last);
-          if (return_is_unit_) {
-            auto value = compile_expr(*expr_stmt.expr);
-            if (!value.has_value()) {
-              return std::unexpected(value.error());
+          auto value = compile_expr(*expr_stmt.expr);
+          if (!value.has_value()) {
+            return std::unexpected(value.error());
+          }
+          // A tail `if`/`match`/block whose every branch/arm diverges (e.g.
+          // via `return`) already ends the current block with its own
+          // terminator (`compile_if`/`compile_match`/`compile_block_as_value`
+          // emit `unreachable` when nothing reaches their merge point) — in
+          // that case nothing reaches here, and adding another terminator
+          // (`ret`) would insert an instruction after one, which LLVM's
+          // verifier rejects.
+          if (builder_.GetInsertBlock()->getTerminator() == nullptr) {
+            if (return_is_unit_) {
+              builder_.CreateRetVoid();
+            } else {
+              builder_.CreateRet(*value);
             }
-            builder_.CreateRetVoid();
-          } else {
-            auto value = compile_expr(*expr_stmt.expr);
-            if (!value.has_value()) {
-              return std::unexpected(value.error());
-            }
-            builder_.CreateRet(*value);
           }
         } else {
           auto result = compile_stmt(last);
@@ -696,11 +701,17 @@ private:
       if (!terminated.has_value()) {
         return std::unexpected(terminated.error());
       }
-      // Scope limitation, documented rather than silently assumed: this
-      // spike does not thread "never" (all-branches-diverge) typing through
-      // expression position the way `hir_if`-as-statement can. Every stress
-      // corpus program keeps an if-expression's branches value-producing,
-      // not diverging, so `result` is always written before this load runs.
+      if (*terminated) {
+        // Every branch diverged (e.g. via `return`) — `compile_if` already
+        // ended the current block with `unreachable`, so `result` was
+        // never written and nothing after this point can execute. Loading
+        // from `result` here would insert an instruction after that
+        // `unreachable` terminator, which LLVM's verifier rejects
+        // ("Terminator found in the middle of a basic block"); return an
+        // undef value of the right type instead — it is provably dead,
+        // never actually observed by anything.
+        return llvm::UndefValue::get(llvm_type_for(ctx_, *kind));
+      }
       return builder_.CreateLoad(result->getAllocatedType(), result,
                                  "if.value");
     }
@@ -737,8 +748,12 @@ private:
       if (!terminated.has_value()) {
         return std::unexpected(terminated.error());
       }
-      // See hir_if's own scope note just above: every stress corpus match
-      // expression keeps every arm value-producing, not diverging.
+      if (*terminated) {
+        // See hir_if's own note just above — every arm diverged, `result`
+        // was never written, and the load below would land after
+        // `compile_match`'s `unreachable` terminator.
+        return llvm::UndefValue::get(*ty);
+      }
       return builder_.CreateLoad(*ty, result, "match.value");
     }
     case hir_node_kind::hir_container_len:
@@ -758,6 +773,11 @@ private:
       auto terminated = compile_block_as_value(node, result);
       if (!terminated.has_value()) {
         return std::unexpected(terminated.error());
+      }
+      if (*terminated) {
+        // See hir_if's own note above — the block diverged before
+        // reaching its own tail value.
+        return llvm::UndefValue::get(*ty);
       }
       return builder_.CreateLoad(*ty, result, "block.value");
     }
@@ -2077,6 +2097,13 @@ private:
         auto value = compile_expr(*expr_stmt.expr);
         if (!value.has_value()) {
           return std::unexpected(value.error());
+        }
+        // See `compile_body_and_finish`'s identical check: a tail
+        // `if`/`match`/block whose every branch/arm diverges already
+        // terminated this block itself, so storing into `want_result` (and
+        // reporting "not terminated" to the caller) would be wrong.
+        if (builder_.GetInsertBlock()->getTerminator() != nullptr) {
+          return true;
         }
         builder_.CreateStore(*value, want_result);
         return false;

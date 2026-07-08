@@ -835,11 +835,11 @@ auto test_parser_accepts_extend_block() -> void {
 }
 
 auto test_parser_accepts_intrinsic_def() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "intrinsic def rt_write(fd: raw_fd, buf: slice[byte]) -> "
-      "result[usize, io_errno]\n"
-      "pub intrinsic def rt_stdout() -> raw_fd\n");
+  auto parsed =
+      parse_source("module sample\n"
+                   "intrinsic def rt_write(fd: raw_fd, buf: slice[byte]) -> "
+                   "result[usize, io_errno]\n"
+                   "pub intrinsic def rt_stdout() -> raw_fd\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2, "expected two intrinsic decls");

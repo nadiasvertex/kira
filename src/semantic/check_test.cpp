@@ -677,8 +677,7 @@ auto test_accepts_intrinsic_decl() -> void {
 }
 
 auto test_reports_unknown_intrinsic() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_unknown_intrinsic.kira");
+  const auto analyzed = analyze_test_data_file("report_unknown_intrinsic.kira");
   expect(analyzed.error_count > 0, "expected unknown intrinsic to fail");
   expect_diagnostic(analyzed, "is not a recognized intrinsic",
                     "expected unknown-intrinsic diagnostic");

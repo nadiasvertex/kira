@@ -168,11 +168,11 @@ auto test_result_variant_tags_and_payload_arity() -> void {
          "expected `ok` to have tag 0");
   expect(runtime::sum_variant_tag(fixture.checked.types, id, "err") == 1,
          "expected `err` to have tag 1");
-  expect(runtime::sum_variant_payload_slots(fixture.checked.types, id,
-                                            "ok") == 1,
+  expect(runtime::sum_variant_payload_slots(fixture.checked.types, id, "ok") ==
+             1,
          "expected `ok` to have one payload slot");
-  expect(runtime::sum_variant_payload_slots(fixture.checked.types, id,
-                                            "err") == 1,
+  expect(runtime::sum_variant_payload_slots(fixture.checked.types, id, "err") ==
+             1,
          "expected `err` to have one payload slot");
   expect(runtime::sum_max_payload_slots(fixture.checked.types, id) == 1,
          "expected result's payload area to be sized for one payload slot");

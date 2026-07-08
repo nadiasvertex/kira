@@ -1,0 +1,25 @@
+module sample
+
+def classify(x: bool) -> int32:
+    match x:
+        true => 111
+        false => 222
+
+def grade(score: int32) -> int32:
+    if score >= 90:
+        4
+    elif score >= 80:
+        3
+    else:
+        2
+
+def grade_returns(score: int32) -> int32:
+    if score >= 90:
+        return 4
+    elif score >= 80:
+        return 3
+    else:
+        return 2
+
+def main() -> int32:
+    return classify(true) * 1000000 + classify(false) * 1000 + grade(95) * 100 + grade_returns(72)

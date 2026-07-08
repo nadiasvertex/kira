@@ -2,6 +2,7 @@
 
 #include <format>
 #include <functional>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -78,9 +79,20 @@ private:
   auto push_scope() -> void { scopes_.emplace_back(); }
   auto pop_scope() -> void { scopes_.pop_back(); }
 
-  [[nodiscard]] auto declare_local(std::string_view name) -> symbol_id {
+  /// Declares a local binding named `name` with checked type `type`,
+  /// returning its fresh symbol id. `type` is recorded in `local_types_` so
+  /// a later `module_path_expr` (a bare `x.field` chain — see
+  /// `lower_expr`'s case for it) rooted at this name can rebuild a real
+  /// `hir_field` without needing a second AST node to look a type up
+  /// against; every call site already has this binding's type in hand
+  /// (either directly, or via its already-lowered initializer/pattern
+  /// expression's own `.type`), so this doesn't add a new type-resolution
+  /// obligation, just persists one that already existed.
+  [[nodiscard]] auto declare_local(std::string_view name, type_id type)
+      -> symbol_id {
     const auto id = next_symbol_++;
     scopes_.back().emplace(std::string(name), id);
+    local_types_.emplace(id, type);
     return id;
   }
 
@@ -89,12 +101,37 @@ private:
   /// `lower_match`).
   [[nodiscard]] auto mint_symbol() -> symbol_id { return next_symbol_++; }
 
-  [[nodiscard]] auto resolve_reference(std::string_view name) -> symbol_id {
-    for (auto &scope : std::views::reverse(scopes_)) {
+  /// Looks up `name` among locals currently in scope only — unlike
+  /// `resolve_reference`, never falls back to minting/reusing a global
+  /// reference id, so a `nullopt` result reliably means "not a local
+  /// binding" (used to decide whether a `module_path_expr`'s root is a
+  /// local being field-accessed vs. a genuine module-qualified path).
+  [[nodiscard]] auto lookup_local(std::string_view name) const
+      -> std::optional<symbol_id> {
+    for (const auto &scope : std::views::reverse(scopes_)) {
       if (const auto found = scope.find(std::string(name));
           found != scope.end()) {
         return found->second;
       }
+    }
+    return std::nullopt;
+  }
+
+  /// The checked type `declare_local` recorded for `symbol`, or `nullopt`
+  /// if `symbol` was never declared through `declare_local` (e.g. it's a
+  /// `mint_symbol`-only synthetic id).
+  [[nodiscard]] auto local_type_of(symbol_id symbol) const
+      -> std::optional<type_id> {
+    if (const auto found = local_types_.find(symbol);
+        found != local_types_.end()) {
+      return found->second;
+    }
+    return std::nullopt;
+  }
+
+  [[nodiscard]] auto resolve_reference(std::string_view name) -> symbol_id {
+    if (const auto local = lookup_local(name); local.has_value()) {
+      return *local;
     }
     auto key = std::string(name);
     if (const auto found = global_refs_.find(key);
@@ -141,6 +178,8 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_field(const ast::field_expr &field)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_module_path(const ast::module_path_expr &path)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_index(const ast::index_expr &index)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_tuple(const ast::tuple_expr &tuple)
@@ -167,6 +206,16 @@ private:
                                  source_span span,
                                  type_id type = k_unknown_type)
       -> std::expected<ptr<hir_block>, lowering_error>;
+  /// Lowers a trailing `if`/`match` *statement* as this block's tail value
+  /// — see `lower_block`'s call site for why this needs to exist
+  /// separately from the ordinary `if_stmt`/`match_stmt` cases in
+  /// `lower_stmt` (which always type as `k_unknown_type` and are never
+  /// wrapped in `hir_expr_stmt`, since a mid-body `if`/`match` is a plain
+  /// effect-only statement, not a value the rest of the pipeline needs to
+  /// see).
+  [[nodiscard]] auto lower_tail_control_flow_stmt(const ast::node &node,
+                                                  type_id type)
+      -> std::expected<ptr<hir_node>, lowering_error>;
   /// Lowers one statement to zero or more HIR nodes: almost always exactly
   /// one, except a destructuring `let` (`let (a, b) = pair`), which expands
   /// to a synthetic subject-binding `hir_let` plus one `hir_let` per name
@@ -299,6 +348,7 @@ private:
   const checked_types &checked_;
   std::vector<std::unordered_map<std::string, symbol_id>> scopes_;
   std::unordered_map<std::string, symbol_id> global_refs_;
+  std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
 };
 
@@ -389,6 +439,8 @@ auto lowerer::lower_expr(const ast::expr &expr)
     return lower_try(dynamic_cast<const ast::try_expr &>(expr));
   case ast::node_kind::for_expr:
     return lower_for_expr(dynamic_cast<const ast::for_expr &>(expr));
+  case ast::node_kind::module_path_expr:
+    return lower_module_path(dynamic_cast<const ast::module_path_expr &>(expr));
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
                 std::format("expression kind {} is not lowered by the first "
@@ -592,6 +644,60 @@ auto lowerer::lower_field(const ast::field_expr &field)
       make<hir_field>(field.span, *type, std::move(*object), field.field_name));
 }
 
+/// `a.b` parses ambiguously — the parser cannot tell "a value being
+/// field-accessed" from "a module path" without symbol info (`parser.cpp`'s
+/// `parse_ident_or_path_expr`), so it always produces `module_path_expr` for
+/// a bare leading identifier followed by `.name`; `field_expr` only comes
+/// from a postfix chain whose base wasn't a bare identifier (`foo().field`,
+/// `arr[0].field`, ...). The checker's `infer_module_path`
+/// (`semantic/check.cpp`) resolves this ambiguity for typing purposes by
+/// checking whether the first segment is a known value binding, but never
+/// rewrites the AST — so lowering has to redo the same disambiguation here.
+///
+/// Only the two-segment case (`root.field`) is supported: `checked_.
+/// node_types` records a type for the *whole* `module_path_expr` node, not
+/// per-segment prefixes, so a chain's only two type_ids this pass can ever
+/// recover are the root's (via `local_type_of`, since `declare_local`
+/// records it) and the final result's (via `checked_type_of` on `path`
+/// itself, which — for exactly two segments — *is* the field's type). A
+/// longer chain (`a.b.c`) would need `b`'s type too, which isn't tracked
+/// anywhere lowering can reach; that's left as `unsupported_construct`
+/// rather than guessed. A root that isn't a local binding in scope here is
+/// a genuine module-qualified reference, which this milestone doesn't
+/// lower yet either.
+auto lowerer::lower_module_path(const ast::module_path_expr &path)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  if (path.segments.size() != 2) {
+    return fail(lowering_error_kind::unsupported_construct, path.span,
+                "only a two-segment `value.field` path is lowered by the "
+                "first milestone — a longer chain, or a module-qualified "
+                "reference, is not supported yet");
+  }
+  const auto root_symbol = lookup_local(path.segments[0]);
+  if (!root_symbol.has_value()) {
+    return fail(lowering_error_kind::unsupported_construct, path.span,
+                std::format("`{}` does not resolve to a local binding — "
+                            "module-qualified value references are not "
+                            "lowered by the first milestone yet",
+                            path.segments[0]));
+  }
+  const auto root_type = local_type_of(*root_symbol);
+  if (!root_type.has_value()) {
+    return fail(lowering_error_kind::unresolved_type, path.span,
+                "no concrete checked type is available for this local "
+                "binding; lowering only accepts fully type-checked, "
+                "fully-annotated code (spec/typed-ir-design.md Decision 1)");
+  }
+  auto type = checked_type_of(path);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  auto root = ptr<hir_expr>(make<hir_local_ref>(
+      path.span, *root_type, *root_symbol, path.segments[0]));
+  return ok_expr(
+      make<hir_field>(path.span, *type, std::move(root), path.segments[1]));
+}
+
 auto lowerer::lower_index(const ast::index_expr &index)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   auto type = checked_type_of(index);
@@ -774,7 +880,7 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     if (param.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
           dynamic_cast<const ast::binding_pattern &>(*param.pattern);
-      const auto symbol = declare_local(binding.name);
+      const auto symbol = declare_local(binding.name, ptype);
       params.push_back(
           hir_param{.symbol = symbol, .name = binding.name, .type = ptype});
       continue;
@@ -824,7 +930,7 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     body =
         make<hir_block>(lambda.body_expr->span, return_type, std::move(stmts));
   } else {
-    body = lower_block(lambda.body_stmts, lambda.span);
+    body = lower_block(lambda.body_stmts, lambda.span, return_type);
     if (body.has_value() && !param_prelude.empty()) {
       auto merged = std::move(param_prelude);
       for (auto &stmt_ptr : (*body)->stmts) {
@@ -861,7 +967,7 @@ auto lowerer::lower_where(const ast::where_expr &where)
       pop_scope();
       return std::unexpected(value.error());
     }
-    const auto symbol = declare_local(binding.name);
+    const auto symbol = declare_local(binding.name, (*value)->type);
     stmts.push_back(ptr<hir_node>(
         make<hir_let>(binding.span, symbol, binding.name, std::move(*value))));
   }
@@ -971,14 +1077,68 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
                                  subject_symbol, std::move(arms)));
 }
 
+auto lowerer::lower_tail_control_flow_stmt(const ast::node &node, type_id type)
+    -> std::expected<ptr<hir_node>, lowering_error> {
+  if (node.kind == ast::node_kind::if_stmt) {
+    const auto &if_s = dynamic_cast<const ast::if_stmt &>(node);
+    auto lowered = lower_if(if_s.branches, if_s.else_body, if_s.span, type);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    return ptr<hir_node>(
+        make<hir_expr_stmt>(if_s.span, ptr<hir_expr>(std::move(*lowered))));
+  }
+  const auto &match_s = dynamic_cast<const ast::match_stmt &>(node);
+  if (match_s.subject == nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, match_s.span,
+                "match statement has no subject");
+  }
+  auto lowered =
+      lower_match(*match_s.subject, match_s.arms, match_s.span, type);
+  if (!lowered.has_value()) {
+    return std::unexpected(lowered.error());
+  }
+  return ptr<hir_node>(
+      make<hir_expr_stmt>(match_s.span, ptr<hir_expr>(std::move(*lowered))));
+}
+
 auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
                           source_span span, type_id type)
     -> std::expected<ptr<hir_block>, lowering_error> {
   push_scope();
   auto lowered_stmts = ptr_vec<hir_node>{};
   lowered_stmts.reserve(stmts.size());
-  for (const auto &stmt_ptr : stmts) {
+
+  // A trailing `if`/`match` *statement* is exactly as value-producing as
+  // any other expression per spec/kira-reference.md's "Control Flow" — the
+  // same "implicit tail expression is the return value" rule an ordinary
+  // `expr_stmt` already gets. Route only the last non-null statement
+  // through `lower_tail_control_flow_stmt` so it's typed with this block's
+  // real `type` and wrapped in `hir_expr_stmt`; everything else (including
+  // a mid-body `if`/`match`, which the checker itself types as `unit`)
+  // goes through the ordinary `lower_stmt` path unchanged.
+  auto last_index = std::optional<size_t>{};
+  for (size_t i = stmts.size(); i-- > 0;) {
+    if (stmts[i] != nullptr) {
+      last_index = i;
+      break;
+    }
+  }
+
+  for (size_t i = 0; i < stmts.size(); ++i) {
+    const auto &stmt_ptr = stmts[i];
     if (stmt_ptr == nullptr) {
+      continue;
+    }
+    if (last_index.has_value() && i == *last_index &&
+        (stmt_ptr->kind == ast::node_kind::if_stmt ||
+         stmt_ptr->kind == ast::node_kind::match_stmt)) {
+      auto tail = lower_tail_control_flow_stmt(*stmt_ptr, type);
+      if (!tail.has_value()) {
+        pop_scope();
+        return std::unexpected(tail.error());
+      }
+      lowered_stmts.push_back(std::move(*tail));
       continue;
     }
     auto lowered = lower_stmt(*stmt_ptr);
@@ -1032,7 +1192,7 @@ auto lowerer::lower_stmt(const ast::node &node)
         let.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
           dynamic_cast<const ast::binding_pattern &>(*let.pattern);
-      const auto symbol = declare_local(binding.name);
+      const auto symbol = declare_local(binding.name, (*initializer)->type);
       return one_stmt(ptr<hir_node>(make<hir_let>(
           let.span, symbol, binding.name, std::move(*initializer))));
     }
@@ -1145,7 +1305,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!initializer.has_value()) {
       return std::unexpected(initializer.error());
     }
-    const auto symbol = declare_local(var.name);
+    const auto symbol = declare_local(var.name, (*initializer)->type);
     return one_stmt(ptr<hir_node>(make<hir_let>(
         var.span, symbol, var.name, std::move(*initializer), /*mut=*/true)));
   }
@@ -1224,7 +1384,7 @@ auto lowerer::lower_if(const std::vector<ast::if_branch> &branches,
     if (!condition.has_value()) {
       return std::unexpected(condition.error());
     }
-    auto body = lower_block(branch.body, branch.span);
+    auto body = lower_block(branch.body, branch.span, type);
     if (!body.has_value()) {
       return std::unexpected(body.error());
     }
@@ -1233,7 +1393,7 @@ auto lowerer::lower_if(const std::vector<ast::if_branch> &branches,
   }
   auto else_block = ptr<hir_block>{};
   if (!else_body.empty()) {
-    auto lowered_else = lower_block(else_body, span);
+    auto lowered_else = lower_block(else_body, span, type);
     if (!lowered_else.has_value()) {
       return std::unexpected(lowered_else.error());
     }
@@ -1491,10 +1651,12 @@ auto lowerer::build_for_loop_body(
     const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
         &inner_stmts) -> std::expected<ptr<hir_block>, lowering_error> {
   push_scope();
-  const auto loop_var_symbol = declare_local(loop_var.name);
+  auto loop_var_place = loop_var_value();
+  const auto loop_var_symbol =
+      declare_local(loop_var.name, loop_var_place->type);
   auto body_stmts = ptr_vec<hir_node>{};
-  body_stmts.push_back(ptr<hir_node>(
-      make<hir_let>(span, loop_var_symbol, loop_var.name, loop_var_value())));
+  body_stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, loop_var_symbol, loop_var.name, std::move(loop_var_place))));
 
   auto inner = inner_stmts();
   if (!inner.has_value()) {
@@ -1539,7 +1701,7 @@ auto lowerer::lower_option_loop(
   const auto subject_span = iterable.span;
 
   push_scope();
-  const auto loop_var_symbol = declare_local(loop_var.name);
+  const auto loop_var_symbol = declare_local(loop_var.name, element_type);
   auto some_stmts = ptr_vec<hir_node>{};
   some_stmts.push_back(ptr<hir_node>(make<hir_let>(
       span, loop_var_symbol, loop_var.name,
@@ -1796,9 +1958,10 @@ auto lowerer::lower_pattern(const ast::node &pattern,
   }
   case ast::node_kind::binding_pattern: {
     const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
-    const auto symbol = declare_local(binding.name);
+    auto place = make_place();
+    const auto symbol = declare_local(binding.name, place->type);
     pending.push_back(ptr<hir_node>(
-        make<hir_let>(pattern.span, symbol, binding.name, make_place())));
+        make<hir_let>(pattern.span, symbol, binding.name, std::move(place))));
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
   }
   case ast::node_kind::group_pattern: {
@@ -1812,9 +1975,10 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       return std::unexpected(inner.error());
     }
     if (group.alias.has_value()) {
-      const auto symbol = declare_local(*group.alias);
+      auto place = make_place();
+      const auto symbol = declare_local(*group.alias, place->type);
       pending.push_back(ptr<hir_node>(
-          make<hir_let>(pattern.span, symbol, *group.alias, make_place())));
+          make<hir_let>(pattern.span, symbol, *group.alias, std::move(place))));
     }
     return inner;
   }
@@ -1932,7 +2096,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
                     "typed-ir-design.md Decision 1)");
       }
       const auto ftype = found->second;
-      const auto symbol = declare_local(field_name);
+      const auto symbol = declare_local(field_name, ftype);
       pending.push_back(ptr<hir_node>(
           make<hir_let>(field_span, symbol, field_name,
                         ptr<hir_expr>(make<hir_field>(
@@ -2153,7 +2317,7 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
           make<hir_expr_stmt>(arm.body_expr->span, std::move(*value))));
       body = make<hir_block>(arm.span, k_unknown_type, std::move(stmts));
     } else {
-      auto lowered_body = lower_block(arm.body_stmts, arm.span);
+      auto lowered_body = lower_block(arm.body_stmts, arm.span, type);
       if (!lowered_body.has_value()) {
         pop_scope();
         return std::unexpected(lowered_body.error());
@@ -2236,7 +2400,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     if (param.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
           dynamic_cast<const ast::binding_pattern &>(*param.pattern);
-      const auto symbol = declare_local(binding.name);
+      const auto symbol = declare_local(binding.name, *type);
       params.push_back(
           hir_param{.symbol = symbol, .name = binding.name, .type = *type});
       continue;
@@ -2292,7 +2456,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     body =
         make<hir_block>(decl.body_expr->span, *return_type, std::move(stmts));
   } else {
-    body = lower_block(decl.body_stmts, decl.span);
+    body = lower_block(decl.body_stmts, decl.span, *return_type);
     if (body.has_value() && !param_prelude.empty()) {
       auto merged = std::move(param_prelude);
       for (auto &stmt_ptr : (*body)->stmts) {

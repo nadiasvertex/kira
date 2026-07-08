@@ -111,6 +111,28 @@ auto test_if_expression_selects_branch_value() -> void {
   expect(result->value.i == 14, "expected abs(-7) + abs(7) == 14");
 }
 
+auto test_implicit_tail_match_and_if_are_the_return_value() -> void {
+  // `match`/`if` used as a bare *statement*-shaped tail (no explicit
+  // `return`, no assignment — as opposed to `if_expression.kira`'s `return
+  // if ...`) previously lowered with `k_unknown_type` and was never
+  // wrapped as a value-producing tail, so it silently returned 0/unit
+  // instead of the matched/branch value (src/hir/lower.cpp's
+  // `lower_block`/`lower_tail_control_flow_stmt`, and — for `if` only —
+  // src/semantic/check.cpp's `if_stmt` case, which previously always typed
+  // `unit` unlike `match_stmt`). Also exercises the case where every
+  // branch diverges via `return` (`grade_returns`), which separately
+  // exposed a `llvm_codegen` bug: it unconditionally loaded/stored/
+  // returned a value after `compile_if`/`compile_match` already closed the
+  // block with `unreachable`, tripping LLVM's verifier
+  // ("Terminator found in the middle of a basic block").
+  auto jf = jit_fixture_for(load_fixture("implicit_tail_match_and_if.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 111222402,
+         "expected classify(true)*1e6 + classify(false)*1e3 + grade(95)*1e2 "
+         "+ grade_returns(72) == 111222402");
+}
+
 auto test_while_loop_sums_one_to_n() -> void {
   auto jf = jit_fixture_for(load_fixture("while_loop.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -370,6 +392,7 @@ auto main() -> int {
     test_add_compiles_and_runs();
     test_implicit_tail_expression_is_the_return_value();
     test_if_expression_selects_branch_value();
+    test_implicit_tail_match_and_if_are_the_return_value();
     test_while_loop_sums_one_to_n();
     test_recursive_call_computes_factorial();
     test_and_or_short_circuit_to_correct_value();

@@ -174,6 +174,40 @@ auto test_intrinsic_result_constructs_and_matches_through_real_syntax()
          "expected main() to match the `@err(e)` arm for a missing file");
 }
 
+auto test_field_access_on_a_local_lowers_for_plain_lets_and_payload_bindings()
+    -> void {
+  // `x.field` parses as `ast::module_path_expr` whenever `x` is a bare
+  // leading identifier (parser.cpp can't yet tell "value" from "module
+  // path" without symbol info) — `hir::lower_expr` previously had no case
+  // for that node kind at all, so it always failed with "expression kind
+  // ... is not lowered by the first milestone", for *any* local, not just
+  // a variant-payload binding. Fixed by `lowerer::lower_module_path`
+  // (src/hir/lower.cpp), which resolves the ambiguity the same way
+  // `semantic::check.cpp`'s `infer_module_path` already does for typing.
+  auto module = compile_fixture(load_fixture("field_access_on_local.kira"));
+
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() not to panic");
+  expect(main_result->value.i == 42,
+         "expected field access on both a plain `let` and a variant "
+         "payload binding to read the right value");
+}
+
+auto test_implicit_tail_match_and_if_are_the_return_value() -> void {
+  // See src/llvm_codegen/codegen_test.cpp's identically-named test for the
+  // full explanation — this is the same fixture run through the bytecode
+  // backend instead, confirming the `hir::lower_block`/`check.cpp` fix
+  // isn't LLVM-specific.
+  auto module =
+      compile_fixture(load_fixture("implicit_tail_match_and_if.kira"));
+
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() to succeed");
+  expect(main_result->value.i == 111222402,
+         "expected classify(true)*1e6 + classify(false)*1e3 + grade(95)*1e2 "
+         "+ grade_returns(72) == 111222402");
+}
+
 auto test_implicit_tail_expression_is_the_return_value() -> void {
   // No explicit `return` — the last statement's value is the function's
   // result (spec/typed-ir-design.md's Rust-like trailing-expression rule,
@@ -696,6 +730,8 @@ auto main() -> int {
     test_add_compiles_and_runs();
     test_intrinsic_call_compiles_to_op_call_intrinsic();
     test_intrinsic_result_constructs_and_matches_through_real_syntax();
+    test_field_access_on_a_local_lowers_for_plain_lets_and_payload_bindings();
+    test_implicit_tail_match_and_if_are_the_return_value();
     test_implicit_tail_expression_is_the_return_value();
     test_if_expression_selects_branch_value();
     test_while_loop_sums_one_to_n();

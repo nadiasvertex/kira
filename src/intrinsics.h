@@ -36,10 +36,9 @@ inline constexpr std::array<std::string_view, 8> known_intrinsic_names = {{
 /// @brief Returns whether `name` is a recognized intrinsic.
 [[nodiscard]] inline auto is_known_intrinsic(std::string_view name) noexcept
     -> bool {
-  return std::ranges::any_of(known_intrinsic_names,
-                             [name](std::string_view known) {
-                               return known == name;
-                             });
+  return std::ranges::any_of(
+      known_intrinsic_names,
+      [name](std::string_view known) { return known == name; });
 }
 
 /// @brief Returns `name`'s index into `known_intrinsic_names`, the same
