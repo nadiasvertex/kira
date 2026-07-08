@@ -218,9 +218,9 @@ using kira::decode_string_literal;
     return opcode::op_sub_sat;
   case ast::binary_op::MulSat:
     return opcode::op_mul_sat;
-  case ast::binary_op::Shl:
+  case ast::binary_op::shl:
     return opcode::op_shl;
-  case ast::binary_op::Shr:
+  case ast::binary_op::shr:
     return opcode::op_shr;
   case ast::binary_op::BitAnd:
     return opcode::op_bitand;
