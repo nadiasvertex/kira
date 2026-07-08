@@ -282,7 +282,7 @@ auto run_llvm(const fs::path &path, const hir::hir_module &module,
     return entry.name == "list" && entry.args.size() == 1 &&
            is_deep_comparable(types, entry.args.front());
   case kira::semantic::type_kind::tuple_kind:
-    return std::ranges::all_of(entry.args, [&](kira::semantic::type_id arg) {
+    return std::ranges::all_of(entry.args, [&](kira::semantic::type_id arg) -> bool {
       return is_deep_comparable(types, arg);
     });
   case kira::semantic::type_kind::array_kind:

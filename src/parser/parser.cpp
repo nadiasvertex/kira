@@ -121,7 +121,7 @@ auto parser::expect(token_kind expected) -> token {
     diag.with_help("An `=` is needed here to assign a value.");
   }
 
-  emit(std::move(diag));
+  emit(diag);
 
   // Recovery strategy: if the current token is something that plausibly
   // starts the *next* construct, don't consume it — just pretend the
@@ -162,7 +162,7 @@ auto parser::expect_with_context(token_kind expected, std::string_view context)
                   .with_label(found.span,
                               std::format("expected {} here", expected_desc));
 
-  emit(std::move(diag));
+  emit(diag);
 
   if (!at_recovery_point() && !at_eof() &&
       !at_any(token_kind::indent, token_kind::dedent, token_kind::newline)) {
@@ -4312,7 +4312,7 @@ auto parser::parse_where_expr(ast::ptr<ast::expr> inner)
     if (at(token_kind::newline) && peek_at(1).is(token_kind::indent)) {
       diag.with_fix("insert `:` before the newline", found.span, ":");
     }
-    emit(std::move(diag));
+    emit(diag);
     wexpr->has_error = true;
 
     // Recovery: if the user started a binding block on the next line, treat

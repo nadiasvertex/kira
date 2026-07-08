@@ -310,8 +310,8 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
 /// `fn(...)` — a lambda/closure value, per increment 6) — every such value
 /// is a single opaque pointer, as opposed to the closed scalar set
 /// `numeric_kind_of` maps directly to an LLVM integer/float type.
-[[nodiscard]] auto is_heap_type(const type_table &types_, type_id id) -> bool {
-  const auto &entry = types_.entry(id);
+[[nodiscard]] auto is_heap_type(const type_table &types, type_id id) -> bool {
+  const auto &entry = types.entry(id);
   switch (entry.kind) {
   case semantic::type_kind::tuple_kind:
   case semantic::type_kind::array_kind:
@@ -356,14 +356,14 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
 /// function-signature builder and `function_compiler::storage_type_for` so
 /// parameter/return/local storage typing is computed the same way in both
 /// places.
-[[nodiscard]] auto storage_llvm_type(const type_table &types_,
+[[nodiscard]] auto storage_llvm_type(const type_table &types,
                                      llvm::LLVMContext &ctx, type_id id)
     -> std::optional<llvm::Type *> {
-  const auto kind = numeric_kind_of(types_, id);
+  const auto kind = numeric_kind_of(types, id);
   if (kind.has_value()) {
     return llvm_type_for(ctx, *kind);
   }
-  if (is_heap_type(types_, id)) {
+  if (is_heap_type(types, id)) {
     return llvm::PointerType::get(ctx, 0);
   }
   return std::nullopt;
@@ -378,12 +378,12 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
 class function_compiler {
 public:
   function_compiler(
-      llvm::LLVMContext &ctx, const type_table &types_,
-      const std::unordered_map<std::string, llvm::Function *> &functions_,
+      llvm::LLVMContext &ctx, const type_table &types,
+      const std::unordered_map<std::string, llvm::Function *> &functions,
       llvm::Function *panic_fn, llvm::Function *alloc_fn,
       llvm::Function *list_reserve_slot_fn,
       const std::array<llvm::Function *, 8> &intrinsic_fns)
-      : ctx_(ctx), types_(types_), functions_(functions_), panic_fn_(panic_fn),
+      : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
         alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
         intrinsic_fns_(intrinsic_fns), builder_(ctx) {}
 

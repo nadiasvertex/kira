@@ -836,9 +836,9 @@ private:
   auto error(source_span span, const std::string &message,
              const std::string &label) -> void {
     auto diag =
-        diagnostic(diagnostic_level::error, std::move(message), file_id_);
-    diag.with_label(span, std::move(label));
-    diag_.emit(std::move(diag));
+        diagnostic(diagnostic_level::error, message, file_id_);
+    diag.with_label(span, label);
+    diag_.emit(diag);
     mark_error();
   }
 
@@ -847,10 +847,10 @@ private:
                        const std::string &label, const std::string &help)
       -> void {
     auto diag =
-        diagnostic(diagnostic_level::error, std::move(message), file_id_);
-    diag.with_label(span, std::move(label));
-    diag.with_help(std::move(help));
-    diag_.emit(std::move(diag));
+        diagnostic(diagnostic_level::error, message, file_id_);
+    diag.with_label(span, label);
+    diag.with_help(help);
+    diag_.emit(diag);
     mark_error();
   }
 
@@ -875,7 +875,7 @@ private:
           "this value explicitly.",
           types_.display(expected)));
     }
-    diag_.emit(std::move(diag));
+    diag_.emit(diag);
     mark_error();
   }
 
@@ -1276,7 +1276,7 @@ private:
           "Declare `type {}` in module `{}`, or import it with `use`.", name,
           module_name_));
     }
-    diag_.emit(std::move(diag));
+    diag_.emit(diag);
     mark_error();
   }
 
@@ -1299,7 +1299,7 @@ private:
                       named.type_args.size()),
           file_id_);
       diag.with_label(named.span, "wrong number of type arguments");
-      diag_.emit(std::move(diag));
+      diag_.emit(diag);
       mark_error();
       return k_error_type;
     }
@@ -1822,7 +1822,7 @@ private:
           if (const auto suggestion = best_suggestion(arg_name, names)) {
             diag.with_help(std::format("did you mean `{}:`?", *suggestion));
           }
-          diag_.emit(std::move(diag));
+          diag_.emit(diag);
           mark_error();
         }
       } else {
@@ -1878,7 +1878,7 @@ private:
                        decl_location.file_id)
                 .with_label(decl_location.span, "declaration"));
       }
-      diag_.emit(std::move(diag));
+      diag_.emit(diag);
       mark_error();
     }
 
@@ -2197,7 +2197,7 @@ private:
       diag.with_help(std::format(
           "Define `{}` before using it, or import it with `use`.", name));
     }
-    diag_.emit(std::move(diag));
+    diag_.emit(diag);
     mark_error();
   }
 
@@ -2308,7 +2308,7 @@ private:
       diag.with_note(std::format("`{}` declares the variants {}",
                                  expected_entry.name, names));
     }
-    diag_.emit(std::move(diag));
+    diag_.emit(diag);
     mark_error();
   }
 
@@ -2365,7 +2365,7 @@ private:
     diag.with_note(
         std::format("the largest `{}` value is {}", entry.name, *max_value));
     diag.with_help("Use a wider integer type, or reduce the value.");
-    diag_.emit(std::move(diag));
+    diag_.emit(diag);
     mark_error();
   }
 
@@ -2523,7 +2523,7 @@ private:
           "Kira never converts numbers implicitly; convert one side "
           "explicitly, e.g. `{}(...)`.",
           types_.display(lhs)));
-      diag_.emit(std::move(diag));
+      diag_.emit(diag);
       mark_error();
       return k_error_type;
     }
@@ -3198,7 +3198,7 @@ private:
             "that provides it.",
             entry.name));
       }
-      diag_.emit(std::move(diag));
+      diag_.emit(diag);
       mark_error();
       infer_call_args_loosely(call);
       return k_error_type;
@@ -3482,7 +3482,7 @@ private:
         diag.with_note(
             std::format("`{}` has the fields {}", entry.name, fields));
       }
-      diag_.emit(std::move(diag));
+      diag_.emit(diag);
       mark_error();
       return k_error_type;
     }
@@ -3766,7 +3766,7 @@ private:
           diag.with_note(
               std::format("`{}` has the fields {}", entry.name, names));
         }
-        diag_.emit(std::move(diag));
+        diag_.emit(diag);
         mark_error();
         if (field.value != nullptr) {
           infer_expr(*field.value, k_unknown_type);
@@ -4619,7 +4619,7 @@ private:
           diag.with_note(
               std::format("`{}` declares the variants {}", entry.name, names));
         }
-        diag_.emit(std::move(diag));
+        diag_.emit(diag);
         mark_error();
         for (const auto &arg : ctor.args) {
           if (arg != nullptr) {
@@ -4811,7 +4811,7 @@ private:
     diag.with_label(span, "missing match arms");
     diag.with_help(std::format(
         "Handle {} explicitly, or add a final `_ => ...` arm.", missing));
-    diag_.emit(std::move(diag));
+    diag_.emit(diag);
     mark_error();
   }
 
@@ -4957,7 +4957,7 @@ private:
                 "Declare it with `var {}` to allow reassignment, or shadow "
                 "it with a new `let`.",
                 ident.name));
-            diag_.emit(std::move(diag));
+            diag_.emit(diag);
             mark_error();
           }
         } else {
@@ -5115,7 +5115,7 @@ private:
           diag.with_note(
               std::format("the enclosing function is declared to return `{}`",
                           types_.display(return_type_)));
-          diag_.emit(std::move(diag));
+          diag_.emit(diag);
           mark_error();
         }
       } else if (return_annotated_ && !types_.is_unit(return_type_) &&
@@ -5290,7 +5290,7 @@ private:
         diag.with_help(
             "see spec/stdlib.md for the list of recognized intrinsics");
       }
-      diag_.emit(std::move(diag));
+      diag_.emit(diag);
       mark_error();
     }
 
@@ -5834,7 +5834,7 @@ private:
                         it->second->params.size()),
             file_id_);
         diag.with_label(fn->span, "signature differs from the trait");
-        diag_.emit(std::move(diag));
+        diag_.emit(diag);
         mark_error();
       }
     }
@@ -6131,7 +6131,7 @@ private:
         duplicate.with_help(
             "A program contains at most one implementation of a trait for a "
             "type; remove or merge one of these.");
-        diag_.emit(std::move(duplicate));
+        diag_.emit(duplicate);
         if (static_cast<size_t>(impl.file_id) < file_has_errors_.size()) {
           file_has_errors_[impl.file_id] = true;
         }
@@ -6201,7 +6201,7 @@ private:
               .with_label(main_decl->span, "explicit `main`"));
       diag.with_help("Move these statements into `main`, or delete the "
                      "explicit `main` and keep the script form.");
-      diag_.emit(std::move(diag));
+      diag_.emit(diag);
       mark_error();
     }
 

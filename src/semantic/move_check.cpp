@@ -80,7 +80,7 @@ private:
     return k_unknown_type;
   }
 
-  auto is_trackable(type_id id) const -> bool {
+  [[nodiscard]] auto is_trackable(type_id id) const -> bool {
     const auto &types = checked_.types;
     if (types.is_unknown(id)) {
       return false;
@@ -142,7 +142,7 @@ private:
         "needs to read or modify it, or restructure the code so `{0}` is "
         "only used once",
         ident.name));
-    diag_.emit(std::move(d));
+    diag_.emit(d);
   }
 
   /// A read of `ident` that does not consume it — fires use-after-move but
