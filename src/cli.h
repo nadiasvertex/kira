@@ -119,6 +119,9 @@ struct compile_report {
 ///
 /// @param argv Argument vector passed to `main`, including the program name at
 /// index 0.
+/// @return Configuration on success with `show_help` set to true when --help /
+/// -h was requested (the caller should print `render_help()` and exit). A
+/// diagnostic error message when arguments are invalid.
 [[nodiscard]] auto parse_args(std::span<char *const> argv)
     -> std::expected<cli_config, std::string>;
 
