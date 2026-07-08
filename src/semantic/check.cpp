@@ -835,8 +835,7 @@ private:
   /// Emits a single-label error at `span` in the current file.
   auto error(source_span span, const std::string &message,
              const std::string &label) -> void {
-    auto diag =
-        diagnostic(diagnostic_level::error, message, file_id_);
+    auto diag = diagnostic(diagnostic_level::error, message, file_id_);
     diag.with_label(span, label);
     diag_.emit(diag);
     mark_error();
@@ -846,8 +845,7 @@ private:
   auto error_with_help(source_span span, const std::string &message,
                        const std::string &label, const std::string &help)
       -> void {
-    auto diag =
-        diagnostic(diagnostic_level::error, message, file_id_);
+    auto diag = diagnostic(diagnostic_level::error, message, file_id_);
     diag.with_label(span, label);
     diag.with_help(help);
     diag_.emit(diag);

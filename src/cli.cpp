@@ -8,7 +8,6 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <iterator>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -652,7 +651,8 @@ struct parsed_input {
   }
 
   auto index = uint16_t{0};
-  for (; index < compiled->functions.size(); ++index) {
+  const auto function_count = static_cast<uint16_t>(compiled->functions.size());
+  for (; index < function_count; ++index) {
     if (compiled->functions[index].name == function_name) {
       break;
     }
@@ -818,6 +818,39 @@ struct parsed_input {
   return build_outcome{.succeeded = true, .message = output_path.string()};
 }
 
+/// Helper for --flag VALUE / --flag=VALUE consumers.
+///
+/// Tries to consume the option and advance `idx` if found.
+///
+/// @param arg Current argv element.
+/// @param option Exact option name (e.g. `"--compile-output"`).
+/// @param missing Error text when the VALUE slot is absent.
+/// @param sorter Called with the value. Signature: `(std::string value) ->
+/// void`.
+/// @param idx Iterator into argv; advanced when the value slot is consumed.
+/// @param argv Full argv for the VALUE form reader.
+/// @return `true` when the argument was consumed by this call.
+auto try_flag_value(std::string_view arg, std::string_view option,
+                    std::string_view missing, auto sorter, size_t &idx,
+                    std::span<char *const> argv)
+    -> std::expected<bool, std::string> {
+  if (arg == option) {
+    if (idx + 1 >= argv.size()) {
+      return std::unexpected{std::string{missing}};
+    }
+    sorter(argv[++idx]);
+    return true;
+  }
+  // --option=VALUE form.
+  auto eq_option = std::string{option};
+  eq_option += '=';
+  if (arg.starts_with(eq_option)) {
+    sorter(std::string{arg.substr(eq_option.size())});
+    return true;
+  }
+  return false; // does not match this option.
+}
+
 } // namespace
 
 /// Parse CLI arguments into the compile driver's configuration structure.
@@ -852,23 +885,19 @@ auto parse_args(std::span<char *const> argv)
     }
 
     if (parse_options && arg == "--metadata-dir") {
-      if (i + 1 >= argv.size()) {
-        return std::unexpected{"missing path after --metadata-dir"};
+      auto r = try_flag_value(
+          arg, "--metadata-dir", "missing path after --metadata-dir",
+          [&cfg](std::string value) { cfg.metadata_dir = std::move(value); }, i,
+          argv);
+      if (!r.has_value()) {
+        return std::unexpected{r.error()};
       }
-      cfg.metadata_dir = argv[++i];
-      if (cfg.metadata_dir.empty()) {
-        return std::unexpected{"--metadata-dir requires a non-empty path"};
+      if (r.value()) {
+        if (cfg.metadata_dir.empty()) {
+          return std::unexpected{"--metadata-dir requires a non-empty path"};
+        }
+        continue;
       }
-      continue;
-    }
-
-    if (parse_options && arg.starts_with("--metadata-dir=")) {
-      cfg.metadata_dir =
-          std::string(arg.substr(std::string_view{"--metadata-dir="}.size()));
-      if (cfg.metadata_dir.empty()) {
-        return std::unexpected{"--metadata-dir requires a non-empty path"};
-      }
-      continue;
     }
 
     if (parse_options && arg == "--run") {
@@ -877,25 +906,22 @@ auto parse_args(std::span<char *const> argv)
     }
 
     if (parse_options && arg == "--run-function") {
-      if (i + 1 >= argv.size()) {
-        return std::unexpected{"missing name after --run-function"};
+      auto r = try_flag_value(
+          arg, "--run-function", "missing name after --run-function",
+          [&cfg](std::string value) {
+            cfg.run = true;
+            cfg.run_function = std::move(value);
+          },
+          i, argv);
+      if (!r.has_value()) {
+        return std::unexpected{r.error()};
       }
-      cfg.run = true;
-      cfg.run_function = argv[++i];
-      if (cfg.run_function.empty()) {
-        return std::unexpected{"--run-function requires a non-empty name"};
+      if (r.value()) {
+        if (cfg.run_function.empty()) {
+          return std::unexpected{"--run-function requires a non-empty name"};
+        }
+        continue;
       }
-      continue;
-    }
-
-    if (parse_options && arg.starts_with("--run-function=")) {
-      cfg.run = true;
-      cfg.run_function =
-          std::string(arg.substr(std::string_view{"--run-function="}.size()));
-      if (cfg.run_function.empty()) {
-        return std::unexpected{"--run-function requires a non-empty name"};
-      }
-      continue;
     }
 
     if (parse_options && arg == "--compile") {
@@ -904,47 +930,42 @@ auto parse_args(std::span<char *const> argv)
     }
 
     if (parse_options && arg == "--compile-function") {
-      if (i + 1 >= argv.size()) {
-        return std::unexpected{"missing name after --compile-function"};
+      auto r = try_flag_value(
+          arg, "--compile-function", "missing name after --compile-function",
+          [&cfg](std::string value) {
+            cfg.build = true;
+            cfg.build_function = std::move(value);
+          },
+          i, argv);
+      if (!r.has_value()) {
+        return std::unexpected{r.error()};
       }
-      cfg.build = true;
-      cfg.build_function = argv[++i];
-      if (cfg.build_function.empty()) {
-        return std::unexpected{"--compile-function requires a non-empty name"};
+      if (r.value()) {
+        if (cfg.build_function.empty()) {
+          return std::unexpected{
+              "--compile-function requires a non-empty name"};
+        }
+        continue;
       }
-      continue;
-    }
-
-    if (parse_options && arg.starts_with("--compile-function=")) {
-      cfg.build = true;
-      cfg.build_function = std::string(
-          arg.substr(std::string_view{"--compile-function="}.size()));
-      if (cfg.build_function.empty()) {
-        return std::unexpected{"--compile-function requires a non-empty name"};
-      }
-      continue;
     }
 
     if (parse_options && arg == "--compile-output") {
-      if (i + 1 >= argv.size()) {
-        return std::unexpected{"missing path after --compile-output"};
+      auto r = try_flag_value(
+          arg, "--compile-output", "missing path after --compile-output",
+          [&cfg](std::string value) {
+            cfg.build = true;
+            cfg.build_output = std::move(value);
+          },
+          i, argv);
+      if (!r.has_value()) {
+        return std::unexpected{r.error()};
       }
-      cfg.build = true;
-      cfg.build_output = argv[++i];
-      if (cfg.build_output.empty()) {
-        return std::unexpected{"--compile-output requires a non-empty path"};
+      if (r.value()) {
+        if (cfg.build_output.empty()) {
+          return std::unexpected{"--compile-output requires a non-empty path"};
+        }
+        continue;
       }
-      continue;
-    }
-
-    if (parse_options && arg.starts_with("--compile-output=")) {
-      cfg.build = true;
-      cfg.build_output =
-          std::string(arg.substr(std::string_view{"--compile-output="}.size()));
-      if (cfg.build_output.empty()) {
-        return std::unexpected{"--compile-output requires a non-empty path"};
-      }
-      continue;
     }
 
     if (parse_options && arg.starts_with('-') && arg != "-") {

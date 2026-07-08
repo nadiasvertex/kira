@@ -28,7 +28,7 @@ struct binding_state {
 class move_checker {
 public:
   move_checker(const checked_types &checked, diagnostic_bag &diag,
-              file_id_type file_id)
+               file_id_type file_id)
       : checked_(checked), diag_(diag), file_id_(file_id) {}
 
   auto check_function(const ast::func_decl &decl) -> void {
@@ -85,21 +85,18 @@ private:
     if (types.is_unknown(id)) {
       return false;
     }
-    return !types.is_boolean(id) && !types.is_numeric(id) &&
-           !types.is_unit(id);
+    return !types.is_boolean(id) && !types.is_numeric(id) && !types.is_unit(id);
   }
 
-  auto declare(std::string_view name, source_span span, type_id type)
-      -> void {
+  auto declare(std::string_view name, source_span span, type_id type) -> void {
     if (name.empty() || scopes_.empty()) {
       return;
     }
     scopes_.back().insert_or_assign(
-        std::string(name),
-        binding_state{.declared_span = span,
-                      .moved_at = source_span::dummy(),
-                      .moved = false,
-                      .trackable = is_trackable(type)});
+        std::string(name), binding_state{.declared_span = span,
+                                         .moved_at = source_span::dummy(),
+                                         .moved = false,
+                                         .trackable = is_trackable(type)});
   }
 
   auto bind_pattern(const ast::pattern &pattern) -> void {
@@ -130,7 +127,7 @@ private:
                         std::format("use of moved value `{}`", ident.name),
                         file_id_);
     d.with_label(ident.span,
-                std::format("`{}` used here after being moved", ident.name));
+                 std::format("`{}` used here after being moved", ident.name));
     d.with_secondary_label(state.moved_at,
                            std::format("`{}` moved here", ident.name));
     d.with_note(

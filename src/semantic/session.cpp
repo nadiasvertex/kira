@@ -82,7 +82,8 @@ auto record_node_scope(semantic_session &session, const ast::node *node,
 /// with `file_id` so callers here don't need to carry it separately.
 auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
                               std::vector<pattern_binding_spec> &out) -> void {
-  for (const auto &binding : kira::semantic::collect_pattern_bindings(pattern)) {
+  for (const auto &binding :
+       kira::semantic::collect_pattern_bindings(pattern)) {
     out.push_back(pattern_binding_spec{
         .name = binding.name,
         .location =
