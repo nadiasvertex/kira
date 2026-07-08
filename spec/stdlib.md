@@ -359,13 +359,50 @@ This is the checklist of compiler work they depend on, grouped by phase.
 
 ### LLVM codegen / AOT runtime
 
-- [ ] Emit an external `declare` per intrinsic against a fixed C-ABI symbol
-      name (`kira_rt_read`, `kira_rt_write`, ...).
-- [ ] A small native runtime static library implementing those symbols,
-      statically linked into AOT executables.
-- [ ] Link step wiring so the runtime library is found and linked
-      automatically — no user-visible linker flags for a program that just
-      uses `std.io`/`std.console`.
+- [x] Emit an external `declare` per intrinsic against a fixed C-ABI symbol
+      name (`kira_rt_stdin`, `kira_rt_open`, ...). `compile_module`
+      (`src/llvm_codegen/codegen.cpp`) declares all eight from
+      `kira::known_intrinsic_names`/`known_intrinsic_arities`
+      (`src/intrinsics.h`) — every argument and return value is an opaque
+      heap `ptr`, so arity is all the declaration needs. `compile_call`
+      checks `kira::intrinsic_index_of` before falling back to the ordinary
+      function table, mirroring `bytecode_compiler`'s identical check.
+- [x] A small native runtime static library implementing those symbols:
+      `src/runtime/io.h`/`io.cpp` — a second, independent native
+      implementation of the same eight operations (per this document's
+      design principle: one implementation per backend, not a shared call
+      path), added to the existing `//src/runtime:runtime` target.
+- [x] Link step wiring — no new plumbing needed. `io.cpp` was added to the
+      same `alwayslink=True` `//src/runtime:runtime` target `cli.cpp`'s
+      `--build` flow already locates and links (`find_bazel_archive`), and
+      that same target is already a real `deps` of `:jit_support`/
+      `:codegen`, so JIT tests resolve `kira_rt_*` via ordinary process-
+      symbol lookup with no separate wiring either. Verified end-to-end via
+      two new JIT tests (`src/llvm_codegen/codegen_test.cpp`:
+      `test_intrinsic_call_resolves_to_native_symbol`,
+      `test_intrinsic_result_constructs_and_matches_through_real_syntax`) —
+      both reuse the existing `intrinsic_call.kira`/`intrinsic_result.kira`
+      fixtures already proven against the bytecode backend.
+- [ ] **Newly discovered, out of scope — a pre-existing `--build` CLI
+      linking gap, not specific to intrinsics.** `cli.cpp`'s link command
+      invokes the plain C linker driver (`cc "<obj>" "<panic_archive>"
+      "<heap_archive>" -o "<out>"`, `cli.cpp:3529-3532`) rather than a C++-
+      aware one (`c++`/`clang++`, or explicit `-lc++`) — any program whose
+      generated object file actually references a symbol from either
+      archive (any heap type: struct/string/list/sum type/intrinsic call,
+      or any checked-arithmetic panic path) fails to link with pages of
+      undefined `std::__1::*`/`operator new`/`__cxa_*` symbols, since
+      `arena.cpp`/`aot_runtime.cpp`/`io.cpp` all use the C++ standard
+      library internally. Reproduces with zero relation to this session's
+      work — confirmed with a two-line `add.kira` (no heap types, no
+      intrinsics) via `kira --build`. A pure-scalar program (e.g. `def
+      main() -> int32: return 42`) links fine only because nothing in it
+      references either archive, so the linker never pulls in the object
+      files that need libc++. `src/llvm_codegen/aot_test.cpp`'s own passing
+      `--build`-equivalent test never exercises this path — it deliberately
+      links against a hand-written, dependency-free C stub instead of the
+      real `aot_runtime`/`runtime` archives (see its own top-of-file
+      comment), so this gap has never been end-to-end tested before.
 
 ### Stdlib source
 

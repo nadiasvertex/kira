@@ -55,4 +55,22 @@ inline constexpr std::array<std::string_view, 8> known_intrinsic_names = {{
   return std::nullopt;
 }
 
+/// Argument count for each intrinsic's native C-ABI symbol (`kira_rt_*`,
+/// `src/runtime/io.h`), indexed the same as `known_intrinsic_names`. Every
+/// intrinsic argument and return value is an opaque heap pointer (see
+/// `io.h`'s doc comment), so this arity is all `llvm_codegen` needs to
+/// declare each `kira_rt_*` function's LLVM signature — read from here
+/// rather than duplicated so the two backends' declared arities can't drift
+/// out of sync with each other or with `io.h`'s actual signatures.
+inline constexpr std::array<uint8_t, 8> known_intrinsic_arities = {{
+    0, // rt_stdin
+    0, // rt_stdout
+    0, // rt_stderr
+    2, // rt_open
+    1, // rt_close
+    2, // rt_read
+    2, // rt_write
+    1, // rt_flush
+}};
+
 } // namespace kira

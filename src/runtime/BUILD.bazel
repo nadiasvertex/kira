@@ -10,10 +10,12 @@ cc_library(
     name = "runtime",
     srcs = [
         "arena.cpp",
+        "io.cpp",
         "layout.cpp",
     ],
     hdrs = [
         "arena.h",
+        "io.h",
         "layout.h",
     ],
     alwayslink = True,

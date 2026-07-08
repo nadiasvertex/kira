@@ -1,5 +1,6 @@
 #include "src/llvm_codegen/codegen.h"
 
+#include <array>
 #include <charconv>
 #include <cstdint>
 #include <format>
@@ -30,6 +31,7 @@
 #include "src/bytecode/value.h"
 #include "src/hir/captures.h"
 #include "src/hir/ids.h"
+#include "src/intrinsics.h"
 #include "src/parser/ast.h"
 #include "src/parser/token.h"
 #include "src/runtime/layout.h"
@@ -379,10 +381,11 @@ public:
       llvm::LLVMContext &ctx, const type_table &types_,
       const std::unordered_map<std::string, llvm::Function *> &functions_,
       llvm::Function *panic_fn, llvm::Function *alloc_fn,
-      llvm::Function *list_reserve_slot_fn)
+      llvm::Function *list_reserve_slot_fn,
+      const std::array<llvm::Function *, 8> &intrinsic_fns)
       : ctx_(ctx), types_(types_), functions_(functions_), panic_fn_(panic_fn),
         alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
-        builder_(ctx) {}
+        intrinsic_fns_(intrinsic_fns), builder_(ctx) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn,
                              llvm::Function *llvm_fn)
@@ -1155,6 +1158,26 @@ private:
     if (call.callee->kind == hir_node_kind::hir_local_ref) {
       const auto &ref = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
       if (lookup_local(ref.symbol) == nullptr) {
+        // `intrinsic def` declarations never enter `functions_` (mirrors
+        // `bytecode_compiler::compile_call` — `hir::lower_module` skips
+        // them, there is no body to lower), so a call to a known intrinsic
+        // name is recognized here instead and dispatched straight to its
+        // `kira_rt_*` C-ABI symbol (declared in `compile_module`,
+        // implemented in `src/runtime/io.h`).
+        if (const auto intrinsic_id = kira::intrinsic_index_of(ref.name);
+            intrinsic_id.has_value()) {
+          auto args = std::vector<llvm::Value *>{};
+          args.reserve(call.args.size());
+          for (const auto &arg : call.args) {
+            auto value = compile_expr(*arg);
+            if (!value.has_value()) {
+              return std::unexpected(value.error());
+            }
+            args.push_back(*value);
+          }
+          return builder_.CreateCall(intrinsic_fns_.at(*intrinsic_id), args);
+        }
+
         const auto found = functions_.find(ref.name);
         if (found == functions_.end()) {
           return std::unexpected(codegen_error{
@@ -1292,8 +1315,9 @@ private:
         std::format("lambda.{}", reinterpret_cast<uintptr_t>(&lambda)),
         current_fn_->getParent());
 
-    auto nested = function_compiler(ctx_, types_, functions_, panic_fn_,
-                                    alloc_fn_, list_reserve_slot_fn_);
+    auto nested =
+        function_compiler(ctx_, types_, functions_, panic_fn_, alloc_fn_,
+                          list_reserve_slot_fn_, intrinsic_fns_);
     auto compiled =
         nested.compile_lambda_body(lambda, free_vars, capture_types, lambda_fn);
     if (!compiled.has_value()) {
@@ -2460,6 +2484,7 @@ private:
   llvm::Function *panic_fn_;
   llvm::Function *alloc_fn_;
   llvm::Function *list_reserve_slot_fn_;
+  std::array<llvm::Function *, 8> intrinsic_fns_;
   llvm::IRBuilder<> builder_;
   llvm::Function *current_fn_ = nullptr;
   llvm::AllocaInst *alloca_marker_ = nullptr;
@@ -2499,6 +2524,26 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
                               {llvm::PointerType::get(ctx, 0)},
                               /*isVarArg=*/false),
       llvm::Function::ExternalLinkage, kListReserveSlotSymbolName, llvm_module);
+
+  // `intrinsic def` declarations (src/intrinsics.h): eight fixed native
+  // entry points, each taking/returning opaque heap pointers (see
+  // src/runtime/io.h's doc comment for the exact layout each argument's
+  // Kira type maps to). Declared once here, the same way the three runtime
+  // externs just above are, and resolved the same way (JIT: process-symbol
+  // lookup against `//src/runtime:runtime`, which now also builds
+  // `io.cpp`; AOT: ordinary static linking against that same archive).
+  auto *ptr_ty = llvm::PointerType::get(ctx, 0);
+  auto intrinsic_fns = std::array<llvm::Function *, 8>{};
+  for (size_t i = 0; i < kira::known_intrinsic_names.size(); ++i) {
+    auto param_types =
+        std::vector<llvm::Type *>(kira::known_intrinsic_arities[i], ptr_ty);
+    auto *fn_type =
+        llvm::FunctionType::get(ptr_ty, param_types, /*isVarArg=*/false);
+    const auto symbol_name =
+        std::format("kira_{}", kira::known_intrinsic_names[i]);
+    intrinsic_fns[i] = llvm::Function::Create(
+        fn_type, llvm::Function::ExternalLinkage, symbol_name, llvm_module);
+  }
 
   // Every function's signature is declared before any body is compiled, so
   // a call (forward-referenced, recursive, or mutually recursive) always
@@ -2549,7 +2594,7 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
   for (const auto &fn : module.functions) {
     auto *llvm_fn = functions.at(fn->name);
     auto compiler = function_compiler(ctx, types, functions, panic_fn, alloc_fn,
-                                      list_reserve_slot_fn);
+                                      list_reserve_slot_fn, intrinsic_fns);
     auto compiled = compiler.compile(*fn, llvm_fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());

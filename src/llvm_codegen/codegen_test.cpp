@@ -111,6 +111,35 @@ auto test_if_expression_selects_branch_value() -> void {
   expect(result->value.i == 14, "expected abs(-7) + abs(7) == 14");
 }
 
+auto test_intrinsic_call_resolves_to_native_symbol() -> void {
+  // `intrinsic def rt_stdout() -> raw_fd` has no body — `compile_call`
+  // recognizes the call by name (src/intrinsics.h) and emits a call to the
+  // `kira_rt_stdout` C-ABI symbol (declared in `compile_module`,
+  // implemented in `src/runtime/io.cpp`) instead of failing with
+  // `unknown_callee`. JIT-resolved here via `//src/runtime:runtime`
+  // (`:jit_support`'s real `deps`, not just `data`) linking `io.cpp`'s
+  // `alwayslink`'d object into this test binary's own process.
+  auto jf = jit_fixture_for(load_fixture("intrinsic_call.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i64);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 1, "expected main()'s rt_stdout().value to be 1");
+}
+
+auto test_intrinsic_result_constructs_and_matches_through_real_syntax()
+    -> void {
+  // The LLVM-tier counterpart of
+  // src/bytecode_compiler/compile_test.cpp's identically-named test: opens
+  // a guaranteed-missing file through the real `intrinsic def rt_open` and
+  // real `match @ok(fd)/@err(e)` syntax, proving `kira_rt_open`'s
+  // `result[raw_fd, io_errno]` heap-pointer return value round-trips
+  // through this backend's own sum-type construction/matching codegen.
+  auto jf = jit_fixture_for(load_fixture("intrinsic_result.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() not to panic");
+  expect(result->value.i == 2,
+         "expected main() to match the `@err(e)` arm for a missing file");
+}
+
 auto test_implicit_tail_match_and_if_are_the_return_value() -> void {
   // `match`/`if` used as a bare *statement*-shaped tail (no explicit
   // `return`, no assignment — as opposed to `if_expression.kira`'s `return
@@ -392,6 +421,8 @@ auto main() -> int {
     test_add_compiles_and_runs();
     test_implicit_tail_expression_is_the_return_value();
     test_if_expression_selects_branch_value();
+    test_intrinsic_call_resolves_to_native_symbol();
+    test_intrinsic_result_constructs_and_matches_through_real_syntax();
     test_implicit_tail_match_and_if_are_the_return_value();
     test_while_loop_sums_one_to_n();
     test_recursive_call_computes_factorial();
