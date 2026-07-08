@@ -1,3 +1,5 @@
 module sample
+def add(x: int32, y: int32) -> int32:
+    return x + y
 def main() -> int32:
-    return 10 + 32
+    return add(10, 32)

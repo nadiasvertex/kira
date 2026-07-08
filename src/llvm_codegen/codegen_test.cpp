@@ -1,7 +1,9 @@
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "src/bytecode/panic.h"
@@ -154,35 +156,52 @@ auto test_checked_div_panics_on_divide_by_zero() -> void {
          "expected the panic reason to be integer_divide_by_zero");
 }
 
-auto test_string_literal_compiles_to_a_heap_value() -> void {
-  // No surface `.len()` yet and jit_support.h's marshaling only unpacks
-  // scalar numeric_kind returns, so this only proves the `str`-returning
-  // function compiles and verifies cleanly, mirroring
-  // compile_test.cpp's own more thorough str test (which can read the
-  // returned heap value's raw slots directly).
-  auto fixture = check_fixture(load_fixture("string_literal.kira"));
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = lc::compile_module(**module, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected a str-returning function to compile now that heap types "
-         "are supported");
+auto test_string_literal_round_trips_through_the_heap() -> void {
+  // Mirrors src/bytecode_compiler/compile_test.cpp's own str test exactly
+  // (same fixture, same "hello" content, same {len; data} slot layout) —
+  // `run_ptr_result` gives a real in-process pointer to the JIT's heap
+  // value, just like the bytecode VM's own return value does, so both
+  // tiers' str construction can be checked against the same expected bytes.
+  auto jf = jit_fixture_for(load_fixture("string_literal.kira"));
+  auto result = jf.jit.run_ptr_result("main");
+  expect(result.has_value(), "expected main() to succeed");
+  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+      static_cast<uintptr_t>(result->value.u));
+  expect(slots[0].u == 5, "expected \"hello\" to report length 5");
+  const auto *data =
+      reinterpret_cast<const char *>(static_cast<uintptr_t>(slots[1].u));
+  expect(std::string_view(data, 5) == "hello",
+         "expected the str's data slot to point at \"hello\"'s bytes");
 }
 
-auto test_sum_type_variant_construction_compiles_to_a_heap_value() -> void {
-  // No `match` yet (increment 4) to project the payload back out through a
-  // scalar-returning wrapper, so — mirroring
-  // test_string_literal_compiles_to_a_heap_value — this only proves the
-  // sum-type-returning function compiles cleanly; compile_test.cpp's sum
-  // type tests read the returned heap value's raw tag/payload slots
-  // directly via the bytecode VM.
-  auto fixture = check_fixture(load_fixture("sum_type_variant.kira"));
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = lc::compile_module(**module, fixture.checked.types);
-  expect(compiled.has_value(),
-         "expected a shape-returning function to compile now that sum "
-         "types are supported");
+auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
+  // Mirrors src/bytecode_compiler/compile_test.cpp's own sum type test:
+  // now that `match` is implemented, both tiers can decode the same
+  // {tag; payload} heap layout for the same `make(3.5)` call and agree on
+  // the tag/payload encoding, not just on "it compiles".
+  auto jf = jit_fixture_for(load_fixture("sum_type_variant.kira"));
+  auto result = jf.jit.run_ptr_result("main");
+  expect(result.has_value(), "expected main() to succeed");
+  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+      static_cast<uintptr_t>(result->value.u));
+  expect(slots[0].i == 0, "expected @circle to encode as tag 0");
+  expect(slots[1].f == 3.5, "expected the payload slot to hold 3.5");
+}
+
+auto test_sum_type_unit_variant_encodes_its_tag() -> void {
+  auto jf = jit_fixture_for(load_fixture("sum_type_unit_variant.kira"));
+  auto result = jf.jit.run_ptr_result("main");
+  expect(result.has_value(), "expected main() to succeed");
+  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+      static_cast<uintptr_t>(result->value.u));
+  expect(slots[0].i == 1, "expected @empty to encode as tag 1");
+}
+
+auto test_calls_another_function_in_the_same_module() -> void {
+  auto jf = jit_fixture_for(load_fixture("function_calls.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 25, "expected sum_of_squares(3, 4) == 25");
 }
 
 auto test_tuple_construction_and_projection() -> void {
@@ -357,8 +376,10 @@ auto main() -> int {
     test_cast_widens_int_to_float();
     test_checked_add_panics_on_overflow_end_to_end();
     test_checked_div_panics_on_divide_by_zero();
-    test_string_literal_compiles_to_a_heap_value();
-    test_sum_type_variant_construction_compiles_to_a_heap_value();
+    test_string_literal_round_trips_through_the_heap();
+    test_sum_type_variant_with_payload_encodes_tag_and_slot();
+    test_sum_type_unit_variant_encodes_its_tag();
+    test_calls_another_function_in_the_same_module();
     test_tuple_construction_and_projection();
     test_struct_literal_and_field_access();
     test_fixed_array_construction_and_indexing();

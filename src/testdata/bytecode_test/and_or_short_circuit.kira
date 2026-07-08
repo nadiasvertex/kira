@@ -1,3 +1,0 @@
-module sample
-def classify(x: int32) -> bool:
-    return x > 0 and x < 10 or x == -1

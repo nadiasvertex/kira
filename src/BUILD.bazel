@@ -21,12 +21,6 @@ filegroup(
 )
 
 filegroup(
-    name = "bytecode_test_corpus",
-    srcs = glob(["testdata/bytecode_test/*.kira"]),
-    visibility = ["//visibility:public"],
-)
-
-filegroup(
     name = "codegen_test_corpus",
     srcs = glob(["testdata/codegen_test/*.kira"]),
     visibility = ["//visibility:public"],

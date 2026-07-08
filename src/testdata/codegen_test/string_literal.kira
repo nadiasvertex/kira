@@ -1,3 +1,5 @@
 module sample
 def greet() -> str:
-    return "hi"
+    return "hello"
+def main() -> str:
+    return greet()

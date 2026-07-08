@@ -1,4 +1,5 @@
 module sample
+def add8(x: int8, y: int8) -> int8:
+    return x + y
 def main() -> int8:
-    var x: int8 = 100
-    return x + x
+    return add8(100, 100)

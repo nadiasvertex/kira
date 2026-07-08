@@ -5,5 +5,9 @@ def area(s: shape) -> float64:
         @circle(r) => r * r
         @square(side) => side * side
         @empty => 0.0
+def circle_area(r: float64) -> float64:
+    return area(@circle(r))
+def empty_area() -> float64:
+    return area(@empty)
 def main() -> float64:
-    return area(@circle(4.0)) + area(@empty)
+    return circle_area(4.0) + empty_area()

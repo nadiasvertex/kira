@@ -1,3 +1,0 @@
-module sample
-def to_float(x: int32) -> float64:
-    return x as float64

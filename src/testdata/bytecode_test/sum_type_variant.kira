@@ -1,4 +1,0 @@
-module sample
-type shape = @circle(float64) | @square(float64)
-def make(r: float64) -> shape:
-    return @circle(r)

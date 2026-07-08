@@ -1,4 +1,0 @@
-module sample
-def third(i: usize) -> int32:
-    let a: array[int32, 4] = [10, 20, 30, 40]
-    return a[i]

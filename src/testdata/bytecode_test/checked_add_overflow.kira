@@ -1,3 +1,0 @@
-module sample
-def add8(x: int8, y: int8) -> int8:
-    return x + y

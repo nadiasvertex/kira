@@ -1,7 +1,8 @@
 module sample
+def make() -> (int32, int32, int32):
+    return (10, 20, 12)
 def sum3() -> int32:
-    let t = (10, 20, 12)
-    let (a, b, c) = t
+    let (a, b, c) = make()
     return a + b + c
 def main() -> int32:
     return sum3()
