@@ -1,0 +1,9 @@
+module sample
+
+type vec[T, n: usize] = { data: array[T, n] }
+
+def take(v: vec[int32, 3]) -> unit:
+    unit
+
+def run(a: vec[int32, 5]) -> unit:
+    take(a)

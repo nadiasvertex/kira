@@ -1144,14 +1144,28 @@ private:
     }
   }
 
-  /// Resolves each generic argument slot of a named type; slots holding a
-  /// compile-time value expression (rather than a type) resolve to
-  /// `unknown` since the checker does not evaluate const expressions.
-  auto resolve_type_args(const ast::named_type &named, const resolve_ctx &ctx)
+  /// Resolves each generic argument slot of a named type. A slot holding a
+  /// type expression resolves to that type; a slot holding a bare integer
+  /// literal (a const generic argument, e.g. the `3` in `vec[T, 3]`) interns
+  /// as a `const_value` so distinct literals produce distinct types; a slot
+  /// holding a bare identifier that names an in-scope value type-parameter
+  /// (e.g. `n` inside `def head[T, n: usize](v: vec[T, n])`) resolves to
+  /// that parameter, keeping the slot fully generic. Any other compile-time
+  /// value expression (arithmetic such as `m + n`, calls, ...) is not
+  /// evaluated and resolves to `unknown` — see `spec/dependent-types-
+  /// design.md` for why this is deliberately not a constraint solver yet.
+  /// `decl_params`, when given, is the target declaration's own type
+  /// parameters, used only to look up a literal argument's declared
+  /// underlying scalar type by position; it may be shorter than `named`'s
+  /// argument list (arity mismatches are diagnosed by the caller).
+  auto
+  resolve_type_args(const ast::named_type &named, const resolve_ctx &ctx,
+                    const std::vector<ast::type_param> *decl_params = nullptr)
       -> std::vector<type_id> {
     auto args = std::vector<type_id>{};
     args.reserve(named.type_args.size());
-    for (const auto &arg : named.type_args) {
+    for (size_t i = 0; i < named.type_args.size(); ++i) {
+      const auto &arg = named.type_args[i];
       if (arg.value == nullptr) {
         args.push_back(k_unknown_type);
         continue;
@@ -1173,6 +1187,42 @@ private:
         args.push_back(resolve_type(
             dynamic_cast<const ast::type_expr &>(*arg.value), ctx));
         break;
+      case ast::node_kind::literal_expr: {
+        const auto &lit = dynamic_cast<const ast::literal_expr &>(*arg.value);
+        const auto value = lit.lit_kind == token_kind::int_lit
+                               ? parse_integer_literal(lit.value)
+                               : std::nullopt;
+        if (!value.has_value()) {
+          args.push_back(k_unknown_type);
+          break;
+        }
+        auto underlying = types_.usize_type();
+        if (decl_params != nullptr && i < decl_params->size() &&
+            (*decl_params)[i].is_value_param &&
+            (*decl_params)[i].bound_or_type != nullptr) {
+          underlying = resolve_type(*(*decl_params)[i].bound_or_type, ctx);
+        }
+        args.push_back(types_.const_value(underlying, *value));
+        break;
+      }
+      case ast::node_kind::ident_expr: {
+        const auto &ident = dynamic_cast<const ast::ident_expr &>(*arg.value);
+        if (ctx.param_bindings != nullptr) {
+          if (const auto it = ctx.param_bindings->find(ident.name);
+              it != ctx.param_bindings->end()) {
+            args.push_back(it->second);
+            break;
+          }
+        }
+        if (ctx.use_type_param_stack) {
+          if (const auto param = lookup_type_param(ident.name)) {
+            args.push_back(*param);
+            break;
+          }
+        }
+        args.push_back(k_unknown_type);
+        break;
+      }
       default:
         args.push_back(k_unknown_type);
         break;
@@ -1236,7 +1286,7 @@ private:
                              std::string_view owner_module,
                              const ast::named_type &named,
                              const resolve_ctx &ctx) -> type_id {
-    const auto args = resolve_type_args(named, ctx);
+    const auto args = resolve_type_args(named, ctx, &decl.type_params);
 
     if (!ctx.quiet && !named.type_args.empty() &&
         named.type_args.size() != decl.type_params.size()) {
@@ -3539,7 +3589,17 @@ private:
     if (index.object->kind == ast::node_kind::ident_expr &&
         ident_names_callable_decl(
             dynamic_cast<const ast::ident_expr &>(*index.object))) {
-      if (index.index != nullptr) {
+      // A bare identifier naming an in-scope generic parameter (e.g. `T` in
+      // `size_of[T]()` inside a concept/generic bound) is a type argument,
+      // not a value reference — skip ordinary name resolution so it doesn't
+      // spuriously report "undefined name".
+      const auto is_type_param_arg =
+          index.index != nullptr &&
+          index.index->kind == ast::node_kind::ident_expr &&
+          lookup_type_param(
+              dynamic_cast<const ast::ident_expr &>(*index.index).name)
+              .has_value();
+      if (index.index != nullptr && !is_type_param_arg) {
         infer_expr(*index.index, k_unknown_type);
       }
       return k_unknown_type;
@@ -5359,6 +5419,28 @@ private:
             if (payload != nullptr) {
               resolve_type(*payload, current_resolve_ctx());
             }
+          }
+        }
+        break;
+      }
+      case ast::node_kind::refinement_type: {
+        const auto &refinement =
+            dynamic_cast<const ast::refinement_type &>(*decl.definition);
+        const auto base =
+            refinement.base != nullptr
+                ? resolve_type(*refinement.base, current_resolve_ctx())
+                : k_unknown_type;
+        if (refinement.predicate != nullptr &&
+            !refinement.predicate->has_error) {
+          if (const auto *predicate =
+                  dynamic_cast<const ast::expr *>(refinement.predicate.get())) {
+            push_scope();
+            const auto saved_self = self_type_;
+            self_type_ = base;
+            bind_value("self", base, binding_origin::parameter, decl.span);
+            require_bool(*predicate, "a refinement predicate");
+            self_type_ = saved_self;
+            pop_scope();
           }
         }
         break;

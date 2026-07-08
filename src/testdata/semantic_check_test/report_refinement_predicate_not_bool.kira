@@ -1,0 +1,3 @@
+module sample
+
+type positive = int32 where self + 1

@@ -193,6 +193,16 @@ auto type_table::type_param(std::string_view name) -> type_id {
                            .name = std::string(name)});
 }
 
+/// Interns using the underlying type id and the value as the key, so two
+/// const generic arguments are the same type iff they carry the same
+/// literal value of the same underlying type.
+auto type_table::const_value(type_id underlying, uint64_t value) -> type_id {
+  return intern(std::format("c:{}:{}", underlying, value),
+                type_entry{.kind = type_kind::const_value_kind,
+                           .name = std::to_string(value),
+                           .result = underlying});
+}
+
 /// Always pushes a new entry rather than consulting `interned_`, so every
 /// call yields a distinct, never-shared `type_id`.
 auto type_table::fresh_type_var() -> type_id {
@@ -290,6 +300,8 @@ auto type_table::display(type_id id) const -> std::string {
   case type_kind::ptr_kind:
     return std::format("*{}{}", item.is_mut ? "mut " : "",
                        display(item.result));
+  case type_kind::const_value_kind:
+    return item.name;
   }
   return "<?>";
 }

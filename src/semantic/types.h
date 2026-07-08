@@ -49,6 +49,8 @@ enum class type_kind : uint8_t {
   opaque_kind,          ///< User alias/opaque type declaration.
   type_param_kind,      ///< In-scope generic parameter such as `T`.
   type_var_kind,        ///< Fresh inference variable; see `fresh_type_var`.
+  const_value_kind,     ///< A literal compile-time value used as a const
+                        ///< generic argument, e.g. the `3` in `vec[T, 3]`.
 };
 
 /// The interned data behind one `type_id`. Which fields are meaningful
@@ -101,6 +103,12 @@ public:
                                std::vector<type_id> args) -> type_id;
   /// Interns an in-scope generic type/value parameter, identified by name.
   [[nodiscard]] auto type_param(std::string_view name) -> type_id;
+  /// Interns a literal compile-time value used as a const generic argument
+  /// (e.g. the `3` in `vec[T, 3]`), keyed on `underlying` (the value's
+  /// scalar type, e.g. `usize`) and `value` so `vec[T, 3]` and `vec[T, 5]`
+  /// are distinct types while two instantiations with the same literal
+  /// collapse to one id.
+  [[nodiscard]] auto const_value(type_id underlying, uint64_t value) -> type_id;
   /// Mints a fresh, globally-unique inference variable for local parameter
   /// inference (see `src/semantic/check.cpp`'s unification engine). Unlike
   /// every other `type_table` constructor, this never structurally interns —

@@ -609,6 +609,66 @@ auto test_recursive_function_param_inference_terminates() -> void {
          "without wrongly narrowing `n`");
 }
 
+auto test_reports_const_generic_value_mismatch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_const_generic_value_mismatch.kira");
+  expect(analyzed.error_count > 0,
+         "expected mismatched const-generic arguments to fail");
+  expect_diagnostic(
+      analyzed, "expected `vec[int32, 3]`, found `vec[int32, 5]`",
+      "expected a diagnostic distinguishing const-generic instantiations");
+}
+
+auto test_accepts_const_generic_value_match() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_const_generic_value_match.kira");
+  expect(analyzed.error_count == 0,
+         "expected matching const-generic arguments to check cleanly");
+}
+
+auto test_reports_refinement_predicate_not_bool() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_refinement_predicate_not_bool.kira");
+  expect(analyzed.error_count > 0,
+         "expected a non-bool refinement predicate to fail");
+  expect_diagnostic(analyzed,
+                    "a refinement predicate must be `bool`, found `int32`",
+                    "expected a refinement-predicate bool-ness diagnostic");
+}
+
+auto test_accepts_refinement_predicate() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_refinement_predicate.kira");
+  expect(analyzed.error_count == 0,
+         "expected a well-formed refinement predicate to check cleanly");
+}
+
+auto test_accepts_concept_bound() -> void {
+  const auto analyzed = analyze_test_data_file("accept_concept_bound.kira");
+  expect(analyzed.error_count == 0,
+         "expected a concept composing trait and value constraints, used as "
+         "a function bound, to check cleanly");
+}
+
+auto test_reports_state_machine_mismatch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_state_machine_mismatch.kira");
+  expect(analyzed.error_count > 0,
+         "expected a connection[closed] argument where connection[open] is "
+         "required to fail");
+  expect_diagnostic(
+      analyzed, "expected `connection[open]`, found `connection[closed]`",
+      "expected a diagnostic rejecting the wrong connection state");
+}
+
+auto test_accepts_state_machine_match() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_state_machine_match.kira");
+  expect(analyzed.error_count == 0,
+         "expected a connection[open] argument where connection[open] is "
+         "required to check cleanly");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -646,6 +706,13 @@ auto main() -> int {
     test_reports_impure_contract_call();
     test_reports_associated_type_output_mismatch();
     test_reports_extend_method_arity_mismatch();
+    test_reports_const_generic_value_mismatch();
+    test_accepts_const_generic_value_match();
+    test_reports_refinement_predicate_not_bool();
+    test_accepts_refinement_predicate();
+    test_accepts_concept_bound();
+    test_reports_state_machine_mismatch();
+    test_accepts_state_machine_match();
 
     test_check_program_persists_expression_types();
 

@@ -1,0 +1,12 @@
+module sample
+
+type closed = { }
+type open = { }
+
+type connection[S] = { addr: str }
+
+def send(c: connection[open], data: str) -> unit:
+    unit
+
+def run(c: connection[closed]) -> unit:
+    send(c, "hi")

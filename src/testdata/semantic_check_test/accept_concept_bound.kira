@@ -1,0 +1,11 @@
+module sample
+
+trait show:
+    def show(self) -> str
+
+concept sortable[T]:
+    T: show
+    size_of[T]() <= 64
+
+def display[T: sortable](item: T) -> unit:
+    println(item.show())
