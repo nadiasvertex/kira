@@ -744,7 +744,7 @@ Since a borrow cannot escape a call, how do you hand back a *window* into a coll
 
 ```kira
 slice[T]       # a read-only view of a contiguous run of elements
-slice_mut[T]   # a mutable view
+mut slice[T]   # a mutable view
 str            # a read-only view of UTF-8 text (already familiar)
 ```
 
@@ -759,6 +759,39 @@ let front = first_half(&data)    # a view; data stays borrowed while front is al
 ```
 
 A view's borrow is still tracked — a view can never outlive the collection it looks into — but you never write a lifetime for it. The compiler infers that a returned view borrows from the argument it was sliced from, and keeps the source borrowed for as long as the view lives. When you need a result that escapes and stands on its own, return an owned value or a handle (an index) rather than a view.
+
+### Single-Element Views: `cell[T]` and `mut cell[T]`
+
+A `slice[T]` covers a contiguous run of elements, but sometimes you need a borrowed view of a single element — the result of a hash-map lookup, a tree search, or an array access. For that Kira provides `cell[T]` (read-only) and `mut cell[T]` (mutable):
+
+```kira
+cell[T]       # a read-only view of a single element
+mut cell[T]   # a mutable view
+```
+
+Like `slice[T]`, a `cell` is a first-class value: it may be passed and returned, and its borrow is tracked automatically so it can never outlive the collection it points into. Unlike a bare `&T`, it does not require lifetime annotations.
+
+```kira
+def find[T](xs: &list[T], pred: fn(&T) -> bool) -> option[cell[T]]:
+    for i in 0..xs.len():
+        if pred(&xs[i]):
+            return @some(xs.cell(i))
+    return @none
+
+let data = [10, 20, 30, 40]
+if let @some(c) = find(&data, x => x > 15):
+    println("found: {c.get()}")    # c.get() yields the element value
+```
+
+A `mut cell` is produced similarly and enforces exclusive access:
+
+```kira
+def find_and_double(xs: &mut list[int32]) -> unit:
+    if let @some(c) = xs.mutable_cell(2):
+        c.set(c.get() * 2)         # mutates the element in place
+```
+
+When you need a result that escapes and stands on its own, return an owned value or a handle rather than a view. `cell[T]` fills the gap between "a whole collection" (`slice[T]`) and "a temporary borrow in a call" (`&T`).
 
 ### Closures and Capture
 
@@ -918,6 +951,37 @@ def inspect[T: show + eq](a: T, b: T) -> unit:
     else:
         println("{a.show()} != {b.show()}")
 ```
+
+### Opaque Return Types: `some trait`
+
+A function that returns a concrete type implementing a trait, but whose exact type is unnameable or unimportant, can use `some trait` as its return type. This is zero-cost static polymorphism: the compiler monomorphizes at each call site, just as it does for `fn(A) -> B`.
+
+```kira
+def make_shape() -> some drawable:
+    return @circle(10.0)
+
+def make_iter() -> some iterator[int32]:
+    return range(0, 100).filter(x => x % 2 == 0).map(x => x * x)
+```
+
+The caller sees only the trait interface:
+
+```kira
+let s = make_shape()
+s.draw()                    # works — s is known to implement drawable
+# s.radius                  # error — concrete type is hidden
+```
+
+`some trait` is distinct from `box[trait]`:
+
+| Feature | `some trait` | `box[trait]` |
+|---|---|---|
+| Cost | Zero — monomorphized | Heap allocation + vtable |
+| Use case | One concrete type, just unnameable | Open set of types, runtime choice |
+| Can store in `list` | No — each call site has a different type | Yes — uniform type |
+| Escapes a function | Yes | Yes |
+
+Because each call site receives a distinct monomorphized type, `some trait` values cannot be placed in a homogeneous collection without erasing them (e.g., via `box`). Use a sum type (`@circle | @square`) when you need a closed, inspectable set of variants; use `box[trait]` when the set is open; use `some trait` when the concrete type is static but inconvenient to name.
 
 ### `requires` — Trait Dependencies
 
@@ -1808,7 +1872,7 @@ impl monad for option:
 
 The following are available in every module without any `use` declaration:
 
-**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types, `array`, `slice`, `slice_mut`, `option`, `result`, `list`, `box`
+**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types, `array`, `slice`, `mut slice`, `option`, `result`, `list`, `box`, `cell`, `cell_mut`
 
 **Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `neg`, `drop`, and the other arithmetic operator traits
 
@@ -1847,6 +1911,8 @@ no_prelude
 | `requires` for trait dependencies | Dependencies are explicit and readable; implied bounds available to callers automatically |
 | Coherent trait implementations | At most one impl per (trait, type); the orphan rule (own the trait or the type) keeps coherence modularly enforceable |
 | `impl` vs `extend` | `impl` declares coherent, orphan-restricted conformance; `extend` adds methods to any type — import-scoped, no conformance, no restriction |
+| `cell[T]` / `cell_mut[T]` single-element views | Extends the view-type family to single elements without reintroducing lifetime annotations; closes the gap between `slice[T]` and `&T` |
+| `some trait` opaque return types | Zero-cost monomorphized opaque returns for unnameable concrete types; distinct from `box[trait]` which is for open-world dynamic dispatch |
 | `machine` prefix | Low-level access is syntactically consistent with other function modifiers |
 | `pure` prefix | Compiler-verified referential transparency; enables use in contracts and proof obligations |
 | Quoting and splicing (`` ` `` and `~`) | Code generation uses ordinary Kira; no separate macro language; hygienic by default |
