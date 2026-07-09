@@ -31,4 +31,29 @@ namespace kira::util {
 
   return buffer.str();
 }
+
+/// Compute the on-disk metadata path for one compiled module.
+///
+/// @param metadata_root Root directory configured for metadata output.
+/// @param file Parsed AST for the source file.
+/// @param source_path Original source file path.
+[[nodiscard]] auto metadata_output_path(const fs::path &metadata_root,
+                                        const ast::file &file,
+                                        const fs::path &source_path)
+    -> fs::path {
+  auto relative = fs::path{};
+
+  if (file.module_decl != nullptr && !file.module_decl->path.empty()) {
+    for (size_t i = 0; i + 1 < file.module_decl->path.size(); ++i) {
+      relative /= file.module_decl->path[i];
+    }
+    relative /=
+        file.module_decl->path.back() + std::string(k_metadata_extension);
+    return metadata_root / relative;
+  }
+
+  relative /=
+      source_stem_or_default(source_path) + std::string(k_metadata_extension);
+  return metadata_root / relative;
+}
 } // namespace kira::util

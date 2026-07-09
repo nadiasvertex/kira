@@ -64,19 +64,11 @@ cc_library(
 
 cc_library(
     name = "cli",
-    srcs = ["cli.cpp"],
+    srcs = [],
     hdrs = ["cli.h"],
     tags = ["no-sandbox"],
     deps = [
-        ":module_metadata_cc_proto",
-        "//src/bytecode:bytecode",
-        "//src/bytecode:vm",
-        "//src/bytecode_compiler:bytecode_compiler",
         "//src/driver:driver",
-        "//src/hir:hir",
-        "//src/llvm_codegen:aot",
-        "//src/semantic:semantic",
-        "//src/parser:parser",
     ],
     visibility = ["//visibility:public"],
 )

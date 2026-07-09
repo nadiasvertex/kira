@@ -5,7 +5,7 @@
 
 #include <unistd.h>
 
-#include "cli.h"
+#include "driver/cli.h"
 
 /// Run the Kira CLI driver from process entry to exit status.
 ///
@@ -28,7 +28,7 @@ auto main(int argc, char *argv[]) -> int {
       return 0;
     }
 
-    auto report = kira::compile_sources(cfg, ::isatty(fileno(stderr)) != 0);
+    auto report = kira::driver::compile_sources(cfg, ::isatty(fileno(stderr)) != 0);
     if (!report) {
       std::println(stderr, "Error: {}", report.error());
       return 1;
@@ -41,7 +41,7 @@ auto main(int argc, char *argv[]) -> int {
       }
     }
 
-    std::println("{}", kira::render_compile_summary(*report));
+    std::println("{}", kira::driver::render_compile_summary(*report));
     const auto run_failed = report->run.has_value() && !report->run->succeeded;
     const auto build_failed =
         report->build.has_value() && !report->build->succeeded;

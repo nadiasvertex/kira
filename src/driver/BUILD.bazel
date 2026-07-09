@@ -4,6 +4,7 @@ cc_library(
     name = "driver",
     srcs = [
         "aot.cpp",
+        "cli.cpp",
         "driver.cpp",
         "interpret.cpp",
         "lower.cpp",
@@ -11,6 +12,7 @@ cc_library(
     ],
     hdrs = [
       "aot.h",
+      "cli.h",
       "defaults.h",
       "driver.h",
       "interpret.h",

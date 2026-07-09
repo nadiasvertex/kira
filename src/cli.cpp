@@ -1,19 +1,23 @@
-#include "cli.h"
-
-#include <unistd.h>
-
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
 #include <format>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <variant>
 
-#include "parser/parser.h"
+#include "driver/driver.h"
+
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
+#include "driver/interpret.h"
+#include "driver/aot.h"
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
@@ -24,6 +28,8 @@
 #include "src/module_metadata.pb.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/types.h"
+#include "src/util/path.h"
+#include "src/util/str.h"
 
 namespace kira {
 
@@ -139,125 +145,6 @@ namespace kira {
   return std::string(value);
 }
 
-/// Append one import entry to a module metadata record.
-///
-/// @param decl Parsed `use` declaration to encode.
-/// @param metadata Metadata message being populated.
-auto add_import_metadata(const ast::use_decl &decl,
-                         metadata::v1::ModuleMetadata &metadata) -> void {
-  auto *import = metadata.add_imports();
-  for (const auto &part : decl.path) {
-    import->add_path(part);
-  }
-
-  if (!decl.selector.has_value()) {
-    import->set_selector_kind(metadata::v1::IMPORT_SELECTOR_KIND_UNSPECIFIED);
-    return;
-  }
-
-  import->set_selector_kind(selector_kind_to_proto(decl.selector->kind));
-  for (const auto &item : decl.selector->items) {
-    auto *metadata_item = import->add_items();
-    metadata_item->set_name(item.name);
-    if (item.alias.has_value()) {
-      metadata_item->set_alias(*item.alias);
-    }
-  }
-}
-
-/// Append one dependency entry to a module metadata record.
-///
-/// @param decl Parsed `dep` declaration to encode.
-/// @param metadata Metadata message being populated.
-auto add_dependency_metadata(const ast::dep_decl &decl,
-                             metadata::v1::ModuleMetadata &metadata) -> void {
-  auto *dependency = metadata.add_dependencies();
-  dependency->set_name(decl.name);
-  for (const auto &field : decl.fields) {
-    (*dependency->mutable_fields())[field.key] =
-        unquote_string_literal(field.value);
-  }
-}
-
-/// Append one top-level symbol summary to a module metadata record.
-///
-/// @param node Parsed top-level item to encode.
-/// @param metadata Metadata message being populated.
-auto add_symbol_metadata(const ast::node &node,
-                         metadata::v1::ModuleMetadata &metadata) -> void {
-  auto *symbol = metadata.add_top_level_symbols();
-  symbol->set_name(top_level_name(node));
-  symbol->set_kind(symbol_kind_to_proto(node.kind));
-  symbol->set_visibility(visibility_to_proto(top_level_visibility(node)));
-  symbol->set_has_parse_error(node.has_error);
-}
-
-/// Build the serialized metadata payload for one parsed source file.
-///
-/// @param file Parsed AST for the source file.
-/// @param source_path Original source file path.
-[[nodiscard]] auto build_module_metadata(const ast::file &file,
-                                         const fs::path &source_path)
-    -> metadata::v1::ModuleMetadata {
-  auto metadata = metadata::v1::ModuleMetadata{};
-  metadata.set_schema_version(k_module_metadata_schema_version);
-  metadata.set_source_path(normalize_path(source_path));
-  metadata.set_no_prelude(file.no_prelude);
-  metadata.set_parser_error_count(0);
-
-  if (file.module_decl != nullptr) {
-    for (const auto &part : file.module_decl->path) {
-      metadata.add_module_path(part);
-    }
-  }
-
-  for (const auto &item : file.items) {
-    if (item == nullptr) {
-      continue;
-    }
-
-    add_symbol_metadata(*item, metadata);
-
-    switch (item->kind) {
-    case ast::node_kind::use_decl:
-      add_import_metadata(dynamic_cast<const ast::use_decl &>(*item), metadata);
-      break;
-    case ast::node_kind::dep_decl:
-      add_dependency_metadata(dynamic_cast<const ast::dep_decl &>(*item),
-                              metadata);
-      break;
-    default:
-      break;
-    }
-  }
-
-  return metadata;
-}
-
-/// Compute the on-disk metadata path for one compiled module.
-///
-/// @param metadata_root Root directory configured for metadata output.
-/// @param file Parsed AST for the source file.
-/// @param source_path Original source file path.
-[[nodiscard]] auto metadata_output_path(const fs::path &metadata_root,
-                                        const ast::file &file,
-                                        const fs::path &source_path)
-    -> fs::path {
-  auto relative = fs::path{};
-
-  if (file.module_decl != nullptr && !file.module_decl->path.empty()) {
-    for (size_t i = 0; i + 1 < file.module_decl->path.size(); ++i) {
-      relative /= file.module_decl->path[i];
-    }
-    relative /=
-        file.module_decl->path.back() + std::string(k_metadata_extension);
-    return metadata_root / relative;
-  }
-
-  relative /=
-      source_stem_or_default(source_path) + std::string(k_metadata_extension);
-  return metadata_root / relative;
-}
 
 /// Serialize one module's metadata file and return its output path.
 ///

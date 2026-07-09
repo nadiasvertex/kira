@@ -18,4 +18,15 @@ namespace kira::util {
 [[nodiscard]] auto read_source_file(const std::filesystem::path &path)
     -> std::expected<std::string, std::string>;
 
+
+    /// Compute the on-disk metadata path for one compiled module.
+    ///
+    /// @param metadata_root Root directory configured for metadata output.
+    /// @param file Parsed AST for the source file.
+    /// @param source_path Original source file path.
+    [[nodiscard]] auto metadata_output_path(const fs::path &metadata_root,
+                                            const ast::file &file,
+                                            const fs::path &source_path)
+        -> std::filesystem:path ;
+
 } // namespace kira::util

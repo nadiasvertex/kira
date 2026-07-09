@@ -1,4 +1,4 @@
-#include "cli.h"
+#include "driver/cli.h"
 
 #include <sys/wait.h>
 
@@ -50,7 +50,7 @@ auto test_parse_args_accepts_sources() -> void {
   expect(result->sources.size() == 2, "expected two source arguments");
   expect(result->sources[0] == "main.kira", "expected first source path");
   expect(result->sources[1] == "lib.kira", "expected second source path");
-  expect(result->metadata_dir == kira::k_default_metadata_dir,
+  expect(result->metadata_dir == kira::driver::k_default_metadata_dir,
          "expected default metadata directory");
 }
 
@@ -107,7 +107,7 @@ auto test_rendering_helpers() -> void {
   expect(help.find("--metadata-dir PATH") != std::string::npos,
          "help should document metadata dir option");
 
-  kira::compile_report report{
+  kira::driver::compile_report report{
       .modules = {{
           .source_path = "main.kira",
           .module_path = {"sample", "tools"},
@@ -116,7 +116,7 @@ auto test_rendering_helpers() -> void {
       .diagnostics = {},
       .error_count = 0,
   };
-  auto summary = kira::render_compile_summary(report);
+  auto summary = kira::driver::render_compile_summary(report);
   expect(summary.find("Compiled 1 module(s):") != std::string::npos,
          "summary should report compiled module count");
   expect(summary.find("sample.tools -> build/meta/sample/tools.kmeta.pb") !=
@@ -177,14 +177,14 @@ auto test_compile_sources_writes_module_metadata() -> void {
                           "  return 1\n"
                           "type person = { name: str }\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid source to compile cleanly");
   expect(report->modules.size() == 1, "expected one metadata artifact");
@@ -212,12 +212,12 @@ auto test_compile_sources_writes_module_metadata() -> void {
   expect(metadata.top_level_symbols_size() == 4,
          "expected top-level declarations to be recorded");
   expect(metadata.top_level_symbols(2).kind() ==
-             kira::metadata::v1::TOP_LEVEL_SYMBOL_KIND_FUNCTION,
+         kira::metadata::v1::TOP_LEVEL_SYMBOL_KIND_FUNCTION,
          "expected function symbol kind");
   expect(metadata.top_level_symbols(2).name() == "run",
          "expected function name in metadata");
   expect(metadata.top_level_symbols(2).visibility() ==
-             kira::metadata::v1::MODULE_VISIBILITY_PUBLIC,
+         kira::metadata::v1::MODULE_VISIBILITY_PUBLIC,
          "expected function visibility in metadata");
   expect(metadata.dependencies(0).fields().at("version") == "3.45",
          "expected dependency field value to be unquoted");
@@ -234,14 +234,14 @@ auto test_compile_sources_lowers_module_to_hir() -> void {
                           "pub def add(a: int32, b: int32) -> int32:\n"
                           "  return a + b\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid source to compile cleanly");
   expect(report->hir_modules.size() == 1, "expected one HIR lowering outcome");
@@ -252,7 +252,7 @@ auto test_compile_sources_lowers_module_to_hir() -> void {
   expect(report->hir_modules[0].error.empty(),
          "expected no error message for a successful lowering");
 
-  auto summary = kira::render_compile_summary(*report);
+  auto summary = kira::driver::render_compile_summary(*report);
   expect(summary.find("Lowered 1/1 module(s) to HIR.") != std::string::npos,
          "expected the summary to report the lowering outcome");
 }
@@ -275,14 +275,14 @@ auto test_compile_sources_records_hir_lowering_failure_without_failing_compile()
                           "    total = total + x\n"
                           "  return total\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a for-loop module to still compile cleanly");
@@ -307,7 +307,7 @@ auto test_compile_sources_skips_lowering_when_parse_only() -> void {
                           "pub def add(a: int32, b: int32) -> int32:\n"
                           "  return a + b\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
@@ -315,7 +315,7 @@ auto test_compile_sources_skips_lowering_when_parse_only() -> void {
       .parse_only = true,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->hir_modules.empty(),
          "expected no HIR lowering outcomes when parse_only skips checking");
@@ -330,14 +330,14 @@ auto test_compile_sources_reports_parser_errors() -> void {
   write_file(source_path, "def broken():\n"
                           "  return 1\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected compile driver to report parser failures");
   expect(report->error_count > 0, "expected parser errors for invalid source");
@@ -361,14 +361,14 @@ auto test_compile_sources_reports_nested_parser_errors() -> void {
                           "  pub def shared() -> int32:\n"
                           "    return 1\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected nested parser failure to return a report");
   expect(report->error_count > 0,
@@ -393,14 +393,14 @@ auto test_compile_sources_handles_multiple_files() -> void {
                        "pub def add() -> int32:\n"
                        "  return 2\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_a.string(), source_b.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected multi-file compile to return a report");
   expect(report->error_count == 0, "expected multi-file compile to succeed");
   expect(report->modules.size() == 2, "expected two metadata artifacts");
@@ -426,14 +426,14 @@ auto test_compile_sources_reports_duplicate_module_paths() -> void {
                        "pub def second() -> int32:\n"
                        "  return 2\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_a.string(), source_b.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected duplicate-module compile to return a report");
   expect(report->error_count > 0, "expected duplicate module path to fail");
@@ -465,14 +465,14 @@ auto test_compile_sources_accepts_declared_external_submodule() -> void {
                            "pub def rotate() -> int32:\n"
                            "  return 2\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {parent_source.string(), child_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected declared submodule compile to return a report");
   expect(report->error_count == 0,
@@ -499,14 +499,14 @@ auto test_compile_sources_reports_missing_parent_submodule_declaration()
                            "pub def rotate() -> int32:\n"
                            "  return 2\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {parent_source.string(), child_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected missing-parent compile to return a report");
   expect(report->error_count > 0,
@@ -536,14 +536,14 @@ auto test_compile_sources_reports_inline_external_submodule_conflict() -> void {
                            "pub def area() -> int32:\n"
                            "  return 3\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {parent_source.string(), child_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected inline-conflict compile to return a report");
   expect(report->error_count > 0,
@@ -590,7 +590,7 @@ auto test_compile_sources_resolves_session_imports() -> void {
                          "pub def run() -> int32:\n"
                          "  return 4\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {package_source.string(), tools_source.string(),
                   util_source.string(), parse_source.string(),
@@ -599,7 +599,7 @@ auto test_compile_sources_resolves_session_imports() -> void {
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected in-session imports to return a report");
   expect(report->error_count == 0,
          "expected in-session imports to resolve cleanly");
@@ -619,14 +619,14 @@ auto test_compile_sources_reports_duplicate_module_scope_symbol() -> void {
                           "trait point:\n"
                           "  def show(self) -> str\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected duplicate declaration scope compile to return a report");
   expect(
@@ -656,14 +656,14 @@ auto test_compile_sources_reports_duplicate_inline_submodule_scope_symbol()
                           "  concept circle[T]:\n"
                           "    T: show\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected duplicate inline scope compile to return a report");
   expect(report->error_count > 0,
@@ -692,14 +692,14 @@ auto test_compile_sources_resolves_super_qualified_type_paths() -> void {
              "pub def rotate(p: super.shapes.circle) -> super.shapes.circle:\n"
              "  return p\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {geometry_source.string(), transform_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected super-qualified type paths to return a report");
   expect(report->error_count == 0,
@@ -726,7 +726,7 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
                          "pub def run(value: package.tools.missing) -> int:\n"
                          "  return 1\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {package_source.string(), tools_source.string(),
                   app_source.string()},
@@ -734,7 +734,7 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected unresolved qualified type path compile to return a report");
   expect(report->error_count > 0,
@@ -765,7 +765,7 @@ auto test_compile_sources_reports_unresolved_module_qualified_reference()
                          "  package.tools.missing\n"
                          "  return 1\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {package_source.string(), tools_source.string(),
                   app_source.string()},
@@ -773,7 +773,7 @@ auto test_compile_sources_reports_unresolved_module_qualified_reference()
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected unresolved module-qualified reference "
                              "compile to return a report");
   expect(report->error_count > 0, "expected unresolved module-qualified "
@@ -805,7 +805,7 @@ auto test_compile_sources_reports_unresolved_session_import() -> void {
                          "pub def run() -> int32:\n"
                          "  return 1\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {package_source.string(), tools_source.string(),
                   app_source.string()},
@@ -813,7 +813,7 @@ auto test_compile_sources_reports_unresolved_session_import() -> void {
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected unresolved in-session import to return a report");
   expect(report->error_count == 1,
@@ -850,7 +850,7 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
                            "pub def run() -> int32:\n"
                            "  return 2\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {package_source.string(), tools_source.string(),
                   secret_source.string(), other_source.string()},
@@ -858,7 +858,7 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
       .show_help = false,
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected inaccessible in-session import to return a report");
   expect(report->error_count > 0,
@@ -900,7 +900,7 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
                           "  let p = point { x: 1, y: 41 }\n"
                           "  return p.x + p.y\n");
 
-  kira::cli_config cfg{
+  kira::driver::cli_config cfg{
       .program_name = "kira",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
@@ -910,7 +910,7 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
       .build_output = output_path.string(),
   };
 
-  auto report = kira::compile_sources(cfg, false);
+  auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid source to compile cleanly");
   expect(report->build.has_value(), "expected a build outcome to be recorded");
