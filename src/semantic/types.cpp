@@ -45,8 +45,8 @@ constexpr std::array<generic_arity_entry, 12> k_builtin_generic_arities = {{
 }};
 
 /// Trait names available from the prelude without any `use`.
-constexpr std::array<std::string_view, 12> k_prelude_trait_names = {
-    "eq",  "ord", "hash", "show", "from", "into",
+constexpr std::array<std::string_view, 13> k_prelude_trait_names = {
+    "eq",  "ord", "hash", "show", "from", "into", "drop",
     "add", "sub", "mul",  "div",  "rem",  "neg",
 };
 

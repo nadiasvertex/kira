@@ -873,6 +873,43 @@ auto test_parser_rejects_intrinsic_def_with_body() -> void {
          "expected a body on an intrinsic def to be reported as an error");
 }
 
+auto test_parser_accepts_mut_binding_pattern() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "trait drop:\n"
+                             "  def drop(mut self) -> unit\n"
+                             "def run():\n"
+                             "  let mut count = 0\n"
+                             "  count = count + 1\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 2,
+         "expected trait and function declarations");
+
+  auto *trait_decl = expect_node<kira::ast::trait_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
+      "expected trait declaration");
+  auto *drop_func = expect_node<kira::ast::func_decl>(
+      trait_decl->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected drop function item");
+  expect(drop_func->params.size() == 1, "expected a single self parameter");
+  auto *self_pattern = expect_pattern<kira::ast::binding_pattern>(
+      drop_func->params[0].pattern.get(), kira::ast::node_kind::binding_pattern,
+      "expected self to parse as a binding pattern");
+  expect(self_pattern->name == "self", "expected the parameter named self");
+  expect(self_pattern->is_mut, "expected `mut self` to mark is_mut");
+
+  auto *run_func = expect_node<kira::ast::func_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+      "expected run function declaration");
+  auto *let_stmt = expect_node<kira::ast::let_stmt>(
+      run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected let mut statement");
+  auto *count_pattern = expect_pattern<kira::ast::binding_pattern>(
+      let_stmt->pattern.get(), kira::ast::node_kind::binding_pattern,
+      "expected count to parse as a binding pattern");
+  expect(count_pattern->is_mut, "expected `let mut count` to mark is_mut");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -881,7 +918,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 14> tests = {{
+  const std::array<named_test, 15> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -906,6 +943,8 @@ auto main(int argc, char *argv[]) -> int {
       {.name = "intrinsic_def", .fn = test_parser_accepts_intrinsic_def},
       {.name = "intrinsic_def_rejects_body",
        .fn = test_parser_rejects_intrinsic_def_with_body},
+      {.name = "mut_binding_pattern",
+       .fn = test_parser_accepts_mut_binding_pattern},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

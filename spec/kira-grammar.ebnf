@@ -648,6 +648,7 @@ atomic_pattern
     = "_"                                               (* wildcard           *)
     | literal                                           (* literal            *)
     | IDENT                                             (* binding            *)
+    | "mut" IDENT                                       (* mutable binding    *)
     | "@" IDENT [ "(" pattern_list ")" ]               (* variant constructor *)
     | "(" pattern_list ")"                             (* tuple              *)
     | "{" field_pattern { "," field_pattern } [ "," ] "}"  (* struct        *)

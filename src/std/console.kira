@@ -1,0 +1,26 @@
+module std.console
+
+pub def stdout() -> std.io.file:
+    return std.io.stdout_handle()
+
+pub def stderr() -> std.io.file:
+    return std.io.stderr_handle()
+
+pub def stdin() -> std.io.file:
+    return std.io.stdin_handle()
+
+pub def print(s: str) -> unit:
+    stdout().write_all(&s.as_bytes())
+    return unit
+
+pub def println(s: str) -> unit:
+    print(s)
+    print("\n")
+
+pub def eprint(s: str) -> unit:
+    stderr().write_all(&s.as_bytes())
+    return unit
+
+pub def eprintln(s: str) -> unit:
+    eprint(s)
+    eprint("\n")

@@ -608,6 +608,28 @@ auto test_compile_sources_resolves_session_imports() -> void {
          "expected no diagnostics for valid session imports");
 }
 
+/// Verify that the real `std.io`/`std.console` source under `src/std/`
+/// parses and typechecks cleanly through the real compile pipeline —
+/// guards against regressing spec/stdlib.md's stdlib-source checklist item.
+auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
+  auto metadata_dir = make_temp_dir().path / "meta";
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {"src/std/io.kira", "src/std/console.kira"},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected stdlib source to return a report");
+  expect(report->error_count == 0, "expected stdlib source to typecheck "
+                                   "cleanly: " +
+                                       report->diagnostics);
+  expect(report->modules.size() == 2,
+         "expected std.io and std.console to both emit metadata");
+}
+
 /// Verify that module-local semantic scopes reject duplicate declaration names.
 auto test_compile_sources_reports_duplicate_module_scope_symbol() -> void {
   auto temp = make_temp_dir();
@@ -949,6 +971,7 @@ auto main() -> int {
     test_compile_sources_reports_missing_parent_submodule_declaration();
     test_compile_sources_reports_inline_external_submodule_conflict();
     test_compile_sources_resolves_session_imports();
+    test_compile_sources_typechecks_stdlib_io_and_console();
     test_compile_sources_reports_duplicate_module_scope_symbol();
     test_compile_sources_reports_duplicate_inline_submodule_scope_symbol();
     test_compile_sources_resolves_super_qualified_type_paths();

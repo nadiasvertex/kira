@@ -1,0 +1,7 @@
+module sample
+trait drop:
+    def drop(mut self) -> unit
+type resource = { handle: int64 }
+impl drop for resource:
+    def drop(mut self) -> unit:
+        return unit

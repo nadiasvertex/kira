@@ -276,6 +276,13 @@ auto test_reports_assignment_to_immutable() -> void {
                     "expected immutable-assignment diagnostic");
 }
 
+auto test_accepts_let_mut_reassignment() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_let_mut_reassignment.kira");
+  expect(analyzed.error_count == 0,
+         "expected `let mut` to allow reassignment");
+}
+
 auto test_reports_return_type_mismatch() -> void {
   const auto analyzed =
       analyze_test_data_file("report_return_type_mismatch.kira");
@@ -373,6 +380,33 @@ auto test_reports_incomplete_trait_impl() -> void {
                     "method `name`",
                     "expected missing-method diagnostic");
   expect_diagnostic(analyzed, "`extra` is not a member of trait `shape2`",
+                    "expected extra-method diagnostic");
+}
+
+auto test_accepts_drop_impl() -> void {
+  const auto analyzed = analyze_test_data_file("accept_drop_impl.kira");
+  expect(analyzed.error_count == 0,
+         "expected a well-formed `impl drop for T` to typecheck");
+}
+
+auto test_reports_duplicate_drop_impl() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_duplicate_drop_impl.kira");
+  expect(analyzed.error_count > 0, "expected duplicate drop impl to fail");
+  expect_diagnostic(analyzed,
+                    "duplicate implementation of trait `drop` for `resource`",
+                    "expected coherence diagnostic");
+}
+
+auto test_reports_incomplete_drop_impl() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_incomplete_drop_impl.kira");
+  expect(analyzed.error_count > 0, "expected incomplete drop impl to fail");
+  expect_diagnostic(analyzed,
+                    "implementation of trait `drop` for `resource` is "
+                    "missing method `drop`",
+                    "expected missing-method diagnostic");
+  expect_diagnostic(analyzed, "`close` is not a member of trait `drop`",
                     "expected extra-method diagnostic");
 }
 
@@ -717,6 +751,7 @@ auto main() -> int {
     test_reports_mixed_numeric_types();
     test_reports_non_bool_condition();
     test_reports_assignment_to_immutable();
+    test_accepts_let_mut_reassignment();
     test_reports_return_type_mismatch();
     test_reports_call_argument_problems();
     test_reports_struct_literal_problems();
@@ -729,6 +764,9 @@ auto main() -> int {
     test_reports_unannotated_pub_function();
     test_reports_duplicate_trait_impl();
     test_reports_incomplete_trait_impl();
+    test_accepts_drop_impl();
+    test_reports_duplicate_drop_impl();
+    test_reports_incomplete_drop_impl();
     test_reports_unsatisfied_trait_requirement();
     test_reports_unknown_deriving();
     test_reports_impure_contract_call();

@@ -4559,6 +4559,9 @@ auto parser::parse_atomic_pattern() -> ast::ptr<ast::pattern> {
   case token_kind::ident:
     return parse_ident_or_constructor_pattern();
 
+  case token_kind::kw_mut:
+    return parse_mut_binding_pattern();
+
   case token_kind::at:
     return parse_variant_pattern();
 
@@ -4666,6 +4669,21 @@ auto parser::parse_ident_or_constructor_pattern() -> ast::ptr<ast::pattern> {
   auto binding = ast::make<ast::binding_pattern>();
   binding->span = start;
   binding->name = std::string(tok.text);
+  return binding;
+}
+
+/// `mut` prefix on a binding pattern (`mut self`, `mut x`) — marks the
+/// bound name reassignable, matching `let mut`/`var` semantics rather than
+/// the default immutable `let`/pattern binding. Only a plain identifier may
+/// follow `mut`; it is not a constructor or range start.
+auto parser::parse_mut_binding_pattern() -> ast::ptr<ast::pattern> {
+  auto mut_tok = advance(); // consume `mut`
+  auto name_tok = expect(token_kind::ident);
+
+  auto binding = ast::make<ast::binding_pattern>();
+  binding->span = mut_tok.span.merge(name_tok.span);
+  binding->name = std::string(name_tok.text);
+  binding->is_mut = true;
   return binding;
 }
 

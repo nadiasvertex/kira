@@ -1,0 +1,128 @@
+module std.io
+
+pub type raw_fd = { value: int64 }
+pub type io_errno = { code: int32 }
+
+pub type io_error = @not_found(str) | @permission_denied(str) | @already_exists(str) | @interrupted | @would_block | @broken_pipe | @unexpected_eof | @other(io_errno)
+
+trait from[T]:
+    def from(value: T) -> self
+
+trait drop:
+    def drop(mut self) -> unit
+
+impl from[io_errno] for io_error:
+    def from(e: io_errno) -> io_error:
+        match e.code:
+            2 => @not_found("no such file or directory")
+            13 => @permission_denied("permission denied")
+            17 => @already_exists("file already exists")
+            4 => @interrupted
+            11 => @would_block
+            32 => @broken_pipe
+            _ => @other(e)
+
+pub type open_options = {
+    read: bool,
+    write: bool,
+    append: bool,
+    create: bool,
+    truncate: bool
+}
+
+pub trait reader:
+    def read(mut self, buf: &mut slice_mut[byte]) -> result[usize, io_error]
+
+    def read_to_end(mut self, out: &mut list[byte]) -> result[usize, io_error]:
+        var total: usize = 0
+        var buf: array[byte, 4096] = [0; 4096]
+        while true:
+            let got = self.read(&mut buf[0..4096])?
+            if got == 0:
+                return @ok(total)
+            var i: usize = 0
+            while i < got:
+                out.push(buf[i])
+                i = i + 1
+            total = total + got
+
+    def read_exact(mut self, buf: &mut slice_mut[byte]) -> result[unit, io_error]:
+        var filled: usize = 0
+        let want = buf.len()
+        while filled < want:
+            let got = self.read(&mut buf[filled..want])?
+            if got == 0:
+                return @err(@unexpected_eof)
+            filled = filled + got
+        return @ok(unit)
+
+pub trait writer:
+    def write(mut self, buf: &slice[byte]) -> result[usize, io_error]
+    def flush(mut self) -> result[unit, io_error]
+
+    def write_all(mut self, buf: &slice[byte]) -> result[unit, io_error]:
+        var written: usize = 0
+        let want = buf.len()
+        while written < want:
+            let n = self.write(&buf[written..want])?
+            if n == 0:
+                return @err(@broken_pipe)
+            written = written + n
+        return @ok(unit)
+
+intrinsic def rt_stdin() -> raw_fd
+intrinsic def rt_stdout() -> raw_fd
+intrinsic def rt_stderr() -> raw_fd
+
+intrinsic def rt_open(path: str, opts: open_options) -> result[raw_fd, io_errno]
+intrinsic def rt_close(fd: raw_fd) -> result[unit, io_errno]
+intrinsic def rt_read(fd: raw_fd, buf: &mut slice_mut[byte]) -> result[usize, io_errno]
+intrinsic def rt_write(fd: raw_fd, buf: &slice[byte]) -> result[usize, io_errno]
+intrinsic def rt_flush(fd: raw_fd) -> result[unit, io_errno]
+
+pub type file = { fd: raw_fd }
+
+pub def open(path: str, opts: open_options) -> result[file, io_error]:
+    match rt_open(path, opts):
+        @ok(fd) => @ok(file { fd: fd })
+        @err(e) => @err(io_error.from(e))
+
+pub def stdin_handle() -> file:
+    return file { fd: rt_stdin() }
+
+pub def stdout_handle() -> file:
+    return file { fd: rt_stdout() }
+
+pub def stderr_handle() -> file:
+    return file { fd: rt_stderr() }
+
+impl reader for file:
+    def read(mut self, buf: &mut slice_mut[byte]) -> result[usize, io_error]:
+        match rt_read(self.fd, buf):
+            @ok(n) => @ok(n)
+            @err(e) => @err(io_error.from(e))
+
+impl writer for file:
+    def write(mut self, buf: &slice[byte]) -> result[usize, io_error]:
+        match rt_write(self.fd, buf):
+            @ok(n) => @ok(n)
+            @err(e) => @err(io_error.from(e))
+    def flush(mut self) -> result[unit, io_error]:
+        match rt_flush(self.fd):
+            @ok(u) => @ok(u)
+            @err(e) => @err(io_error.from(e))
+
+impl drop for file:
+    def drop(mut self) -> unit:
+        rt_close(self.fd)
+        return unit
+
+extend file:
+    pub def close(mut self) -> result[unit, io_error]:
+        let r = rt_close(self.fd)
+        self.fd = closed_sentinel
+        match r:
+            @ok(u) => @ok(u)
+            @err(e) => @err(io_error.from(e))
+
+static closed_sentinel: raw_fd = raw_fd { value: -1 }

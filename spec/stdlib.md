@@ -240,8 +240,46 @@ This is the checklist of compiler work they depend on, grouped by phase.
       module-level (not a trait/impl member), and every parameter plus the
       return type must be explicitly annotated, since there is no body to
       infer from.
-- [ ] Recognize `impl drop for T` and treat `drop` like any other trait impl
-      for coherence/completeness checking (this part is unblocked today).
+- [x] Recognize `impl drop for T` and treat `drop` like any other trait impl
+      for coherence/completeness checking. **Resolved:** turned out to need
+      no special-casing at all — even "prelude" traits like `show`/`eq` have
+      no synthesized `trait_decl` anywhere in the compiler; every prelude
+      trait name only ever affects name *resolution* (letting the bare name
+      be used as a bound/in `deriving` without a `use`,
+      `is_prelude_trait_name`, `src/semantic/types.cpp`), while impl
+      coherence/completeness (`validate_impl_coherence`,
+      `check_impl_members`, both in `src/semantic/check.cpp`) is driven
+      entirely by finding a real, in-session `trait_decl` — a trait a test
+      or program declares itself. So `drop` just needed adding to
+      `k_prelude_trait_names` (`src/semantic/types.cpp`) for parity with
+      `show`/`eq`/etc., and any `trait drop: def drop(mut self) -> unit`
+      declared in source flows through the exact same
+      duplicate-impl/missing-method/extra-method checks as any other trait.
+      Regression tests: `accept_drop_impl.kira`,
+      `report_duplicate_drop_impl.kira`, `report_incomplete_drop_impl.kira`
+      (`src/testdata/semantic_check_test/`, wired into
+      `src/semantic/check_test.cpp`).
+- [x] **Newly discovered and resolved while implementing the above:** the
+      `mut self`/`mut <ident>` binding-pattern syntax used throughout this
+      document and `spec/kira-reference.md`'s `drop` section did not parse
+      at all — `mut` previously only appeared on reference/pointer *types*
+      (`&mut T`, `*mut T`), never as a pattern prefix
+      (`spec/kira-grammar.ebnf`'s `atomic_pattern` had no `mut` case).
+      Fixed by adding `bool is_mut` to `ast::binding_pattern`
+      (`src/parser/ast.h`), a new `parser::parse_mut_binding_pattern`
+      dispatched from `parse_atomic_pattern` on `token_kind::kw_mut`
+      (`src/parser/parser.cpp`/`.h`), a new `binding_origin::mut_binding`
+      (mutable, like `var`) consumed at both binding sites —
+      `check_pattern`'s `binding_pattern` case and `let_stmt`'s fast path
+      (`src/semantic/check.cpp`) — and a grammar update
+      (`spec/kira-grammar.ebnf`). Function parameters needed no semantic
+      change: `check_function` already binds every parameter (including
+      `self`) with the always-reassignable `parameter` origin regardless of
+      pattern mutability, so `mut self` only needed to *parse*. Regression
+      tests: `mut_binding_pattern` (`src/parser/parser_test.cpp`),
+      `accept_let_mut_reassignment.kira`
+      (`src/testdata/semantic_check_test/`, proving `let mut x` allows
+      reassignment where plain `let x` would error).
 - [ ] **Blocked:** automatically invoking `drop()` at scope exit requires
       knowing whether a binding was moved from, which requires move/ownership
       tracking. The roadmap's "Missing" list already calls out that borrow
@@ -413,6 +451,54 @@ This is the checklist of compiler work they depend on, grouped by phase.
 
 ### Stdlib source
 
-- [ ] `std.io`, `std.format`, `std.console` written as `.kira` source once
-      `intrinsic def` parses and typechecks (this document's code blocks are
-      the target, not yet committed source).
+- [x] `std.io`, `std.console` written as real `.kira` source
+      (`src/std/io.kira`, `src/std/console.kira`), parsing and typechecking
+      cleanly end-to-end through the real CLI/driver — regression test:
+      `test_compile_sources_typechecks_stdlib_io_and_console`
+      (`src/cli_test.cpp`, backed by the `//src:std_sources` filegroup in
+      `src/BUILD.bazel`). `std.format` remains blocked on `{expr:spec}`
+      interpolation splitting, above. Notable deviations from this
+      document's code blocks, all forced by real compiler/language gaps
+      found while writing the source (not stylistic choices):
+      - `from`/`into` are "prelude trait names" the same way `drop` was
+        (see above) — no synthesized `trait_decl` exists for them either.
+        `std.io` declares its own `trait from[T]: def from(value: T) ->
+        self` before `impl from[io_errno] for io_error`.
+      - The document's `...` placeholder bodies aren't valid Kira syntax;
+        every method below has a real body (`io_error.from`'s errno-code
+        match covers `ENOENT`/`EACCES`/`EEXIST`/`EINTR`/`EAGAIN`/`EPIPE`
+        explicitly, falling back to `@other`).
+      - `use std.io.{ file, writer, ... }`-style *member-group* imports
+        don't resolve: `src/semantic/resolution.cpp`'s import validation
+        (`emit_unresolved_import`) only ever checks whether a `use`'s
+        dotted path matches a *submodule* declared in-session — there is
+        no mechanism to import an individual type/trait/function by name
+        into unqualified scope, only whole-module imports (`use std.io`)
+        or wildcard submodule imports (`use pkg.tools.*`, see
+        `test_compile_sources_resolves_session_imports`,
+        `src/cli_test.cpp`). `std.console` therefore references `std.io`'s
+        public items by fully qualified path (`std.io.file`,
+        `std.io.stdout_handle()`, ...) instead of importing them — the
+        same pattern already proven by
+        `src/testdata/semantic_check_test/accept_cross_module_qualified_types/`.
+        Cross-module *method* calls (`.write_all()` on a `std.io.file`
+        from `std.console`) needed no such workaround: `find_method`
+        (`src/semantic/check.cpp`) resolves impls session-wide regardless
+        of `use` imports.
+      - The document's `pub def (file).close(mut self) -> ...` extend-method
+        syntax isn't real; the actual syntax is an `extend file:` block
+        (already used by `extend_user_type`/`extend_builtin_type` tests).
+      - **Confirmed but out of scope:** neither file lowers to HIR yet
+        (`bazelisk run` reports "Lowered 0/2 module(s)" with zero
+        diagnostics from the semantic pass) — HIR lowering for `trait`
+        default-method dispatch, `extend` blocks, and generic `impl`s isn't
+        exercised anywhere in the existing corpus either (no
+        `codegen_test`/`codegen_stress` fixture uses `trait`/`extend` at
+        all), so this predates and is unrelated to the stdlib work. It
+        blocks actually *running* `std.io`/`std.console`, not typechecking
+        them. Tracked here as a follow-up, not fixed.
+      - Minor, separately-noticed gap: `render_compile_summary`
+        (`src/driver/driver.cpp`) never surfaces a per-module HIR-lowering
+        failure's error message (`hir_lowering_result::error` is recorded
+        but never printed), making the "Lowered N/M" line silently
+        unhelpful when M > N. Not fixed here.

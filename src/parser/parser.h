@@ -764,6 +764,8 @@ private:
   /// range).
   [[nodiscard]] auto parse_ident_or_constructor_pattern()
       -> ast::ptr<ast::pattern>;
+  /// Parses a `mut`-prefixed binding pattern: `mut name`.
+  [[nodiscard]] auto parse_mut_binding_pattern() -> ast::ptr<ast::pattern>;
   /// Parses an `@`-prefixed variant constructor pattern: `@name`, `@name(...)`.
   [[nodiscard]] auto parse_variant_pattern() -> ast::ptr<ast::pattern>;
   /// Parses parenthesized and tuple patterns.

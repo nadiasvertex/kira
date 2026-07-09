@@ -1095,9 +1095,10 @@ struct literal_pattern : pattern {
   literal_pattern() : pattern(node_kind::literal_pattern) {}
 };
 
-/// Simple name binding: `x`
+/// Simple name binding: `x`, or a mutable one: `mut x`
 struct binding_pattern : pattern {
   std::string name; ///< Bound identifier introduced when the pattern matches.
+  bool is_mut = false; ///< Written with a leading `mut` (e.g. `mut self`).
 
   binding_pattern() : pattern(node_kind::binding_pattern) {}
 };

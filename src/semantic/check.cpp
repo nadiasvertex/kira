@@ -116,6 +116,8 @@ enum class binding_origin : uint8_t {
   var_binding,     ///< `var` — mutable.
   parameter,       ///< Function or lambda parameter.
   pattern_binding, ///< Bound by a pattern (match arm, `if let`, `for`, ...).
+  mut_binding,     ///< A pattern binding written with a leading `mut`
+                   ///< (`let mut x`, `mut self`) — mutable like `var`.
   synthetic,       ///< Introduced by the checker itself (e.g. a `crew`/`cancel`
                    ///< name).
 };
@@ -4409,7 +4411,9 @@ private:
       return;
     case ast::node_kind::binding_pattern: {
       const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
-      bind_value(binding.name, stripped, binding_origin::pattern_binding,
+      bind_value(binding.name, stripped,
+                 binding.is_mut ? binding_origin::mut_binding
+                                : binding_origin::pattern_binding,
                  binding.span);
       return;
     }
@@ -4871,6 +4875,8 @@ private:
       return "a parameter";
     case binding_origin::var_binding:
       return "declared with `var`";
+    case binding_origin::mut_binding:
+      return "declared with `mut`";
     case binding_origin::synthetic:
       return "introduced here";
     }
@@ -5054,7 +5060,9 @@ private:
           // checker) needs every plain `let` binding's type keyed by its
           // pattern node, the same way a destructured binding's is.
           record_expr_type(*stmt.pattern, binding_type);
-          bind_value(binding.name, binding_type, binding_origin::let_binding,
+          bind_value(binding.name, binding_type,
+                     binding.is_mut ? binding_origin::mut_binding
+                                    : binding_origin::let_binding,
                      binding.span);
         } else {
           check_pattern(*stmt.pattern, strip_refs(binding_type));
