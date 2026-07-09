@@ -1029,7 +1029,10 @@ auto render_help(std::string_view program_name) -> std::string {
       "                          src/llvm_codegen)\n"
       "  --compile-function NAME  Like --compile, but use NAME as the entry\n"
       "                          point\n"
-      "  --compile-output PATH    Write the linked executable to PATH",
+      "  --compile-output PATH    Write the linked executable to PATH\n"
+      "  --parse-only             Run only the lexer and parser,\n"
+      "                          skipping semantic name resolution and\n"
+      "                          type checking",
       program_name, k_default_metadata_dir, k_default_run_function,
       k_default_run_function, k_default_run_function);
 }
