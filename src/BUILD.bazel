@@ -74,17 +74,6 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-cc_library(
-    name = "cli",
-    srcs = [],
-    hdrs = ["cli.h"],
-    tags = ["no-sandbox"],
-    deps = [
-        "//src/driver:driver",
-    ],
-    visibility = ["//visibility:public"],
-)
-
 cc_binary(
     name = "kira",
     srcs = ["main.cpp"],
@@ -93,7 +82,7 @@ cc_binary(
         "//src/runtime",
     ],
     tags = ["no-sandbox"],
-    deps = [":cli"],
+    deps = ["//src/driver:driver"],
     visibility = ["//visibility:public"],
 )
 
@@ -107,8 +96,8 @@ cc_test(
         "//src/runtime:runtime",
     ],
     deps = [
-        ":cli",
         ":module_metadata_cc_proto",
+        "//src/driver:driver",
     ],
 )
 
@@ -118,7 +107,7 @@ cc_test(
     srcs = ["driver_stress_test.cpp"],
     data = [":parser_stress_corpus"],
     tags = ["no-sandbox"],
-    deps = [":cli"],
+    deps = ["//src/driver:driver"],
 )
 
 cc_test(
@@ -127,7 +116,7 @@ cc_test(
     srcs = ["semantic_stress_test.cpp"],
     data = [":semantic_stress_corpus"],
     tags = ["no-sandbox"],
-    deps = [":cli"],
+    deps = ["//src/driver:driver"],
 )
 
 cc_test(
@@ -136,7 +125,7 @@ cc_test(
     srcs = ["std_test.cpp"],
     data = [":std_test_corpus"],
     tags = ["no-sandbox"],
-    deps = [":cli"],
+    deps = ["//src/driver:driver"],
 )
 
 cc_test(
