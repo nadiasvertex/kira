@@ -79,12 +79,12 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
       source_fixture{
           .path = "std/traits.kira",
           .text = kira::testing::load_test_data_file(std_dir.string(),
-                                                      "traits.kira"),
+                                                     "traits.kira"),
       },
       source_fixture{
           .path = "std/prelude.kira",
           .text = kira::testing::load_test_data_file(std_dir.string(),
-                                                      "prelude.kira"),
+                                                     "prelude.kira"),
       },
   };
 }
@@ -331,8 +331,7 @@ auto test_reports_assignment_to_immutable() -> void {
 auto test_accepts_let_mut_reassignment() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_let_mut_reassignment.kira");
-  expect(analyzed.error_count == 0,
-         "expected `let mut` to allow reassignment");
+  expect(analyzed.error_count == 0, "expected `let mut` to allow reassignment");
 }
 
 auto test_reports_return_type_mismatch() -> void {

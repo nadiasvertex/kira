@@ -8,7 +8,10 @@ cc_library(
         "driver.cpp",
         "interpret.cpp",
         "lower.cpp",
+        "lowering_stage.cpp",
         "module_metadata.cpp",
+        "parse_stage.cpp",
+        "run_build_stage.cpp",
     ],
     hdrs = [
       "aot.h",
@@ -17,7 +20,10 @@ cc_library(
       "driver.h",
       "interpret.h",
       "lower.h",
+      "lowering_stage.h",
       "module_metadata.h",
+      "parse_stage.h",
+      "run_build_stage.h",
     ],
     deps = [
       "//src:module_metadata_cc_proto",

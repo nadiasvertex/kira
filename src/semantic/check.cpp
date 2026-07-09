@@ -2803,8 +2803,8 @@ private:
     if (file_no_prelude_) {
       return std::nullopt;
     }
-    static constexpr std::array<std::string_view, 2> k_prelude_reexport_modules =
-        {"prelude", "std.traits"};
+    static constexpr std::array<std::string_view, 2>
+        k_prelude_reexport_modules = {"prelude", "std.traits"};
     for (const auto module_name : k_prelude_reexport_modules) {
       if (const auto *source = index_.find_module(module_name)) {
         if (const auto it = source->traits.find(std::string(name));
