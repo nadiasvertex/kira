@@ -1,0 +1,32 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+cc_library(
+    name = "driver",
+    srcs = [
+        "aot.cpp",
+        "driver.cpp",
+        "interpret.cpp",
+        "lower.cpp",
+        "module_metadata.cpp",
+    ],
+    hdrs = [
+      "aot.h",
+      "defaults.h",
+      "driver.h",
+      "interpret.h",
+      "lower.h",
+      "module_metadata.h",
+    ],
+    deps = [
+      "//src:module_metadata_cc_proto",
+      "//src/bytecode:bytecode",
+      "//src/bytecode:vm",
+      "//src/bytecode_compiler:bytecode_compiler",
+      "//src/hir:hir",
+      "//src/llvm_codegen:aot",
+      "//src/semantic:semantic",
+      "//src/parser:parser",
+      "//src/util:util",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -72,6 +72,7 @@ cc_library(
         "//src/bytecode:bytecode",
         "//src/bytecode:vm",
         "//src/bytecode_compiler:bytecode_compiler",
+        "//src/driver:driver",
         "//src/hir:hir",
         "//src/llvm_codegen:aot",
         "//src/semantic:semantic",
