@@ -7,7 +7,7 @@
 
 #include "driver.h"
 
-namespace kira {
+namespace kira::driver {
 
 /// Parse command-line arguments into driver configuration.
 ///
@@ -17,11 +17,11 @@ namespace kira {
 /// -h was requested (the caller should print `render_help()` and exit). A
 /// diagnostic error message when arguments are invalid.
 [[nodiscard]] auto parse_args(std::span<char *const> argv)
-    -> std::expected<driver::cli_config, std::string>;
+    -> std::expected<cli_config, std::string>;
 
 /// Render the user-facing CLI help text.
 ///
 /// @param program_name Executable name to display in the usage line.
 [[nodiscard]] auto render_help(std::string_view program_name) -> std::string;
 
-} // namespace kira
+} // namespace kira::driver

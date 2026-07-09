@@ -18,4 +18,35 @@ struct run_outcome {
                           ///< execution didn't happen or panicked otherwise.
 };
 
+namespace kira::driver {
+
+/// Renders a VM return value for `--run`'s output, using the function's
+/// checked return type to pick how `slot_value`'s untagged union should be
+/// read back (mirrors `bytecode_compiler::encode_literal`'s reverse
+/// direction).
+///
+/// @param types Checked type table the function's `return_type` indexes
+/// into.
+/// @param return_type Checked return type of the executed function.
+/// @param value Raw VM result to render.
+[[nodiscard]] auto render_run_value(const semantic::type_table &types,
+                                    semantic::type_id return_type,
+                                    const bytecode::slot_value &value)
+    -> std::string;
+
+/// Compiles `hir_module` to bytecode and executes `function_name` with no
+/// arguments, producing the `--run` outcome shown in the CLI summary.
+/// `--run` targets exactly `spec/codegen-design.md` increment 1's subset —
+/// this project has no CLI-level argument-marshalling story yet, so only
+/// zero-parameter functions are runnable — and fails closed (a message, not
+/// a crash) on every other reason execution can't proceed.
+///
+/// @param hir_module Lowered module to compile and run.
+/// @param types Checked type table the module's HIR indexes into.
+/// @param function_name Name of the zero-argument function to execute.
+[[nodiscard]] auto run_hir_module(const hir::hir_module &hir_module,
+                                  const semantic::type_table &types,
+                                  std::string_view function_name)
+    -> run_outcome;
+
 } // namespace kira::driver

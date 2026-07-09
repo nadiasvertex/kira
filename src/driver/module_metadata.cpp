@@ -18,6 +18,106 @@ constexpr uint32_t k_module_metadata_schema_version = 1;
 
 } // namespace
 
+/// Render user-facing visibility text for diagnostics.
+[[nodiscard]] auto visibility_name(ast::visibility visibility)
+    -> std::string_view {
+  switch (visibility) {
+  case ast::visibility::def:
+  case ast::visibility::internal:
+    return "internal";
+  case ast::visibility::pub:
+    return "pub";
+  case ast::visibility::super:
+    return "super";
+  case ast::visibility::priv:
+    return "priv";
+  }
+  return "__unspecified__";
+}
+
+/// Explain how to make an import valid after a visibility failure.
+[[nodiscard]] auto visibility_help(ast::visibility visibility,
+                                   std::string_view parent_name)
+    -> std::string {
+  switch (visibility) {
+  case ast::visibility::pub:
+    return std::format(
+        "Mark the module `pub` only when it should be importable outside `{}`.",
+        parent_name);
+  case ast::visibility::def:
+  case ast::visibility::internal:
+    return std::format("Import this module from `{}` or one of its submodules, "
+                       "or widen the declaration's visibility.",
+                       parent_name);
+  case ast::visibility::super:
+    return std::format("Only the parent module `{}` can import this module; "
+                       "widen the declaration if other modules need it.",
+                       parent_name);
+  case ast::visibility::priv:
+    return "Keep the import in the declaring file, or widen the module "
+           "declaration's visibility.";
+  }
+  return {};
+}
+
+/// Extract the effective top-level visibility from a parsed item node.
+[[nodiscard]] auto
+top_level_visibility(const ast::node &node) -> ast::visibility {
+  switch (node.kind) {
+  case ast::node_kind::use_decl:
+    return dynamic_cast<const ast::use_decl &>(node).visibility;
+  case ast::node_kind::type_decl:
+    return dynamic_cast<const ast::type_decl &>(node).visibility;
+  case ast::node_kind::trait_decl:
+    return dynamic_cast<const ast::trait_decl &>(node).visibility;
+  case ast::node_kind::concept_decl:
+    return dynamic_cast<const ast::concept_decl &>(node).visibility;
+  case ast::node_kind::func_decl:
+    return dynamic_cast<const ast::func_decl &>(node).visibility;
+  case ast::node_kind::sub_module_decl:
+    return dynamic_cast<const ast::sub_module_decl &>(node).visibility;
+  case ast::node_kind::static_decl:
+    return dynamic_cast<const ast::static_decl &>(node).visibility;
+  default:
+    return ast::visibility::def;
+  }
+}
+
+/// Extract the user-facing symbol name for a parsed top-level item.
+[[nodiscard]] auto top_level_name(const ast::node &node) -> std::string {
+  switch (node.kind) {
+  case ast::node_kind::use_decl:
+    return join_strings(dynamic_cast<const ast::use_decl &>(node).path, ".");
+  case ast::node_kind::type_decl:
+    return dynamic_cast<const ast::type_decl &>(node).name;
+  case ast::node_kind::trait_decl:
+    return dynamic_cast<const ast::trait_decl &>(node).name;
+  case ast::node_kind::concept_decl:
+    return dynamic_cast<const ast::concept_decl &>(node).name;
+  case ast::node_kind::func_decl:
+    return dynamic_cast<const ast::func_decl &>(node).name;
+  case ast::node_kind::sub_module_decl:
+    return dynamic_cast<const ast::sub_module_decl &>(node).name;
+  case ast::node_kind::dep_decl:
+    return dynamic_cast<const ast::dep_decl &>(node).name;
+  case ast::node_kind::static_decl:
+    return static_decl_label(dynamic_cast<const ast::static_decl &>(node));
+  case ast::node_kind::error_node:
+    return dynamic_cast<const ast::error_node &>(node).description;
+  default:
+    return {};
+  }
+}
+
+/// Remove surrounding quotes from dependency string literals before persisting
+/// them.
+[[nodiscard]] auto unquote_string_literal(std::string_view value) -> std::string {
+  if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+    return std::string(value.substr(1, value.size() - 2));
+  }
+  return std::string(value);
+}
+
 /// Choose a stable fallback stem for metadata when a source file has no
 /// filename stem.
 ///
@@ -211,33 +311,33 @@ auto add_import_metadata(const ast::use_decl &decl,
       metadata_item->set_alias(*item.alias);
     }
   }
+}
 
-  /// Append one dependency entry to a module metadata record.
-  ///
-  /// @param decl Parsed `dep` declaration to encode.
-  /// @param metadata Metadata message being populated.
-  auto add_dependency_metadata(const ast::dep_decl &decl,
-                               metadata::v1::ModuleMetadata &metadata) -> void {
-    auto *dependency = metadata.add_dependencies();
-    dependency->set_name(decl.name);
-    for (const auto &field : decl.fields) {
-      (*dependency->mutable_fields())[field.key] =
-          unquote_string_literal(field.value);
-    }
+/// Append one dependency entry to a module metadata record.
+///
+/// @param decl Parsed `dep` declaration to encode.
+/// @param metadata Metadata message being populated.
+auto add_dependency_metadata(const ast::dep_decl &decl,
+                             metadata::v1::ModuleMetadata &metadata) -> void {
+  auto *dependency = metadata.add_dependencies();
+  dependency->set_name(decl.name);
+  for (const auto &field : decl.fields) {
+    (*dependency->mutable_fields())[field.key] =
+        unquote_string_literal(field.value);
   }
+}
 
-  /// Append one top-level symbol summary to a module metadata record.
-  ///
-  /// @param node Parsed top-level item to encode.
-  /// @param metadata Metadata message being populated.
-  auto add_symbol_metadata(const ast::node &node,
-                           metadata::v1::ModuleMetadata &metadata) -> void {
-    auto *symbol = metadata.add_top_level_symbols();
-    symbol->set_name(top_level_name(node));
-    symbol->set_kind(symbol_kind_to_proto(node.kind));
-    symbol->set_visibility(visibility_to_proto(top_level_visibility(node)));
-    symbol->set_has_parse_error(node.has_error);
-  }
+/// Append one top-level symbol summary to a module metadata record.
+///
+/// @param node Parsed top-level item to encode.
+/// @param metadata Metadata message being populated.
+auto add_symbol_metadata(const ast::node &node,
+                         metadata::v1::ModuleMetadata &metadata) -> void {
+  auto *symbol = metadata.add_top_level_symbols();
+  symbol->set_name(top_level_name(node));
+  symbol->set_kind(symbol_kind_to_proto(node.kind));
+  symbol->set_visibility(visibility_to_proto(top_level_visibility(node)));
+  symbol->set_has_parse_error(node.has_error);
 }
 
 /// Build the serialized metadata payload for one parsed source file.

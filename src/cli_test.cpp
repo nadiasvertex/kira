@@ -44,7 +44,7 @@ auto test_parse_args_accepts_sources() -> void {
   std::vector<std::string> args = {"kira", "main.kira", "lib.kira"};
   auto argv = make_argv(args);
 
-  auto result = kira::parse_args(argv);
+  auto result = kira::driver::parse_args(argv);
   expect(result.has_value(), "expected sources to parse successfully");
   expect(!result->show_help, "plain sources should not request help");
   expect(result->sources.size() == 2, "expected two source arguments");
@@ -59,14 +59,14 @@ auto test_parse_args_supports_help_and_double_dash() -> void {
   std::vector<std::string> help_args = {"kira", "--help"};
   auto help_argv = make_argv(help_args);
 
-  auto help_result = kira::parse_args(help_argv);
+  auto help_result = kira::driver::parse_args(help_argv);
   expect(help_result.has_value(), "help should parse successfully");
   expect(help_result->show_help, "--help should set show_help");
 
   std::vector<std::string> dash_args = {"kira", "--", "-literal.kira"};
   auto dash_argv = make_argv(dash_args);
 
-  auto dash_result = kira::parse_args(dash_argv);
+  auto dash_result = kira::driver::parse_args(dash_argv);
   expect(dash_result.has_value(), "-- should stop option parsing");
   expect(dash_result->sources.size() == 1, "expected one source after --");
   expect(dash_result->sources[0] == "-literal.kira",
@@ -79,7 +79,7 @@ auto test_parse_args_accepts_metadata_dir() -> void {
                                    "main.kira"};
   auto argv = make_argv(args);
 
-  auto result = kira::parse_args(argv);
+  auto result = kira::driver::parse_args(argv);
   expect(result.has_value(), "metadata dir option should parse successfully");
   expect(result->metadata_dir == "build/meta",
          "expected metadata directory override");
@@ -90,7 +90,7 @@ auto test_parse_args_rejects_unknown_options() -> void {
   std::vector<std::string> args = {"kira", "--bogus"};
   auto argv = make_argv(args);
 
-  auto result = kira::parse_args(argv);
+  auto result = kira::driver::parse_args(argv);
   expect(!result.has_value(), "unknown options should fail");
   expect(result.error() == "unknown option: --bogus",
          "expected unknown option error message");
@@ -98,7 +98,7 @@ auto test_parse_args_rejects_unknown_options() -> void {
 
 /// Verify help and compile-summary rendering helpers.
 auto test_rendering_helpers() -> void {
-  auto help = kira::render_help("kira");
+  auto help = kira::driver::render_help("kira");
   expect(help.find("Usage: kira [OPTIONS] SOURCES...") != std::string::npos,
          "help should contain usage line");
   expect(help.find("Kira - Parse source files and emit module metadata") !=

@@ -13,7 +13,7 @@
 /// @param argv Argument vector supplied by the host process.
 auto main(int argc, char *argv[]) -> int {
   try {
-    auto result = kira::parse_args(
+    auto result = kira::driver::parse_args(
         std::span<char *const>(argv, static_cast<size_t>(argc)));
 
     if (!result) {
@@ -24,7 +24,7 @@ auto main(int argc, char *argv[]) -> int {
     const auto &cfg = *result;
 
     if (cfg.show_help) {
-      std::println("{}", kira::render_help(cfg.program_name));
+      std::println("{}", kira::driver::render_help(cfg.program_name));
       return 0;
     }
 

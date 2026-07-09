@@ -4,9 +4,9 @@
 #include <string_view>
 #include <vector>
 
-#include "parser/ast.h"
+#include "ast/ast.h"
 
-namespace kira::driver {
+namespacekira::driver {
 
 /// Default output directory for serialized module metadata artifacts.
 inline constexpr std::string_view k_default_metadata_dir =
@@ -46,10 +46,5 @@ struct compiled_module {
 ///
 /// @param node Top-level AST item.
 [[nodiscard]] auto top_level_name(const ast::node &node) -> std::string;
-
-/// Remove surrounding quotes from dependency string literals.
-///
-/// @param value Parsed dependency field value.
-[[nodiscard]] auto unquote_string_literal(std::string_view value) -> std::string;
 
 } // namespace kira::driver
