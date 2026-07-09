@@ -920,6 +920,28 @@ static const std::unordered_map<std::string_view, cli_converter>
           }}},
 };
 
+/// Find the first lowered module that defines a function with the given name.
+///
+/// @param modules Vector of lowered HIR modules to search.
+/// @param function_name Name of the function to find.
+/// @return Pointer to the module if found, or nullptr.
+[[nodiscard]] auto
+find_module_by_function(const hir::ptr_vec<hir::hir_module> &modules,
+                        std::string_view function_name)
+    -> const hir::hir_module * {
+  for (const auto &module : modules) {
+    if (module == nullptr) {
+      continue;
+    }
+    for (const auto &fn : module->functions) {
+      if (fn != nullptr && fn->name == function_name) {
+        return module.get();
+      }
+    }
+  }
+  return nullptr;
+}
+
 } // namespace
 
 /// Parse CLI arguments into the compile driver's configuration structure.
@@ -1167,21 +1189,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   }
 
   if (cfg.run) {
-    const auto *target_module = static_cast<const hir::hir_module *>(nullptr);
-    for (const auto &module : lowered_modules) {
-      if (module == nullptr) {
-        continue;
-      }
-      const auto has_target =
-          std::any_of(module->functions.begin(), module->functions.end(),
-                      [&cfg](const auto &fn) -> auto {
-                        return fn != nullptr && fn->name == cfg.run_function;
-                      });
-      if (has_target) {
-        target_module = module.get();
-        break;
-      }
-    }
+    const auto *target_module =
+        find_module_by_function(lowered_modules, cfg.run_function);
 
     if (target_module == nullptr) {
       report.run = run_outcome{
@@ -1196,21 +1205,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   }
 
   if (cfg.build) {
-    const auto *target_module = static_cast<const hir::hir_module *>(nullptr);
-    for (const auto &module : lowered_modules) {
-      if (module == nullptr) {
-        continue;
-      }
-      const auto has_target =
-          std::any_of(module->functions.begin(), module->functions.end(),
-                      [&cfg](const auto &fn) -> auto {
-                        return fn != nullptr && fn->name == cfg.build_function;
-                      });
-      if (has_target) {
-        target_module = module.get();
-        break;
-      }
-    }
+    const auto *target_module =
+        find_module_by_function(lowered_modules, cfg.build_function);
 
     if (target_module == nullptr) {
       report.build = build_outcome{
