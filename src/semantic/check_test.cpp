@@ -40,8 +40,60 @@ auto expect_diagnostic(
   }
 }
 
-auto analyze_sources(const std::vector<source_fixture> &fixtures)
+/// Locates the real `src/std` package under whichever invocation shape the
+/// test binary is running (`bazel test`'s `TEST_SRCDIR`, or a plain
+/// `bazel-bin` invocation from the workspace root) — mirrors
+/// `find_test_data_dir` (`src/testing/test_data.h`), pointed at `src/std`
+/// instead of a `src/testdata/<test_name>` subdirectory.
+auto find_std_dir() -> kira::testing::fs::path {
+  namespace fs = kira::testing::fs;
+  auto candidates = std::vector<fs::path>{};
+  if (const auto *srcdir = std::getenv("TEST_SRCDIR"); srcdir != nullptr) {
+    if (const auto *workspace = std::getenv("TEST_WORKSPACE");
+        workspace != nullptr && *workspace != '\0') {
+      candidates.emplace_back(fs::path(srcdir) / workspace / "src/std");
+    }
+    candidates.emplace_back(fs::path(srcdir) / "_main" / "src/std");
+  }
+  candidates.emplace_back("src/std");
+
+  for (const auto &candidate : candidates) {
+    auto ec = std::error_code{};
+    if (fs::is_directory(candidate, ec)) {
+      return candidate;
+    }
+  }
+
+  fail("could not locate src/std directory");
+  std::abort();
+}
+
+/// Fixtures for the real auto-injected prelude (`std/traits.kira`,
+/// `std/prelude.kira`) — mirrors `inject_stdlib_prelude`
+/// (`src/driver/driver.cpp`), which every real `kira` invocation prepends to
+/// its session, so bound positions like `T: eq` and `impl show for point`
+/// resolve here the same way they do for a real compile.
+auto prelude_fixtures() -> std::vector<source_fixture> {
+  const auto std_dir = find_std_dir();
+  return {
+      source_fixture{
+          .path = "std/traits.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                      "traits.kira"),
+      },
+      source_fixture{
+          .path = "std/prelude.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                      "prelude.kira"),
+      },
+  };
+}
+
+auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
     -> analyzed_session {
+  auto fixtures = prelude_fixtures();
+  fixtures.insert(fixtures.end(), extra_fixtures.begin(), extra_fixtures.end());
+
   auto sources = kira::source_manager{};
   auto diag = kira::diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};

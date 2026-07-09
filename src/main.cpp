@@ -21,12 +21,14 @@ auto main(int argc, char *argv[]) -> int {
       return 1;
     }
 
-    const auto &cfg = *result;
+    auto cfg = *result;
 
     if (cfg.show_help) {
       std::println("{}", kira::driver::render_help(cfg.program_name));
       return 0;
     }
+
+    kira::driver::inject_stdlib_prelude(cfg);
 
     auto report =
         kira::driver::compile_sources(cfg, ::isatty(fileno(stderr)) != 0);

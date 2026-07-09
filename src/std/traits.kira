@@ -1,0 +1,46 @@
+module std.traits
+
+pub trait from[T]:
+    def from(value: T) -> self
+
+pub trait into[T]:
+    def into(self) -> T
+
+pub trait drop:
+    def drop(mut self) -> unit
+
+pub trait eq:
+    def eq(self, other: &self) -> bool
+
+pub trait ord requires eq:
+    def cmp(self, other: &self) -> ordering
+
+pub trait hash:
+    def hash(self) -> uint64
+
+pub trait show:
+    def show(self) -> str
+
+pub trait add:
+    type output
+    def add(self, other: self) -> self.output
+
+pub trait sub:
+    type output
+    def sub(self, other: self) -> self.output
+
+pub trait mul:
+    type output
+    def mul(self, other: self) -> self.output
+
+pub trait div:
+    type output
+    def div(self, other: self) -> self.output
+
+pub trait rem:
+    type output
+    def rem(self, other: self) -> self.output
+
+pub trait neg:
+    type output
+    def neg(self) -> self.output

@@ -44,12 +44,6 @@ constexpr std::array<generic_arity_entry, 12> k_builtin_generic_arities = {{
     {.name = "atomic", .min_args = 1, .max_args = 1},
 }};
 
-/// Trait names available from the prelude without any `use`.
-constexpr std::array<std::string_view, 13> k_prelude_trait_names = {
-    "eq",  "ord", "hash", "show", "from", "into", "drop",
-    "add", "sub", "mul",  "div",  "rem",  "neg",
-};
-
 /// Appends a bracketed, comma-separated list of `args` ids to `key`, for
 /// building a unique intern key that distinguishes generic instantiations.
 auto append_args_key(std::string &key, const std::vector<type_id> &args)
@@ -470,13 +464,6 @@ auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
     return 18446744073709551615u;
   }
   return std::nullopt;
-}
-
-/// Linear search over `k_prelude_trait_names`.
-auto is_prelude_trait_name(std::string_view name) -> bool {
-  return std::ranges::any_of(
-      k_prelude_trait_names,
-      [name](std::string_view candidate) -> bool { return candidate == name; });
 }
 
 // ==========================================================================

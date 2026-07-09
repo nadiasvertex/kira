@@ -259,6 +259,64 @@ This is the checklist of compiler work they depend on, grouped by phase.
       `report_duplicate_drop_impl.kira`, `report_incomplete_drop_impl.kira`
       (`src/testdata/semantic_check_test/`, wired into
       `src/semantic/check_test.cpp`).
+- [x] **Superseded by a real prelude, below:** the `k_prelude_trait_names`
+      array was a compiler-hardcoded stand-in for `from`/`drop` having no
+      real declaration anywhere. Replaced with an actual `prelude.kira` +
+      `std/traits.kira` that every real invocation auto-imports; see
+      "Real auto-imported prelude" below. `eq`/`ord`/`hash`/`show`/`into`/
+      `add`/`sub`/`mul`/`div`/`rem`/`neg` now all have real `std.traits`
+      declarations too, and `k_prelude_trait_names`/`is_prelude_trait_name`
+      (`src/semantic/types.h`/`.cpp`) have been deleted entirely — every
+      prelude trait name resolves purely through `find_prelude_trait`
+      finding a real, in-session `trait_decl`. `src/semantic/check_test.cpp`
+      now auto-injects `std/traits.kira` + `std/prelude.kira` into every
+      fixture session (`prelude_fixtures`, backed by the `//src:std_sources`
+      filegroup) so bound positions like `T: eq` keep resolving without the
+      hardcoded fallback.
+- [x] **Real auto-imported prelude.** `prelude.kira` and `std/traits.kira`
+      are real committed `.kira` source (`src/std/prelude.kira`,
+      `src/std/traits.kira` — module `prelude` and module `std.traits`,
+      the latter declaring the real `pub trait from[T]:`/`pub trait drop:`).
+      Every real `kira` invocation now auto-injects both into the
+      compile session: `inject_stdlib_prelude` (`src/driver/driver.cpp`)
+      locates them next to the running binary (mirroring
+      `find_bazel_archive`'s bundled-data search in `src/driver/aot.cpp` —
+      works under `bazelisk run`, `bazel test`, and a plain `bazel-bin`
+      invocation) and appends them to `cli_config::sources` unless a
+      source with the same resolved path is already present; `main.cpp`
+      calls it right before `compile_sources`. Deliberately *not* called
+      inside `compile_sources` itself, so `compile_sources`'s own unit
+      tests keep their exact hand-crafted sessions — only the real CLI
+      entry point (and any test that explicitly opts in, e.g.
+      `test_compile_sources_typechecks_stdlib_io_and_console`,
+      `src/cli_test.cpp`) gets the injected files.
+
+      Name resolution: `checker::find_prelude_trait`
+      (`src/semantic/check.cpp`) is a new fallback tier, consulted after
+      "declared in the current module" and "reachable through an explicit
+      `use`" both miss. It looks up the name in module `prelude`'s own
+      traits table, then in each stdlib module `prelude` is known to
+      re-export (today just `std.traits`) — a small fixed list
+      (`k_prelude_reexport_modules`), not generic transitive `use`
+      resolution (see the member-group-import gap noted below; genuine
+      transitivity would need that fixed first). Wired into
+      `find_session_trait` (so `impl drop for T`/`impl from[X] for Y`
+      resolve the real trait with zero local declaration or `use`) and
+      into both `is_prelude_trait_name` bound-position fallback sites
+      (`T: drop` in a `where`/bound position). Gated on
+      `ast::file::no_prelude` (parsed and stored since before this work,
+      but never actually consumed until now — see
+      `checker::file_no_prelude_`) so a file can opt out.
+      `src/std/io.kira` no longer declares its own local `trait from[T]:`/
+      `trait drop:` (needed last iteration only because no real prelude
+      existed yet) — it relies on the auto-injected one, verified via a
+      real end-to-end compile with zero diagnostics.
+      Verified interactively (not just by test): `impl drop for T`
+      without any local trait declaration resolves and passes
+      coherence/completeness checking (missing-method and extra-method
+      diagnostics both fire correctly against the real trait), and
+      `no_prelude` correctly makes the same file fail with "undefined
+      type `drop`".
 - [x] **Newly discovered and resolved while implementing the above:** the
       `mut self`/`mut <ident>` binding-pattern syntax used throughout this
       document and `spec/kira-reference.md`'s `drop` section did not parse
@@ -460,10 +518,11 @@ This is the checklist of compiler work they depend on, grouped by phase.
       interpolation splitting, above. Notable deviations from this
       document's code blocks, all forced by real compiler/language gaps
       found while writing the source (not stylistic choices):
-      - `from`/`into` are "prelude trait names" the same way `drop` was
-        (see above) — no synthesized `trait_decl` exists for them either.
-        `std.io` declares its own `trait from[T]: def from(value: T) ->
-        self` before `impl from[io_errno] for io_error`.
+      - `from` is now real — `std.io` no longer declares its own local
+        `trait from[T]:`; `impl from[io_errno] for io_error` resolves the
+        real trait via the auto-imported prelude (see "Real auto-imported
+        prelude", above). `into` is now real too (`src/std/traits.kira`),
+        though unused by `std.io`/`std.console` today.
       - The document's `...` placeholder bodies aren't valid Kira syntax;
         every method below has a real body (`io_error.from`'s errno-code
         match covers `ENOENT`/`EACCES`/`EEXIST`/`EINTR`/`EAGAIN`/`EPIPE`

@@ -788,6 +788,7 @@ private:
   std::string module_name_;
   file_id_type file_id_ = 0;
   bool file_has_external_wildcard_ = false;
+  bool file_no_prelude_ = false;
 
   // --- current function context -------------------------------------------
   std::vector<std::unordered_map<std::string, value_binding>> scopes_;
@@ -1467,9 +1468,9 @@ private:
       return k_unknown_type; // external or non-type import; trust it
     }
 
-    // Prelude traits used in bound positions (`T: show`).
-    if (is_prelude_trait_name(name) || name == "send" || name == "share" ||
-        name == "pool") {
+    // Prelude traits used in bound positions (`T: show`, `T: drop`).
+    if (find_prelude_trait(name).has_value() || name == "send" ||
+        name == "share" || name == "pool") {
       return k_unknown_type;
     }
 
@@ -2141,7 +2142,7 @@ private:
   /// used where the checker didn't expect one.
   auto is_type_like_name(std::string_view name) -> bool {
     if (is_builtin_scalar_name(name) || builtin_generic_arity(name) ||
-        name == "array" || is_prelude_trait_name(name)) {
+        name == "array" || find_prelude_trait(name).has_value()) {
       return true;
     }
     if (module_ != nullptr && (module_->types.contains(std::string(name)) ||
@@ -2781,6 +2782,32 @@ private:
     if (const auto *binding = find_import(name)) {
       if (const auto *source = import_source_module(*binding)) {
         if (const auto it = source->traits.find(imported_member_name(*binding));
+            it != source->traits.end()) {
+          return it->second;
+        }
+      }
+    }
+    return find_prelude_trait(name);
+  }
+
+  /// Finds a trait declaration named `name` in the auto-imported prelude —
+  /// module `prelude` itself, or one of the stdlib modules it re-exports
+  /// (currently `std.traits`, home of `from`/`drop`) — without requiring an
+  /// explicit `use`. Every real invocation of the compiler injects
+  /// `prelude.kira`/`std/traits.kira` into the session (`compile_sources`,
+  /// `src/driver/driver.cpp`); a file that writes `no_prelude` opts out.
+  /// Absent from a session that never included those files (most unit
+  /// tests), this is simply inert.
+  auto find_prelude_trait(std::string_view name)
+      -> std::optional<trait_decl_ref> {
+    if (file_no_prelude_) {
+      return std::nullopt;
+    }
+    static constexpr std::array<std::string_view, 2> k_prelude_reexport_modules =
+        {"prelude", "std.traits"};
+    for (const auto module_name : k_prelude_reexport_modules) {
+      if (const auto *source = index_.find_module(module_name)) {
+        if (const auto it = source->traits.find(std::string(name));
             it != source->traits.end()) {
           return it->second;
         }
@@ -6246,6 +6273,7 @@ public:
       file_id_ = input.file_id;
       module_name_ = join_strings(input.ast_file->module_decl->path, ".");
       module_ = index_.find_module(module_name_);
+      file_no_prelude_ = input.ast_file->no_prelude;
       check_file(*input.ast_file);
     }
   }

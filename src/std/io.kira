@@ -5,12 +5,6 @@ pub type io_errno = { code: int32 }
 
 pub type io_error = @not_found(str) | @permission_denied(str) | @already_exists(str) | @interrupted | @would_block | @broken_pipe | @unexpected_eof | @other(io_errno)
 
-trait from[T]:
-    def from(value: T) -> self
-
-trait drop:
-    def drop(mut self) -> unit
-
 impl from[io_errno] for io_error:
     def from(e: io_errno) -> io_error:
         match e.code:

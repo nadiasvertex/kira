@@ -262,9 +262,6 @@ struct checked_types {
 [[nodiscard]] auto integer_max_value(std::string_view name)
     -> std::optional<uint64_t>;
 
-/// Whether `name` is a trait available from the prelude without any `use`.
-[[nodiscard]] auto is_prelude_trait_name(std::string_view name) -> bool;
-
 // ==========================================================================
 //  Program index — session-wide declaration lookup tables.
 // ==========================================================================

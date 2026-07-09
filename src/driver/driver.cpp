@@ -1,6 +1,10 @@
 #include "driver.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
+#include <format>
+#include <system_error>
 
 #include "src/hir/lower.h"
 #include "src/parser/diagnostic.h"
@@ -64,6 +68,64 @@ static auto first_source_stem(auto &&cfg) -> std::string {
     return stem;
   }
   return "kira";
+}
+
+/// Locates `filename` under the `src/std` Bazel package, trying every
+/// invocation shape the binary might run under (`bazelisk run`'s runfiles
+/// tree, `bazel test`'s `TEST_SRCDIR`, or a plain `bazel-bin` invocation
+/// from the workspace root) — the same set of candidates
+/// `find_bazel_archive` (`src/driver/aot.cpp`) tries for the AOT runtime
+/// archives.
+[[nodiscard]] static auto
+find_stdlib_source_file(std::string_view program_name,
+                        std::string_view filename)
+    -> std::optional<std::filesystem::path> {
+  auto candidates = std::vector<std::filesystem::path>{};
+  if (!program_name.empty()) {
+    candidates.emplace_back(std::filesystem::path(
+                                std::format("{}.runfiles", program_name)) /
+                            "_main" / "src" / "std" / filename);
+  }
+  if (const auto *srcdir = std::getenv("TEST_SRCDIR"); srcdir != nullptr) {
+    if (const auto *workspace = std::getenv("TEST_WORKSPACE");
+        workspace != nullptr && *workspace != '\0') {
+      candidates.emplace_back(std::filesystem::path(srcdir) / workspace /
+                              "src" / "std" / filename);
+    }
+    candidates.emplace_back(std::filesystem::path(srcdir) / "_main" / "src" /
+                            "std" / filename);
+  }
+  candidates.emplace_back(std::filesystem::path("src") / "std" / filename);
+
+  for (const auto &candidate : candidates) {
+    auto ec = std::error_code{};
+    if (std::filesystem::exists(candidate, ec)) {
+      return candidate;
+    }
+  }
+  return std::nullopt;
+}
+
+auto inject_stdlib_prelude(cli_config &cfg) -> void {
+  auto already_present =
+      [&cfg](const std::filesystem::path &candidate) -> bool {
+    const auto normalized = normalize_path(candidate);
+    return std::ranges::any_of(
+        cfg.sources, [&](const auto &source) -> bool {
+          return normalize_path(std::filesystem::path(source)) == normalized;
+        });
+  };
+
+  // `traits.kira` first: it declares the traits `prelude.kira` depends on,
+  // though declaration order across session files has no effect on
+  // resolution — the whole session's module index is built before any file
+  // is checked.
+  for (const auto *filename : {"traits.kira", "prelude.kira"}) {
+    const auto found = find_stdlib_source_file(cfg.program_name, filename);
+    if (found && !already_present(*found)) {
+      cfg.sources.push_back(found->string());
+    }
+  }
 }
 
 auto compile_sources(const cli_config &cfg, bool use_color)

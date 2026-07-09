@@ -620,14 +620,20 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
+  // `io.kira`'s `impl from[...]`/`impl drop for file` rely on the real
+  // `from`/`drop` traits the auto-injected prelude provides — mirror what
+  // `main.cpp` does for every real invocation, rather than hand-listing
+  // `traits.kira`/`prelude.kira` here.
+  kira::driver::inject_stdlib_prelude(cfg);
 
   auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected stdlib source to return a report");
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 2,
-         "expected std.io and std.console to both emit metadata");
+  expect(report->modules.size() == 4,
+         "expected std.io, std.console, std.traits, and prelude to all emit "
+         "metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.

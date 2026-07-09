@@ -1,0 +1,8 @@
+module prelude
+
+# Auto-imported into every module in a compile session (unless a file writes
+# `no_prelude`) — see `inject_stdlib_prelude`, `src/driver/driver.cpp`.
+# `from`/`drop` live in `std.traits`; the checker's `find_prelude_trait`
+# (`src/semantic/check.cpp`) treats this module and the stdlib modules it
+# names below as reachable without an explicit `use`.
+use std.traits

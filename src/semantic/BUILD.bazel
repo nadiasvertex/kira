@@ -52,6 +52,7 @@ cc_test(
     srcs = ["check_test.cpp"],
     data = [
         "//src:semantic_check_test_files",
+        "//src:std_sources",
     ],
     deps = [
         ":semantic",
