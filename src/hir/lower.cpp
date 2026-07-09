@@ -176,6 +176,9 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_call(const ast::call_expr &call)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_prelude_print(const ast::call_expr &call,
+                                         type_id call_type, bool with_newline)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_field(const ast::field_expr &field)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_module_path(const ast::module_path_expr &path)
@@ -515,6 +518,62 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
       hir::make<hir_unary>(un.span, *type, un.op, std::move(*operand)));
 }
 
+/// Lowers a bare `println(s)`/`print(s)` call straight to the
+/// `rt_stdout`/`rt_write` intrinsics (`spec/stdlib.md`) rather than routing
+/// through `std.console`'s Kira-source implementation — that implementation
+/// calls `str::as_bytes`/`file::write_all`, builtin/trait method calls
+/// neither backend can compile yet (only a direct, same-module free-function
+/// or intrinsic callee is supported). `rt_write` takes a `&slice[byte]`, but
+/// the VM/native runtime represent `str` and `slice[byte]` with the same
+/// `{ len; data_ptr }` header (see `bytes_of` in `src/bytecode/vm.cpp`), so
+/// `message` is passed to it unconverted. Each intrinsic call's own `type`
+/// is irrelevant busywork here — nothing downstream reads it (`hir_call`
+/// and `hir_local_ref`'s `type` is unused by either backend outside of
+/// numeric-literal encoding, struct-literal field layout, and the checked-
+/// type map lowering itself already validated) — so `call_type` (the
+/// `unit` type `check.cpp` recorded for the whole call) is reused
+/// everywhere a placeholder is needed.
+auto lowerer::lower_prelude_print(const ast::call_expr &call, type_id call_type,
+                                  bool with_newline)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  if (call.args.size() != 1 || call.args.front().value == nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, call.span,
+                "`println`/`print` accept exactly one `str` argument");
+  }
+  auto message = lower_expr(*call.args.front().value);
+  if (!message.has_value()) {
+    return std::unexpected(message.error());
+  }
+
+  auto write_stmt = [&](ptr<hir_expr> text) -> ptr<hir_node> {
+    auto stdout_call = make<hir_call>(
+        call.span, call_type,
+        ptr<hir_expr>(make<hir_local_ref>(call.span, call_type,
+                                          resolve_reference("rt_stdout"),
+                                          "rt_stdout")),
+        ptr_vec<hir_expr>{});
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(std::move(stdout_call));
+    args.push_back(std::move(text));
+    auto write_call = make<hir_call>(
+        call.span, call_type,
+        ptr<hir_expr>(make<hir_local_ref>(call.span, call_type,
+                                          resolve_reference("rt_write"),
+                                          "rt_write")),
+        std::move(args));
+    return ptr<hir_node>(
+        make<hir_expr_stmt>(call.span, ptr<hir_expr>(std::move(write_call))));
+  };
+
+  auto stmts = ptr_vec<hir_node>{};
+  stmts.push_back(write_stmt(std::move(*message)));
+  if (with_newline) {
+    stmts.push_back(write_stmt(ptr<hir_expr>(make<hir_literal>(
+        call.span, call_type, token_kind::string_lit, std::string("\"\\n\"")))));
+  }
+  return ok_expr(make<hir_block>(call.span, call_type, std::move(stmts)));
+}
+
 auto lowerer::lower_call(const ast::call_expr &call)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   auto type = checked_type_of(call);
@@ -554,6 +613,18 @@ auto lowerer::lower_call(const ast::call_expr &call)
       }
       return ok_expr(make<hir_variant_init>(call.span, *type, callee_ident.name,
                                             std::move(args)));
+    }
+
+    // Bare `println(...)`/`print(...)` — `check.cpp`'s `infer_call` accepts
+    // these as "prelude magic" without resolving them against any real
+    // declaration (deliberately leaving the callee ident's own type
+    // unrecorded, unlike every other callee shape), so there is nothing to
+    // look up via the ordinary machinery below. See `lower_prelude_print`'s
+    // doc comment for why this lowers straight to the `rt_write`/`rt_stdout`
+    // intrinsics rather than routing through `std.console`.
+    if ((callee_ident.name == "println" || callee_ident.name == "print") &&
+        !checked_.node_types.contains(&callee_ident)) {
+      return lower_prelude_print(call, *type, callee_ident.name == "println");
     }
   }
 

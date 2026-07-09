@@ -1,0 +1,7 @@
+module main
+
+def main() -> int32:
+    println("first line")
+    println("second line")
+    println("third line")
+    return 0

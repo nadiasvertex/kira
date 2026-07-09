@@ -3123,6 +3123,9 @@ private:
       if (name == "split") {
         return types_.builtin_generic("list", {types_.builtin("str")});
       }
+      if (name == "as_bytes") {
+        return types_.builtin_generic("slice", {types_.builtin("byte")});
+      }
       return k_unknown_type;
     }
     if (object.kind == type_kind::builtin_generic_kind &&
@@ -3206,6 +3209,7 @@ private:
     case type_kind::sum_kind:
     case type_kind::opaque_kind: {
       if (const auto *method = find_method(entry, field.field_name)) {
+        record_expr_type(field, fn_type_of(*method->decl, method->owner));
         return check_call_against_decl(call, *method->decl, method->owner,
                                        file_id_, /*skip_self=*/true);
       }
@@ -3250,6 +3254,7 @@ private:
       if (types_.is_unknown(builtin_result)) {
         if (const auto *method =
                 find_extend_method_for_builtin(entry, field.field_name)) {
+          record_expr_type(field, fn_type_of(*method->decl, method->owner));
           return check_call_against_decl(call, *method->decl, method->owner,
                                          file_id_, /*skip_self=*/true);
         }
@@ -3500,7 +3505,12 @@ private:
       return k_unknown_type;
     }
 
-    // Prelude functions.
+    // Prelude functions. `println`/`print` are lowered directly to the
+    // `rt_write`/`rt_stdout` intrinsics by `hir::lower_call` (see its doc
+    // comment) rather than resolved against a real declaration here, so —
+    // unlike every other branch in this function — the callee `ident` is
+    // deliberately left unrecorded in `node_types_`: that absence is what
+    // lowering keys off of to recognize the magic form.
     if (name == "println" || name == "print") {
       infer_call_args_loosely(call);
       return types_.builtin("unit");

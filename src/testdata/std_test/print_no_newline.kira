@@ -1,0 +1,8 @@
+module main
+
+def main() -> int32:
+    print("a")
+    print("b")
+    print("c")
+    println("")
+    return 0

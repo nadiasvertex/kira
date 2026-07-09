@@ -50,6 +50,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "std_test_corpus",
+    srcs = glob(["testdata/std_test/*.kira", "testdata/std_test/*.expected"]),
+    visibility = ["//visibility:public"],
+)
+
 proto_library(
     name = "module_metadata_proto",
     srcs = ["module_metadata.proto"],
@@ -120,6 +126,15 @@ cc_test(
     size = "medium",
     srcs = ["semantic_stress_test.cpp"],
     data = [":semantic_stress_corpus"],
+    tags = ["no-sandbox"],
+    deps = [":cli"],
+)
+
+cc_test(
+    name = "std_test",
+    size = "medium",
+    srcs = ["std_test.cpp"],
+    data = [":std_test_corpus"],
     tags = ["no-sandbox"],
     deps = [":cli"],
 )

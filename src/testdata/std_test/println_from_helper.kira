@@ -1,0 +1,9 @@
+module main
+
+def greet(name: str) -> unit:
+    println(name)
+
+def main() -> int32:
+    greet("alice")
+    greet("bob")
+    return 0
