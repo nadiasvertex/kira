@@ -555,9 +555,59 @@ This is the checklist of compiler work they depend on, grouped by phase.
         `codegen_test`/`codegen_stress` fixture uses `trait`/`extend` at
         all), so this predates and is unrelated to the stdlib work. It
         blocks actually *running* `std.io`/`std.console`, not typechecking
-        them. Tracked here as a follow-up, not fixed.
-      - Minor, separately-noticed gap: `render_compile_summary`
-        (`src/driver/driver.cpp`) never surfaces a per-module HIR-lowering
-        failure's error message (`hir_lowering_result::error` is recorded
+        them. See "Running the stdlib: HIR lowering gaps" below for the
+        specific constructs this breaks down into.
+      - [x] Minor, separately-noticed gap, now fixed: `render_compile_summary`
+        (`src/driver/driver.cpp`) never surfaced a per-module HIR-lowering
+        failure's error message (`hir_lowering_result::error` was recorded
         but never printed), making the "Lowered N/M" line silently
-        unhelpful when M > N. Not fixed here.
+        unhelpful when M > N. `render_compile_summary` now prints
+        `[module] message` for every module that failed to lower, and
+        `lower_and_emit_modules` (`src/driver/lowering_stage.cpp`) appends
+        the failing node's byte offset to the message so a failure can be
+        matched back to a source line without a debugger. This is what
+        made the findings below possible to pin down precisely.
+
+### Running the stdlib: HIR lowering gaps
+
+Verified by hand against the real driver (`bazel-bin/src/kira`, not just
+`bazelisk run` — argv0 differs enough between the two that
+`inject_stdlib_prelude`'s runfiles search behaves differently; see
+`find_stdlib_source_file`), passing `src/std/{traits,prelude,io,console}.kira`
+plus a trivial `main` module. Typechecking is clean (0 diagnostics); lowering
+fails for every stdlib module that calls into another one. All three
+failures share one root cause: `hir::lowerer`'s call/path resolution
+(`lower_module_path`/`lower_call`, `src/hir/lower.cpp`) only ever resolves a
+multi-segment path whose *root* is a local binding currently in scope —
+there is no case for "root is a module" or "root is a type name."
+
+- [ ] **Module-qualified free-function calls** — `console.println(...)`
+      (root `console` is an imported module, not a local) and
+      `std.io.stdout_handle()` (a full module path, 3 segments) both fail
+      identically: `checked_type_of` reports "no concrete checked type is
+      available for this node" because `lower_module_path` never attempts
+      module-path-to-function resolution, so no HIR node — and no entry in
+      the checked-type table lowering consults — is ever produced for the
+      call. Confirmed failure site: `std.console`'s very first function,
+      `stdout()`, fails to lower on `return std.io.stdout_handle()` (byte
+      offset 64 in `console.kira`) — `std.console` cannot lower a single
+      function today.
+- [ ] **Type-qualified associated-function calls** — `io_error.from(e)`
+      (root `io_error` is a type name, dispatching to the `from` trait impl),
+      the pattern every error-mapping call site in `std.io` relies on.
+      Confirmed failure site: `impl from[io_errno] for io_error`'s body
+      (byte offset 2808 in `io.kira`).
+- [ ] **Trait default-method dispatch** (`file.write_all(...)`,
+      `.read_to_end(...)`, `.read_exact(...)` — calling a trait method that
+      the impl doesn't override, only the trait's default body supplies) and
+      **`extend` blocks** (`extend file: pub def close(...)`) remain
+      *unverified*, not confirmed-working: lowering aborts at a module's
+      first failing node, and every function in `std.io`/`std.console` that
+      would exercise these sits behind one of the two call-resolution gaps
+      above. Once those are fixed, re-run and check whether these need
+      their own fixes or fall out for free — no `codegen_test`/
+      `codegen_stress` fixture exercises either construct today, so there is
+      no existing evidence either way.
+- [ ] `std.format` remains entirely blocked on `{expr:spec}` interpolation
+      splitting (unchanged from above) — this is lexer/parser work, not
+      lowering work, and hasn't been started.

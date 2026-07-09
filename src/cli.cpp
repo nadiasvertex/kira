@@ -35,48 +35,48 @@ namespace fs = std::filesystem;
 /// @param source_path Original source file path.
 /// @param diagnostics Plain-text driver diagnostics buffer for I/O failures.
 [[nodiscard]] auto
-write_module_metadata(const fs::path &metadata_root, const ast::file &file,
+write_module_metadata(const fs::path &metadata_root, const kira::ast::file &file,
                       const fs::path &source_path, std::string &diagnostics)
     -> std::expected<std::string, std::monostate> {
-  auto output_path = metadata_output_path(metadata_root, file, source_path);
+  auto output_path = kira::driver::metadata_output_path(metadata_root, file, source_path);
   auto output_parent = output_path.parent_path();
 
   auto ec = std::error_code{};
   if (!output_parent.empty()) {
     fs::create_directories(output_parent, ec);
     if (ec) {
-      append_error(diagnostics,
+      kira::util::append_error(diagnostics,
                    std::format("failed to create `{}`: {}",
-                               normalize_path(output_parent), ec.message()));
+                               kira::util::normalize_path(output_parent), ec.message()));
       return std::unexpected(std::monostate{});
     }
   }
 
   auto out = std::ofstream(output_path, std::ios::binary | std::ios::trunc);
   if (!out) {
-    append_error(diagnostics, std::format("failed to open `{}` for writing",
-                                          normalize_path(output_path)));
+    kira::util::append_error(diagnostics, std::format("failed to open `{}` for writing",
+                                          kira::util::normalize_path(output_path)));
     return std::unexpected(std::monostate{});
   }
 
-  auto metadata = build_module_metadata(file, source_path);
+  auto metadata = kira::driver::build_module_metadata(file, source_path);
   if (!metadata.SerializeToOstream(&out) || !out.good()) {
     out.close();
     fs::remove(output_path, ec);
-    append_error(diagnostics,
+    kira::util::append_error(diagnostics,
                  std::format("failed to serialize module metadata to `{}`",
-                             normalize_path(output_path)));
+                             kira::util::normalize_path(output_path)));
     return std::unexpected(std::monostate{});
   }
 
-  return normalize_path(output_path);
+  return kira::util::normalize_path(output_path);
 }
 
 /// Parsed source file plus the bookkeeping needed by later driver passes.
 struct parsed_input {
   fs::path source_path;     ///< Original source file path passed to the CLI.
-  file_id_type file_id = 0; ///< Source manager file identifier for diagnostics.
-  ast::ptr<ast::file> ast_file; ///< Parsed AST for the source file.
+  kira::file_id_type file_id = 0; ///< Source manager file identifier for diagnostics.
+  kira::ast::ptr<kira::ast::file> ast_file; ///< Parsed AST for the source file.
 };
 
 namespace kira {
@@ -85,8 +85,8 @@ namespace kira {
 ///
 /// @param cfg Command-line configuration that names source inputs and outputs.
 /// @param use_color Whether rendered diagnostics should include ANSI colors.
-auto compile_sources(const cli_config &cfg, bool use_color)
-    -> std::expected<compile_report, std::string> {
+auto compile_sources(const driver::cli_config &cfg, bool use_color)
+    -> std::expected<driver::compile_report, std::string> {
   if (cfg.sources.empty()) {
     return std::unexpected{"no source files provided"};
   }
@@ -100,7 +100,7 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   for (const auto &source_arg : cfg.sources) {
     const auto source_path = fs::path(source_arg);
-    auto source_text = read_source_file(source_path);
+    auto source_text = util::read_source_file(source_path);
     if (!source_text) {
       ++report.error_count;
       append_error(report.diagnostics, source_text.error());
@@ -108,7 +108,7 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     }
 
     auto file_id =
-        sources.add_file(normalize_path(source_path), std::move(*source_text));
+        sources.add_file(util::normalize_path(source_path), std::move(*source_text));
     if (!file_id) {
       ++report.error_count;
       append_error(report.diagnostics, file_id.error());
