@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 namespace kira::driver {
 
 /// Default entry-point function name executed by default (or via

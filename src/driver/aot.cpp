@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -5,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unistd.h>
 #include <vector>
 
 #include "aot.h"
@@ -17,10 +19,9 @@ namespace fs = std::filesystem;
 
 namespace kira::driver {
 
-[[nodiscard]] auto
-find_bazel_archive(std::string_view program_name,
-                   std::string_view bazel_package,
-                   std::string_view library_name)
+[[nodiscard]] auto find_bazel_archive(std::string_view program_name,
+                                      std::string_view bazel_package,
+                                      std::string_view library_name)
     -> std::optional<fs::path> {
   auto candidates = std::vector<fs::path>{};
   for (const auto *extension : {"lo", "a"}) {
@@ -72,11 +73,10 @@ find_bazel_archive(std::string_view program_name,
       std::move(*compiled), function_name, object_path.string());
   if (!emitted) {
     return build_outcome{.succeeded = false,
-                         .message =
-                             std::format("failed to emit an object "
-                                         "file for `{}`: {}",
-                                       function_name,
-                                       emitted.error().message)};
+                         .message = std::format("failed to emit an object "
+                                                "file for `{}`: {}",
+                                                function_name,
+                                                emitted.error().message)};
   }
 
   const auto panic_archive =

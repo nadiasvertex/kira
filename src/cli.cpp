@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cstdlib>
 #include <format>
 #include <fstream>
 #include <optional>
@@ -8,9 +7,9 @@
 #include <string_view>
 #include <system_error>
 
+#include "driver/aot.h"
 #include "driver/driver.h"
 #include "driver/interpret.h"
-#include "driver/aot.h"
 
 #include <filesystem>
 
@@ -29,122 +28,58 @@
 
 namespace fs = std::filesystem;
 
-namespace {
-
-/// Parse CLI arguments into the compile driver's configuration structure.
+/// Serialize one module's metadata file and return its output path.
 ///
-/// @param argc Argument count passed to `main`.
-/// @param argv Argument vector passed to `main`.
-auto parse_args(std::span<char *const> argv)
-    -> std::expected<cli_config, std::string> {
-  if (argv.empty()) {
-    return std::unexpected{"argc must be at least 1"};
+/// @param metadata_root Root directory configured for metadata output.
+/// @param file Parsed AST for the source file.
+/// @param source_path Original source file path.
+/// @param diagnostics Plain-text driver diagnostics buffer for I/O failures.
+[[nodiscard]] auto
+write_module_metadata(const fs::path &metadata_root, const ast::file &file,
+                      const fs::path &source_path, std::string &diagnostics)
+    -> std::expected<std::string, std::monostate> {
+  auto output_path = metadata_output_path(metadata_root, file, source_path);
+  auto output_parent = output_path.parent_path();
+
+  auto ec = std::error_code{};
+  if (!output_parent.empty()) {
+    fs::create_directories(output_parent, ec);
+    if (ec) {
+      append_error(diagnostics,
+                   std::format("failed to create `{}`: {}",
+                               normalize_path(output_parent), ec.message()));
+      return std::unexpected(std::monostate{});
+    }
   }
 
-  auto cfg = cli_config{
-      .program_name = argv[0],
-      .sources = {},
-      .metadata_dir = std::string(k_default_metadata_dir),
-      .show_help = false,
-  };
-
-  // Track whether the `--` end-of-options marker has been seen.
-  bool parse_options = true;
-  for (size_t i = 1; i < argv.size(); ++i) {
-    std::string_view arg = argv[i];
-
-    if (!parse_options) {
-      cfg.sources.emplace_back(arg);
-      continue;
-    }
-
-    if (arg == "--") {
-      parse_options = false;
-      continue;
-    }
-
-    bool matched_flag = false;
-    std::string_view value{};
-    const cli_converter *matched_converter = nullptr;
-    if (auto it = k_flag_converters.find(arg); it != k_flag_converters.end()) {
-      matched_flag = true;
-      matched_converter = &it->second;
-      if (it->second.needs_value) {
-        if (i + 1 >= argv.size()) {
-          return std::unexpected{
-              std::format("missing value for `{}`", std::string{arg})};
-        }
-        value = argv[i + 1];
-        ++i;
-      }
-    } else {
-      // --flag=value form.
-      if (auto eq_pos = arg.find('='); eq_pos != std::string_view::npos) {
-        std::string_view flag_key = arg.substr(0, eq_pos);
-        if (auto eq_it = k_flag_converters.find(flag_key);
-            eq_it != k_flag_converters.end() && eq_it->second.needs_value) {
-          matched_flag = true;
-          matched_converter = &eq_it->second;
-          value = arg.substr(eq_pos + 1);
-        }
-      }
-    }
-    if (matched_flag) {
-      auto r = matched_converter->apply(cfg, value);
-      if (!r) {
-        return std::unexpected{r.error()};
-      }
-      continue;
-    }
-
-    if (arg.starts_with('-') && arg != "-") {
-      return std::unexpected{std::format("unknown option: {}", arg)};
-    }
-
-    cfg.sources.emplace_back(arg);
+  auto out = std::ofstream(output_path, std::ios::binary | std::ios::trunc);
+  if (!out) {
+    append_error(diagnostics, std::format("failed to open `{}` for writing",
+                                          normalize_path(output_path)));
+    return std::unexpected(std::monostate{});
   }
 
-  // Running is the default mode: `kira SOURCE` alone executes it via the
-  // tier-0 VM without needing an explicit `--run`. `--compile` opts into
-  // AOT compilation instead; pair it with an explicit `--run`/`--run-function`
-  // to do both.
-  if (!cfg.build && !cfg.run) {
-    cfg.run = true;
+  auto metadata = build_module_metadata(file, source_path);
+  if (!metadata.SerializeToOstream(&out) || !out.good()) {
+    out.close();
+    fs::remove(output_path, ec);
+    append_error(diagnostics,
+                 std::format("failed to serialize module metadata to `{}`",
+                             normalize_path(output_path)));
+    return std::unexpected(std::monostate{});
   }
 
-  return cfg;
+  return normalize_path(output_path);
 }
 
-/// Render the user-facing CLI help text.
-///
-/// @param program_name Executable name to display in the usage line.
-auto render_help(std::string_view program_name) -> std::string {
-  return std::format(
-      "Usage: {} [OPTIONS] SOURCES...\n\n"
-      "Kira - Parse source files and emit module metadata\n\n"
-      "Options:\n"
-      "  -h, --help               Show this help message and exit\n"
-      "  --metadata-dir PATH      Write module metadata under PATH\n"
-      "                          (default: {})\n"
-      "  (default)                Compile to bytecode and execute `{}` via\n"
-      "                          the tier-0 VM (increment 1's scalar/\n"
-      "                          control-flow subset only; see\n"
-      "                          src/bytecode_compiler) — no flag needed\n"
-      "  --run-function NAME      Like the default run, but execute NAME\n"
-      "                          instead of `{}`\n"
-      "  --compile                Compile `{}` to native code via LLVM, link\n"
-      "                          a standalone executable instead of running\n"
-      "                          it (same scalar/control-flow subset; see\n"
-      "                          src/llvm_codegen)\n"
-      "  --compile-function NAME  Like --compile, but use NAME as the entry\n"
-      "                          point\n"
-      "  --compile-output PATH    Write the linked executable to PATH\n"
-      "  --parse-only             Run only the lexer and parser,\n"
-      "                          skipping semantic name resolution and\n"
-      "                          type checking",
-      program_name, k_default_metadata_dir, k_default_run_function,
-      k_default_run_function, k_default_run_function);
-}
+/// Parsed source file plus the bookkeeping needed by later driver passes.
+struct parsed_input {
+  fs::path source_path;     ///< Original source file path passed to the CLI.
+  file_id_type file_id = 0; ///< Source manager file identifier for diagnostics.
+  ast::ptr<ast::file> ast_file; ///< Parsed AST for the source file.
+};
+
+namespace kira {
 
 /// Parse, validate, and emit metadata for each requested source file.
 ///
@@ -318,7 +253,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 /// Render a short CLI summary of emitted metadata artifacts and errors.
 ///
 /// @param report Aggregate result of `compile_sources`.
-auto render_compile_summary(const compile_report &report) -> std::string {
+[[nodiscard]] auto render_compile_summary(const compile_report &report)
+    -> std::string {
   if (report.modules.empty()) {
     return std::format("Compilation failed with {} error(s).",
                        report.error_count);

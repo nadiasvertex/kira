@@ -3,6 +3,11 @@
 
 #include "module_metadata.h"
 #include "src/module_metadata.pb.h"
+#include "src/util/path.h"
+#include "src/util/str.h"
+
+using kira::util::join_strings;
+using kira::util::normalize_path;
 
 namespace kira::driver {
 
@@ -61,8 +66,8 @@ constexpr uint32_t k_module_metadata_schema_version = 1;
 }
 
 /// Extract the effective top-level visibility from a parsed item node.
-[[nodiscard]] auto
-top_level_visibility(const ast::node &node) -> ast::visibility {
+[[nodiscard]] auto top_level_visibility(const ast::node &node)
+    -> ast::visibility {
   switch (node.kind) {
   case ast::node_kind::use_decl:
     return dynamic_cast<const ast::use_decl &>(node).visibility;
@@ -111,7 +116,8 @@ top_level_visibility(const ast::node &node) -> ast::visibility {
 
 /// Remove surrounding quotes from dependency string literals before persisting
 /// them.
-[[nodiscard]] auto unquote_string_literal(std::string_view value) -> std::string {
+[[nodiscard]] auto unquote_string_literal(std::string_view value)
+    -> std::string {
   if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
     return std::string(value.substr(1, value.size() - 2));
   }
@@ -129,6 +135,31 @@ top_level_visibility(const ast::node &node) -> ast::visibility {
     return stem;
   }
   return "module";
+}
+
+/// Compute the on-disk metadata path for one compiled module.
+///
+/// @param metadata_root Root directory configured for metadata output.
+/// @param file Parsed AST for the source file.
+/// @param source_path Original source file path.
+[[nodiscard]] auto metadata_output_path(const fs::path &metadata_root,
+                                        const ast::file &file,
+                                        const fs::path &source_path)
+    -> fs::path {
+  auto relative = fs::path{};
+
+  if (file.module_decl != nullptr && !file.module_decl->path.empty()) {
+    for (size_t i = 0; i + 1 < file.module_decl->path.size(); ++i) {
+      relative /= file.module_decl->path[i];
+    }
+    relative /=
+        file.module_decl->path.back() + std::string(k_metadata_extension);
+    return metadata_root / relative;
+  }
+
+  relative /=
+      source_stem_or_default(source_path) + std::string(k_metadata_extension);
+  return metadata_root / relative;
 }
 
 /// Render a human-readable module label for compile summaries.

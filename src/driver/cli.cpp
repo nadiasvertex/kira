@@ -1,13 +1,16 @@
-#include "driver.h"
-
 #include <expected>
+#include <format>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
-#include "parser/parser.h"
+#include "defaults.h"
+#include "driver.h"
+#include "module_metadata.h"
+#include "src/parser/parser.h"
 #include "src/util/path.h"
 #include "src/util/str.h"
 
@@ -46,7 +49,8 @@ namespace {
 [[nodiscard]] auto top_level_name(const ast::node &node) -> std::string {
   switch (node.kind) {
   case ast::node_kind::use_decl:
-    return join_strings(dynamic_cast<const ast::use_decl &>(node).path, ".");
+    return util::join_strings(dynamic_cast<const ast::use_decl &>(node).path,
+                              ".");
   case ast::node_kind::type_decl:
     return dynamic_cast<const ast::type_decl &>(node).name;
   case ast::node_kind::trait_decl:
@@ -187,8 +191,6 @@ find_module_by_function(const hir::ptr_vec<hir::hir_module> &modules,
   }
   return nullptr;
 }
-
-} // namespace
 
 auto parse_args(std::span<char *const> argv)
     -> std::expected<cli_config, std::string> {

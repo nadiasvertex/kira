@@ -212,12 +212,12 @@ auto test_compile_sources_writes_module_metadata() -> void {
   expect(metadata.top_level_symbols_size() == 4,
          "expected top-level declarations to be recorded");
   expect(metadata.top_level_symbols(2).kind() ==
-         kira::metadata::v1::TOP_LEVEL_SYMBOL_KIND_FUNCTION,
+             kira::metadata::v1::TOP_LEVEL_SYMBOL_KIND_FUNCTION,
          "expected function symbol kind");
   expect(metadata.top_level_symbols(2).name() == "run",
          "expected function name in metadata");
   expect(metadata.top_level_symbols(2).visibility() ==
-         kira::metadata::v1::MODULE_VISIBILITY_PUBLIC,
+             kira::metadata::v1::MODULE_VISIBILITY_PUBLIC,
          "expected function visibility in metadata");
   expect(metadata.dependencies(0).fields().at("version") == "3.45",
          "expected dependency field value to be unquoted");

@@ -28,7 +28,8 @@ auto main(int argc, char *argv[]) -> int {
       return 0;
     }
 
-    auto report = kira::driver::compile_sources(cfg, ::isatty(fileno(stderr)) != 0);
+    auto report =
+        kira::driver::compile_sources(cfg, ::isatty(fileno(stderr)) != 0);
     if (!report) {
       std::println(stderr, "Error: {}", report.error());
       return 1;

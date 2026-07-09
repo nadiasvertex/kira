@@ -4,7 +4,9 @@
 #include <string_view>
 #include <vector>
 
-#include "parser/ast.h"
+#include "src/parser/ast.h"
+
+#include <filesystem>
 
 namespace kira::driver {
 
@@ -22,6 +24,15 @@ struct compiled_module {
       metadata_path; ///< Serialized metadata file emitted for the module.
 };
 
+/// Compute the on-disk metadata path for one compiled module.
+///
+/// @param metadata_root Root directory configured for metadata output.
+/// @param file Parsed AST for the source file.
+/// @param source_path Original source file path.
+[[nodiscard]] auto metadata_output_path(
+    const std::filesystem::path &metadata_root, const ast::file &file,
+    const std::filesystem::path &source_path) -> std::filesystem::path;
+
 /// Render user-facing visibility text for diagnostics.
 ///
 /// @param visibility Visibility modifier attached to a declaration.
@@ -33,8 +44,7 @@ struct compiled_module {
 /// @param visibility Visibility modifier attached to the imported declaration.
 /// @param parent_name Parent module that owns the imported child module.
 [[nodiscard]] auto visibility_help(ast::visibility visibility,
-                                   std::string_view parent_name)
-    -> std::string;
+                                   std::string_view parent_name) -> std::string;
 
 /// Extract the effective top-level visibility from a parsed item node.
 ///
@@ -50,6 +60,14 @@ struct compiled_module {
 /// Remove surrounding quotes from dependency string literals.
 ///
 /// @param value Parsed dependency field value.
-[[nodiscard]] auto unquote_string_literal(std::string_view value) -> std::string;
+[[nodiscard]] auto unquote_string_literal(std::string_view value)
+    -> std::string;
+
+/// Choose a stable display label for metadata emitted from `static`
+/// declarations.
+///
+/// @param decl Static declaration to describe.
+[[nodiscard]] auto static_decl_label(const ast::static_decl &decl)
+    -> std::string;
 
 } // namespace kira::driver

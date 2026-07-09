@@ -1,6 +1,12 @@
 #pragma once
 
+#include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
+
+#include "src/hir/nodes.h"
+#include "src/semantic/types.h"
 
 namespace kira::driver {
 
@@ -14,6 +20,8 @@ struct build_outcome {
   std::string message;    ///< The output executable's path on success; the
                           ///< reason the build didn't happen otherwise.
 };
+
+} // namespace kira::driver
 
 namespace kira::driver {
 

@@ -1,6 +1,11 @@
 #pragma once
 
 #include <string>
+#include <string_view>
+
+#include "src/bytecode/value.h"
+#include "src/hir/nodes.h"
+#include "src/semantic/types.h"
 
 namespace kira::driver {
 
@@ -17,6 +22,8 @@ struct run_outcome {
   std::string message;    ///< Rendered return value on success; the reason
                           ///< execution didn't happen or panicked otherwise.
 };
+
+} // namespace kira::driver
 
 namespace kira::driver {
 
