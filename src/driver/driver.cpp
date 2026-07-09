@@ -138,6 +138,11 @@ auto render_compile_summary(const compile_report &report) -> std::string {
                       [](const auto &result) { return result.lowered; }));
     out += std::format("\nLowered {}/{} module(s) to HIR.", lowered_count,
                        report.hir_modules.size());
+    for (const auto &result : report.hir_modules) {
+      if (!result.lowered) {
+        out += std::format("\n  [{}] {}", result.module_path, result.error);
+      }
+    }
   }
   if (report.run.has_value()) {
     out += report.run->succeeded

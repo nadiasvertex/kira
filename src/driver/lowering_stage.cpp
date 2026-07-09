@@ -1,5 +1,6 @@
 #include "lowering_stage.h"
 
+#include <format>
 #include <utility>
 
 #include "src/hir/lower.h"
@@ -72,7 +73,10 @@ auto lower_and_emit_modules(const cli_config &cfg,
             ? hir_lowering_result{.module_path = module_name, .lowered = true}
             : hir_lowering_result{.module_path = module_name,
                                   .lowered = false,
-                                  .error = lowered_result.error().message});
+                                  .error = std::format(
+                                      "{} (byte offset {})",
+                                      lowered_result.error().message,
+                                      lowered_result.error().span.start)});
     if (lowered_result.has_value()) {
       lowered_modules.push_back(std::move(*lowered_result));
     }
