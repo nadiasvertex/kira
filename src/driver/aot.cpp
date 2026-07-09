@@ -52,13 +52,12 @@ namespace kira::driver {
   return std::nullopt;
 }
 
-[[nodiscard]] auto build_hir_module(const hir::hir_module &hir_module,
-                                    const semantic::type_table &types,
-                                    std::string_view function_name,
-                                    const fs::path &output_path,
-                                    std::string_view program_name)
-    -> build_outcome {
-  auto compiled = llvm_codegen::compile_module(hir_module, types);
+[[nodiscard]] auto
+build_hir_module(std::span<const hir::hir_module *const> modules,
+                 const semantic::type_table &types,
+                 std::string_view function_name, const fs::path &output_path,
+                 std::string_view program_name) -> build_outcome {
+  auto compiled = llvm_codegen::compile_module(modules, types);
   if (!compiled) {
     return build_outcome{
         .succeeded = false,

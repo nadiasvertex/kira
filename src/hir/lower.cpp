@@ -557,7 +557,35 @@ auto lowerer::lower_call(const ast::call_expr &call)
     }
   }
 
-  auto callee = lower_expr(*call.callee);
+  // A module- or type-qualified call (`std.io.open(...)`, `io_error.
+  // from(...)`) was resolved against a real declaration by `check.cpp`'s
+  // `infer_qualified_call` — rebuild the callee directly from that
+  // resolution instead of `lower_module_path`, which only ever handles a
+  // local-value root. The local name matches exactly what `lower_module`
+  // names the same declaration when it lowers it (bare for a free
+  // function, `TargetType::method` for an associated function), so both
+  // backends' cross-module dispatch (see `hir_local_ref::owner_module`)
+  // finds the same function under the same key from either side.
+  auto callee = std::expected<ptr<hir_expr>, lowering_error>{};
+  if (const auto found = checked_.resolved_callees.find(&call);
+      found != checked_.resolved_callees.end()) {
+    const auto &resolved = found->second;
+    const auto local_name =
+        resolved.impl_target_type.empty()
+            ? resolved.decl->name
+            : std::format("{}::{}", resolved.impl_target_type,
+                          resolved.decl->name);
+    auto callee_type = checked_type_of(*call.callee);
+    if (!callee_type.has_value()) {
+      return std::unexpected(callee_type.error());
+    }
+    const auto symbol = resolve_reference(local_name);
+    callee =
+        ok_expr(make<hir_local_ref>(call.callee->span, *callee_type, symbol,
+                                    local_name, resolved.owner_module));
+  } else {
+    callee = lower_expr(*call.callee);
+  }
   if (!callee.has_value()) {
     return std::unexpected(callee.error());
   }
@@ -2483,12 +2511,90 @@ auto lower_function(const ast::func_decl &decl,
   return walker.lower_function(decl);
 }
 
+/// Whether `param` is the leading `self`/`mut self` receiver — the same
+/// shape `semantic::check.cpp`'s own `is_self_param` checks for, redone
+/// here since lowering has no access to that checker-private helper.
+[[nodiscard]] auto is_self_param(const ast::param &param) -> bool {
+  if (param.pattern == nullptr ||
+      param.pattern->kind != ast::node_kind::binding_pattern) {
+    return false;
+  }
+  return dynamic_cast<const ast::binding_pattern &>(*param.pattern).name ==
+         "self";
+}
+
+/// The bare target-type name an `impl ... for <type>` block lowers its
+/// associated functions under (`TargetType::method`, matching
+/// `resolved_callee::impl_target_type` in `check.cpp`) — only a simple,
+/// non-generic named type is handled; anything else (a generic
+/// instantiation, a ref/tuple/slice target, ...) isn't a shape
+/// `infer_qualified_call` resolves a type-qualified call against either, so
+/// there is nothing to lower it for yet.
+[[nodiscard]] auto simple_impl_target_name(const ast::type_expr *for_type)
+    -> std::optional<std::string> {
+  if (for_type == nullptr || for_type->kind != ast::node_kind::named_type) {
+    return std::nullopt;
+  }
+  const auto &named = dynamic_cast<const ast::named_type &>(*for_type);
+  if (named.path.empty() || !named.type_args.empty()) {
+    return std::nullopt;
+  }
+  return named.path.back();
+}
+
+/// Lowers every eligible associated function (no `self` receiver, no
+/// generics on the impl block or the function itself) declared in `impl`
+/// into a `hir_function` named `TargetType::method`, appending each to
+/// `functions`. A `self`-taking method or a generic impl/method is left
+/// alone — instance-method dispatch and monomorphization are both out of
+/// scope here (see `spec/stdlib.md`'s "trait default-method dispatch"
+/// gap and `spec/typed-ir-design.md`'s generics non-goal).
+[[nodiscard]] auto lower_impl_associated_functions(
+    const ast::impl_decl &impl, const semantic::checked_types &checked,
+    ptr_vec<hir_function> &functions) -> std::expected<void, lowering_error> {
+  if (!impl.type_params.empty()) {
+    return {};
+  }
+  const auto target_name = simple_impl_target_name(impl.for_type.get());
+  if (!target_name.has_value()) {
+    return {};
+  }
+  for (const auto &item : impl.items) {
+    if (item == nullptr || item->kind != ast::node_kind::func_decl) {
+      continue;
+    }
+    const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
+    if (decl.modifiers.is_intrinsic || !decl.type_params.empty() ||
+        (!decl.params.empty() && is_self_param(decl.params.front()))) {
+      continue;
+    }
+    auto lowered = lower_function(decl, checked);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    (*lowered)->name = std::format("{}::{}", *target_name, decl.name);
+    functions.push_back(std::move(*lowered));
+  }
+  return {};
+}
+
 auto lower_module(const ast::file &file, std::string module_name,
                   const semantic::checked_types &checked)
     -> std::expected<ptr<hir_module>, lowering_error> {
   auto functions = ptr_vec<hir_function>{};
   for (const auto &item : file.items) {
-    if (item == nullptr || item->kind != ast::node_kind::func_decl) {
+    if (item == nullptr) {
+      continue;
+    }
+    if (item->kind == ast::node_kind::impl_decl) {
+      auto result = lower_impl_associated_functions(
+          dynamic_cast<const ast::impl_decl &>(*item), checked, functions);
+      if (!result.has_value()) {
+        return std::unexpected(result.error());
+      }
+      continue;
+    }
+    if (item->kind != ast::node_kind::func_decl) {
       continue;
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);

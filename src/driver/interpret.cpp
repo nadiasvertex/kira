@@ -45,12 +45,13 @@ namespace kira::driver {
   return {};
 }
 
-[[nodiscard]] auto run_hir_module(const hir::hir_module &hir_module,
-                                  const semantic::type_table &types,
-                                  std::string_view function_name)
-    -> run_outcome {
+[[nodiscard]] auto
+run_hir_module(std::span<const hir::hir_module *const> modules,
+               const semantic::type_table &types,
+               std::string_view function_name) -> run_outcome {
+  const auto &entry_module = *modules.front();
   const auto *target = static_cast<const hir::hir_function *>(nullptr);
-  for (const auto &fn : hir_module.functions) {
+  for (const auto &fn : entry_module.functions) {
     if (fn != nullptr && fn->name == function_name) {
       target = fn.get();
       break;
@@ -58,10 +59,10 @@ namespace kira::driver {
   }
 
   if (target == nullptr) {
-    return run_outcome{.succeeded = false,
-                       .message =
-                           std::format("module `{}` has no function named `{}`",
-                                       hir_module.module_name, function_name)};
+    return run_outcome{
+        .succeeded = false,
+        .message = std::format("module `{}` has no function named `{}`",
+                               entry_module.module_name, function_name)};
   }
 
   if (!target->params.empty()) {
@@ -72,7 +73,7 @@ namespace kira::driver {
             function_name)};
   }
 
-  auto compiled = bytecode_compiler::compile_module(hir_module, types);
+  auto compiled = bytecode_compiler::compile_module(modules, types);
   if (!compiled) {
     return run_outcome{.succeeded = false,
                        .message = std::format("failed to compile `{}` to "

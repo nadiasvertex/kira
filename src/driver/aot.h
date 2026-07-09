@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -33,14 +34,16 @@ namespace kira::driver {
                                       std::string_view library_name)
     -> std::optional<std::filesystem::path>;
 
-/// Compiles `hir_module` to a native object file via `src/llvm_codegen`,
-/// then links it against Kira's AOT runtime support library into a
-/// standalone executable at `output_path`.
-[[nodiscard]] auto build_hir_module(const hir::hir_module &hir_module,
-                                    const semantic::type_table &types,
-                                    std::string_view function_name,
-                                    const std::filesystem::path &output_path,
-                                    std::string_view program_name)
-    -> build_outcome;
+/// Compiles `modules` to a native object file via `src/llvm_codegen`, then
+/// links it against Kira's AOT runtime support library into a standalone
+/// executable at `output_path`. `modules.front()` is the entry module (which
+/// owns `function_name`); see `run_hir_module`'s doc comment
+/// (`interpret.h`) for the full contract, shared with this function.
+[[nodiscard]] auto
+build_hir_module(std::span<const hir::hir_module *const> modules,
+                 const semantic::type_table &types,
+                 std::string_view function_name,
+                 const std::filesystem::path &output_path,
+                 std::string_view program_name) -> build_outcome;
 
 } // namespace kira::driver

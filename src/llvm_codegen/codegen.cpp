@@ -377,15 +377,23 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
 
 class function_compiler {
 public:
+  /// `entry_module_name`/`current_module_name` default to matching (empty)
+  /// strings when omitted, so every existing single-module `compile_module`
+  /// call site keeps treating every call as same-module — see
+  /// `resolve_callee_key`, and its identical counterpart in
+  /// `bytecode_compiler::function_compiler`.
   function_compiler(
       llvm::LLVMContext &ctx, const type_table &types,
       const std::unordered_map<std::string, llvm::Function *> &functions,
       llvm::Function *panic_fn, llvm::Function *alloc_fn,
       llvm::Function *list_reserve_slot_fn,
-      const std::array<llvm::Function *, 8> &intrinsic_fns)
+      const std::array<llvm::Function *, 8> &intrinsic_fns,
+      std::string entry_module_name = {}, std::string current_module_name = {})
       : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
         alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
-        intrinsic_fns_(intrinsic_fns), builder_(ctx) {}
+        intrinsic_fns_(intrinsic_fns),
+        entry_module_name_(std::move(entry_module_name)),
+        current_module_name_(std::move(current_module_name)), builder_(ctx) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn,
                              llvm::Function *llvm_fn)
@@ -1151,6 +1159,21 @@ private:
                : builder_.CreateZExtOrTrunc(*src, to_ty);
   }
 
+  /// Identical scheme to `bytecode_compiler::function_compiler`'s own
+  /// `resolve_callee_key` (see its doc comment) — the `functions_` key a
+  /// call to `ref` resolves against.
+  [[nodiscard]] auto resolve_callee_key(const hir::hir_local_ref &ref) const
+      -> std::string {
+    if (ref.owner_module.has_value()) {
+      return *ref.owner_module == entry_module_name_
+                 ? ref.name
+                 : *ref.owner_module + "::" + ref.name;
+    }
+    return current_module_name_ == entry_module_name_
+               ? ref.name
+               : current_module_name_ + "::" + ref.name;
+  }
+
   [[nodiscard]] auto compile_call(const hir::hir_call &call)
       -> std::expected<llvm::Value *, codegen_error> {
     // Direct call to a named module-level function, resolved at compile
@@ -1178,7 +1201,7 @@ private:
           return builder_.CreateCall(intrinsic_fns_.at(*intrinsic_id), args);
         }
 
-        const auto found = functions_.find(ref.name);
+        const auto found = functions_.find(resolve_callee_key(ref));
         if (found == functions_.end()) {
           return std::unexpected(codegen_error{
               .kind = codegen_error_kind::unknown_callee,
@@ -1315,9 +1338,9 @@ private:
         std::format("lambda.{}", reinterpret_cast<uintptr_t>(&lambda)),
         current_fn_->getParent());
 
-    auto nested =
-        function_compiler(ctx_, types_, functions_, panic_fn_, alloc_fn_,
-                          list_reserve_slot_fn_, intrinsic_fns_);
+    auto nested = function_compiler(
+        ctx_, types_, functions_, panic_fn_, alloc_fn_, list_reserve_slot_fn_,
+        intrinsic_fns_, entry_module_name_, current_module_name_);
     auto compiled =
         nested.compile_lambda_body(lambda, free_vars, capture_types, lambda_fn);
     if (!compiled.has_value()) {
@@ -2485,6 +2508,8 @@ private:
   llvm::Function *alloc_fn_;
   llvm::Function *list_reserve_slot_fn_;
   std::array<llvm::Function *, 8> intrinsic_fns_;
+  std::string entry_module_name_;
+  std::string current_module_name_;
   llvm::IRBuilder<> builder_;
   llvm::Function *current_fn_ = nullptr;
   llvm::AllocaInst *alloca_marker_ = nullptr;
@@ -2495,14 +2520,16 @@ private:
 
 } // namespace
 
-auto compile_module(const hir::hir_module &module, const type_table &types)
+auto compile_module(std::span<const hir::hir_module *const> modules,
+                    const type_table &types)
     -> std::expected<compiled_module, codegen_error> {
+  const auto &entry_name = modules.front()->module_name;
+
   auto result = compiled_module{
       .context = std::make_unique<llvm::LLVMContext>(),
       .module = nullptr,
   };
-  result.module =
-      std::make_unique<llvm::Module>(module.module_name, *result.context);
+  result.module = std::make_unique<llvm::Module>(entry_name, *result.context);
   auto &ctx = *result.context;
   auto &llvm_module = *result.module;
 
@@ -2547,54 +2574,68 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
 
   // Every function's signature is declared before any body is compiled, so
   // a call (forward-referenced, recursive, or mutually recursive) always
-  // finds a real `llvm::Function*` — see codegen.h's doc comment.
+  // finds a real `llvm::Function*` — see codegen.h's doc comment. Keyed the
+  // same way `bytecode_compiler::compile_module`'s span overload keys its
+  // own function table: bare for the entry module, `module::name` for
+  // everything else.
   auto functions = std::unordered_map<std::string, llvm::Function *>{};
-  functions.reserve(module.functions.size());
-  for (const auto &fn : module.functions) {
-    auto param_types = std::vector<llvm::Type *>{};
-    param_types.reserve(fn->params.size());
-    for (const auto &param : fn->params) {
-      const auto ty = storage_llvm_type(types, ctx, param.type);
-      if (!ty.has_value()) {
-        return std::unexpected(codegen_error{
-            .kind = codegen_error_kind::unsupported_type,
-            .span = fn->span,
-            .message = std::format("parameter `{}` of `{}` has no scalar or "
-                                   "heap-value llvm_codegen representation "
-                                   "yet",
-                                   param.name, fn->name)});
+  auto ordered_functions = std::vector<
+      std::pair<const hir::hir_module *, const hir::hir_function *>>{};
+  for (const auto *module : modules) {
+    for (const auto &fn : module->functions) {
+      auto param_types = std::vector<llvm::Type *>{};
+      param_types.reserve(fn->params.size());
+      for (const auto &param : fn->params) {
+        const auto ty = storage_llvm_type(types, ctx, param.type);
+        if (!ty.has_value()) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_type,
+              .span = fn->span,
+              .message = std::format("parameter `{}` of `{}` has no scalar or "
+                                     "heap-value llvm_codegen representation "
+                                     "yet",
+                                     param.name, fn->name)});
+        }
+        param_types.push_back(*ty);
       }
-      param_types.push_back(*ty);
-    }
 
-    llvm::Type *return_ty = nullptr;
-    if (types.is_unit(fn->return_type)) {
-      return_ty = llvm::Type::getVoidTy(ctx);
-    } else {
-      const auto ty = storage_llvm_type(types, ctx, fn->return_type);
-      if (!ty.has_value()) {
-        return std::unexpected(codegen_error{
-            .kind = codegen_error_kind::unsupported_type,
-            .span = fn->span,
-            .message = std::format("return type of `{}` has no scalar or "
-                                   "heap-value llvm_codegen representation "
-                                   "yet",
-                                   fn->name)});
+      llvm::Type *return_ty = nullptr;
+      if (types.is_unit(fn->return_type)) {
+        return_ty = llvm::Type::getVoidTy(ctx);
+      } else {
+        const auto ty = storage_llvm_type(types, ctx, fn->return_type);
+        if (!ty.has_value()) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_type,
+              .span = fn->span,
+              .message = std::format("return type of `{}` has no scalar or "
+                                     "heap-value llvm_codegen representation "
+                                     "yet",
+                                     fn->name)});
+        }
+        return_ty = *ty;
       }
-      return_ty = *ty;
-    }
 
-    auto *fn_type = llvm::FunctionType::get(return_ty, param_types,
-                                            /*isVarArg=*/false);
-    auto *llvm_fn = llvm::Function::Create(
-        fn_type, llvm::Function::ExternalLinkage, fn->name, llvm_module);
-    functions.emplace(fn->name, llvm_fn);
+      const auto key = module->module_name == entry_name
+                           ? fn->name
+                           : module->module_name + "::" + fn->name;
+      auto *fn_type = llvm::FunctionType::get(return_ty, param_types,
+                                              /*isVarArg=*/false);
+      auto *llvm_fn = llvm::Function::Create(
+          fn_type, llvm::Function::ExternalLinkage, key, llvm_module);
+      functions.emplace(key, llvm_fn);
+      ordered_functions.emplace_back(module, fn.get());
+    }
   }
 
-  for (const auto &fn : module.functions) {
-    auto *llvm_fn = functions.at(fn->name);
+  for (const auto &[module, fn] : ordered_functions) {
+    const auto key = module->module_name == entry_name
+                         ? fn->name
+                         : module->module_name + "::" + fn->name;
+    auto *llvm_fn = functions.at(key);
     auto compiler = function_compiler(ctx, types, functions, panic_fn, alloc_fn,
-                                      list_reserve_slot_fn, intrinsic_fns);
+                                      list_reserve_slot_fn, intrinsic_fns,
+                                      entry_name, module->module_name);
     auto compiled = compiler.compile(*fn, llvm_fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
@@ -2606,7 +2647,7 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
   if (llvm::verifyModule(llvm_module, &verify_stream)) {
     return std::unexpected(codegen_error{
         .kind = codegen_error_kind::unsupported_construct,
-        .span = module.span,
+        .span = modules.front()->span,
         .message =
             std::format("llvm_codegen produced a module that failed "
                         "verification (this is a codegen bug, not a source "
@@ -2615,6 +2656,13 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
   }
 
   return result;
+}
+
+auto compile_module(const hir::hir_module &module, const type_table &types)
+    -> std::expected<compiled_module, codegen_error> {
+  const auto *module_ptr = &module;
+  return compile_module(std::span<const hir::hir_module *const>(&module_ptr, 1),
+                        types);
 }
 
 } // namespace kira::llvm_codegen

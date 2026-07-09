@@ -1,0 +1,4 @@
+module app
+
+pub def run() -> int32:
+    return pkg.tools.double(21)

@@ -1,0 +1,4 @@
+module tools
+
+pub def double(x: int32) -> int32:
+    return x * 2

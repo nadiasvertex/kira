@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -41,19 +42,22 @@ namespace kira::driver {
                                     const bytecode::slot_value &value)
     -> std::string;
 
-/// Compiles `hir_module` to bytecode and executes `function_name` with no
+/// Compiles `modules` to bytecode and executes `function_name` with no
 /// arguments, producing the `--run` outcome shown in the CLI summary.
 /// `--run` targets exactly `spec/codegen-design.md` increment 1's subset —
 /// this project has no CLI-level argument-marshalling story yet, so only
 /// zero-parameter functions are runnable — and fails closed (a message, not
 /// a crash) on every other reason execution can't proceed.
 ///
-/// @param hir_module Lowered module to compile and run.
-/// @param types Checked type table the module's HIR indexes into.
+/// @param modules The entry module (`modules.front()`, which owns
+/// `function_name`) plus every module `hir::find_reachable_modules` found it
+/// transitively needs — passed straight through to
+/// `bytecode_compiler::compile_module`'s multi-module overload.
+/// @param types Checked type table the modules' HIR indexes into.
 /// @param function_name Name of the zero-argument function to execute.
-[[nodiscard]] auto run_hir_module(const hir::hir_module &hir_module,
-                                  const semantic::type_table &types,
-                                  std::string_view function_name)
-    -> run_outcome;
+[[nodiscard]] auto
+run_hir_module(std::span<const hir::hir_module *const> modules,
+               const semantic::type_table &types,
+               std::string_view function_name) -> run_outcome;
 
 } // namespace kira::driver

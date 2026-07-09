@@ -71,12 +71,12 @@ auto lower_and_emit_modules(const cli_config &cfg,
     report.hir_modules.push_back(
         lowered_result.has_value()
             ? hir_lowering_result{.module_path = module_name, .lowered = true}
-            : hir_lowering_result{.module_path = module_name,
-                                  .lowered = false,
-                                  .error = std::format(
-                                      "{} (byte offset {})",
-                                      lowered_result.error().message,
-                                      lowered_result.error().span.start)});
+            : hir_lowering_result{
+                  .module_path = module_name,
+                  .lowered = false,
+                  .error = std::format("{} (byte offset {})",
+                                       lowered_result.error().message,
+                                       lowered_result.error().span.start)});
     if (lowered_result.has_value()) {
       lowered_modules.push_back(std::move(*lowered_result));
     }

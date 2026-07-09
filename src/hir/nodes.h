@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -218,11 +219,24 @@ struct hir_literal : hir_expr {
 /// than minting a parallel HIR-local identity scheme.
 struct hir_local_ref : hir_expr {
   symbol_id symbol = k_invalid_symbol_id;
-  std::string name; ///< Preserved for diagnostics/debugging only.
+  /// A same-scope/same-module reference relies on `symbol` alone; a call
+  /// target resolved against a real declaration (a same- or cross-module
+  /// free function, or a `TargetType::method`-mangled associated function —
+  /// see `lower_call`'s `resolved_callees` handling) also needs `name` for
+  /// backend dispatch, since neither backend's function table is keyed by
+  /// `symbol_id` (see compile.cpp/codegen.cpp's `functions_`).
+  std::string name;
+  /// Set only when this reference was resolved against a module- or
+  /// type-qualified call site (`resolved_callee::owner_module`, `check.cpp`)
+  /// — the module that declares the referenced function. `nullopt` for an
+  /// ordinary local binding or same-module bare-name reference, which both
+  /// backends already resolve correctly with no module qualifier.
+  std::optional<std::string> owner_module;
 
-  hir_local_ref(source_span s, type_id t, symbol_id sym, std::string n)
+  hir_local_ref(source_span s, type_id t, symbol_id sym, std::string n,
+                std::optional<std::string> owner = std::nullopt)
       : hir_expr(hir_node_kind::hir_local_ref, s, t), symbol(sym),
-        name(std::move(n)) {}
+        name(std::move(n)), owner_module(std::move(owner)) {}
 };
 
 /// Binary operator application; reuses `ast::binary_op` rather than

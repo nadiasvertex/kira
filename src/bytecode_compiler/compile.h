@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <string>
 #include <unordered_map>
 
@@ -71,6 +72,22 @@ struct compile_error {
 /// first function `compile_function` rejects.
 [[nodiscard]] auto compile_module(const hir::hir_module &module,
                                   const semantic::type_table &types)
+    -> std::expected<bytecode::bytecode_module, compile_error>;
+
+/// Multi-module variant of `compile_module`, for a program whose entry
+/// function calls into another module (a `hir_local_ref` with
+/// `owner_module` set — see `hir::lower_call`'s `resolved_callees`
+/// handling). `modules.front()` is the entry module: its own functions keep
+/// their bare declared names (so `--run`/`--build`'s function-name lookup is
+/// unaffected), exactly like the single-module overload. Every other
+/// module's functions are keyed `module_name::name` in the combined function
+/// table, and any call whose callee names a non-entry module (directly via
+/// `owner_module`, or implicitly — a same-module sibling call inside a
+/// non-entry module's own body) resolves against that same mangled key. The
+/// single-module overload above is exactly `compile_module({&module}, types)`.
+[[nodiscard]] auto
+compile_module(std::span<const hir::hir_module *const> modules,
+               const semantic::type_table &types)
     -> std::expected<bytecode::bytecode_module, compile_error>;
 
 } // namespace kira::bytecode_compiler

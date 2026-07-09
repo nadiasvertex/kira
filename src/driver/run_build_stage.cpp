@@ -3,6 +3,9 @@
 #include <filesystem>
 #include <format>
 #include <string>
+#include <vector>
+
+#include "src/hir/link.h"
 
 namespace kira::driver {
 
@@ -53,7 +56,9 @@ auto run_requested_function(
     return;
   }
 
-  report.run = run_hir_module(*target_module, checked.types, cfg.run_function);
+  const auto reachable =
+      hir::find_reachable_modules(*target_module, lowered_modules);
+  report.run = run_hir_module(reachable, checked.types, cfg.run_function);
 }
 
 auto build_requested_function(
@@ -75,13 +80,14 @@ auto build_requested_function(
     return;
   }
 
+  const auto reachable =
+      hir::find_reachable_modules(*target_module, lowered_modules);
   const auto output_path =
       cfg.build_output.empty()
           ? std::filesystem::path(first_source_stem(cfg) + ".out")
           : std::filesystem::path(cfg.build_output);
-  report.build =
-      build_hir_module(*target_module, checked.types, cfg.build_function,
-                       output_path, cfg.program_name);
+  report.build = build_hir_module(reachable, checked.types, cfg.build_function,
+                                  output_path, cfg.program_name);
 }
 
 } // namespace kira::driver

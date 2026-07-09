@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <span>
 #include <string>
 
 #pragma clang diagnostic push
@@ -89,6 +90,18 @@ inline constexpr const char *kListReserveSlotSymbolName =
 /// on `module`'s nodes indexes into.
 [[nodiscard]] auto compile_module(const hir::hir_module &module,
                                   const semantic::type_table &types)
+    -> std::expected<compiled_module, codegen_error>;
+
+/// Multi-module variant of `compile_module`, mirroring
+/// `bytecode_compiler::compile_module`'s span overload exactly (same
+/// entry-module-is-bare, everyone-else-is-`module::name`-mangled scheme —
+/// see its doc comment in `src/bytecode_compiler/compile.h`). `modules.
+/// front()` is the entry module; the produced `llvm::Module` is named after
+/// it. The single-module overload above is exactly
+/// `compile_module({&module}, types)`.
+[[nodiscard]] auto
+compile_module(std::span<const hir::hir_module *const> modules,
+               const semantic::type_table &types)
     -> std::expected<compiled_module, codegen_error>;
 
 } // namespace kira::llvm_codegen

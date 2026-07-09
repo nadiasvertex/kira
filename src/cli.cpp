@@ -34,28 +34,32 @@ namespace fs = std::filesystem;
 /// @param file Parsed AST for the source file.
 /// @param source_path Original source file path.
 /// @param diagnostics Plain-text driver diagnostics buffer for I/O failures.
-[[nodiscard]] auto
-write_module_metadata(const fs::path &metadata_root, const kira::ast::file &file,
-                      const fs::path &source_path, std::string &diagnostics)
+[[nodiscard]] auto write_module_metadata(const fs::path &metadata_root,
+                                         const kira::ast::file &file,
+                                         const fs::path &source_path,
+                                         std::string &diagnostics)
     -> std::expected<std::string, std::monostate> {
-  auto output_path = kira::driver::metadata_output_path(metadata_root, file, source_path);
+  auto output_path =
+      kira::driver::metadata_output_path(metadata_root, file, source_path);
   auto output_parent = output_path.parent_path();
 
   auto ec = std::error_code{};
   if (!output_parent.empty()) {
     fs::create_directories(output_parent, ec);
     if (ec) {
-      kira::util::append_error(diagnostics,
-                   std::format("failed to create `{}`: {}",
-                               kira::util::normalize_path(output_parent), ec.message()));
+      kira::util::append_error(
+          diagnostics,
+          std::format("failed to create `{}`: {}",
+                      kira::util::normalize_path(output_parent), ec.message()));
       return std::unexpected(std::monostate{});
     }
   }
 
   auto out = std::ofstream(output_path, std::ios::binary | std::ios::trunc);
   if (!out) {
-    kira::util::append_error(diagnostics, std::format("failed to open `{}` for writing",
-                                          kira::util::normalize_path(output_path)));
+    kira::util::append_error(
+        diagnostics, std::format("failed to open `{}` for writing",
+                                 kira::util::normalize_path(output_path)));
     return std::unexpected(std::monostate{});
   }
 
@@ -63,9 +67,9 @@ write_module_metadata(const fs::path &metadata_root, const kira::ast::file &file
   if (!metadata.SerializeToOstream(&out) || !out.good()) {
     out.close();
     fs::remove(output_path, ec);
-    kira::util::append_error(diagnostics,
-                 std::format("failed to serialize module metadata to `{}`",
-                             kira::util::normalize_path(output_path)));
+    kira::util::append_error(
+        diagnostics, std::format("failed to serialize module metadata to `{}`",
+                                 kira::util::normalize_path(output_path)));
     return std::unexpected(std::monostate{});
   }
 
@@ -74,8 +78,9 @@ write_module_metadata(const fs::path &metadata_root, const kira::ast::file &file
 
 /// Parsed source file plus the bookkeeping needed by later driver passes.
 struct parsed_input {
-  fs::path source_path;     ///< Original source file path passed to the CLI.
-  kira::file_id_type file_id = 0; ///< Source manager file identifier for diagnostics.
+  fs::path source_path; ///< Original source file path passed to the CLI.
+  kira::file_id_type file_id =
+      0; ///< Source manager file identifier for diagnostics.
   kira::ast::ptr<kira::ast::file> ast_file; ///< Parsed AST for the source file.
 };
 
@@ -107,8 +112,8 @@ auto compile_sources(const driver::cli_config &cfg, bool use_color)
       continue;
     }
 
-    auto file_id =
-        sources.add_file(util::normalize_path(source_path), std::move(*source_text));
+    auto file_id = sources.add_file(util::normalize_path(source_path),
+                                    std::move(*source_text));
     if (!file_id) {
       ++report.error_count;
       append_error(report.diagnostics, file_id.error());

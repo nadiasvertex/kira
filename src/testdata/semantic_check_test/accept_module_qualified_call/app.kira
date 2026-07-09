@@ -1,0 +1,6 @@
+module app
+
+use tools
+
+pub def run() -> int32:
+    return tools.double(21)

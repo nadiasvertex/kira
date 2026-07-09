@@ -4,11 +4,13 @@ cc_library(
     name = "hir",
     srcs = [
         "captures.cpp",
+        "link.cpp",
         "lower.cpp",
     ],
     hdrs = [
         "captures.h",
         "ids.h",
+        "link.h",
         "lower.h",
         "nodes.h",
     ],
@@ -38,6 +40,18 @@ cc_test(
         "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "link_test",
+    srcs = ["link_test.cpp"],
+    deps = [
+        ":hir",
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+        "//src/util",
     ],
 )
 

@@ -133,9 +133,9 @@ auto render_compile_summary(const compile_report &report) -> std::string {
     }
   }
   if (!report.hir_modules.empty()) {
-    const auto lowered_count = static_cast<size_t>(
-        std::count_if(report.hir_modules.begin(), report.hir_modules.end(),
-                      [](const auto &result) -> auto { return result.lowered; }));
+    const auto lowered_count = static_cast<size_t>(std::count_if(
+        report.hir_modules.begin(), report.hir_modules.end(),
+        [](const auto &result) -> auto { return result.lowered; }));
     out += std::format("\nLowered {}/{} module(s) to HIR.", lowered_count,
                        report.hir_modules.size());
     for (const auto &result : report.hir_modules) {

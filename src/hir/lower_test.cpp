@@ -58,6 +58,52 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   return fixture;
 }
 
+// Same as `check_fixture`, but checks several files together as one
+// session — needed to exercise cross-module call resolution, where the
+// callee lives in a different file than the call site.
+struct multi_checked_fixture {
+  kira::source_manager sources;
+  kira::diagnostic_bag diag{};
+  std::vector<kira::ast::ptr<kira::ast::file>> ast_files;
+  kira::semantic::checked_types checked;
+};
+
+auto check_fixture_multi(
+    const std::vector<std::pair<std::string, std::string>> &files)
+    -> multi_checked_fixture {
+  auto fixture = multi_checked_fixture{};
+  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  auto file_ids = std::vector<kira::file_id_type>{};
+
+  for (const auto &[path, text] : files) {
+    const auto file_id = fixture.sources.add_file(path, text);
+    expect(file_id.has_value(), "expected fixture source to register");
+    const auto *file = fixture.sources.get(*file_id);
+    expect(file != nullptr, "expected registered fixture source");
+
+    auto lexer = kira::lexer(file->source(), file->id(), fixture.diag);
+    auto tokens = lexer.tokenize();
+    auto parser = kira::parser(std::move(tokens), file->id(), fixture.diag);
+    auto ast_file = parser.parse_file();
+    expect(fixture.diag.error_count() == 0,
+           "expected fixture to parse cleanly");
+
+    file_ids.push_back(*file_id);
+    fixture.ast_files.push_back(std::move(ast_file));
+  }
+
+  for (size_t i = 0; i < fixture.ast_files.size(); ++i) {
+    parsed_modules.push_back(kira::semantic::parsed_module{
+        .file_id = file_ids[i], .ast_file = fixture.ast_files[i].get()});
+  }
+
+  auto file_has_errors = std::vector<bool>(file_ids.size(), false);
+  fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
+                                                  file_has_errors);
+  expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
+  return fixture;
+}
+
 auto find_func(const kira::ast::file &file, std::string_view name)
     -> const kira::ast::func_decl & {
   for (const auto &item : file.items) {
@@ -1219,6 +1265,76 @@ auto test_lowers_call_to_named_function() -> void {
          "expected both calls to `helper` to resolve to the same symbol");
 }
 
+auto test_lowers_module_qualified_call() -> void {
+  auto fixture = check_fixture_multi({
+      {"tools.kira", "module tools\n"
+                     "pub def double(x: int32) -> int32:\n"
+                     "    return x * 2\n"},
+      {"app.kira", "module app\n"
+                   "use tools\n"
+                   "pub def run() -> int32:\n"
+                   "    return tools.double(21)\n"},
+  });
+  const auto &decl = find_func(*fixture.ast_files[1], "run");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a module-qualified call to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_call,
+         "expected the returned value to be a hir_call");
+  const auto &call = dynamic_cast<const hir::hir_call &>(*ret.value);
+  const auto &callee = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
+  expect(callee.name == "double", "expected the callee to name `double`");
+  expect(callee.owner_module.has_value() && *callee.owner_module == "tools",
+         "expected the callee to carry owner_module `tools`");
+}
+
+auto test_lowers_type_qualified_associated_call() -> void {
+  auto fixture = check_fixture("module app\n"
+                               "pub trait from[T]:\n"
+                               "    def from(value: T) -> self\n"
+                               "pub type wrapper = { pub value: int32 }\n"
+                               "impl from[int32] for wrapper:\n"
+                               "    def from(x: int32) -> wrapper:\n"
+                               "        return wrapper{ value: x }\n"
+                               "pub def run() -> wrapper:\n"
+                               "    return wrapper.from(5)\n");
+
+  auto module_result =
+      hir::lower_module(*fixture.ast_file, "app", fixture.checked);
+  expect(module_result.has_value(),
+         "expected the module to lower, including the associated function");
+  expect((*module_result)->functions.size() == 2,
+         "expected both `run` and the lowered `wrapper::from` in the module");
+
+  const hir::hir_function *run = nullptr;
+  const hir::hir_function *wrapper_from = nullptr;
+  for (const auto &fn : (*module_result)->functions) {
+    if (fn->name == "run") {
+      run = fn.get();
+    } else if (fn->name == "wrapper::from") {
+      wrapper_from = fn.get();
+    }
+  }
+  expect(run != nullptr, "expected to find the lowered `run` function");
+  expect(wrapper_from != nullptr,
+         "expected the impl member to lower as `wrapper::from`");
+
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*run->body->stmts.front());
+  expect(ret.value->kind == hir::hir_node_kind::hir_call,
+         "expected `run`'s returned value to be a hir_call");
+  const auto &call = dynamic_cast<const hir::hir_call &>(*ret.value);
+  const auto &callee = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
+  expect(callee.name == "wrapper::from",
+         "expected the callee to name `wrapper::from`");
+  expect(callee.owner_module.has_value() && *callee.owner_module == "app",
+         "expected the callee to carry owner_module `app`");
+}
+
 auto test_lowers_named_call_arguments_in_declared_order() -> void {
   auto fixture = check_fixture("module sample\n"
                                "def subtract(a: int32, b: int32) -> int32:\n"
@@ -1822,6 +1938,8 @@ auto main() -> int {
     test_lowers_lambda_expression();
     test_lowers_where_expression();
     test_lowers_call_to_named_function();
+    test_lowers_module_qualified_call();
+    test_lowers_type_qualified_associated_call();
     test_lowers_named_call_arguments_in_declared_order();
     test_rejects_call_relying_on_default_argument();
     test_lowers_variant_construction_with_payload();

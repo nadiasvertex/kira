@@ -211,6 +211,20 @@ struct call_argument_mapping {
   std::vector<const ast::expr *> args_by_param;
 };
 
+/// The declaration a module-qualified free-function call (`std.io.open(...)`)
+/// or a type-qualified associated-function call (`io_error.from(...)`)
+/// resolved to — recorded by `infer_qualified_call` (`check.cpp`) since
+/// lowering has no way to redo this resolution itself (it never re-walks
+/// `program_index`). `owner_module` is the module that declares `decl`;
+/// `impl_target_type` is the bare name of the target type an associated
+/// function was resolved on (e.g. `io_error` for `io_error.from`), empty for
+/// an ordinary module-qualified free function.
+struct resolved_callee {
+  const ast::func_decl *decl = nullptr;
+  std::string owner_module;
+  std::string impl_target_type;
+};
+
 /// The persisted result of type-checking one session: the interned
 /// `type_table` every `type_id` below indexes into, plus the resolved type
 /// of every expression node the checker actually visited. Several
@@ -246,6 +260,11 @@ struct checked_types {
       struct_literal_field_types;
   std::unordered_map<const ast::call_expr *, call_argument_mapping>
       call_argument_mappings;
+  /// Every call resolved by `infer_qualified_call` — see `resolved_callee`'s
+  /// doc comment. A node absent here was either resolved some other way
+  /// (a plain same-module/imported bare-name call, a method call) or never
+  /// resolved at all.
+  std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

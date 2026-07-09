@@ -213,6 +213,27 @@ auto test_accepts_cross_module_qualified_types() -> void {
          "expected qualified types from other session modules to resolve");
 }
 
+auto test_accepts_module_qualified_call() -> void {
+  const auto analyzed =
+      analyze_test_data_directory("accept_module_qualified_call");
+  expect(analyzed.error_count == 0,
+         "expected a call through a whole-module `use` import to resolve");
+}
+
+auto test_accepts_fully_qualified_call() -> void {
+  const auto analyzed =
+      analyze_test_data_directory("accept_fully_qualified_call");
+  expect(analyzed.error_count == 0,
+         "expected a fully module-qualified call to resolve");
+}
+
+auto test_accepts_type_qualified_associated_call() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_type_qualified_associated_call.kira");
+  expect(analyzed.error_count == 0,
+         "expected a type-qualified associated-function call to resolve");
+}
+
 auto test_accepts_indexing_local_bindings() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_indexing_local_bindings.kira");
@@ -788,6 +809,9 @@ auto main() -> int {
     test_accepts_collections_and_lambdas();
     test_accepts_option_result_flow();
     test_accepts_cross_module_qualified_types();
+    test_accepts_module_qualified_call();
+    test_accepts_fully_qualified_call();
+    test_accepts_type_qualified_associated_call();
     test_accepts_indexing_local_bindings();
     test_accepts_associated_type_self_output();
     test_accepts_extend_on_builtin_type();

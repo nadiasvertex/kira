@@ -739,7 +739,8 @@ public:
         .node_types = std::move(node_types_),
         .struct_pattern_field_types = std::move(struct_pattern_field_types_),
         .struct_literal_field_types = std::move(struct_literal_field_types_),
-        .call_argument_mappings = std::move(call_argument_mappings_)};
+        .call_argument_mappings = std::move(call_argument_mappings_),
+        .resolved_callees = std::move(resolved_callees_)};
   }
 
 private:
@@ -782,6 +783,9 @@ private:
   /// an entry here). Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::call_expr *, call_argument_mapping>
       call_argument_mappings_;
+  /// Every module-qualified or type-qualified call resolved by
+  /// `infer_qualified_call`. Handed to the caller via `take_checked_types`.
+  std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees_;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -3186,6 +3190,14 @@ private:
       return *type_constant;
     }
 
+    // A module- or type-qualified call (`std.io.open(...)`,
+    // `console.println(...)`, `io_error.from(...)`) — see
+    // `infer_qualified_call`'s doc comment for why this is checked here
+    // rather than dispatched on `call.callee`'s own kind.
+    if (const auto qualified = infer_qualified_call(call, field)) {
+      return *qualified;
+    }
+
     const auto object = strip_refs(infer_expr(*field.object, k_unknown_type));
     const auto &entry = types_.entry(object);
 
@@ -3281,6 +3293,118 @@ private:
                       target_name));
     }
     return target;
+  }
+
+  /// Resolves a call whose callee is `object.fn_name(...)` against a real
+  /// declaration when `object` names a module or a type rather than a
+  /// value — a fully module-qualified free function (`std.io.open(...)`,
+  /// `object` a multi-segment `module_path_expr`), a free function reached
+  /// through a whole-module `use` import (`console.println(...)`, `object`
+  /// a single-segment `ident_expr` naming an imported module), or a
+  /// type-qualified associated function (`io_error.from(...)`, `object` a
+  /// single-segment `ident_expr` naming a type) — dispatched like
+  /// `find_method` but with no receiver, so a match whose first parameter is
+  /// `self` is rejected (that's a genuine instance-method call, handled the
+  /// existing way by the rest of `infer_method_call`). Returns `nullopt`
+  /// when `object` is value-rooted or doesn't resolve to any of these,
+  /// leaving the caller to fall back to today's method-call/unknown
+  /// handling. On a match, records a `resolved_callee` so `hir::lower_call`
+  /// can rebuild this exact call site without redoing this resolution.
+  ///
+  /// Called from `infer_method_call` rather than dispatched on
+  /// `call.callee`'s own kind in `infer_call`, because the parser never
+  /// produces a bare `module_path_expr` callee for a call — a dotted name
+  /// immediately followed by `(` always parses as `field_expr` (see
+  /// `parser::parse_ident_or_path_expr`), with `object` holding whatever
+  /// dotted prefix, if any, preceded the call-adjacent final segment.
+  auto infer_qualified_call(const ast::call_expr &call,
+                            const ast::field_expr &field)
+      -> std::optional<type_id> {
+    const auto &object = *field.object;
+    const auto fn_name = field.field_name;
+    auto root = std::vector<std::string>{};
+    if (object.kind == ast::node_kind::ident_expr) {
+      const auto &ident = dynamic_cast<const ast::ident_expr &>(object);
+      if (lookup_value(ident.name) != nullptr ||
+          (ident.name == "self" && self_type_ != k_unknown_type)) {
+        return std::nullopt; // a real value, not a module/type reference
+      }
+      root = {ident.name};
+    } else if (object.kind == ast::node_kind::module_path_expr) {
+      const auto &path = dynamic_cast<const ast::module_path_expr &>(object);
+      if (path.segments.empty()) {
+        return std::nullopt;
+      }
+      if (lookup_value(path.segments.front()) != nullptr ||
+          (path.segments.front() == "self" && self_type_ != k_unknown_type)) {
+        return std::nullopt; // a value-rooted field chain, not a module path
+      }
+      root = path.segments;
+    } else {
+      return std::nullopt;
+    }
+
+    const auto resolve_against =
+        [&](const ast::func_decl &decl, const module_members *owner,
+            file_id_type decl_file, std::string impl_target_type) -> type_id {
+      record_expr_type(field, fn_type_of(decl, owner));
+      resolved_callees_[&call] =
+          resolved_callee{.decl = &decl,
+                          .owner_module = owner->module_name,
+                          .impl_target_type = std::move(impl_target_type)};
+      return check_call_against_decl(call, decl, owner, decl_file,
+                                     /*skip_self=*/false);
+    };
+
+    // Fully module-qualified: `std.io.open(...)`.
+    if (const auto *owner = find_session_module_of_path(root)) {
+      if (const auto it = owner->functions.find(fn_name);
+          it != owner->functions.end()) {
+        return resolve_against(*it->second.decl, owner, it->second.file_id, "");
+      }
+    }
+
+    if (root.size() == 1) {
+      // A single-segment root naming an imported module (`use std.console`,
+      // then `console.println(...)`).
+      if (const auto *binding = find_import(root.front());
+          binding != nullptr && binding->leaf_name.empty() &&
+          session_owns_path_root(binding->path)) {
+        if (const auto *owner =
+                index_.find_module(join_strings(binding->path, "."))) {
+          if (const auto it = owner->functions.find(fn_name);
+              it != owner->functions.end()) {
+            return resolve_against(*it->second.decl, owner, it->second.file_id,
+                                   "");
+          }
+        }
+      }
+
+      // A single-segment root naming a type (`io_error.from(...)`) —
+      // resolve an associated (non-`self`) function the same way a method
+      // call resolves an instance method.
+      if (const auto found_type = find_type_decl_by_name(root.front())) {
+        const auto type =
+            make_user_type(*found_type->first, found_type->second, {});
+        const auto &entry = types_.entry(type);
+        if (const auto *method = find_method(entry, fn_name)) {
+          const auto has_self =
+              !method->decl->params.empty() &&
+              method->decl->params.front().pattern != nullptr &&
+              method->decl->params.front().pattern->kind ==
+                  ast::node_kind::binding_pattern &&
+              dynamic_cast<const ast::binding_pattern &>(
+                  *method->decl->params.front().pattern)
+                      .name == "self";
+          if (!has_self) {
+            return resolve_against(*method->decl, method->owner, file_id_,
+                                   found_type->first->name);
+          }
+        }
+      }
+    }
+
+    return std::nullopt;
   }
 
   /// Types a call expression by dispatching on its callee's shape: a method

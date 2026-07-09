@@ -87,22 +87,25 @@ struct cli_converter {
 static const std::unordered_map<std::string_view, cli_converter>
     k_flag_converters = {
         {"-h",
-         {.name="-h", .needs_value=false,
-          .apply=+[](cli_config &cfg,
-              std::string_view) -> std::expected<std::monostate, std::string> {
+         {.name = "-h",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
             cfg.show_help = true;
             return std::monostate{};
           }}},
         {"--help",
-         {.name="--help", .needs_value=false,
-          .apply=+[](cli_config &cfg,
-              std::string_view) -> std::expected<std::monostate, std::string> {
+         {.name = "--help",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
             cfg.show_help = true;
             return std::monostate{};
           }}},
         {"--metadata-dir",
-         {.name="--metadata-dir", .needs_value=true,
-          .apply=+[](cli_config &cfg, std::string_view value)
+         {.name = "--metadata-dir",
+          .needs_value = true,
+          .apply = +[](cli_config &cfg, std::string_view value)
               -> std::expected<std::monostate, std::string> {
             if (value.empty()) {
               return std::unexpected{
@@ -112,15 +115,17 @@ static const std::unordered_map<std::string_view, cli_converter>
             return std::monostate{};
           }}},
         {"--run",
-         {.name="--run", .needs_value=false,
-          .apply=+[](cli_config &cfg,
-              std::string_view) -> std::expected<std::monostate, std::string> {
+         {.name = "--run",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
             cfg.run = true;
             return std::monostate{};
           }}},
         {"--run-function",
-         {.name="--run-function", .needs_value=true,
-          .apply=+[](cli_config &cfg, std::string_view value)
+         {.name = "--run-function",
+          .needs_value = true,
+          .apply = +[](cli_config &cfg, std::string_view value)
               -> std::expected<std::monostate, std::string> {
             if (value.empty()) {
               return std::unexpected{
@@ -131,15 +136,17 @@ static const std::unordered_map<std::string_view, cli_converter>
             return std::monostate{};
           }}},
         {"--compile",
-         {.name="--compile", .needs_value=false,
-          .apply=+[](cli_config &cfg,
-              std::string_view) -> std::expected<std::monostate, std::string> {
+         {.name = "--compile",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
             cfg.build = true;
             return std::monostate{};
           }}},
         {"--compile-function",
-         {.name="--compile-function", .needs_value=true,
-          .apply=+[](cli_config &cfg, std::string_view value)
+         {.name = "--compile-function",
+          .needs_value = true,
+          .apply = +[](cli_config &cfg, std::string_view value)
               -> std::expected<std::monostate, std::string> {
             if (value.empty()) {
               return std::unexpected{
@@ -150,8 +157,9 @@ static const std::unordered_map<std::string_view, cli_converter>
             return std::monostate{};
           }}},
         {"--compile-output",
-         {.name="--compile-output", .needs_value=true,
-          .apply=+[](cli_config &cfg, std::string_view value)
+         {.name = "--compile-output",
+          .needs_value = true,
+          .apply = +[](cli_config &cfg, std::string_view value)
               -> std::expected<std::monostate, std::string> {
             if (value.empty()) {
               return std::unexpected{
@@ -162,9 +170,10 @@ static const std::unordered_map<std::string_view, cli_converter>
             return std::monostate{};
           }}},
         {"--parse-only",
-         {.name="--parse-only", .needs_value=false,
-          .apply=+[](cli_config &cfg,
-              std::string_view) -> std::expected<std::monostate, std::string> {
+         {.name = "--parse-only",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
             cfg.parse_only = true;
             return std::monostate{};
           }}},

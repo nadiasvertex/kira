@@ -286,13 +286,21 @@ using kira::decode_string_literal;
 
 class function_compiler {
 public:
+  /// `entry_module_name`/`current_module_name` default to matching (empty)
+  /// strings when omitted, so `compile_function`'s standalone single-function
+  /// API and every existing single-module `compile_module` call site keep
+  /// treating every call as same-module — see `resolve_callee_key`.
   function_compiler(const type_table &types,
                     const std::unordered_map<std::string, uint16_t> &functions,
                     std::vector<bytecode::bytecode_function> &lambda_functions,
-                    size_t function_table_base)
+                    size_t function_table_base,
+                    std::string entry_module_name = {},
+                    std::string current_module_name = {})
       : types_(types), functions_(functions),
         lambda_functions_(lambda_functions),
-        function_table_base_(function_table_base) {}
+        function_table_base_(function_table_base),
+        entry_module_name_(std::move(entry_module_name)),
+        current_module_name_(std::move(current_module_name)) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn)
       -> std::expected<bytecode::bytecode_function, compile_error> {
@@ -666,6 +674,26 @@ private:
     return {};
   }
 
+  /// The `functions_` key a call to `ref` resolves against: bare `ref.name`
+  /// when the target is the entry module (whether that's implicit — no
+  /// `owner_module`, and this function's own module is the entry — or
+  /// explicit via `owner_module` naming the entry module itself), otherwise
+  /// `module::name` naming whichever non-entry module owns the target. This
+  /// is the single place that knows the mangling scheme `compile_module`'s
+  /// multi-module overload builds `functions_` with, so a lookup here always
+  /// agrees with how the table was built.
+  [[nodiscard]] auto resolve_callee_key(const hir::hir_local_ref &ref) const
+      -> std::string {
+    if (ref.owner_module.has_value()) {
+      return *ref.owner_module == entry_module_name_
+                 ? ref.name
+                 : *ref.owner_module + "::" + ref.name;
+    }
+    return current_module_name_ == entry_module_name_
+               ? ref.name
+               : current_module_name_ + "::" + ref.name;
+  }
+
   [[nodiscard]] auto compile_call(const hir::hir_call &call, uint8_t dst)
       -> std::expected<void, compile_error> {
     if (call.args.size() > 255) {
@@ -715,7 +743,7 @@ private:
           return {};
         }
 
-        const auto found = functions_.find(ref.name);
+        const auto found = functions_.find(resolve_callee_key(ref));
         if (found == functions_.end()) {
           return std::unexpected(compile_error{
               .kind = compile_error_kind::unknown_callee,
@@ -839,7 +867,8 @@ private:
     }
 
     auto compiled = function_compiler(types_, functions_, lambda_functions_,
-                                      function_table_base_)
+                                      function_table_base_, entry_module_name_,
+                                      current_module_name_)
                         .compile_lambda_body(lambda, free_vars);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
@@ -2087,6 +2116,8 @@ private:
   /// after every top-level function has compiled.
   std::vector<bytecode::bytecode_function> &lambda_functions_;
   size_t function_table_base_;
+  std::string entry_module_name_;
+  std::string current_module_name_;
   chunk_writer writer_;
   std::unordered_map<hir::symbol_id, uint8_t> locals_;
   size_t next_register_ = 0;
@@ -2103,27 +2134,44 @@ auto compile_function(
   return compiler.compile(fn);
 }
 
-auto compile_module(const hir::hir_module &module, const type_table &types)
+auto compile_module(std::span<const hir::hir_module *const> modules,
+                    const type_table &types)
     -> std::expected<bytecode::bytecode_module, compile_error> {
+  const auto &entry_name = modules.front()->module_name;
+
+  // Flatten every module's functions into one compiled unit, keyed the same
+  // way `function_compiler::resolve_callee_key` computes a callee's lookup
+  // key: bare for the entry module, `module::name` for everything else —
+  // see `compile_module`'s (span overload) doc comment in compile.h.
   auto function_index = std::unordered_map<std::string, uint16_t>{};
-  function_index.reserve(module.functions.size());
-  for (size_t i = 0; i < module.functions.size(); ++i) {
-    function_index.emplace(module.functions[i]->name, static_cast<uint16_t>(i));
+  auto ordered_functions = std::vector<
+      std::pair<const hir::hir_module *, const hir::hir_function *>>{};
+  for (const auto *module : modules) {
+    for (const auto &fn : module->functions) {
+      const auto key = module->module_name == entry_name
+                           ? fn->name
+                           : module->module_name + "::" + fn->name;
+      function_index.emplace(key,
+                             static_cast<uint16_t>(ordered_functions.size()));
+      ordered_functions.emplace_back(module, fn.get());
+    }
   }
 
   // Every lambda encountered while compiling any top-level function (or any
   // lambda nested within one) is appended here and given a stable
-  // function-table index starting right after the module's named top-level
-  // functions — see `function_compiler::lambda_functions_`'s doc comment.
+  // function-table index starting right after every module's named
+  // top-level functions — see `function_compiler::lambda_functions_`'s doc
+  // comment.
   auto lambda_functions = std::vector<bytecode::bytecode_function>{};
-  const auto function_table_base = module.functions.size();
+  const auto function_table_base = ordered_functions.size();
 
-  auto result = bytecode::bytecode_module{.module_name = module.module_name,
-                                          .functions = {}};
-  result.functions.reserve(module.functions.size());
-  for (const auto &fn : module.functions) {
-    auto compiler = function_compiler(types, function_index, lambda_functions,
-                                      function_table_base);
+  auto result =
+      bytecode::bytecode_module{.module_name = entry_name, .functions = {}};
+  result.functions.reserve(ordered_functions.size());
+  for (const auto &[module, fn] : ordered_functions) {
+    auto compiler =
+        function_compiler(types, function_index, lambda_functions,
+                          function_table_base, entry_name, module->module_name);
     auto compiled = compiler.compile(*fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
@@ -2134,6 +2182,13 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
     result.functions.push_back(std::move(lambda_fn));
   }
   return result;
+}
+
+auto compile_module(const hir::hir_module &module, const type_table &types)
+    -> std::expected<bytecode::bytecode_module, compile_error> {
+  const auto *module_ptr = &module;
+  return compile_module(std::span<const hir::hir_module *const>(&module_ptr, 1),
+                        types);
 }
 
 } // namespace kira::bytecode_compiler

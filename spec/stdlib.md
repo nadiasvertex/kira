@@ -570,7 +570,7 @@ This is the checklist of compiler work they depend on, grouped by phase.
 
 ### Running the stdlib: HIR lowering gaps
 
-Verified by hand against the real driver (`bazel-bin/src/kira`, not just
+Initial investigation, below, was verified by hand against the real driver (`bazel-bin/src/kira`, not just
 `bazelisk run` — argv0 differs enough between the two that
 `inject_stdlib_prelude`'s runfiles search behaves differently; see
 `find_stdlib_source_file`), passing `src/std/{traits,prelude,io,console}.kira`
@@ -581,22 +581,90 @@ failures share one root cause: `hir::lowerer`'s call/path resolution
 multi-segment path whose *root* is a local binding currently in scope —
 there is no case for "root is a module" or "root is a type name."
 
-- [ ] **Module-qualified free-function calls** — `console.println(...)`
-      (root `console` is an imported module, not a local) and
-      `std.io.stdout_handle()` (a full module path, 3 segments) both fail
-      identically: `checked_type_of` reports "no concrete checked type is
-      available for this node" because `lower_module_path` never attempts
-      module-path-to-function resolution, so no HIR node — and no entry in
-      the checked-type table lowering consults — is ever produced for the
-      call. Confirmed failure site: `std.console`'s very first function,
-      `stdout()`, fails to lower on `return std.io.stdout_handle()` (byte
-      offset 64 in `console.kira`) — `std.console` cannot lower a single
-      function today.
-- [ ] **Type-qualified associated-function calls** — `io_error.from(e)`
-      (root `io_error` is a type name, dispatching to the `from` trait impl),
-      the pattern every error-mapping call site in `std.io` relies on.
-      Confirmed failure site: `impl from[io_errno] for io_error`'s body
-      (byte offset 2808 in `io.kira`).
+- [x] **Module-qualified free-function calls and type-qualified
+      associated-function calls — resolved, including real cross-module
+      execution, not just lowering.** Root cause was two-fold, not one:
+      (1) the *checker* never resolved a module-qualified call
+      (`console.println(...)`, `std.io.stdout_handle()`) or a
+      type-qualified associated-function call (`io_error.from(e)`) to a
+      real declaration at all — `infer_call` fell straight to "unknown"
+      for these; and (2) even a correctly-resolved cross-module call had
+      nothing to *run* against — `bytecode_compiler::compile_module` and
+      `llvm_codegen::compile_module` each only ever compiled one
+      `hir::hir_module` in isolation, and the driver only ever selected and
+      handed off a single module to begin with.
+      Fixed: `semantic::check.cpp`'s new `infer_qualified_call` (reached
+      from `infer_method_call`, since a dotted call — `a.b(...)` — always
+      parses as `field_expr`, never a bare `module_path_expr`, once a call
+      follows the last segment; see `parser::parse_ident_or_path_expr`)
+      resolves a call's `object.fn_name` shape against a real module
+      function (fully qualified, or through a whole-module `use` import)
+      or a type's associated function (an impl member with no `self`
+      parameter — an actual instance-method call, `x.method()`, is a
+      different, still out-of-scope call shape, see below), reusing the
+      existing `find_session_module_of_path`/`find_import`/
+      `find_type_decl_by_name`/`find_method`/`check_call_against_decl`
+      lookups rather than inventing new resolution. Each match is recorded
+      in a new `checked_types::resolved_callees` map
+      (`semantic/types.h`'s `resolved_callee`) keyed by the call node, so
+      `hir::lower_call` (`src/hir/lower.cpp`) can rebuild the exact same
+      call site without redoing checker-side resolution — it builds a
+      `hir_local_ref` whose name is the bare declared name (or, for an
+      associated function, `TargetType::method`) and whose new
+      `owner_module` field (`hir_local_ref::owner_module`,
+      `src/hir/nodes.h`, additive/optional — every other construction site
+      is unaffected) names the declaring module. `hir::lower_module` was
+      also extended to lower eligible impl members (no `self` parameter,
+      no generics on the impl or the method) into real `hir_function`s
+      under that same `TargetType::method` name — previously `lower_module`
+      only ever walked top-level `func_decl` items, so no impl member had
+      ever been lowered at all.
+      Cross-module *execution*: both `bytecode_compiler::compile_module`
+      and `llvm_codegen::compile_module` gained a `std::span`-of-modules
+      overload (the existing single-module signature now just delegates to
+      it) that builds one combined function table across every module
+      passed in — the entry module's (`modules.front()`) functions keep
+      their bare names (so `--run`/`--build` function-name lookup is
+      unaffected), every other module's functions are keyed
+      `module_name::name`, and each backend's `function_compiler` resolves
+      a callee's table key from `hir_local_ref::owner_module` plus which
+      module the currently-compiling function itself belongs to — no HIR
+      tree is ever mutated, moved, or cloned to achieve this, so the same
+      lowered modules can be reused for both `--run` and `--build` in one
+      invocation. A new read-only discovery pass,
+      `hir::find_reachable_modules` (`src/hir/link.h`/`.cpp`, a mutable-free
+      walker mirroring `captures.cpp`'s shape), finds every module an entry
+      module transitively needs by following `owner_module` references, one
+      whole module at a time; `driver/run_build_stage.cpp` calls it before
+      handing modules to either backend.
+      Verified against the real stdlib source, not just synthetic
+      fixtures: `bazel-bin/src/kira --run` against
+      `src/std/{traits,prelude,io}.kira` plus a trivial `main` module
+      calling `std.io.stdin_handle()` now reports `Lowered 4/4 module(s)`
+      and actually executes (`main() -> 7`); the identical program built
+      with `--compile` links and runs as a native executable returning
+      the same value. `std.io`'s own internal use of `io_error.from(e)`
+      (inside `open`, `read`, `write`, `flush`) lowers and links cleanly as
+      part of that same run — the real pattern this gap blocked, not a
+      simplified stand-in. `std.console` still fails to lower as a whole
+      file (`print`/`println`/`eprint`/`eprintln` call the self-taking
+      `write_all` trait-default method — item 3, below), even though its
+      own `stdout()`/`stderr()`/`stdin()` (pure module-qualified calls, no
+      self-taking dependencies) are individually fixed by this work —
+      lowering still fails closed per-file, so one still-blocked function
+      in a file blocks the whole file. Regression tests:
+      `src/semantic/check_test.cpp` (`accept_module_qualified_call`,
+      `accept_fully_qualified_call`, `accept_type_qualified_associated_call.kira`,
+      `src/testdata/semantic_check_test/`), `src/hir/lower_test.cpp`
+      (`test_lowers_module_qualified_call`,
+      `test_lowers_type_qualified_associated_call`), `src/hir/link_test.cpp`
+      (new — direct/transitive module discovery), and, for real
+      cross-module execution through both backends end to end,
+      `src/bytecode_compiler/compile_test.cpp` /
+      `src/llvm_codegen/codegen_test.cpp`
+      (`test_calls_a_function_in_another_module`,
+      `test_calls_an_associated_function_via_a_type_qualified_path`, both
+      run/JIT'd to a real expected value).
 - [ ] **Trait default-method dispatch** (`file.write_all(...)`,
       `.read_to_end(...)`, `.read_exact(...)` — calling a trait method that
       the impl doesn't override, only the trait's default body supplies) and

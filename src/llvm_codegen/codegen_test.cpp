@@ -8,6 +8,7 @@
 
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
+#include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
 #include "src/llvm_codegen/codegen.h"
@@ -85,6 +86,70 @@ auto jit_fixture_for(const std::string &text) -> jit_fixture {
   auto compiled = lc::compile_module(**module, fixture.checked.types);
   expect(compiled.has_value(),
          "expected fixture to compile to an llvm::Module");
+  auto jit = lc::jit_module::create(std::move(*compiled));
+  expect(jit.has_value(), "expected the compiled module to JIT successfully");
+  return jit_fixture{.fixture = std::move(fixture), .jit = std::move(*jit)};
+}
+
+// Mirrors src/bytecode_compiler/compile_test.cpp's own
+// `compile_fixture_multi`: parses/checks/lowers several files as one
+// session, then compiles the entry module (named `entry_module_name`) plus
+// every module `hir::find_reachable_modules` discovers it needs.
+auto jit_fixture_for_multi(
+    const std::vector<std::pair<std::string, std::string>> &files,
+    std::string_view entry_module_name) -> jit_fixture {
+  auto fixture = checked_fixture{};
+  auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
+  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  auto file_ids = std::vector<kira::file_id_type>{};
+
+  for (const auto &[path, text] : files) {
+    const auto file_id = fixture.sources.add_file(path, text);
+    expect(file_id.has_value(), "expected fixture source to register");
+    const auto *file = fixture.sources.get(*file_id);
+    expect(file != nullptr, "expected registered fixture source");
+
+    auto lexer = kira::lexer(file->source(), file->id(), fixture.diag);
+    auto tokens = lexer.tokenize();
+    auto parser = kira::parser(std::move(tokens), file->id(), fixture.diag);
+    auto ast_file = parser.parse_file();
+    expect(fixture.diag.error_count() == 0,
+           "expected fixture to parse cleanly");
+
+    file_ids.push_back(*file_id);
+    ast_files.push_back(std::move(ast_file));
+  }
+  for (size_t i = 0; i < ast_files.size(); ++i) {
+    parsed_modules.push_back(kira::semantic::parsed_module{
+        .file_id = file_ids[i], .ast_file = ast_files[i].get()});
+  }
+
+  auto file_has_errors = std::vector<bool>(file_ids.size(), false);
+  fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
+                                                  file_has_errors);
+  expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
+
+  auto modules = hir::ptr_vec<hir::hir_module>{};
+  for (size_t i = 0; i < files.size(); ++i) {
+    auto lowered =
+        hir::lower_module(*ast_files[i], files[i].first, fixture.checked);
+    expect(lowered.has_value(), "expected every fixture module to lower");
+    modules.push_back(std::move(*lowered));
+  }
+  fixture.ast_file = std::move(ast_files.front());
+
+  const hir::hir_module *entry = nullptr;
+  for (const auto &module : modules) {
+    if (module->module_name == entry_module_name) {
+      entry = module.get();
+    }
+  }
+  expect(entry != nullptr, "expected to find the entry module by name");
+
+  const auto reachable = hir::find_reachable_modules(*entry, modules);
+  auto compiled = lc::compile_module(reachable, fixture.checked.types);
+  expect(compiled.has_value(),
+         "expected the cross-module fixture to compile to an llvm::Module");
   auto jit = lc::jit_module::create(std::move(*compiled));
   expect(jit.has_value(), "expected the compiled module to JIT successfully");
   return jit_fixture{.fixture = std::move(fixture), .jit = std::move(*jit)};
@@ -253,6 +318,45 @@ auto test_calls_another_function_in_the_same_module() -> void {
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 25, "expected sum_of_squares(3, 4) == 25");
+}
+
+auto test_calls_a_function_in_another_module() -> void {
+  auto jf = jit_fixture_for_multi(
+      {
+          {"tools", "module tools\n"
+                    "pub def double(x: int32) -> int32:\n"
+                    "    return x * 2\n"},
+          {"app", "module app\n"
+                  "use tools\n"
+                  "pub def main() -> int32:\n"
+                  "    return tools.double(21)\n"},
+      },
+      "app");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected a call across module boundaries to run");
+  expect(result->value.i == 42,
+         "expected main() to return tools.double(21) == 42");
+}
+
+auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
+  auto jf = jit_fixture_for_multi(
+      {
+          {"app", "module app\n"
+                  "pub trait from[T]:\n"
+                  "    def from(value: T) -> self\n"
+                  "pub type wrapped = { pub value: int32 }\n"
+                  "impl from[int32] for wrapped:\n"
+                  "    def from(x: int32) -> wrapped:\n"
+                  "        return wrapped{ value: x * 3 }\n"
+                  "pub def main() -> int32:\n"
+                  "    return wrapped.from(7).value\n"},
+      },
+      "app");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(),
+         "expected a type-qualified associated-function call to run");
+  expect(result->value.i == 21,
+         "expected main() to return wrapped.from(7).value == 21");
 }
 
 auto test_tuple_construction_and_projection() -> void {
@@ -434,6 +538,8 @@ auto main() -> int {
     test_sum_type_variant_with_payload_encodes_tag_and_slot();
     test_sum_type_unit_variant_encodes_its_tag();
     test_calls_another_function_in_the_same_module();
+    test_calls_a_function_in_another_module();
+    test_calls_an_associated_function_via_a_type_qualified_path();
     test_tuple_construction_and_projection();
     test_struct_literal_and_field_access();
     test_fixed_array_construction_and_indexing();

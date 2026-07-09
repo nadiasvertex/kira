@@ -11,6 +11,7 @@
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/compile.h"
+#include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
 #include "src/parser/diagnostic.h"
@@ -87,6 +88,67 @@ auto compile_fixture(const std::string &text) -> bc::bytecode_module {
   expect(module.has_value(), "expected fixture to lower to HIR");
   auto compiled = bcc::compile_module(**module, fixture.checked.types);
   expect(compiled.has_value(), "expected fixture to compile to bytecode");
+  return std::move(*compiled);
+}
+
+// Parses, checks, and lowers several files together as one session, then
+// compiles the entry module (named by `entry_module_name`) plus every module
+// `hir::find_reachable_modules` discovers it needs — the real
+// parse -> check -> lower -> discover -> compile -> run pipeline for a
+// program that calls across module boundaries.
+auto compile_fixture_multi(
+    const std::vector<std::pair<std::string, std::string>> &files,
+    std::string_view entry_module_name) -> bc::bytecode_module {
+  auto sources = kira::source_manager{};
+  auto diag = kira::diagnostic_bag{};
+  auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
+  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  auto file_ids = std::vector<kira::file_id_type>{};
+
+  for (const auto &[path, text] : files) {
+    const auto file_id = sources.add_file(path, text);
+    expect(file_id.has_value(), "expected fixture source to register");
+    const auto *file = sources.get(*file_id);
+    expect(file != nullptr, "expected registered fixture source");
+
+    auto lexer = kira::lexer(file->source(), file->id(), diag);
+    auto tokens = lexer.tokenize();
+    auto parser = kira::parser(std::move(tokens), file->id(), diag);
+    auto ast_file = parser.parse_file();
+    expect(diag.error_count() == 0, "expected fixture to parse cleanly");
+
+    file_ids.push_back(*file_id);
+    ast_files.push_back(std::move(ast_file));
+  }
+  for (size_t i = 0; i < ast_files.size(); ++i) {
+    parsed_modules.push_back(kira::semantic::parsed_module{
+        .file_id = file_ids[i], .ast_file = ast_files[i].get()});
+  }
+
+  auto file_has_errors = std::vector<bool>(file_ids.size(), false);
+  const auto checked =
+      kira::semantic::check_program(parsed_modules, diag, file_has_errors);
+  expect(diag.error_count() == 0, "expected fixture to check cleanly");
+
+  auto modules = hir::ptr_vec<hir::hir_module>{};
+  for (size_t i = 0; i < ast_files.size(); ++i) {
+    auto lowered = hir::lower_module(*ast_files[i], files[i].first, checked);
+    expect(lowered.has_value(), "expected every fixture module to lower");
+    modules.push_back(std::move(*lowered));
+  }
+
+  const hir::hir_module *entry = nullptr;
+  for (const auto &module : modules) {
+    if (module->module_name == entry_module_name) {
+      entry = module.get();
+    }
+  }
+  expect(entry != nullptr, "expected to find the entry module by name");
+
+  const auto reachable = hir::find_reachable_modules(*entry, modules);
+  auto compiled = bcc::compile_module(reachable, checked.types);
+  expect(compiled.has_value(),
+         "expected the cross-module fixture to compile to bytecode");
   return std::move(*compiled);
 }
 
@@ -289,6 +351,46 @@ auto test_calls_another_function_in_the_same_module() -> void {
   expect(main_result.has_value(), "expected main() to succeed");
   expect(main_result->value.i == 25,
          "expected main()'s sum_of_squares(3, 4) == 25");
+}
+
+auto test_calls_a_function_in_another_module() -> void {
+  auto module = compile_fixture_multi(
+      {
+          {"tools", "module tools\n"
+                    "pub def double(x: int32) -> int32:\n"
+                    "    return x * 2\n"},
+          {"app", "module app\n"
+                  "use tools\n"
+                  "pub def main() -> int32:\n"
+                  "    return tools.double(21)\n"},
+      },
+      "app");
+  auto main_result = run_main(module);
+  expect(main_result.has_value(),
+         "expected a call across module boundaries to run");
+  expect(main_result->value.i == 42,
+         "expected main() to return tools.double(21) == 42");
+}
+
+auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
+  auto module = compile_fixture_multi(
+      {
+          {"app", "module app\n"
+                  "pub trait from[T]:\n"
+                  "    def from(value: T) -> self\n"
+                  "pub type wrapped = { pub value: int32 }\n"
+                  "impl from[int32] for wrapped:\n"
+                  "    def from(x: int32) -> wrapped:\n"
+                  "        return wrapped{ value: x * 3 }\n"
+                  "pub def main() -> int32:\n"
+                  "    return wrapped.from(7).value\n"},
+      },
+      "app");
+  auto main_result = run_main(module);
+  expect(main_result.has_value(),
+         "expected a type-qualified associated-function call to run");
+  expect(main_result->value.i == 21,
+         "expected main() to return wrapped.from(7).value == 21");
 }
 
 auto test_and_or_short_circuit_to_correct_value() -> void {
@@ -737,6 +839,8 @@ auto main() -> int {
     test_while_loop_sums_one_to_n();
     test_recursive_call_computes_factorial();
     test_calls_another_function_in_the_same_module();
+    test_calls_a_function_in_another_module();
+    test_calls_an_associated_function_via_a_type_qualified_path();
     test_and_or_short_circuit_to_correct_value();
     test_cast_widens_int_to_float();
     test_checked_add_panics_on_overflow_end_to_end();
