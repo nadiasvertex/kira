@@ -113,28 +113,29 @@ auto main(int argc, char *argv[]) -> int {
                "expected a broad parser stress corpus, found only {} files",
                files.size()));
 
-    auto temp = make_temp_dir();
-    kira::cli_config cfg{
+    auto dir = make_temp_dir();
+    kira::driver::cli_config cfg{
         .program_name = "kira",
         .sources = files,
-        .metadata_dir = temp.path.string(),
+        .metadata_dir = dir.path.string(),
         .show_help = false,
         // The stress corpus exercises the parser; its snippets reference names
         // that intentionally do not exist, so semantic checking stays off.
         .parse_only = true,
     };
 
-    auto report = kira::compile_sources(cfg, false);
-    expect(report.has_value(), "expected compile_sources to return a report");
-    expect(report->error_count == 0,
-           report->diagnostics.empty()
+    auto result = kira::driver::compile_sources(cfg, false);
+    expect(result.has_value(), "expected compile_sources to return a report");
+    auto &report = result.value();
+    expect(report.error_count == 0,
+           report.diagnostics.empty()
                ? std::string{"expected parser stress corpus to parse cleanly"}
-               : report->diagnostics);
-    expect(report->modules.size() == files.size(),
+               : report.diagnostics);
+    expect(report.modules.size() == files.size(),
            std::format("expected {} metadata artifacts, got {}", files.size(),
-                       report->modules.size()));
+                       report.modules.size()));
 
-    for (const auto &module : report->modules) {
+    for (const auto &module : report.modules) {
       expect(fs::exists(module.metadata_path),
              std::format("expected metadata artifact `{}` to exist",
                          module.metadata_path));

@@ -1,9 +1,12 @@
 #pragma once
 
+#include <expected>
+
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "src/module_metadata.pb.h"
 #include "src/parser/ast.h"
 
 #include <filesystem>
@@ -69,5 +72,31 @@ struct compiled_module {
 /// @param decl Static declaration to describe.
 [[nodiscard]] auto static_decl_label(const ast::static_decl &decl)
     -> std::string;
+
+/// Serialize one module's metadata file and return its output path.
+///
+/// @param metadata_root Root directory configured for metadata output.
+/// @param file Parsed AST for the source file.
+/// @param source_path Original source file path.
+/// @param diagnostics Plain-text driver diagnostics buffer for I/O failures.
+[[nodiscard]] auto write_module_metadata(
+    const std::filesystem::path &metadata_root, const ast::file &file,
+    const std::filesystem::path &source_path, std::string &diagnostics)
+    -> std::expected<std::string, std::monostate>;
+
+/// Render a human-readable module label for compile summaries.
+///
+/// @param module Compiled module record to describe.
+[[nodiscard]] auto module_display_name(const compiled_module &module)
+    -> std::string;
+
+/// Build the serialized metadata payload for one parsed source file.
+///
+/// @param file Parsed AST for the source file.
+/// @param source_path Original source file path.
+[[nodiscard]] auto
+build_module_metadata(const ast::file &file,
+                      const std::filesystem::path &source_path)
+    -> metadata::v1::ModuleMetadata;
 
 } // namespace kira::driver

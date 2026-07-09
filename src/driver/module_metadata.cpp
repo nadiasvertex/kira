@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <fstream>
 #include <string_view>
 
 #include "module_metadata.h"
@@ -6,6 +7,7 @@
 #include "src/util/path.h"
 #include "src/util/str.h"
 
+using kira::util::append_error;
 using kira::util::join_strings;
 using kira::util::normalize_path;
 
@@ -171,6 +173,50 @@ constexpr uint32_t k_module_metadata_schema_version = 1;
     return join_strings(module.module_path, ".");
   }
   return module.source_path;
+}
+
+/// Serialize one module's metadata file and return its output path.
+///
+/// @param metadata_root Root directory configured for metadata output.
+/// @param file Parsed AST for the source file.
+/// @param source_path Original source file path.
+/// @param diagnostics Plain-text driver diagnostics buffer for I/O failures.
+[[nodiscard]] auto
+write_module_metadata(const fs::path &metadata_root, const ast::file &file,
+                      const fs::path &source_path, std::string &diagnostics)
+    -> std::expected<std::string, std::monostate> {
+  auto output_path = metadata_output_path(metadata_root, file, source_path);
+  auto output_parent = output_path.parent_path();
+
+  auto ec = std::error_code{};
+  if (!output_parent.empty()) {
+    fs::create_directories(output_parent, ec);
+    if (ec) {
+      append_error(diagnostics,
+                   std::format("failed to create `{}`: {}",
+                               normalize_path(output_parent), ec.message()));
+      return std::unexpected(std::monostate{});
+    }
+  }
+
+  auto out = std::ofstream(output_path, std::ios::binary | std::ios::trunc);
+  if (!out) {
+    append_error(diagnostics, std::format("failed to open `{}` for writing",
+                                          normalize_path(output_path)));
+    return std::unexpected(std::monostate{});
+  }
+
+  auto metadata = build_module_metadata(file, source_path);
+  if (!metadata.SerializeToOstream(&out) || !out.good()) {
+    out.close();
+    fs::remove(output_path, ec);
+    append_error(diagnostics,
+                 std::format("failed to serialize module metadata to `{}`",
+                             normalize_path(output_path)));
+    return std::unexpected(std::monostate{});
+  }
+
+  return normalize_path(output_path);
 }
 
 /// Return the parent module portion of a dotted module path.
