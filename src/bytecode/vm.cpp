@@ -1121,6 +1121,38 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         f.pc = ip + 3;
         break;
       }
+      case opcode::op_store_byte: {
+        const uint8_t ptr_reg = code[ip];
+        const uint16_t byte_offset = read_u16(code, ip + 1);
+        const uint8_t src = code[ip + 3];
+        auto *data = reinterpret_cast<uint8_t *>(
+            static_cast<uintptr_t>(f.registers[ptr_reg].u));
+        data[byte_offset] = static_cast<uint8_t>(f.registers[src].u);
+        f.pc = ip + 4;
+        break;
+      }
+      case opcode::op_load_byte_indexed: {
+        const uint8_t dst = code[ip];
+        const uint8_t ptr_reg = code[ip + 1];
+        const uint8_t index_reg = code[ip + 2];
+        const auto index = f.registers[index_reg].u;
+        const auto *data = reinterpret_cast<const uint8_t *>(
+            static_cast<uintptr_t>(f.registers[ptr_reg].u));
+        f.registers[dst] = slot_value{static_cast<uint64_t>(data[index])};
+        f.pc = ip + 3;
+        break;
+      }
+      case opcode::op_store_byte_indexed: {
+        const uint8_t ptr_reg = code[ip];
+        const uint8_t index_reg = code[ip + 1];
+        const uint8_t src = code[ip + 2];
+        const auto index = f.registers[index_reg].u;
+        auto *data = reinterpret_cast<uint8_t *>(
+            static_cast<uintptr_t>(f.registers[ptr_reg].u));
+        data[index] = static_cast<uint8_t>(f.registers[src].u);
+        f.pc = ip + 3;
+        break;
+      }
       case opcode::op_list_push: {
         const uint8_t header_reg = code[ip];
         const uint8_t value_reg = code[ip + 1];

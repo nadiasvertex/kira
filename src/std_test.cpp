@@ -123,10 +123,16 @@ auto list_samples(const fs::path &corpus_dir) -> std::vector<sample> {
 /// Runs `source_path`'s `main` via the tier-0 bytecode VM
 /// (`driver::compile_sources` with `cfg.run = true`) with real process
 /// stdout (fd 1) redirected to a temp file for the duration of the call —
-/// `println`/`print` write through `rt_write`'s real `::write(1, ...)`
-/// syscall (`src/bytecode/vm.cpp`), not anything `compile_report` captures,
-/// so this is the only way to observe what a sample actually printed.
-auto run_sample_capturing_stdout(const sample &sample, const fs::path &tmp_dir)
+/// `println`/`print`/`eprintln`/`eprint` write through `rt_write`'s real
+/// `::write(fd, ...)` syscall (`src/bytecode/vm.cpp`), not anything
+/// `compile_report` captures, so redirecting the real process fd for the
+/// duration of the run is the only way to observe what a sample actually
+/// wrote. `capture_fd`/`suffix` pick which stream (`STDOUT_FILENO`/
+/// `STDERR_FILENO`) to redirect and what to name the temp capture file, so
+/// `run_sample_capturing_stdout`/`run_sample_capturing_stderr` below are
+/// both thin callers of the exact same redirect-run-restore dance.
+auto run_sample_capturing_fd(const sample &sample, const fs::path &tmp_dir,
+                             int capture_fd_number, std::string_view suffix)
     -> std::string {
   kira::driver::cli_config cfg{
       .program_name = "kira",
@@ -138,25 +144,25 @@ auto run_sample_capturing_stdout(const sample &sample, const fs::path &tmp_dir)
   };
   kira::driver::inject_stdlib_prelude(cfg);
 
-  const auto capture_path = tmp_dir / (sample.name + ".stdout");
+  const auto capture_path = tmp_dir / (sample.name + std::string(suffix));
   const auto capture_fd =
       ::open(capture_path.string().c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  expect(capture_fd >= 0, std::format("expected to open `{}` for capturing "
-                                      "stdout",
-                                      capture_path.string()));
+  expect(capture_fd >= 0,
+         std::format("expected to open `{}` for capturing output",
+                     capture_path.string()));
 
-  const auto saved_stdout_fd = ::dup(STDOUT_FILENO);
-  expect(saved_stdout_fd >= 0, "expected to save the real stdout fd");
-  ::fflush(stdout);
-  expect(::dup2(capture_fd, STDOUT_FILENO) >= 0,
-         "expected to redirect stdout to the capture file");
+  const auto saved_fd = ::dup(capture_fd_number);
+  expect(saved_fd >= 0, "expected to save the real fd being captured");
+  ::fflush(nullptr);
+  expect(::dup2(capture_fd, capture_fd_number) >= 0,
+         "expected to redirect the target fd to the capture file");
   ::close(capture_fd);
 
   auto report = kira::driver::compile_sources(cfg, false);
 
-  ::fflush(stdout);
-  ::dup2(saved_stdout_fd, STDOUT_FILENO);
-  ::close(saved_stdout_fd);
+  ::fflush(nullptr);
+  ::dup2(saved_fd, capture_fd_number);
+  ::close(saved_fd);
 
   expect(report.has_value(),
          std::format("[{}] expected compile_sources to return a report",
@@ -177,6 +183,16 @@ auto run_sample_capturing_stdout(const sample &sample, const fs::path &tmp_dir)
   return captured.str();
 }
 
+auto run_sample_capturing_stdout(const sample &sample, const fs::path &tmp_dir)
+    -> std::string {
+  return run_sample_capturing_fd(sample, tmp_dir, STDOUT_FILENO, ".stdout");
+}
+
+auto run_sample_capturing_stderr(const sample &sample, const fs::path &tmp_dir)
+    -> std::string {
+  return run_sample_capturing_fd(sample, tmp_dir, STDERR_FILENO, ".stderr");
+}
+
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
@@ -195,7 +211,27 @@ auto main(int argc, char *argv[]) -> int {
                          sample.name, sample.expected_stdout, actual_stdout));
     }
 
-    std::cout << "std_test: " << samples.size() << " sample(s) passed\n";
+    // `eprintln`/`eprint` (and the `rt_stderr` intrinsic they bottom out
+    // in) are otherwise uncovered by the loop above, which only ever
+    // checks stdout — `find_prelude_function` (`src/semantic/check.cpp`)
+    // makes every name in `std.console` bare-reachable, not just
+    // `println`/`print`, so this closes that gap the same way the stdout
+    // corpus covers those two.
+    const auto stderr_sample_it =
+        std::ranges::find(samples, "eprintln_writes_to_stderr", &sample::name);
+    expect(stderr_sample_it != samples.end(),
+           "expected the eprintln_writes_to_stderr sample to be present in "
+           "the corpus");
+    auto stderr_dir = make_temp_dir();
+    const auto actual_stderr =
+        run_sample_capturing_stderr(*stderr_sample_it, stderr_dir.path);
+    const auto expected_stderr = std::string("stderr message\n");
+    expect(actual_stderr == expected_stderr,
+           std::format("[{}] expected stderr:\n{}\n---\ngot:\n{}",
+                       stderr_sample_it->name, expected_stderr, actual_stderr));
+
+    std::cout << "std_test: " << samples.size()
+              << " sample(s) passed (plus 1 stderr check)\n";
   } catch (const std::exception &ex) {
     std::cerr << "std_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);

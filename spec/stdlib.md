@@ -208,8 +208,12 @@ Prelude") re-export these.
 
 ## Compiler and Language Changes Required
 
-None of `std.io`/`std.format`/`std.console` can compile end-to-end yet.
-This is the checklist of compiler work they depend on, grouped by phase.
+`std.io`/`std.console` compile and run end-to-end now (see "Running the
+stdlib: HIR lowering gaps" below for the full path, including
+`println`/`print` routing through real `std.console` source rather than a
+lowering shortcut); `std.format` still cannot, entirely blocked on
+`{expr:spec}` interpolation splitting. This is the checklist of compiler
+work they depend on, grouped by phase.
 
 ### Language / grammar
 
@@ -665,17 +669,72 @@ there is no case for "root is a module" or "root is a type name."
       (`test_calls_a_function_in_another_module`,
       `test_calls_an_associated_function_via_a_type_qualified_path`, both
       run/JIT'd to a real expected value).
-- [ ] **Trait default-method dispatch** (`file.write_all(...)`,
+- [x] **Trait default-method dispatch** (`file.write_all(...)`,
       `.read_to_end(...)`, `.read_exact(...)` — calling a trait method that
       the impl doesn't override, only the trait's default body supplies) and
-      **`extend` blocks** (`extend file: pub def close(...)`) remain
-      *unverified*, not confirmed-working: lowering aborts at a module's
-      first failing node, and every function in `std.io`/`std.console` that
-      would exercise these sits behind one of the two call-resolution gaps
-      above. Once those are fixed, re-run and check whether these need
-      their own fixes or fall out for free — no `codegen_test`/
-      `codegen_stress` fixture exercises either construct today, so there is
-      no existing evidence either way.
+      **`extend` blocks** (`extend file: pub def close(...)`) are resolved
+      at the checker/lowering level: `semantic::check.cpp`'s
+      `build_method_table` synthesizes a per-concrete-impl clone of each
+      unwritten trait-default method (`monomorphize_trait_default`, via the
+      now-general `ast::clone_func_decl`), type-checks it with `self_type_`
+      bound to the concrete target, and records it in `checked_types::
+      synthesized_trait_defaults` for `hir::lower_module` to lower alongside
+      every other impl member; `extend` blocks lower through a
+      `lower_extend_methods` sibling of the ordinary impl-member lowering.
+      Reading the code directly (this checklist item having gone stale
+      relative to it) confirms the mechanism is fully wired end to end,
+      checker through lowering.
+      This surfaced several lower-level blockers, all now fixed and
+      verified by a full `bazelisk test //...` run plus manual `--run`/
+      `--compile` smoke tests of a real `println` program on both
+      backends:
+      - `&`/`&mut`/range-slicing (`buf[a..b]`) were entirely unimplemented
+        in both `bytecode_compiler`/`llvm_codegen` — `std.console::print`'s
+        real body (`stdout().write_all(&s.as_bytes())`) needs the former,
+        `write_all` needs both. Both backends now pass `&`/`&mut` through
+        unchanged for any already-heap-pointer-represented value (struct/
+        sum/opaque/fn/tuple/array/`list`/`option`/`result`/`str`), and
+        range-index a `str`/`slice`/`slice_mut`/`array[byte, N]` source by
+        pure pointer arithmetic on its byte-addressed `{ len; data }`
+        header (or, for `array[byte, N]`, the statically-known `N` and the
+        array's own pointer — it has no header). `array[byte, N]` is now
+        given its own tightly byte-packed representation (`is_byte_array_
+        type`, new `op_store_byte`/`op_load_byte_indexed`/`op_store_byte_
+        indexed` bytecode opcodes and their LLVM equivalents) instead of
+        the generic 8-bytes/element slot layout every other array uses —
+        needed so `reader::read_to_end`'s `buf[0..4096]` aliases a real
+        mutable view (`rt_read` writes through it, and `buf[i]` reads the
+        result back out afterward), not a silently-dropped copy.
+      - A dangling-reference bug in `type_table`: `entry()` returned a
+        `const type_entry &` into `type_table`'s backing `std::vector`,
+        which callers routinely held across further calls that could
+        themselves intern new types (e.g. `infer_method_call` holding its
+        own `entry` across `find_method`/`fn_type_of`) — a `push_back`-
+        triggered reallocation would silently invalidate it mid-expression
+        (a struct's own name reading back empty). Fixed at the root by
+        switching `entries_` to `std::deque`, which never invalidates
+        references to existing elements on `push_back`.
+      - `unit` had no bytecode/LLVM representation as a *value* (only as
+        an absent return) — `std.console.print`/`eprint`'s explicit
+        `return unit` needs one. Both backends now treat it as a zero
+        placeholder, mirroring how little information a `unit` value
+        carries.
+      - Assigning to a struct field (`self.fd = ...`, `std.io.file`'s
+        `close()`) had no bytecode/LLVM support; added.
+      - `while true: ...` (Kira's only spelling for an unconditional loop,
+        having no `break`/`continue`) — `read_to_end`/`read_exact`'s shape
+        — miscompiled under `llvm_codegen`: the loop's `end_bb` is
+        statically unreachable (its only exits are `return`s inside the
+        body), but was left open for a caller to plant a *different*,
+        wrongly-typed fallthrough return into, tripping the LLVM verifier.
+        Now marked `unreachable` instead.
+      - `aot.cpp`'s hand-rolled AOT link step only linked `libruntime.a`/
+        `libaot_runtime.a`, missing `runtime`'s own transitive Bazel
+        `deps` on `//src/semantic`/`//src/parser` (needed by `layout.cpp`'s
+        `struct_field_slot`-family compile-time layout helpers) — any AOT
+        program touching a struct/sum type failed to link with
+        `type_table::entry` undefined. Now finds and links those two
+        archives as well.
 - [ ] `std.format` remains entirely blocked on `{expr:spec}` interpolation
       splitting (unchanged from above) — this is lexer/parser work, not
       lowering work, and hasn't been started.

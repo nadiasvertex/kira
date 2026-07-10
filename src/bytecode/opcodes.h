@@ -255,30 +255,53 @@ enum class opcode : uint8_t {
                      ///< this, not baked into the instruction stream.
   op_store_indexed,  ///< u8 ptr, u8 index, u8 src —
                      ///< *(reg[ptr] as slot_value* + reg[index].u) = reg[src].
-  op_list_push,      ///< u8 header_ptr, u8 value — appends reg[value] onto
-                     ///< the `list[T]` value at reg[header_ptr] (a 3-slot
-                     ///< `{ len; cap; data }` header, `src/runtime/
-                     ///< layout.h`), growing/copying to a larger `data`
-                     ///< block when already at capacity. Unlike
-                     ///< `op_load_slot`/`op_store_slot`, this is one
-                     ///< opcode rather than several composed primitives:
-                     ///< growth needs a real conditional allocate-and-copy
-                     ///< that doesn't reduce to "one flat block of 8-byte
-                     ///< slots," so this delegates to
-                     ///< `kira::runtime::list_push` (the exact same
-                     ///< function `llvm_codegen`'s generated IR calls via
-                     ///< `kira_rt_list_push`) rather than reimplementing
-                     ///< growth as a second copy of that logic here.
-  op_panic_if,       ///< u8 cond, u8 panic_reason — panics with
-                     ///< `static_cast<panic_reason>(panic_reason)` if
-                     ///< reg[cond] (a `boolean` register) is true; otherwise
-                     ///< falls through. The bytecode-level building block a
-                     ///< compiler-emitted bounds check (or any other
-                     ///< source-triggered panic condition that isn't one of
-                     ///< the checked-arithmetic opcodes' own built-in panics)
-                     ///< composes from — mirrors `llvm_codegen`'s
-                     ///< `guard_panic` helper, just reified as one opcode
-                     ///< instead of a conditional branch to a call.
+  op_store_byte,     ///< u8 ptr, u16 byte_offset, u8 src —
+                     ///< *(reg[ptr] as uint8_t* + byte_offset) = low byte of
+                     ///< reg[src]. Byte-granular, compile-time-constant-offset
+                     ///< counterpart to `op_store_slot` — used for `array
+                     ///< [byte, N]`'s tightly-packed (1 byte/element, not one
+                     ///< 8-byte slot/element) representation, the one element
+                     ///< type that must byte-address so it can alias a
+                     ///< `str`/`slice[byte]` view without a copy (see
+                     ///< `spec/stdlib.md`'s `std.io` byte-buffer notes).
+  op_load_byte_indexed, ///< u8 dst, u8 ptr, u8 index — reg[dst] = zero-
+                        ///< extended *(reg[ptr] as uint8_t* + reg[index].u).
+                        ///< Byte-granular, runtime-indexed counterpart to
+                        ///< `op_load_indexed`, for reading one element out of a
+                        ///< byte-packed `array[byte, N]`.
+  op_store_byte_indexed, ///< u8 ptr, u8 index, u8 src —
+  ///< *(reg[ptr] as uint8_t* + reg[index].u) = low byte of
+  ///< reg[src]. Byte-granular, runtime-indexed counterpart
+  ///< to `op_store_indexed` — the write-side sibling of
+  ///< `op_load_byte_indexed`/`op_store_byte`, unused by
+  ///< any construct compiled today (nothing assigns
+  ///< through a runtime-indexed `array[byte, N]` element
+  ///< yet) but kept alongside its load counterpart so a
+  ///< future one doesn't need its own opcode-design pass.
+  op_list_push, ///< u8 header_ptr, u8 value — appends reg[value] onto
+                ///< the `list[T]` value at reg[header_ptr] (a 3-slot
+                ///< `{ len; cap; data }` header, `src/runtime/
+                ///< layout.h`), growing/copying to a larger `data`
+                ///< block when already at capacity. Unlike
+                ///< `op_load_slot`/`op_store_slot`, this is one
+                ///< opcode rather than several composed primitives:
+                ///< growth needs a real conditional allocate-and-copy
+                ///< that doesn't reduce to "one flat block of 8-byte
+                ///< slots," so this delegates to
+                ///< `kira::runtime::list_push` (the exact same
+                ///< function `llvm_codegen`'s generated IR calls via
+                ///< `kira_rt_list_push`) rather than reimplementing
+                ///< growth as a second copy of that logic here.
+  op_panic_if,  ///< u8 cond, u8 panic_reason — panics with
+                ///< `static_cast<panic_reason>(panic_reason)` if
+                ///< reg[cond] (a `boolean` register) is true; otherwise
+                ///< falls through. The bytecode-level building block a
+                ///< compiler-emitted bounds check (or any other
+                ///< source-triggered panic condition that isn't one of
+                ///< the checked-arithmetic opcodes' own built-in panics)
+                ///< composes from — mirrors `llvm_codegen`'s
+                ///< `guard_panic` helper, just reified as one opcode
+                ///< instead of a conditional branch to a call.
 
   // --- Diagnostics ---------------------------------------------------------
   op_panic, ///< (no operands) — panics with `panic_reason::explicit_panic`

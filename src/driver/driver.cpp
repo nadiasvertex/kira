@@ -63,11 +63,13 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
     });
   };
 
-  // `traits.kira` first: it declares the traits `prelude.kira` depends on,
-  // though declaration order across session files has no effect on
-  // resolution — the whole session's module index is built before any file
-  // is checked.
-  for (const auto *filename : {"traits.kira", "prelude.kira"}) {
+  // `traits.kira` first: it declares the traits `prelude.kira` depends on;
+  // `io.kira` before `console.kira`, matching `console.kira`'s own
+  // `use std.io` — though declaration order across session files has no
+  // effect on resolution — the whole session's module index is built
+  // before any file is checked.
+  for (const auto *filename :
+       {"traits.kira", "prelude.kira", "io.kira", "console.kira"}) {
     const auto found = find_stdlib_source_file(cfg.program_name, filename);
     if (found && !already_present(*found)) {
       cfg.sources.push_back(found->string());

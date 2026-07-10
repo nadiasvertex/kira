@@ -93,7 +93,9 @@ cc_test(
     data = [
         ":std_sources",
         "//src/llvm_codegen:aot_runtime",
+        "//src/parser:parser",
         "//src/runtime:runtime",
+        "//src/semantic:semantic",
     ],
     deps = [
         ":module_metadata_cc_proto",
@@ -123,7 +125,10 @@ cc_test(
     name = "std_test",
     size = "medium",
     srcs = ["std_test.cpp"],
-    data = [":std_test_corpus"],
+    data = [
+        ":std_sources",
+        ":std_test_corpus",
+    ],
     tags = ["no-sandbox"],
     deps = ["//src/driver:driver"],
 )

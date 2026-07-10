@@ -114,9 +114,7 @@ impl drop for file:
 extend file:
     pub def close(mut self) -> result[unit, io_error]:
         let r = rt_close(self.fd)
-        self.fd = closed_sentinel
+        self.fd = raw_fd { value: -1 }
         match r:
             @ok(u) => @ok(u)
             @err(e) => @err(io_error.from(e))
-
-static closed_sentinel: raw_fd = raw_fd { value: -1 }

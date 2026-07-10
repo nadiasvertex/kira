@@ -349,6 +349,23 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
   }
 }
 
+/// Unwraps `&T`/`&mut T` down to `T` — mirrors `semantic::check.cpp`'s own
+/// `strip_refs`. A parameter/local/field declared `&T` is represented
+/// identically to a bare `T` for every `is_heap_type` kind (the same
+/// passthrough `compile_unary`'s `addr_of`/`addr_of_mut` relies on: the
+/// referent's own heap pointer already *is* the address a reference to it
+/// would hold), so `storage_llvm_type` needs to see through the wrapper to
+/// find that representation — neither `numeric_kind_of` nor `is_heap_type`
+/// otherwise recognize `ref_kind` at all.
+[[nodiscard]] auto strip_refs(const type_table &types, type_id id) -> type_id {
+  const auto *entry = &types.entry(id);
+  while (entry->kind == semantic::type_kind::ref_kind) {
+    id = entry->result;
+    entry = &types.entry(id);
+  }
+  return id;
+}
+
 /// Maps `id` to the LLVM type a value of that type is stored/passed as: the
 /// scalar `numeric_kind` mapping for scalars, an opaque `ptr` for anything
 /// `is_heap_type` recognizes, or `nullopt` for the (currently) genuinely
@@ -359,12 +376,25 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
 [[nodiscard]] auto storage_llvm_type(const type_table &types,
                                      llvm::LLVMContext &ctx, type_id id)
     -> std::optional<llvm::Type *> {
-  const auto kind = numeric_kind_of(types, id);
+  const auto stripped = strip_refs(types, id);
+  const auto kind = numeric_kind_of(types, stripped);
   if (kind.has_value()) {
     return llvm_type_for(ctx, *kind);
   }
-  if (is_heap_type(types, id)) {
+  if (is_heap_type(types, stripped)) {
     return llvm::PointerType::get(ctx, 0);
+  }
+  if (types.is_unit(stripped)) {
+    // `unit` has exactly one value and carries no information — a
+    // function's own `unit` *return* is already handled specially
+    // (`return_is_unit_` emits `void`/`CreateRetVoid` instead of ever
+    // reaching here), but `unit` can still appear as a parameter, local, or
+    // intermediate expression type (e.g. `std.console.print`'s own
+    // `-> unit` body discarding `write_all`'s `result[unit, io_error]`) —
+    // an i64 zero placeholder, mirroring `bytecode_compiler::compile.cpp`'s
+    // identical treatment of the `unit` literal, is enough since nothing
+    // ever reads it back out.
+    return llvm::Type::getInt64Ty(ctx);
   }
   return std::nullopt;
 }
@@ -599,9 +629,26 @@ private:
   /// codegen for everything except sizing/length (see `compile_array_init`/
   /// `compile_index`).
   [[nodiscard]] auto is_list_type(type_id id) const -> bool {
-    const auto &entry = types_.entry(id);
+    const auto &entry = types_.entry(strip_refs(types_, id));
     return entry.kind == semantic::type_kind::builtin_generic_kind &&
            entry.name == "list";
+  }
+
+  /// Whether `id` is a fixed `array[byte, N]` — mirrors
+  /// `bytecode_compiler::compile.cpp`'s `is_byte_array_type` exactly (see
+  /// its doc comment): the one array element type given its own tightly
+  /// byte-packed (1 byte/element) representation instead of the generic
+  /// 8-bytes/element slot layout, so `buf[a..b]` can alias a real
+  /// `str`/`slice[byte]` view with no copy.
+  [[nodiscard]] auto is_byte_array_type(type_id id) const -> bool {
+    const auto &entry = types_.entry(strip_refs(types_, id));
+    if (entry.kind != semantic::type_kind::array_kind ||
+        !entry.array_size.has_value()) {
+      return false;
+    }
+    const auto &elem = types_.entry(entry.result);
+    return elem.kind == semantic::type_kind::builtin_kind &&
+           elem.name == "byte";
   }
 
   // ------------------------------------------------------------------
@@ -663,6 +710,23 @@ private:
         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 8));
     return builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), block_ptr,
                               byte_offset);
+  }
+
+  /// Byte-granular counterparts of the two `slot_address` overloads above —
+  /// used only for `array[byte, N]`'s tightly-packed representation
+  /// (`is_byte_array_type`): a raw byte offset/index, not scaled by 8, into
+  /// the block `compile_heap_alloc((N + 7) / 8)` reserved for it.
+  [[nodiscard]] auto byte_address(llvm::Value *block_ptr, size_t byte_offset)
+      -> llvm::Value * {
+    auto *offset =
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), byte_offset);
+    return builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), block_ptr, offset);
+  }
+  [[nodiscard]] auto byte_address(llvm::Value *block_ptr,
+                                  llvm::Value *dynamic_byte_index)
+      -> llvm::Value * {
+    return builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), block_ptr,
+                              dynamic_byte_index);
   }
 
   // ------------------------------------------------------------------
@@ -866,6 +930,14 @@ private:
       -> std::expected<llvm::Value *, codegen_error> {
     if (lit.lit_kind == token_kind::string_lit) {
       return compile_string_literal(lit);
+    }
+    if (lit.lit_kind == token_kind::kw_unit) {
+      // `unit` has exactly one value and carries no information — nothing
+      // downstream ever reads it back out (a `unit`-typed return discards
+      // this value in favor of `CreateRetVoid`, see `return_is_unit_`
+      // above), so a zero placeholder is enough. Bypasses `numeric_kind_for`
+      // below, which has no scalar kind for `unit` at all.
+      return llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0);
     }
     auto kind = numeric_kind_for(lit.type, lit.span);
     if (!kind.has_value()) {
@@ -1076,6 +1148,33 @@ private:
                      : builder_.CreateLShr(lhs, rhs);
   }
 
+  /// Whether `id`'s runtime representation is already a single pointer into
+  /// a flat N-slot heap block (`src/runtime/layout.h`) rather than an
+  /// inline scalar value. For exactly these kinds, `&`/`&mut` needs no new
+  /// instruction at all: the compiled value already *is* the address a
+  /// reference would hold — see `compile_unary`'s `addr_of`/`addr_of_mut`
+  /// passthrough below.
+  [[nodiscard]] auto is_heap_pointer_value(type_id id) const -> bool {
+    const auto &entry = types_.entry(id);
+    switch (entry.kind) {
+    case semantic::type_kind::struct_kind:
+    case semantic::type_kind::sum_kind:
+    case semantic::type_kind::opaque_kind:
+    case semantic::type_kind::fn_kind:
+    case semantic::type_kind::tuple_kind:
+    case semantic::type_kind::array_kind:
+      return true;
+    case semantic::type_kind::builtin_kind:
+      return entry.name == "str";
+    case semantic::type_kind::builtin_generic_kind:
+      return entry.name == "list" || entry.name == "slice" ||
+             entry.name == "slice_mut" || entry.name == "option" ||
+             entry.name == "result";
+    default:
+      return false;
+    }
+  }
+
   [[nodiscard]] auto compile_unary(const hir::hir_unary &un)
       -> std::expected<llvm::Value *, codegen_error> {
     if (un.op == ast::unary_op::logical_not) {
@@ -1084,6 +1183,13 @@ private:
         return std::unexpected(src.error());
       }
       return builder_.CreateNot(*src);
+    }
+    if ((un.op == ast::unary_op::addr_of ||
+         un.op == ast::unary_op::addr_of_mut) &&
+        is_heap_pointer_value(un.operand->type)) {
+      // The operand's compiled value already is the pointer a reference to
+      // it would hold — compile it straight through, no new instruction.
+      return compile_expr(*un.operand);
     }
     if (un.op != ast::unary_op::neg && un.op != ast::unary_op::bit_not) {
       return std::unexpected(codegen_error{
@@ -1491,10 +1597,51 @@ private:
     return block;
   }
 
+  /// Allocates a byte-packed `array[byte, N]` (`is_byte_array_type`) —
+  /// `ceil(N/8)` slots' worth of raw bytes, one byte per element via
+  /// `byte_address` — mirrors `bytecode_compiler::compile.cpp`'s
+  /// `compile_byte_array_init` exactly, storing a byte (`CreateTrunc` to
+  /// `i8`) at each element's offset instead of a whole slot.
+  [[nodiscard]] auto compile_byte_array_init(const hir::hir_array_init &init,
+                                             uint64_t count)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto *block = compile_heap_alloc((count + 7) / 8);
+    if (init.fill_value == nullptr) {
+      for (size_t i = 0; i < init.elements.size(); ++i) {
+        auto value = compile_expr(*init.elements[i]);
+        if (!value.has_value()) {
+          return std::unexpected(value.error());
+        }
+        auto *byte_value =
+            builder_.CreateTrunc(*value, llvm::Type::getInt8Ty(ctx_));
+        builder_.CreateStore(byte_value, byte_address(block, i));
+      }
+      return block;
+    }
+    // See `compile_array_init`'s fill form for why `fill_value` is evaluated
+    // once, not re-evaluated per element.
+    auto fill_value = compile_expr(*init.fill_value);
+    if (!fill_value.has_value()) {
+      return std::unexpected(fill_value.error());
+    }
+    auto *byte_fill_value =
+        builder_.CreateTrunc(*fill_value, llvm::Type::getInt8Ty(ctx_));
+    for (uint64_t i = 0; i < count; ++i) {
+      builder_.CreateStore(byte_fill_value, byte_address(block, i));
+    }
+    return block;
+  }
+
   [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init)
       -> std::expected<llvm::Value *, codegen_error> {
     if (is_list_type(init.type)) {
       return compile_list_init(init);
+    }
+    if (is_byte_array_type(init.type)) {
+      // `check.cpp` requires an explicit-elements array literal's element
+      // count to match its declared size exactly, so `array_size` is the
+      // right count either way — fill or explicit-elements form.
+      return compile_byte_array_init(init, *types_.entry(init.type).array_size);
     }
     if (init.fill_value == nullptr) {
       return compile_slots_init(init.elements);
@@ -1636,6 +1783,120 @@ private:
     return builder_.CreateLoad(*elem_ty, slot_address(*object, node.index));
   }
 
+  /// Whether `id` is `str`, `slice[T]`, `slice_mut[T]`, or `array[byte, N]`
+  /// — the kinds `compile_range_index` can slice by pure pointer arithmetic
+  /// without needing an element-size-aware copy. Mirrors
+  /// `bytecode_compiler::compile.cpp`'s identically-named function (see its
+  /// doc comment): the first three share a byte-addressed 2-slot
+  /// `{ len; data }` header (`src/runtime/io.h`); `array[byte, N]` has no
+  /// such header (a fixed array's "data pointer" is the object itself, its
+  /// length the statically-known `N`), but is *also* byte-addressed because
+  /// `is_byte_array_type` gives it its own tightly-packed representation
+  /// for exactly this reason. Every other `array[T,N]`/`list[T]` stores one
+  /// 8-byte slot per element regardless of `T` (`compile_array_init`) and
+  /// so cannot be range-indexed this way.
+  [[nodiscard]] auto is_byte_addressed_slice_type(type_id id) const -> bool {
+    const auto &entry = types_.entry(strip_refs(types_, id));
+    if (entry.kind == semantic::type_kind::builtin_kind) {
+      return entry.name == "str";
+    }
+    if (entry.kind == semantic::type_kind::builtin_generic_kind) {
+      return entry.name == "slice" || entry.name == "slice_mut";
+    }
+    return is_byte_array_type(id);
+  }
+
+  /// `buf[a..b]`/`buf[a..=b]` on a `str`/`slice`/`slice_mut`/
+  /// `array[byte, N]` source — builds a fresh 2-slot `{ len; data }` header
+  /// whose `data` points into the source's own backing bytes, no copy. For
+  /// the three header-based kinds, `len`/`data` are read from the source's
+  /// own heap header; for `array[byte, N]` (`is_byte_array_type`), there is
+  /// no header — `len` is the statically-known `N` and `data` is the
+  /// array's own pointer, mirroring `compile_index`'s non-range element
+  /// access. Returning a *view* rather than a copy matters for correctness,
+  /// not just performance: `std.io.reader::read_to_end`'s
+  /// `self.read(&mut buf[0..4096])` passes this as a `&mut` out-parameter
+  /// `rt_read` writes through, and `read_to_end` reads the result back out
+  /// of `buf` itself afterward — a copy-based view would silently drop
+  /// every byte `rt_read` wrote.
+  [[nodiscard]] auto compile_range_index(const hir::hir_index &node,
+                                         const hir::hir_binary &range)
+      -> std::expected<llvm::Value *, codegen_error> {
+    if (range.lhs == nullptr || range.rhs == nullptr) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "a range used as an index needs both a start and an "
+                     "end bound"});
+    }
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto start_kind = numeric_kind_for(range.lhs->type, node.span);
+    if (!start_kind.has_value()) {
+      return std::unexpected(start_kind.error());
+    }
+    auto start_value = compile_expr(*range.lhs);
+    if (!start_value.has_value()) {
+      return std::unexpected(start_value.error());
+    }
+    auto *start64 = builder_.CreateIntCast(
+        *start_value, llvm::Type::getInt64Ty(ctx_),
+        is_signed_integer(*start_kind), "range_start.i64");
+
+    auto end_kind = numeric_kind_for(range.rhs->type, node.span);
+    if (!end_kind.has_value()) {
+      return std::unexpected(end_kind.error());
+    }
+    auto end_value = compile_expr(*range.rhs);
+    if (!end_value.has_value()) {
+      return std::unexpected(end_value.error());
+    }
+    auto *end64 =
+        builder_.CreateIntCast(*end_value, llvm::Type::getInt64Ty(ctx_),
+                               is_signed_integer(*end_kind), "range_end.i64");
+    // Normalize `a..=b` (an inclusive bound, `b` itself a valid index) to
+    // the same exclusive-end shape `a..b` already is (`b` itself out of
+    // bounds), so everything below treats `end64` uniformly either way.
+    if (range.op == ast::binary_op::range_inclusive) {
+      end64 = builder_.CreateAdd(
+          end64, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1),
+          "range_end.inclusive_adjust");
+    }
+
+    llvm::Value *len = nullptr;
+    llvm::Value *data = nullptr;
+    if (is_byte_array_type(node.object->type)) {
+      len = llvm::ConstantInt::get(
+          llvm::Type::getInt64Ty(ctx_),
+          *types_.entry(strip_refs(types_, node.object->type)).array_size);
+      data = *object;
+    } else {
+      len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                                slot_address(*object, size_t{0}), "slice.len");
+      data =
+          builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
+                              slot_address(*object, size_t{1}), "slice.data");
+    }
+    // `end > len` and `start > end` are both out-of-bounds — checked as two
+    // separate panics so an inverted range still reports as an inverted
+    // range even when `start` also happens to exceed `len`.
+    guard_panic(builder_.CreateICmpUGT(end64, len, "range_end.oob"),
+                panic_reason::index_out_of_bounds);
+    guard_panic(builder_.CreateICmpUGT(start64, end64, "range_start.oob"),
+                panic_reason::index_out_of_bounds);
+
+    auto *new_data = builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), data,
+                                        start64, "range_slice.data");
+    auto *new_len = builder_.CreateSub(end64, start64, "range_slice.len");
+
+    auto *header = compile_heap_alloc(2);
+    builder_.CreateStore(new_len, slot_address(header, size_t{0}));
+    builder_.CreateStore(new_data, slot_address(header, size_t{1}));
+    return header;
+  }
+
   /// Fixed `array[T, N]` and growable `list[T]` element access —
   /// `slice`/`str` indexing still needs a byte/view model this backend
   /// doesn't have yet. A fixed array's elements live directly in its own
@@ -1647,7 +1908,27 @@ private:
   /// the indexed load) is shared.
   [[nodiscard]] auto compile_index(const hir::hir_index &node)
       -> std::expected<llvm::Value *, codegen_error> {
-    const auto &object_entry = types_.entry(node.object->type);
+    if (node.index != nullptr &&
+        node.index->kind == hir_node_kind::hir_binary) {
+      const auto &maybe_range =
+          dynamic_cast<const hir::hir_binary &>(*node.index);
+      if (maybe_range.op == ast::binary_op::range ||
+          maybe_range.op == ast::binary_op::range_inclusive) {
+        if (!is_byte_addressed_slice_type(node.object->type)) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_construct,
+              .span = node.span,
+              .message =
+                  "range-indexing is only supported on `str`/`slice`/"
+                  "`slice_mut`/`array[byte, N]` yet — any other fixed array "
+                  "or list source needs an element-size-aware view model "
+                  "this backend doesn't have yet"});
+        }
+        return compile_range_index(node, maybe_range);
+      }
+    }
+    const auto &object_entry =
+        types_.entry(strip_refs(types_, node.object->type));
     const bool indexing_list = is_list_type(node.object->type);
     if (!indexing_list &&
         (object_entry.kind != semantic::type_kind::array_kind ||
@@ -1694,6 +1975,12 @@ private:
     auto elem_ty = storage_type_for(node.type, node.span);
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
+    }
+    if (is_byte_array_type(node.object->type)) {
+      // `node.type` is `byte` here, whose `storage_type_for` is already a
+      // bare `i8` (`numeric_kind_of`'s scalar mapping) — no widening needed,
+      // just a byte-granular address instead of `slot_address`'s 8x one.
+      return builder_.CreateLoad(*elem_ty, byte_address(data, index64));
     }
     return builder_.CreateLoad(*elem_ty, slot_address(data, index64));
   }
@@ -2243,14 +2530,47 @@ private:
 
   [[nodiscard]] auto compile_assign(const hir::hir_assign &assign)
       -> std::expected<bool, codegen_error> {
+    if (assign.target->kind == hir_node_kind::hir_field) {
+      // `self.field = value` — mirrors `compile_field`'s own read through
+      // `slot_address`, just a store instead of a load.
+      const auto &field = dynamic_cast<const hir::hir_field &>(*assign.target);
+      const auto slot = runtime::struct_field_slot(types_, field.object->type,
+                                                   field.field_name);
+      if (!slot.has_value()) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = std::format(
+                "field `.{}` is only assignable on struct values by "
+                "llvm_codegen yet",
+                field.field_name)});
+      }
+      if (assign.op != ast::assign_op::assign) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = "compound assignment to a struct field is not "
+                       "supported by llvm_codegen yet — only plain `=` is"});
+      }
+      auto object = compile_expr(*field.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      auto value = compile_expr(*assign.value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      builder_.CreateStore(*value, slot_address(*object, *slot));
+      return false;
+    }
     if (assign.target->kind != hir_node_kind::hir_local_ref) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = assign.span,
-          .message = "assigning to a field or index target needs a heap/"
-                     "aggregate representation llvm_codegen doesn't have "
-                     "yet — only assigning directly to a local variable is "
-                     "supported"});
+          .message = "assigning to an index target needs a heap/aggregate "
+                     "representation llvm_codegen doesn't have yet — only "
+                     "assigning directly to a local variable or a struct "
+                     "field is supported"});
     }
     const auto &target =
         dynamic_cast<const hir::hir_local_ref &>(*assign.target);
@@ -2357,19 +2677,40 @@ private:
     return compile_binary_op(synthetic, kind, current, rhs);
   }
 
+  /// Whether `expr` is the literal `true` — `while true: ...` is Kira's
+  /// only spelling for an unconditional loop, since the language has no
+  /// `break`/`continue` (no `hir_break`/`hir_continue` node kind exists at
+  /// all: see `src/hir/nodes.h`'s doc comment on this). That means such a
+  /// loop's only possible exit is an internal `return`/panic inside its own
+  /// body — its condition can never itself become false, so the `end_bb`
+  /// `compile_while` would otherwise leave open for a "falls through"
+  /// caller is genuinely, statically unreachable, not just dynamically
+  /// unlikely.
+  [[nodiscard]] auto is_literal_true(const hir::hir_expr &expr) const -> bool {
+    return expr.kind == hir_node_kind::hir_literal &&
+           dynamic_cast<const hir::hir_literal &>(expr).lit_kind ==
+               token_kind::kw_true;
+  }
+
   [[nodiscard]] auto compile_while(const hir::hir_while &loop)
       -> std::expected<bool, codegen_error> {
+    const auto is_infinite =
+        loop.condition != nullptr && is_literal_true(*loop.condition);
     auto *cond_bb = llvm::BasicBlock::Create(ctx_, "while.cond", current_fn_);
     auto *body_bb = llvm::BasicBlock::Create(ctx_, "while.body", current_fn_);
     auto *end_bb = llvm::BasicBlock::Create(ctx_, "while.end", current_fn_);
 
     builder_.CreateBr(cond_bb);
     builder_.SetInsertPoint(cond_bb);
-    auto cond = compile_expr(*loop.condition);
-    if (!cond.has_value()) {
-      return std::unexpected(cond.error());
+    if (is_infinite) {
+      builder_.CreateBr(body_bb);
+    } else {
+      auto cond = compile_expr(*loop.condition);
+      if (!cond.has_value()) {
+        return std::unexpected(cond.error());
+      }
+      builder_.CreateCondBr(*cond, body_bb, end_bb);
     }
-    builder_.CreateCondBr(*cond, body_bb, end_bb);
 
     builder_.SetInsertPoint(body_bb);
     auto terminated = compile_block_as_value(*loop.body, nullptr);
@@ -2381,6 +2722,16 @@ private:
     }
 
     builder_.SetInsertPoint(end_bb);
+    if (is_infinite) {
+      // Nothing ever branches here (no `break`, and the condition can never
+      // itself become false) — mark it unreachable rather than leaving an
+      // open block for a caller to plant a "falls through" return in, which
+      // would emit a `ret` whose value/type can't agree with the function's
+      // real return type (this loop's exits are all real `return`s inside
+      // its own body, already correctly typed).
+      builder_.CreateUnreachable();
+      return true;
+    }
     return false;
   }
 

@@ -393,6 +393,47 @@ auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
          "expected main() to return wrapped.from(7).value == 21");
 }
 
+// Exercises trait-default-method monomorphization (`semantic::check.cpp`'s
+// `monomorphize_trait_default`) and its cross-module lowering
+// (`hir::lower_module`'s `synthesized_trait_defaults` pass, `hir/lower.cpp`)
+// end to end through the bytecode compiler and VM — `bump`'s body is never
+// written in `impl bumpable for counter`, only inherited from the trait's
+// default, and `bump` itself dispatches a further `self`-receiver call
+// (`self.poke(1)`) to the real impl method. Nothing in the existing test
+// suite compiles or runs a `self`-receiver method call of any kind (only
+// type-checks it), so this is the first thing to prove the mechanism that
+// `std.console.println` -> `std.io.file::write_all` -> `file::write` relies
+// on actually produces runnable bytecode, in isolation from that much
+// larger call graph.
+auto test_calls_a_self_receiver_trait_default_method_across_modules() -> void {
+  auto module = compile_fixture_multi(
+      {
+          {"lib", "module lib\n"
+                  "pub type counter = { n: int32 }\n"
+                  "pub trait bumpable:\n"
+                  "    def peek(mut self) -> int32\n"
+                  "\n"
+                  "    def bump(mut self) -> int32:\n"
+                  "        return self.peek() + 1\n"
+                  "impl bumpable for counter:\n"
+                  "    def peek(mut self) -> int32:\n"
+                  "        return self.n\n"
+                  "pub def make(start: int32) -> counter:\n"
+                  "    return counter { n: start }\n"},
+          {"app", "module app\n"
+                  "use lib\n"
+                  "pub def main() -> int32:\n"
+                  "    var c = lib.make(41)\n"
+                  "    return c.bump()\n"},
+      },
+      "app");
+  auto main_result = run_main(module);
+  expect(main_result.has_value(),
+         "expected a cross-module trait-default method call to run");
+  expect(main_result->value.i == 42,
+         "expected main() to return lib.make(41).bump() == 42");
+}
+
 auto test_and_or_short_circuit_to_correct_value() -> void {
   auto module = compile_fixture(load_fixture("and_or_short_circuit.kira"));
   const auto vm = bc::vm{module};
@@ -841,6 +882,7 @@ auto main() -> int {
     test_calls_another_function_in_the_same_module();
     test_calls_a_function_in_another_module();
     test_calls_an_associated_function_via_a_type_qualified_path();
+    test_calls_a_self_receiver_trait_default_method_across_modules();
     test_and_or_short_circuit_to_correct_value();
     test_cast_widens_int_to_float();
     test_checked_add_panics_on_overflow_end_to_end();

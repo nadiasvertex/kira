@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -167,7 +168,20 @@ private:
   /// stores `entry` and returns its new id.
   [[nodiscard]] auto intern(std::string key, type_entry entry) -> type_id;
 
-  std::vector<type_entry> entries_;
+  // A `std::deque`, not `std::vector`: `entry()` returns `const type_entry &`
+  // that callers routinely hold across further calls into this table (e.g.
+  // `infer_method_call` holding its own `entry` across `find_method`/
+  // `fn_type_of`, which can themselves intern new types). A `std::vector`
+  // reallocates its backing storage on `push_back`, silently invalidating
+  // every such reference the moment capacity is exceeded — a real,
+  // previously-hit bug (a struct's own name reading back empty mid-
+  // expression). `std::deque` never invalidates references to existing
+  // elements on `push_back`, only iterators (which nothing here holds
+  // across a mutation), while keeping the same O(1) indexed access
+  // `entry()`/`intern()` rely on — a direct, representation-only fix for
+  // the whole class of bug at once, rather than auditing every call site
+  // that takes a `const type_entry &`.
+  std::deque<type_entry> entries_;
   std::unordered_map<std::string, type_id> interned_;
 };
 

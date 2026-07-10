@@ -4,5 +4,8 @@ module prelude
 # `no_prelude`) — see `inject_stdlib_prelude`, `src/driver/driver.cpp`.
 # `from`/`drop` live in `std.traits`; the checker's `find_prelude_trait`
 # (`src/semantic/check.cpp`) treats this module and the stdlib modules it
-# names below as reachable without an explicit `use`.
+# names below as reachable without an explicit `use`. `println`/`print`/
+# `eprintln`/`eprint` live in `std.console`; `find_prelude_function` treats
+# that module the same way.
 use std.traits
+use std.console

@@ -98,10 +98,44 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
                    "//src:kira` or from `bazel-bin/src/kira` inside the "
                    "workspace that built it"};
   }
+  // `src/runtime:runtime`'s own `layout.cpp` (`struct_field_slot` and
+  // friends — compile-time-only helpers `codegen.cpp` calls to compute a
+  // struct/sum type's heap layout, never called by the *generated* code
+  // itself) depends on `semantic::type_table`, so its own Bazel target
+  // `deps` on `//src/semantic` and (transitively) `//src/parser` — but a
+  // hand-rolled archive link like this one doesn't follow `cc_library`
+  // `deps` the way Bazel's own linker invocation does, so those two have to
+  // be found and passed explicitly too, or any AOT program touching a
+  // struct/sum type (which is to say, nearly everything past a bare
+  // scalar) fails to link with `type_table::entry` undefined.
+  const auto semantic_archive =
+      find_bazel_archive(program_name, "src/semantic", "semantic");
+  if (!semantic_archive) {
+    return build_outcome{
+        .succeeded = false,
+        .message = "could not locate Kira's semantic-analysis support "
+                   "library (libsemantic.a, needed by the heap runtime's "
+                   "struct/sum layout helpers) — run `kira` via `bazelisk "
+                   "run //src:kira` or from `bazel-bin/src/kira` inside the "
+                   "workspace that built it"};
+  }
+  const auto parser_archive =
+      find_bazel_archive(program_name, "src/parser", "parser");
+  if (!parser_archive) {
+    return build_outcome{
+        .succeeded = false,
+        .message = "could not locate Kira's parser support library "
+                   "(libparser.a, needed by the heap runtime's struct/sum "
+                   "layout helpers) — run `kira` via `bazelisk run "
+                   "//src:kira` or from `bazel-bin/src/kira` inside the "
+                   "workspace that built it"};
+  }
 
-  const auto link_command = std::format(
-      R"(c++ "{}" "{}" "{}" -o "{}")", object_path.string(),
-      panic_archive->string(), heap_archive->string(), output_path.string());
+  const auto link_command =
+      std::format(R"(c++ "{}" "{}" "{}" "{}" "{}" -o "{}")",
+                  object_path.string(), panic_archive->string(),
+                  heap_archive->string(), semantic_archive->string(),
+                  parser_archive->string(), output_path.string());
   const auto link_status = std::system(link_command.c_str());
   auto ec = std::error_code{};
   fs::remove(object_path, ec);

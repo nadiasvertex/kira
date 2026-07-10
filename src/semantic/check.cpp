@@ -2849,6 +2849,34 @@ private:
     return std::nullopt;
   }
 
+  /// Finds a free function named `name` in the auto-imported prelude —
+  /// currently just `std.console` (home of `println`/`print`/`eprintln`/
+  /// `eprint`) — without requiring an explicit `use`. Mirrors
+  /// `find_prelude_trait` exactly, one module list for functions instead of
+  /// traits, except it also returns the declaring module (`fn_type_of`/
+  /// `check_call_against_decl` need it as the function's "owner", the same
+  /// way the `find_import` call branch a few lines below passes its own
+  /// resolved `source` module through); see `find_prelude_trait`'s doc
+  /// comment for the auto-injection mechanism (`inject_stdlib_prelude`,
+  /// `src/driver/driver.cpp`) this depends on.
+  auto find_prelude_function(std::string_view name)
+      -> std::optional<std::pair<func_decl_ref, const module_members *>> {
+    if (file_no_prelude_) {
+      return std::nullopt;
+    }
+    static constexpr std::array<std::string_view, 1>
+        k_prelude_function_modules = {"std.console"};
+    for (const auto module_name : k_prelude_function_modules) {
+      if (const auto *source = index_.find_module(module_name)) {
+        if (const auto it = source->functions.find(std::string(name));
+            it != source->functions.end()) {
+          return std::pair{it->second, source};
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
   /// Resolves the concrete type an impl block targets (its `for` clause),
   /// against the impl's own generic parameters.
   auto resolve_impl_target(const impl_ref &impl) -> type_id {
@@ -2934,6 +2962,18 @@ private:
         }
         auto &methods = methods_[target_entry.decl];
         auto overridden_names = std::unordered_set<std::string>{};
+        // Owned copy of `target_entry.name`, taken up front: `target_entry`
+        // is a reference into `type_table`'s backing store
+        // (`type_table::entries_`, a `std::vector`), and
+        // `monomorphize_trait_default` below calls `check_function` on each
+        // cloned default body, which can intern new types and reallocate
+        // that vector — silently invalidating `target_entry` (and any
+        // `string_view` still pointing into it) for every default *after*
+        // the first in this same impl. Reading through an owned string
+        // instead of `target_entry.name` keeps every call in this loop
+        // using a name that's still valid no matter how much interning the
+        // previous call triggered.
+        const auto target_type_name = std::string(target_entry.name);
 
         for (const auto &item : impl.decl->items) {
           if (item == nullptr || item->has_error ||
@@ -2999,7 +3039,7 @@ private:
             });
             continue;
           }
-          monomorphize_trait_default(*decl, target, target_entry.name,
+          monomorphize_trait_default(*decl, target, target_type_name,
                                      trait_module, trait_file_id, methods);
         }
       }
@@ -3564,8 +3604,11 @@ private:
   /// callable value is checked against its `fn(...)` type; a variant-ident
   /// callee constructs that variant; otherwise the identifier is resolved in
   /// order through local bindings, the current module's functions, imports,
-  /// prelude functions (each with its own hard-coded signature), a builtin
-  /// conversion call, a bare variant spelling, or an undefined-name error.
+  /// a real declaration in the auto-imported prelude (`find_prelude_function`
+  /// — `println`/`print`/`eprintln`/`eprint`), a handful of remaining
+  /// prelude forms with their own hard-coded signature (`panic`, `assert`,
+  /// ...), a builtin conversion call, a bare variant spelling, or an
+  /// undefined-name error.
   auto infer_call(const ast::call_expr &call, type_id expected) -> type_id {
     if (call.callee == nullptr) {
       infer_call_args_loosely(call);
@@ -3652,15 +3695,20 @@ private:
       return k_unknown_type;
     }
 
-    // Prelude functions. `println`/`print` are lowered directly to the
-    // `rt_write`/`rt_stdout` intrinsics by `hir::lower_call` (see its doc
-    // comment) rather than resolved against a real declaration here, so —
-    // unlike every other branch in this function — the callee `ident` is
-    // deliberately left unrecorded in `node_types_`: that absence is what
-    // lowering keys off of to recognize the magic form.
-    if (name == "println" || name == "print") {
-      infer_call_args_loosely(call);
-      return types_.builtin("unit");
+    // Prelude functions — `println`/`print`/`eprintln`/`eprint` resolve
+    // here to their real `std.console` declarations (auto-injected into
+    // every session, `inject_stdlib_prelude`), exactly like the module-
+    // local-function branch a few lines above, just against a module found
+    // through prelude reachability instead of `module_`/an explicit `use`.
+    if (const auto found = find_prelude_function(name)) {
+      const auto &[fn, owner] = *found;
+      record_expr_type(ident, fn_type_of(*fn.decl, owner));
+      resolved_callees_[&call] =
+          resolved_callee{.decl = fn.decl,
+                          .owner_module = owner->module_name,
+                          .impl_target_type = ""};
+      return check_call_against_decl(call, *fn.decl, owner, fn.file_id,
+                                     /*skip_self=*/false);
     }
     if (name == "panic") {
       infer_call_args_loosely(call);
@@ -6545,6 +6593,18 @@ public:
   /// input file that has a valid module declaration and no already-recorded
   /// error, setting up the current-file/current-module context before each.
   auto run_impl(const std::vector<parsed_module> &inputs) -> void {
+    // Eagerly, before anything below can take a `const type_entry &`
+    // reference into `type_table` and hold it across an expression: `find_
+    // method`'s own lazy call to this (guarded by `methods_built_`, so it
+    // only actually runs once) interns a type for every cloned trait-
+    // default body it monomorphizes, which can reallocate `type_table`'s
+    // backing storage. A caller like `infer_method_call` that resolved
+    // `entry` just before calling `find_method` — the very first call
+    // anywhere in the session, if this weren't forced early — would have
+    // that reference silently dangle for the rest of its own scope once
+    // `find_method` returns (see `target_type_name` ending up empty
+    // instead of a real struct name, for exactly this reason).
+    build_method_table();
     validate_impl_coherence();
 
     for (const auto &input : inputs) {

@@ -69,10 +69,11 @@ auto find_std_dir() -> kira::testing::fs::path {
 }
 
 /// Fixtures for the real auto-injected prelude (`std/traits.kira`,
-/// `std/prelude.kira`) — mirrors `inject_stdlib_prelude`
-/// (`src/driver/driver.cpp`), which every real `kira` invocation prepends to
-/// its session, so bound positions like `T: eq` and `impl show for point`
-/// resolve here the same way they do for a real compile.
+/// `std/prelude.kira`, `std/io.kira`, `std/console.kira`) — mirrors
+/// `inject_stdlib_prelude` (`src/driver/driver.cpp`), which every real
+/// `kira` invocation prepends to its session, so bound positions like
+/// `T: eq` and `impl show for point`, and `prelude.kira`'s `use
+/// std.console`, resolve here the same way they do for a real compile.
 auto prelude_fixtures() -> std::vector<source_fixture> {
   const auto std_dir = find_std_dir();
   return {
@@ -85,6 +86,16 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
           .path = "std/prelude.kira",
           .text = kira::testing::load_test_data_file(std_dir.string(),
                                                      "prelude.kira"),
+      },
+      source_fixture{
+          .path = "std/io.kira",
+          .text =
+              kira::testing::load_test_data_file(std_dir.string(), "io.kira"),
+      },
+      source_fixture{
+          .path = "std/console.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "console.kira"),
       },
   };
 }

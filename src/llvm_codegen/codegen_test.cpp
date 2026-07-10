@@ -359,6 +359,43 @@ auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
          "expected main() to return wrapped.from(7).value == 21");
 }
 
+// Mirrors src/bytecode_compiler/compile_test.cpp's
+// `test_calls_a_self_receiver_trait_default_method_across_modules` exactly,
+// on the LLVM/AOT side: proves trait-default-method monomorphization
+// (`semantic::check.cpp`'s `monomorphize_trait_default`) and its
+// cross-module lowering (`synthesized_trait_defaults`, `hir/lower.cpp`)
+// produce IR the JIT can actually run, not just bytecode the VM can — no
+// existing test compiled a `self`-receiver method call through this
+// backend before.
+auto test_calls_a_self_receiver_trait_default_method_across_modules() -> void {
+  auto jf = jit_fixture_for_multi(
+      {
+          {"lib", "module lib\n"
+                  "pub type counter = { n: int32 }\n"
+                  "pub trait bumpable:\n"
+                  "    def peek(mut self) -> int32\n"
+                  "\n"
+                  "    def bump(mut self) -> int32:\n"
+                  "        return self.peek() + 1\n"
+                  "impl bumpable for counter:\n"
+                  "    def peek(mut self) -> int32:\n"
+                  "        return self.n\n"
+                  "pub def make(start: int32) -> counter:\n"
+                  "    return counter { n: start }\n"},
+          {"app", "module app\n"
+                  "use lib\n"
+                  "pub def main() -> int32:\n"
+                  "    var c = lib.make(41)\n"
+                  "    return c.bump()\n"},
+      },
+      "app");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(),
+         "expected a cross-module trait-default method call to run");
+  expect(result->value.i == 42,
+         "expected main() to return lib.make(41).bump() == 42");
+}
+
 auto test_tuple_construction_and_projection() -> void {
   auto jf = jit_fixture_for(load_fixture("tuple_construction.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -540,6 +577,7 @@ auto main() -> int {
     test_calls_another_function_in_the_same_module();
     test_calls_a_function_in_another_module();
     test_calls_an_associated_function_via_a_type_qualified_path();
+    test_calls_a_self_receiver_trait_default_method_across_modules();
     test_tuple_construction_and_projection();
     test_struct_literal_and_field_access();
     test_fixed_array_construction_and_indexing();

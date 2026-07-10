@@ -442,9 +442,48 @@ private:
   /// codegen for everything except sizing/length (see `compile_array_init`/
   /// `compile_index`).
   [[nodiscard]] auto is_list_type(type_id id) const -> bool {
-    const auto &entry = types_.entry(id);
+    const auto &entry = types_.entry(strip_refs(id));
     return entry.kind == semantic::type_kind::builtin_generic_kind &&
            entry.name == "list";
+  }
+
+  /// Unwraps `&T`/`&mut T` down to `T` — mirrors `semantic::check.cpp`'s own
+  /// `strip_refs`. A reference's compiled *value* is already representation-
+  /// identical to the referent for every heap-pointer-backed type
+  /// (`is_heap_pointer_value`'s `addr_of`/`addr_of_mut` passthrough), but
+  /// `hir_index`/`hir_field`'s `object->type` still carries the unstripped
+  /// `&T` the checker recorded (`infer_index`/`infer_method_call` strip
+  /// refs only for their own local dispatch, not for what they record) — so
+  /// any type-kind check made *against* that recorded type (e.g. "is this a
+  /// `slice`?") has to strip it first, the same way the checker's own
+  /// dispatch already does.
+  [[nodiscard]] auto strip_refs(type_id id) const -> type_id {
+    const auto *entry = &types_.entry(id);
+    while (entry->kind == semantic::type_kind::ref_kind) {
+      id = entry->result;
+      entry = &types_.entry(id);
+    }
+    return id;
+  }
+
+  /// Whether `id` is a fixed `array[byte, N]` — the one array element type
+  /// that is stored tightly byte-packed (1 byte/element via `op_store_byte`/
+  /// `op_load_byte_indexed`) rather than the generic 8-bytes/element slot
+  /// layout every other `array[T, N]` uses (`compile_array_init`'s doc
+  /// comment). Byte-packing is what lets `buf[a..b]` alias a real
+  /// `str`/`slice[byte]` view with no copy (`compile_range_index`) — needed
+  /// so a mutation through the view (e.g. `rt_read` filling it) is visible
+  /// back through `buf` itself, which a copy-based view would silently
+  /// break for `std.io.reader::read_to_end`'s `buf[0..4096]`.
+  [[nodiscard]] auto is_byte_array_type(type_id id) const -> bool {
+    const auto &entry = types_.entry(strip_refs(id));
+    if (entry.kind != semantic::type_kind::array_kind ||
+        !entry.array_size.has_value()) {
+      return false;
+    }
+    const auto &elem = types_.entry(entry.result);
+    return elem.kind == semantic::type_kind::builtin_kind &&
+           elem.name == "byte";
   }
 
   // ------------------------------------------------------------------
@@ -470,6 +509,18 @@ private:
       const auto &lit = dynamic_cast<const hir::hir_literal &>(expr);
       if (lit.lit_kind == token_kind::string_lit) {
         return compile_string_literal(lit, dst);
+      }
+      if (lit.lit_kind == token_kind::kw_unit) {
+        // `unit` has exactly one value and carries no information — nothing
+        // downstream ever reads it back out, so a zeroed placeholder slot
+        // (mirroring `op_return_unit`'s own no-value return) is enough.
+        // Bypasses `numeric_kind_for` below, which has no scalar kind for
+        // `unit` at all.
+        const auto index = writer_.add_constant(slot_value{uint64_t{0}});
+        writer_.emit_opcode(opcode::op_load_const);
+        writer_.emit_u8(dst);
+        writer_.emit_u16(index);
+        return {};
       }
       auto kind = numeric_kind_for(expr.type, expr.span);
       if (!kind.has_value()) {
@@ -615,6 +666,33 @@ private:
     return {};
   }
 
+  /// Whether `id`'s runtime representation is already a single pointer into
+  /// a flat N-slot heap block (`src/runtime/layout.h`) rather than an
+  /// inline scalar bit pattern. For exactly these kinds, `&`/`&mut` needs no
+  /// new instruction at all: the compiled value already *is* the address a
+  /// reference would hold — see `compile_unary`'s `addr_of`/`addr_of_mut`
+  /// passthrough below.
+  [[nodiscard]] auto is_heap_pointer_value(type_id id) const -> bool {
+    const auto &entry = types_.entry(id);
+    switch (entry.kind) {
+    case semantic::type_kind::struct_kind:
+    case semantic::type_kind::sum_kind:
+    case semantic::type_kind::opaque_kind:
+    case semantic::type_kind::fn_kind:
+    case semantic::type_kind::tuple_kind:
+    case semantic::type_kind::array_kind:
+      return true;
+    case semantic::type_kind::builtin_kind:
+      return entry.name == "str";
+    case semantic::type_kind::builtin_generic_kind:
+      return entry.name == "list" || entry.name == "slice" ||
+             entry.name == "slice_mut" || entry.name == "option" ||
+             entry.name == "result";
+    default:
+      return false;
+    }
+  }
+
   [[nodiscard]] auto compile_unary(const hir::hir_unary &un, uint8_t dst)
       -> std::expected<void, compile_error> {
     if (un.op == ast::unary_op::logical_not) {
@@ -626,6 +704,13 @@ private:
       writer_.emit_u8(dst);
       writer_.emit_u8(*src);
       return {};
+    }
+    if ((un.op == ast::unary_op::addr_of ||
+         un.op == ast::unary_op::addr_of_mut) &&
+        is_heap_pointer_value(un.operand->type)) {
+      // The operand's compiled value already is the pointer a reference to
+      // it would hold — compile it straight into `dst`, no new opcode.
+      return compile_expr_into(*un.operand, dst);
     }
     if (un.op != ast::unary_op::neg && un.op != ast::unary_op::bit_not) {
       return std::unexpected(compile_error{
@@ -1022,11 +1107,70 @@ private:
     return {};
   }
 
+  /// Allocates a byte-packed `array[byte, N]` (`is_byte_array_type`) —
+  /// `ceil(N/8)` slots' worth of raw bytes, one byte per element via
+  /// `op_store_byte`, mirroring `compile_slots_init`/the fill-form branch of
+  /// `compile_array_init` exactly except for storing a byte instead of a
+  /// whole slot per element. `N` is always a compile-time constant here
+  /// (checked already, by the caller and by `check.cpp`'s requirement that a
+  /// fixed array's size be statically known), so — like the slot-packed fill
+  /// form this mirrors — the per-element stores are unrolled at compile
+  /// time rather than emitting a runtime loop.
+  [[nodiscard]] auto compile_byte_array_init(const hir::hir_array_init &init,
+                                             uint64_t count, uint8_t dst)
+      -> std::expected<void, compile_error> {
+    const auto slot_count = static_cast<uint16_t>((count + 7) / 8);
+    writer_.emit_opcode(opcode::op_alloc);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(slot_count);
+    if (init.fill_value == nullptr) {
+      for (size_t i = 0; i < init.elements.size(); ++i) {
+        auto value_reg = compile_expr(*init.elements[i]);
+        if (!value_reg.has_value()) {
+          return std::unexpected(value_reg.error());
+        }
+        writer_.emit_opcode(opcode::op_store_byte);
+        writer_.emit_u8(dst);
+        writer_.emit_u16(static_cast<uint16_t>(i));
+        writer_.emit_u8(*value_reg);
+      }
+      return {};
+    }
+    // See `compile_array_init`'s fill form for why `fill_value` is evaluated
+    // once, not re-evaluated per element.
+    auto fill_reg = compile_expr(*init.fill_value);
+    if (!fill_reg.has_value()) {
+      return std::unexpected(fill_reg.error());
+    }
+    for (uint64_t i = 0; i < count; ++i) {
+      writer_.emit_opcode(opcode::op_store_byte);
+      writer_.emit_u8(dst);
+      writer_.emit_u16(static_cast<uint16_t>(i));
+      writer_.emit_u8(*fill_reg);
+    }
+    return {};
+  }
+
   [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init,
                                         uint8_t dst)
       -> std::expected<void, compile_error> {
     if (is_list_type(init.type)) {
       return compile_list_init(init, dst);
+    }
+    if (is_byte_array_type(init.type)) {
+      // `check.cpp` requires an explicit-elements array literal's element
+      // count to match its declared size exactly, so `array_size` is the
+      // right count either way — fill or explicit-elements form.
+      const auto count = *types_.entry(init.type).array_size;
+      if (count > 0xFFFF) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::register_limit_exceeded,
+            .span = init.span,
+            .message = "this array literal has more than 65535 elements, "
+                       "which this bytecode format's u16 byte-offset operand "
+                       "cannot address"});
+      }
+      return compile_byte_array_init(init, count, dst);
     }
     if (init.fill_value == nullptr) {
       return compile_slots_init(init.elements, dst, init.span);
@@ -1227,6 +1371,195 @@ private:
     return {};
   }
 
+  /// Whether `id` is `str`, `slice[T]`, `slice_mut[T]`, or `array[byte, N]`
+  /// — the kinds `compile_range_index` can slice by pure pointer arithmetic
+  /// without needing an element-size-aware copy. The first three share a
+  /// byte-addressed 2-slot `{ len; data }` header (`src/runtime/io.h`),
+  /// where `data` is a raw byte pointer (confirmed by `op_load_str_const`'s
+  /// own construction of a `str` value and `bytecode::vm.cpp`'s
+  /// `bytes_of`); `array[byte, N]` has no such header (a fixed array's
+  /// "data pointer" is the object itself, its length the statically-known
+  /// `N` — see `compile_index`), but is *also* byte-addressed, because
+  /// `is_byte_array_type` gives it its own tightly-packed (not slot-packed)
+  /// representation for exactly this reason. Every other `array[T,N]`/
+  /// `list[T]` stores one 8-byte slot per element regardless of `T`
+  /// (`compile_array_init`/`compile_list_init`) and so cannot be
+  /// range-indexed this way.
+  [[nodiscard]] auto is_byte_addressed_slice_type(type_id id) const -> bool {
+    const auto &entry = types_.entry(strip_refs(id));
+    if (entry.kind == semantic::type_kind::builtin_kind) {
+      return entry.name == "str";
+    }
+    if (entry.kind == semantic::type_kind::builtin_generic_kind) {
+      return entry.name == "slice" || entry.name == "slice_mut";
+    }
+    return is_byte_array_type(id);
+  }
+
+  /// `buf[a..b]`/`buf[a..=b]` on a `str`/`slice`/`slice_mut`/
+  /// `array[byte, N]` source — builds a fresh 2-slot `{ len; data }` header
+  /// pointing `data` into the source's own backing bytes, no copy. For the
+  /// three header-based kinds, `len`/`data` are read from the source's own
+  /// heap header; for `array[byte, N]` (`is_byte_array_type`), there is no
+  /// header to read — `len` is the statically-known `N` and `data` is the
+  /// array's own pointer, mirroring `compile_index`'s non-range element
+  /// access exactly. Returning a *view* rather than a copy matters for
+  /// correctness, not just performance: `std.io.reader::read_to_end`'s
+  /// `self.read(&mut buf[0..4096])` passes this as a `&mut` out-parameter
+  /// that `rt_read` writes through, and `read_to_end` reads the result back
+  /// out of `buf` itself afterward — a copy-based view would silently drop
+  /// every byte `rt_read` wrote.
+  [[nodiscard]] auto compile_range_index(const hir::hir_index &node,
+                                         const hir::hir_binary &range,
+                                         uint8_t dst)
+      -> std::expected<void, compile_error> {
+    if (range.lhs == nullptr || range.rhs == nullptr) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "a range used as an index needs both a start and an "
+                     "end bound"});
+    }
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    auto start_reg = compile_expr(*range.lhs);
+    if (!start_reg.has_value()) {
+      return std::unexpected(start_reg.error());
+    }
+    auto end_reg = compile_expr(*range.rhs);
+    if (!end_reg.has_value()) {
+      return std::unexpected(end_reg.error());
+    }
+    // Normalize `a..=b` (an inclusive bound, `b` itself a valid index) to
+    // the same exclusive-end shape `a..b` already is (`b` itself out of
+    // bounds) by computing `b + 1` once, up front — everything below this
+    // point then treats `end_reg` uniformly regardless of which range form
+    // produced it.
+    if (range.op == ast::binary_op::range_inclusive) {
+      const auto one_const = writer_.add_constant(slot_value{uint64_t{1}});
+      auto one_reg = alloc_register(node.span);
+      if (!one_reg.has_value()) {
+        return std::unexpected(one_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(*one_reg);
+      writer_.emit_u16(one_const);
+      auto inclusive_end_reg = alloc_register(node.span);
+      if (!inclusive_end_reg.has_value()) {
+        return std::unexpected(inclusive_end_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_add);
+      writer_.emit_u8(*inclusive_end_reg);
+      writer_.emit_u8(*end_reg);
+      writer_.emit_u8(*one_reg);
+      writer_.emit_numeric_kind(numeric_kind::u64);
+      end_reg = inclusive_end_reg;
+    }
+
+    uint8_t len_reg;
+    uint8_t data_reg;
+    if (is_byte_array_type(node.object->type)) {
+      const auto len_const =
+          writer_.add_constant(slot_value{static_cast<uint64_t>(
+              *types_.entry(strip_refs(node.object->type)).array_size)});
+      auto len_reg_exp = alloc_register(node.span);
+      if (!len_reg_exp.has_value()) {
+        return std::unexpected(len_reg_exp.error());
+      }
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(*len_reg_exp);
+      writer_.emit_u16(len_const);
+      len_reg = *len_reg_exp;
+      data_reg = *object_reg;
+    } else {
+      auto len_reg_exp = alloc_register(node.span);
+      if (!len_reg_exp.has_value()) {
+        return std::unexpected(len_reg_exp.error());
+      }
+      writer_.emit_opcode(opcode::op_load_slot);
+      writer_.emit_u8(*len_reg_exp);
+      writer_.emit_u8(*object_reg);
+      writer_.emit_u16(0);
+      len_reg = *len_reg_exp;
+
+      auto data_reg_exp = alloc_register(node.span);
+      if (!data_reg_exp.has_value()) {
+        return std::unexpected(data_reg_exp.error());
+      }
+      writer_.emit_opcode(opcode::op_load_slot);
+      writer_.emit_u8(*data_reg_exp);
+      writer_.emit_u8(*object_reg);
+      writer_.emit_u16(1);
+      data_reg = *data_reg_exp;
+    }
+
+    // `end > len` and `start > end` are both out-of-bounds — checked as two
+    // separate panics (rather than one combined condition) so an inverted
+    // range still reports as an inverted range even when `start` also
+    // happens to exceed `len`.
+    const auto emit_bounds_check =
+        [&](uint8_t lhs_reg,
+            uint8_t rhs_reg) -> std::expected<void, compile_error> {
+      auto oob_reg = alloc_register(node.span);
+      if (!oob_reg.has_value()) {
+        return std::unexpected(oob_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_gt);
+      writer_.emit_u8(*oob_reg);
+      writer_.emit_u8(lhs_reg);
+      writer_.emit_u8(rhs_reg);
+      writer_.emit_numeric_kind(numeric_kind::u64);
+      writer_.emit_opcode(opcode::op_panic_if);
+      writer_.emit_u8(*oob_reg);
+      writer_.emit_u8(
+          static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
+      return {};
+    };
+    if (auto result = emit_bounds_check(*end_reg, len_reg);
+        !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+    if (auto result = emit_bounds_check(*start_reg, *end_reg);
+        !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+
+    auto new_data_reg_exp = alloc_register(node.span);
+    if (!new_data_reg_exp.has_value()) {
+      return std::unexpected(new_data_reg_exp.error());
+    }
+    writer_.emit_opcode(opcode::op_add);
+    writer_.emit_u8(*new_data_reg_exp);
+    writer_.emit_u8(data_reg);
+    writer_.emit_u8(*start_reg);
+    writer_.emit_numeric_kind(numeric_kind::u64);
+
+    auto new_len_reg_exp = alloc_register(node.span);
+    if (!new_len_reg_exp.has_value()) {
+      return std::unexpected(new_len_reg_exp.error());
+    }
+    writer_.emit_opcode(opcode::op_sub);
+    writer_.emit_u8(*new_len_reg_exp);
+    writer_.emit_u8(*end_reg);
+    writer_.emit_u8(*start_reg);
+    writer_.emit_numeric_kind(numeric_kind::u64);
+
+    writer_.emit_opcode(opcode::op_alloc);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(2);
+    writer_.emit_opcode(opcode::op_store_slot);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(0);
+    writer_.emit_u8(*new_len_reg_exp);
+    writer_.emit_opcode(opcode::op_store_slot);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(1);
+    writer_.emit_u8(*new_data_reg_exp);
+    return {};
+  }
+
   /// Fixed `array[T, N]` and growable `list[T]` element access —
   /// `slice`/`str` indexing still needs a byte/view model this bytecode
   /// compiler doesn't have yet and is rejected here for now. A fixed
@@ -1238,7 +1571,26 @@ private:
   /// point (the bounds check, the indexed load) is shared.
   [[nodiscard]] auto compile_index(const hir::hir_index &node, uint8_t dst)
       -> std::expected<void, compile_error> {
-    const auto &object_entry = types_.entry(node.object->type);
+    if (node.index != nullptr &&
+        node.index->kind == hir_node_kind::hir_binary) {
+      const auto &maybe_range =
+          dynamic_cast<const hir::hir_binary &>(*node.index);
+      if (maybe_range.op == ast::binary_op::range ||
+          maybe_range.op == ast::binary_op::range_inclusive) {
+        if (!is_byte_addressed_slice_type(node.object->type)) {
+          return std::unexpected(compile_error{
+              .kind = compile_error_kind::unsupported_construct,
+              .span = node.span,
+              .message =
+                  "range-indexing is only supported on `str`/`slice`/"
+                  "`slice_mut`/`array[byte, N]` yet — any other fixed array "
+                  "or list source needs an element-size-aware view model "
+                  "this bytecode compiler doesn't have yet"});
+        }
+        return compile_range_index(node, maybe_range, dst);
+      }
+    }
+    const auto &object_entry = types_.entry(strip_refs(node.object->type));
     const bool indexing_list = is_list_type(node.object->type);
     if (!indexing_list &&
         (object_entry.kind != semantic::type_kind::array_kind ||
@@ -1310,7 +1662,9 @@ private:
     writer_.emit_u8(
         static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
 
-    writer_.emit_opcode(opcode::op_load_indexed);
+    writer_.emit_opcode(is_byte_array_type(node.object->type)
+                            ? opcode::op_load_byte_indexed
+                            : opcode::op_load_indexed);
     writer_.emit_u8(dst);
     writer_.emit_u8(data_reg);
     writer_.emit_u8(*index_reg);
@@ -1934,14 +2288,54 @@ private:
 
   [[nodiscard]] auto compile_assign(const hir::hir_assign &assign)
       -> std::expected<void, compile_error> {
+    if (assign.target->kind == hir_node_kind::hir_field) {
+      // `self.field = value` — the struct's own value is already a heap
+      // pointer (`compile_field`'s own `op_load_slot` reads through it the
+      // same way), so writing a field is just `op_store_slot` through that
+      // same pointer at the field's statically-known slot index.
+      const auto &field = dynamic_cast<const hir::hir_field &>(*assign.target);
+      const auto slot = runtime::struct_field_slot(types_, field.object->type,
+                                                   field.field_name);
+      if (!slot.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = std::format(
+                "field `.{}` is only assignable on struct values by the "
+                "bytecode compiler yet",
+                field.field_name)});
+      }
+      if (assign.op != ast::assign_op::assign) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = "compound assignment to a struct field is not "
+                       "supported by the bytecode compiler yet — only plain "
+                       "`=` is"});
+      }
+      auto object_reg = compile_expr(*field.object);
+      if (!object_reg.has_value()) {
+        return std::unexpected(object_reg.error());
+      }
+      auto value_reg = compile_expr(*assign.value);
+      if (!value_reg.has_value()) {
+        return std::unexpected(value_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_store_slot);
+      writer_.emit_u8(*object_reg);
+      writer_.emit_u16(static_cast<uint16_t>(*slot));
+      writer_.emit_u8(*value_reg);
+      return {};
+    }
     if (assign.target->kind != hir_node_kind::hir_local_ref) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = assign.span,
           .message =
-              "assigning to a field or index target needs a heap/aggregate "
+              "assigning to an index target needs a heap/aggregate "
               "representation this bytecode compiler doesn't have yet — only "
-              "assigning directly to a local variable is supported"});
+              "assigning directly to a local variable or a struct field is "
+              "supported"});
     }
     const auto &target =
         dynamic_cast<const hir::hir_local_ref &>(*assign.target);

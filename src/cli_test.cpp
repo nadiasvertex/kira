@@ -614,16 +614,21 @@ auto test_compile_sources_resolves_session_imports() -> void {
 auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   auto metadata_dir = make_temp_dir().path / "meta";
 
-  kira::driver::cli_config cfg{
+  auto cfg = kira::driver::cli_config{
       .program_name = "kira",
-      .sources = {"src/std/io.kira", "src/std/console.kira"},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
   // `io.kira`'s `impl from[...]`/`impl drop for file` rely on the real
-  // `from`/`drop` traits the auto-injected prelude provides — mirror what
-  // `main.cpp` does for every real invocation, rather than hand-listing
-  // `traits.kira`/`prelude.kira` here.
+  // `from`/`drop` traits the auto-injected prelude provides, and
+  // `prelude.kira` itself now `use`s `std.console` — mirror what
+  // `main.cpp` does for every real invocation (this alone now pulls in
+  // `traits.kira`, `prelude.kira`, `io.kira`, and `console.kira`) rather
+  // than hand-listing sources, which would double-add `io.kira`/
+  // `console.kira` under a different path string and trip a duplicate-
+  // module-path diagnostic (`find_stdlib_source_file`'s resolved path
+  // doesn't lexically match a literal `"src/std/io.kira"` under `bazel
+  // test`'s runfiles tree).
   kira::driver::inject_stdlib_prelude(cfg);
 
   auto report = kira::driver::compile_sources(cfg, false);
