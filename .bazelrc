@@ -9,6 +9,10 @@ build --host_cxxopt=-std=c++26
 build --action_env=CC=clang
 build --action_env=CXX=clang++
 
+# Set macOS deployment target (26.0 for current system compatibility)
+build --apple_platform_type=macos
+build --macos_minimum_os=26.0
+
 # Disable header-parsing validation actions; they omit -c and break
 # wolfd_bazel_compile_commands' compile_commands.json generation.
 build --features=-parse_headers
