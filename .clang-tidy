@@ -25,10 +25,12 @@ Checks: >
   readability-make-unique,
   readability-use-anyofallof
 
-# -bugprone-easily-swappable-parameters: flags nearly every multi-arg
+  -bugprone-easily-swappable-parameters
+#   flags nearly every multi-arg
 #   numeric/pointer function in this codebase (bit-packing helpers, codegen
 #   builders); too noisy relative to the bugs it catches here.
-# -bugprone-throwing-static-initialization /-bugprone-exception-escape:
+# -bugprone-throwing-static-initialization
+# -bugprone-exception-escape
 #   both really mean "a std::string/std::vector/std::unordered_map
 #   allocation could throw bad_alloc," which is true of nearly every static
 #   table and closure in this codebase and isn't a failure mode CLAUDE.md's
@@ -41,7 +43,6 @@ WarningsAsErrors: >
   clang-diagnostic-*,
   clang-analyzer-*,
   bugprone-*,
-  -bugprone-easily-swappable-parameters,
   -bugprone-throwing-static-initialization,
   -bugprone-exception-escape,
   cppcoreguidelines-narrowing-conversions,
