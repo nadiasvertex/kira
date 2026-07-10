@@ -1105,6 +1105,10 @@ private:
   [[nodiscard]] auto checked_arith(llvm::Intrinsic::ID id, llvm::Value *lhs,
                                    llvm::Value *rhs) -> llvm::Value * {
     auto *pair = builder_.CreateBinaryIntrinsic(id, lhs, rhs);
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) - false positive:
+    // the analyzer's path-sensitive trace bottoms out in LLVM's own
+    // OperandTraits/User operand-accessor macros (vendored code we don't
+    // control), not in anything this call site does.
     auto *value = builder_.CreateExtractValue(pair, 0);
     auto *overflowed = builder_.CreateExtractValue(pair, 1);
     guard_panic(overflowed, panic_reason::integer_overflow);
@@ -1641,7 +1645,8 @@ private:
       // `check.cpp` requires an explicit-elements array literal's element
       // count to match its declared size exactly, so `array_size` is the
       // right count either way — fill or explicit-elements form.
-      return compile_byte_array_init(init, *types_.entry(init.type).array_size);
+      return compile_byte_array_init(init,
+                                     types_.entry(init.type).array_size.value());
     }
     if (init.fill_value == nullptr) {
       return compile_slots_init(init.elements);
@@ -1731,6 +1736,10 @@ private:
     builder_.CreateBr(cond_bb);
     builder_.SetInsertPoint(cond_bb);
     auto *idx = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_), idx_alloca);
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) - false positive:
+    // the analyzer's path-sensitive trace bottoms out in LLVM's own
+    // OperandTraits/User operand-accessor macros (vendored code we don't
+    // control), not in anything this call site does.
     auto *cond = builder_.CreateICmpULT(idx, count64, "list.fill.test");
     builder_.CreateCondBr(cond, body_bb, end_bb);
 
@@ -1870,7 +1879,8 @@ private:
     if (is_byte_array_type(node.object->type)) {
       len = llvm::ConstantInt::get(
           llvm::Type::getInt64Ty(ctx_),
-          *types_.entry(strip_refs(types_, node.object->type)).array_size);
+          types_.entry(strip_refs(types_, node.object->type))
+              .array_size.value());
       data = *object;
     } else {
       len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
@@ -2345,7 +2355,6 @@ private:
     const auto subject_type = std::optional<type_id>(match.subject->type);
 
     auto *merge_bb = llvm::BasicBlock::Create(ctx_, "match.end", current_fn_);
-    auto any_reaches_merge = false;
 
     for (const auto &arm : match.arms) {
       auto test = compile_pattern_test(*arm.pattern, *subject, subject_type);
@@ -2375,7 +2384,6 @@ private:
         }
         if (!*terminated) {
           builder_.CreateBr(merge_bb);
-          any_reaches_merge = true;
         }
         builder_.SetInsertPoint(skip_guard_bb);
         continue;
@@ -2392,22 +2400,19 @@ private:
       }
       if (!*terminated) {
         builder_.CreateBr(merge_bb);
-        any_reaches_merge = true;
       }
       builder_.SetInsertPoint(next_bb);
     }
 
     // Exhaustiveness is checker-guaranteed; this is a defensive fallback,
-    // not an expected runtime path.
+    // not an expected runtime path. It unconditionally branches into
+    // `merge_bb`, so `merge_bb` always has at least one predecessor and is
+    // never actually unreachable.
     guard_panic(llvm::ConstantInt::getTrue(ctx_), panic_reason::explicit_panic);
     builder_.CreateBr(merge_bb);
-    any_reaches_merge = true;
 
     builder_.SetInsertPoint(merge_bb);
-    if (!any_reaches_merge) {
-      builder_.CreateUnreachable();
-    }
-    return !any_reaches_merge;
+    return false;
   }
 
   // ------------------------------------------------------------------

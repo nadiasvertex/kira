@@ -23,7 +23,7 @@
 // `kira build` output for one string table — cheaper to keep four
 // messages in sync by hand than to grow this runtime's link graph for it.
 extern "C" [[noreturn]] void kira_codegen_panic(uint8_t reason) {
-  const char *message = "unknown panic";
+  const char *message;
   switch (static_cast<kira::bytecode::panic_reason>(reason)) {
   case kira::bytecode::panic_reason::integer_overflow:
     message = "integer overflow";
@@ -39,6 +39,9 @@ extern "C" [[noreturn]] void kira_codegen_panic(uint8_t reason) {
     break;
   case kira::bytecode::panic_reason::index_out_of_bounds:
     message = "index out of bounds";
+    break;
+  default:
+    message = "unknown panic";
     break;
   }
   std::println(stderr, "panic: {}", message);

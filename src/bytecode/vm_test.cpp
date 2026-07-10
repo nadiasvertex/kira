@@ -448,7 +448,7 @@ auto test_return_unit_produces_no_value() -> void {
 auto intrinsic_id(std::string_view name) -> uint8_t {
   const auto id = kira::intrinsic_index_of(name);
   expect(id.has_value(), "expected a recognized intrinsic name");
-  return *id;
+  return id.value();
 }
 
 auto test_intrinsic_rt_stdout_returns_fd_one() -> void {

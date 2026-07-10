@@ -3972,9 +3972,10 @@ private:
         types_.entry(key).kind == type_kind::builtin_generic_kind &&
         types_.entry(key).name == "range";
 
+    const auto key_span = index.index != nullptr ? index.index->span : index.span;
     const auto require_integer_key = [&] -> void {
       if (!key_is_range && !types_.is_unknown(key) && !types_.is_integer(key)) {
-        error(index.index != nullptr ? index.index->span : index.span,
+        error(key_span,
               std::format("index must be an integer type, found `{}`",
                           types_.display(key)),
               "expected an integer index");

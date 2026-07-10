@@ -1,3 +1,5 @@
+#include <exception>
+#include <iostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -157,8 +159,14 @@ auto test_discovers_transitive_dependency() -> void {
 } // namespace
 
 auto main() -> int {
-  test_finds_only_entry_when_nothing_qualified();
-  test_discovers_direct_dependency();
-  test_discovers_transitive_dependency();
+  try {
+    test_finds_only_entry_when_nothing_qualified();
+    test_discovers_direct_dependency();
+    test_discovers_transitive_dependency();
+  } catch (const std::exception &ex) {
+    std::cerr << "link_test failed: unhandled exception: " << ex.what()
+              << '\n';
+    return 1;
+  }
   return 0;
 }

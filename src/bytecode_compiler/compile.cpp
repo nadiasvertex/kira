@@ -1161,7 +1161,7 @@ private:
       // `check.cpp` requires an explicit-elements array literal's element
       // count to match its declared size exactly, so `array_size` is the
       // right count either way — fill or explicit-elements form.
-      const auto count = *types_.entry(init.type).array_size;
+      const auto count = types_.entry(init.type).array_size.value();
       if (count > 0xFFFF) {
         return std::unexpected(compile_error{
             .kind = compile_error_kind::register_limit_exceeded,
@@ -1463,7 +1463,7 @@ private:
     if (is_byte_array_type(node.object->type)) {
       const auto len_const =
           writer_.add_constant(slot_value{static_cast<uint64_t>(
-              *types_.entry(strip_refs(node.object->type)).array_size)});
+              types_.entry(strip_refs(node.object->type)).array_size.value())});
       auto len_reg_exp = alloc_register(node.span);
       if (!len_reg_exp.has_value()) {
         return std::unexpected(len_reg_exp.error());

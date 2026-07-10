@@ -20,9 +20,9 @@ auto test_resolve_self_executable_finds_running_binary() -> void {
          "running test binary");
 
   auto ec = std::error_code{};
-  expect(std::filesystem::exists(*resolved, ec),
+  expect(std::filesystem::exists(resolved.value(), ec),
          "expected the resolved self-executable path to exist on disk");
-  expect(resolved->is_absolute(),
+  expect(resolved.value().is_absolute(),
          "expected the resolved self-executable path to be absolute");
 }
 
