@@ -20,6 +20,14 @@ namespace kira::driver {
 struct run_outcome {
   bool succeeded = false; ///< True when the function was found, compiled, and
                           ///< ran to completion without panicking.
+  int32_t exit_code = 0;  ///< The function's return value, read back the same
+                          ///< way `render_run_value` renders it, for integer
+                          ///< return types (0 for `()` or any other return
+                          ///< type). This is what the CLI uses as the
+                          ///< process exit status in `run` mode, mirroring
+                          ///< every other process whose `main` return value
+                          ///< becomes its exit code. Meaningless when
+                          ///< `succeeded` is false.
   std::string message;    ///< Rendered return value on success; the reason
                           ///< execution didn't happen or panicked otherwise.
 };

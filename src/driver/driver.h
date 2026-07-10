@@ -19,6 +19,13 @@ struct cli_config {
   std::string metadata_dir =
       std::string(k_default_metadata_dir); ///< Output root for metadata files.
   bool show_help = false; ///< True when argument parsing requested help output.
+  bool show_compile_details =
+      false; ///< Print the per-module "Compiled N module(s)"/"Lowered N/M
+             ///< module(s) to HIR." listing (and, in `run` mode, the
+             ///< executed function's rendered return value) that
+             ///< `render_compile_summary` otherwise omits as noise —
+             ///< especially unwanted when just interpreting a program.
+             ///< Requested via `--show-compile-details`.
   bool parse_only = false; ///< Skip name resolution and type checking
                            ///< (parser-focused drivers).
   bool run = false;        ///< Compile to bytecode and execute `run_function`
@@ -79,7 +86,14 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void;
 /// Render a short CLI summary of emitted metadata artifacts and errors.
 ///
 /// @param report Aggregate result of `compile_sources`.
-[[nodiscard]] auto render_compile_summary(const compile_report &report)
+/// @param show_compile_details Include the per-module compile/HIR-lowering
+/// listing and (on a successful `run`) the executed function's rendered
+/// return value. When false, only failure information is rendered — a
+/// clean `run` with nothing to report yields an empty string, matching
+/// `cli_config::show_compile_details`'s default of not printing anything
+/// when interpreting a program that ran without error.
+[[nodiscard]] auto render_compile_summary(const compile_report &report,
+                                          bool show_compile_details = false)
     -> std::string;
 
 } // namespace kira::driver

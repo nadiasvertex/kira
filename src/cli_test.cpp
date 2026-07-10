@@ -96,6 +96,27 @@ auto test_parse_args_rejects_unknown_options() -> void {
          "expected unknown option error message");
 }
 
+/// Verify that `--show-compile-details` is off by default and settable.
+auto test_parse_args_accepts_show_compile_details() -> void {
+  std::vector<std::string> default_args = {"kira", "main.kira"};
+  auto default_argv = make_argv(default_args);
+
+  auto default_result = kira::driver::parse_args(default_argv);
+  expect(default_result.has_value(), "expected sources to parse successfully");
+  expect(!default_result->show_compile_details,
+         "expected show_compile_details to default to false");
+
+  std::vector<std::string> args = {"kira", "--show-compile-details",
+                                   "main.kira"};
+  auto argv = make_argv(args);
+
+  auto result = kira::driver::parse_args(argv);
+  expect(result.has_value(),
+         "--show-compile-details should parse successfully");
+  expect(result->show_compile_details,
+         "--show-compile-details should set show_compile_details");
+}
+
 /// Verify help and compile-summary rendering helpers.
 auto test_rendering_helpers() -> void {
   auto help = kira::driver::render_help("kira");
@@ -116,9 +137,14 @@ auto test_rendering_helpers() -> void {
       .diagnostics = {},
       .error_count = 0,
   };
-  auto summary = kira::driver::render_compile_summary(report);
+  auto quiet_summary = kira::driver::render_compile_summary(report);
+  expect(quiet_summary.empty(),
+         "summary should be silent by default for a clean compile");
+
+  auto summary = kira::driver::render_compile_summary(report, true);
   expect(summary.find("Compiled 1 module(s):") != std::string::npos,
-         "summary should report compiled module count");
+         "summary should report compiled module count with "
+         "--show-compile-details");
   expect(summary.find("sample.tools -> build/meta/sample/tools.kmeta.pb") !=
              std::string::npos,
          "summary should include metadata output path");
@@ -252,7 +278,7 @@ auto test_compile_sources_lowers_module_to_hir() -> void {
   expect(report->hir_modules[0].error.empty(),
          "expected no error message for a successful lowering");
 
-  auto summary = kira::driver::render_compile_summary(*report);
+  auto summary = kira::driver::render_compile_summary(*report, true);
   expect(summary.find("Lowered 1/1 module(s) to HIR.") != std::string::npos,
          "expected the summary to report the lowering outcome");
 }
@@ -960,6 +986,49 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 #endif
 }
 
+/// `--run`'s exit code should mirror whatever the executed function
+/// returned (mirroring any other process's `main` return value), and the
+/// rendered summary should stay silent on a clean run unless
+/// `--show-compile-details` was requested — `main.cpp`'s job is to turn
+/// `run_outcome::exit_code` into the process exit status and to skip
+/// printing `render_compile_summary`'s output when it comes back empty;
+/// this test covers the `compile_sources`/`render_compile_summary` half of
+/// that contract directly.
+auto test_run_reports_exit_code_and_silent_summary() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_exit.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample\n"
+                          "def main() -> int32:\n"
+                          "  return 42\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0, "expected valid source to compile cleanly");
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded, "expected `main` to run without panicking");
+  expect(report->run->exit_code == 42,
+         "expected the run's exit code to match main()'s returned value");
+
+  auto quiet_summary = kira::driver::render_compile_summary(*report);
+  expect(quiet_summary.empty(),
+         "expected a clean run's summary to be silent by default");
+
+  auto detailed_summary = kira::driver::render_compile_summary(*report, true);
+  expect(detailed_summary.find("main() -> 42") != std::string::npos,
+         "expected --show-compile-details to include the run's return value");
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -969,6 +1038,7 @@ auto main() -> int {
     test_parse_args_supports_help_and_double_dash();
     test_parse_args_accepts_metadata_dir();
     test_parse_args_rejects_unknown_options();
+    test_parse_args_accepts_show_compile_details();
     test_rendering_helpers();
     test_compile_sources_writes_module_metadata();
     test_compile_sources_lowers_module_to_hir();
@@ -991,6 +1061,7 @@ auto main() -> int {
     test_compile_sources_reports_unresolved_session_import();
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
+    test_run_reports_exit_code_and_silent_summary();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;

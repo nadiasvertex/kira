@@ -44,11 +44,26 @@ auto main(int argc, char *argv[]) -> int {
       }
     }
 
-    std::println("{}", kira::driver::render_compile_summary(*report));
     const auto run_failed = report->run.has_value() && !report->run->succeeded;
     const auto build_failed =
         report->build.has_value() && !report->build->succeeded;
-    return report->error_count == 0 && !run_failed && !build_failed ? 0 : 1;
+    const auto had_errors =
+        report->error_count > 0 || run_failed || build_failed;
+
+    const auto summary =
+        kira::driver::render_compile_summary(*report, cfg.show_compile_details);
+    if (!summary.empty()) {
+      std::println("{}", summary);
+    }
+
+    // In interpreter mode the process exit code mirrors whatever `main`
+    // (or `--run-function`'s target) returned, like any other program —
+    // not the usual "0 success / 1 failure" the compiler itself uses for
+    // every other outcome (`spec/codegen-design.md`'s driver semantics).
+    if (cfg.run && !had_errors) {
+      return report->run.has_value() ? report->run->exit_code : 0;
+    }
+    return had_errors ? 1 : 0;
   } catch (const std::exception &ex) {
     // Avoid std::format/std::println here: they can themselves throw, and a
     // throw from within this handler would escape main() uncaught.

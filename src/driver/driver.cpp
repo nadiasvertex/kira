@@ -127,45 +127,64 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   return report;
 }
 
-auto render_compile_summary(const compile_report &report) -> std::string {
+auto render_compile_summary(const compile_report &report,
+                            bool show_compile_details) -> std::string {
   if (report.modules.empty()) {
     return std::format("Compilation failed with {} error(s).",
                        report.error_count);
   }
 
-  std::string out =
-      std::format("Compiled {} module(s):", report.modules.size());
-  for (size_t i = 0; i < report.modules.size(); ++i) {
-    if (i < report.modules.size()) {
-      out += std::format("\n  [{}] {} -> {}", i,
-                         module_display_name(report.modules[i]),
-                         report.modules[i].metadata_path);
+  std::string out;
+  auto append_line = [&out](std::string_view line) -> void {
+    if (!out.empty()) {
+      out += "\n";
     }
-  }
-  if (!report.hir_modules.empty()) {
-    const auto lowered_count = static_cast<size_t>(std::count_if(
-        report.hir_modules.begin(), report.hir_modules.end(),
-        [](const auto &result) -> auto { return result.lowered; }));
-    out += std::format("\nLowered {}/{} module(s) to HIR.", lowered_count,
-                       report.hir_modules.size());
-    for (const auto &result : report.hir_modules) {
-      if (!result.lowered) {
-        out += std::format("\n  [{}] {}", result.module_path, result.error);
+    out += line;
+  };
+
+  if (show_compile_details) {
+    std::string modules_section =
+        std::format("Compiled {} module(s):", report.modules.size());
+    for (size_t i = 0; i < report.modules.size(); ++i) {
+      modules_section += std::format("\n  [{}] {} -> {}", i,
+                                     module_display_name(report.modules[i]),
+                                     report.modules[i].metadata_path);
+    }
+    append_line(modules_section);
+
+    if (!report.hir_modules.empty()) {
+      const auto lowered_count = static_cast<size_t>(std::count_if(
+          report.hir_modules.begin(), report.hir_modules.end(),
+          [](const auto &result) -> auto { return result.lowered; }));
+      std::string hir_section =
+          std::format("Lowered {}/{} module(s) to HIR.", lowered_count,
+                      report.hir_modules.size());
+      for (const auto &result : report.hir_modules) {
+        if (!result.lowered) {
+          hir_section +=
+              std::format("\n  [{}] {}", result.module_path, result.error);
+        }
       }
+      append_line(hir_section);
     }
   }
+
   if (report.run.has_value()) {
-    out += report.run->succeeded
-               ? std::format("\n{}", report.run->message)
-               : std::format("\nrun failed: {}", report.run->message);
+    if (report.run->succeeded) {
+      if (show_compile_details) {
+        append_line(report.run->message);
+      }
+    } else {
+      append_line(std::format("run failed: {}", report.run->message));
+    }
   }
   if (report.build.has_value()) {
-    out += report.build->succeeded
-               ? std::format("\nBuilt executable: {}", report.build->message)
-               : std::format("\nbuild failed: {}", report.build->message);
+    append_line(report.build->succeeded
+                    ? std::format("Built executable: {}", report.build->message)
+                    : std::format("build failed: {}", report.build->message));
   }
   if (report.error_count > 0) {
-    out += std::format("\nEncountered {} error(s).", report.error_count);
+    append_line(std::format("Encountered {} error(s).", report.error_count));
   }
   return out;
 }

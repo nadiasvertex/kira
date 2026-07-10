@@ -32,8 +32,7 @@ auto main() -> int {
   try {
     test_resolve_self_executable_finds_running_binary();
   } catch (const std::exception &ex) {
-    std::cerr << "path_test failed: unhandled exception: " << ex.what()
-              << '\n';
+    std::cerr << "path_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);
   }
   return 0;

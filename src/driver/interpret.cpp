@@ -45,6 +45,45 @@ namespace kira::driver {
   return {};
 }
 
+/// Reads a VM return value back as a process exit code, using the same
+/// `numeric_kind_of` dispatch `render_run_value` uses to pick apart
+/// `slot_value`'s untagged union. Non-numeric/unsupported return types (and
+/// `()`) contribute no meaningful exit status, so they fall back to `0`.
+///
+/// @param types Checked type table `return_type` indexes into.
+/// @param return_type Checked return type of the executed function.
+/// @param value Raw VM result to read.
+[[nodiscard]] static auto exit_code_of(const semantic::type_table &types,
+                                       semantic::type_id return_type,
+                                       const bytecode::slot_value &value)
+    -> int32_t {
+  const auto kind = bytecode::numeric_kind_of(types, return_type);
+  if (!kind) {
+    return 0;
+  }
+
+  switch (*kind) {
+  case bytecode::numeric_kind::i8:
+  case bytecode::numeric_kind::i16:
+  case bytecode::numeric_kind::i32:
+  case bytecode::numeric_kind::i64:
+    return static_cast<int32_t>(value.i);
+  case bytecode::numeric_kind::u8:
+  case bytecode::numeric_kind::u16:
+  case bytecode::numeric_kind::u32:
+  case bytecode::numeric_kind::u64:
+    return static_cast<int32_t>(value.u);
+  case bytecode::numeric_kind::boolean:
+    return value.i != 0 ? 1 : 0;
+  case bytecode::numeric_kind::character:
+    return static_cast<int32_t>(value.u);
+  case bytecode::numeric_kind::f32:
+  case bytecode::numeric_kind::f64:
+    return static_cast<int32_t>(value.f);
+  }
+  return 0;
+}
+
 [[nodiscard]] auto
 run_hir_module(std::span<const hir::hir_module *const> modules,
                const semantic::type_table &types,
@@ -106,6 +145,7 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
 
   return run_outcome{
       .succeeded = true,
+      .exit_code = exit_code_of(types, target->return_type, result->value),
       .message = std::format(
           "{}() -> {}", function_name,
           render_run_value(types, target->return_type, result->value))};

@@ -177,6 +177,14 @@ static const std::unordered_map<std::string_view, cli_converter>
             cfg.parse_only = true;
             return std::monostate{};
           }}},
+        {"--show-compile-details",
+         {.name = "--show-compile-details",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.show_compile_details = true;
+            return std::monostate{};
+          }}},
 };
 
 /// Find the first lowered module that defines a function with the given name.
@@ -298,7 +306,12 @@ auto render_help(std::string_view program_name) -> std::string {
       "  --compile-output PATH    Write the linked executable to PATH\n"
       "  --parse-only             Run only the lexer and parser,\n"
       "                          skipping semantic name resolution and\n"
-      "                          type checking",
+      "                          type checking\n"
+      "  --show-compile-details   Print the per-module compile/HIR-lowering\n"
+      "                          listing (silent by default, especially in\n"
+      "                          the default interpreting mode, where\n"
+      "                          nothing is printed unless there's an\n"
+      "                          error)",
       program_name, k_default_metadata_dir, k_default_run_function,
       k_default_run_function, k_default_run_function);
 }
