@@ -727,7 +727,20 @@ STRING_CHAR
     | ESCAPE_SEQ
     ;
 
-INTERP_EXPR = "{" expr "}" ;    (* string interpolation *)
+INTERP_EXPR
+    = "{" expr [ "=" ] [ ":" FORMAT_SPEC ] "}" ;    (* string interpolation;
+        see spec/string-formatting-design.md for FORMAT_SPEC semantics *)
+
+FORMAT_SPEC
+    = [ FILL_ALIGN ] [ SIGN ] [ "#" ] [ "0" ] [ WIDTH ] [ "." PRECISION ] [ FORMAT_TYPE ]
+    ;
+
+FILL_ALIGN  = [ FILL_CHAR ] ( "<" | ">" | "^" ) ;
+SIGN        = "+" | "-" | " " ;
+WIDTH       = DEC_DIGITS | "{" expr "}" ;
+PRECISION   = DEC_DIGITS | "{" expr "}" ;
+FORMAT_TYPE = "s" | "?" | "d" | "x" | "X" | "o" | "b" | "e" | "E" | "f" | "g" | "G" | "c" ;
+FILL_CHAR   = (* any character except '{', '}', ':', '=', '\' *) ;
 
 ESCAPE_SEQ
     = "\\" ( "n" | "t" | "r" | '"' | "'" | "\\" | "{" | "}" )
