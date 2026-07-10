@@ -52,6 +52,7 @@ cc_library(
     tags = ["no-sandbox"],
     deps = [
         ":codegen",
+        "//src/util:util",
         "@llvm//:llvm",
     ],
     visibility = ["//visibility:public"],

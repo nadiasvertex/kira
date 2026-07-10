@@ -27,11 +27,31 @@ package:
     tarball="$dist_root/kira-$version-$platform-$machine.tar.bz2"
 
     rm -rf "$dist_root"
-    mkdir -p "$tar_root/bin"
+    mkdir -p "$tar_root/bin" "$tar_root/share/kira/std" "$tar_root/lib/kira"
 
-    bazelisk build --config=release //src:kira
+    # `kira build` (AOT native compile) shells out to `c++` and links the
+    # produced object file against these four archives (`find_bazel_archive`,
+    # `src/driver/aot.cpp`); `inject_stdlib_prelude`
+    # (`src/driver/driver.cpp`) auto-imports the `src/std/*.kira` sources
+    # into every compile. Both lookups fall back to a path next to the
+    # installed binary's own resolved location
+    # (`<prefix>/lib/kira/`, `<prefix>/share/kira/std/`), which is the
+    # layout built below.
+    bazelisk build --config=release \
+      //src:kira \
+      //src/llvm_codegen:aot_runtime \
+      //src/runtime:runtime \
+      //src/semantic:semantic \
+      //src/parser:parser
     cp -L "bazel-bin/src/kira" "$tar_root/bin/kira"
     chmod 0755 "$tar_root/bin/kira"
+
+    cp -L "bazel-bin/src/llvm_codegen/libaot_runtime.lo" \
+          "bazel-bin/src/runtime/libruntime.lo" \
+          "bazel-bin/src/semantic/libsemantic.a" \
+          "bazel-bin/src/parser/libparser.a" \
+          "$tar_root/lib/kira/"
+    cp src/std/*.kira "$tar_root/share/kira/std/"
 
     cp "README.md" "$tar_root/README.md"
     cp -R "spec" "$tar_root/spec"
@@ -56,11 +76,22 @@ package:
       control_root="$work_root/control"
       deb="$dist_root/kira_${version}_${deb_arch}.deb"
 
-      mkdir -p "$deb_root/usr/bin" "$deb_root/usr/share/doc/kira" "$control_root"
+      mkdir -p "$deb_root/usr/bin" "$deb_root/usr/share/doc/kira" \
+        "$deb_root/usr/share/kira/std" "$deb_root/usr/lib/kira"
       cp -L "bazel-bin/src/kira" "$deb_root/usr/bin/kira"
       chmod 0755 "$deb_root/usr/bin/kira"
       cp "README.md" "$deb_root/usr/share/doc/kira/README.md"
       cp -R "spec" "$deb_root/usr/share/doc/kira/spec"
+
+      # `/usr/bin/kira` resolves its own install prefix (`/usr`) at runtime,
+      # so its support files must land under `/usr/share/kira/std` and
+      # `/usr/lib/kira/` — see the tarball packaging step above for why.
+      cp -L "bazel-bin/src/llvm_codegen/libaot_runtime.lo" \
+            "bazel-bin/src/runtime/libruntime.lo" \
+            "bazel-bin/src/semantic/libsemantic.a" \
+            "bazel-bin/src/parser/libparser.a" \
+            "$deb_root/usr/lib/kira/"
+      cp src/std/*.kira "$deb_root/usr/share/kira/std/"
 
       printf '%s\n' \
         "Package: kira" \

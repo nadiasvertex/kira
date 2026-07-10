@@ -21,10 +21,12 @@ namespace kira::driver {
 
 /// Locates `filename` under the `src/std` Bazel package, trying every
 /// invocation shape the binary might run under (`bazelisk run`'s runfiles
-/// tree, `bazel test`'s `TEST_SRCDIR`, or a plain `bazel-bin` invocation
-/// from the workspace root) — the same set of candidates
-/// `find_bazel_archive` (`src/driver/aot.cpp`) tries for the AOT runtime
-/// archives.
+/// tree, `bazel test`'s `TEST_SRCDIR`, a plain `bazel-bin` invocation from
+/// the workspace root, or — for a binary installed from a `just package`
+/// archive/`.deb`, run from any working directory — `share/kira/std` next
+/// to the running executable's own resolved install prefix) — the same set
+/// of candidates `find_bazel_archive` (`src/driver/aot.cpp`) tries for the
+/// AOT runtime archives.
 [[nodiscard]] static auto find_stdlib_source_file(std::string_view program_name,
                                                   std::string_view filename)
     -> std::optional<std::filesystem::path> {
@@ -44,6 +46,12 @@ namespace kira::driver {
                             "std" / filename);
   }
   candidates.emplace_back(std::filesystem::path("src") / "std" / filename);
+  if (const auto exe_path = util::resolve_self_executable()) {
+    // Installed layout: `<prefix>/bin/kira`, stdlib sources under
+    // `<prefix>/share/kira/std/`.
+    candidates.emplace_back(exe_path->parent_path().parent_path() / "share" /
+                            "kira" / "std" / filename);
+  }
 
   for (const auto &candidate : candidates) {
     auto ec = std::error_code{};

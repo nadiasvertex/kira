@@ -41,6 +41,13 @@ namespace kira::driver {
                               filename);
     }
     candidates.emplace_back(fs::path("bazel-bin") / bazel_package / filename);
+    if (const auto exe_path = kira::util::resolve_self_executable()) {
+      // Installed layout: `<prefix>/bin/kira`, link archives flattened
+      // under `<prefix>/lib/kira/` (matching `just package`'s tar/`.deb`
+      // output), independent of the AOT program's cwd.
+      candidates.emplace_back(exe_path->parent_path().parent_path() / "lib" /
+                              "kira" / filename);
+    }
   }
 
   for (const auto &candidate : candidates) {
