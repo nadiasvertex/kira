@@ -16,64 +16,6 @@
 
 namespace kira::driver {
 
-namespace {
-
-/// Extract the effective top-level visibility from a parsed item node.
-///
-/// @param node Top-level AST item.
-[[nodiscard]] auto top_level_visibility(const ast::node &node)
-    -> ast::visibility {
-  switch (node.kind) {
-  case ast::node_kind::use_decl:
-    return dynamic_cast<const ast::use_decl &>(node).visibility;
-  case ast::node_kind::type_decl:
-    return dynamic_cast<const ast::type_decl &>(node).visibility;
-  case ast::node_kind::trait_decl:
-    return dynamic_cast<const ast::trait_decl &>(node).visibility;
-  case ast::node_kind::concept_decl:
-    return dynamic_cast<const ast::concept_decl &>(node).visibility;
-  case ast::node_kind::func_decl:
-    return dynamic_cast<const ast::func_decl &>(node).visibility;
-  case ast::node_kind::sub_module_decl:
-    return dynamic_cast<const ast::sub_module_decl &>(node).visibility;
-  case ast::node_kind::static_decl:
-    return dynamic_cast<const ast::static_decl &>(node).visibility;
-  default:
-    return ast::visibility::def;
-  }
-}
-
-/// Extract the user-facing symbol name for a parsed top-level item.
-///
-/// @param node Top-level AST item.
-[[nodiscard]] auto top_level_name(const ast::node &node) -> std::string {
-  switch (node.kind) {
-  case ast::node_kind::use_decl:
-    return util::join_strings(dynamic_cast<const ast::use_decl &>(node).path,
-                              ".");
-  case ast::node_kind::type_decl:
-    return dynamic_cast<const ast::type_decl &>(node).name;
-  case ast::node_kind::trait_decl:
-    return dynamic_cast<const ast::trait_decl &>(node).name;
-  case ast::node_kind::concept_decl:
-    return dynamic_cast<const ast::concept_decl &>(node).name;
-  case ast::node_kind::func_decl:
-    return dynamic_cast<const ast::func_decl &>(node).name;
-  case ast::node_kind::sub_module_decl:
-    return dynamic_cast<const ast::sub_module_decl &>(node).name;
-  case ast::node_kind::dep_decl:
-    return dynamic_cast<const ast::dep_decl &>(node).name;
-  case ast::node_kind::static_decl:
-    return static_decl_label(dynamic_cast<const ast::static_decl &>(node));
-  case ast::node_kind::error_node:
-    return dynamic_cast<const ast::error_node &>(node).description;
-  default:
-    return {};
-  }
-}
-
-} // namespace
-
 struct cli_converter {
   std::string_view name;
 
