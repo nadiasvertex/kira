@@ -29,6 +29,7 @@ cc_library(
     ],
     deps = [
         "//src:intrinsics",
+        "//src/parser:ast_clone",
         "//src/parser:parser",
     ],
     visibility = ["//visibility:public"],

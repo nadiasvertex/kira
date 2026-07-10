@@ -32,6 +32,18 @@ using semantic::type_kind;
       .kind = kind, .span = span, .message = std::move(message)});
 }
 
+/// Whether `param` is the leading `self`/`mut self` receiver — the same
+/// shape `semantic::check.cpp`'s own `is_self_param` checks for, redone
+/// here since lowering has no access to that checker-private helper.
+[[nodiscard]] auto is_self_param(const ast::param &param) -> bool {
+  if (param.pattern == nullptr ||
+      param.pattern->kind != ast::node_kind::binding_pattern) {
+    return false;
+  }
+  return dynamic_cast<const ast::binding_pattern &>(*param.pattern).name ==
+         "self";
+}
+
 /// Wraps a freshly-built derived node into the `ptr<hir_expr>` result type
 /// every expression-lowering helper returns.
 template <typename T>
@@ -585,6 +597,34 @@ auto lowerer::lower_call(const ast::call_expr &call)
                 "call expression is missing its callee");
   }
 
+  // `x.len()`/`x.as_bytes()` on a builtin container/`str` — these have no
+  // `func_decl` backing them at all (`semantic::check.cpp`'s
+  // `builtin_method_result` is a hardcoded type-rule table, not a real
+  // declaration `resolved_callees_` could ever point at), so they can't go
+  // through the ordinary method-call lowering below. Guarded on the absence
+  // of a `resolved_callees_` entry so a real user-defined `len`/`as_bytes`
+  // method (an inherent method or `extend` override, which *does* get one —
+  // see `record_instance_method_callee`) always wins.
+  if (call.callee->kind == ast::node_kind::field_expr &&
+      !checked_.resolved_callees.contains(&call)) {
+    const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+    if (field.object != nullptr && field.field_name == "len") {
+      auto object = lower_expr(*field.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      return ok_expr(
+          make<hir_container_len>(call.span, *type, std::move(*object)));
+    }
+    if (field.object != nullptr && field.field_name == "as_bytes") {
+      // `str` and `slice[byte]` share the same `{len; data_ptr}` runtime
+      // representation (see `lower_prelude_print`'s doc comment and
+      // `bytes_of` in `src/bytecode/vm.cpp`), so this is a pure type-level
+      // reinterpret — the `str` value lowers completely unchanged.
+      return lower_expr(*field.object);
+    }
+  }
+
   // `@variant(args...)` parses as a call whose callee is the variant's
   // ident (see `is_variant_ident`) — this is construction, not an ordinary
   // call, so it never goes through the callee-resolution machinery below
@@ -638,9 +678,11 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // backends' cross-module dispatch (see `hir_local_ref::owner_module`)
   // finds the same function under the same key from either side.
   auto callee = std::expected<ptr<hir_expr>, lowering_error>{};
+  const ast::expr *receiver_ast = nullptr;
   if (const auto found = checked_.resolved_callees.find(&call);
       found != checked_.resolved_callees.end()) {
     const auto &resolved = found->second;
+    receiver_ast = resolved.receiver;
     const auto local_name =
         resolved.impl_target_type.empty()
             ? resolved.decl->name
@@ -661,6 +703,19 @@ auto lowerer::lower_call(const ast::call_expr &call)
     return std::unexpected(callee.error());
   }
 
+  // An instance-method call's receiver (`resolved_callee::receiver`) is the
+  // callee's hidden first (`self`) argument — evaluated once, ahead of every
+  // declared argument, matching where `field.object` is written at the call
+  // site.
+  auto receiver_arg = ptr<hir_expr>{};
+  if (receiver_ast != nullptr) {
+    auto lowered_receiver = lower_expr(*receiver_ast);
+    if (!lowered_receiver.has_value()) {
+      return std::unexpected(lowered_receiver.error());
+    }
+    receiver_arg = std::move(*lowered_receiver);
+  }
+
   // A call resolved against a real declaration (free function, method, or
   // trait default) has a persisted argument-to-parameter mapping (see
   // `call_argument_mapping` in types.h) — reorder named/positional
@@ -678,7 +733,11 @@ auto lowerer::lower_call(const ast::call_expr &call)
   if (const auto mapping = checked_.call_argument_mappings.find(&call);
       mapping != checked_.call_argument_mappings.end()) {
     auto args = ptr_vec<hir_expr>{};
-    args.reserve(mapping->second.args_by_param.size());
+    args.reserve(mapping->second.args_by_param.size() +
+                (receiver_arg != nullptr ? 1 : 0));
+    if (receiver_arg != nullptr) {
+      args.push_back(std::move(receiver_arg));
+    }
     for (const auto *arg_expr : mapping->second.args_by_param) {
       if (arg_expr == nullptr) {
         return fail(lowering_error_kind::unsupported_construct, call.span,
@@ -1352,6 +1411,36 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (expr_stmt.expr == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, expr_stmt.span,
                   "expression statement has no expression");
+    }
+    // `list.push(x)` as a bare statement — like `.len()`/`.as_bytes()`
+    // (`lower_call`), `push` on a builtin `list[T]` has no `func_decl`
+    // backing it (`semantic::check.cpp`'s `builtin_method_result`), so it
+    // can't lower through the ordinary call path either. Unlike those two,
+    // it has no expression-shaped HIR node — `hir_list_push` is a
+    // statement, matching how it's actually written (`out.push(x)` on its
+    // own line, never as a value) — so it's intercepted here rather than in
+    // `lower_call`. Guarded on the absence of a `resolved_callees_` entry so
+    // a real user-defined `push` method still wins.
+    if (expr_stmt.expr->kind == ast::node_kind::call_expr) {
+      const auto &call = dynamic_cast<const ast::call_expr &>(*expr_stmt.expr);
+      if (call.callee != nullptr &&
+          call.callee->kind == ast::node_kind::field_expr &&
+          !checked_.resolved_callees.contains(&call)) {
+        const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+        if (field.field_name == "push" && field.object != nullptr &&
+            call.args.size() == 1 && call.args.front().value != nullptr) {
+          auto target = lower_expr(*field.object);
+          if (!target.has_value()) {
+            return std::unexpected(target.error());
+          }
+          auto value = lower_expr(*call.args.front().value);
+          if (!value.has_value()) {
+            return std::unexpected(value.error());
+          }
+          return one_stmt(ptr<hir_node>(make<hir_list_push>(
+              expr_stmt.span, std::move(*target), std::move(*value))));
+        }
+      }
     }
     auto lowered = lower_expr(*expr_stmt.expr);
     if (!lowered.has_value()) {
@@ -2471,7 +2560,12 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   params.reserve(decl.params.size());
   for (size_t i = 0; i < decl.params.size(); ++i) {
     const auto &param = decl.params[i];
-    if (param.type_annotation == nullptr) {
+    // `self`/`mut self` is always unannotated by design (its type is the
+    // enclosing impl/extend target, not written out) — `check_function`
+    // (`semantic/check.cpp`) already resolves and records its type from
+    // `self_type_` regardless, so `checked_type_of` below has a real answer
+    // even though there's no `type_annotation` node to point at.
+    if (param.type_annotation == nullptr && !(i == 0 && is_self_param(param))) {
       pop_scope();
       return fail(lowering_error_kind::unannotated_parameter, param.span,
                   std::format("parameter in function `{}` has no explicit "
@@ -2582,18 +2676,6 @@ auto lower_function(const ast::func_decl &decl,
   return walker.lower_function(decl);
 }
 
-/// Whether `param` is the leading `self`/`mut self` receiver — the same
-/// shape `semantic::check.cpp`'s own `is_self_param` checks for, redone
-/// here since lowering has no access to that checker-private helper.
-[[nodiscard]] auto is_self_param(const ast::param &param) -> bool {
-  if (param.pattern == nullptr ||
-      param.pattern->kind != ast::node_kind::binding_pattern) {
-    return false;
-  }
-  return dynamic_cast<const ast::binding_pattern &>(*param.pattern).name ==
-         "self";
-}
-
 /// The bare target-type name an `impl ... for <type>` block lowers its
 /// associated functions under (`TargetType::method`, matching
 /// `resolved_callee::impl_target_type` in `check.cpp`) — only a simple,
@@ -2613,13 +2695,16 @@ auto lower_function(const ast::func_decl &decl,
   return named.path.back();
 }
 
-/// Lowers every eligible associated function (no `self` receiver, no
-/// generics on the impl block or the function itself) declared in `impl`
-/// into a `hir_function` named `TargetType::method`, appending each to
-/// `functions`. A `self`-taking method or a generic impl/method is left
-/// alone — instance-method dispatch and monomorphization are both out of
-/// scope here (see `spec/stdlib.md`'s "trait default-method dispatch"
-/// gap and `spec/typed-ir-design.md`'s generics non-goal).
+/// Lowers every eligible associated function or method (no generics on the
+/// impl block or the function itself) declared in `impl` into a
+/// `hir_function` named `TargetType::method`, appending each to
+/// `functions`. A `self`-taking method lowers exactly like any other
+/// function — `self` is just an ordinary first parameter by the time
+/// `lower_function` sees it (its type comes from `checked_type_of`, not
+/// `param.type_annotation`, which is always null for `self`; see
+/// `lower_function`'s guard). A generic impl/method is still left alone —
+/// monomorphization is out of scope (`spec/typed-ir-design.md`'s generics
+/// non-goal).
 [[nodiscard]] auto lower_impl_associated_functions(
     const ast::impl_decl &impl, const semantic::checked_types &checked,
     ptr_vec<hir_function> &functions) -> std::expected<void, lowering_error> {
@@ -2635,8 +2720,39 @@ auto lower_function(const ast::func_decl &decl,
       continue;
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
-    if (decl.modifiers.is_intrinsic || !decl.type_params.empty() ||
-        (!decl.params.empty() && is_self_param(decl.params.front()))) {
+    if (decl.modifiers.is_intrinsic || !decl.type_params.empty()) {
+      continue;
+    }
+    auto lowered = lower_function(decl, checked);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    (*lowered)->name = std::format("{}::{}", *target_name, decl.name);
+    functions.push_back(std::move(*lowered));
+  }
+  return {};
+}
+
+/// Lowers every method declared in an `extend TargetType:` block into a
+/// `hir_function` named `TargetType::method`, the same naming convention
+/// `lower_impl_associated_functions` uses — an `extend` block makes no
+/// trait-conformance claim, so there's no coherence bookkeeping to skip,
+/// just a plain per-item lowering.
+[[nodiscard]] auto
+lower_extend_methods(const ast::extend_decl &extend,
+                     const semantic::checked_types &checked,
+                     ptr_vec<hir_function> &functions)
+    -> std::expected<void, lowering_error> {
+  const auto target_name = simple_impl_target_name(extend.for_type.get());
+  if (!target_name.has_value()) {
+    return {};
+  }
+  for (const auto &item : extend.items) {
+    if (item == nullptr || item->kind != ast::node_kind::func_decl) {
+      continue;
+    }
+    const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
+    if (decl.modifiers.is_intrinsic || !decl.type_params.empty()) {
       continue;
     }
     auto lowered = lower_function(decl, checked);
@@ -2665,6 +2781,14 @@ auto lower_module(const ast::file &file, std::string module_name,
       }
       continue;
     }
+    if (item->kind == ast::node_kind::extend_decl) {
+      auto result = lower_extend_methods(
+          dynamic_cast<const ast::extend_decl &>(*item), checked, functions);
+      if (!result.has_value()) {
+        return std::unexpected(result.error());
+      }
+      continue;
+    }
     if (item->kind != ast::node_kind::func_decl) {
       continue;
     }
@@ -2680,6 +2804,23 @@ auto lower_module(const ast::file &file, std::string module_name,
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
+    functions.push_back(std::move(*lowered));
+  }
+  // Trait-default methods `semantic::checker::monomorphize_trait_default`
+  // (`check.cpp`) cloned and concretely type-checked for one impl each —
+  // they have no `impl_decl`/`func_decl` item of their own in `file` to
+  // walk above, so they're lowered here instead, once per module, the same
+  // `TargetType::method` naming convention every other impl member uses.
+  for (const auto &synthesized : checked.synthesized_trait_defaults) {
+    if (synthesized.owner_module != module_name) {
+      continue;
+    }
+    auto lowered = lower_function(*synthesized.decl, checked);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    (*lowered)->name = std::format("{}::{}", synthesized.target_type_name,
+                                   synthesized.decl->name);
     functions.push_back(std::move(*lowered));
   }
   return make<hir_module>(file.span, std::move(module_name),

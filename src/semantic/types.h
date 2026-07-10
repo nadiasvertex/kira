@@ -211,18 +211,24 @@ struct call_argument_mapping {
   std::vector<const ast::expr *> args_by_param;
 };
 
-/// The declaration a module-qualified free-function call (`std.io.open(...)`)
-/// or a type-qualified associated-function call (`io_error.from(...)`)
-/// resolved to — recorded by `infer_qualified_call` (`check.cpp`) since
-/// lowering has no way to redo this resolution itself (it never re-walks
+/// The declaration a module-qualified free-function call (`std.io.open(...)`),
+/// a type-qualified associated-function call (`io_error.from(...)`), or a
+/// genuine instance-method call (`x.method(...)`) resolved to — recorded by
+/// `infer_qualified_call`/`infer_method_call` (`check.cpp`) since lowering
+/// has no way to redo this resolution itself (it never re-walks
 /// `program_index`). `owner_module` is the module that declares `decl`;
 /// `impl_target_type` is the bare name of the target type an associated
-/// function was resolved on (e.g. `io_error` for `io_error.from`), empty for
-/// an ordinary module-qualified free function.
+/// function or method was resolved on (e.g. `io_error` for `io_error.from`,
+/// `file` for `file_value.write(...)`), empty for an ordinary
+/// module-qualified free function. `receiver` is the AST expression the
+/// method was called on (`field.object`) for a real instance-method call —
+/// lowering evaluates it and passes it as the callee's hidden first (`self`)
+/// argument; null for every other call shape (there is no receiver to pass).
 struct resolved_callee {
   const ast::func_decl *decl = nullptr;
   std::string owner_module;
   std::string impl_target_type;
+  const ast::expr *receiver = nullptr;
 };
 
 /// The persisted result of type-checking one session: the interned
@@ -251,6 +257,20 @@ struct resolved_callee {
 /// `.find`, not `.at`. This is what a later typed-lowering pass
 /// (`spec/typed-ir-design.md`) reads instead of re-deriving types from the
 /// AST a second time.
+/// A trait-default method body cloned and type-checked concretely for one
+/// impl that doesn't override it — see `checker::build_method_table`
+/// (`check.cpp`), the only place these are created. `decl` is owned by the
+/// checker's `synthesized_decls_` list, moved into `checked_types` alongside
+/// this record so it outlives the checker; `hir::lower_module` lowers each
+/// one whose `owner_module` matches the module it's currently lowering, the
+/// same way it lowers every other impl member, naming it
+/// `target_type_name::<decl->name>`.
+struct synthesized_method {
+  const ast::func_decl *decl = nullptr;
+  std::string target_type_name;
+  std::string owner_module;
+};
+
 struct checked_types {
   type_table types;
   std::unordered_map<const ast::node *, type_id> node_types;
@@ -265,6 +285,11 @@ struct checked_types {
   /// (a plain same-module/imported bare-name call, a method call) or never
   /// resolved at all.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees;
+  /// Every trait-default method cloned and monomorphized for a concrete impl
+  /// — see `synthesized_method`'s doc comment. Owns the clones themselves
+  /// (moved here from the checker) so their lifetime outlives type-checking.
+  ast::ptr_vec<ast::func_decl> synthesized_decls;
+  std::vector<synthesized_method> synthesized_trait_defaults;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

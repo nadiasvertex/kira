@@ -21,6 +21,16 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "ast_clone",
+    srcs = ["ast_clone.cpp"],
+    hdrs = ["ast_clone.h"],
+    deps = [
+        ":parser",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 cc_test(
     name = "parser_test",
     srcs = ["parser_test.cpp"],

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "src/intrinsics.h"
+#include "src/parser/ast_clone.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/types.h"
 
@@ -740,7 +741,9 @@ public:
         .struct_pattern_field_types = std::move(struct_pattern_field_types_),
         .struct_literal_field_types = std::move(struct_literal_field_types_),
         .call_argument_mappings = std::move(call_argument_mappings_),
-        .resolved_callees = std::move(resolved_callees_)};
+        .resolved_callees = std::move(resolved_callees_),
+        .synthesized_decls = std::move(synthesized_decls_),
+        .synthesized_trait_defaults = std::move(synthesized_trait_defaults_)};
   }
 
 private:
@@ -786,6 +789,12 @@ private:
   /// Every module-qualified or type-qualified call resolved by
   /// `infer_qualified_call`. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees_;
+  /// Owns every trait-default method clone `build_method_table` synthesizes
+  /// (see `synthesized_method` in types.h) — lifetime must outlive
+  /// `checked_types`, so both are moved out together in
+  /// `take_checked_types`.
+  ast::ptr_vec<ast::func_decl> synthesized_decls_;
+  std::vector<synthesized_method> synthesized_trait_defaults_;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -2734,8 +2743,28 @@ private:
     }
     case ast::unary_op::addr_of:
       return types_.ref_to(stripped, false);
-    case ast::unary_op::addr_of_mut:
+    case ast::unary_op::addr_of_mut: {
+      // `&mut container[a..b]` — `infer_index`'s range-slice result is
+      // always the immutable `slice[T]` (the same range-index expression
+      // written bare, or under a plain `&`, should stay immutable) — but
+      // wrapped directly in `&mut`, the intent is a mutable sub-view, so
+      // upgrade it to `slice_mut[T]` here rather than teaching `infer_index`
+      // about an enclosing-expression context it otherwise has no reason to
+      // know about.
+      if (unary.operand != nullptr &&
+          unary.operand->kind == ast::node_kind::index_expr) {
+        const auto &stripped_entry = types_.entry(stripped);
+        if (stripped_entry.kind == type_kind::builtin_generic_kind &&
+            stripped_entry.name == "slice") {
+          const auto element = stripped_entry.args.empty()
+                                   ? k_unknown_type
+                                   : stripped_entry.args[0];
+          return types_.ref_to(
+              types_.builtin_generic("slice_mut", {element}), true);
+        }
+      }
       return types_.ref_to(stripped, true);
+    }
     }
     return k_unknown_type;
   }
@@ -2904,14 +2933,17 @@ private:
           continue;
         }
         auto &methods = methods_[target_entry.decl];
+        auto overridden_names = std::unordered_set<std::string>{};
 
         for (const auto &item : impl.decl->items) {
           if (item == nullptr || item->has_error ||
               item->kind != ast::node_kind::func_decl) {
             continue;
           }
+          const auto *decl = dynamic_cast<const ast::func_decl *>(item.get());
+          overridden_names.insert(decl->name);
           methods.push_back(method_entry{
-              .decl = dynamic_cast<const ast::func_decl *>(item.get()),
+              .decl = decl,
               .owner = &members,
               .from_trait = nullptr,
           });
@@ -2924,14 +2956,17 @@ private:
         }
         const auto *trait_module = &members;
         const ast::trait_decl *trait_decl = nullptr;
+        auto trait_file_id = file_id_type{0};
         if (const auto it = members.traits.find(trait_name);
             it != members.traits.end()) {
           trait_decl = it->second.decl;
+          trait_file_id = it->second.file_id;
         } else {
           for (const auto &[other_name, other] : index_.modules) {
             if (const auto other_it = other.traits.find(trait_name);
                 other_it != other.traits.end()) {
               trait_decl = other_it->second.decl;
+              trait_file_id = other_it->second.file_id;
               trait_module = &other;
               break;
             }
@@ -2944,14 +2979,88 @@ private:
           if (item == nullptr || item->kind != ast::node_kind::func_decl) {
             continue;
           }
-          methods.push_back(method_entry{
-              .decl = dynamic_cast<const ast::func_decl *>(item.get()),
-              .owner = trait_module,
-              .from_trait = trait_decl,
-          });
+          const auto *decl = dynamic_cast<const ast::func_decl *>(item.get());
+          if (overridden_names.contains(decl->name)) {
+            continue;
+          }
+          const auto has_self = !decl->params.empty() &&
+                                param_name_of(decl->params.front()) == "self";
+          const auto has_body =
+              decl->body_expr != nullptr || !decl->body_stmts.empty();
+          if (!has_self || !has_body) {
+            // No `self` receiver (an associated-function-shaped trait
+            // requirement) or no default body (a required method the impl
+            // must itself provide, already validated by
+            // `check_impl_members`) — nothing to monomorphize.
+            methods.push_back(method_entry{
+                .decl = decl,
+                .owner = trait_module,
+                .from_trait = trait_decl,
+            });
+            continue;
+          }
+          monomorphize_trait_default(*decl, target, target_entry.name,
+                                     trait_module, trait_file_id, methods);
         }
       }
     }
+  }
+
+  /// Clones `decl` (an unwritten trait-default method) and type-checks the
+  /// clone with `self_type_` bound to `target` — the concrete impl target,
+  /// e.g. `file` — instead of the trait's own abstract `self` type param
+  /// (`check_trait_decl` checks the trait's own copy exactly once, generic
+  /// over `self`; that copy's `node_types_` entries can never resolve a
+  /// concrete call like `self.write(buf)` against a real declaration). On
+  /// success, registers the clone as an ordinary `method_entry` (so
+  /// `find_method`/`record_instance_method_callee` treat it exactly like a
+  /// real impl-provided method — see `infer_method_call`) and records it in
+  /// `synthesized_trait_defaults_` so `hir::lower_module` lowers it into a
+  /// real `hir_function`. On failure (a construct `ast::clone_func_decl`
+  /// doesn't support — see its doc comment), reports a diagnostic rather
+  /// than silently leaving the method uncallable through this impl.
+  auto monomorphize_trait_default(const ast::func_decl &decl, type_id target,
+                                  std::string_view target_type_name,
+                                  const module_members *trait_module,
+                                  file_id_type trait_file_id,
+                                  std::vector<method_entry> &methods) -> void {
+    auto cloned = ast::clone_func_decl(decl);
+    if (!cloned.has_value()) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("cannot make `{}` callable on `{}`: its default body "
+                      "in `{}` uses a construct trait-default monomorphization "
+                      "doesn't support yet",
+                      decl.name, target_type_name, trait_module->module_name),
+          trait_file_id);
+      diag.with_label(cloned.error().span, cloned.error().message);
+      diag_.emit(diag);
+      return;
+    }
+
+    const auto *raw = cloned->get();
+    synthesized_decls_.push_back(std::move(*cloned));
+
+    const auto saved_module = module_;
+    const auto saved_file_id = file_id_;
+    const auto saved_self = self_type_;
+    module_ = trait_module;
+    file_id_ = trait_file_id;
+    self_type_ = target;
+    check_function(*raw, /*at_module_scope=*/false);
+    module_ = saved_module;
+    file_id_ = saved_file_id;
+    self_type_ = saved_self;
+
+    methods.push_back(method_entry{
+        .decl = raw,
+        .owner = trait_module,
+        .from_trait = nullptr,
+    });
+    synthesized_trait_defaults_.push_back(
+        synthesized_method{.decl = raw,
+                          .target_type_name = std::string(target_type_name),
+                          .owner_module = trait_module->module_name});
   }
 
   /// Looks up a method by name on a user-type instance. An inherent or
@@ -3108,6 +3217,16 @@ private:
       }
       return k_unknown_type;
     }
+    if (object.kind == type_kind::builtin_generic_kind &&
+        (object.name == "slice" || object.name == "slice_mut")) {
+      if (name == "len") {
+        return types_.builtin("usize");
+      }
+      if (name == "is_empty") {
+        return types_.builtin("bool");
+      }
+      return k_unknown_type;
+    }
     if (object.kind == type_kind::builtin_kind && object.name == "str") {
       if (name == "len") {
         return types_.builtin("usize");
@@ -3175,6 +3294,31 @@ private:
     return out;
   }
 
+  /// Records a `resolved_callees_` entry for a genuine instance-method call
+  /// (`object.method(args...)`, `method` a real `self`-taking declaration
+  /// found via `find_method`/`find_extend_method_for_builtin`) so
+  /// `hir::lower_call` can rebuild the call site directly instead of
+  /// mishandling `field` as plain field access — see `resolved_callee`'s
+  /// doc comment (`semantic/types.h`) for why `receiver` matters. A method
+  /// with no `self` parameter (an associated function reached through
+  /// `find_method`, e.g. a type-constant lookup) has no receiver to record
+  /// and is left alone; `infer_qualified_call` is what actually resolves
+  /// those call shapes.
+  auto record_instance_method_callee(const ast::call_expr &call,
+                                     const method_entry &method,
+                                     std::string_view target_type_name,
+                                     const ast::expr &receiver) -> void {
+    if (method.decl->params.empty() ||
+        param_name_of(method.decl->params.front()) != "self") {
+      return;
+    }
+    resolved_callees_[&call] =
+        resolved_callee{.decl = method.decl,
+                        .owner_module = method.owner->module_name,
+                        .impl_target_type = std::string(target_type_name),
+                        .receiver = &receiver};
+  }
+
   /// Types a method-call expression `object.method(args...)`: resolves
   /// `object`'s type, then tries (in order) a user-declared method, a
   /// `deriving`/prelude-trait-derived method, a callable struct field, or a
@@ -3210,6 +3354,7 @@ private:
     case type_kind::opaque_kind: {
       if (const auto *method = find_method(entry, field.field_name)) {
         record_expr_type(field, fn_type_of(*method->decl, method->owner));
+        record_instance_method_callee(call, *method, entry.name, *field.object);
         return check_call_against_decl(call, *method->decl, method->owner,
                                        file_id_, /*skip_self=*/true);
       }
@@ -3255,6 +3400,8 @@ private:
         if (const auto *method =
                 find_extend_method_for_builtin(entry, field.field_name)) {
           record_expr_type(field, fn_type_of(*method->decl, method->owner));
+          record_instance_method_callee(call, *method, entry.name,
+                                        *field.object);
           return check_call_against_decl(call, *method->decl, method->owner,
                                          file_id_, /*skip_self=*/true);
         }
@@ -3797,8 +3944,14 @@ private:
         require_integer_key();
         const auto element =
             entry.args.empty() ? k_unknown_type : entry.args[0];
-        return key_is_range ? types_.builtin_generic("slice", {element})
-                            : element;
+        // A range-sliced `slice_mut` stays a `slice_mut` (a sub-view of a
+        // mutable slice is still mutable) — `list`/`slice` range-slice to a
+        // plain (immutable) `slice`, same as before.
+        if (key_is_range) {
+          return types_.builtin_generic(
+              entry.name == "slice_mut" ? "slice_mut" : "slice", {element});
+        }
+        return element;
       }
       return k_unknown_type;
     }
