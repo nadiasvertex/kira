@@ -112,6 +112,37 @@ package:
       printf '%s\n' "Skipped .deb packaging on $platform; build on Linux to produce a Debian package."
     fi
 
+# Install kira into PREFIX (default: $HOME/.kira)
+install prefix=(env('HOME') / '.kira'):
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    prefix="{{ prefix }}"
+
+    # Mirrors the `package` recipe's layout: `kira build` (AOT native
+    # compile) and `inject_stdlib_prelude` both resolve support files
+    # relative to the installed binary's own location
+    # (`<prefix>/lib/kira/`, `<prefix>/share/kira/std/`).
+    bazelisk build --config=release \
+      //src:kira \
+      //src/llvm_codegen:aot_runtime \
+      //src/runtime:runtime \
+      //src/semantic:semantic \
+      //src/parser:parser
+
+    mkdir -p "$prefix/bin" "$prefix/share/kira/std" "$prefix/lib/kira"
+    cp -L "bazel-bin/src/kira" "$prefix/bin/kira"
+    chmod 0755 "$prefix/bin/kira"
+    cp -L "bazel-bin/src/llvm_codegen/libaot_runtime.lo" \
+          "bazel-bin/src/runtime/libruntime.lo" \
+          "bazel-bin/src/semantic/libsemantic.a" \
+          "bazel-bin/src/parser/libparser.a" \
+          "$prefix/lib/kira/"
+    cp src/std/*.kira "$prefix/share/kira/std/"
+
+    printf 'Installed kira to %s\n' "$prefix"
+    printf 'Add %s/bin to your PATH to use it.\n' "$prefix"
+
 # Run the kira binary
 run source_file: build
     bazel-bin/src/kira {{ source_file }}
