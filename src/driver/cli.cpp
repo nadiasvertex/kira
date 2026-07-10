@@ -169,6 +169,27 @@ static const std::unordered_map<std::string_view, cli_converter>
             cfg.build_output = std::string{value};
             return std::monostate{};
           }}},
+        {"-c",
+         {.name = "-c",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.build = true;
+            return std::monostate{};
+          }}},
+        {"-o",
+         {.name = "-o",
+          .needs_value = true,
+          .apply = +[](cli_config &cfg, std::string_view value)
+              -> std::expected<std::monostate, std::string> {
+            if (value.empty()) {
+              return std::unexpected{
+                  std::string{"-o requires a non-empty path"}};
+            }
+            cfg.build = true;
+            cfg.build_output = std::string{value};
+            return std::monostate{};
+          }}},
         {"--parse-only",
          {.name = "--parse-only",
           .needs_value = false,
@@ -297,13 +318,14 @@ auto render_help(std::string_view program_name) -> std::string {
       "                          src/bytecode_compiler) — no flag needed\n"
       "  --run-function NAME      Like the default run, but execute NAME\n"
       "                          instead of `{}`\n"
-      "  --compile                Compile `{}` to native code via LLVM, link\n"
+      "  --compile, -c            Compile `{}` to native code via LLVM, link\n"
       "                          a standalone executable instead of running\n"
       "                          it (same scalar/control-flow subset; see\n"
       "                          src/llvm_codegen)\n"
       "  --compile-function NAME  Like --compile, but use NAME as the entry\n"
       "                          point\n"
-      "  --compile-output PATH    Write the linked executable to PATH\n"
+      "  --compile-output, -o PATH\n"
+      "                          Write the linked executable to PATH\n"
       "  --parse-only             Run only the lexer and parser,\n"
       "                          skipping semantic name resolution and\n"
       "                          type checking\n"
