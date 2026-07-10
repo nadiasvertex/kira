@@ -560,18 +560,16 @@ auto lowerer::lower_prelude_print(const ast::call_expr &call, type_id call_type,
   auto write_stmt = [&](ptr<hir_expr> text) -> ptr<hir_node> {
     auto stdout_call = make<hir_call>(
         call.span, call_type,
-        ptr<hir_expr>(make<hir_local_ref>(call.span, call_type,
-                                          resolve_reference("rt_stdout"),
-                                          "rt_stdout")),
+        ptr<hir_expr>(make<hir_local_ref>(
+            call.span, call_type, resolve_reference("rt_stdout"), "rt_stdout")),
         ptr_vec<hir_expr>{});
     auto args = ptr_vec<hir_expr>{};
     args.push_back(std::move(stdout_call));
     args.push_back(std::move(text));
     auto write_call = make<hir_call>(
         call.span, call_type,
-        ptr<hir_expr>(make<hir_local_ref>(call.span, call_type,
-                                          resolve_reference("rt_write"),
-                                          "rt_write")),
+        ptr<hir_expr>(make<hir_local_ref>(
+            call.span, call_type, resolve_reference("rt_write"), "rt_write")),
         std::move(args));
     return ptr<hir_node>(
         make<hir_expr_stmt>(call.span, ptr<hir_expr>(std::move(write_call))));
@@ -580,8 +578,9 @@ auto lowerer::lower_prelude_print(const ast::call_expr &call, type_id call_type,
   auto stmts = ptr_vec<hir_node>{};
   stmts.push_back(write_stmt(std::move(*message)));
   if (with_newline) {
-    stmts.push_back(write_stmt(ptr<hir_expr>(make<hir_literal>(
-        call.span, call_type, token_kind::string_lit, std::string("\"\\n\"")))));
+    stmts.push_back(write_stmt(ptr<hir_expr>(
+        make<hir_literal>(call.span, call_type, token_kind::string_lit,
+                          std::string("\"\\n\"")))));
   }
   return ok_expr(make<hir_block>(call.span, call_type, std::move(stmts)));
 }
@@ -734,7 +733,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
       mapping != checked_.call_argument_mappings.end()) {
     auto args = ptr_vec<hir_expr>{};
     args.reserve(mapping->second.args_by_param.size() +
-                (receiver_arg != nullptr ? 1 : 0));
+                 (receiver_arg != nullptr ? 1 : 0));
     if (receiver_arg != nullptr) {
       args.push_back(std::move(receiver_arg));
     }
@@ -2738,10 +2737,9 @@ auto lower_function(const ast::func_decl &decl,
 /// `lower_impl_associated_functions` uses — an `extend` block makes no
 /// trait-conformance claim, so there's no coherence bookkeeping to skip,
 /// just a plain per-item lowering.
-[[nodiscard]] auto
-lower_extend_methods(const ast::extend_decl &extend,
-                     const semantic::checked_types &checked,
-                     ptr_vec<hir_function> &functions)
+[[nodiscard]] auto lower_extend_methods(const ast::extend_decl &extend,
+                                        const semantic::checked_types &checked,
+                                        ptr_vec<hir_function> &functions)
     -> std::expected<void, lowering_error> {
   const auto target_name = simple_impl_target_name(extend.for_type.get());
   if (!target_name.has_value()) {

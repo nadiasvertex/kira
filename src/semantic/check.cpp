@@ -2759,8 +2759,8 @@ private:
           const auto element = stripped_entry.args.empty()
                                    ? k_unknown_type
                                    : stripped_entry.args[0];
-          return types_.ref_to(
-              types_.builtin_generic("slice_mut", {element}), true);
+          return types_.ref_to(types_.builtin_generic("slice_mut", {element}),
+                               true);
         }
       }
       return types_.ref_to(stripped, true);
@@ -3059,8 +3059,8 @@ private:
     });
     synthesized_trait_defaults_.push_back(
         synthesized_method{.decl = raw,
-                          .target_type_name = std::string(target_type_name),
-                          .owner_module = trait_module->module_name});
+                           .target_type_name = std::string(target_type_name),
+                           .owner_module = trait_module->module_name});
   }
 
   /// Looks up a method by name on a user-type instance. An inherent or

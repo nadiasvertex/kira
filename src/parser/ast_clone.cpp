@@ -71,8 +71,8 @@ template <typename T>
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      cloned->type_args.push_back(
-          type_arg{.span = arg.span, .value = std::move(*value), .name = arg.name});
+      cloned->type_args.push_back(type_arg{
+          .span = arg.span, .value = std::move(*value), .name = arg.name});
     }
     return ptr<type_expr>(std::move(cloned));
   }
@@ -142,8 +142,8 @@ template <typename T>
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    cloned.push_back(
-        call_arg{.span = arg.span, .name = arg.name, .value = std::move(*value)});
+    cloned.push_back(call_arg{
+        .span = arg.span, .name = arg.name, .value = std::move(*value)});
   }
   return cloned;
 }
@@ -289,7 +289,7 @@ template <typename T>
     if (n == nullptr) {
       return std::unexpected(
           clone_error{.span = source_span::dummy(),
-                     .message = "cannot clone a missing statement"});
+                      .message = "cannot clone a missing statement"});
     }
     auto cloned_node = clone_node(*n);
     if (!cloned_node.has_value()) {
@@ -487,11 +487,11 @@ auto clone_func_decl(const func_decl &decl)
     if (!type_annotation.has_value()) {
       return std::unexpected(type_annotation.error());
     }
-    cloned->params.push_back(ast::param{.span = param.span,
-                                        .pattern = std::move(*pattern),
-                                        .type_annotation =
-                                            std::move(*type_annotation),
-                                        .default_value = nullptr});
+    cloned->params.push_back(
+        ast::param{.span = param.span,
+                   .pattern = std::move(*pattern),
+                   .type_annotation = std::move(*type_annotation),
+                   .default_value = nullptr});
   }
 
   auto return_type = clone_optional(decl.return_type);

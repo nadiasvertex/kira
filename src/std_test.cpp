@@ -164,9 +164,9 @@ auto run_sample_capturing_stdout(const sample &sample, const fs::path &tmp_dir)
   expect(report->error_count == 0,
          std::format("[{}] expected the sample to compile cleanly: {}",
                      sample.name, report->diagnostics));
-  expect(report->run.has_value(),
-         std::format("[{}] expected a run outcome to be recorded",
-                     sample.name));
+  expect(
+      report->run.has_value(),
+      std::format("[{}] expected a run outcome to be recorded", sample.name));
   expect(report->run->succeeded,
          std::format("[{}] expected `main` to run successfully: {}",
                      sample.name, report->run->message));
@@ -197,8 +197,7 @@ auto main(int argc, char *argv[]) -> int {
 
     std::cout << "std_test: " << samples.size() << " sample(s) passed\n";
   } catch (const std::exception &ex) {
-    std::cerr << "std_test failed: unhandled exception: " << ex.what()
-              << '\n';
+    std::cerr << "std_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);
   }
 
