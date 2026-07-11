@@ -601,6 +601,56 @@ auto test_padded_struct_field_access() -> void {
          "expected each padded field to still read back at its own value");
 }
 
+auto test_packed_struct_has_no_padding_in_memory() -> void {
+  // `combine()` above only proves field *values* round-trip correctly,
+  // which a padded layout would do identically — this test instead reads
+  // the constructed struct's raw heap bytes directly to prove the
+  // `packed` modifier actually removes alignment padding, not just that
+  // reads/writes stay internally consistent.
+  auto module = compile_fixture(load_fixture("packed_struct_layout.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "make"),
+                       std::array{bc::slot_value{uint64_t{0x1234}},
+                                  bc::slot_value{uint64_t{0xAB}},
+                                  bc::slot_value{uint64_t{0xDEADBEEF}}});
+  expect(result.has_value(), "expected make() on a packed struct to succeed");
+  const auto *bytes = reinterpret_cast<const uint8_t *>(
+      static_cast<uintptr_t>(result->value.u));
+  // packed: magic@0 (2 bytes, LE), flags@2 (1 byte), len@3 (4 bytes, LE) —
+  // back to back, no padding, 7 bytes total.
+  expect(bytes[0] == 0x34 && bytes[1] == 0x12,
+         "expected magic at offset 0, little-endian");
+  expect(bytes[2] == 0xAB, "expected flags immediately after magic at offset 2");
+  expect(bytes[3] == 0xEF && bytes[4] == 0xBE && bytes[5] == 0xAD &&
+             bytes[6] == 0xDE,
+         "expected len packed immediately after flags at offset 3, with no "
+         "padding inserted for its own 4-byte alignment");
+}
+
+auto test_padded_struct_has_alignment_padding_in_memory() -> void {
+  auto module = compile_fixture(load_fixture("padded_struct_layout.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "make"),
+                       std::array{bc::slot_value{uint64_t{0x1234}},
+                                  bc::slot_value{uint64_t{0xAB}},
+                                  bc::slot_value{uint64_t{0xDEADBEEF}}});
+  expect(result.has_value(), "expected make() on a padded struct to succeed");
+  const auto *bytes = reinterpret_cast<const uint8_t *>(
+      static_cast<uintptr_t>(result->value.u));
+  // default (padded) layout: magic@0 (2 bytes), flags@2 (1 byte), one
+  // padding byte at offset 3 so len lands on its own 4-byte alignment
+  // boundary at offset 4 — 8 bytes total, unlike the packed layout's 7.
+  expect(bytes[0] == 0x34 && bytes[1] == 0x12, "expected magic at offset 0");
+  expect(bytes[2] == 0xAB, "expected flags at offset 2");
+  expect(bytes[3] == 0x00,
+         "expected a zero padding byte at offset 3 ahead of len's own "
+         "4-byte alignment — a fresh arena allocation is zeroed, so an "
+         "unused padding byte reads back as 0");
+  expect(bytes[4] == 0xEF && bytes[5] == 0xBE && bytes[6] == 0xAD &&
+             bytes[7] == 0xDE,
+         "expected len at offset 4, after the alignment padding");
+}
+
 auto test_narrow_element_array_construction_and_indexing() -> void {
   auto module = compile_fixture(load_fixture("narrow_element_array.kira"));
   const auto vm = bc::vm{module};
@@ -941,6 +991,8 @@ auto main() -> int {
     test_fixed_array_construction_and_indexing();
     test_packed_struct_field_access();
     test_padded_struct_field_access();
+    test_packed_struct_has_no_padding_in_memory();
+    test_padded_struct_has_alignment_padding_in_memory();
     test_narrow_element_array_construction_and_indexing();
     test_array_index_out_of_bounds_panics();
     test_array_fill_form_repeats_the_same_value();

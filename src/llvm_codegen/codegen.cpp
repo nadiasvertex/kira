@@ -597,6 +597,18 @@ private:
     return builder_.CreateCall(alloc_fn_, {size});
   }
 
+  /// `compile_heap_alloc`'s byte-precise sibling — struct construction
+  /// (`compile_struct_init`) allocates exactly `runtime::struct_layout`'s
+  /// size (padded or, with `packed`, byte-tight) rather than
+  /// `field_count * 8`, mirroring `bytecode_compiler::compile.cpp`'s own
+  /// `emit_alloc` byte-size callers.
+  [[nodiscard]] auto compile_heap_alloc_bytes(size_t byte_size)
+      -> llvm::Value * {
+    auto *size =
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), byte_size);
+    return builder_.CreateCall(alloc_fn_, {size});
+  }
+
   [[nodiscard]] auto slot_address(llvm::Value *block_ptr, size_t slot_index)
       -> llvm::Value * {
     auto *offset =
@@ -1481,15 +1493,23 @@ private:
     return block;
   }
 
+  /// Allocates a byte-precise struct block (`runtime::struct_layout` —
+  /// padded by default, byte-packed with no padding if the struct's own
+  /// `type` declaration carries `packed`) and stores each field at its own
+  /// `runtime::struct_field_offset` via `byte_address` (a plain byte-offset
+  /// GEP, not `slot_address`'s uniform 8x-scaled one) — `CreateStore`
+  /// writes exactly `*value`'s own (possibly narrower-than-8-byte) LLVM
+  /// type at that address, which is what makes a packed field's bytes land
+  /// immediately after its neighbor with no gap, mirroring
+  /// `bytecode_compiler::compile.cpp`'s `compile_struct_init`.
   [[nodiscard]] auto compile_struct_init(const hir::hir_struct_init &init)
       -> std::expected<llvm::Value *, codegen_error> {
-    const auto field_count =
-        runtime::struct_field_names(types_, init.type).size();
-    auto *block = compile_heap_alloc(field_count);
+    const auto layout = runtime::struct_layout(types_, init.type);
+    auto *block = compile_heap_alloc_bytes(layout.size_bytes);
     for (const auto &field : init.fields) {
-      const auto slot =
-          runtime::struct_field_slot(types_, init.type, field.name);
-      if (!slot.has_value()) {
+      const auto offset =
+          runtime::struct_field_offset(types_, init.type, field.name);
+      if (!offset.has_value()) {
         return std::unexpected(codegen_error{
             .kind = codegen_error_kind::unsupported_construct,
             .span = init.span,
@@ -1502,7 +1522,7 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      builder_.CreateStore(*value, slot_address(block, *slot));
+      builder_.CreateStore(*value, byte_address(block, *offset));
     }
     return block;
   }
@@ -1667,9 +1687,9 @@ private:
 
   [[nodiscard]] auto compile_field(const hir::hir_field &field)
       -> std::expected<llvm::Value *, codegen_error> {
-    const auto slot = runtime::struct_field_slot(types_, field.object->type,
-                                                 field.field_name);
-    if (!slot.has_value()) {
+    const auto offset = runtime::struct_field_offset(types_, field.object->type,
+                                                      field.field_name);
+    if (!offset.has_value()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = field.span,
@@ -1686,7 +1706,7 @@ private:
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
     }
-    return builder_.CreateLoad(*elem_ty, slot_address(*object, *slot));
+    return builder_.CreateLoad(*elem_ty, byte_address(*object, *offset));
   }
 
   [[nodiscard]] auto compile_tuple_index(const hir::hir_tuple_index &node)
@@ -2447,11 +2467,11 @@ private:
       -> std::expected<bool, codegen_error> {
     if (assign.target->kind == hir_node_kind::hir_field) {
       // `self.field = value` — mirrors `compile_field`'s own read through
-      // `slot_address`, just a store instead of a load.
+      // `byte_address`, just a store instead of a load.
       const auto &field = dynamic_cast<const hir::hir_field &>(*assign.target);
-      const auto slot = runtime::struct_field_slot(types_, field.object->type,
-                                                   field.field_name);
-      if (!slot.has_value()) {
+      const auto offset = runtime::struct_field_offset(
+          types_, field.object->type, field.field_name);
+      if (!offset.has_value()) {
         return std::unexpected(codegen_error{
             .kind = codegen_error_kind::unsupported_construct,
             .span = assign.span,
@@ -2475,7 +2495,7 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      builder_.CreateStore(*value, slot_address(*object, *slot));
+      builder_.CreateStore(*value, byte_address(*object, *offset));
       return false;
     }
     if (assign.target->kind != hir_node_kind::hir_local_ref) {
