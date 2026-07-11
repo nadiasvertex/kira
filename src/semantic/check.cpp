@@ -725,7 +725,7 @@ private:
 /// each declaration.
 class checker {
 public:
-  checker(const program_index &index, diagnostic_bag &diag,
+  checker(program_index &index, diagnostic_bag &diag,
           std::vector<bool> &file_has_errors)
       : index_(index), diag_(diag), file_has_errors_(file_has_errors),
         comptime_eval_(diag, 0) {}
@@ -752,7 +752,8 @@ public:
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
         .synthesized_types = std::move(synthesized_types_),
         .spliced_fragments = std::move(spliced_fragments_),
-        .synthesized_fragments = comptime_eval_.take_synthesized_fragments()};
+        .synthesized_fragments = comptime_eval_.take_synthesized_fragments(),
+        .synthesized_item_splices = std::move(synthesized_item_splices_)};
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
@@ -804,7 +805,12 @@ public:
 
 private:
   // --- session state ----------------------------------------------------
-  const program_index &index_;
+  // Not `const`: `resolve_item_splices` (run before `build_method_table`/
+  // `validate_impl_coherence`) injects splice-synthesized impls directly
+  // into `index_.modules[...].impls`, so both of those functions — which
+  // only ever iterate `index_.modules` — pick the synthesized impls up for
+  // free, with no separate bookkeeping of their own.
+  program_index &index_;
   diagnostic_bag &diag_;
   std::vector<bool> &file_has_errors_;
   type_table types_;
@@ -866,6 +872,18 @@ private:
   /// `splice_expr` case in `infer_expr_impl` and the `splice_stmt` case in
   /// `check_body_node`. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::node *, const ast::node *> spliced_fragments_;
+  /// Every item-level splice resolved to an injected `impl` block — see
+  /// `synthesized_item_splice` in types.h. Populated by
+  /// `resolve_item_splices`, moved out via `take_checked_types` for
+  /// `hir::lower_module`.
+  std::vector<synthesized_item_splice> synthesized_item_splices_;
+  /// Top-level (item-position) `splice_stmt` node -> the `impl_decl` it
+  /// resolved to, so `check_file`'s item loop knows to `check_item` the
+  /// resolved impl instead of routing the splice node itself through
+  /// `check_body_node` (which only understands statement/expression
+  /// fragments) — see `resolve_item_splices`.
+  std::unordered_map<const ast::node *, const ast::impl_decl *>
+      item_splice_impls_;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -7121,14 +7139,20 @@ private:
       module_ = index_.find_module(module_name_);
       push_scope();
       for (const auto &child : decl.items) {
-        if (child != nullptr && !child->has_error) {
-          if (const auto *expr = dynamic_cast<const ast::expr *>(child.get());
-              expr != nullptr ||
-              dynamic_cast<const ast::stmt *>(child.get()) != nullptr) {
-            check_body_node(*child, k_unknown_type);
-          } else {
-            check_item(*child, /*at_module_scope=*/true);
-          }
+        if (child == nullptr || child->has_error) {
+          continue;
+        }
+        if (const auto it = item_splice_impls_.find(child.get());
+            it != item_splice_impls_.end()) {
+          check_item(*it->second, /*at_module_scope=*/true);
+          continue;
+        }
+        if (const auto *expr = dynamic_cast<const ast::expr *>(child.get());
+            expr != nullptr ||
+            dynamic_cast<const ast::stmt *>(child.get()) != nullptr) {
+          check_body_node(*child, k_unknown_type);
+        } else {
+          check_item(*child, /*at_module_scope=*/true);
         }
       }
       pop_scope();
@@ -7244,6 +7268,9 @@ private:
         if (fn.name == "main") {
           main_decl = &fn;
         }
+      } else if (item_splice_impls_.contains(item.get())) {
+        // Resolved to an injected `impl` block by `resolve_item_splices` —
+        // an item, not a top-level script statement.
       } else if (first_statement == nullptr &&
                  (dynamic_cast<const ast::stmt *>(item.get()) != nullptr ||
                   dynamic_cast<const ast::expr *>(item.get()) != nullptr)) {
@@ -7271,6 +7298,16 @@ private:
     push_scope();
     for (const auto &item : file.items) {
       if (item == nullptr || item->has_error) {
+        continue;
+      }
+      if (const auto it = item_splice_impls_.find(item.get());
+          it != item_splice_impls_.end()) {
+        // Already resolved by `resolve_item_splices` (before method-table/
+        // coherence build) — check the injected impl itself, in place of
+        // the splice node. Do not fall through to `check_body_node` below:
+        // `splice_stmt` derives from `stmt`, so it would otherwise match
+        // that branch and re-evaluate the operand a second time.
+        check_item(*it->second, /*at_module_scope=*/true);
         continue;
       }
       if (dynamic_cast<const ast::stmt *>(item.get()) != nullptr ||
@@ -7313,6 +7350,95 @@ private:
     }
   }
 
+  /// Recursively resolves every item-level splice (`~expr` used directly
+  /// among `items`, as opposed to inside a function body) into an injected
+  /// `impl` block, descending into inline submodules the same way
+  /// `register_comptime_globals` does. Must run after that pass (so
+  /// `static def`/`static let` globals it references are registered) but
+  /// before `build_method_table`/`validate_impl_coherence` — see `index_`'s
+  /// doc comment for why running here, rather than during ordinary
+  /// per-file checking, is what makes the injected impl's methods visible
+  /// to coherence checking and to every other file's method lookups
+  /// regardless of file-checking order.
+  ///
+  /// Only a `def_expr` fragment wrapping a single `impl_decl` is supported
+  /// — item-level splice producing a `type`/`trait`/`def` is not
+  /// implemented yet, and reports a clear diagnostic rather than silently
+  /// doing nothing. Evaluates each splice's operand exactly once: the
+  /// result (found or not) is recorded in `item_splice_impls_` so
+  /// `check_file`'s item loop never falls through to re-evaluating it via
+  /// `check_body_node`.
+  auto resolve_item_splices(const std::vector<ast::ptr<ast::node>> &items,
+                            file_id_type owner_file) -> void {
+    for (const auto &item : items) {
+      if (item == nullptr || item->has_error) {
+        continue;
+      }
+      if (item->kind == ast::node_kind::sub_module_decl) {
+        const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
+        if (sub.items.empty()) {
+          continue;
+        }
+        const auto saved_module_name = module_name_;
+        const auto *saved_module = module_;
+        module_name_ = append_module_name(module_name_, sub.name);
+        module_ = index_.find_module(module_name_);
+        push_scope();
+        resolve_item_splices(sub.items, owner_file);
+        pop_scope();
+        module_name_ = saved_module_name;
+        module_ = saved_module;
+        continue;
+      }
+      if (item->kind != ast::node_kind::splice_stmt) {
+        continue;
+      }
+      const auto &splice = dynamic_cast<const ast::splice_stmt &>(*item);
+      if (splice.expr == nullptr) {
+        continue;
+      }
+      const auto operand_type = infer_expr(*splice.expr, k_unknown_type);
+      require_quote_value(operand_type, splice.expr->span,
+                          "an item-level splice");
+      const auto fragment_value = comptime_eval_.evaluate(*splice.expr);
+      if (fragment_value.is_error()) {
+        continue;
+      }
+      if (fragment_value.kind != comptime::value_kind::def_expr_fragment ||
+          fragment_value.fragment == nullptr) {
+        error_with_help(
+            splice.expr->span,
+            std::format("an item-level splice must resolve to a quoted "
+                        "definition (`def_expr`), found {}",
+                        quote_fragment_kind_name(fragment_value.kind)),
+            "this splice is used in item position",
+            "Only a value quoted with definition content (e.g. "
+            "`` `(impl show for point: ...)` ``) can be spliced among a "
+            "module's top-level items; a quoted expression or statement "
+            "belongs inside a function body instead.");
+        continue;
+      }
+      const auto *impl =
+          dynamic_cast<const ast::impl_decl *>(fragment_value.fragment);
+      if (impl == nullptr) {
+        error_with_help(
+            splice.expr->span,
+            "an item-level splice currently only supports injecting an "
+            "`impl` block",
+            "this quoted definition is not an `impl`",
+            "Splicing a quoted `type`/`trait`/`def` at item position is "
+            "not supported yet; wrap the generated code in an `impl` "
+            "block instead.");
+        continue;
+      }
+      index_.modules[module_name_].impls.push_back(impl_ref{
+          .decl = impl, .module_name = module_name_, .file_id = owner_file});
+      item_splice_impls_[item.get()] = impl;
+      synthesized_item_splices_.push_back(
+          synthesized_item_splice{.impl = impl, .owner_module = module_name_});
+    }
+  }
+
 public:
   /// Runs impl coherence once for the whole session, then checks every
   /// input file that has a valid module declaration and no already-recorded
@@ -7329,9 +7455,6 @@ public:
     // that reference silently dangle for the rest of its own scope once
     // `find_method` returns (see `target_type_name` ending up empty
     // instead of a real struct name, for exactly this reason).
-    build_method_table();
-    validate_impl_coherence();
-
     for (const auto &input : inputs) {
       if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
           input.ast_file->module_decl->has_error ||
@@ -7344,6 +7467,32 @@ public:
       }
       register_comptime_globals(input.ast_file->items, input.file_id);
     }
+
+    // Resolve item-level splices before the method table/coherence build
+    // below, so any injected impl participates exactly like one written
+    // directly in source — see `resolve_item_splices`'s doc comment.
+    for (const auto &input : inputs) {
+      if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
+          input.ast_file->module_decl->has_error ||
+          input.ast_file->module_decl->path.empty()) {
+        continue;
+      }
+      if (static_cast<size_t>(input.file_id) < file_has_errors_.size() &&
+          file_has_errors_[input.file_id]) {
+        continue;
+      }
+      file_id_ = input.file_id;
+      module_name_ = join_strings(input.ast_file->module_decl->path, ".");
+      module_ = index_.find_module(module_name_);
+      file_no_prelude_ = input.ast_file->no_prelude;
+      compute_external_wildcard();
+      push_scope();
+      resolve_item_splices(input.ast_file->items, input.file_id);
+      pop_scope();
+    }
+
+    build_method_table();
+    validate_impl_coherence();
 
     for (const auto &input : inputs) {
       if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
@@ -7377,7 +7526,10 @@ auto checker::run(const std::vector<parsed_module> &inputs) -> void {
 auto check_program(const std::vector<parsed_module> &inputs,
                    diagnostic_bag &diag, std::vector<bool> &file_has_errors)
     -> checked_types {
-  const auto index = build_program_index(inputs);
+  // Not `const`: `checker::resolve_item_splices` mutates this in place to
+  // graft splice-synthesized impls in before method-table/coherence build —
+  // see `checker::index_`'s doc comment.
+  auto index = build_program_index(inputs);
   auto session_checker = checker(index, diag, file_has_errors);
   session_checker.run(inputs);
   return session_checker.take_checked_types();

@@ -3211,6 +3211,16 @@ auto lower_module(const ast::file &file, std::string module_name,
       // in the module's `hir_function` table.
       continue;
     }
+    if (decl.modifiers.is_static) {
+      // A `static def` only ever runs inside `comptime::evaluator` (see
+      // `semantic::checker::register_comptime_globals`) — it has no
+      // runtime call site and no runtime representation. Its body may
+      // even use constructs ordinary lowering can't handle at all (a
+      // quote expression, for instance), so attempting to lower it is
+      // both unnecessary and can be a hard failure for otherwise-valid
+      // code.
+      continue;
+    }
     auto lowered = lower_function(decl, checked);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
@@ -3233,6 +3243,21 @@ auto lower_module(const ast::file &file, std::string module_name,
     (*lowered)->name = std::format("{}::{}", synthesized.target_type_name,
                                    synthesized.decl->name);
     functions.push_back(std::move(*lowered));
+  }
+  // Item-level splices (`semantic::checker::resolve_item_splices`,
+  // check.cpp) injected these `impl` blocks directly into `program_index`
+  // rather than into any file's `items` — lower them here the same way, by
+  // module name, that trait defaults are lowered just above; they'd
+  // otherwise never be reached by the `file.items` walk further up.
+  for (const auto &splice : checked.synthesized_item_splices) {
+    if (splice.owner_module != module_name || splice.impl == nullptr) {
+      continue;
+    }
+    auto result =
+        lower_impl_associated_functions(*splice.impl, checked, functions);
+    if (!result.has_value()) {
+      return std::unexpected(result.error());
+    }
   }
   return make<hir_module>(file.span, std::move(module_name),
                           std::move(functions));

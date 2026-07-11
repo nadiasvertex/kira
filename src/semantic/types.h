@@ -311,6 +311,24 @@ struct synthesized_method {
   std::string owner_module;
 };
 
+/// One item-level splice (`~expr` used directly among a file/module's
+/// top-level items, as opposed to inside a function body) that resolved to
+/// an injected `impl` block — see `checker::resolve_item_splices`
+/// (`check.cpp`), which runs before `build_method_table`/
+/// `validate_impl_coherence` so the injected impl's methods participate in
+/// ordinary method lookup and coherence checking exactly like an impl
+/// written directly in source. `impl` is owned by whichever file's AST the
+/// quoted content came from (an ordinary quote fragment, per `quote_expr::
+/// parsed_body`'s doc comment — no separate arena needed). `hir::lower_
+/// module` lowers each one whose `owner_module` matches the module it's
+/// currently lowering, the same way it lowers `synthesized_trait_defaults`
+/// above, since the injected impl has no item of its own in any file's
+/// `items` to walk.
+struct synthesized_item_splice {
+  const ast::impl_decl *impl = nullptr;
+  std::string owner_module;
+};
+
 /// Type ids for `std.fmt`'s runtime-support types (`src/std/fmt.kira`),
 /// resolved once after checking finishes and handed to `hir::lower` so it
 /// can build `format_spec`/box-type struct literals for interpolation
@@ -400,6 +418,9 @@ struct checked_types {
   /// returns) so anything `spliced_fragments` points at stays alive for
   /// `hir::lower`, which runs afterward.
   ast::ptr_vec<ast::node> synthesized_fragments;
+  /// Every item-level splice resolved to an injected `impl` block — see
+  /// `synthesized_item_splice`'s doc comment.
+  std::vector<synthesized_item_splice> synthesized_item_splices;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

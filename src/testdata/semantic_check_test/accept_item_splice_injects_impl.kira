@@ -1,0 +1,17 @@
+module sample
+
+type point = { x: int32 }
+
+trait show:
+    def show(self) -> int32
+
+static def make_show_impl() -> def_expr:
+    return `impl show for point:
+        def show(self) -> int32:
+            return 42
+    `
+
+~make_show_impl()
+
+def run(p: point) -> int32:
+    return p.show()

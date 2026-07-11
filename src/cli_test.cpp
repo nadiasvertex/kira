@@ -1243,6 +1243,56 @@ auto test_run_executes_spliced_builder_constructed_expression() -> void {
          "fragment and actually execute it, returning 42");
 }
 
+/// M4.6 end-to-end check: `~make_show_impl()` at module top level — item-
+/// level splice — must inject a real `impl show for point` that later
+/// checking, method lookup, and lowering all see, so `p.show()` actually
+/// executes the spliced method's body under `--run`. Proves `semantic::
+/// checker::resolve_item_splices` (evaluated before `build_method_table`/
+/// `validate_impl_coherence`, so the injected impl participates in
+/// coherence/method-table bookkeeping exactly like one written directly in
+/// source) and `hir::lower_module`'s new `synthesized_item_splices` walk.
+auto test_run_executes_item_level_splice_injected_impl() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_item_splice.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+             "module sample\n"
+             "type point = { x: int32 }\n"
+             "trait show:\n"
+             "    def show(self) -> int32\n"
+             "static def make_show_impl() -> def_expr:\n"
+             "    return `impl show for point:\n"
+             "        def show(self) -> int32:\n"
+             "            return 42\n"
+             "    `\n"
+             "~make_show_impl()\n"
+             "def main() -> int32:\n"
+             "  let p = point{x: 1}\n"
+             "  return p.show()\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected an item-level splice injecting `impl show for point` to "
+         "compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded, "expected `main` to run without panicking");
+  expect(report->run->exit_code == 42,
+         "expected `p.show()` to call the item-splice-injected method and "
+         "actually execute it, returning 42");
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -1281,6 +1331,7 @@ auto main() -> int {
     test_run_reports_exit_code_and_silent_summary();
     test_run_executes_spliced_quoted_expression();
     test_run_executes_spliced_builder_constructed_expression();
+    test_run_executes_item_level_splice_injected_impl();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;

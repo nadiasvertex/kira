@@ -409,6 +409,16 @@ auto test_accepts_expr_builder_constructs_fragment() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_item_splice_injects_impl() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_item_splice_injects_impl.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `~make_show_impl()` at module top level to "
+                     "inject a real `impl show for point`, callable as "
+                     "`p.show()`:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_accepts_expr_keyword_usable_as_identifier() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_expr_keyword_usable_as_identifier.kira");
@@ -1058,6 +1068,7 @@ auto main() -> int {
     test_accepts_splice_type_reifies_quoted_type();
     test_accepts_expr_keyword_usable_as_identifier();
     test_accepts_expr_builder_constructs_fragment();
+    test_accepts_item_splice_injects_impl();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
