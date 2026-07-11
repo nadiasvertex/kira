@@ -156,13 +156,15 @@ enum class token_kind : uint8_t {
   // ------------------------------------------------------------------
   //  Type-related keywords
   // ------------------------------------------------------------------
-  kw_array,     ///< Type-level array constructor keyword.
-  kw_fn,        ///< Function type introducer.
-  kw_expr,      ///< Quote-type marker for expression syntax trees.
-  kw_stmt,      ///< Quote-type marker for statement syntax trees.
-  kw_def_expr,  ///< Quote-type marker for declaration-expression syntax trees.
-  kw_type_expr, ///< Quote-type marker for type-expression syntax trees.
-  kw_assert,    ///< Static assertion introducer after `static`.
+  kw_array, ///< Type-level array constructor keyword.
+  kw_fn,    ///< Function type introducer.
+  // Note: `expr`/`stmt`/`def_expr`/`type_expr` are *not* keywords here —
+  // they're contextual: an ordinary identifier everywhere except type
+  // position, where `parser::parse_prim_type_expr` recognizes the bare
+  // spelling and builds an `ast::quote_type` directly (see
+  // `classify_ident`'s comment below for why they're deliberately absent
+  // from this keyword table).
+  kw_assert, ///< Static assertion introducer after `static`.
 
   // ------------------------------------------------------------------
   //  Punctuation — single character
@@ -581,9 +583,6 @@ struct token {
     if (text == "deriving") {
       return token_kind::kw_deriving;
     }
-    if (text == "def_expr") {
-      return token_kind::kw_def_expr;
-    }
     break;
   case 'e':
     if (text == "else") {
@@ -594,9 +593,6 @@ struct token {
     }
     if (text == "err") {
       return token_kind::kw_err;
-    }
-    if (text == "expr") {
-      return token_kind::kw_expr;
     }
     if (text == "extend") {
       return token_kind::kw_extend;
@@ -721,9 +717,6 @@ struct token {
     if (text == "shared") {
       return token_kind::kw_shared;
     }
-    if (text == "stmt") {
-      return token_kind::kw_stmt;
-    }
     break;
   case 't':
     if (text == "type") {
@@ -734,9 +727,6 @@ struct token {
     }
     if (text == "true") {
       return token_kind::kw_true;
-    }
-    if (text == "type_expr") {
-      return token_kind::kw_type_expr;
     }
     break;
   case 'u':
@@ -942,14 +932,6 @@ struct token {
     return "`array`";
   case token_kind::kw_fn:
     return "`fn`";
-  case token_kind::kw_expr:
-    return "`expr`";
-  case token_kind::kw_stmt:
-    return "`stmt`";
-  case token_kind::kw_def_expr:
-    return "`def_expr`";
-  case token_kind::kw_type_expr:
-    return "`type_expr`";
   case token_kind::kw_assert:
     return "`assert`";
 

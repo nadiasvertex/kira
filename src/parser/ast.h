@@ -49,6 +49,7 @@ struct ref_type;
 struct ptr_type;
 struct fn_type;
 struct quote_type;
+struct splice_type;
 struct union_type;
 struct refinement_type;
 
@@ -91,6 +92,7 @@ struct crew_stmt;
 struct asm_stmt;
 
 // Expressions
+struct expr;
 struct ident_expr;
 struct literal_expr;
 struct interpolated_string_expr;
@@ -212,6 +214,7 @@ enum class node_kind : uint8_t {
   ptr_type,        ///< Raw pointer type expression.
   fn_type,         ///< Function type expression.
   quote_type,      ///< Quote-type marker for syntax values.
+  splice_type,     ///< Type-position splice: `~(expr)`.
   union_type,      ///< Union-style type expression.
   refinement_type, ///< Refinement type with predicate clause.
 
@@ -446,14 +449,26 @@ struct fn_type : type_expr {
   fn_type() : type_expr(node_kind::fn_type) {}
 };
 
+/// Which shape a quoted fragment holds — shared between `quote_type`
+/// (a type-position quote-value marker) and `quote_expr` (the quasi-quote
+/// expression that produces an actual quoted value at runtime/comptime).
+enum class quote_fragment_kind : uint8_t {
+  none,
+  expr,
+  stmt,
+  def_expr,
+  type_expr,
+};
+
 /// @brief Type-level representation of quoted syntax categories.
 struct quote_type : type_expr {
-  token_kind quote_kind; ///< Which syntax category this quoted value contains.
+  quote_fragment_kind
+      quote_kind; ///< Which syntax category this quoted value contains.
 
   /// @brief Creates a quote-type marker.
   ///
-  /// @param qk Quote keyword describing the syntax category.
-  explicit quote_type(token_kind qk = token_kind::kw_expr)
+  /// @param qk Which syntax category this quote-type names.
+  explicit quote_type(quote_fragment_kind qk = quote_fragment_kind::expr)
       : type_expr(node_kind::quote_type), quote_kind(qk) {}
 };
 
@@ -1078,23 +1093,6 @@ struct block_expr : expr {
   block_expr() : expr(node_kind::block_expr) {}
 };
 
-/// @brief Which of the four quote-value shapes a `quote_expr`'s re-parsed
-/// content turned out to be. `none` means `parsed_body` was never populated
-/// (e.g. the content was empty or re-parsing hasn't happened yet).
-///
-/// `type_expr` is not produced by content-shape classification alone — a
-/// bare identifier/path is lexically ambiguous between an expression and a
-/// type expression (both parse as ordinary primary syntax), so choosing
-/// `type_expr` needs the surrounding declared-type context, not just the
-/// quoted tokens. That disambiguation is deferred to the semantic layer.
-enum class quote_fragment_kind : uint8_t {
-  none,
-  expr,
-  stmt,
-  def_expr,
-  type_expr,
-};
-
 /// Quasi-quote: `` `(content)` `` or `` `content` ``
 struct quote_expr : expr {
   std::vector<token>
@@ -1121,6 +1119,18 @@ struct splice_expr : expr {
                      ///< syntax.
 
   splice_expr() : expr(node_kind::splice_expr) {}
+};
+
+/// @brief Type-position splice: `~(expr)` — the operand is evaluated at
+/// compile time and must resolve to a `type_expr_fragment` quote value; the
+/// wrapped type is used in this splice's place. Mirrors `splice_expr`
+/// (expression position) and `splice_stmt` (statement position). Defined
+/// here (rather than alongside `quote_type`) because it needs a complete
+/// `ast::expr` for its `operand` member.
+struct splice_type : type_expr {
+  ptr<expr> operand; ///< Expression whose value should name the type here.
+
+  splice_type() : type_expr(node_kind::splice_type) {}
 };
 
 /// `static expr`

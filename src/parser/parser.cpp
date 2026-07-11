@@ -1279,7 +1279,26 @@ auto parser::parse_type_expr() -> ast::ptr<ast::type_expr> {
 
 auto parser::parse_prim_type_expr() -> ast::ptr<ast::type_expr> {
   switch (current()) {
-  case token_kind::ident:
+  case token_kind::ident: {
+    // `expr`/`stmt`/`def_expr`/`type_expr` are contextual keywords: an
+    // ordinary identifier everywhere else (so `expr.lit(5)` can parse as a
+    // field access), but in type position their bare spelling names one of
+    // the four quote-value types instead of an ordinary named type.
+    const auto &tok = peek();
+    if (tok.text == "expr" || tok.text == "stmt" || tok.text == "def_expr" ||
+        tok.text == "type_expr") {
+      const auto kind = tok.text == "expr"   ? ast::quote_fragment_kind::expr
+                        : tok.text == "stmt" ? ast::quote_fragment_kind::stmt
+                        : tok.text == "def_expr"
+                            ? ast::quote_fragment_kind::def_expr
+                            : ast::quote_fragment_kind::type_expr;
+      advance();
+      auto qt = ast::make<ast::quote_type>(kind);
+      qt->span = tok.span;
+      return qt;
+    }
+    return parse_named_type();
+  }
   case token_kind::kw_super:
     return parse_named_type();
 
@@ -1346,14 +1365,24 @@ auto parser::parse_prim_type_expr() -> ast::ptr<ast::type_expr> {
   case token_kind::kw_fn:
     return parse_fn_type();
 
-  case token_kind::kw_expr:
-  case token_kind::kw_stmt:
-  case token_kind::kw_def_expr:
-  case token_kind::kw_type_expr: {
-    auto tok = advance();
-    auto qt = ast::make<ast::quote_type>(tok.kind);
-    qt->span = tok.span;
-    return qt;
+  case token_kind::tilde: {
+    // Type-position splice: `~(expr)` — mirrors `parse_splice_expr_inner`
+    // (expression position), just building a `splice_type` instead.
+    auto sty = ast::make<ast::splice_type>();
+    auto start = peek().span;
+    advance(); // consume `~`
+    if (at(token_kind::lparen)) {
+      advance(); // consume `(`
+      sty->operand = parse_expr();
+      expect(token_kind::rparen);
+    } else if (peek().can_start_expr()) {
+      sty->operand = parse_postfix_expr();
+    } else {
+      emit_unexpected("an expression after `~` in type position");
+      sty->operand = make_error_expr(start);
+    }
+    sty->span = start.merge(previous_span());
+    return sty;
   }
 
   default:

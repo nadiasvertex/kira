@@ -400,6 +400,25 @@ auto test_accepts_splice_stmt_reifies_quoted_statement() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_expr_keyword_usable_as_identifier() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_expr_keyword_usable_as_identifier.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `expr`/`stmt` to be usable as ordinary "
+                     "identifiers outside type position (contextual "
+                     "keywords, M4.5):\n") +
+             analyzed.diagnostics);
+}
+
+auto test_accepts_splice_type_reifies_quoted_type() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_splice_type_reifies_quoted_type.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `~(int_type)` in return-type position to "
+                     "resolve to the quoted `int32` type:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_reports_splice_expr_wrong_fragment_kind() -> void {
   const auto analyzed =
       analyze_test_data_file("report_splice_expr_wrong_fragment_kind.kira");
@@ -1027,6 +1046,8 @@ auto main() -> int {
     test_accepts_static_let_forward_reference();
     test_accepts_splice_expr_reifies_quoted_value();
     test_accepts_splice_stmt_reifies_quoted_statement();
+    test_accepts_splice_type_reifies_quoted_type();
+    test_accepts_expr_keyword_usable_as_identifier();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();

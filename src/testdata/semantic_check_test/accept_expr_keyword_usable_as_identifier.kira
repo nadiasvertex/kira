@@ -1,0 +1,6 @@
+module sample
+
+def run() -> int32:
+    let expr: int32 = 5
+    let stmt: int32 = expr + 1
+    return stmt

@@ -750,6 +750,7 @@ public:
         .fmt_types = fmt_types,
         .synthesized_decls = std::move(synthesized_decls_),
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
+        .synthesized_types = std::move(synthesized_types_),
         .spliced_fragments = std::move(spliced_fragments_)};
   }
 
@@ -854,6 +855,11 @@ private:
   /// `take_checked_types`.
   ast::ptr_vec<ast::func_decl> synthesized_decls_;
   std::vector<synthesized_method> synthesized_trait_defaults_;
+  /// Owns every `named_type` synthesized by `reinterpret_as_named_type`
+  /// (see its doc comment) for the whole session — stable-address (a
+  /// `vector<unique_ptr<T>>` only moves the pointer, never the pointee),
+  /// same pattern as `synthesized_decls_` above.
+  ast::ptr_vec<ast::type_expr> synthesized_types_;
   /// Splice-node -> resolved-fragment mapping — see `checked_types::
   /// spliced_fragments`'s doc comment in types.h. Populated by the
   /// `splice_expr` case in `infer_expr_impl` and the `splice_stmt` case in
@@ -1228,21 +1234,97 @@ private:
     case ast::node_kind::quote_type: {
       const auto &quote = dynamic_cast<const ast::quote_type &>(type);
       switch (quote.quote_kind) {
-      case token_kind::kw_expr:
+      case ast::quote_fragment_kind::expr:
         return types_.builtin("expr");
-      case token_kind::kw_stmt:
+      case ast::quote_fragment_kind::stmt:
         return types_.builtin("stmt");
-      case token_kind::kw_def_expr:
+      case ast::quote_fragment_kind::def_expr:
         return types_.builtin("def_expr");
-      case token_kind::kw_type_expr:
+      case ast::quote_fragment_kind::type_expr:
         return types_.builtin("type_expr");
-      default:
+      case ast::quote_fragment_kind::none:
         return k_unknown_type;
       }
+    }
+    case ast::node_kind::splice_type: {
+      const auto &splice = dynamic_cast<const ast::splice_type &>(type);
+      return resolve_splice_type(splice, ctx);
     }
     default:
       return k_unknown_type;
     }
+  }
+
+  /// A quoted `` `(int32)` `` or `` `(std.foo.bar)` `` classifies as an
+  /// `expr` fragment at parse time (`parser::classify_and_parse_quote_
+  /// fragment` has no annotation context to know it's meant as a type — see
+  /// its doc comment) — the disambiguation is genuinely deferred to this
+  /// layer. Here, in type position, a bare name or dotted path is
+  /// unambiguous: it can only sensibly mean a named type, so reinterpret it
+  /// as one rather than rejecting the splice. Anything structurally richer
+  /// (a call, a binary expression, ...) isn't reinterpreted — return
+  /// `nullptr` and let the caller report the mismatch.
+  auto reinterpret_as_named_type(const ast::node &fragment)
+      -> const ast::type_expr * {
+    auto path = std::vector<std::string>{};
+    if (const auto *ident = dynamic_cast<const ast::ident_expr *>(&fragment)) {
+      path.push_back(ident->name);
+    } else if (const auto *module_path =
+                   dynamic_cast<const ast::module_path_expr *>(&fragment)) {
+      path = module_path->segments;
+    } else {
+      return nullptr;
+    }
+    auto named = ast::make<ast::named_type>();
+    named->span = fragment.span;
+    named->path = std::move(path);
+    const auto *raw = named.get();
+    synthesized_types_.push_back(std::move(named));
+    return raw;
+  }
+
+  /// Type-position splice: `~(expr)`. Evaluates the operand at compile time
+  /// (mirroring `infer_expr`'s `splice_expr` case) and, if it resolves to a
+  /// `type_expr_fragment` quote value, resolves the wrapped `ast::type_expr`
+  /// in `splice.operand`'s place. No hygiene yet (M5): the wrapped type is
+  /// resolved against `ctx`, the splice site's own resolve context, not the
+  /// quote site's.
+  auto resolve_splice_type(const ast::splice_type &splice,
+                           const resolve_ctx &ctx) -> type_id {
+    if (splice.operand == nullptr) {
+      return k_unknown_type;
+    }
+    const auto operand_type = infer_expr(*splice.operand, k_unknown_type);
+    require_quote_value(operand_type, splice.operand->span,
+                        "a type-position splice");
+    const auto fragment_value = comptime_eval_.evaluate(*splice.operand);
+    if (fragment_value.is_error()) {
+      return k_error_type;
+    }
+    if (fragment_value.kind == comptime::value_kind::type_expr_fragment &&
+        fragment_value.fragment != nullptr) {
+      const auto *fragment_type =
+          dynamic_cast<const ast::type_expr *>(fragment_value.fragment);
+      if (fragment_type != nullptr) {
+        return resolve_type(*fragment_type, ctx);
+      }
+    }
+    if (fragment_value.kind == comptime::value_kind::expr_fragment &&
+        fragment_value.fragment != nullptr) {
+      if (const auto *reinterpreted =
+              reinterpret_as_named_type(*fragment_value.fragment)) {
+        return resolve_type(*reinterpreted, ctx);
+      }
+    }
+    error_with_help(
+        splice.operand->span,
+        std::format("a type-position splice must resolve to a quoted "
+                    "type, found {}",
+                    quote_fragment_kind_name(fragment_value.kind)),
+        "this splice is used in type position",
+        "Only a value quoted as `` `(...)` `` with `type_expr` content "
+        "can be spliced into a type position.");
+    return k_error_type;
   }
 
   /// Resolves each generic argument slot of a named type. A slot holding a
@@ -4780,6 +4862,22 @@ private:
       case ast::quote_fragment_kind::type_expr:
         return types_.builtin("type_expr");
       case ast::quote_fragment_kind::expr:
+        // A bare name or dotted path (`` `(int32)` ``, `` `(std.foo.bar)` ``)
+        // is lexically ambiguous between an expression and a type — the
+        // parser classifies it as `expr` since it has no annotation context
+        // (see `parser::classify_and_parse_quote_fragment`'s doc comment).
+        // When the surrounding context expects `type_expr` and the content
+        // reinterprets as a named type, honor that instead of reporting a
+        // spurious mismatch — this is the "deferred to the semantic layer"
+        // disambiguation the parser punted on.
+        if (!types_.is_unknown(expected) &&
+            types_.entry(expected).kind == type_kind::builtin_kind &&
+            types_.entry(expected).name == "type_expr" &&
+            quote.parsed_body != nullptr &&
+            reinterpret_as_named_type(*quote.parsed_body) != nullptr) {
+          return types_.builtin("type_expr");
+        }
+        return types_.builtin("expr");
       case ast::quote_fragment_kind::none:
         // `none` means the parser couldn't classify the quoted content
         // (already diagnosed at parse time, or genuinely empty) — fall back
