@@ -245,6 +245,32 @@ struct resolved_callee {
   const ast::expr *receiver = nullptr;
 };
 
+/// How one interpolation segment's embedded expression
+/// (`ast::interp_segment::value`, `spec/string-formatting-design.md`) should
+/// render at runtime — resolved once by `check.cpp`'s interpolation
+/// capability check so `hir::lower` never has to re-derive which style
+/// (builtin intrinsic vs. a real trait method) a segment's format-spec type
+/// char selected.
+struct interp_dispatch {
+  enum class kind_t : uint8_t {
+    builtin_show,  ///< *(none)*/`s` on a builtin primitive.
+    builtin_debug, ///< `?` on a builtin primitive.
+    builtin_radix, ///< `d`/`x`/`X`/`o`/`b` on a builtin integer.
+    builtin_float, ///< `e`/`E`/`f`/`g`/`G` on a builtin float.
+    builtin_char,  ///< `c` on a builtin integer (codepoint source).
+    trait_method,  ///< `show`/`debug`/`hex`/`octal`/`binary` via a real
+                   ///< user-defined `impl`, resolved the same way
+                   ///< `resolved_callee` records an ordinary method call.
+  };
+  kind_t kind = kind_t::builtin_show;
+  char type_char = 0;     ///< The format spec's type char, or `0` for *(none)*.
+  type_id value_type = 0; ///< The segment expression's resolved static type.
+  /// Valid when `kind == trait_method`, same meaning as `resolved_callee`.
+  const ast::func_decl *decl = nullptr;
+  std::string owner_module;
+  std::string impl_target_type;
+};
+
 /// The persisted result of type-checking one session: the interned
 /// `type_table` every `type_id` below indexes into, plus the resolved type
 /// of every expression node the checker actually visited. Several
@@ -285,6 +311,48 @@ struct synthesized_method {
   std::string owner_module;
 };
 
+/// Type ids for `std.fmt`'s runtime-support types (`src/std/fmt.kira`),
+/// resolved once after checking finishes and handed to `hir::lower` so it
+/// can build `format_spec`/box-type struct literals for interpolation
+/// lowering without a name-based lookup of its own — `type_table` only
+/// supports looking a user type up via its declaring `ast::type_decl`, which
+/// lowering has no route to independent of an AST node it's already
+/// visiting (see `interp_dispatch`'s use in `hir::lower`). Left as
+/// `k_unknown_type` (0) if `std.fmt` wasn't part of the session — lowering
+/// only reads these when a `interp_dispatch` entry exists, and one can only
+/// exist if a source file had string interpolation, which the driver never
+/// allows without also injecting `std.fmt` (`inject_stdlib_prelude`).
+struct fmt_runtime_types {
+  type_id format_spec = 0;
+  type_id align_mode = 0;
+  type_id sign_mode = 0;
+  type_id box_u64 = 0;
+  type_id box_u32 = 0;
+  type_id box_u8 = 0;
+  type_id box_usize = 0;
+  type_id box_bool = 0;
+  type_id box_f64 = 0;
+  /// Builtin scalar types lowering needs for casts ahead of a `std.fmt`
+  /// helper call (e.g. widening an `int32` to `int64` before
+  /// `fmt_show_i64`) — resolved here for the same reason the `box_*`/
+  /// `format_spec` ids above are: `type_table::builtin` needs mutable
+  /// access to intern-or-fetch, which `hir::lower` (holding only a `const
+  /// type_table&`) doesn't have. `bool`/`usize`/`char` aren't included
+  /// since `type_table` already exposes those three as const lookups.
+  type_id str_type = 0;
+  type_id int64_type = 0;
+  type_id uint64_type = 0;
+  type_id uint32_type = 0;
+  type_id uint8_type = 0;
+  type_id float64_type = 0;
+  /// `option[align_mode]`/`option[usize]` — needed to build a structurally
+  /// correct `@some(...)`/`@none` `hir_variant_init` for `format_spec.align`/
+  /// `.width`/`.precision`, since a sum-type value's tag/slot layout depends
+  /// on its exact `type_id`, not just its variant name.
+  type_id option_align_mode = 0;
+  type_id option_usize = 0;
+};
+
 struct checked_types {
   type_table types;
   std::unordered_map<const ast::node *, type_id> node_types;
@@ -299,6 +367,13 @@ struct checked_types {
   /// (a plain same-module/imported bare-name call, a method call) or never
   /// resolved at all.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees;
+  /// Every interpolation segment's resolved rendering dispatch — see
+  /// `interp_dispatch`'s doc comment. Keyed by the segment's `value`
+  /// expression pointer (`ast::interp_segment::value.get()`).
+  std::unordered_map<const ast::expr *, interp_dispatch> interp_dispatches;
+  /// Resolved once from `std.fmt`'s own type declarations — see
+  /// `fmt_runtime_types`'s doc comment.
+  fmt_runtime_types fmt_types;
   /// Every trait-default method cloned and monomorphized for a concrete impl
   /// — see `synthesized_method`'s doc comment. Owns the clones themselves
   /// (moved here from the checker) so their lifetime outlives type-checking.

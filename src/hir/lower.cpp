@@ -52,6 +52,68 @@ template <typename T>
   return ptr<hir_expr>(std::move(node));
 }
 
+/// Re-encodes an already escape-decoded literal-text segment
+/// (`ast::interp_segment::literal_text`) back into the quoted, escaped
+/// source spelling `decode_string_literal` (both backends' codegen) expects
+/// a `string_lit`'s `hir_literal::value` to be — used by
+/// `lower_interpolated_string` so a literal-text segment can still ride the
+/// ordinary `hir_literal`/`compile_string_literal` path with no new HIR node
+/// kind or backend change.
+[[nodiscard]] auto quote_and_escape_for_literal(std::string_view text)
+    -> std::string {
+  auto out = std::string("\"");
+  for (const char c : text) {
+    switch (c) {
+    case '"':
+      out += "\\\"";
+      break;
+    case '\\':
+      out += "\\\\";
+      break;
+    case '\n':
+      out += "\\n";
+      break;
+    case '\t':
+      out += "\\t";
+      break;
+    case '\r':
+      out += "\\r";
+      break;
+    case '\0':
+      out += "\\0";
+      break;
+    default:
+      out.push_back(c);
+      break;
+    }
+  }
+  out += "\"";
+  return out;
+}
+
+/// Builds a `char_lit`-shaped source spelling for a single ASCII byte (a
+/// format spec's `fill` character or a synthesized `'0'` zero-pad digit) —
+/// same escape set as `quote_and_escape_for_literal`, single-quoted, for
+/// `decode_char_literal` to invert.
+[[nodiscard]] auto quote_char_for_literal(char c) -> std::string {
+  switch (c) {
+  case '\'':
+    return "'\\''";
+  case '\\':
+    return "'\\\\'";
+  case '\n':
+    return "'\\n'";
+  case '\t':
+    return "'\\t'";
+  case '\r':
+    return "'\\r'";
+  case '\0':
+    return "'\\0'";
+  default:
+    return std::string("'") + c + "'";
+  }
+}
+
 /// A variant-constructor expression (`@some(x)`) parses to an `ident_expr`
 /// whose span still covers the leading `@` — this must stay exactly in
 /// sync with the identically-named, identically-implemented predicate in
@@ -207,6 +269,9 @@ private:
   [[nodiscard]] auto lower_where(const ast::where_expr &where)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_try(const ast::try_expr &try_expr)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto
+  lower_interpolated_string(const ast::interpolated_string_expr &node)
       -> std::expected<ptr<hir_expr>, lowering_error>;
 
   // ------------------------------------------------------------------
@@ -453,6 +518,9 @@ auto lowerer::lower_expr(const ast::expr &expr)
     return lower_for_expr(dynamic_cast<const ast::for_expr &>(expr));
   case ast::node_kind::module_path_expr:
     return lower_module_path(dynamic_cast<const ast::module_path_expr &>(expr));
+  case ast::node_kind::interpolated_string_expr:
+    return lower_interpolated_string(
+        dynamic_cast<const ast::interpolated_string_expr &>(expr));
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
                 std::format("expression kind {} is not lowered by the first "
@@ -1162,6 +1230,377 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
 
   return ok_expr(make<hir_match>(try_expr.span, *type, std::move(*operand),
                                  subject_symbol, std::move(arms)));
+}
+
+/// Desugars a `"{expr :spec}"` interpolated string literal
+/// (`spec/string-formatting-design.md`) into a sequence of calls to
+/// `std.fmt`'s fixed-signature rendering helpers (`fmt_show_i64`,
+/// `fmt_radix_u64`, `pad_str`, ...) plus `std.fmt.rt_str_concat` to fold
+/// every segment together — see the design doc's "Desugaring via Quoting
+/// and Splicing" section, emitted here directly rather than through an
+/// interpreted macro (`spec/string-formatting-design.md`, "Implementation
+/// Staging"). Because this bottoms out entirely in ordinary function calls
+/// and struct/variant construction — both already lowered/codegen'd by both
+/// backends — no bytecode-compiler or LLVM-codegen change is needed beyond
+/// the new intrinsics' native bodies (`src/bytecode/vm.cpp`,
+/// `src/runtime/fmt.cpp`).
+auto lowerer::lower_interpolated_string(
+    const ast::interpolated_string_expr &node)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto result_type = checked_type_of(node);
+  if (!result_type.has_value()) {
+    return std::unexpected(result_type.error());
+  }
+
+  const auto &fmt = checked_.fmt_types;
+  if (fmt.format_spec == 0) {
+    return fail(lowering_error_kind::unsupported_construct, node.span,
+                "string interpolation requires `std.fmt` to be part of the "
+                "compiled session");
+  }
+  const auto span = node.span;
+  const auto str_type = fmt.str_type;
+  const auto bool_type = checked_.types.bool_type();
+  const auto usize_type = checked_.types.usize_type();
+
+  const auto str_lit = [&](std::string_view text) -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_literal>(span, str_type,
+                                           token_kind::string_lit,
+                                           quote_and_escape_for_literal(text)));
+  };
+  const auto bool_lit = [&](bool v) -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_literal>(
+        span, bool_type, v ? token_kind::kw_true : token_kind::kw_false,
+        std::string(v ? "true" : "false")));
+  };
+  const auto usize_lit = [&](uint64_t v) -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_literal>(
+        span, usize_type, token_kind::int_lit, std::to_string(v)));
+  };
+  const auto uint8_lit = [&](uint64_t v) -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_literal>(
+        span, fmt.uint8_type, token_kind::int_lit, std::to_string(v)));
+  };
+  const auto char_lit = [&](char c) -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_literal>(span, checked_.types.char_type(),
+                                           token_kind::char_lit,
+                                           quote_char_for_literal(c)));
+  };
+  const auto unit_variant = [&](type_id type,
+                                std::string_view name) -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_variant_init>(span, type, std::string(name),
+                                                ptr_vec<hir_expr>{}));
+  };
+  const auto some_of = [&](type_id option_type,
+                           ptr<hir_expr> payload) -> ptr<hir_expr> {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(std::move(payload));
+    return ptr<hir_expr>(
+        make<hir_variant_init>(span, option_type, "some", std::move(args)));
+  };
+  const auto none_of = [&](type_id option_type) -> ptr<hir_expr> {
+    return ptr<hir_expr>(
+        make<hir_variant_init>(span, option_type, "none", ptr_vec<hir_expr>{}));
+  };
+  const auto call_fmt = [&](std::string_view name, type_id ret_type,
+                            ptr_vec<hir_expr> args) -> ptr<hir_expr> {
+    auto callee = ptr<hir_expr>(make<hir_local_ref>(
+        span, k_unknown_type, resolve_reference(std::string(name)),
+        std::string(name), std::string("std.fmt")));
+    return ptr<hir_expr>(
+        make<hir_call>(span, ret_type, std::move(callee), std::move(args)));
+  };
+  const auto cast_to = [&](ptr<hir_expr> value,
+                           type_id target) -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_cast>(span, target, std::move(value)));
+  };
+
+  // A dynamic `{expr}` width/precision was already type-checked as `usize`
+  // by `check_interpolated_string`; a literal one is just a compile-time
+  // constant. Either way this yields a plain `usize`-typed value expression
+  // (not wrapped in `option`) — callers wrap it in `@some(...)` themselves
+  // where the field needs that (`format_spec.width`/`.precision`), or use it
+  // bare where a helper takes the precision directly (`fmt_float_fixed`).
+  const auto lower_usize_slot =
+      [&](const std::variant<std::monostate, size_t, ast::ptr<ast::expr>> *slot,
+          uint64_t default_value)
+      -> std::expected<ptr<hir_expr>, lowering_error> {
+    if (slot == nullptr) {
+      return usize_lit(default_value);
+    }
+    if (const auto *literal = std::get_if<size_t>(slot)) {
+      return usize_lit(*literal);
+    }
+    if (const auto *dynamic = std::get_if<ast::ptr<ast::expr>>(slot);
+        dynamic != nullptr && *dynamic != nullptr) {
+      return lower_expr(**dynamic);
+    }
+    return usize_lit(default_value);
+  };
+
+  const auto build_spec = [&](const ast::interp_segment &seg)
+      -> std::expected<ptr<hir_expr>, lowering_error> {
+    const auto has_spec = seg.has_spec;
+    const auto fill = has_spec ? seg.spec.fill : ' ';
+
+    auto align_value = ptr<hir_expr>{};
+    if (has_spec && seg.spec.align.has_value()) {
+      const auto name = *seg.spec.align == ast::format_align::left ? "left"
+                        : *seg.spec.align == ast::format_align::right
+                            ? "right"
+                            : "center";
+      align_value =
+          some_of(fmt.option_align_mode, unit_variant(fmt.align_mode, name));
+    } else {
+      align_value = none_of(fmt.option_align_mode);
+    }
+
+    const auto sign_name =
+        !has_spec                                   ? "negative_only"
+        : seg.spec.sign == ast::format_sign::always ? "always"
+        : seg.spec.sign == ast::format_sign::space  ? "space"
+                                                    : "negative_only";
+
+    auto width_payload =
+        lower_usize_slot(has_spec ? &seg.spec.width : nullptr, 0);
+    if (!width_payload.has_value()) {
+      return std::unexpected(width_payload.error());
+    }
+    const bool has_width =
+        has_spec && !std::holds_alternative<std::monostate>(seg.spec.width);
+
+    auto precision_payload =
+        lower_usize_slot(has_spec ? &seg.spec.precision : nullptr, 0);
+    if (!precision_payload.has_value()) {
+      return std::unexpected(precision_payload.error());
+    }
+    const bool has_precision =
+        has_spec && !std::holds_alternative<std::monostate>(seg.spec.precision);
+
+    auto fields = std::vector<hir_struct_init_field>{};
+    fields.push_back({.name = "fill", .value = char_lit(fill)});
+    fields.push_back({.name = "align", .value = std::move(align_value)});
+    fields.push_back(
+        {.name = "sign", .value = unit_variant(fmt.sign_mode, sign_name)});
+    fields.push_back({.name = "alternate",
+                      .value = bool_lit(has_spec && seg.spec.alternate)});
+    fields.push_back(
+        {.name = "zero_pad", .value = bool_lit(has_spec && seg.spec.zero_pad)});
+    fields.push_back({.name = "width",
+                      .value = has_width ? some_of(fmt.option_usize,
+                                                   std::move(*width_payload))
+                                         : none_of(fmt.option_usize)});
+    fields.push_back(
+        {.name = "precision",
+         .value = has_precision
+                      ? some_of(fmt.option_usize, std::move(*precision_payload))
+                      : none_of(fmt.option_usize)});
+    return ptr<hir_expr>(
+        make<hir_struct_init>(span, fmt.format_spec, std::move(fields)));
+  };
+
+  auto pieces = ptr_vec<hir_expr>{};
+  for (const auto &seg : node.segments) {
+    if (seg.is_literal) {
+      pieces.push_back(str_lit(seg.literal_text));
+      continue;
+    }
+    if (seg.value == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, span,
+                  "interpolation segment is missing its expression");
+    }
+    if (seg.self_doc) {
+      pieces.push_back(str_lit(seg.source_text + "="));
+    }
+
+    const auto dispatch_it = checked_.interp_dispatches.find(seg.value.get());
+    if (dispatch_it == checked_.interp_dispatches.end()) {
+      return fail(lowering_error_kind::unresolved_type, seg.value->span,
+                  "this interpolated expression was never resolved by the "
+                  "capability check");
+    }
+    const auto &dispatch = dispatch_it->second;
+
+    auto value = lower_expr(*seg.value);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto spec_expr = build_spec(seg);
+    if (!spec_expr.has_value()) {
+      return std::unexpected(spec_expr.error());
+    }
+
+    const auto &value_entry = checked_.types.entry(dispatch.value_type);
+    const bool is_signed =
+        value_entry.name.starts_with("int") || value_entry.name == "isize";
+
+    // `dispatch.type_char` selected a float style ('e'/'E'/'f'/'g'/'G') only
+    // when `dispatch.kind == builtin_float`; every other kind ignores
+    // `precision_value` entirely, so it's fine to always compute it from
+    // the same spec slot up front rather than threading it out of
+    // `build_spec` (which independently derives the same slot for
+    // `format_spec.precision`).
+    const auto precision_default = uint64_t{6};
+    auto lowered_precision = lower_usize_slot(
+        seg.has_spec ? &seg.spec.precision : nullptr, precision_default);
+    if (!lowered_precision.has_value()) {
+      return std::unexpected(lowered_precision.error());
+    }
+    auto precision_value = std::move(*lowered_precision);
+
+    auto rendered = ptr<hir_expr>{};
+    switch (dispatch.kind) {
+    case semantic::interp_dispatch::kind_t::trait_method: {
+      if (dispatch.decl == nullptr) {
+        return fail(
+            lowering_error_kind::unsupported_construct, seg.value->span,
+            "this type's capability comes only from `deriving`, which has "
+            "no runtime body yet — implement it with an explicit `impl` "
+            "block instead");
+      }
+      const auto local_name =
+          dispatch.impl_target_type.empty()
+              ? dispatch.decl->name
+              : std::format("{}::{}", dispatch.impl_target_type,
+                            dispatch.decl->name);
+      auto callee = ptr<hir_expr>(make<hir_local_ref>(
+          seg.value->span, k_unknown_type, resolve_reference(local_name),
+          local_name, dispatch.owner_module));
+      auto call_args = ptr_vec<hir_expr>{};
+      call_args.push_back(std::move(*value));
+      auto method_result = ptr<hir_expr>(make<hir_call>(
+          seg.value->span, str_type, std::move(callee), std::move(call_args)));
+
+      const auto is_radix_trait =
+          dispatch.type_char == 'x' || dispatch.type_char == 'X' ||
+          dispatch.type_char == 'o' || dispatch.type_char == 'b';
+      if (is_radix_trait) {
+        const auto prefix = dispatch.type_char == 'o'   ? "0o"
+                            : dispatch.type_char == 'b' ? "0b"
+                                                        : "0x";
+        auto args = ptr_vec<hir_expr>{};
+        args.push_back(bool_lit(false));
+        args.push_back(str_lit(prefix));
+        args.push_back(std::move(method_result));
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt("pad_integral", str_type, std::move(args));
+      } else {
+        auto args = ptr_vec<hir_expr>{};
+        args.push_back(std::move(method_result));
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt("pad_str", str_type, std::move(args));
+      }
+      break;
+    }
+    case semantic::interp_dispatch::kind_t::builtin_show:
+    case semantic::interp_dispatch::kind_t::builtin_debug: {
+      const auto debug =
+          dispatch.kind == semantic::interp_dispatch::kind_t::builtin_debug;
+      if (value_entry.kind == type_kind::builtin_kind &&
+          value_entry.name == "str") {
+        auto args = ptr_vec<hir_expr>{};
+        args.push_back(std::move(*value));
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt(debug ? "fmt_debug_str" : "fmt_show_str", str_type,
+                            std::move(args));
+      } else if (checked_.types.is_boolean(dispatch.value_type)) {
+        auto args = ptr_vec<hir_expr>{};
+        args.push_back(std::move(*value));
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt("fmt_show_bool", str_type, std::move(args));
+      } else if (value_entry.kind == type_kind::builtin_kind &&
+                 value_entry.name == "char") {
+        auto args = ptr_vec<hir_expr>{};
+        args.push_back(std::move(*value));
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt("fmt_show_char", str_type, std::move(args));
+      } else if (checked_.types.is_integer(dispatch.value_type)) {
+        auto args = ptr_vec<hir_expr>{};
+        args.push_back(cast_to(std::move(*value),
+                               is_signed ? fmt.int64_type : fmt.uint64_type));
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt(is_signed ? "fmt_show_i64" : "fmt_show_u64",
+                            str_type, std::move(args));
+      } else if (checked_.types.is_float(dispatch.value_type)) {
+        auto args = ptr_vec<hir_expr>{};
+        args.push_back(cast_to(std::move(*value), fmt.float64_type));
+        args.push_back(usize_lit(precision_default));
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt("fmt_float_general", str_type, std::move(args));
+      } else {
+        return fail(lowering_error_kind::unsupported_construct, seg.value->span,
+                    "no builtin rendering exists for this type");
+      }
+      break;
+    }
+    case semantic::interp_dispatch::kind_t::builtin_radix: {
+      const auto radix =
+          dispatch.type_char == 'o'                                ? 8
+          : dispatch.type_char == 'b'                              ? 2
+          : dispatch.type_char == 'x' || dispatch.type_char == 'X' ? 16
+                                                                   : 10;
+      const auto uppercase = dispatch.type_char == 'X';
+      const auto prefix =
+          dispatch.type_char == 'o'                                  ? "0o"
+          : dispatch.type_char == 'b'                                ? "0b"
+          : (dispatch.type_char == 'x' || dispatch.type_char == 'X') ? "0x"
+                                                                     : "";
+      auto args = ptr_vec<hir_expr>{};
+      args.push_back(cast_to(std::move(*value),
+                             is_signed ? fmt.int64_type : fmt.uint64_type));
+      args.push_back(uint8_lit(static_cast<uint64_t>(radix)));
+      args.push_back(bool_lit(uppercase));
+      args.push_back(str_lit(prefix));
+      args.push_back(std::move(*spec_expr));
+      rendered = call_fmt(is_signed ? "fmt_radix_i64" : "fmt_radix_u64",
+                          str_type, std::move(args));
+      break;
+    }
+    case semantic::interp_dispatch::kind_t::builtin_float: {
+      auto args = ptr_vec<hir_expr>{};
+      args.push_back(cast_to(std::move(*value), fmt.float64_type));
+      args.push_back(std::move(precision_value));
+      const auto style = dispatch.type_char;
+      if (style == 'e' || style == 'E') {
+        args.push_back(bool_lit(style == 'E'));
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt("fmt_float_sci", str_type, std::move(args));
+      } else if (style == 'g' || style == 'G') {
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt("fmt_float_general", str_type, std::move(args));
+      } else {
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt("fmt_float_fixed", str_type, std::move(args));
+      }
+      break;
+    }
+    case semantic::interp_dispatch::kind_t::builtin_char: {
+      auto args = ptr_vec<hir_expr>{};
+      args.push_back(cast_to(std::move(*value), fmt.uint32_type));
+      args.push_back(std::move(*spec_expr));
+      rendered = call_fmt("fmt_char_codepoint", str_type, std::move(args));
+      break;
+    }
+    }
+
+    if (rendered == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, seg.value->span,
+                  "no rendering was produced for this interpolation segment");
+    }
+    pieces.push_back(std::move(rendered));
+  }
+
+  if (pieces.empty()) {
+    return str_lit("");
+  }
+  auto folded = std::move(pieces.front());
+  for (size_t i = 1; i < pieces.size(); ++i) {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(std::move(folded));
+    args.push_back(std::move(pieces[i]));
+    folded = call_fmt("rt_str_concat", str_type, std::move(args));
+  }
+  return folded;
 }
 
 auto lowerer::lower_tail_control_flow_stmt(const ast::node &node, type_id type)

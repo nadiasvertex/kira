@@ -1,0 +1,5 @@
+module sample
+
+def run() -> unit:
+    let s = "hello"
+    println("{s :x}")

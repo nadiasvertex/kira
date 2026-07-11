@@ -93,6 +93,7 @@ struct asm_stmt;
 // Expressions
 struct ident_expr;
 struct literal_expr;
+struct interpolated_string_expr;
 struct binary_expr;
 struct unary_expr;
 struct postfix_expr;
@@ -258,6 +259,8 @@ enum class node_kind : uint8_t {
   module_path_expr, ///< Module-path expression.
   group_expr,       ///< Parenthesized grouping expression.
   where_expr,       ///< Expression with trailing local bindings.
+  interpolated_string_expr, ///< String literal split into literal/format
+                            ///< segments (`spec/string-formatting-design.md`).
 
   // Patterns
   wildcard_pattern,    ///< Wildcard pattern.
@@ -625,6 +628,65 @@ struct literal_expr : expr {
       value; ///< Raw source spelling, kept for exact later interpretation.
 
   literal_expr() : expr(node_kind::literal_expr) {}
+};
+
+// ==========================================================================
+//  String interpolation — `spec/string-formatting-design.md`.
+// ==========================================================================
+
+/// @brief Alignment requested by a format spec's `fill_align` component.
+enum class format_align : uint8_t { left, right, center };
+
+/// @brief Sign display requested by a format spec's `sign` component.
+enum class format_sign : uint8_t { always, negative_only, space };
+
+/// @brief One parsed `format_spec` (the text after `:` in `{expr :spec}`),
+/// a compile-time constant shape even though `width`/`precision` may each
+/// carry a dynamic `{expr}` sub-expression evaluated at the interpolation
+/// site.
+struct format_spec {
+  char fill = ' ';                   ///< Fill character (default space).
+  std::optional<format_align> align; ///< None = type's own default alignment.
+  format_sign sign = format_sign::negative_only; ///< `+`/`-`/`' '` flag.
+  bool alternate = false; ///< `#` flag (numeric prefix, e.g. `0x`).
+  bool zero_pad = false;  ///< `0` flag — distinct from `fill_align` of `0>`.
+  bool has_explicit_align =
+      false; ///< Whether `fill_align` was written; `zero_pad` composition
+             ///< differs when an explicit align is present (see design
+             ///< doc, "Padding, alignment, and zero-padding").
+  /// Width: unset, a literal digit count, or a dynamic `{expr}`.
+  std::variant<std::monostate, size_t, ptr<expr>> width;
+  /// Precision: unset, a literal digit count, or a dynamic `{expr}`.
+  std::variant<std::monostate, size_t, ptr<expr>> precision;
+  std::optional<char>
+      type_char;    ///< One of `s ? d x X o b e E f g G c`, or unset (default).
+  source_span span; ///< Source range of the spec text itself.
+};
+
+/// @brief One segment of an interpolated string literal: either a run of
+/// literal (already escape-decoded) text, or an embedded expression with its
+/// optional self-documenting `=` and/or format spec.
+struct interp_segment {
+  bool is_literal = true;   ///< Whether this segment is plain literal text.
+  std::string literal_text; ///< Escape-decoded text, valid when `is_literal`.
+
+  ptr<expr> value;       ///< Embedded expression, valid when `!is_literal`.
+  bool self_doc = false; ///< Whether a trailing `=` was written.
+  std::string
+      source_text;       ///< Exact source spelling of `value`, for `self_doc`.
+  bool has_spec = false; ///< Whether a `:format_spec` was written.
+  format_spec spec;      ///< Parsed format spec, valid when `has_spec`.
+};
+
+/// @brief A string literal containing one or more `{expr}` interpolations,
+/// split into an ordered sequence of literal-text and formatted-value
+/// segments. A plain string literal with no interpolation is still parsed as
+/// an ordinary `literal_expr` — this node only exists when splitting found at
+/// least one `{...}` region.
+struct interpolated_string_expr : expr {
+  std::vector<interp_segment> segments;
+
+  interpolated_string_expr() : expr(node_kind::interpolated_string_expr) {}
 };
 
 /// @brief Normalized binary operators produced by expression and pattern

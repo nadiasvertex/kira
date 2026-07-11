@@ -1,0 +1,8 @@
+Name:      Alice
+Age:  030
+Pi:   3.14
+Hex:  00ff
+Bin:  11111111
+width=8
+-00042
+{escaped} stays literal

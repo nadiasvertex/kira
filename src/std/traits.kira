@@ -21,6 +21,18 @@ pub trait hash:
 pub trait show:
     def show(self) -> str
 
+pub trait debug:
+    def debug(self) -> str
+
+pub trait hex:
+    def hex(self) -> str
+
+pub trait octal:
+    def octal(self) -> str
+
+pub trait binary:
+    def binary(self) -> str
+
 pub trait add:
     type output
     def add(self, other: self) -> self.output

@@ -59,16 +59,28 @@ auto decode_char_literal(std::string_view text) -> std::optional<uint32_t> {
   }
 }
 
-auto decode_string_literal(std::string_view text)
+auto decode_string_body(std::string_view unquoted_text)
     -> std::optional<std::string> {
-  if (text.size() < 2 || text.front() != '"' || text.back() != '"') {
-    return std::nullopt;
-  }
-  const auto inner = text.substr(1, text.size() - 2);
+  const auto inner = unquoted_text;
   auto out = std::string{};
   out.reserve(inner.size());
   size_t pos = 0;
   while (pos < inner.size()) {
+    // A doubled brace is a literal single brace (`spec/string-formatting-
+    // design.md`: "an interpolation brace is written literally by doubling
+    // it") — checked before the backslash-escape switch below since it's
+    // not itself a backslash escape. A lone, unescaped `{`/`}` here (from a
+    // literal-text segment already split out of an interpolated string) has
+    // already had any real `{expr}` removed by the caller, so it can only be
+    // a leftover doubled pair.
+    if ((inner[pos] == '{' && pos + 1 < inner.size() &&
+         inner[pos + 1] == '{') ||
+        (inner[pos] == '}' && pos + 1 < inner.size() &&
+         inner[pos + 1] == '}')) {
+      out.push_back(inner[pos]);
+      pos += 2;
+      continue;
+    }
     if (inner[pos] != '\\') {
       out.push_back(inner[pos]);
       ++pos;
@@ -136,6 +148,14 @@ auto decode_string_literal(std::string_view text)
     }
   }
   return out;
+}
+
+auto decode_string_literal(std::string_view text)
+    -> std::optional<std::string> {
+  if (text.size() < 2 || text.front() != '"' || text.back() != '"') {
+    return std::nullopt;
+  }
+  return decode_string_body(text.substr(1, text.size() - 2));
 }
 
 } // namespace kira

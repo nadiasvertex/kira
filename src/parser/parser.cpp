@@ -6,6 +6,10 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
+
+#include "src/parser/interp_string.h"
+#include "src/parser/text_escape.h"
 
 namespace kira {
 
@@ -3231,12 +3235,14 @@ auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
   // Literals.
   case token_kind::int_lit:
   case token_kind::float_lit:
-  case token_kind::string_lit:
   case token_kind::char_lit:
   case token_kind::kw_true:
   case token_kind::kw_false:
   case token_kind::kw_unit:
     return parse_literal_expr();
+
+  case token_kind::string_lit:
+    return parse_string_literal_expr();
 
   // Identifiers and module paths.
   case token_kind::ident:
@@ -3333,6 +3339,250 @@ auto parser::parse_literal_expr() -> ast::ptr<ast::expr> {
   lit->lit_kind = tok.kind;
   lit->value = std::string(tok.text);
   return lit;
+}
+
+auto parser::parse_sub_expr(std::string_view text, byte_offset absolute_offset)
+    -> ast::ptr<ast::expr> {
+  // Trim surrounding whitespace so the sub-lexer's leading-line indentation
+  // tracking (which measures indentation from column 0 of a logical line)
+  // never mistakes leading spaces inside `{...}` for an INDENT.
+  size_t start = 0;
+  while (start < text.size() && (text[start] == ' ' || text[start] == '\t')) {
+    ++start;
+  }
+  size_t end = text.size();
+  while (end > start && (text[end - 1] == ' ' || text[end - 1] == '\t')) {
+    --end;
+  }
+  const auto trimmed = text.substr(start, end - start);
+  if (trimmed.empty()) {
+    return make_error_expr(
+        source_span{.start = absolute_offset,
+                    .end = absolute_offset +
+                           static_cast<byte_offset>(text.size())},
+        "expected an expression here");
+  }
+
+  auto sub_lexer = lexer(trimmed, file_id_, diag_,
+                         absolute_offset + static_cast<byte_offset>(start));
+  auto sub_tokens = sub_lexer.tokenize();
+  auto sub_parser = parser(std::move(sub_tokens), file_id_, diag_);
+  return sub_parser.parse_expr();
+}
+
+auto parser::parse_format_spec_text(std::string_view text,
+                                    byte_offset absolute_offset,
+                                    source_span whole_span)
+    -> ast::format_spec {
+  auto spec = ast::format_spec{};
+  spec.span = whole_span;
+  size_t pos = 0;
+  const size_t len = text.size();
+
+  const auto is_type_char = [](char c) -> bool {
+    return c == 's' || c == '?' || c == 'd' || c == 'x' || c == 'X' ||
+           c == 'o' || c == 'b' || c == 'e' || c == 'E' || c == 'f' ||
+           c == 'g' || c == 'G' || c == 'c';
+  };
+  const auto align_of = [](char c) -> ast::format_align {
+    return c == '<'   ? ast::format_align::left
+           : c == '>' ? ast::format_align::right
+                      : ast::format_align::center;
+  };
+
+  if (pos + 1 < len &&
+      (text[pos + 1] == '<' || text[pos + 1] == '>' || text[pos + 1] == '^')) {
+    spec.fill = text[pos];
+    spec.align = align_of(text[pos + 1]);
+    spec.has_explicit_align = true;
+    pos += 2;
+  } else if (pos < len &&
+             (text[pos] == '<' || text[pos] == '>' || text[pos] == '^')) {
+    spec.align = align_of(text[pos]);
+    spec.has_explicit_align = true;
+    pos += 1;
+  }
+
+  if (pos < len && (text[pos] == '+' || text[pos] == '-' || text[pos] == ' ')) {
+    spec.sign = text[pos] == '+'   ? ast::format_sign::always
+                : text[pos] == '-' ? ast::format_sign::negative_only
+                                   : ast::format_sign::space;
+    pos += 1;
+  }
+
+  if (pos < len && text[pos] == '#') {
+    spec.alternate = true;
+    pos += 1;
+  }
+
+  if (pos < len && text[pos] == '0') {
+    spec.zero_pad = true;
+    pos += 1;
+  }
+
+  const auto parse_width_or_precision =
+      [&](std::variant<std::monostate, size_t, ast::ptr<ast::expr>> &out)
+      -> void {
+    if (pos < len && text[pos] == '{') {
+      const auto close = find_matching_brace(text, pos);
+      if (!close.has_value()) {
+        emit(diagnostic(diagnostic_level::error,
+                        "unterminated dynamic width/precision in "
+                        "format spec",
+                        file_id_)
+                 .with_label(whole_span, "the `{` here is never closed")
+                 .with_help("Close the dynamic width/precision with a "
+                            "matching `}`."));
+        pos = len;
+        return;
+      }
+      const auto inner = text.substr(pos + 1, *close - pos - 1);
+      out = parse_sub_expr(inner,
+                           absolute_offset + static_cast<byte_offset>(pos + 1));
+      pos = *close + 1;
+      return;
+    }
+    const size_t digits_start = pos;
+    while (pos < len && text[pos] >= '0' && text[pos] <= '9') {
+      ++pos;
+    }
+    if (pos > digits_start) {
+      size_t value = 0;
+      for (size_t i = digits_start; i < pos; ++i) {
+        value = (value * 10) + static_cast<size_t>(text[i] - '0');
+      }
+      out = value;
+    }
+  };
+
+  parse_width_or_precision(spec.width);
+
+  if (pos < len && text[pos] == '.') {
+    pos += 1;
+    parse_width_or_precision(spec.precision);
+  }
+
+  if (pos < len && is_type_char(text[pos])) {
+    spec.type_char = text[pos];
+    pos += 1;
+  }
+
+  if (pos != len) {
+    emit(diagnostic(diagnostic_level::error,
+                    std::format("unrecognized format spec text `{}`",
+                                text.substr(pos)),
+                    file_id_)
+             .with_label(whole_span,
+                         "could not parse the rest of this format spec")
+             .with_help("A format spec looks like "
+                        "`[fill_align][sign][#][0][width][.precision][type]` — "
+                        "see spec/string-formatting-design.md for the full "
+                        "grammar."));
+  }
+
+  return spec;
+}
+
+auto parser::parse_string_literal_expr() -> ast::ptr<ast::expr> {
+  auto tok = advance();
+
+  const auto make_plain_literal = [&] -> ast::ptr<ast::expr> {
+    auto lit = ast::make<ast::literal_expr>();
+    lit->span = tok.span;
+    lit->lit_kind = tok.kind;
+    lit->value = std::string(tok.text);
+    return lit;
+  };
+
+  if (tok.text.size() < 2) {
+    return make_plain_literal();
+  }
+
+  const auto content = tok.text.substr(1, tok.text.size() - 2);
+  const auto content_base = static_cast<byte_offset>(tok.span.start + 1);
+
+  if (!has_interpolation(content)) {
+    return make_plain_literal();
+  }
+
+  auto scanned = scan_interpolated_content(content);
+  if (!scanned.has_value()) {
+    emit(diagnostic(diagnostic_level::error,
+                    "unterminated string interpolation — a `{` inside this "
+                    "string was never closed with a matching `}`",
+                    file_id_)
+             .with_label(tok.span, "in this string")
+             .with_help("Make sure every `{` inside a string has a matching "
+                        "`}`. If you want a literal `{`, write it twice: "
+                        "`{{`."));
+    auto lit = make_plain_literal();
+    lit->has_error = true;
+    return lit;
+  }
+
+  auto node = ast::make<ast::interpolated_string_expr>();
+  node->span = tok.span;
+
+  for (auto &run : *scanned) {
+    if (run.is_literal) {
+      auto seg = ast::interp_segment{};
+      seg.is_literal = true;
+      if (auto decoded = decode_string_body(run.literal_text);
+          decoded.has_value()) {
+        seg.literal_text = std::move(*decoded);
+      } else {
+        emit(diagnostic(diagnostic_level::error,
+                        "invalid escape sequence in string literal", file_id_)
+                 .with_label(tok.span, "inside this string")
+                 .with_help("Valid escapes are \\n \\t \\r \\0 \\\" \\' \\\\ "
+                            "\\{ \\} and \\u{...}."));
+        seg.literal_text = run.literal_text;
+        node->has_error = true;
+      }
+      node->segments.push_back(std::move(seg));
+      continue;
+    }
+
+    auto seg = ast::interp_segment{};
+    seg.is_literal = false;
+
+    const auto expr_text =
+        content.substr(run.expr_start, run.expr_end - run.expr_start);
+    seg.source_text = std::string(expr_text);
+    while (!seg.source_text.empty() && (seg.source_text.front() == ' ' ||
+                                        seg.source_text.front() == '\t')) {
+      seg.source_text.erase(seg.source_text.begin());
+    }
+    while (!seg.source_text.empty() &&
+           (seg.source_text.back() == ' ' || seg.source_text.back() == '\t')) {
+      seg.source_text.pop_back();
+    }
+
+    seg.value = parse_sub_expr(
+        expr_text, content_base + static_cast<byte_offset>(run.expr_start));
+    if (!seg.value) {
+      seg.value =
+          make_error_expr(tok.span, "expected an expression inside `{...}`");
+      node->has_error = true;
+    }
+
+    seg.self_doc = run.self_doc;
+    seg.has_spec = run.has_spec;
+    if (run.has_spec) {
+      const auto spec_text =
+          content.substr(run.spec_start, run.spec_end - run.spec_start);
+      const auto spec_span = source_span{
+          .start = content_base + static_cast<byte_offset>(run.spec_start),
+          .end = content_base + static_cast<byte_offset>(run.spec_end)};
+      seg.spec = parse_format_spec_text(
+          spec_text, content_base + static_cast<byte_offset>(run.spec_start),
+          spec_span);
+    }
+
+    node->segments.push_back(std::move(seg));
+  }
+
+  return node;
 }
 
 auto parser::parse_ident_or_path_expr() -> ast::ptr<ast::expr> {

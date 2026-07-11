@@ -80,6 +80,7 @@ cc_binary(
     data = [
         "//src/llvm_codegen:aot_runtime",
         "//src/runtime",
+        "//src/utf8",
     ],
     tags = ["no-sandbox"],
     deps = ["//src/driver:driver"],
@@ -96,6 +97,7 @@ cc_test(
         "//src/parser:parser",
         "//src/runtime:runtime",
         "//src/semantic:semantic",
+        "//src/utf8",
     ],
     deps = [
         ":module_metadata_cc_proto",

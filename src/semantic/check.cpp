@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "src/intrinsics.h"
@@ -735,6 +736,7 @@ public:
   /// caller, once `run` has finished. Moves both out of the checker, so call
   /// this at most once, after `run` returns.
   auto take_checked_types() -> checked_types {
+    const auto fmt_types = resolve_fmt_runtime_types();
     return checked_types{
         .types = std::move(types_),
         .node_types = std::move(node_types_),
@@ -742,9 +744,58 @@ public:
         .struct_literal_field_types = std::move(struct_literal_field_types_),
         .call_argument_mappings = std::move(call_argument_mappings_),
         .resolved_callees = std::move(resolved_callees_),
+        .interp_dispatches = std::move(interp_dispatches_),
+        .fmt_types = fmt_types,
         .synthesized_decls = std::move(synthesized_decls_),
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_)};
   }
+
+  /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
+  /// `sign_mode`, and the `box_*` scalar wrappers) into `type_id`s for
+  /// `hir::lower` — see `fmt_runtime_types`'s doc comment for why this can't
+  /// just be a lookup lowering does itself. A no-op (all-zero) result if
+  /// `std.fmt` isn't part of this session at all.
+  auto resolve_fmt_runtime_types() -> fmt_runtime_types {
+    auto result = fmt_runtime_types{};
+    const auto *fmt_module = index_.find_module("std.fmt");
+    if (fmt_module == nullptr) {
+      return result;
+    }
+    const auto resolve = [&](std::string_view name) -> type_id {
+      const auto it = fmt_module->types.find(std::string(name));
+      if (it == fmt_module->types.end() || it->second.decl == nullptr) {
+        return 0;
+      }
+      return types_.user_type(*it->second.decl, "std.fmt", {});
+    };
+    result.format_spec = resolve("format_spec");
+    result.align_mode = resolve("align_mode");
+    result.sign_mode = resolve("sign_mode");
+    result.box_u64 = resolve("box_u64");
+    result.box_u32 = resolve("box_u32");
+    result.box_u8 = resolve("box_u8");
+    result.box_usize = resolve("box_usize");
+    result.box_bool = resolve("box_bool");
+    result.box_f64 = resolve("box_f64");
+    result.str_type = types_.builtin("str");
+    result.int64_type = types_.builtin("int64");
+    result.uint64_type = types_.builtin("uint64");
+    result.uint32_type = types_.builtin("uint32");
+    result.uint8_type = types_.builtin("uint8");
+    result.float64_type = types_.builtin("float64");
+    if (result.align_mode != 0) {
+      result.option_align_mode =
+          types_.builtin_generic("option", {result.align_mode});
+    }
+    result.option_usize = types_.builtin_generic("option", {usize_type()});
+    return result;
+  }
+
+  /// The interned id for the builtin `usize` type — a thin wrapper so
+  /// `resolve_fmt_runtime_types` reads the same way regardless of whether
+  /// `usize` happens to already be interned (`type_table::builtin` interns
+  /// lazily either way, so this is just a readable spelling).
+  auto usize_type() -> type_id { return types_.builtin("usize"); }
 
 private:
   // --- session state ----------------------------------------------------
@@ -789,6 +840,11 @@ private:
   /// Every module-qualified or type-qualified call resolved by
   /// `infer_qualified_call`. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees_;
+  /// Every interpolation segment's resolved rendering dispatch — see
+  /// `interp_dispatch`'s doc comment in types.h. Populated by
+  /// `check_interpolated_string`. Handed to the caller via
+  /// `take_checked_types`.
+  std::unordered_map<const ast::expr *, interp_dispatch> interp_dispatches_;
   /// Owns every trait-default method clone `build_method_table` synthesizes
   /// (see `synthesized_method` in types.h) — lifetime must outlive
   /// `checked_types`, so both are moved out together in
@@ -3184,6 +3240,9 @@ private:
     if (name == "show" && has("show")) {
       return types_.builtin("str");
     }
+    if (name == "debug" && has("debug")) {
+      return types_.builtin("str");
+    }
     if (name == "hash" && has("hash")) {
       return types_.builtin("uint64");
     }
@@ -3972,7 +4031,8 @@ private:
         types_.entry(key).kind == type_kind::builtin_generic_kind &&
         types_.entry(key).name == "range";
 
-    const auto key_span = index.index != nullptr ? index.index->span : index.span;
+    const auto key_span =
+        index.index != nullptr ? index.index->span : index.span;
     const auto require_integer_key = [&] -> void {
       if (!key_is_range && !types_.is_unknown(key) && !types_.is_integer(key)) {
         error(key_span,
@@ -4656,6 +4716,9 @@ private:
       return group.inner != nullptr ? infer_expr(*group.inner, expected)
                                     : k_unknown_type;
     }
+    case ast::node_kind::interpolated_string_expr:
+      return check_interpolated_string(
+          dynamic_cast<const ast::interpolated_string_expr &>(expr));
     case ast::node_kind::where_expr: {
       const auto &where = dynamic_cast<const ast::where_expr &>(expr);
       push_scope();
@@ -4676,6 +4739,224 @@ private:
     default:
       return k_unknown_type;
     }
+  }
+
+  /// Types an interpolated string literal (`"{expr :spec}"`,
+  /// `spec/string-formatting-design.md`): infers each embedded expression's
+  /// type, resolves the format spec's type char to a required capability
+  /// (a builtin primitive or a trait), checks the `.precision`-on-integer-
+  /// style and dynamic-width/precision-must-be-`usize` rules, and records
+  /// how `hir::lower` should render each segment in `interp_dispatches_`.
+  /// The whole node always types as `str`.
+  auto check_interpolated_string(const ast::interpolated_string_expr &node)
+      -> type_id {
+    const auto usize_type = types_.builtin("usize");
+
+    const auto check_dynamic_size =
+        [&](const std::variant<std::monostate, size_t, ast::ptr<ast::expr>>
+                &slot) -> void {
+      const auto *dynamic_expr = std::get_if<ast::ptr<ast::expr>>(&slot);
+      if (dynamic_expr == nullptr || *dynamic_expr == nullptr) {
+        return;
+      }
+      const auto found = infer_expr(**dynamic_expr, usize_type);
+      if (!types_.is_unknown(found) && !types_.compatible(usize_type, found)) {
+        error((*dynamic_expr)->span,
+              std::format("format width must be `usize`, found `{}`",
+                          types_.display(found)),
+              "expected usize here");
+      }
+    };
+
+    for (const auto &seg : node.segments) {
+      if (seg.is_literal || seg.value == nullptr) {
+        continue;
+      }
+      const auto value_type =
+          strip_refs(infer_expr(*seg.value, k_unknown_type));
+
+      if (seg.has_spec) {
+        check_dynamic_size(seg.spec.width);
+        check_dynamic_size(seg.spec.precision);
+      }
+
+      if (types_.is_unknown(value_type)) {
+        continue;
+      }
+
+      const char type_char = (seg.has_spec && seg.spec.type_char.has_value())
+                                 ? *seg.spec.type_char
+                                 : '\0';
+
+      const bool has_precision =
+          seg.has_spec &&
+          !std::holds_alternative<std::monostate>(seg.spec.precision);
+      const bool is_integer_style = type_char == 'd' || type_char == 'x' ||
+                                    type_char == 'X' || type_char == 'o' ||
+                                    type_char == 'b';
+      if (has_precision && is_integer_style) {
+        error_with_help(
+            seg.spec.span,
+            std::format("`.precision` is not allowed with `{}`", type_char),
+            "precision is only meaningful for `s`, `?`, `f`, `e`/`E`, `g`/`G`",
+            "for integer styles, use width and zero-padding instead, e.g. "
+            "\"{value :04x}\"");
+      }
+
+      const auto &value_entry = types_.entry(value_type);
+      const bool is_builtin_int = types_.is_integer(value_type);
+      const bool is_builtin_float = types_.is_float(value_type);
+      const bool is_builtin_str = value_entry.kind == type_kind::builtin_kind &&
+                                  value_entry.name == "str";
+      const bool is_builtin_bool = types_.is_boolean(value_type);
+      const bool is_builtin_char =
+          value_entry.kind == type_kind::builtin_kind &&
+          value_entry.name == "char";
+      const bool is_any_builtin = is_builtin_int || is_builtin_float ||
+                                  is_builtin_str || is_builtin_bool ||
+                                  is_builtin_char;
+
+      auto dispatch = interp_dispatch{};
+      dispatch.type_char = type_char;
+      dispatch.value_type = value_type;
+
+      const auto try_trait_dispatch =
+          [&](std::string_view trait_name,
+              interp_dispatch::kind_t builtin_kind_fallback,
+              bool builtin_allowed) -> bool {
+        if (builtin_allowed) {
+          dispatch.kind = builtin_kind_fallback;
+          return true;
+        }
+        if (!type_has_trait(value_entry, trait_name)) {
+          return false;
+        }
+        dispatch.kind = interp_dispatch::kind_t::trait_method;
+        dispatch.impl_target_type = value_entry.name;
+        if (const auto *method = find_method(value_entry, trait_name);
+            method != nullptr) {
+          dispatch.decl = method->decl;
+          dispatch.owner_module = method->owner->module_name;
+        }
+        return true;
+      };
+
+      // What `value_type` actually supports — used only for the diagnostic
+      // below when the requested style isn't one of them, so the message
+      // never has to guess: builtins get a fixed description per category,
+      // a user type gets a list of the capability traits it really
+      // implements (empty if none, meaning only `impl show for T` etc. can
+      // fix this).
+      auto describe_supported = [&]() -> std::string {
+        if (is_builtin_int) {
+          return "the default/`s` style (`show`), `?` (`debug`), `d`, "
+                 "`x`/`X`, `o`, `b`, and `c`";
+        }
+        if (is_builtin_float) {
+          return "the default/`s` style (`show`), `?` (`debug`), `e`/`E`, "
+                 "`f`, and `g`/`G`";
+        }
+        if (is_builtin_char) {
+          return "the default/`s` style (`show`), `?` (`debug`), and `c`";
+        }
+        if (is_builtin_str || is_builtin_bool) {
+          return "the default/`s` style (`show`) and `?` (`debug`)";
+        }
+        auto styles = std::vector<std::string>{};
+        for (const auto &[trait_name, label] :
+             {std::pair{"show", "the default/`s` style (`show`)"},
+              std::pair{"debug", "`?` (`debug`)"},
+              std::pair{"hex", "`x`/`X` (`hex`)"},
+              std::pair{"octal", "`o` (`octal`)"},
+              std::pair{"binary", "`b` (`binary`)"}}) {
+          if (type_has_trait(value_entry, trait_name)) {
+            styles.emplace_back(label);
+          }
+        }
+        if (styles.empty()) {
+          return "no format styles yet";
+        }
+        auto out = std::string{};
+        for (size_t i = 0; i < styles.size(); ++i) {
+          if (i > 0) {
+            out += ", ";
+          }
+          out += styles[i];
+        }
+        return out;
+      };
+
+      auto ok = false;
+      std::string trait_hint;
+      switch (type_char) {
+      case '\0':
+      case 's':
+        ok = try_trait_dispatch("show", interp_dispatch::kind_t::builtin_show,
+                                is_any_builtin);
+        trait_hint = "show";
+        break;
+      case '?':
+        ok = try_trait_dispatch("debug", interp_dispatch::kind_t::builtin_debug,
+                                is_any_builtin);
+        trait_hint = "debug";
+        break;
+      case 'x':
+      case 'X':
+        ok = try_trait_dispatch("hex", interp_dispatch::kind_t::builtin_radix,
+                                is_builtin_int);
+        trait_hint = "hex";
+        break;
+      case 'o':
+        ok = try_trait_dispatch("octal", interp_dispatch::kind_t::builtin_radix,
+                                is_builtin_int);
+        trait_hint = "octal";
+        break;
+      case 'b':
+        ok = try_trait_dispatch(
+            "binary", interp_dispatch::kind_t::builtin_radix, is_builtin_int);
+        trait_hint = "binary";
+        break;
+      case 'd':
+        ok = is_builtin_int;
+        dispatch.kind = interp_dispatch::kind_t::builtin_radix;
+        break;
+      case 'e':
+      case 'E':
+      case 'f':
+      case 'g':
+      case 'G':
+        ok = is_builtin_float;
+        dispatch.kind = interp_dispatch::kind_t::builtin_float;
+        break;
+      case 'c':
+        ok = is_builtin_int;
+        dispatch.kind = interp_dispatch::kind_t::builtin_char;
+        break;
+      default:
+        break;
+      }
+
+      if (!ok) {
+        error_with_help(
+            seg.value->span,
+            std::format("`{}` does not support {} formatting",
+                        types_.display(value_type),
+                        type_char == '\0' ? "the requested"
+                                          : std::string(1, type_char)),
+            std::format("`{}` does not implement a required trait",
+                        types_.display(value_type)),
+            std::format("`{}` supports {} — implement `{} for {}` yourself "
+                        "if you want this style to mean something specific",
+                        types_.display(value_type), describe_supported(),
+                        trait_hint.empty() ? "show" : trait_hint,
+                        types_.display(value_type)));
+        continue;
+      }
+
+      interp_dispatches_[seg.value.get()] = dispatch;
+    }
+
+    return types_.builtin("str");
   }
 
   /// Types an array literal, either the explicit-list form `[a, b, c]` or
@@ -5845,13 +6126,14 @@ private:
 
     for (const auto &derived : decl.deriving) {
       if (derived != "eq" && derived != "ord" && derived != "show" &&
-          derived != "hash") {
+          derived != "hash" && derived != "debug") {
         error_with_help(
             decl.span,
             std::format("cannot derive `{}` for `{}`", derived, decl.name),
             "not a derivable trait",
-            "The derivable traits are `eq`, `ord`, `show`, and `hash`; "
-            "implement other traits with an explicit `impl` block.");
+            "The derivable traits are `eq`, `ord`, `show`, `hash`, and "
+            "`debug`; implement other traits with an explicit `impl` "
+            "block.");
       }
     }
 

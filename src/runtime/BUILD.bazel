@@ -10,11 +10,13 @@ cc_library(
     name = "runtime",
     srcs = [
         "arena.cpp",
+        "fmt.cpp",
         "io.cpp",
         "layout.cpp",
     ],
     hdrs = [
         "arena.h",
+        "fmt.h",
         "io.h",
         "layout.h",
     ],
@@ -22,6 +24,7 @@ cc_library(
     deps = [
         "//src/parser:parser",
         "//src/semantic:semantic",
+        "//src/utf8",
     ],
     visibility = ["//visibility:public"],
 )

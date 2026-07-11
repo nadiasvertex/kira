@@ -27,6 +27,7 @@ cc_library(
         ":bytecode",
         "//src:intrinsics",
         "//src/runtime",
+        "//src/utf8",
     ],
     visibility = ["//visibility:public"],
 )

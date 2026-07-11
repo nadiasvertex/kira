@@ -1,9 +1,12 @@
 #include "src/bytecode/vm.h"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cerrno>
+#include <charconv>
 #include <cstdint>
+#include <cstring>
 #include <fcntl.h>
 #include <span>
 #include <string>
@@ -14,6 +17,7 @@
 #include "src/intrinsics.h"
 #include "src/runtime/arena.h"
 #include "src/runtime/layout.h"
+#include "src/utf8/utf8.h"
 
 namespace kira::bytecode {
 
@@ -881,13 +885,198 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   return make_result_ok(slot_value{});
 }
 
+// ---------------------------------------------------------------------------
+// String-formatting intrinsics (`spec/string-formatting-design.md`). These
+// back `std.fmt`'s `pad_str`/`pad_integral` and the builtin-only numeric
+// format styles. Every scalar argument/return is boxed in a single-field
+// struct (see `src/std/fmt.kira`'s `box_*` types) so it stays
+// heap-representable, matching this file's existing struct-is-a-flat-slot-
+// block convention rather than special-casing scalar intrinsic arguments.
+// ---------------------------------------------------------------------------
+
+[[nodiscard]] auto make_runtime_str(std::string_view text) -> slot_value {
+  auto *bytes = kira::runtime::global_arena().allocate(text.size());
+  if (!text.empty()) {
+    std::memcpy(bytes, text.data(), text.size());
+  }
+  const std::array<slot_value, 2> fields = {
+      slot_value{static_cast<uint64_t>(text.size())}, ptr_to_slot(bytes)};
+  return alloc_struct(fields);
+}
+
+[[nodiscard]] auto make_box(slot_value v) -> slot_value {
+  return alloc_struct(std::span<const slot_value>(&v, 1));
+}
+
+[[nodiscard]] auto unbox(slot_value boxed) -> slot_value {
+  return slots_of(boxed)[0];
+}
+
+[[nodiscard]] auto view_of(slot_value str_header) -> std::string_view {
+  const auto bytes = bytes_of(str_header);
+  return {bytes.data(), bytes.size()};
+}
+
+auto intrinsic_rt_str_concat(std::span<const slot_value> args) -> slot_value {
+  auto out = std::string(view_of(args[0]));
+  out += view_of(args[1]);
+  return make_runtime_str(out);
+}
+
+auto intrinsic_rt_str_len_scalars(std::span<const slot_value> args)
+    -> slot_value {
+  const auto view = view_of(args[0]);
+  size_t count = 0;
+  size_t pos = 0;
+  while (pos < view.size()) {
+    if (!decode_utf8_scalar(view, pos).has_value()) {
+      break;
+    }
+    ++count;
+  }
+  return make_box(slot_value{static_cast<uint64_t>(count)});
+}
+
+auto intrinsic_rt_str_repeat_char(std::span<const slot_value> args)
+    -> slot_value {
+  const auto codepoint = static_cast<uint32_t>(unbox(args[0]).u);
+  const auto n = unbox(args[1]).u;
+  std::string one;
+  encode_utf8_scalar(codepoint, one);
+  std::string out;
+  out.reserve(one.size() * static_cast<size_t>(n));
+  for (uint64_t i = 0; i < n; ++i) {
+    out += one;
+  }
+  return make_runtime_str(out);
+}
+
+auto intrinsic_rt_str_truncate_scalars(std::span<const slot_value> args)
+    -> slot_value {
+  const auto view = view_of(args[0]);
+  const auto n = unbox(args[1]).u;
+  size_t pos = 0;
+  uint64_t count = 0;
+  while (count < n && pos < view.size()) {
+    if (!decode_utf8_scalar(view, pos).has_value()) {
+      break;
+    }
+    ++count;
+  }
+  return make_runtime_str(view.substr(0, pos));
+}
+
+auto intrinsic_rt_fmt_radix_digits(std::span<const slot_value> args)
+    -> slot_value {
+  const auto value = unbox(args[0]).u;
+  const auto radix = static_cast<uint64_t>(unbox(args[1]).u);
+  const bool uppercase = unbox(args[2]).u != 0;
+  if (value == 0) {
+    return make_runtime_str("0");
+  }
+  static constexpr std::string_view lower_digits = "0123456789abcdef";
+  static constexpr std::string_view upper_digits = "0123456789ABCDEF";
+  const auto &digits = uppercase ? upper_digits : lower_digits;
+  std::string out;
+  uint64_t v = value;
+  while (v > 0) {
+    out.push_back(digits[v % radix]);
+    v /= radix;
+  }
+  std::ranges::reverse(out);
+  return make_runtime_str(out);
+}
+
+/// Rewrites `std::to_chars`' scientific-notation exponent (`e+03`/`e-03`)
+/// into the design doc's leaner form (`e3`/`e-3`): no `+` sign, no leading
+/// zero padding.
+[[nodiscard]] auto tidy_scientific_exponent(std::string_view formatted)
+    -> std::string {
+  const auto e_pos = formatted.find('e');
+  if (e_pos == std::string_view::npos) {
+    return std::string(formatted);
+  }
+  auto out = std::string(formatted.substr(0, e_pos + 1));
+  auto exp = formatted.substr(e_pos + 1);
+  bool negative = false;
+  if (!exp.empty() && (exp.front() == '+' || exp.front() == '-')) {
+    negative = exp.front() == '-';
+    exp.remove_prefix(1);
+  }
+  while (exp.size() > 1 && exp.front() == '0') {
+    exp.remove_prefix(1);
+  }
+  if (negative) {
+    out.push_back('-');
+  }
+  out += exp;
+  return out;
+}
+
+auto intrinsic_rt_fmt_f64_fixed(std::span<const slot_value> args)
+    -> slot_value {
+  const auto value = unbox(args[0]).f;
+  const auto precision = static_cast<int>(unbox(args[1]).u);
+  std::array<char, 512> buf{};
+  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
+                                    std::chars_format::fixed, precision);
+  if (result.ec != std::errc{}) {
+    return make_runtime_str("0");
+  }
+  return make_runtime_str(std::string_view(buf.data(), result.ptr));
+}
+
+auto intrinsic_rt_fmt_f64_sci(std::span<const slot_value> args) -> slot_value {
+  const auto value = unbox(args[0]).f;
+  const auto precision = static_cast<int>(unbox(args[1]).u);
+  const bool uppercase = unbox(args[2]).u != 0;
+  std::array<char, 512> buf{};
+  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
+                                    std::chars_format::scientific, precision);
+  if (result.ec != std::errc{}) {
+    return make_runtime_str("0");
+  }
+  auto tidy =
+      tidy_scientific_exponent(std::string_view(buf.data(), result.ptr));
+  if (uppercase) {
+    for (auto &c : tidy) {
+      if (c == 'e') {
+        c = 'E';
+      }
+    }
+  }
+  return make_runtime_str(tidy);
+}
+
+auto intrinsic_rt_fmt_f64_general(std::span<const slot_value> args)
+    -> slot_value {
+  const auto value = unbox(args[0]).f;
+  const auto precision = static_cast<int>(unbox(args[1]).u);
+  std::array<char, 512> buf{};
+  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
+                                    std::chars_format::general, precision);
+  if (result.ec != std::errc{}) {
+    return make_runtime_str("0");
+  }
+  return make_runtime_str(
+      tidy_scientific_exponent(std::string_view(buf.data(), result.ptr)));
+}
+
+auto intrinsic_rt_fmt_char_from_codepoint(std::span<const slot_value> args)
+    -> slot_value {
+  const auto codepoint = static_cast<uint32_t>(unbox(args[0]).u);
+  std::string out;
+  encode_utf8_scalar(codepoint, out);
+  return make_runtime_str(out);
+}
+
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 
 /// Indexed by `op_call_intrinsic`'s `intrinsic_id` operand — must stay in
 /// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 8> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, 17> k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
@@ -896,6 +1085,15 @@ constexpr std::array<intrinsic_fn, 8> k_intrinsics = {{
     intrinsic_rt_read,
     intrinsic_rt_write,
     intrinsic_rt_flush,
+    intrinsic_rt_str_concat,
+    intrinsic_rt_str_len_scalars,
+    intrinsic_rt_str_repeat_char,
+    intrinsic_rt_str_truncate_scalars,
+    intrinsic_rt_fmt_radix_digits,
+    intrinsic_rt_fmt_f64_fixed,
+    intrinsic_rt_fmt_f64_sci,
+    intrinsic_rt_fmt_f64_general,
+    intrinsic_rt_fmt_char_from_codepoint,
 }};
 
 static_assert(k_intrinsics.size() == kira::known_intrinsic_names.size(),

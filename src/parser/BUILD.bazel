@@ -3,12 +3,14 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 cc_library(
     name = "parser",
     srcs = [
+        "interp_string.cpp",
         "parser.cpp",
         "text_escape.cpp",
     ],
     hdrs = [
         "ast.h",
         "diagnostic.h",
+        "interp_string.h",
         "lexer.h",
         "parser.h",
         "source_location.h",

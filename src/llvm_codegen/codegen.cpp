@@ -33,6 +33,7 @@
 #include "src/hir/ids.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast.h"
+#include "src/parser/text_escape.h"
 #include "src/parser/token.h"
 #include "src/runtime/layout.h"
 
@@ -201,108 +202,13 @@ using semantic::type_table;
   }
 }
 
-/// Appends `scalar`'s UTF-8 encoding to `out` — duplicated from
-/// `bytecode_compiler/compile.cpp`'s own `encode_utf8_scalar`, same
-/// duplication precedent as `decode_char_literal` above.
-auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
-  if (scalar < 0x80) {
-    out.push_back(static_cast<char>(scalar));
-  } else if (scalar < 0x800) {
-    out.push_back(static_cast<char>(0xC0U | (scalar >> 6)));
-    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
-  } else if (scalar < 0x10000) {
-    out.push_back(static_cast<char>(0xE0U | (scalar >> 12)));
-    out.push_back(static_cast<char>(0x80U | ((scalar >> 6) & 0x3FU)));
-    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
-  } else {
-    out.push_back(static_cast<char>(0xF0U | (scalar >> 18)));
-    out.push_back(static_cast<char>(0x80U | ((scalar >> 12) & 0x3FU)));
-    out.push_back(static_cast<char>(0x80U | ((scalar >> 6) & 0x3FU)));
-    out.push_back(static_cast<char>(0x80U | (scalar & 0x3FU)));
-  }
-}
-
-/// Decodes a `string_lit` token's raw text into UTF-8 byte content —
-/// duplicated from `bytecode_compiler/compile.cpp`'s `decode_string_literal`
-/// (see its doc comment for why interpolation isn't handled here either).
-[[nodiscard]] auto decode_string_literal(std::string_view text)
-    -> std::optional<std::string> {
-  if (text.size() < 2 || text.front() != '"' || text.back() != '"') {
-    return std::nullopt;
-  }
-  const auto inner = text.substr(1, text.size() - 2);
-  auto out = std::string{};
-  out.reserve(inner.size());
-  size_t pos = 0;
-  while (pos < inner.size()) {
-    if (inner[pos] != '\\') {
-      out.push_back(inner[pos]);
-      ++pos;
-      continue;
-    }
-    if (pos + 1 >= inner.size()) {
-      return std::nullopt;
-    }
-    switch (inner[pos + 1]) {
-    case 'n':
-      out.push_back('\n');
-      pos += 2;
-      break;
-    case 't':
-      out.push_back('\t');
-      pos += 2;
-      break;
-    case 'r':
-      out.push_back('\r');
-      pos += 2;
-      break;
-    case '"':
-      out.push_back('"');
-      pos += 2;
-      break;
-    case '\'':
-      out.push_back('\'');
-      pos += 2;
-      break;
-    case '\\':
-      out.push_back('\\');
-      pos += 2;
-      break;
-    case '{':
-      out.push_back('{');
-      pos += 2;
-      break;
-    case '}':
-      out.push_back('}');
-      pos += 2;
-      break;
-    case 'u': {
-      if (pos + 2 >= inner.size() || inner[pos + 2] != '{') {
-        return std::nullopt;
-      }
-      const auto close = inner.find('}', pos + 3);
-      if (close == std::string_view::npos) {
-        return std::nullopt;
-      }
-      const auto hex = inner.substr(pos + 3, close - (pos + 3));
-      auto value = uint32_t{0};
-      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-      const char *hex_end = hex.data() + hex.size();
-      const auto result = std::from_chars(hex.data(), hex_end, value, 16);
-      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-      if (result.ec != std::errc{} || result.ptr != hex_end) {
-        return std::nullopt;
-      }
-      encode_utf8_scalar(value, out);
-      pos = close + 1;
-      break;
-    }
-    default:
-      return std::nullopt;
-    }
-  }
-  return out;
-}
+// `decode_string_literal` used to be duplicated here (same reasoning as
+// `decode_char_literal`/`encode_utf8_scalar` above) — now reuses the shared
+// `kira::decode_string_literal` (`src/parser/text_escape.h`), the same way
+// `bytecode_compiler/compile.cpp` already does, so the doubled-brace
+// (`{{`/`}}`) literal-escape handling `spec/string-formatting-design.md`
+// requires only has to exist in one place.
+using kira::decode_string_literal;
 
 /// Whether `id` is one of the heap-backed representations
 /// `src/runtime/layout.h` describes (`str`, `list`/`option`/`result` and
@@ -417,7 +323,7 @@ public:
       const std::unordered_map<std::string, llvm::Function *> &functions,
       llvm::Function *panic_fn, llvm::Function *alloc_fn,
       llvm::Function *list_reserve_slot_fn,
-      const std::array<llvm::Function *, 8> &intrinsic_fns,
+      const std::array<llvm::Function *, 17> &intrinsic_fns,
       std::string entry_module_name = {}, std::string current_module_name = {})
       : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
         alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
@@ -1645,8 +1551,8 @@ private:
       // `check.cpp` requires an explicit-elements array literal's element
       // count to match its declared size exactly, so `array_size` is the
       // right count either way — fill or explicit-elements form.
-      return compile_byte_array_init(init,
-                                     types_.entry(init.type).array_size.value());
+      return compile_byte_array_init(
+          init, types_.entry(init.type).array_size.value());
     }
     if (init.fill_value == nullptr) {
       return compile_slots_init(init.elements);
@@ -2863,7 +2769,7 @@ private:
   llvm::Function *panic_fn_;
   llvm::Function *alloc_fn_;
   llvm::Function *list_reserve_slot_fn_;
-  std::array<llvm::Function *, 8> intrinsic_fns_;
+  std::array<llvm::Function *, 17> intrinsic_fns_;
   std::string entry_module_name_;
   std::string current_module_name_;
   llvm::IRBuilder<> builder_;
@@ -2908,15 +2814,16 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
                               /*isVarArg=*/false),
       llvm::Function::ExternalLinkage, kListReserveSlotSymbolName, llvm_module);
 
-  // `intrinsic def` declarations (src/intrinsics.h): eight fixed native
-  // entry points, each taking/returning opaque heap pointers (see
-  // src/runtime/io.h's doc comment for the exact layout each argument's
-  // Kira type maps to). Declared once here, the same way the three runtime
-  // externs just above are, and resolved the same way (JIT: process-symbol
-  // lookup against `//src/runtime:runtime`, which now also builds
-  // `io.cpp`; AOT: ordinary static linking against that same archive).
+  // `intrinsic def` declarations (src/intrinsics.h): fixed native entry
+  // points, each taking/returning opaque heap pointers (see
+  // src/runtime/io.h's and src/runtime/fmt.h's doc comments for the exact
+  // layout each argument's Kira type maps to). Declared once here, the same
+  // way the three runtime externs just above are, and resolved the same way
+  // (JIT: process-symbol lookup against `//src/runtime:runtime`, which now
+  // also builds `io.cpp`/`fmt.cpp`; AOT: ordinary static linking against
+  // that same archive).
   auto *ptr_ty = llvm::PointerType::get(ctx, 0);
-  auto intrinsic_fns = std::array<llvm::Function *, 8>{};
+  auto intrinsic_fns = std::array<llvm::Function *, 17>{};
   for (size_t i = 0; i < kira::known_intrinsic_names.size(); ++i) {
     auto param_types =
         std::vector<llvm::Type *>(kira::known_intrinsic_arities[i], ptr_ty);

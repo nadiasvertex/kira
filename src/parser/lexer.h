@@ -46,8 +46,20 @@ public:
   /// @param source Borrowed source text to tokenize.
   /// @param file_id Source identifier attached to emitted diagnostics.
   /// @param diag Diagnostic sink used for lexing errors.
-  lexer(std::string_view source, file_id_type file_id, diagnostic_bag &diag)
-      : source_(source), file_id_(file_id), diag_(diag), indent_stack_{0} {}
+  /// @param base_offset Absolute file offset `source` begins at. Non-zero
+  /// when re-lexing a substring extracted from a larger buffer (e.g. an
+  /// embedded `{expr}` inside string interpolation,
+  /// `spec/string-formatting-design.md`) so emitted token spans line up with
+  /// the original file for diagnostics, rather than restarting at 0. Only
+  /// `span_from`-derived spans (i.e. ordinary token spans) account for this;
+  /// the handful of diagnostic labels built directly from `pos_` deep inside
+  /// string/char-literal scanning do not, since a sub-lexed embedded
+  /// expression is never itself a raw string/char literal scan target at the
+  /// top level.
+  lexer(std::string_view source, file_id_type file_id, diagnostic_bag &diag,
+        byte_offset base_offset = 0)
+      : source_(source), file_id_(file_id), diag_(diag),
+        base_offset_(base_offset), indent_stack_{0} {}
 
   /// @brief Tokenizes the entire file into an eager token vector.
   ///
@@ -149,7 +161,8 @@ private:
   /// @param start Starting byte offset for the span.
   [[nodiscard]] auto span_from(byte_offset start) const noexcept
       -> source_span {
-    return source_span{.start = start, .end = static_cast<byte_offset>(pos_)};
+    return source_span{.start = static_cast<byte_offset>(start + base_offset_),
+                       .end = static_cast<byte_offset>(pos_ + base_offset_)};
   }
 
   /// Returns whether `c` is an ASCII alphabetic character.
@@ -1244,8 +1257,9 @@ private:
   file_id_type file_id_;    ///< File id attached to emitted diagnostics.
   diagnostic_bag &diag_;    ///< Shared diagnostic sink for lexing failures.
 
-  size_t pos_{0};             ///< Current byte offset in `source_`.
-  std::vector<token> tokens_; ///< Eager token stream under construction.
+  size_t pos_{0};              ///< Current byte offset in `source_`.
+  std::vector<token> tokens_;  ///< Eager token stream under construction.
+  byte_offset base_offset_{0}; ///< Absolute file offset `source_` begins at.
 
   /// Stack of indentation levels. The bottom is always 0 (column 0).
   /// Each entry is the column number of an INDENT. We push on INDENT

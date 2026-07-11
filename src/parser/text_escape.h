@@ -25,4 +25,13 @@ namespace kira {
 [[nodiscard]] auto decode_string_literal(std::string_view text)
     -> std::optional<std::string>;
 
+/// Decodes escape sequences in a raw, unquoted slice of `string_lit` source
+/// text — the same escape handling `decode_string_literal` applies to a
+/// whole token's inner content, but usable on just one literal-text segment
+/// of a string split by interpolation
+/// (`spec/string-formatting-design.md`), since a `{...}` region there is
+/// never itself passed through this function.
+[[nodiscard]] auto decode_string_body(std::string_view unquoted_text)
+    -> std::optional<std::string>;
+
 } // namespace kira

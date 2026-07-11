@@ -68,8 +68,10 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   if (!compiled) {
     return build_outcome{
         .succeeded = false,
-        .message = std::format("failed to compile `{}` to native code: {}",
-                               function_name, compiled.error().message)};
+        .message = std::format("failed to compile `{}` to native code (byte "
+                               "offset {}): {}",
+                               function_name, compiled.error().span.start,
+                               compiled.error().message)};
   }
 
   const auto object_path =
@@ -137,12 +139,27 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
                    "//src:kira` or from `bazel-bin/src/kira` inside the "
                    "workspace that built it"};
   }
+  // `src/runtime:fmt.cpp` (string-interpolation formatting intrinsics,
+  // `spec/string-formatting-design.md`) calls `//src/utf8`'s scalar encode/
+  // decode helpers directly, same "hand-rolled link doesn't follow Bazel
+  // `deps`" reasoning as `semantic_archive`/`parser_archive` above.
+  const auto utf8_archive =
+      find_bazel_archive(program_name, "src/utf8", "utf8");
+  if (!utf8_archive) {
+    return build_outcome{
+        .succeeded = false,
+        .message = "could not locate Kira's UTF-8 support library "
+                   "(libutf8.a, needed by the heap runtime's string-"
+                   "formatting intrinsics) — run `kira` via `bazelisk run "
+                   "//src:kira` or from `bazel-bin/src/kira` inside the "
+                   "workspace that built it"};
+  }
 
-  const auto link_command =
-      std::format(R"(c++ "{}" "{}" "{}" "{}" "{}" -o "{}")",
-                  object_path.string(), panic_archive->string(),
-                  heap_archive->string(), semantic_archive->string(),
-                  parser_archive->string(), output_path.string());
+  const auto link_command = std::format(
+      R"(c++ "{}" "{}" "{}" "{}" "{}" "{}" -o "{}")", object_path.string(),
+      panic_archive->string(), heap_archive->string(),
+      semantic_archive->string(), parser_archive->string(),
+      utf8_archive->string(), output_path.string());
   const auto link_status = std::system(link_command.c_str());
   auto ec = std::error_code{};
   fs::remove(object_path, ec);

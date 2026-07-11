@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "parser.h"
@@ -910,6 +911,170 @@ auto test_parser_accepts_mut_binding_pattern() -> void {
   expect(count_pattern->is_mut, "expected `let mut count` to mark is_mut");
 }
 
+auto test_parser_splits_string_interpolation() -> void {
+  // Plain strings (even with a doubled `{{`/`}}` escape) stay a single
+  // `literal_expr`, matching the "zero-cost by default" design goal.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "def run():\n"
+                               "  let a = \"hello\"\n"
+                               "  let b = \"{{x}} stays literal\"\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *run_func = expect_node<kira::ast::func_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+        "expected run function declaration");
+    auto *let_a = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+        "expected let a statement");
+    expect_expr<kira::ast::literal_expr>(
+        let_a->initializer.get(), kira::ast::node_kind::literal_expr,
+        "expected plain string literal to stay a literal_expr");
+    auto *let_b = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+        "expected let b statement");
+    auto *lit_b = expect_expr<kira::ast::literal_expr>(
+        let_b->initializer.get(), kira::ast::node_kind::literal_expr,
+        "expected doubled-brace string to stay a literal_expr");
+    expect(lit_b->value.find("{{") != std::string::npos,
+           "expected the doubled braces to remain in the raw token text "
+           "unchanged (un-doubling happens later, when the literal is "
+           "decoded)");
+  }
+
+  // A basic `{expr}` interpolation with no spec.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "def run():\n"
+                               "  let msg = \"Hello, {name}!\"\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *run_func = expect_node<kira::ast::func_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+        "expected run function declaration");
+    auto *let_msg = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+        "expected let msg statement");
+    auto *interp = expect_expr<kira::ast::interpolated_string_expr>(
+        let_msg->initializer.get(),
+        kira::ast::node_kind::interpolated_string_expr,
+        "expected an interpolated_string_expr");
+    expect(interp->segments.size() == 3,
+           "expected literal/expr/literal segments");
+    expect(interp->segments[0].is_literal &&
+               interp->segments[0].literal_text == "Hello, ",
+           "expected the leading literal segment text");
+    expect(!interp->segments[1].is_literal,
+           "expected the middle segment to be an embedded expression");
+    auto *name_ident = expect_expr<kira::ast::ident_expr>(
+        interp->segments[1].value.get(), kira::ast::node_kind::ident_expr,
+        "expected the embedded expression to be a bare identifier");
+    expect(name_ident->name == "name", "expected identifier name `name`");
+    expect(!interp->segments[1].self_doc && !interp->segments[1].has_spec,
+           "expected no self-doc/spec on a plain `{name}`");
+    expect(interp->segments[2].is_literal &&
+               interp->segments[2].literal_text == "!",
+           "expected the trailing literal segment text");
+  }
+
+  // A format spec, a dynamic width, and self-documenting `=`.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "def run():\n"
+                               "  let a = \"{total :.2f}\"\n"
+                               "  let b = \"{val :{width}.{prec}f}\"\n"
+                               "  let c = \"{total=}\"\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *run_func = expect_node<kira::ast::func_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+        "expected run function declaration");
+
+    auto *let_a = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+        "expected let a statement");
+    auto *interp_a = expect_expr<kira::ast::interpolated_string_expr>(
+        let_a->initializer.get(),
+        kira::ast::node_kind::interpolated_string_expr,
+        "expected an interpolated_string_expr for `{total :.2f}`");
+    expect(interp_a->segments.size() == 1, "expected a single segment");
+    expect(interp_a->segments[0].has_spec, "expected a parsed format spec");
+    expect(interp_a->segments[0].spec.type_char == 'f',
+           "expected type char `f`");
+    expect(
+        std::holds_alternative<size_t>(interp_a->segments[0].spec.precision) &&
+            std::get<size_t>(interp_a->segments[0].spec.precision) == 2,
+        "expected literal precision 2");
+
+    auto *let_b = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+        "expected let b statement");
+    auto *interp_b = expect_expr<kira::ast::interpolated_string_expr>(
+        let_b->initializer.get(),
+        kira::ast::node_kind::interpolated_string_expr,
+        "expected an interpolated_string_expr for the dynamic-width case");
+    expect(interp_b->segments.size() == 1, "expected a single segment");
+    expect(std::holds_alternative<kira::ast::ptr<kira::ast::expr>>(
+               interp_b->segments[0].spec.width),
+           "expected a dynamic (sub-expression) width");
+    expect(std::holds_alternative<kira::ast::ptr<kira::ast::expr>>(
+               interp_b->segments[0].spec.precision),
+           "expected a dynamic (sub-expression) precision");
+
+    auto *let_c = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[2].get(), kira::ast::node_kind::let_stmt,
+        "expected let c statement");
+    auto *interp_c = expect_expr<kira::ast::interpolated_string_expr>(
+        let_c->initializer.get(),
+        kira::ast::node_kind::interpolated_string_expr,
+        "expected an interpolated_string_expr for `{total=}`");
+    expect(interp_c->segments.size() == 1, "expected a single segment");
+    expect(interp_c->segments[0].self_doc, "expected self_doc to be set");
+    expect(interp_c->segments[0].source_text == "total",
+           "expected the self-documenting source text to be `total`");
+    expect(!interp_c->segments[0].has_spec,
+           "expected no format spec on `{total=}`");
+  }
+
+  // A named-argument `:` inside a nested call, and a nested struct literal's
+  // own `{...}`, must not be mistaken for the interpolation's own `=`/`:`.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "def run():\n"
+                               "  let a = \"{f(x: 1)}\"\n"
+                               "  let b = \"{point { x: 1, y: 2 } }\"\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *run_func = expect_node<kira::ast::func_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+        "expected run function declaration");
+    auto *let_a = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+        "expected let a statement");
+    auto *interp_a = expect_expr<kira::ast::interpolated_string_expr>(
+        let_a->initializer.get(),
+        kira::ast::node_kind::interpolated_string_expr,
+        "expected an interpolated_string_expr for `{f(x: 1)}`");
+    expect(interp_a->segments.size() == 1, "expected a single segment");
+    expect(!interp_a->segments[0].has_spec,
+           "expected the named-arg `:` to not be mistaken for a format spec");
+    expect_expr<kira::ast::call_expr>(
+        interp_a->segments[0].value.get(), kira::ast::node_kind::call_expr,
+        "expected the embedded expression to be a call");
+
+    auto *let_b = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+        "expected let b statement");
+    auto *interp_b = expect_expr<kira::ast::interpolated_string_expr>(
+        let_b->initializer.get(),
+        kira::ast::node_kind::interpolated_string_expr,
+        "expected an interpolated_string_expr for the struct-literal case");
+    expect(interp_b->segments.size() == 1, "expected a single segment");
+    expect(!interp_b->segments[0].has_spec,
+           "expected the struct literal's own fields to not be mistaken for "
+           "a format spec");
+    expect_expr<kira::ast::struct_expr>(
+        interp_b->segments[0].value.get(), kira::ast::node_kind::struct_expr,
+        "expected the embedded expression to be a struct literal");
+  }
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -918,7 +1083,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 15> tests = {{
+  const std::array<named_test, 16> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -945,6 +1110,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_rejects_intrinsic_def_with_body},
       {.name = "mut_binding_pattern",
        .fn = test_parser_accepts_mut_binding_pattern},
+      {.name = "string_interpolation",
+       .fn = test_parser_splits_string_interpolation},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

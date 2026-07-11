@@ -1,0 +1,192 @@
+module std.fmt
+
+pub type align_mode = @left | @right | @center
+
+pub type sign_mode = @always | @negative_only | @space
+
+pub type format_spec = {
+    fill: char,
+    align: option[align_mode],
+    sign: sign_mode,
+    alternate: bool,
+    zero_pad: bool,
+    width: option[usize],
+    precision: option[usize]
+}
+
+# Single-field wrapper structs so a scalar value stays heap-representable
+# when passed to an `intrinsic def` — every intrinsic argument/return is an
+# opaque heap pointer (`src/runtime/fmt.h`'s doc comment), the same
+# convention `std.io`'s `raw_fd = { value: int64 }` already uses.
+type box_u64 = { v: uint64 }
+type box_u32 = { v: uint32 }
+type box_u8 = { v: uint8 }
+type box_usize = { v: usize }
+type box_bool = { v: bool }
+type box_f64 = { v: float64 }
+
+intrinsic def rt_str_concat(a: str, b: str) -> str
+intrinsic def rt_str_len_scalars(s: str) -> box_usize
+intrinsic def rt_str_repeat_char(c: box_u32, n: box_usize) -> str
+intrinsic def rt_str_truncate_scalars(s: str, n: box_usize) -> str
+intrinsic def rt_fmt_radix_digits(value: box_u64, radix: box_u8, uppercase: box_bool) -> str
+intrinsic def rt_fmt_f64_fixed(value: box_f64, precision: box_usize) -> str
+intrinsic def rt_fmt_f64_sci(value: box_f64, precision: box_usize, uppercase: box_bool) -> str
+intrinsic def rt_fmt_f64_general(value: box_f64, precision: box_usize) -> str
+intrinsic def rt_fmt_char_from_codepoint(cp: box_u32) -> str
+
+def scalar_len(s: str) -> usize:
+    return rt_str_len_scalars(s).v
+
+def repeat_char(c: char, n: usize) -> str:
+    return rt_str_repeat_char(box_u32 { v: c as uint32 }, box_usize { v: n })
+
+def width_or_zero(width: option[usize]) -> usize:
+    match width:
+        @some(w) => w
+        @none => 0
+
+def align_or(align: option[align_mode], default_align: align_mode) -> align_mode:
+    match align:
+        @some(a) => a
+        @none => default_align
+
+def has_align(align: option[align_mode]) -> bool:
+    match align:
+        @some(a) => true
+        @none => false
+
+# Written as statement-style `if`/`return` rather than an `if`/`else`
+# *expression* yielding `str`: the LLVM backend does not yet support a
+# heap-typed (`str`) value flowing out of an `if`-expression branch
+# (`spec/codegen-design.md` increment 6, heap types, hasn't landed for that
+# shape yet) — the bytecode VM tier has no such restriction, but every
+# helper here is written the way that works on both backends.
+def sign_prefix_char(negative: bool, mode: sign_mode) -> str:
+    match mode:
+        @always =>:
+            if negative:
+                return "-"
+            return "+"
+        @space =>:
+            if negative:
+                return "-"
+            return " "
+        @negative_only =>:
+            if negative:
+                return "-"
+            return ""
+
+def alternate_prefix(alternate: bool, prefix: str) -> str:
+    if alternate:
+        return prefix
+    return ""
+
+def bool_text(b: bool) -> str:
+    if b:
+        return "true"
+    return "false"
+
+pub def pad_str(s: str, spec: format_spec) -> str:
+    let truncated = match spec.precision:
+        @some(prec) => rt_str_truncate_scalars(s, box_usize { v: prec })
+        @none => s
+
+    let text_len = scalar_len(truncated)
+    let target_width = width_or_zero(spec.width)
+    if target_width <= text_len:
+        return truncated
+
+    let pad_total = target_width - text_len
+    let align = align_or(spec.align, @left)
+
+    match align:
+        @left => rt_str_concat(truncated, repeat_char(spec.fill, pad_total))
+        @right => rt_str_concat(repeat_char(spec.fill, pad_total), truncated)
+        @center =>:
+            let left_pad = pad_total / 2
+            let right_pad = pad_total - left_pad
+            rt_str_concat(rt_str_concat(repeat_char(spec.fill, left_pad), truncated), repeat_char(spec.fill, right_pad))
+
+pub def pad_integral(negative: bool, prefix: str, digits: str, spec: format_spec) -> str:
+    let sign_char = sign_prefix_char(negative, spec.sign)
+    let full_prefix = alternate_prefix(spec.alternate, prefix)
+    let body = rt_str_concat(rt_str_concat(sign_char, full_prefix), digits)
+    let has_explicit_align = has_align(spec.align)
+
+    if spec.zero_pad and not has_explicit_align:
+        let sign_prefix_len = scalar_len(sign_char) + scalar_len(full_prefix)
+        let digits_len = scalar_len(digits)
+        let target_width = width_or_zero(spec.width)
+        if target_width <= sign_prefix_len + digits_len:
+            return body
+        let zeros = repeat_char('0', target_width - sign_prefix_len - digits_len)
+        return rt_str_concat(rt_str_concat(rt_str_concat(sign_char, full_prefix), zeros), digits)
+
+    let body_spec = format_spec {
+        fill: spec.fill,
+        align: @some(align_or(spec.align, @right)),
+        sign: spec.sign,
+        alternate: spec.alternate,
+        zero_pad: false,
+        width: spec.width,
+        precision: @none
+    }
+    return pad_str(body, body_spec)
+
+# ==========================================================================
+#  Fixed-signature entry points `hir::lower_interpolated_string` calls for
+#  each builtin type/style combination — kept here instead of hand-built in
+#  HIR so lowering never has to construct control flow (bool -> "true"/
+#  "false", sign/magnitude splitting) by hand; it only ever needs to lower
+#  the embedded value, build a `format_spec` literal, and call one of these.
+# ==========================================================================
+
+pub def fmt_show_str(s: str, spec: format_spec) -> str:
+    return pad_str(s, spec)
+
+pub def fmt_debug_str(s: str, spec: format_spec) -> str:
+    return pad_str(rt_str_concat(rt_str_concat("\"", s), "\""), spec)
+
+pub def fmt_show_bool(b: bool, spec: format_spec) -> str:
+    return pad_str(bool_text(b), spec)
+
+pub def fmt_show_char(c: char, spec: format_spec) -> str:
+    return pad_str(rt_fmt_char_from_codepoint(box_u32 { v: c as uint32 }), spec)
+
+pub def fmt_char_codepoint(cp: uint32, spec: format_spec) -> str:
+    return pad_str(rt_fmt_char_from_codepoint(box_u32 { v: cp }), spec)
+
+pub def fmt_show_i64(v: int64, spec: format_spec) -> str:
+    return fmt_radix_i64(v, 10, false, "", spec)
+
+pub def fmt_show_u64(v: uint64, spec: format_spec) -> str:
+    return fmt_radix_u64(v, 10, false, "", spec)
+
+pub def fmt_radix_i64(v: int64, radix: uint8, uppercase: bool, prefix: str, spec: format_spec) -> str:
+    let negative = v < 0
+    let magnitude = if negative: (-v) as uint64 else: v as uint64
+    let digits = rt_fmt_radix_digits(box_u64 { v: magnitude }, box_u8 { v: radix }, box_bool { v: uppercase })
+    return pad_integral(negative, prefix, digits, spec)
+
+pub def fmt_radix_u64(v: uint64, radix: uint8, uppercase: bool, prefix: str, spec: format_spec) -> str:
+    let digits = rt_fmt_radix_digits(box_u64 { v: v }, box_u8 { v: radix }, box_bool { v: uppercase })
+    return pad_integral(false, prefix, digits, spec)
+
+pub def fmt_float_fixed(v: float64, precision: usize, spec: format_spec) -> str:
+    let negative = v < 0.0
+    let magnitude = if negative: -v else: v
+    let digits = rt_fmt_f64_fixed(box_f64 { v: magnitude }, box_usize { v: precision })
+    return pad_integral(negative, "", digits, spec)
+
+pub def fmt_float_sci(v: float64, precision: usize, uppercase: bool, spec: format_spec) -> str:
+    let negative = v < 0.0
+    let magnitude = if negative: -v else: v
+    let digits = rt_fmt_f64_sci(box_f64 { v: magnitude }, box_usize { v: precision }, box_bool { v: uppercase })
+    return pad_integral(negative, "", digits, spec)
+
+pub def fmt_float_general(v: float64, precision: usize, spec: format_spec) -> str:
+    let negative = v < 0.0
+    let magnitude = if negative: -v else: v
+    let digits = rt_fmt_f64_general(box_f64 { v: magnitude }, box_usize { v: precision })
+    return pad_integral(negative, "", digits, spec)

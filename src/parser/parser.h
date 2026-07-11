@@ -680,6 +680,29 @@ private:
 
   /// Parses a literal expression node.
   [[nodiscard]] auto parse_literal_expr() -> ast::ptr<ast::expr>;
+  /// Parses a `string_lit` token, splitting it into an
+  /// `interpolated_string_expr` when it contains `{...}` interpolation, or a
+  /// plain `literal_expr` otherwise (`spec/string-formatting-design.md`).
+  [[nodiscard]] auto parse_string_literal_expr() -> ast::ptr<ast::expr>;
+  /// Parses a byte range of source text (usually extracted from inside a
+  /// string literal's `{...}`) as a standalone expression, by re-lexing it
+  /// with the given absolute file offset so token spans stay correct.
+  ///
+  /// @param text Raw source text to parse (no surrounding braces/quotes).
+  /// @param absolute_offset File offset `text[0]` corresponds to.
+  [[nodiscard]] auto parse_sub_expr(std::string_view text,
+                                    byte_offset absolute_offset)
+      -> ast::ptr<ast::expr>;
+  /// Parses one `format_spec` mini-grammar's text (the part after `:` in
+  /// `{expr :spec}`), including any dynamic `{expr}` width/precision.
+  ///
+  /// @param text Raw format-spec source text.
+  /// @param absolute_offset File offset `text[0]` corresponds to.
+  /// @param whole_span Source span covering the whole spec, for diagnostics.
+  [[nodiscard]] auto parse_format_spec_text(std::string_view text,
+                                            byte_offset absolute_offset,
+                                            source_span whole_span)
+      -> ast::format_spec;
   /// Parses either a plain identifier or a dotted module/path expression.
   [[nodiscard]] auto parse_ident_or_path_expr() -> ast::ptr<ast::expr>;
   /// Parses an `@`-prefixed variant constructor reference: `@name`, later

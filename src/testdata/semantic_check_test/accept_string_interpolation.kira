@@ -1,0 +1,29 @@
+module sample
+
+trait show:
+    def show(self) -> str
+
+trait hex:
+    def hex(self) -> str
+
+type point = { x: int32, y: int32 }
+
+impl show for point:
+    def show(self) -> str: "point"
+
+impl hex for point:
+    def hex(self) -> str: "abc"
+
+def run(width: usize) -> unit:
+    let name = "Alice"
+    let age: int32 = 30
+    let pi = 3.5
+    let p = point { x: 1, y: 2 }
+    println("Hello, {name}!")
+    println("Age: {age :03}")
+    println("Pi: {pi :.2f}")
+    println("Hex: {255 :#x}")
+    println("{age=}")
+    println("{pi :{width}.2f}")
+    println("{p}")
+    println("{p :x}")

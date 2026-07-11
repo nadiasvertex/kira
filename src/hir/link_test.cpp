@@ -164,8 +164,7 @@ auto main() -> int {
     test_discovers_direct_dependency();
     test_discovers_transitive_dependency();
   } catch (const std::exception &ex) {
-    std::cerr << "link_test failed: unhandled exception: " << ex.what()
-              << '\n';
+    std::cerr << "link_test failed: unhandled exception: " << ex.what() << '\n';
     return 1;
   }
   return 0;

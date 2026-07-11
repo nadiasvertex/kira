@@ -69,7 +69,8 @@ auto find_std_dir() -> kira::testing::fs::path {
 }
 
 /// Fixtures for the real auto-injected prelude (`std/traits.kira`,
-/// `std/prelude.kira`, `std/io.kira`, `std/console.kira`) — mirrors
+/// `std/prelude.kira`, `std/io.kira`, `std/console.kira`, `std/fmt.kira`) —
+/// mirrors
 /// `inject_stdlib_prelude` (`src/driver/driver.cpp`), which every real
 /// `kira` invocation prepends to its session, so bound positions like
 /// `T: eq` and `impl show for point`, and `prelude.kira`'s `use
@@ -96,6 +97,11 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
           .path = "std/console.kira",
           .text = kira::testing::load_test_data_file(std_dir.string(),
                                                      "console.kira"),
+      },
+      source_fixture{
+          .path = "std/fmt.kira",
+          .text =
+              kira::testing::load_test_data_file(std_dir.string(), "fmt.kira"),
       },
   };
 }
@@ -297,6 +303,14 @@ auto test_reports_associated_type_output_mismatch() -> void {
          "expected `self.output` to resolve to the impl's concrete type");
   expect_diagnostic(analyzed, "expected `str`, found `vec2`",
                     "expected the resolved associated type to drive checking");
+}
+
+auto test_accepts_string_interpolation() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_string_interpolation.kira");
+  expect(analyzed.error_count == 0,
+         "expected string interpolation program to check cleanly: " +
+             analyzed.diagnostics);
 }
 
 // ==========================================================================
@@ -517,6 +531,32 @@ auto test_reports_impure_contract_call() -> void {
   expect_diagnostic(analyzed,
                     "contract conditions may only call pure functions",
                     "expected contract-purity diagnostic");
+}
+
+auto test_reports_string_interpolation_unsupported_style() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "report_string_interpolation_unsupported_style.kira");
+  expect(analyzed.error_count > 0,
+         "expected `str` with `:x` to fail — `str` has no `hex` capability");
+  expect_diagnostic(analyzed, "does not support x formatting",
+                    "expected an unsupported-format-style diagnostic");
+}
+
+auto test_reports_string_interpolation_precision_on_integer_style() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "report_string_interpolation_precision_on_integer_style.kira");
+  expect(analyzed.error_count > 0, "expected `.precision` on `x` to fail");
+  expect_diagnostic(analyzed, "`.precision` is not allowed with `x`",
+                    "expected a precision-on-integer-style diagnostic");
+}
+
+auto test_reports_string_interpolation_bad_dynamic_width() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "report_string_interpolation_bad_dynamic_width.kira");
+  expect(analyzed.error_count > 0,
+         "expected a non-usize dynamic width to fail");
+  expect_diagnostic(analyzed, "format width must be `usize`, found `str`",
+                    "expected a dynamic-width-must-be-usize diagnostic");
 }
 
 // ==========================================================================
@@ -829,6 +869,7 @@ auto main() -> int {
     test_accepts_extend_on_user_type();
     test_impl_method_takes_priority_over_extend();
     test_accepts_intrinsic_decl();
+    test_accepts_string_interpolation();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
@@ -856,6 +897,9 @@ auto main() -> int {
     test_reports_unsatisfied_trait_requirement();
     test_reports_unknown_deriving();
     test_reports_impure_contract_call();
+    test_reports_string_interpolation_unsupported_style();
+    test_reports_string_interpolation_precision_on_integer_style();
+    test_reports_string_interpolation_bad_dynamic_width();
     test_reports_associated_type_output_mismatch();
     test_reports_extend_method_arity_mismatch();
     test_reports_const_generic_value_mismatch();

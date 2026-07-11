@@ -1,0 +1,5 @@
+module sample
+
+def run() -> unit:
+    let w = "not a width"
+    println("{42 :{w}}")

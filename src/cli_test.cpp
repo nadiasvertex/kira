@@ -2,7 +2,9 @@
 
 #include <sys/wait.h>
 
+#include <array>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -649,11 +651,11 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // `from`/`drop` traits the auto-injected prelude provides, and
   // `prelude.kira` itself now `use`s `std.console` — mirror what
   // `main.cpp` does for every real invocation (this alone now pulls in
-  // `traits.kira`, `prelude.kira`, `io.kira`, and `console.kira`) rather
-  // than hand-listing sources, which would double-add `io.kira`/
-  // `console.kira` under a different path string and trip a duplicate-
-  // module-path diagnostic (`find_stdlib_source_file`'s resolved path
-  // doesn't lexically match a literal `"src/std/io.kira"` under `bazel
+  // `traits.kira`, `prelude.kira`, `io.kira`, `console.kira`, and
+  // `fmt.kira`) rather than hand-listing sources, which would double-add
+  // `io.kira`/`console.kira` under a different path string and trip a
+  // duplicate-module-path diagnostic (`find_stdlib_source_file`'s resolved
+  // path doesn't lexically match a literal `"src/std/io.kira"` under `bazel
   // test`'s runfiles tree).
   kira::driver::inject_stdlib_prelude(cfg);
 
@@ -662,9 +664,9 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 4,
-         "expected std.io, std.console, std.traits, and prelude to all emit "
-         "metadata");
+  expect(report->modules.size() == 5,
+         "expected std.io, std.console, std.traits, std.fmt, and prelude to "
+         "all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.
@@ -986,6 +988,63 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 #endif
 }
 
+/// Regression test for `spec/string-formatting-design.md` on the AOT/LLVM
+/// backend specifically (the bytecode VM path is covered by
+/// `src/testdata/std_test/string_interpolation.kira`): builds and actually
+/// runs a program using several format styles, and checks its real stdout —
+/// this is what caught two real bugs during development (an `if`/`else`
+/// *expression* yielding `str` failing LLVM codegen, and a `usize` literal
+/// passed where `std.fmt`'s `fmt_radix_i64` declares a `uint8` parameter),
+/// neither of which a VM-only or exit-code-only test would have surfaced.
+auto test_build_links_and_runs_a_string_interpolation_program() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_interp.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_interp_bin";
+
+  write_file(source_path, "module sample\n"
+                          "def main() -> int32:\n"
+                          "  let name = \"Alice\"\n"
+                          "  println(\"Hi, {name}!\")\n"
+                          "  println(\"Hex: {255 :04x}\")\n"
+                          "  return 0\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected valid source to compile cleanly: " + report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  expect(close_status == 0, "expected the linked executable to exit cleanly");
+  expect(output == "Hi, Alice!\nHex: 00ff\n",
+         std::format("unexpected stdout from the interpolation program: `{}`",
+                     output));
+}
+
 /// `--run`'s exit code should mirror whatever the executed function
 /// returned (mirroring any other process's `main` return value), and the
 /// rendered summary should stay silent on a clean run unless
@@ -1061,6 +1120,7 @@ auto main() -> int {
     test_compile_sources_reports_unresolved_session_import();
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
+    test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
