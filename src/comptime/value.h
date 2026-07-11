@@ -2,19 +2,30 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace kira::ast {
+struct func_decl;
+} // namespace kira::ast
 
 namespace kira::comptime {
 
-/// Which shape a `value` currently holds. Deliberately a small, closed set
-/// for this first milestone — no structs/lists/closures/quote-fragment
-/// values yet (those land in later milestones of the compile-time
-/// evaluation subsystem; see the design plan's M2/M3 split).
+/// Which shape a `value` currently holds.
 enum class value_kind : uint8_t {
   unit,
   boolean,
   integer,
   floating,
   string,
+  /// A compile-time list or tuple; both are represented the same way since
+  /// neither has element-count-dependent typing at this layer.
+  list,
+  /// A compile-time struct instance built from a `struct_expr` literal.
+  struct_instance,
+  /// A reference to a `static def` function, callable from other
+  /// compile-time expressions.
+  closure,
   /// Sentinel meaning "evaluation already failed and a diagnostic was
   /// already reported" — mirrors `k_unknown_type`'s role in the type
   /// checker (`src/semantic/types.h`): once emitted, it propagates through
@@ -36,6 +47,21 @@ struct value {
   double floating = 0.0;
   std::string string;
 
+  /// Elements for `list`.
+  std::vector<value> elements;
+
+  /// Declared/inferred type name for `struct_instance` (empty if the
+  /// literal had no explicit type head) and, for `closure`, the function's
+  /// name (used in diagnostics).
+  std::string type_name;
+
+  /// Field values for `struct_instance`.
+  std::unordered_map<std::string, value> fields;
+
+  /// Target function for `closure`; never owning — function declarations
+  /// live for the whole checking session.
+  const ast::func_decl *function = nullptr;
+
   [[nodiscard]] static auto make_unit() -> value {
     return value{.kind = value_kind::unit};
   }
@@ -50,6 +76,23 @@ struct value {
   }
   [[nodiscard]] static auto make_string(std::string v) -> value {
     return value{.kind = value_kind::string, .string = std::move(v)};
+  }
+  [[nodiscard]] static auto make_list(std::vector<value> elements) -> value {
+    return value{.kind = value_kind::list, .elements = std::move(elements)};
+  }
+  [[nodiscard]] static auto
+  make_struct(std::string type_name,
+              std::unordered_map<std::string, value> fields) -> value {
+    return value{.kind = value_kind::struct_instance,
+                 .type_name = std::move(type_name),
+                 .fields = std::move(fields)};
+  }
+  [[nodiscard]] static auto make_closure(std::string name,
+                                         const ast::func_decl *function)
+      -> value {
+    return value{.kind = value_kind::closure,
+                 .type_name = std::move(name),
+                 .function = function};
   }
   [[nodiscard]] static auto make_error() -> value {
     return value{.kind = value_kind::diagnostic_marker};

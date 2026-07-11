@@ -6682,7 +6682,11 @@ private:
       static_types_.insert_or_assign(
           &decl, decl.type_annotation != nullptr ? declared : found);
       if (decl.initializer != nullptr && !decl.initializer->has_error &&
-          !decl.name.empty()) {
+          !decl.name.empty() && !comptime_eval_.has_global(decl.name)) {
+        // A forward reference from an earlier-checked `static let` may
+        // already have resolved this binding lazily (see
+        // `register_comptime_globals`/`evaluator::resolve_pending_static`);
+        // skip re-evaluating (and potentially re-diagnosing) it here.
         const auto evaluated = comptime_eval_.evaluate(*decl.initializer);
         if (!evaluated.is_error()) {
           comptime_eval_.bind_global(decl.name, evaluated);
@@ -6758,6 +6762,53 @@ private:
       }
       check_body_nodes(decl.for_body, k_unknown_type);
       pop_scope();
+
+      // Real compile-time iteration, separate from the type-check pass
+      // above (which only checks the body/yield once against the element
+      // type). Only a single loop pattern is supported for now — multiple
+      // patterns (tuple-unpacking `for a, b in ...`) still only
+      // type-check, matching the pre-existing fallback behavior.
+      if (decl.for_iterable != nullptr && !decl.for_iterable->has_error &&
+          decl.for_patterns.size() == 1 && decl.for_patterns[0] != nullptr) {
+        auto list_value = comptime_eval_.evaluate_iterable(*decl.for_iterable);
+        if (!list_value.is_error()) {
+          for (const auto &element_value : list_value.elements) {
+            auto scope = std::unordered_map<std::string, comptime::value>{};
+            if (!comptime_eval_.bind_pattern(*decl.for_patterns[0],
+                                             element_value, scope)) {
+              break;
+            }
+            comptime_eval_.push_locals(std::move(scope));
+            if (decl.for_guard != nullptr) {
+              auto guard = comptime_eval_.evaluate(*decl.for_guard);
+              if (guard.is_error() ||
+                  guard.kind != comptime::value_kind::boolean) {
+                comptime_eval_.pop_locals();
+                break;
+              }
+              if (!guard.boolean) {
+                comptime_eval_.pop_locals();
+                continue;
+              }
+            }
+            if (decl.decl_kind == ast::static_decl_kind::for_inline) {
+              if (decl.for_yield != nullptr) {
+                // Evaluated for its compile-time diagnostics/effects; the
+                // resulting sequence has no consumer yet — reifying it
+                // into generated code is splice reification (M4).
+                (void)comptime_eval_.evaluate(*decl.for_yield);
+              }
+            } else {
+              const auto exec = comptime_eval_.evaluate_stmts(decl.for_body);
+              if (exec.errored) {
+                comptime_eval_.pop_locals();
+                break;
+              }
+            }
+            comptime_eval_.pop_locals();
+          }
+        }
+      }
       return;
     }
     }
@@ -6968,6 +7019,36 @@ private:
     pop_scope();
   }
 
+  /// Recursively registers every top-level `static let` binding and
+  /// `static def` function found in `items` (descending into inline
+  /// submodules) with `comptime_eval_`, so cross-file/forward references
+  /// resolve lazily regardless of file-checking order — see the design
+  /// plan's confluence requirement.
+  auto register_comptime_globals(const std::vector<ast::ptr<ast::node>> &items,
+                                 file_id_type owner_file) -> void {
+    for (const auto &item : items) {
+      if (item == nullptr || item->has_error) {
+        continue;
+      }
+      if (item->kind == ast::node_kind::static_decl) {
+        const auto &decl = dynamic_cast<const ast::static_decl &>(*item);
+        if (decl.decl_kind == ast::static_decl_kind::binding &&
+            decl.initializer != nullptr && !decl.name.empty()) {
+          comptime_eval_.register_pending_static(decl.name, *decl.initializer,
+                                                 owner_file);
+        }
+      } else if (item->kind == ast::node_kind::func_decl) {
+        const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+        if (fn.modifiers.is_static && !fn.name.empty()) {
+          comptime_eval_.register_pending_function(fn.name, fn);
+        }
+      } else if (item->kind == ast::node_kind::sub_module_decl) {
+        const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
+        register_comptime_globals(sub.items, owner_file);
+      }
+    }
+  }
+
 public:
   /// Runs impl coherence once for the whole session, then checks every
   /// input file that has a valid module declaration and no already-recorded
@@ -6986,6 +7067,19 @@ public:
     // instead of a real struct name, for exactly this reason).
     build_method_table();
     validate_impl_coherence();
+
+    for (const auto &input : inputs) {
+      if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
+          input.ast_file->module_decl->has_error ||
+          input.ast_file->module_decl->path.empty()) {
+        continue;
+      }
+      if (static_cast<size_t>(input.file_id) < file_has_errors_.size() &&
+          file_has_errors_[input.file_id]) {
+        continue;
+      }
+      register_comptime_globals(input.ast_file->items, input.file_id);
+    }
 
     for (const auto &input : inputs) {
       if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
