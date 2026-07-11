@@ -1256,20 +1256,19 @@ auto test_run_executes_item_level_splice_injected_impl() -> void {
   auto source_path = temp.path / "sample_item_splice.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample\n"
-             "type point = { x: int32 }\n"
-             "trait show:\n"
-             "    def show(self) -> int32\n"
-             "static def make_show_impl() -> def_expr:\n"
-             "    return `impl show for point:\n"
-             "        def show(self) -> int32:\n"
-             "            return 42\n"
-             "    `\n"
-             "~make_show_impl()\n"
-             "def main() -> int32:\n"
-             "  let p = point{x: 1}\n"
-             "  return p.show()\n");
+  write_file(source_path, "module sample\n"
+                          "type point = { x: int32 }\n"
+                          "trait show:\n"
+                          "    def show(self) -> int32\n"
+                          "static def make_show_impl() -> def_expr:\n"
+                          "    return `impl show for point:\n"
+                          "        def show(self) -> int32:\n"
+                          "            return 42\n"
+                          "    `\n"
+                          "~make_show_impl()\n"
+                          "def main() -> int32:\n"
+                          "  let p = point{x: 1}\n"
+                          "  return p.show()\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
