@@ -370,6 +370,28 @@ auto test_reports_quote_type_annotation_mismatch() -> void {
                     "everything and would silently accept this");
 }
 
+auto test_accepts_quote_expr_typed_by_fragment_kind() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_quote_expr_typed_by_fragment_kind.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected each quote to type-check against the "
+                     "quote-value type matching its own classified "
+                     "`fragment_kind` (`expr`/`stmt`/`def_expr`), not a "
+                     "hardcoded `expr`:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_reports_splice_requires_quote_value() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_splice_requires_quote_value.kira");
+  expect(analyzed.error_count > 0,
+         "expected `~(42)` to fail: a splice operand must be a quoted "
+         "fragment, not an arbitrary value");
+  expect_diagnostic(analyzed, "must be a quoted fragment",
+                    "expected a diagnostic explaining that the splice "
+                    "operand is not quoted syntax");
+}
+
 auto test_accepts_static_let_evaluates() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_static_let_evaluates.kira");
@@ -969,6 +991,7 @@ auto main() -> int {
     test_accepts_string_interpolation();
     test_accepts_static_let_evaluates();
     test_accepts_static_if_selects_taken_branch();
+    test_accepts_quote_expr_typed_by_fragment_kind();
     test_accepts_static_def_call_evaluates();
     test_accepts_static_struct_value_evaluates();
     test_accepts_static_let_forward_reference();
@@ -980,6 +1003,7 @@ auto main() -> int {
     test_reports_quote_type_annotation_mismatch();
     test_reports_static_assert_evaluates_false();
     test_reports_static_for_evaluates_each_iteration();
+    test_reports_splice_requires_quote_value();
     test_reports_integer_literal_overflow();
     test_reports_mixed_numeric_types();
     test_reports_non_bool_condition();

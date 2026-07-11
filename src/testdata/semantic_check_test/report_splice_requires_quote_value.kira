@@ -1,0 +1,4 @@
+module sample
+
+def run() -> int32:
+    return ~(42)

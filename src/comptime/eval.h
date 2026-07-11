@@ -123,6 +123,7 @@ private:
   [[nodiscard]] auto eval_tuple(const ast::tuple_expr &tup) -> value;
   [[nodiscard]] auto eval_module_path(const ast::module_path_expr &path)
       -> value;
+  [[nodiscard]] auto eval_quote(const ast::quote_expr &quote) -> value;
 
   [[nodiscard]] auto call_function(const ast::func_decl &fn,
                                    const std::string &name,

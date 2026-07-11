@@ -1,0 +1,10 @@
+module sample
+
+static let an_expr: expr = `(1 + 2)`
+static let a_stmt: stmt = `x = 5`
+static let an_item: def_expr = `def helper() -> int32:
+    return 1
+`
+
+def run() -> unit:
+  return unit

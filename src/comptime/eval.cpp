@@ -556,6 +556,26 @@ auto evaluator::eval_module_path(const ast::module_path_expr &path) -> value {
   return current;
 }
 
+auto evaluator::eval_quote(const ast::quote_expr &quote) -> value {
+  if (quote.parsed_body == nullptr) {
+    return report(quote.span, "this quoted fragment could not be parsed");
+  }
+  switch (quote.fragment_kind) {
+  case ast::quote_fragment_kind::expr:
+    return value::make_expr_fragment(quote.parsed_body.get());
+  case ast::quote_fragment_kind::stmt:
+    return value::make_stmt_fragment(quote.parsed_body.get());
+  case ast::quote_fragment_kind::def_expr:
+    return value::make_def_expr_fragment(quote.parsed_body.get());
+  case ast::quote_fragment_kind::type_expr:
+    return value::make_type_expr_fragment(quote.parsed_body.get());
+  case ast::quote_fragment_kind::none:
+    return report(quote.span, "this quoted fragment could not be classified "
+                              "as an expression, statement, or definition");
+  }
+  return value::make_error();
+}
+
 auto evaluator::call_function(const ast::func_decl &fn, const std::string &name,
                               std::vector<value> args, source_span span)
     -> value {
@@ -966,6 +986,8 @@ auto evaluator::evaluate(const ast::expr &expr) -> value {
     return eval_call(dynamic_cast<const ast::call_expr &>(expr));
   case ast::node_kind::module_path_expr:
     return eval_module_path(dynamic_cast<const ast::module_path_expr &>(expr));
+  case ast::node_kind::quote_expr:
+    return eval_quote(dynamic_cast<const ast::quote_expr &>(expr));
   default:
     return report(expr.span, "this expression form is not yet supported in "
                              "compile-time evaluation");

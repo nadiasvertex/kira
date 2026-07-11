@@ -113,6 +113,15 @@ auto test_eval_global_binding_reference() -> void {
          "101");
 }
 
+auto test_eval_quote_boxes_matching_fragment_kind() -> void {
+  const auto result = eval_source("`(1 + 2)`");
+  expect(result.kind == kira::comptime::value_kind::expr_fragment,
+         "expected a quoted `(1 + 2)` to box as an `expr_fragment`, matching "
+         "the parser's own `quote_fragment_kind::expr` classification");
+  expect(result.fragment != nullptr,
+         "expected the boxed fragment to point at the parsed sub-AST");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -123,5 +132,6 @@ auto main() -> int {
   test_eval_division_by_zero_reports_error();
   test_eval_string_equality();
   test_eval_global_binding_reference();
+  test_eval_quote_boxes_matching_fragment_kind();
   return 0;
 }

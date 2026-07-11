@@ -2667,6 +2667,33 @@ private:
     }
   }
 
+  /// Reports an error unless `found` names one of the four quote-value
+  /// types (`expr`/`stmt`/`def_expr`/`type_expr`) — used at a splice site,
+  /// where the operand must be quoted syntax, not an ordinary value like
+  /// `~(42)`. `unknown`/`error` are accepted so one upstream gap doesn't
+  /// cascade into a second, redundant diagnostic here.
+  auto require_quote_value(type_id found, source_span span,
+                           std::string_view context) -> void {
+    if (types_.is_unknown(found)) {
+      return;
+    }
+    const auto &entry = types_.entry(found);
+    if (entry.kind == type_kind::builtin_kind &&
+        (entry.name == "expr" || entry.name == "stmt" ||
+         entry.name == "def_expr" || entry.name == "type_expr")) {
+      return;
+    }
+    error_with_help(
+        span,
+        std::format("{} must be a quoted fragment (`expr`, `stmt`, or "
+                    "`def_expr`), found `{}`",
+                    context, types_.display(found)),
+        "expected quoted syntax here",
+        "`~` splices previously-captured syntax (from a backtick quote "
+        "`` `(...)` ``) back into code; it does not evaluate an arbitrary "
+        "compile-time value.");
+  }
+
   /// Dispatches a binary expression to the appropriate typing rule for its
   /// operator family: arithmetic, equality/ordering comparison, logical
   /// (`and`/`or`, requiring `bool` operands), bitwise/shift (requiring
@@ -4718,12 +4745,32 @@ private:
     case ast::node_kind::block_expr:
       return check_body_nodes(dynamic_cast<const ast::block_expr &>(expr).stmts,
                               expected);
-    case ast::node_kind::quote_expr:
+    case ast::node_kind::quote_expr: {
+      const auto &quote = dynamic_cast<const ast::quote_expr &>(expr);
+      switch (quote.fragment_kind) {
+      case ast::quote_fragment_kind::stmt:
+        return types_.builtin("stmt");
+      case ast::quote_fragment_kind::def_expr:
+        return types_.builtin("def_expr");
+      case ast::quote_fragment_kind::type_expr:
+        return types_.builtin("type_expr");
+      case ast::quote_fragment_kind::expr:
+      case ast::quote_fragment_kind::none:
+        // `none` means the parser couldn't classify the quoted content
+        // (already diagnosed at parse time, or genuinely empty) — fall back
+        // to `expr` rather than `unknown` so a downstream annotation
+        // mismatch still gets a concrete, if possibly wrong, type to report
+        // against instead of silently unifying with everything.
+        return types_.builtin("expr");
+      }
       return types_.builtin("expr");
+    }
     case ast::node_kind::splice_expr: {
       const auto &splice = dynamic_cast<const ast::splice_expr &>(expr);
       if (splice.operand != nullptr) {
-        infer_expr(*splice.operand, k_unknown_type);
+        const auto operand_type = infer_expr(*splice.operand, k_unknown_type);
+        require_quote_value(operand_type, splice.operand->span,
+                            "a spliced expression");
       }
       return k_unknown_type;
     }
@@ -5906,7 +5953,9 @@ private:
     case ast::node_kind::splice_stmt: {
       const auto &stmt = dynamic_cast<const ast::splice_stmt &>(node);
       if (stmt.expr != nullptr) {
-        infer_expr(*stmt.expr, k_unknown_type);
+        const auto operand_type = infer_expr(*stmt.expr, k_unknown_type);
+        require_quote_value(operand_type, stmt.expr->span,
+                            "a spliced statement");
       }
       return unit;
     }

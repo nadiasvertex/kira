@@ -7,6 +7,7 @@
 
 namespace kira::ast {
 struct func_decl;
+struct node;
 } // namespace kira::ast
 
 namespace kira::comptime {
@@ -26,6 +27,17 @@ enum class value_kind : uint8_t {
   /// A reference to a `static def` function, callable from other
   /// compile-time expressions.
   closure,
+  /// A quoted expression fragment (Kira type `expr`) — a boxed
+  /// `const ast::expr *` into `fragment` (stored as `const ast::node *`
+  /// since the four quote-value kinds share one storage field; the actual
+  /// dynamic type always matches `ast::quote_expr::fragment_kind`).
+  expr_fragment,
+  /// A quoted statement fragment (Kira type `stmt`).
+  stmt_fragment,
+  /// A quoted item/definition fragment (Kira type `def_expr`).
+  def_expr_fragment,
+  /// A quoted type fragment (Kira type `type_expr`).
+  type_expr_fragment,
   /// Sentinel meaning "evaluation already failed and a diagnostic was
   /// already reported" — mirrors `k_unknown_type`'s role in the type
   /// checker (`src/semantic/types.h`): once emitted, it propagates through
@@ -62,6 +74,13 @@ struct value {
   /// live for the whole checking session.
   const ast::func_decl *function = nullptr;
 
+  /// Boxed AST fragment for `expr_fragment`/`stmt_fragment`/
+  /// `def_expr_fragment`/`type_expr_fragment` — always a
+  /// `ast::quote_expr::parsed_body` (or a sub-node reached by tearing one
+  /// down), owned by the file's own AST tree, which outlives the whole
+  /// checking session; never owning here.
+  const ast::node *fragment = nullptr;
+
   [[nodiscard]] static auto make_unit() -> value {
     return value{.kind = value_kind::unit};
   }
@@ -94,8 +113,33 @@ struct value {
                  .type_name = std::move(name),
                  .function = function};
   }
+  [[nodiscard]] static auto make_expr_fragment(const ast::node *fragment)
+      -> value {
+    return value{.kind = value_kind::expr_fragment, .fragment = fragment};
+  }
+  [[nodiscard]] static auto make_stmt_fragment(const ast::node *fragment)
+      -> value {
+    return value{.kind = value_kind::stmt_fragment, .fragment = fragment};
+  }
+  [[nodiscard]] static auto make_def_expr_fragment(const ast::node *fragment)
+      -> value {
+    return value{.kind = value_kind::def_expr_fragment, .fragment = fragment};
+  }
+  [[nodiscard]] static auto make_type_expr_fragment(const ast::node *fragment)
+      -> value {
+    return value{.kind = value_kind::type_expr_fragment,
+                 .fragment = fragment};
+  }
   [[nodiscard]] static auto make_error() -> value {
     return value{.kind = value_kind::diagnostic_marker};
+  }
+
+  /// Whether `kind` is one of the four quote-value kinds.
+  [[nodiscard]] auto is_quote_fragment() const noexcept -> bool {
+    return kind == value_kind::expr_fragment ||
+           kind == value_kind::stmt_fragment ||
+           kind == value_kind::def_expr_fragment ||
+           kind == value_kind::type_expr_fragment;
   }
 
   [[nodiscard]] auto is_error() const noexcept -> bool {
