@@ -557,6 +557,23 @@ private:
            elem.name == "byte";
   }
 
+  /// An element type's byte stride within a fixed `array[T,N]` or a
+  /// `list[T]`'s growable backing store — `runtime::layout_of`'s size,
+  /// clamped/defaulted to one of 1/2/4/8. Mirrors
+  /// `bytecode_compiler::compile.cpp`'s identically-named/-shaped helper
+  /// exactly, so both backends agree on how many bytes a narrow element
+  /// (e.g. `int16`, `bool`) costs in contiguous storage; `array[byte,N]`'s
+  /// old special-cased 1-byte stride (`is_byte_array_type`) is now just the
+  /// size==1 case of this general rule.
+  [[nodiscard]] auto element_stride(type_id element_type) const -> uint8_t {
+    const auto layout = runtime::layout_of(types_, element_type);
+    if (!layout.has_value() || layout->size_bytes == 0 ||
+        layout->size_bytes > 8) {
+      return 8;
+    }
+    return static_cast<uint8_t>(layout->size_bytes);
+  }
+
   // ------------------------------------------------------------------
   //  Panics — every checked-arithmetic guard funnels through this, so a
   //  panic always looks like: compute a bool "should panic" condition,
@@ -1527,57 +1544,32 @@ private:
     return block;
   }
 
-  /// Allocates a byte-packed `array[byte, N]` (`is_byte_array_type`) —
-  /// `ceil(N/8)` slots' worth of raw bytes, one byte per element via
-  /// `byte_address` — mirrors `bytecode_compiler::compile.cpp`'s
-  /// `compile_byte_array_init` exactly, storing a byte (`CreateTrunc` to
-  /// `i8`) at each element's offset instead of a whole slot.
-  [[nodiscard]] auto compile_byte_array_init(const hir::hir_array_init &init,
-                                             uint64_t count)
-      -> std::expected<llvm::Value *, codegen_error> {
-    auto *block = compile_heap_alloc((count + 7) / 8);
-    if (init.fill_value == nullptr) {
-      for (size_t i = 0; i < init.elements.size(); ++i) {
-        auto value = compile_expr(*init.elements[i]);
-        if (!value.has_value()) {
-          return std::unexpected(value.error());
-        }
-        auto *byte_value =
-            builder_.CreateTrunc(*value, llvm::Type::getInt8Ty(ctx_));
-        builder_.CreateStore(byte_value, byte_address(block, i));
-      }
-      return block;
-    }
-    // See `compile_array_init`'s fill form for why `fill_value` is evaluated
-    // once, not re-evaluated per element.
-    auto fill_value = compile_expr(*init.fill_value);
-    if (!fill_value.has_value()) {
-      return std::unexpected(fill_value.error());
-    }
-    auto *byte_fill_value =
-        builder_.CreateTrunc(*fill_value, llvm::Type::getInt8Ty(ctx_));
-    for (uint64_t i = 0; i < count; ++i) {
-      builder_.CreateStore(byte_fill_value, byte_address(block, i));
-    }
-    return block;
-  }
-
+  /// Allocates a fixed `array[T, N]`'s `N * element_stride(T)`-byte block
+  /// and stores each element at its own natural-stride `byte_address` — one
+  /// path for every element type (`array[byte,N]`'s old tightly-packed
+  /// special case, `compile_byte_array_init`, is now just the
+  /// `element_stride == 1` instance of this general rule), mirroring
+  /// `bytecode_compiler::compile.cpp`'s `compile_array_init` exactly.
   [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init)
       -> std::expected<llvm::Value *, codegen_error> {
     if (is_list_type(init.type)) {
       return compile_list_init(init);
     }
-    if (is_byte_array_type(init.type)) {
-      // `check.cpp` requires an explicit-elements array literal's element
-      // count to match its declared size exactly, so `array_size` is the
-      // right count either way — fill or explicit-elements form.
-      return compile_byte_array_init(
-          init, types_.entry(init.type).array_size.value());
-    }
-    if (init.fill_value == nullptr) {
-      return compile_slots_init(init.elements);
-    }
     const auto &array_entry = types_.entry(init.type);
+    const auto elem_size = element_stride(array_entry.result);
+    if (init.fill_value == nullptr) {
+      // `check.cpp` requires an explicit-elements array literal's element
+      // count to match its declared size exactly.
+      auto *block = compile_heap_alloc_bytes(init.elements.size() * elem_size);
+      for (size_t i = 0; i < init.elements.size(); ++i) {
+        auto value = compile_expr(*init.elements[i]);
+        if (!value.has_value()) {
+          return std::unexpected(value.error());
+        }
+        builder_.CreateStore(*value, byte_address(block, i * elem_size));
+      }
+      return block;
+    }
     if (!array_entry.array_size.has_value()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
@@ -1587,16 +1579,16 @@ private:
                      "allocation"});
     }
     const auto count = *array_entry.array_size;
-    auto *block = compile_heap_alloc(count);
-    // Evaluated once, then its bits are stored into every element slot —
-    // see bytecode_compiler::compile_array_init's doc comment for why this
-    // is correct (and required) rather than re-evaluating per element.
+    auto *block = compile_heap_alloc_bytes(count * elem_size);
+    // Evaluated once, then its bits are stored into every element — see
+    // bytecode_compiler::compile_array_init's doc comment for why this is
+    // correct (and required) rather than re-evaluating per element.
     auto fill_value = compile_expr(*init.fill_value);
     if (!fill_value.has_value()) {
       return std::unexpected(fill_value.error());
     }
     for (uint64_t i = 0; i < count; ++i) {
-      builder_.CreateStore(*fill_value, slot_address(block, i));
+      builder_.CreateStore(*fill_value, byte_address(block, i * elem_size));
     }
     return block;
   }
@@ -1616,6 +1608,12 @@ private:
   [[nodiscard]] auto compile_list_init(const hir::hir_array_init &init)
       -> std::expected<llvm::Value *, codegen_error> {
     auto *header = compile_heap_alloc(3);
+    const auto &list_entry = types_.entry(init.type);
+    const auto elem_size = list_entry.args.empty()
+                               ? uint8_t{8}
+                               : element_stride(list_entry.args.front());
+    auto *elem_size_const =
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), elem_size);
 
     if (init.fill_value == nullptr) {
       for (const auto &elem : init.elements) {
@@ -1623,9 +1621,8 @@ private:
         if (!value.has_value()) {
           return std::unexpected(value.error());
         }
-        auto *slot = builder_.CreateCall(
-            list_reserve_slot_fn_,
-            {header, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 8)});
+        auto *slot = builder_.CreateCall(list_reserve_slot_fn_,
+                                         {header, elem_size_const});
         builder_.CreateStore(*value, slot);
       }
       return header;
@@ -1672,9 +1669,8 @@ private:
     builder_.CreateCondBr(cond, body_bb, end_bb);
 
     builder_.SetInsertPoint(body_bb);
-    auto *slot = builder_.CreateCall(
-        list_reserve_slot_fn_,
-        {header, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 8)});
+    auto *slot =
+        builder_.CreateCall(list_reserve_slot_fn_, {header, elem_size_const});
     builder_.CreateStore(*fill_value, slot);
     auto *next_idx = builder_.CreateAdd(
         idx, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1));
@@ -1688,7 +1684,7 @@ private:
   [[nodiscard]] auto compile_field(const hir::hir_field &field)
       -> std::expected<llvm::Value *, codegen_error> {
     const auto offset = runtime::struct_field_offset(types_, field.object->type,
-                                                      field.field_name);
+                                                     field.field_name);
     if (!offset.has_value()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
@@ -1899,15 +1895,20 @@ private:
 
     llvm::Value *len = nullptr;
     llvm::Value *data = nullptr;
+    uint8_t elem_size = 8;
     if (indexing_list) {
       len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
                                 slot_address(*object, size_t{0}), "list.len");
       data = builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
                                  slot_address(*object, size_t{2}), "list.data");
+      elem_size = object_entry.args.empty()
+                      ? uint8_t{8}
+                      : element_stride(object_entry.args.front());
     } else {
       len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
                                    *object_entry.array_size);
       data = *object;
+      elem_size = element_stride(object_entry.result);
     }
     auto *out_of_bounds = builder_.CreateICmpUGE(index64, len, "index.oob");
     guard_panic(out_of_bounds, panic_reason::index_out_of_bounds);
@@ -1916,13 +1917,16 @@ private:
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
     }
-    if (is_byte_array_type(node.object->type)) {
-      // `node.type` is `byte` here, whose `storage_type_for` is already a
-      // bare `i8` (`numeric_kind_of`'s scalar mapping) — no widening needed,
-      // just a byte-granular address instead of `slot_address`'s 8x one.
-      return builder_.CreateLoad(*elem_ty, byte_address(data, index64));
-    }
-    return builder_.CreateLoad(*elem_ty, slot_address(data, index64));
+    // A plain `slot_address`-style 8x-scaled offset is only correct when
+    // `elem_size == 8`; every element type now has its own natural stride
+    // (`element_stride`), so the address is always computed as an explicit
+    // byte offset instead — `array[byte,N]`'s old special case is just
+    // `elem_size == 1` here.
+    auto *stride_const =
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), elem_size);
+    auto *byte_offset =
+        builder_.CreateMul(index64, stride_const, "index.byte_offset");
+    return builder_.CreateLoad(*elem_ty, byte_address(data, byte_offset));
   }
 
   /// A container's runtime element count (`for`/`while` loop bound
@@ -2130,10 +2134,12 @@ private:
       if (!elem_ty.has_value()) {
         return std::unexpected(elem_ty.error());
       }
+      const auto elem_size = element_stride(entry.result);
       llvm::Value *acc = nullptr;
       for (std::size_t i = 0; i < arr.elements.size(); ++i) {
         const auto &element = arr.elements[i];
-        auto *elem_val = builder_.CreateLoad(*elem_ty, slot_address(value, i));
+        auto *elem_val =
+            builder_.CreateLoad(*elem_ty, byte_address(value, i * elem_size));
         auto sub = compile_pattern_test(*element, elem_val,
                                         std::optional<type_id>(entry.result));
         if (!sub.has_value()) {
@@ -2782,9 +2788,11 @@ private:
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
+    const auto elem_size = element_stride(node.value->type);
     auto *slot = builder_.CreateCall(
         list_reserve_slot_fn_,
-        {*target, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 8)});
+        {*target,
+         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), elem_size)});
     builder_.CreateStore(*value, slot);
     return false;
   }
@@ -2836,12 +2844,12 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
 
   // `runtime::list_reserve_slot`/`kira_rt_list_reserve_slot` (layout.h) grew
   // an `elem_size` parameter to generalize a `list[T]`'s push stride beyond
-  // a hardcoded 8 bytes/element — this tier still always passes a constant
-  // `8` (see the three call sites below) since LLVM-side `list[T]` storage
-  // hasn't yet migrated off the uniform-8-byte-slot representation the way
-  // the bytecode tier's arrays/structs have; the parameter still has to be
-  // declared and supplied here to keep the real native function's ABI
-  // (2 args now, not 1) correct across the JIT/AOT call boundary.
+  // a hardcoded 8 bytes/element — `function_compiler::compile_list_init`/
+  // `compile_list_push` (below) now pass each call site's own
+  // `element_stride`-computed value, matching the bytecode tier's own
+  // natural-stride `list[T]` storage. The parameter still has to be declared
+  // here to keep the real native function's ABI (2 args, not 1) correct
+  // across the JIT/AOT call boundary.
   auto *list_reserve_slot_fn = llvm::Function::Create(
       llvm::FunctionType::get(
           llvm::PointerType::get(ctx, 0),

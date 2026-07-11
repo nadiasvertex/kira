@@ -2,5 +2,7 @@ module sample
 def sum_all(i: usize, j: usize) -> int32:
     let a: array[int16, 5] = [10, 20, 30, 40, 50]
     return (a[i] as int32) + (a[j] as int32)
+def make_fixed() -> array[int16, 5]:
+    return [0x1111, 0x2222, 0x3333, 0x4444, 0x5555]
 def main() -> int32:
     return sum_all(0, 4)

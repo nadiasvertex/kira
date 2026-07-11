@@ -620,7 +620,8 @@ auto test_packed_struct_has_no_padding_in_memory() -> void {
   // back to back, no padding, 7 bytes total.
   expect(bytes[0] == 0x34 && bytes[1] == 0x12,
          "expected magic at offset 0, little-endian");
-  expect(bytes[2] == 0xAB, "expected flags immediately after magic at offset 2");
+  expect(bytes[2] == 0xAB,
+         "expected flags immediately after magic at offset 2");
   expect(bytes[3] == 0xEF && bytes[4] == 0xBE && bytes[5] == 0xAD &&
              bytes[6] == 0xDE,
          "expected len packed immediately after flags at offset 3, with no "
@@ -665,6 +666,31 @@ auto test_narrow_element_array_construction_and_indexing() -> void {
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() to succeed");
   expect(main_result->value.i == 60, "expected main()'s sum_all(0, 4) == 60");
+}
+
+auto test_narrow_element_array_has_no_padding_in_memory() -> void {
+  // Mirrors `test_packed_struct_has_no_padding_in_memory` above: value-only
+  // assertions can't distinguish a natural-stride `array[int16,5]` from one
+  // that still wastes 8 bytes/element the old uniform-slot way — this reads
+  // the constructed array's raw heap bytes directly.
+  auto module = compile_fixture(load_fixture("narrow_element_array.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "make_fixed"), {});
+  expect(result.has_value(), "expected make_fixed() to succeed");
+  const auto *bytes = reinterpret_cast<const uint8_t *>(
+      static_cast<uintptr_t>(result->value.u));
+  expect(bytes[0] == 0x11 && bytes[1] == 0x11,
+         "expected element 0 (0x1111) at byte offset 0, little-endian");
+  expect(bytes[2] == 0x22 && bytes[3] == 0x22,
+         "expected element 1 (0x2222) immediately after at offset 2, no "
+         "padding to an 8-byte slot");
+  expect(bytes[4] == 0x33 && bytes[5] == 0x33,
+         "expected element 2 (0x3333) at offset 4");
+  expect(bytes[6] == 0x44 && bytes[7] == 0x44,
+         "expected element 3 (0x4444) at offset 6");
+  expect(bytes[8] == 0x55 && bytes[9] == 0x55,
+         "expected element 4 (0x5555) at offset 8 — 10 bytes total for 5 "
+         "`int16` elements, not 40");
 }
 
 auto test_array_index_out_of_bounds_panics() -> void {
@@ -994,6 +1020,7 @@ auto main() -> int {
     test_packed_struct_has_no_padding_in_memory();
     test_padded_struct_has_alignment_padding_in_memory();
     test_narrow_element_array_construction_and_indexing();
+    test_narrow_element_array_has_no_padding_in_memory();
     test_array_index_out_of_bounds_panics();
     test_array_fill_form_repeats_the_same_value();
     test_sum_type_variant_with_payload_encodes_tag_and_slot();

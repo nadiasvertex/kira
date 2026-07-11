@@ -270,19 +270,17 @@ auto run_llvm(const fs::path &path, const hir::hir_module &module,
   return slots[slot_index];
 }
 
-// The bytecode tier's array/list element storage is now natural-stride
+// Both tiers' array/list element storage is natural-stride
 // (`runtime::layout_of`'s size, generalizing the old uniform-8-byte-slot
-// scheme — `bytecode_compiler::function_compiler::element_stride` is the
-// production code this mirrors), while the LLVM tier's hasn't migrated off
-// the uniform 8-byte-slot representation yet (`is_byte_array_type`/
-// `slot_address` in `llvm_codegen/codegen.cpp`) — so `values_equal` below
-// reads the two sides at different strides: `bytecode_element_stride`
-// picks the width for `a_bits` (always the bytecode VM's result, see
-// `run_one`), while `b_bits` (always the LLVM JIT's result) keeps using
-// `read_slot`'s fixed 8-byte stride.
-[[nodiscard]] auto
-bytecode_element_stride(const kira::semantic::type_table &types,
-                        kira::semantic::type_id elem_type) -> uint8_t {
+// scheme — `bytecode_compiler::function_compiler::element_stride` and
+// `llvm_codegen::codegen.cpp`'s identically-named/-shaped helper are the
+// production code this mirrors), so `values_equal` below reads both
+// `a_bits` (the bytecode VM's result) and `b_bits` (the LLVM JIT's result)
+// at the same computed stride via `read_at`, not `read_slot`'s fixed
+// 8-byte one.
+[[nodiscard]] auto element_stride(const kira::semantic::type_table &types,
+                                  kira::semantic::type_id elem_type)
+    -> uint8_t {
   const auto layout = kira::runtime::layout_of(types, elem_type);
   if (!layout.has_value() || layout->size_bytes == 0 ||
       layout->size_bytes > 8) {
@@ -377,11 +375,10 @@ bytecode_element_stride(const kira::semantic::type_table &types,
     const auto data_a = read_slot(a_bits, 2);
     const auto data_b = read_slot(b_bits, 2);
     const auto elem_type = entry.args.front();
-    const auto stride_a = bytecode_element_stride(types, elem_type);
+    const auto stride = element_stride(types, elem_type);
     for (uint64_t i = 0; i < len_a; ++i) {
-      if (!values_equal(types, elem_type,
-                        read_at(data_a, i * stride_a, stride_a),
-                        read_slot(data_b, i))) {
+      if (!values_equal(types, elem_type, read_at(data_a, i * stride, stride),
+                        read_at(data_b, i * stride, stride))) {
         return false;
       }
     }
@@ -397,11 +394,11 @@ bytecode_element_stride(const kira::semantic::type_table &types,
     return true;
   case kira::semantic::type_kind::array_kind: {
     const auto count = entry.array_size.value_or(0);
-    const auto stride_a = bytecode_element_stride(types, entry.result);
+    const auto stride = element_stride(types, entry.result);
     for (uint64_t i = 0; i < count; ++i) {
       if (!values_equal(types, entry.result,
-                        read_at(a_bits, i * stride_a, stride_a),
-                        read_slot(b_bits, i))) {
+                        read_at(a_bits, i * stride, stride),
+                        read_at(b_bits, i * stride, stride))) {
         return false;
       }
     }
