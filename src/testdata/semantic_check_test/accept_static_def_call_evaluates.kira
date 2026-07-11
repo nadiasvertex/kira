@@ -1,0 +1,11 @@
+module sample
+
+static def square(n: int32) -> int32:
+    return n * n
+
+static let nine: int32 = square(3)
+
+static assert nine == 9, "square(3) should evaluate to 9 at compile time"
+
+def run() -> unit:
+  return unit

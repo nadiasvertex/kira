@@ -1,0 +1,11 @@
+module sample
+
+type point = { x: int32, y: int32 }
+
+static let origin: point = point { x: 0, y: 0 }
+static let sum_x: int32 = origin.x + 5
+
+static assert sum_x == 5, "reading a field off a compile-time struct value should work"
+
+def run() -> unit:
+  return unit

@@ -1,0 +1,10 @@
+module sample
+
+static for n in 0..3:
+    static assert n < 10, "every element of 0..3 should be below 10"
+
+static for n in [1, 2, 3, 4]:
+    static assert n != 3, "should fail on the third element of the list"
+
+def run() -> unit:
+  return unit

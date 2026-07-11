@@ -1,0 +1,10 @@
+module sample
+
+static let doubled: int32 = base * 2
+
+static let base: int32 = 21
+
+static assert doubled == 42, "a `static let` should be able to forward-reference a `static let` declared later in the file"
+
+def run() -> unit:
+  return unit

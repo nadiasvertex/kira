@@ -390,6 +390,44 @@ auto test_reports_static_assert_evaluates_false() -> void {
                     "in the diagnostic");
 }
 
+auto test_accepts_static_def_call_evaluates() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_static_def_call_evaluates.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `static def square` to be callable from "
+                     "`static let nine: int32 = square(3)`:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_reports_static_for_evaluates_each_iteration() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "report_static_for_evaluates_each_iteration.kira");
+  expect(analyzed.error_count > 0,
+         "expected `static for` to actually iterate and evaluate its body "
+         "per element, catching the third-element assertion failure");
+  expect_diagnostic(
+      analyzed, "should fail on the third element of the list",
+      "expected the per-iteration `static assert` message for n == 3");
+}
+
+auto test_accepts_static_struct_value_evaluates() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_static_struct_value_evaluates.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected a compile-time struct literal and field "
+                     "access to evaluate:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_accepts_static_let_forward_reference() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_static_let_forward_reference.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `static let doubled` to forward-reference "
+                     "`static let base` declared later in the file:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_accepts_static_if_selects_taken_branch() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_static_if_selects_taken_branch.kira");
@@ -931,6 +969,9 @@ auto main() -> int {
     test_accepts_string_interpolation();
     test_accepts_static_let_evaluates();
     test_accepts_static_if_selects_taken_branch();
+    test_accepts_static_def_call_evaluates();
+    test_accepts_static_struct_value_evaluates();
+    test_accepts_static_let_forward_reference();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
@@ -938,6 +979,7 @@ auto main() -> int {
     test_reports_annotation_mismatch();
     test_reports_quote_type_annotation_mismatch();
     test_reports_static_assert_evaluates_false();
+    test_reports_static_for_evaluates_each_iteration();
     test_reports_integer_literal_overflow();
     test_reports_mixed_numeric_types();
     test_reports_non_bool_condition();
