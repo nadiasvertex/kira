@@ -370,6 +370,36 @@ auto test_reports_quote_type_annotation_mismatch() -> void {
                     "everything and would silently accept this");
 }
 
+auto test_accepts_static_let_evaluates() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_static_let_evaluates.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `static limit: int32 = 2 + 3 * 4` to check "
+                     "cleanly:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_reports_static_assert_evaluates_false() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_static_assert_evaluates_false.kira");
+  expect(analyzed.error_count > 0,
+         "expected `static assert 1 == 2` to actually be evaluated and fail "
+         "compilation, not just type-checked for `bool`-ness");
+  expect_diagnostic(analyzed, "one is not two at compile time",
+                    "expected the static assert's own message to be used "
+                    "in the diagnostic");
+}
+
+auto test_accepts_static_if_selects_taken_branch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_static_if_selects_taken_branch.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected only the `else` branch (condition `false`) "
+                     "to be checked, so the `if` branch's undefined-name "
+                     "reference is never reached:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_reports_integer_literal_overflow() -> void {
   const auto analyzed =
       analyze_test_data_file("report_integer_literal_overflow.kira");
@@ -899,12 +929,15 @@ auto main() -> int {
     test_impl_method_takes_priority_over_extend();
     test_accepts_intrinsic_decl();
     test_accepts_string_interpolation();
+    test_accepts_static_let_evaluates();
+    test_accepts_static_if_selects_taken_branch();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
     test_reports_packed_on_sum_type();
     test_reports_annotation_mismatch();
     test_reports_quote_type_annotation_mismatch();
+    test_reports_static_assert_evaluates_false();
     test_reports_integer_literal_overflow();
     test_reports_mixed_numeric_types();
     test_reports_non_bool_condition();

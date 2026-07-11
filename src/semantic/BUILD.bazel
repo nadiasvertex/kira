@@ -29,6 +29,7 @@ cc_library(
     ],
     deps = [
         "//src:intrinsics",
+        "//src/comptime",
         "//src/parser:ast_clone",
         "//src/parser:parser",
     ],

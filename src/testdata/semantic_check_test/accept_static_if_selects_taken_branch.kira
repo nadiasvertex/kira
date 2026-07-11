@@ -1,0 +1,9 @@
+module sample
+
+static if false:
+  static assert totally_undefined_condition, "unreachable — must not be checked"
+else:
+  static assert 1 == 1, "reachable and true"
+
+def run() -> unit:
+  return unit

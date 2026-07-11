@@ -1,0 +1,6 @@
+module sample
+
+static limit: int32 = 2 + 3 * 4
+
+def run() -> unit:
+  return unit

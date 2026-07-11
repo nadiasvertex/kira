@@ -1,0 +1,24 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+cc_library(
+    name = "comptime",
+    srcs = ["eval.cpp"],
+    hdrs = [
+        "eval.h",
+        "value.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/parser",
+    ],
+)
+
+cc_test(
+    name = "eval_test",
+    srcs = ["eval_test.cpp"],
+    deps = [
+        ":comptime",
+        "//src/parser",
+        "//src/testing",
+    ],
+)

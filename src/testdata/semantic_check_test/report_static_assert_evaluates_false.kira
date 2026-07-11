@@ -1,0 +1,6 @@
+module sample
+
+static assert 1 == 2, "one is not two at compile time"
+
+def run() -> unit:
+  return unit

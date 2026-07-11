@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "src/comptime/eval.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast_clone.h"
 #include "src/semantic/module_index.h"
@@ -726,7 +727,8 @@ class checker {
 public:
   checker(const program_index &index, diagnostic_bag &diag,
           std::vector<bool> &file_has_errors)
-      : index_(index), diag_(diag), file_has_errors_(file_has_errors) {}
+      : index_(index), diag_(diag), file_has_errors_(file_has_errors),
+        comptime_eval_(diag, 0) {}
 
   /// Entry point: validates impl coherence session-wide, then checks every
   /// input file in turn.
@@ -875,6 +877,13 @@ private:
   // --- caches ---------------------------------------------------------------
   std::unordered_map<const ast::static_decl *, type_id> static_types_;
   std::unordered_set<const ast::static_decl *> statics_in_progress_;
+  /// Compile-time evaluator backing `static let`/`static assert`/
+  /// `static if`. One instance for the whole session (parallel to
+  /// `static_types_`/`types_`) so `static let` bindings evaluated while
+  /// checking one file stay visible by name to `static` expressions in
+  /// later files — see the compile-time evaluation design plan's
+  /// confluence requirement.
+  comptime::evaluator comptime_eval_;
   std::unordered_set<const ast::type_decl *> aliases_in_progress_;
   /// Cache of `param_types_for`'s result, so `check_function`'s own body
   /// check and `signature_params`'s call-site view agree on the same
@@ -6642,17 +6651,20 @@ private:
   /// Checks a `static` declaration in whichever of its five forms it takes
   /// (binding, assertion, conditional compilation, or either `static for`
   /// variant), dispatching on `decl_kind`.
-  /// Type-checks a `static` declaration; it does not evaluate one. A
-  /// `static assert`/`static if` condition is only checked for `bool`-ness
-  /// here, never actually evaluated, and `static if` currently type-checks
-  /// *both* `if_body` and `else_body` unconditionally rather than selecting
-  /// one branch — there is no constant folding or branch selection until a
-  /// real compile-time evaluator exists (tracked as the M2 milestone of the
-  /// compile-time evaluation subsystem; see spec/typed-ir-design.md's note
-  /// that quote/splice/static's execution model was still an open design
-  /// question). `static for` likewise never actually iterates; it only
-  /// type-checks its body once against the element type.
+  /// Type-checks a `static` declaration, then — for `binding`/`assertion`/
+  /// `conditional_compilation` — actually evaluates it via `comptime_eval_`
+  /// (the M2 milestone of the compile-time evaluation subsystem). Only the
+  /// scalar-arithmetic subset `comptime::evaluator` currently supports
+  /// evaluates for real; anything wider (a name it doesn't recognize, a
+  /// forward reference to a `static let` not yet checked in file order, a
+  /// call) reports its own "not yet supported"/"not a compile-time
+  /// constant yet" diagnostic from within the evaluator and this function
+  /// falls back to the old type-check-only behavior for that node so a
+  /// missing evaluator feature degrades to a diagnostic rather than a
+  /// crash. `static for` still only type-checks its body once against the
+  /// element type — iteration is a later milestone.
   auto check_static_decl(const ast::static_decl &decl) -> void {
+    comptime_eval_.set_file(file_id_);
     switch (decl.decl_kind) {
     case ast::static_decl_kind::binding: {
       auto declared = k_unknown_type;
@@ -6669,21 +6681,60 @@ private:
       }
       static_types_.insert_or_assign(
           &decl, decl.type_annotation != nullptr ? declared : found);
+      if (decl.initializer != nullptr && !decl.initializer->has_error &&
+          !decl.name.empty()) {
+        const auto evaluated = comptime_eval_.evaluate(*decl.initializer);
+        if (!evaluated.is_error()) {
+          comptime_eval_.bind_global(decl.name, evaluated);
+        }
+      }
       return;
     }
     case ast::static_decl_kind::assertion:
       if (decl.assert_condition != nullptr &&
           !decl.assert_condition->has_error) {
         require_bool(*decl.assert_condition, "a `static assert` condition");
+        const auto evaluated = comptime_eval_.evaluate(*decl.assert_condition);
+        if (!evaluated.is_error() &&
+            evaluated.kind == comptime::value_kind::boolean &&
+            !evaluated.is_true()) {
+          auto diag = diagnostic(diagnostic_level::error,
+                                 decl.assert_message.has_value()
+                                     ? *decl.assert_message
+                                     : "`static assert` condition was false",
+                                 file_id_)
+                          .with_label(decl.assert_condition->span,
+                                      "this condition evaluated to `false`");
+          diag_.emit(diag);
+        }
       }
       return;
-    case ast::static_decl_kind::conditional_compilation:
+    case ast::static_decl_kind::conditional_compilation: {
+      auto condition_value = std::optional<comptime::value>{};
       if (decl.if_condition != nullptr && !decl.if_condition->has_error) {
         require_bool(*decl.if_condition, "a `static if` condition");
+        auto evaluated = comptime_eval_.evaluate(*decl.if_condition);
+        if (!evaluated.is_error() &&
+            evaluated.kind == comptime::value_kind::boolean) {
+          condition_value = std::move(evaluated);
+        }
       }
-      check_body_nodes(decl.if_body, k_unknown_type);
-      check_body_nodes(decl.else_body, k_unknown_type);
+      // When the condition evaluated to a real boolean, only the taken
+      // branch is checked — this is real branch selection, not just
+      // type-checking both sides. When evaluation couldn't determine a
+      // value (unsupported construct, forward reference, ...), fall back
+      // to checking both branches so users still get diagnostics for
+      // whichever branch has real problems.
+      if (condition_value.has_value()) {
+        check_body_nodes(condition_value->is_true() ? decl.if_body
+                                                    : decl.else_body,
+                         k_unknown_type);
+      } else {
+        check_body_nodes(decl.if_body, k_unknown_type);
+        check_body_nodes(decl.else_body, k_unknown_type);
+      }
       return;
+    }
     case ast::static_decl_kind::for_inline:
     case ast::static_decl_kind::for_block: {
       push_scope();
