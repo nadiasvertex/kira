@@ -400,8 +400,8 @@ auto test_accepts_static_def_call_evaluates() -> void {
 }
 
 auto test_reports_static_for_evaluates_each_iteration() -> void {
-  const auto analyzed = analyze_test_data_file(
-      "report_static_for_evaluates_each_iteration.kira");
+  const auto analyzed =
+      analyze_test_data_file("report_static_for_evaluates_each_iteration.kira");
   expect(analyzed.error_count > 0,
          "expected `static for` to actually iterate and evaluate its body "
          "per element, catching the third-element assertion failure");

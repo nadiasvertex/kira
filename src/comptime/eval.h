@@ -77,8 +77,7 @@ public:
 
   /// Registers a top-level `static def` function so calls to `name`
   /// elsewhere in compile-time code can find and invoke it.
-  void register_pending_function(std::string name,
-                                 const ast::func_decl &decl);
+  void register_pending_function(std::string name, const ast::func_decl &decl);
 
   /// Evaluates `iterable` in `static for` position to a `list` value.
   /// Supports list/array literals and integer ranges (`a..b`, `a..=b`);
@@ -87,9 +86,9 @@ public:
 
   /// Binds `pattern` against `v` into `scope`, reporting a diagnostic and
   /// returning `false` on a shape mismatch or unsupported pattern form.
-  [[nodiscard]] auto
-  bind_pattern(const ast::pattern &pattern, const value &v,
-              std::unordered_map<std::string, value> &scope) -> bool;
+  [[nodiscard]] auto bind_pattern(const ast::pattern &pattern, const value &v,
+                                  std::unordered_map<std::string, value> &scope)
+      -> bool;
 
   /// Pushes/pops one local-variable scope frame, used by callers (e.g.
   /// `static for` loop bodies) that need to bind loop variables around a
@@ -108,8 +107,8 @@ public:
   /// Executes a statement/body-node sequence against the current locals
   /// scope, short-circuiting on `return` or on the first unsupported/
   /// erroring construct.
-  [[nodiscard]] auto evaluate_stmts(const std::vector<ast::ptr<ast::node>> &body)
-      -> exec_result;
+  [[nodiscard]] auto
+  evaluate_stmts(const std::vector<ast::ptr<ast::node>> &body) -> exec_result;
 
 private:
   [[nodiscard]] auto eval_binary(const ast::binary_expr &bin) -> value;
@@ -122,6 +121,8 @@ private:
   [[nodiscard]] auto eval_index(const ast::index_expr &idx) -> value;
   [[nodiscard]] auto eval_call(const ast::call_expr &call) -> value;
   [[nodiscard]] auto eval_tuple(const ast::tuple_expr &tup) -> value;
+  [[nodiscard]] auto eval_module_path(const ast::module_path_expr &path)
+      -> value;
 
   [[nodiscard]] auto call_function(const ast::func_decl &fn,
                                    const std::string &name,
@@ -132,6 +133,13 @@ private:
 
   /// Looks up `name` in the local-scope stack (innermost first).
   [[nodiscard]] auto lookup_local(const std::string &name) -> const value *;
+
+  /// Resolves a bare name (locals, then globals, then a pending `static
+  /// let`/`static def`), reporting "not a compile-time constant" if none
+  /// match. Shared by `eval_ident` and `eval_module_path`, since the parser
+  /// can't distinguish `a.b` field access from a module-qualified path.
+  [[nodiscard]] auto resolve_name(const std::string &name, source_span span)
+      -> value;
 
   /// Resolves a not-yet-bound global by evaluating its pending `static
   /// let` initializer, with cycle detection.

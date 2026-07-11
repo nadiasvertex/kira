@@ -97,8 +97,8 @@ void evaluator::register_pending_static(std::string name,
                                         const ast::expr &initializer,
                                         file_id_type owner_file) {
   pending_statics_.insert_or_assign(
-      std::move(name), pending_static{.initializer = &initializer,
-                                      .owner_file = owner_file});
+      std::move(name),
+      pending_static{.initializer = &initializer, .owner_file = owner_file});
 }
 
 void evaluator::register_pending_function(std::string name,
@@ -202,15 +202,16 @@ auto evaluator::eval_literal(const ast::literal_expr &lit) -> value {
   }
 }
 
-auto evaluator::eval_ident(const ast::ident_expr &ident) -> value {
-  if (const auto *local = lookup_local(ident.name); local != nullptr) {
+auto evaluator::resolve_name(const std::string &name, source_span span)
+    -> value {
+  if (const auto *local = lookup_local(name); local != nullptr) {
     return *local;
   }
-  if (const auto it = globals_.find(ident.name); it != globals_.end()) {
+  if (const auto it = globals_.find(name); it != globals_.end()) {
     return it->second;
   }
-  if (pending_statics_.contains(ident.name)) {
-    if (const auto *resolved = resolve_pending_static(ident.name, ident.span);
+  if (pending_statics_.contains(name)) {
+    if (const auto *resolved = resolve_pending_static(name, span);
         resolved != nullptr) {
       return *resolved;
     }
@@ -218,14 +219,18 @@ auto evaluator::eval_ident(const ast::ident_expr &ident) -> value {
     // initializer's own evaluation failure) — don't pile on another one.
     return value::make_error();
   }
-  if (const auto fn_it = pending_functions_.find(ident.name);
+  if (const auto fn_it = pending_functions_.find(name);
       fn_it != pending_functions_.end()) {
-    return value::make_closure(ident.name, fn_it->second);
+    return value::make_closure(name, fn_it->second);
   }
-  return report(ident.span,
+  return report(span,
                 std::format("`{}` is not a compile-time constant that has "
                             "been evaluated yet",
-                            ident.name));
+                            name));
+}
+
+auto evaluator::eval_ident(const ast::ident_expr &ident) -> value {
+  return resolve_name(ident.name, ident.span);
 }
 
 auto evaluator::eval_unary(const ast::unary_expr &un) -> value {
@@ -523,6 +528,34 @@ auto evaluator::eval_index(const ast::index_expr &idx) -> value {
   return object.elements[static_cast<size_t>(index.integer)];
 }
 
+auto evaluator::eval_module_path(const ast::module_path_expr &path) -> value {
+  // The parser can't tell `origin.x` (field access) apart from a real
+  // module-qualified path at parse time — see `parse_ident_or_path_expr` —
+  // so, mirroring `checker::infer_module_path`, treat the first segment as
+  // a value reference and every remaining segment as a field projection.
+  if (path.segments.empty()) {
+    return value::make_error();
+  }
+  auto current = resolve_name(path.segments.front(), path.span);
+  if (current.is_error()) {
+    return current;
+  }
+  for (size_t i = 1; i < path.segments.size(); ++i) {
+    if (current.kind != value_kind::struct_instance) {
+      return report(path.span, "`.` field access requires a compile-time "
+                               "struct value");
+    }
+    const auto it = current.fields.find(path.segments[i]);
+    if (it == current.fields.end()) {
+      return report(path.span,
+                    std::format("compile-time struct value has no field `{}`",
+                                path.segments[i]));
+    }
+    current = it->second;
+  }
+  return current;
+}
+
 auto evaluator::call_function(const ast::func_decl &fn, const std::string &name,
                               std::vector<value> args, source_span span)
     -> value {
@@ -550,8 +583,8 @@ auto evaluator::call_function(const ast::func_decl &fn, const std::string &name,
     } else {
       pop_locals();
       --call_depth_;
-      return report(span, std::format("`{}` is missing a required argument",
-                                      name));
+      return report(span,
+                    std::format("`{}` is missing a required argument", name));
     }
     if (arg_value.is_error()) {
       pop_locals();
@@ -599,10 +632,10 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
       it != pending_functions_.end()) {
     fn = it->second;
   } else if (const auto *local = lookup_local(callee_ident->name);
-            local != nullptr && local->kind == value_kind::closure) {
+             local != nullptr && local->kind == value_kind::closure) {
     fn = local->function;
   } else if (const auto git = globals_.find(callee_ident->name);
-            git != globals_.end() && git->second.kind == value_kind::closure) {
+             git != globals_.end() && git->second.kind == value_kind::closure) {
     fn = git->second.function;
   }
   if (fn == nullptr) {
@@ -653,7 +686,8 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
   }
   case ast::node_kind::tuple_pattern: {
     const auto &tup = dynamic_cast<const ast::tuple_pattern &>(pattern);
-    if (v.kind != value_kind::list || v.elements.size() != tup.elements.size()) {
+    if (v.kind != value_kind::list ||
+        v.elements.size() != tup.elements.size()) {
       report(pattern.span, "compile-time tuple pattern does not match the "
                            "shape of the value being destructured");
       return false;
@@ -680,8 +714,8 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
       const auto it = v.fields.find(field.name);
       if (it == v.fields.end()) {
         report(field.span,
-              std::format("compile-time struct value has no field `{}`",
-                          field.name));
+               std::format("compile-time struct value has no field `{}`",
+                           field.name));
         return false;
       }
       if (field.pattern != nullptr) {
@@ -703,9 +737,8 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
 
 auto evaluator::evaluate_iterable(const ast::expr &iterable) -> value {
   if (const auto *bin = dynamic_cast<const ast::binary_expr *>(&iterable);
-      bin != nullptr &&
-      (bin->op == ast::binary_op::range ||
-       bin->op == ast::binary_op::range_inclusive)) {
+      bin != nullptr && (bin->op == ast::binary_op::range ||
+                         bin->op == ast::binary_op::range_inclusive)) {
     if (bin->lhs == nullptr || bin->rhs == nullptr) {
       return value::make_error();
     }
@@ -722,7 +755,7 @@ auto evaluator::evaluate_iterable(const ast::expr &iterable) -> value {
                                    "bounds");
     }
     const auto end = bin->op == ast::binary_op::range_inclusive ? hi.integer + 1
-                                                                 : hi.integer;
+                                                                : hi.integer;
     auto elements = std::vector<value>{};
     for (auto i = lo.integer; i < end; ++i) {
       elements.push_back(value::make_int(i));
@@ -858,8 +891,8 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
       if (!evaluated.is_error() && evaluated.kind == value_kind::boolean &&
           !evaluated.is_true()) {
         report(decl.assert_condition->span,
-              decl.assert_message.value_or(
-                  "`static assert` condition was false"));
+               decl.assert_message.value_or(
+                   "`static assert` condition was false"));
         return exec_result{.errored = true};
       }
       return exec_result{};
@@ -872,8 +905,7 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
       if (condition.is_error() || condition.kind != value_kind::boolean) {
         return exec_result{};
       }
-      return evaluate_stmts(condition.boolean ? decl.if_body
-                                              : decl.else_body);
+      return evaluate_stmts(condition.boolean ? decl.if_body : decl.else_body);
     }
     default:
       // Nested `static for` isn't evaluated for real yet — skip it rather
@@ -932,6 +964,8 @@ auto evaluator::evaluate(const ast::expr &expr) -> value {
     return eval_index(dynamic_cast<const ast::index_expr &>(expr));
   case ast::node_kind::call_expr:
     return eval_call(dynamic_cast<const ast::call_expr &>(expr));
+  case ast::node_kind::module_path_expr:
+    return eval_module_path(dynamic_cast<const ast::module_path_expr &>(expr));
   default:
     return report(expr.span, "this expression form is not yet supported in "
                              "compile-time evaluation");
