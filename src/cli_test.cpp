@@ -1340,6 +1340,52 @@ auto test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site()
          "it didn't clobber the splice site's `temp`");
 }
 
+/// M6 end-to-end check: `point.field_count()` (`comptime::
+/// try_eval_type_reflection_call`, `reflect.cpp`) must actually reflect
+/// `point`'s real field count at compile time, and that value must reach a
+/// runnable program. Reflection itself has no runtime representation (a
+/// bare `static let count: int32 = point.field_count()` referenced by name
+/// from `main` isn't lowered as a real global — that's a separate,
+/// unrelated gap in the bytecode compiler, not something this milestone
+/// touches), so this routes the reflected value through `expr.lit(...)`
+/// (M4.5) + `~splice` (M4), the same proven "compile-time value becomes
+/// real code" path `test_run_executes_spliced_builder_constructed_
+/// expression` already exercises — reflection just supplies the argument.
+auto test_run_reflects_struct_field_count_into_runtime_constant() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_reflect.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample\n"
+                          "type point = { x: int32, y: int32, z: int32 }\n"
+                          "static let count_expr: expr = "
+                          "expr.lit(point.field_count())\n"
+                          "def main() -> int32:\n"
+                          "  return ~count_expr\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `expr.lit(point.field_count())` spliced into `main` to "
+         "compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded, "expected `main` to run without panicking");
+  expect(report->run->exit_code == 3,
+         "expected `point.field_count()` to reflect `point`'s real 3 "
+         "fields (x, y, z) and for that value to reach `main` at runtime "
+         "via the spliced literal");
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -1380,6 +1426,7 @@ auto main() -> int {
     test_run_executes_spliced_builder_constructed_expression();
     test_run_executes_item_level_splice_injected_impl();
     test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site();
+    test_run_reflects_struct_field_count_into_runtime_constant();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;

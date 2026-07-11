@@ -82,6 +82,12 @@ public:
   /// elsewhere in compile-time code can find and invoke it.
   void register_pending_function(std::string name, const ast::func_decl &decl);
 
+  /// Registers a top-level `type` declaration so `T.fields()`/
+  /// `.field_count()`/`.name()` (`reflect.cpp`) can resolve `name` to its
+  /// declaration independently of `checker`'s own module-scoped lookup —
+  /// see `checker::register_comptime_globals`, the only caller.
+  void register_pending_type(std::string name, const ast::type_decl &decl);
+
   /// Evaluates `iterable` in `static for` position to a `list` value.
   /// Supports list/array literals and integer ranges (`a..b`, `a..=b`);
   /// anything else reports "not yet supported" and returns an error.
@@ -150,6 +156,16 @@ private:
   [[nodiscard]] auto try_eval_expr_builder_call(const ast::call_expr &call)
       -> std::optional<value>;
 
+  /// Recognizes `T.fields()`/`T.field_count()`/`T.name()` — compile-time
+  /// reflection over a registered `type` declaration's own syntax (design
+  /// plan section 4; implemented in `reflect.cpp`). `T` must be an
+  /// `ident_expr` naming an entry in `pending_types_`. Returns `nullopt`
+  /// if `call` doesn't match this shape at all (including "names a type,
+  /// but not one of the three recognized calls"), so `eval_call` can fall
+  /// through to its ordinary dispatch.
+  [[nodiscard]] auto try_eval_type_reflection_call(const ast::call_expr &call)
+      -> std::optional<value>;
+
   [[nodiscard]] auto call_function(const ast::func_decl &fn,
                                    const std::string &name,
                                    std::vector<value> args, source_span span)
@@ -187,6 +203,9 @@ private:
   std::unordered_map<std::string, pending_static> pending_statics_;
   std::unordered_set<std::string> statics_in_progress_;
   std::unordered_map<std::string, const ast::func_decl *> pending_functions_;
+  /// Every registered `type` declaration, by name — see
+  /// `register_pending_type` and `try_eval_type_reflection_call`.
+  std::unordered_map<std::string, const ast::type_decl *> pending_types_;
 
   std::vector<std::unordered_map<std::string, value>> locals_;
   int call_depth_ = 0;

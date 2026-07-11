@@ -421,6 +421,16 @@ auto test_accepts_item_splice_injects_impl() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_type_reflection_primitives() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_type_reflection_primitives.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `point.field_count()`/`.name()`/`.fields()` "
+                     "to reflect over `point`'s own declaration at compile "
+                     "time:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_accepts_expr_keyword_usable_as_identifier() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_expr_keyword_usable_as_identifier.kira");
@@ -1085,6 +1095,7 @@ auto main() -> int {
     test_accepts_expr_keyword_usable_as_identifier();
     test_accepts_expr_builder_constructs_fragment();
     test_accepts_item_splice_injects_impl();
+    test_accepts_type_reflection_primitives();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();

@@ -3631,6 +3631,39 @@ private:
       return types_.builtin("expr");
     }
 
+    // `T.fields()`/`T.field_count()`/`T.name()` — compile-time reflection
+    // over a struct type's own declaration (design plan section 4). Only
+    // intercepted when both the method name matches one of the three
+    // recognized reflection calls *and* the object actually names a real
+    // type reachable here — a bare `ident_expr` whose name happens to
+    // collide with an unrelated value or qualified-call target must still
+    // fall through to the ordinary handling below untouched.
+    if (field.object->kind == ast::node_kind::ident_expr &&
+        (field.field_name == "fields" || field.field_name == "field_count" ||
+         field.field_name == "name")) {
+      const auto &type_name =
+          dynamic_cast<const ast::ident_expr &>(*field.object).name;
+      if (const auto found = find_type_decl_by_name(type_name)) {
+        infer_call_args_loosely(call);
+        if (field.field_name == "name") {
+          return types_.builtin("str");
+        }
+        if (field.field_name == "field_count") {
+          return types_.builtin("int32");
+        }
+        // `fields()` returns a compile-time list of per-field descriptors
+        // — no builtin "list of X" type exists to check this against yet,
+        // so it deliberately checks as `k_unknown_type` (same "don't
+        // cascade a gap in the type system into a real error" role it
+        // plays everywhere else) rather than inventing new type-system
+        // machinery for this one narrow milestone. Real per-field values
+        // (`comptime::value` `struct_instance`s with `name`/`type`
+        // string fields) exist at evaluation time regardless — see
+        // `comptime::try_eval_type_reflection_call` (`reflect.cpp`).
+        return k_unknown_type;
+      }
+    }
+
     // `int32.max`-style access on a type name never reaches method lookup.
     if (const auto type_constant = infer_type_name_member(field)) {
       infer_call_args_loosely(call);
@@ -7342,6 +7375,19 @@ private:
         const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
         if (fn.modifiers.is_static && !fn.name.empty()) {
           comptime_eval_.register_pending_function(fn.name, fn);
+        }
+      } else if (item->kind == ast::node_kind::type_decl) {
+        // Every `type` declaration is registered, unconditionally (Kira
+        // types have no "static" modifier to gate on — they're always
+        // compile-time-known) — gives `comptime::evaluator::eval_call`'s
+        // reflection intrinsics (`T.fields()`/etc., `reflect.cpp`) their
+        // own session-wide name -> declaration table, the same
+        // "confluent, order-independent" shape `register_pending_static`/
+        // `register_pending_function` already use for `static let`/
+        // `static def`.
+        const auto &decl = dynamic_cast<const ast::type_decl &>(*item);
+        if (!decl.name.empty()) {
+          comptime_eval_.register_pending_type(decl.name, decl);
         }
       } else if (item->kind == ast::node_kind::sub_module_decl) {
         const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);

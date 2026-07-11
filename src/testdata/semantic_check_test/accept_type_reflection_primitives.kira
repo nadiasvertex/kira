@@ -1,0 +1,14 @@
+module sample
+
+type point = { x: int32, y: int32 }
+
+static assert point.field_count() == 2, "point should have 2 fields"
+
+static assert point.name() == "point", "point's reflected name should be point"
+
+static assert point.fields()[0].name == "x", "first field should be named x"
+
+static assert point.fields()[1].type_name == "int32", "second field's type should be int32"
+
+def run() -> int32:
+    return point.field_count()

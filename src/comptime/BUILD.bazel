@@ -5,6 +5,7 @@ cc_library(
     srcs = [
         "eval.cpp",
         "hygiene.cpp",
+        "reflect.cpp",
     ],
     hdrs = [
         "eval.h",

@@ -737,6 +737,9 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
   if (auto builder = try_eval_expr_builder_call(call)) {
     return *builder;
   }
+  if (auto reflected = try_eval_type_reflection_call(call)) {
+    return *reflected;
+  }
   const auto *callee_ident =
       dynamic_cast<const ast::ident_expr *>(call.callee.get());
   if (callee_ident == nullptr) {
