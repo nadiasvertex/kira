@@ -6,10 +6,9 @@ trait show:
     def show(self) -> int32
 
 static def make_show_impl() -> def_expr:
-    return `impl show for point:
+    return `(impl show for point:
         def show(self) -> int32:
-            return 42
-    `
+            return 42)`
 
 ~make_show_impl()
 

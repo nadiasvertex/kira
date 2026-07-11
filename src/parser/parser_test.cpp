@@ -1179,6 +1179,59 @@ auto test_parser_classifies_quote_fragment_kind() -> void {
   }
 }
 
+/// A `` `(...)` `` quote wraps its content in a real, literal `(` — which
+/// the lexer treats as an ordinary bracket, suppressing NEWLINE/INDENT/
+/// DEDENT synthesis for its whole span (`bracket_depth_ > 0`, `lexer.h`).
+/// Left unhandled, that means indentation-block-sensitive content (an
+/// `impl` with a method body) can never lex correctly inside `` `(...)` ``:
+/// the lexer would never see the INDENT that starts the block, so the
+/// parser would see an empty body with no diagnostic at all. `lexer.h`'s
+/// `(`/`)` cases special-case the wrapper paren pair (not bumping
+/// `bracket_depth_`, and force-emitting the DEDENTs the quoted block owes
+/// right at the closing `)`, regardless of nested real parens like a
+/// `(self)` parameter list in between — mirrored by `parse_quote_expr`'s
+/// own real-paren-nesting tracking, so lexer and parser agree on exactly
+/// which `)` closes the wrapper. This test is the regression check for
+/// that whole mechanism, using the shape `semantic::checker::
+/// resolve_item_splices` (item-level splice, check.cpp) actually needs:
+/// a multi-line `impl` block, with a method that has a parenthesized
+/// parameter list, quoted inside `` `(...)` ``.
+auto test_parser_parses_multiline_indented_paren_quote() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "static def make_show_impl() -> def_expr:\n"
+                             "    return `(impl show for point:\n"
+                             "        def show(self) -> int32:\n"
+                             "            return 42)`\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *fn_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected the make_show_impl function");
+  auto *return_stmt = expect_node<kira::ast::return_stmt>(
+      fn_decl->body_stmts[0].get(), kira::ast::node_kind::return_stmt,
+      "expected a return statement");
+  auto *quote = expect_expr<kira::ast::quote_expr>(
+      return_stmt->value.get(), kira::ast::node_kind::quote_expr,
+      "expected the returned value to be a quote_expr");
+  expect(quote->fragment_kind == kira::ast::quote_fragment_kind::def_expr,
+         "expected the quoted `impl` to classify as a def_expr fragment");
+  auto *impl = expect_node<kira::ast::impl_decl>(
+      quote->parsed_body.get(), kira::ast::node_kind::impl_decl,
+      "expected the fragment body to be an impl declaration");
+  expect(impl->items.size() == 1,
+         "expected the quoted impl to contain exactly one method — if the "
+         "lexer failed to preserve indentation inside `` `(...)` ``, this "
+         "would be empty instead");
+  auto *method = expect_node<kira::ast::func_decl>(
+      impl->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected the quoted impl's item to be the `show` method");
+  expect(method->name == "show", "expected the method to be named `show`");
+  expect(method->body_stmts.size() == 1,
+         "expected `show`'s body to contain exactly one statement — if the "
+         "closing `)` didn't emit the DEDENTs the block owed, this body "
+         "would be empty instead");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -1187,7 +1240,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 17> tests = {{
+  const std::array<named_test, 18> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -1218,6 +1271,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_splits_string_interpolation},
       {.name = "quote_fragment_kind",
        .fn = test_parser_classifies_quote_fragment_kind},
+      {.name = "multiline_indented_paren_quote",
+       .fn = test_parser_parses_multiline_indented_paren_quote},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

@@ -75,6 +75,8 @@ public:
     indent_stack_.push_back(0);
     bracket_depth_ = 0;
     at_line_start_ = true;
+    at_quote_open_ = false;
+    quote_wrapper_indent_marks_.clear();
 
     while (pos_ < source_.size()) {
       scan_token();
@@ -298,6 +300,8 @@ private:
 
     auto start = static_cast<byte_offset>(pos_);
     char c = advance();
+    const bool was_quote_open = at_quote_open_;
+    at_quote_open_ = false;
 
     switch (c) {
     // ---- Newlines ----
@@ -314,10 +318,44 @@ private:
 
     // ---- Single-character punctuation ----
     case '(':
+      if (was_quote_open) {
+        // The `(` immediately after `` ` `` opens `` `(...)` ``'s
+        // quote-wrapper — see `quote_wrapper_indent_marks_`'s doc comment.
+        // It doesn't bump `bracket_depth_`, so indentation-sensitive
+        // content inside (an `impl`/`def` block, say) lexes exactly as if
+        // it weren't wrapped in parens at all.
+        quote_wrapper_indent_marks_.push_back(indent_stack_.size());
+        emit(token_kind::lparen, start);
+        return;
+      }
       ++bracket_depth_;
       emit(token_kind::lparen, start);
       return;
     case ')':
+      if (bracket_depth_ == 0 && !quote_wrapper_indent_marks_.empty()) {
+        // Closes the innermost open quote-wrapper. `bracket_depth_ == 0`
+        // means every ordinary bracket opened *inside* the wrapper (an
+        // `(self)` parameter list, a `{...}` struct literal, ...) has
+        // already been closed, so this `)` can only be the wrapper's own
+        // — mirroring `parser::parse_quote_expr`'s own matching real
+        // paren-nesting tracking, so lexer and parser agree on which
+        // paren pair is quote-wrapper syntax versus ordinary code the
+        // user wrote inside the quote. Pop back down to the indent level
+        // active when the wrapper opened, emitting real DEDENT tokens
+        // first: this makes the quoted content's own blocks close
+        // correctly (and be captured as part of the quote's token range)
+        // regardless of where the closing `` )` `` physically sits, and
+        // keeps the outer file's indentation bookkeeping consistent
+        // afterward.
+        const auto mark = quote_wrapper_indent_marks_.back();
+        quote_wrapper_indent_marks_.pop_back();
+        while (indent_stack_.size() > mark) {
+          indent_stack_.pop_back();
+          emit_synthetic(token_kind::dedent, span_from(start));
+        }
+        emit(token_kind::rparen, start);
+        return;
+      }
       if (bracket_depth_ > 0) {
         --bracket_depth_;
       }
@@ -357,8 +395,12 @@ private:
       return;
     case '`':
       // Backtick — quote region delimiter. We treat open/close the same
-      // and let the parser track nesting.
+      // and let the parser track nesting. Remember this for the very next
+      // character only: an immediately-following `(` opens a quote-wrapper
+      // (see the `(` case / `quote_wrapper_indent_marks_`), not an
+      // ordinary grouping paren.
       emit(token_kind::backtick, start);
+      at_quote_open_ = true;
       return;
 
     // ---- Colon ----
@@ -597,6 +639,11 @@ private:
   /// is intentionally ignored so expression continuations do not create block
   /// structure.
   void handle_line_start() {
+    // A `` ` `` at the very end of a line, with no `(` following on the
+    // same line, isn't opening a quote-wrapper — don't let the flag leak
+    // across a newline into unrelated content on a later line.
+    at_quote_open_ = false;
+
     // Measure leading whitespace.
     uint32_t indent = 0;
     auto line_begin = static_cast<byte_offset>(pos_);
@@ -1269,6 +1316,15 @@ private:
   /// Number of currently open brackets (parens, square brackets, braces).
   /// While > 0, NEWLINE / INDENT / DEDENT are suppressed.
   int bracket_depth_ = 0;
+
+  /// True right after emitting a `` ` `` token, until the very next
+  /// character is examined — see the `` ` `` case's doc comment.
+  bool at_quote_open_ = false;
+
+  /// One entry per currently-open `` `( `` quote-wrapper, holding
+  /// `indent_stack_.size()` as it was when that wrapper opened — see the
+  /// `(` / `)` cases' doc comments.
+  std::vector<size_t> quote_wrapper_indent_marks_;
 
   /// True if we're at the beginning of a new logical line and need to
   /// measure indentation before scanning tokens.

@@ -4534,6 +4534,15 @@ auto parser::parse_quote_expr() -> ast::ptr<ast::quote_expr> {
   // Handle nested backticks by tracking depth.
   int depth = 1;
   bool has_paren = match(token_kind::lparen);
+  // Real `(...)` nesting *inside* a `` `(...)` `` wrapper (an `(self)`
+  // parameter list, a call, ...) — tracked so the wrapper's own closing
+  // `)` is only recognized once every such nested paren has itself closed,
+  // rather than treating the very first `)` encountered as the wrapper's
+  // close. Mirrors the lexer's own `bracket_depth_ == 0` check in its `)`
+  // case (`lexer.h`), which the two must agree on for indentation-
+  // sensitive quoted content (an `impl`/`def` block) to lex and parse
+  // consistently.
+  int paren_nesting = 0;
 
   while (!at_eof() && depth > 0) {
     if (at(token_kind::backtick)) {
@@ -4548,9 +4557,17 @@ auto parser::parse_quote_expr() -> ast::ptr<ast::quote_expr> {
         }
         qexpr->tokens.push_back(advance());
       }
+    } else if (has_paren && at(token_kind::lparen)) {
+      ++paren_nesting;
+      qexpr->tokens.push_back(advance());
     } else if (at(token_kind::rparen) && has_paren && depth == 1) {
-      advance(); // consume `)`
-      has_paren = false;
+      if (paren_nesting > 0) {
+        --paren_nesting;
+        qexpr->tokens.push_back(advance());
+      } else {
+        advance(); // consume the wrapper's own closing `)`
+        has_paren = false;
+      }
     } else {
       qexpr->tokens.push_back(advance());
     }
