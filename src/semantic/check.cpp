@@ -1210,6 +1210,21 @@ private:
       return refinement.base != nullptr ? resolve_type(*refinement.base, ctx)
                                         : k_unknown_type;
     }
+    case ast::node_kind::quote_type: {
+      const auto &quote = dynamic_cast<const ast::quote_type &>(type);
+      switch (quote.quote_kind) {
+      case token_kind::kw_expr:
+        return types_.builtin("expr");
+      case token_kind::kw_stmt:
+        return types_.builtin("stmt");
+      case token_kind::kw_def_expr:
+        return types_.builtin("def_expr");
+      case token_kind::kw_type_expr:
+        return types_.builtin("type_expr");
+      default:
+        return k_unknown_type;
+      }
+    }
     default:
       return k_unknown_type;
     }
@@ -6627,6 +6642,16 @@ private:
   /// Checks a `static` declaration in whichever of its five forms it takes
   /// (binding, assertion, conditional compilation, or either `static for`
   /// variant), dispatching on `decl_kind`.
+  /// Type-checks a `static` declaration; it does not evaluate one. A
+  /// `static assert`/`static if` condition is only checked for `bool`-ness
+  /// here, never actually evaluated, and `static if` currently type-checks
+  /// *both* `if_body` and `else_body` unconditionally rather than selecting
+  /// one branch — there is no constant folding or branch selection until a
+  /// real compile-time evaluator exists (tracked as the M2 milestone of the
+  /// compile-time evaluation subsystem; see spec/typed-ir-design.md's note
+  /// that quote/splice/static's execution model was still an open design
+  /// question). `static for` likewise never actually iterates; it only
+  /// type-checks its body once against the element type.
   auto check_static_decl(const ast::static_decl &decl) -> void {
     switch (decl.decl_kind) {
     case ast::static_decl_kind::binding: {

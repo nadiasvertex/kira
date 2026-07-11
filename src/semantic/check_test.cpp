@@ -358,6 +358,18 @@ auto test_reports_annotation_mismatch() -> void {
                     "expected annotation type-mismatch diagnostic");
 }
 
+auto test_reports_quote_type_annotation_mismatch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_quote_type_annotation_mismatch.kira");
+  expect(analyzed.error_count > 0,
+        "expected a quote-type (`expr`) annotation mismatch to fail");
+  expect_diagnostic(analyzed, "expected `expr`, found `str`",
+                    "expected quote-type annotation mismatch diagnostic; "
+                    "quote_type must resolve to its own builtin instead of "
+                    "falling through to `<unknown>`, which unifies with "
+                    "everything and would silently accept this");
+}
+
 auto test_reports_integer_literal_overflow() -> void {
   const auto analyzed =
       analyze_test_data_file("report_integer_literal_overflow.kira");
@@ -892,6 +904,7 @@ auto main() -> int {
     test_reports_undefined_type();
     test_reports_packed_on_sum_type();
     test_reports_annotation_mismatch();
+    test_reports_quote_type_annotation_mismatch();
     test_reports_integer_literal_overflow();
     test_reports_mixed_numeric_types();
     test_reports_non_bool_condition();
