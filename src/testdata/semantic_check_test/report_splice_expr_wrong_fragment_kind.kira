@@ -1,0 +1,6 @@
+module sample
+
+static let a_stmt: stmt = `x = 5`
+
+def run() -> int32:
+    return ~a_stmt

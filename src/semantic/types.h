@@ -379,6 +379,14 @@ struct checked_types {
   /// (moved here from the checker) so their lifetime outlives type-checking.
   ast::ptr_vec<ast::func_decl> synthesized_decls;
   std::vector<synthesized_method> synthesized_trait_defaults;
+  /// Every `splice_expr`/`splice_stmt` node resolved (via compile-time
+  /// evaluation of its operand) to the exact AST fragment it should be
+  /// lowered as, keyed by the splice node itself. `hir::lower` looks a
+  /// splice node up here and lowers the resolved fragment in its place —
+  /// see `checker::infer_expr`'s `splice_expr` case and
+  /// `checker::check_body_node`'s `splice_stmt` case. Absent entries mean
+  /// the splice never resolved to usable syntax (already diagnosed).
+  std::unordered_map<const ast::node *, const ast::node *> spliced_fragments;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

@@ -1,0 +1,6 @@
+module sample
+
+static let doubled: expr = `(21 + 21)`
+
+def run() -> int32:
+    return ~doubled

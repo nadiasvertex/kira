@@ -381,6 +381,36 @@ auto test_accepts_quote_expr_typed_by_fragment_kind() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_splice_expr_reifies_quoted_value() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_splice_expr_reifies_quoted_value.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `~doubled` to graft the quoted `21 + 21` "
+                     "fragment in as `run`'s real return expression:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_accepts_splice_stmt_reifies_quoted_statement() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_splice_stmt_reifies_quoted_statement.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `~make_binding` to graft the quoted `let "
+                     "y: int32 = 10` statement into `run`'s body, binding "
+                     "`y` for the following `return y`:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_reports_splice_expr_wrong_fragment_kind() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_splice_expr_wrong_fragment_kind.kira");
+  expect(analyzed.error_count > 0,
+         "expected splicing a `stmt` fragment in expression position to "
+         "fail: only a quoted expression can be spliced there");
+  expect_diagnostic(analyzed, "must resolve to a quoted expression",
+                    "expected a diagnostic explaining that a quoted "
+                    "statement can't be spliced into expression position");
+}
+
 auto test_reports_splice_requires_quote_value() -> void {
   const auto analyzed =
       analyze_test_data_file("report_splice_requires_quote_value.kira");
@@ -995,6 +1025,8 @@ auto main() -> int {
     test_accepts_static_def_call_evaluates();
     test_accepts_static_struct_value_evaluates();
     test_accepts_static_let_forward_reference();
+    test_accepts_splice_expr_reifies_quoted_value();
+    test_accepts_splice_stmt_reifies_quoted_statement();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
@@ -1003,6 +1035,7 @@ auto main() -> int {
     test_reports_quote_type_annotation_mismatch();
     test_reports_static_assert_evaluates_false();
     test_reports_static_for_evaluates_each_iteration();
+    test_reports_splice_expr_wrong_fragment_kind();
     test_reports_splice_requires_quote_value();
     test_reports_integer_literal_overflow();
     test_reports_mixed_numeric_types();

@@ -1169,6 +1169,43 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
          "expected --show-compile-details to include the run's return value");
 }
 
+/// M4 end-to-end check: a `static let` bound to a quoted expression
+/// (`` `(...)` ``), spliced back into `main`'s body with `~`, must actually
+/// execute the quoted arithmetic under `--run` — not just type-check. This
+/// is the first runnable program exercising quote/splice reification
+/// (`checker::infer_expr`'s `splice_expr` case grafting the fragment,
+/// `hir::lower`'s new `splice_expr` case following `spliced_fragments`).
+auto test_run_executes_spliced_quoted_expression() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_splice.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample\n"
+                          "static let doubled: expr = `(21 + 21)`\n"
+                          "def main() -> int32:\n"
+                          "  return ~doubled\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected a spliced quoted expression to compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded, "expected `main` to run without panicking");
+  expect(report->run->exit_code == 42,
+         "expected `~doubled` to splice in `21 + 21` and actually execute "
+         "it, returning 42");
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -1205,6 +1242,7 @@ auto main() -> int {
     test_build_at_o2_still_links_and_runs_correctly();
     test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();
+    test_run_executes_spliced_quoted_expression();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;

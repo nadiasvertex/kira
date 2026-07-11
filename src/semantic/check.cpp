@@ -749,7 +749,8 @@ public:
         .interp_dispatches = std::move(interp_dispatches_),
         .fmt_types = fmt_types,
         .synthesized_decls = std::move(synthesized_decls_),
-        .synthesized_trait_defaults = std::move(synthesized_trait_defaults_)};
+        .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
+        .spliced_fragments = std::move(spliced_fragments_)};
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
@@ -853,6 +854,11 @@ private:
   /// `take_checked_types`.
   ast::ptr_vec<ast::func_decl> synthesized_decls_;
   std::vector<synthesized_method> synthesized_trait_defaults_;
+  /// Splice-node -> resolved-fragment mapping — see `checked_types::
+  /// spliced_fragments`'s doc comment in types.h. Populated by the
+  /// `splice_expr` case in `infer_expr_impl` and the `splice_stmt` case in
+  /// `check_body_node`. Handed to the caller via `take_checked_types`.
+  std::unordered_map<const ast::node *, const ast::node *> spliced_fragments_;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -2672,6 +2678,25 @@ private:
   /// where the operand must be quoted syntax, not an ordinary value like
   /// `~(42)`. `unknown`/`error` are accepted so one upstream gap doesn't
   /// cascade into a second, redundant diagnostic here.
+  /// Human-readable name for a compile-time quote-fragment kind, used in
+  /// splice-position mismatch diagnostics (e.g. splicing a quoted statement
+  /// where only a quoted expression is usable).
+  static auto quote_fragment_kind_name(comptime::value_kind kind)
+      -> std::string_view {
+    switch (kind) {
+    case comptime::value_kind::expr_fragment:
+      return "a quoted expression";
+    case comptime::value_kind::stmt_fragment:
+      return "a quoted statement";
+    case comptime::value_kind::def_expr_fragment:
+      return "a quoted definition";
+    case comptime::value_kind::type_expr_fragment:
+      return "a quoted type";
+    default:
+      return "a non-quote value";
+    }
+  }
+
   auto require_quote_value(type_id found, source_span span,
                            std::string_view context) -> void {
     if (types_.is_unknown(found)) {
@@ -4767,12 +4792,44 @@ private:
     }
     case ast::node_kind::splice_expr: {
       const auto &splice = dynamic_cast<const ast::splice_expr &>(expr);
-      if (splice.operand != nullptr) {
-        const auto operand_type = infer_expr(*splice.operand, k_unknown_type);
-        require_quote_value(operand_type, splice.operand->span,
-                            "a spliced expression");
+      if (splice.operand == nullptr) {
+        return k_unknown_type;
       }
-      return k_unknown_type;
+      const auto operand_type = infer_expr(*splice.operand, k_unknown_type);
+      require_quote_value(operand_type, splice.operand->span,
+                          "a spliced expression");
+      // Reification: evaluate the operand at compile time and, if it
+      // resolves to a quoted expression, graft that fragment in as this
+      // splice's real content — type-checking it here (so `hir::lower` has
+      // a `node_types_` entry to look up) and recording the splice ->
+      // fragment mapping (`spliced_fragments_`) so lowering can find it.
+      // No hygiene pass yet (M5): the fragment is checked directly against
+      // whatever scope is active at the splice site.
+      const auto fragment_value = comptime_eval_.evaluate(*splice.operand);
+      if (fragment_value.is_error()) {
+        return k_error_type;
+      }
+      if (fragment_value.kind != comptime::value_kind::expr_fragment ||
+          fragment_value.fragment == nullptr) {
+        error_with_help(
+            splice.operand->span,
+            std::format("a spliced expression must resolve to a quoted "
+                        "expression, found {}",
+                        quote_fragment_kind_name(fragment_value.kind)),
+            "this splice is used in expression position",
+            "Only a value quoted as `` `(...)` `` with expression content "
+            "can be spliced here; a quoted statement or definition belongs "
+            "in statement or item position instead.");
+        return k_error_type;
+      }
+      const auto *fragment_expr =
+          dynamic_cast<const ast::expr *>(fragment_value.fragment);
+      if (fragment_expr == nullptr) {
+        return k_error_type;
+      }
+      const auto fragment_type = infer_expr(*fragment_expr, expected);
+      spliced_fragments_[&expr] = fragment_expr;
+      return fragment_type;
     }
     case ast::node_kind::static_expr: {
       const auto &inner = dynamic_cast<const ast::static_expr &>(expr);
@@ -5952,12 +6009,47 @@ private:
 
     case ast::node_kind::splice_stmt: {
       const auto &stmt = dynamic_cast<const ast::splice_stmt &>(node);
-      if (stmt.expr != nullptr) {
-        const auto operand_type = infer_expr(*stmt.expr, k_unknown_type);
-        require_quote_value(operand_type, stmt.expr->span,
-                            "a spliced statement");
+      if (stmt.expr == nullptr) {
+        return unit;
       }
-      return unit;
+      const auto operand_type = infer_expr(*stmt.expr, k_unknown_type);
+      require_quote_value(operand_type, stmt.expr->span, "a spliced statement");
+      // Reification, mirroring `splice_expr` above: a quoted statement
+      // fragment is checked and grafted in directly; a quoted expression
+      // fragment is accepted too (splicing `` `(f())` `` in statement
+      // position is just an expression-statement, same as writing `f()`
+      // there directly).
+      const auto fragment_value = comptime_eval_.evaluate(*stmt.expr);
+      if (fragment_value.is_error()) {
+        return k_error_type;
+      }
+      if (fragment_value.kind == comptime::value_kind::stmt_fragment &&
+          fragment_value.fragment != nullptr) {
+        const auto fragment_type =
+            check_body_node(*fragment_value.fragment, expected_tail);
+        spliced_fragments_[&node] = fragment_value.fragment;
+        return fragment_type;
+      }
+      if (fragment_value.kind == comptime::value_kind::expr_fragment &&
+          fragment_value.fragment != nullptr) {
+        const auto *fragment_expr =
+            dynamic_cast<const ast::expr *>(fragment_value.fragment);
+        if (fragment_expr != nullptr) {
+          const auto fragment_type = infer_expr(*fragment_expr, expected_tail);
+          spliced_fragments_[&node] = fragment_expr;
+          return fragment_type;
+        }
+      }
+      error_with_help(
+          stmt.expr->span,
+          std::format("a spliced statement must resolve to a quoted "
+                      "statement or expression, found {}",
+                      quote_fragment_kind_name(fragment_value.kind)),
+          "this splice is used in statement position",
+          "Only a value quoted with expression or statement content can be "
+          "spliced here; a quoted definition belongs in item position "
+          "instead.");
+      return k_error_type;
     }
 
     case ast::node_kind::asm_stmt:

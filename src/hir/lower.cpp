@@ -521,6 +521,26 @@ auto lowerer::lower_expr(const ast::expr &expr)
   case ast::node_kind::interpolated_string_expr:
     return lower_interpolated_string(
         dynamic_cast<const ast::interpolated_string_expr &>(expr));
+  case ast::node_kind::splice_expr: {
+    // `checker::infer_expr`'s `splice_expr` case resolves the operand's
+    // compile-time value to a real AST fragment and records it in
+    // `spliced_fragments` — lowering just needs to redirect to that
+    // fragment as if it were physically present here. An absent entry
+    // means the splice never resolved to usable syntax, which checking
+    // would already have diagnosed.
+    const auto found = checked_.spliced_fragments.find(&expr);
+    if (found == checked_.spliced_fragments.end()) {
+      return fail(lowering_error_kind::unsupported_construct, expr.span,
+                  "this splice did not resolve to a quoted expression during "
+                  "checking");
+    }
+    const auto *fragment_expr = dynamic_cast<const ast::expr *>(found->second);
+    if (fragment_expr == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, expr.span,
+                  "this splice's resolved fragment is not an expression");
+    }
+    return lower_expr(*fragment_expr);
+  }
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
                 std::format("expression kind {} is not lowered by the first "
@@ -1909,6 +1929,30 @@ auto lowerer::lower_stmt(const ast::node &node)
   }
   case ast::node_kind::for_stmt:
     return lower_for_stmt(dynamic_cast<const ast::for_stmt &>(node));
+  case ast::node_kind::splice_stmt: {
+    // Mirrors the `splice_expr` case in `lower_expr` above: `checker::
+    // check_body_node`'s `splice_stmt` case records the resolved fragment
+    // in `spliced_fragments`, keyed by this statement node. The fragment
+    // may be a real statement (lowered directly through `lower_stmt`) or a
+    // bare expression (wrapped in `hir_expr_stmt`, same as an ordinary
+    // `expr_stmt`).
+    const auto found = checked_.spliced_fragments.find(&node);
+    if (found == checked_.spliced_fragments.end()) {
+      return fail(lowering_error_kind::unsupported_construct, node.span,
+                  "this splice did not resolve to quoted syntax during "
+                  "checking");
+    }
+    if (const auto *fragment_expr =
+            dynamic_cast<const ast::expr *>(found->second)) {
+      auto lowered = lower_expr(*fragment_expr);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      return one_stmt(
+          ptr<hir_node>(make<hir_expr_stmt>(node.span, std::move(*lowered))));
+    }
+    return lower_stmt(*found->second);
+  }
   default:
     return fail(lowering_error_kind::unsupported_construct, node.span,
                 std::format("statement kind {} is not lowered by the first "

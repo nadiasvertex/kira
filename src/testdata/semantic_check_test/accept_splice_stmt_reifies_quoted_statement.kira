@@ -1,0 +1,7 @@
+module sample
+
+static let make_binding: stmt = `let y: int32 = 10`
+
+def run() -> int32:
+    ~make_binding
+    return y
