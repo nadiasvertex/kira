@@ -87,7 +87,7 @@ auto build_requested_function(
           ? std::filesystem::path(first_source_stem(cfg) + ".out")
           : std::filesystem::path(cfg.build_output);
   report.build = build_hir_module(reachable, checked.types, cfg.build_function,
-                                  output_path, cfg.program_name);
+                                  output_path, cfg.program_name, cfg.opt_level);
 }
 
 } // namespace kira::driver

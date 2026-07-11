@@ -119,6 +119,41 @@ auto test_parse_args_accepts_show_compile_details() -> void {
          "--show-compile-details should set show_compile_details");
 }
 
+/// Verify `-O0`/`-O1`/`-O2`/`-O3`/bare `-O` parse into `cli_config::opt_level`,
+/// and that the default (no flag at all) stays `o0`.
+auto test_parse_args_accepts_optimization_level() -> void {
+  std::vector<std::string> default_args = {"kira", "main.kira"};
+  auto default_argv = make_argv(default_args);
+  auto default_result = kira::driver::parse_args(default_argv);
+  expect(default_result.has_value(), "expected sources to parse successfully");
+  expect(default_result->opt_level == kira::driver::optimization_level::o0,
+         "expected opt_level to default to o0 with no -O flag");
+
+  std::vector<std::string> bare_args = {"kira", "-O", "main.kira"};
+  auto bare_argv = make_argv(bare_args);
+  auto bare_result = kira::driver::parse_args(bare_argv);
+  expect(bare_result.has_value(), "-O should parse successfully");
+  expect(bare_result->opt_level == kira::driver::optimization_level::o1,
+         "expected bare -O to mean -O1");
+
+  const auto levels =
+      std::array<std::pair<std::string, kira::driver::optimization_level>, 4>{{
+          {"-O0", kira::driver::optimization_level::o0},
+          {"-O1", kira::driver::optimization_level::o1},
+          {"-O2", kira::driver::optimization_level::o2},
+          {"-O3", kira::driver::optimization_level::o3},
+      }};
+  for (const auto &[flag, expected] : levels) {
+    std::vector<std::string> args = {"kira", flag, "main.kira"};
+    auto argv = make_argv(args);
+    auto result = kira::driver::parse_args(argv);
+    expect(result.has_value(),
+           std::format("{} should parse successfully", flag));
+    expect(result->opt_level == expected,
+           std::format("expected {} to set the matching opt_level", flag));
+  }
+}
+
 /// Verify help and compile-summary rendering helpers.
 auto test_rendering_helpers() -> void {
   auto help = kira::driver::render_help("kira");
@@ -988,6 +1023,52 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 #endif
 }
 
+/// Same program as `test_build_links_and_runs_a_heap_using_program`, built
+/// at `-O2` instead of the default `-O0` — proves `cli_config::opt_level`
+/// actually reaches `llvm_codegen::emit_object_file`'s
+/// `optimize_module` call and that a real `llvm::PassBuilder` pipeline
+/// still produces a correct, linkable, runnable binary for a heap-using
+/// program (struct construction/field access), not just a scalar one.
+auto test_build_at_o2_still_links_and_runs_correctly() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_struct_o2.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_struct_o2_bin";
+
+  write_file(source_path, "module sample\n"
+                          "type point = { x: int32, y: int32 }\n"
+                          "def main() -> int32:\n"
+                          "  let p = point { x: 1, y: 41 }\n"
+                          "  return p.x + p.y\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+      .opt_level = kira::driver::optimization_level::o2,
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0, "expected valid source to compile cleanly");
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `-O2 --compile` to link successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  const auto exit_status = std::system(output_path.string().c_str());
+  expect(exit_status != -1, "expected the linked executable to launch");
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(exit_status) == 42,
+         "expected -O2's main()'s point{x:1,y:41}.x + .y to still be 42");
+#endif
+}
+
 /// Regression test for `spec/string-formatting-design.md` on the AOT/LLVM
 /// backend specifically (the bytecode VM path is covered by
 /// `src/testdata/std_test/string_interpolation.kira`): builds and actually
@@ -1098,6 +1179,7 @@ auto main() -> int {
     test_parse_args_accepts_metadata_dir();
     test_parse_args_rejects_unknown_options();
     test_parse_args_accepts_show_compile_details();
+    test_parse_args_accepts_optimization_level();
     test_rendering_helpers();
     test_compile_sources_writes_module_metadata();
     test_compile_sources_lowers_module_to_hir();
@@ -1120,6 +1202,7 @@ auto main() -> int {
     test_compile_sources_reports_unresolved_session_import();
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
+    test_build_at_o2_still_links_and_runs_correctly();
     test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();
   } catch (const std::exception &ex) {

@@ -63,7 +63,8 @@ namespace kira::driver {
 build_hir_module(std::span<const hir::hir_module *const> modules,
                  const semantic::type_table &types,
                  std::string_view function_name, const fs::path &output_path,
-                 std::string_view program_name) -> build_outcome {
+                 std::string_view program_name, optimization_level level)
+    -> build_outcome {
   auto compiled = llvm_codegen::compile_module(modules, types);
   if (!compiled) {
     return build_outcome{
@@ -77,8 +78,12 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   const auto object_path =
       fs::temp_directory_path() /
       std::format("kira-build-{}.o", static_cast<long>(::getpid()));
+  // `driver::optimization_level` and `llvm_codegen::optimization_level` are
+  // kept numerically identical (see `defaults.h`'s doc comment) specifically
+  // so this cast is valid without a switch.
+  const auto llvm_level = static_cast<llvm_codegen::optimization_level>(level);
   auto emitted = llvm_codegen::emit_object_file(
-      std::move(*compiled), function_name, object_path.string());
+      std::move(*compiled), function_name, object_path.string(), llvm_level);
   if (!emitted) {
     return build_outcome{.succeeded = false,
                          .message = std::format("failed to emit an object "

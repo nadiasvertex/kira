@@ -652,6 +652,68 @@ auto test_non_capturing_closure_is_called_indirectly() -> void {
   expect(result->value.i == 42, "expected (x => x * 2)(21) == 42");
 }
 
+// ==========================================================================
+//  Optimization (`llvm_codegen::optimization_level`/`optimize_module`) —
+//  these build the same fixture at `-O2` (via `jit_module::create`'s
+//  optional `level` parameter) as an already-passing `-O0` test above, and
+//  assert the exact same result, proving `llvm::PassBuilder`'s default
+//  pipeline doesn't change program semantics for constructs this backend
+//  actually emits: recursion/control flow, and a real runtime panic still
+//  firing (not folded away) through checked-arithmetic overflow.
+// ==========================================================================
+
+auto test_recursive_call_computes_factorial_at_o2() -> void {
+  auto fixture = check_fixture(load_fixture("recursive_factorial.kira"));
+  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(module.has_value(), "expected fixture to lower to HIR");
+  auto compiled = lc::compile_module(**module, fixture.checked.types);
+  expect(compiled.has_value(),
+         "expected fixture to compile to an llvm::Module");
+  auto jit =
+      lc::jit_module::create(std::move(*compiled), lc::optimization_level::o2);
+  expect(jit.has_value(),
+         "expected the -O2 compiled module to JIT successfully");
+
+  auto result = jit->run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected -O2's main() to succeed");
+  expect(result->value.i == 120, "expected -O2's factorial(5) == 120, matching "
+                                 "the -O0 result exactly");
+}
+
+auto test_checked_add_still_panics_on_overflow_at_o2() -> void {
+  auto fixture = check_fixture(load_fixture("checked_add_overflow.kira"));
+  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(module.has_value(), "expected fixture to lower to HIR");
+  auto compiled = lc::compile_module(**module, fixture.checked.types);
+  expect(compiled.has_value(),
+         "expected fixture to compile to an llvm::Module");
+  auto jit =
+      lc::jit_module::create(std::move(*compiled), lc::optimization_level::o2);
+  expect(jit.has_value(),
+         "expected the -O2 compiled module to JIT successfully");
+
+  auto result = jit->run("main", bc::numeric_kind::i32);
+  expect(!result.has_value(),
+         "expected -O2's overflow panic to still fire, not be optimized away");
+  expect(result.error() == bc::panic_reason::integer_overflow,
+         "expected -O2's panic reason to still be integer_overflow");
+}
+
+auto test_parse_optimization_level_accepts_0_through_3_only() -> void {
+  expect(lc::parse_optimization_level("0") == lc::optimization_level::o0,
+         "expected \"0\" to parse as o0");
+  expect(lc::parse_optimization_level("1") == lc::optimization_level::o1,
+         "expected \"1\" to parse as o1");
+  expect(lc::parse_optimization_level("2") == lc::optimization_level::o2,
+         "expected \"2\" to parse as o2");
+  expect(lc::parse_optimization_level("3") == lc::optimization_level::o3,
+         "expected \"3\" to parse as o3");
+  expect(!lc::parse_optimization_level("4").has_value(),
+         "expected an out-of-range level to fail to parse");
+  expect(!lc::parse_optimization_level("s").has_value(),
+         "expected a non-numeric level to fail to parse");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -702,6 +764,9 @@ auto main() -> int {
     test_list_comprehension_builds_and_reads_back_a_list();
     test_closure_captures_an_outer_parameter_and_is_called_indirectly();
     test_non_capturing_closure_is_called_indirectly();
+    test_recursive_call_computes_factorial_at_o2();
+    test_checked_add_still_panics_on_overflow_at_o2();
+    test_parse_optimization_level_accepts_0_through_3_only();
   } catch (const std::exception &ex) {
     std::cerr << "codegen_test failed: unhandled exception: " << ex.what()
               << '\n';

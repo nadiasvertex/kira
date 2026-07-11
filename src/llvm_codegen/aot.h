@@ -28,9 +28,14 @@ struct aot_error {
 /// linking it (with a system linker and Kira's native runtime support
 /// library, see `aot_runtime.h`) into a standalone executable; this
 /// function only emits the object file.
-[[nodiscard]] auto emit_object_file(compiled_module module,
-                                    std::string_view entry_function_name,
-                                    const std::string &object_path)
+/// `level` runs `optimize_module` (codegen.h) over the module in between
+/// synthesizing the C-ABI `main` entry point and handing it to the target
+/// machine's own codegen passes — `o0` (the default) leaves the emitted
+/// object code an exact reflection of `compile_module`'s own IR, unoptimized.
+[[nodiscard]] auto
+emit_object_file(compiled_module module, std::string_view entry_function_name,
+                 const std::string &object_path,
+                 optimization_level level = optimization_level::o0)
     -> std::expected<void, aot_error>;
 
 } // namespace kira::llvm_codegen

@@ -3,8 +3,10 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-conversion"
@@ -103,5 +105,38 @@ inline constexpr const char *kListReserveSlotSymbolName =
 compile_module(std::span<const hir::hir_module *const> modules,
                const semantic::type_table &types)
     -> std::expected<compiled_module, codegen_error>;
+
+// ==========================================================================
+//  Optimization — an opt-in `llvm::PassBuilder` pipeline run over a
+//  `compiled_module`'s IR before it's JIT-executed or emitted as a native
+//  object file. `compile_module` above never runs any optimization itself
+//  (matches `spec/codegen-design.md`'s "compiler is a teacher" philosophy,
+//  CLAUDE.md — the generated IR should stay a direct, readable reflection
+//  of the source); `optimize_module` is a separate, explicit step a caller
+//  opts into via `-O1`/`-O2`/`-O3` (`driver::cli_config::opt_level`).
+// ==========================================================================
+
+/// Mirrors clang/gcc's `-O0`/`-O1`/`-O2`/`-O3` convention and maps 1:1 onto
+/// `llvm::OptimizationLevel` (see `optimize_module`'s definition in
+/// `codegen.cpp` for the actual `llvm::PassBuilder` pipeline — kept out of
+/// this header so callers that only need `compiled_module`/`compile_module`
+/// don't have to pull in `<llvm/Passes/PassBuilder.h>`). `o0` — no
+/// optimization passes run at all — is every caller's default unless a
+/// `-O` flag says otherwise.
+enum class optimization_level : uint8_t { o0 = 0, o1 = 1, o2 = 2, o3 = 3 };
+
+/// Parses a CLI-style `-O` value's text (`"0"`/`"1"`/`"2"`/`"3"`, i.e. the
+/// part after `-O`) into an `optimization_level` — `nullopt` for anything
+/// else, so the caller (`driver::parse_args`) can report a clear diagnostic
+/// naming exactly what failed to parse.
+[[nodiscard]] auto parse_optimization_level(std::string_view text)
+    -> std::optional<optimization_level>;
+
+/// Runs `llvm::PassBuilder`'s standard per-module pipeline for `level` over
+/// `module` in place — a no-op when `level` is `o0`. Safe to call on any
+/// verified module, including one `aot.cpp`'s `synthesize_c_main` has
+/// already added a synthetic `main` to, or one about to be handed to
+/// `llvm::orc::LLJIT`.
+auto optimize_module(llvm::Module &module, optimization_level level) -> void;
 
 } // namespace kira::llvm_codegen

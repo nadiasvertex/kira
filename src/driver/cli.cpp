@@ -148,6 +148,48 @@ static const std::unordered_map<std::string_view, cli_converter>
             cfg.show_compile_details = true;
             return std::monostate{};
           }}},
+        {"-O",
+         {.name = "-O",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            // Bare `-O`, matching gcc/clang's own convention, is shorthand
+            // for `-O1`.
+            cfg.opt_level = optimization_level::o1;
+            return std::monostate{};
+          }}},
+        {"-O0",
+         {.name = "-O0",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.opt_level = optimization_level::o0;
+            return std::monostate{};
+          }}},
+        {"-O1",
+         {.name = "-O1",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.opt_level = optimization_level::o1;
+            return std::monostate{};
+          }}},
+        {"-O2",
+         {.name = "-O2",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.opt_level = optimization_level::o2;
+            return std::monostate{};
+          }}},
+        {"-O3",
+         {.name = "-O3",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.opt_level = optimization_level::o3;
+            return std::monostate{};
+          }}},
 };
 
 /// Find the first lowered module that defines a function with the given name.
@@ -268,6 +310,10 @@ auto render_help(std::string_view program_name) -> std::string {
       "                          point\n"
       "  --compile-output, -o PATH\n"
       "                          Write the linked executable to PATH\n"
+      "  -O0, -O1, -O2, -O3       Optimization level for --compile's LLVM\n"
+      "                          output (-O bare means -O1); default -O0,\n"
+      "                          no optimization passes run. Has no effect\n"
+      "                          on the default bytecode-VM `run` mode\n"
       "  --parse-only             Run only the lexer and parser,\n"
       "                          skipping semantic name resolution and\n"
       "                          type checking\n"

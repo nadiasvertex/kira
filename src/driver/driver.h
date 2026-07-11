@@ -48,6 +48,11 @@ struct cli_config {
                                            ///< when `build` is set.
   std::string build_output; ///< Output executable path; empty derives one
                             ///< from the first source file's stem.
+  optimization_level opt_level =
+      k_default_optimization_level; ///< `-O0`/`-O1`/`-O2`/`-O3` — only takes
+                                    ///< effect on `build`'s LLVM output;
+                                    ///< `run` (the bytecode VM) never runs
+                                    ///< any LLVM optimization pass.
 };
 
 /// Aggregate result of compiling all requested source files.

@@ -78,7 +78,7 @@ namespace {
 
 auto emit_object_file(compiled_module module,
                       std::string_view entry_function_name,
-                      const std::string &object_path)
+                      const std::string &object_path, optimization_level level)
     -> std::expected<void, aot_error> {
   auto &ctx = *module.context;
   auto &llvm_module = *module.module;
@@ -112,6 +112,11 @@ auto emit_object_file(compiled_module module,
                                "error): {}",
                                verify_message)});
   }
+
+  // Optimize (if requested) after the synthetic `main` is in place and the
+  // module has already been verified once, so any optimization bug surfaces
+  // against a module already known to be well-formed going in.
+  optimize_module(llvm_module, level);
 
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();

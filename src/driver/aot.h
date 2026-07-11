@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "defaults.h"
 #include "src/hir/nodes.h"
 #include "src/semantic/types.h"
 
@@ -39,11 +40,10 @@ namespace kira::driver {
 /// executable at `output_path`. `modules.front()` is the entry module (which
 /// owns `function_name`); see `run_hir_module`'s doc comment
 /// (`interpret.h`) for the full contract, shared with this function.
-[[nodiscard]] auto
-build_hir_module(std::span<const hir::hir_module *const> modules,
-                 const semantic::type_table &types,
-                 std::string_view function_name,
-                 const std::filesystem::path &output_path,
-                 std::string_view program_name) -> build_outcome;
+[[nodiscard]] auto build_hir_module(
+    std::span<const hir::hir_module *const> modules,
+    const semantic::type_table &types, std::string_view function_name,
+    const std::filesystem::path &output_path, std::string_view program_name,
+    optimization_level level = k_default_optimization_level) -> build_outcome;
 
 } // namespace kira::driver

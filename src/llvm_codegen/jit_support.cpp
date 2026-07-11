@@ -73,9 +73,10 @@ template <typename T>
 
 } // namespace
 
-auto jit_module::create(compiled_module module)
+auto jit_module::create(compiled_module module, optimization_level level)
     -> std::expected<jit_module, std::string> {
   ensure_native_target_initialized();
+  optimize_module(*module.module, level);
 
   auto builder = llvm::orc::LLJITBuilder();
   auto jit = builder.create();

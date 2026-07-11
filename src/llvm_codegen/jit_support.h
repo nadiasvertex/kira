@@ -39,10 +39,13 @@ struct jit_result {
 class jit_module {
 public:
   /// Takes ownership of `module` (its `llvm::LLVMContext`/`llvm::Module`
-  /// pair) and adds it to a fresh `LLJIT` instance, with process symbols
-  /// (this executable's own linked-in `kira_codegen_panic`, see runtime.h)
-  /// visible to it.
-  [[nodiscard]] static auto create(compiled_module module)
+  /// pair), runs `optimize_module(*module.module, level)` over it (a no-op
+  /// at the default `o0`), and adds it to a fresh `LLJIT` instance, with
+  /// process symbols (this executable's own linked-in `kira_codegen_panic`,
+  /// see runtime.h) visible to it.
+  [[nodiscard]] static auto
+  create(compiled_module module,
+         optimization_level level = optimization_level::o0)
       -> std::expected<jit_module, std::string>;
 
   /// Runs the zero-argument function `name`. `return_kind` must be the
