@@ -1206,6 +1206,43 @@ auto test_run_executes_spliced_quoted_expression() -> void {
          "it, returning 42");
 }
 
+/// M4.5 end-to-end check: `expr.lit(42)` — the AST-builder intrinsic that
+/// programmatically constructs a new `expr` quote value, rather than
+/// capturing existing syntax with `` `(...)` `` — must actually execute
+/// once spliced back in, mirroring `test_run_executes_spliced_quoted_
+/// expression` for M4's backtick-quote case.
+auto test_run_executes_spliced_builder_constructed_expression() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_builder_splice.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample\n"
+                          "static let built: expr = expr.lit(42)\n"
+                          "def main() -> int32:\n"
+                          "  return ~built\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected a spliced `expr.lit`-built expression to compile "
+         "cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded, "expected `main` to run without panicking");
+  expect(report->run->exit_code == 42,
+         "expected `~built` to splice in the `expr.lit(42)`-constructed "
+         "fragment and actually execute it, returning 42");
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -1243,6 +1280,7 @@ auto main() -> int {
     test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();
     test_run_executes_spliced_quoted_expression();
+    test_run_executes_spliced_builder_constructed_expression();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;

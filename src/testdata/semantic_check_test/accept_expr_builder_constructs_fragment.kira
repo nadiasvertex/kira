@@ -1,0 +1,6 @@
+module sample
+
+static let built: expr = expr.lit(42)
+
+def run() -> int32:
+    return ~built

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "src/comptime/value.h"
@@ -110,6 +112,16 @@ public:
   [[nodiscard]] auto
   evaluate_stmts(const std::vector<ast::ptr<ast::node>> &body) -> exec_result;
 
+  /// Moves out every AST-builder-constructed fragment (see
+  /// `synthesized_fragments_`'s doc comment) so its owner outlives this
+  /// evaluator — `checker::take_checked_types` calls this and stores the
+  /// result in `checked_types`, since `hir::lower` reads spliced fragments
+  /// (via `checked_types::spliced_fragments`) after the `checker`/
+  /// `evaluator` that produced them has already been destroyed.
+  [[nodiscard]] auto take_synthesized_fragments() -> ast::ptr_vec<ast::node> {
+    return std::move(synthesized_fragments_);
+  }
+
 private:
   [[nodiscard]] auto eval_binary(const ast::binary_expr &bin) -> value;
   [[nodiscard]] auto eval_unary(const ast::unary_expr &un) -> value;
@@ -124,6 +136,18 @@ private:
   [[nodiscard]] auto eval_module_path(const ast::module_path_expr &path)
       -> value;
   [[nodiscard]] auto eval_quote(const ast::quote_expr &quote) -> value;
+
+  /// Recognizes `expr.lit(...)`/`expr.ident(...)` — the AST-builder
+  /// intrinsics that construct a new `expr` quote-value programmatically
+  /// (as opposed to capturing existing syntax via a backtick quote). `expr`
+  /// here is a contextual pseudo-namespace, not a real bound value (nothing
+  /// ever binds the name `expr` itself); `field` must be a direct call
+  /// whose callee is a `field_expr` with an `ident_expr` object literally
+  /// spelled `expr`. Returns `nullopt` if `call` doesn't match this shape
+  /// at all, so `eval_call` can fall through to its ordinary `static def`
+  /// dispatch.
+  [[nodiscard]] auto try_eval_expr_builder_call(const ast::call_expr &call)
+      -> std::optional<value>;
 
   [[nodiscard]] auto call_function(const ast::func_decl &fn,
                                    const std::string &name,
@@ -165,6 +189,16 @@ private:
 
   std::vector<std::unordered_map<std::string, value>> locals_;
   int call_depth_ = 0;
+
+  /// Owns every AST node synthesized by `try_eval_expr_builder_call`
+  /// (`expr.lit(...)`/`expr.ident(...)`) — unlike a quoted `` `(...)` ``
+  /// fragment (an ordinary child of the file's own AST, see `ast::
+  /// quote_expr::parsed_body`'s doc comment), a programmatically
+  /// constructed fragment has no natural file owner, so it needs its own
+  /// session-lifetime storage. Stable-address: a `vector<unique_ptr<T>>`
+  /// only moves the pointer on growth, never the pointee — mirrors
+  /// `checker::synthesized_decls_`/`synthesized_types_` (`check.cpp`).
+  ast::ptr_vec<ast::node> synthesized_fragments_;
 };
 
 } // namespace kira::comptime

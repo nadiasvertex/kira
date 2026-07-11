@@ -393,6 +393,13 @@ struct checked_types {
   /// `checker::check_body_node`'s `splice_stmt` case. Absent entries mean
   /// the splice never resolved to usable syntax (already diagnosed).
   std::unordered_map<const ast::node *, const ast::node *> spliced_fragments;
+  /// Owns every AST node the `comptime::evaluator` constructed
+  /// programmatically (`expr.lit(...)`/`expr.ident(...)`, see `evaluator::
+  /// synthesized_fragments_`'s doc comment) — moved out of the evaluator
+  /// (which is destroyed along with `checker` once `check_program`
+  /// returns) so anything `spliced_fragments` points at stays alive for
+  /// `hir::lower`, which runs afterward.
+  ast::ptr_vec<ast::node> synthesized_fragments;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

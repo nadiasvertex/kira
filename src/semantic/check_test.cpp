@@ -400,6 +400,15 @@ auto test_accepts_splice_stmt_reifies_quoted_statement() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_expr_builder_constructs_fragment() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_expr_builder_constructs_fragment.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `expr.lit(42)` to construct a real `expr` "
+                     "quote value, spliceable via `~built`:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_accepts_expr_keyword_usable_as_identifier() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_expr_keyword_usable_as_identifier.kira");
@@ -1048,6 +1057,7 @@ auto main() -> int {
     test_accepts_splice_stmt_reifies_quoted_statement();
     test_accepts_splice_type_reifies_quoted_type();
     test_accepts_expr_keyword_usable_as_identifier();
+    test_accepts_expr_builder_constructs_fragment();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();

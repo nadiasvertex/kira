@@ -751,7 +751,8 @@ public:
         .synthesized_decls = std::move(synthesized_decls_),
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
         .synthesized_types = std::move(synthesized_types_),
-        .spliced_fragments = std::move(spliced_fragments_)};
+        .spliced_fragments = std::move(spliced_fragments_),
+        .synthesized_fragments = comptime_eval_.take_synthesized_fragments()};
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
@@ -3586,6 +3587,30 @@ private:
     if (field.object == nullptr) {
       infer_call_args_loosely(call);
       return k_unknown_type;
+    }
+
+    // `expr.lit(...)`/`expr.ident(...)` — the AST-builder intrinsics that
+    // construct a new `expr` quote value programmatically. `expr` here is
+    // a contextual pseudo-namespace (see `is_prelude_value_name`), not a
+    // real bound value, so it must be intercepted before ordinary object
+    // typing/method lookup ever tries to resolve it. Actual construction
+    // happens at evaluation time (`evaluator::try_eval_expr_builder_call`);
+    // this just gives the call site a concrete type to check against.
+    if (field.object->kind == ast::node_kind::ident_expr &&
+        dynamic_cast<const ast::ident_expr &>(*field.object).name == "expr") {
+      infer_call_args_loosely(call);
+      if (field.field_name != "lit" && field.field_name != "ident") {
+        error_with_help(
+            field.span,
+            std::format("`expr.{}` is not a recognized AST-builder "
+                        "intrinsic",
+                        field.field_name),
+            "unknown AST-builder call",
+            "Only `expr.lit(value)` and `expr.ident(name)` construct a new "
+            "`expr` quote value programmatically.");
+        return k_error_type;
+      }
+      return types_.builtin("expr");
     }
 
     // `int32.max`-style access on a type name never reaches method lookup.

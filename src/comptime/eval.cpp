@@ -3,6 +3,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
+#include <format>
 #include <ranges>
 #include <string>
 
@@ -636,9 +637,87 @@ auto evaluator::call_function(const ast::func_decl &fn, const std::string &name,
   return result;
 }
 
+auto evaluator::try_eval_expr_builder_call(const ast::call_expr &call)
+    -> std::optional<value> {
+  if (call.callee == nullptr ||
+      call.callee->kind != ast::node_kind::field_expr) {
+    return std::nullopt;
+  }
+  const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+  if (field.object == nullptr ||
+      field.object->kind != ast::node_kind::ident_expr) {
+    return std::nullopt;
+  }
+  if (dynamic_cast<const ast::ident_expr &>(*field.object).name != "expr") {
+    return std::nullopt;
+  }
+
+  if (field.field_name == "lit") {
+    if (call.args.size() != 1 || call.args.front().value == nullptr) {
+      return report(call.span, "`expr.lit` takes exactly one argument");
+    }
+    auto arg = evaluate(*call.args.front().value);
+    if (arg.is_error()) {
+      return arg;
+    }
+    auto lit = ast::make<ast::literal_expr>();
+    lit->span = call.span;
+    switch (arg.kind) {
+    case value_kind::integer:
+      lit->lit_kind = token_kind::int_lit;
+      lit->value = std::to_string(arg.integer);
+      break;
+    case value_kind::floating:
+      lit->lit_kind = token_kind::float_lit;
+      lit->value = std::to_string(arg.floating);
+      break;
+    case value_kind::boolean:
+      lit->lit_kind = arg.boolean ? token_kind::kw_true : token_kind::kw_false;
+      lit->value = arg.boolean ? "true" : "false";
+      break;
+    default:
+      return report(call.args.front().value->span,
+                    "`expr.lit` only supports integer, floating-point, and "
+                    "boolean values (string literals are not yet supported)");
+    }
+    const auto *raw = lit.get();
+    synthesized_fragments_.push_back(std::move(lit));
+    return value::make_expr_fragment(raw);
+  }
+
+  if (field.field_name == "ident") {
+    if (call.args.size() != 1 || call.args.front().value == nullptr) {
+      return report(call.span, "`expr.ident` takes exactly one argument");
+    }
+    auto arg = evaluate(*call.args.front().value);
+    if (arg.is_error()) {
+      return arg;
+    }
+    if (arg.kind != value_kind::string) {
+      return report(call.args.front().value->span,
+                    "`expr.ident` expects a string naming the identifier");
+    }
+    auto ident = ast::make<ast::ident_expr>();
+    ident->span = call.span;
+    ident->name = arg.string;
+    const auto *raw = ident.get();
+    synthesized_fragments_.push_back(std::move(ident));
+    return value::make_expr_fragment(raw);
+  }
+
+  return report(call.span,
+                std::format("`expr.{}` is not a recognized AST-builder "
+                            "intrinsic (only `expr.lit`/`expr.ident` are "
+                            "supported)",
+                            field.field_name));
+}
+
 auto evaluator::eval_call(const ast::call_expr &call) -> value {
   if (call.callee == nullptr) {
     return value::make_error();
+  }
+  if (auto builder = try_eval_expr_builder_call(call)) {
+    return *builder;
   }
   const auto *callee_ident =
       dynamic_cast<const ast::ident_expr *>(call.callee.get());
