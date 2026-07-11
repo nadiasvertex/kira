@@ -8,6 +8,7 @@
 namespace kira::ast {
 struct func_decl;
 struct node;
+struct type_decl;
 } // namespace kira::ast
 
 namespace kira::comptime {
@@ -38,6 +39,13 @@ enum class value_kind : uint8_t {
   def_expr_fragment,
   /// A quoted type fragment (Kira type `type_expr`).
   type_expr_fragment,
+  /// A bound generic type argument (e.g. `T` inside `static def
+  /// derive_show[T]()`, bound by a compile-time generic call like
+  /// `derive_show[point]()`) — a boxed `const ast::type_decl *`, resolved
+  /// the same way `reflect.cpp`'s `pending_types_`-by-literal-name lookup
+  /// already resolves a type reflection target, just reached through a
+  /// local binding instead of a literal identifier spelling.
+  type_value,
   /// Sentinel meaning "evaluation already failed and a diagnostic was
   /// already reported" — mirrors `k_unknown_type`'s role in the type
   /// checker (`src/semantic/types.h`): once emitted, it propagates through
@@ -73,6 +81,10 @@ struct value {
   /// Target function for `closure`; never owning — function declarations
   /// live for the whole checking session.
   const ast::func_decl *function = nullptr;
+
+  /// Bound type declaration for `type_value`; never owning, same lifetime
+  /// rationale as `function`.
+  const ast::type_decl *type_decl = nullptr;
 
   /// Boxed AST fragment for `expr_fragment`/`stmt_fragment`/
   /// `def_expr_fragment`/`type_expr_fragment` — always a
@@ -128,6 +140,13 @@ struct value {
   [[nodiscard]] static auto make_type_expr_fragment(const ast::node *fragment)
       -> value {
     return value{.kind = value_kind::type_expr_fragment, .fragment = fragment};
+  }
+  [[nodiscard]] static auto make_type_value(std::string name,
+                                            const ast::type_decl *decl)
+      -> value {
+    return value{.kind = value_kind::type_value,
+                 .type_name = std::move(name),
+                 .type_decl = decl};
   }
   [[nodiscard]] static auto make_error() -> value {
     return value{.kind = value_kind::diagnostic_marker};

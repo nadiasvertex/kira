@@ -67,13 +67,14 @@ auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
       field.field_name != "name") {
     return std::nullopt;
   }
-  const auto &type_name =
-      dynamic_cast<const ast::ident_expr &>(*field.object).name;
-  const auto it = pending_types_.find(type_name);
-  if (it == pending_types_.end() || it->second == nullptr) {
+  const auto &object_ident =
+      dynamic_cast<const ast::ident_expr &>(*field.object);
+  const auto &type_name = object_ident.name;
+  const auto *resolved = resolve_type_reference(object_ident);
+  if (resolved == nullptr) {
     return std::nullopt;
   }
-  const auto &decl = *it->second;
+  const auto &decl = *resolved;
 
   if (field.field_name == "name") {
     return value::make_string(decl.name);

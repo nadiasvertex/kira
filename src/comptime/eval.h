@@ -167,6 +167,55 @@ private:
   [[nodiscard]] auto try_eval_expr_builder_call(const ast::call_expr &call)
       -> std::optional<value>;
 
+  /// Deep-clones a fragment reached through a boxed `expr_fragment` value so
+  /// it can become an owned child of a newly synthesized node (e.g.
+  /// `expr.field`'s `object`) without aliasing a `unique_ptr` some other
+  /// node/arena already owns. Deliberately narrow — only the node shapes
+  /// reachable via the AST-builder intrinsics or a typical simple quoted
+  /// expression (`ident_expr`, `field_expr`, `literal_expr`) are supported;
+  /// returns `nullptr` for anything structurally richer, so the caller can
+  /// report a clear "too complex" diagnostic instead of guessing.
+  [[nodiscard]] auto clone_expr_fragment(const ast::node &node)
+      -> ast::ptr<ast::expr>;
+
+  /// Appends the segment(s) needed to represent `fragment` inside a larger
+  /// `interpolated_string_expr` being assembled by `expr.interp_concat` —
+  /// see the `.cpp` doc comment for the exact per-shape rules. Reports and
+  /// returns `false` if `fragment`'s shape can't be represented.
+  [[nodiscard]] auto
+  append_interp_segments(const ast::node &fragment, source_span span,
+                         std::vector<ast::interp_segment> &out) -> bool;
+
+  /// Whether `node` (restricted to the structural shapes
+  /// `materialize_quote` understands — see its own doc comment) contains a
+  /// nested `~` splice anywhere beneath it, so `eval_quote` knows whether
+  /// this fragment needs eager materialization at all. Best-effort/
+  /// conservative: a node kind not specifically recognized here is assumed
+  /// splice-free, matching this quote's pre-materialization behavior (leave
+  /// it as literal syntax, resolved later at the eventual splice site)
+  /// rather than risking a clone `materialize_quote` couldn't reconstruct.
+  [[nodiscard]] auto quote_body_has_nested_splice(const ast::node &node)
+      -> bool;
+
+  /// Deep-clones `node`, resolving any nested `~` splice found along the
+  /// way *now* — while the locals/globals active at the point this quote is
+  /// being constructed are still live — instead of leaving it as literal,
+  /// unresolved syntax to be re-evaluated later at whatever scope the
+  /// eventual splice site happens to have (which, for a quote returned from
+  /// a `static def` call, is *after* that call's own locals have already
+  /// been popped — see the design plan's M7 addendum for the concrete
+  /// failure this fixes: `static def make_adder(n) -> expr:
+  /// `(x + ~(expr.lit(n)))`` couldn't resolve `n` at the eventual splice
+  /// site without this). Only called when `quote_body_has_nested_splice`
+  /// found something to resolve. Narrow, not a general AST clone: supports
+  /// exactly the node shapes needed to quote a small generated `impl`
+  /// (`impl_decl`, `func_decl`, `return_stmt`, `named_type`, `splice_type`,
+  /// `splice_expr`, plus the expr leaf kinds `clone_expr_fragment` already
+  /// handles). Returns `nullptr` (after reporting, for the cases that can
+  /// fail) for anything else.
+  [[nodiscard]] auto materialize_quote(const ast::node &node)
+      -> ast::ptr<ast::node>;
+
   /// Recognizes `T.fields()`/`T.field_count()`/`T.name()` — compile-time
   /// reflection over a registered `type` declaration's own syntax (design
   /// plan section 4; implemented in `reflect.cpp`). `T` must be an
@@ -177,9 +226,30 @@ private:
   [[nodiscard]] auto try_eval_type_reflection_call(const ast::call_expr &call)
       -> std::optional<value>;
 
-  [[nodiscard]] auto call_function(const ast::func_decl &fn,
-                                   const std::string &name,
-                                   std::vector<value> args, source_span span)
+  /// Recognizes `name[T](...)` — a compile-time generic call to a `static
+  /// def` function with one type parameter (e.g. `derive_show[point]()`).
+  /// `name` must be in `pending_functions_` with a non-empty `type_params`;
+  /// `T` must resolve via `resolve_type_reference` (a real declared type, or
+  /// — for a nested generic call forwarding its own type parameter — an
+  /// already-bound `type_value` local). Returns `nullopt` if the shape
+  /// doesn't match at all, so `eval_call` can fall through to its ordinary
+  /// direct-call dispatch (which itself will reject an `index_expr` callee).
+  [[nodiscard]] auto try_eval_comptime_generic_call(const ast::call_expr &call)
+      -> std::optional<value>;
+
+  /// Resolves `ident` to a registered `type` declaration for reflection/
+  /// generic-call purposes: first checks whether `ident` names a local
+  /// bound to a `type_value` (a generic parameter received by the enclosing
+  /// `static def`, e.g. `T`), then falls back to `pending_types_`-by-
+  /// literal-name (an ordinary top-level type name, e.g. `point`). Returns
+  /// `nullptr` if neither resolves.
+  [[nodiscard]] auto resolve_type_reference(const ast::ident_expr &ident)
+      -> const ast::type_decl *;
+
+  [[nodiscard]] auto
+  call_function(const ast::func_decl &fn, const std::string &name,
+                std::vector<value> args, source_span span,
+                std::vector<std::pair<std::string, value>> type_args = {})
       -> value;
 
   [[nodiscard]] auto evaluate_stmt(const ast::node &node) -> exec_result;

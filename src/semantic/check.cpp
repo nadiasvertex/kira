@@ -3725,15 +3725,17 @@ private:
     if (field.object->kind == ast::node_kind::ident_expr &&
         dynamic_cast<const ast::ident_expr &>(*field.object).name == "expr") {
       infer_call_args_loosely(call);
-      if (field.field_name != "lit" && field.field_name != "ident") {
+      if (field.field_name != "lit" && field.field_name != "ident" &&
+          field.field_name != "field" && field.field_name != "interp_concat") {
         error_with_help(
             field.span,
             std::format("`expr.{}` is not a recognized AST-builder "
                         "intrinsic",
                         field.field_name),
             "unknown AST-builder call",
-            "Only `expr.lit(value)` and `expr.ident(name)` construct a new "
-            "`expr` quote value programmatically.");
+            "Only `expr.lit(value)`, `expr.ident(name)`, "
+            "`expr.field(object, name)`, and `expr.interp_concat(a, b)` "
+            "construct a new `expr` quote value programmatically.");
         return k_error_type;
       }
       return types_.builtin("expr");
@@ -3743,14 +3745,26 @@ private:
     // over a struct type's own declaration (design plan section 4). Only
     // intercepted when both the method name matches one of the three
     // recognized reflection calls *and* the object actually names a real
-    // type reachable here — a bare `ident_expr` whose name happens to
-    // collide with an unrelated value or qualified-call target must still
-    // fall through to the ordinary handling below untouched.
+    // type or an in-scope generic type parameter (the latter for a
+    // `static def derive_show[T]()`-shaped body calling `T.fields()` — M7)
+    // reachable here — a bare `ident_expr` whose name happens to collide
+    // with an unrelated value or qualified-call target must still fall
+    // through to the ordinary handling below untouched.
     if (field.object->kind == ast::node_kind::ident_expr &&
         (field.field_name == "fields" || field.field_name == "field_count" ||
          field.field_name == "name")) {
       const auto &type_name =
           dynamic_cast<const ast::ident_expr &>(*field.object).name;
+      if (lookup_type_param(type_name).has_value()) {
+        infer_call_args_loosely(call);
+        if (field.field_name == "name") {
+          return types_.builtin("str");
+        }
+        if (field.field_name == "field_count") {
+          return types_.builtin("int32");
+        }
+        return k_unknown_type;
+      }
       if (const auto found = find_type_decl_by_name(type_name)) {
         infer_call_args_loosely(call);
         if (field.field_name == "name") {
@@ -4010,6 +4024,71 @@ private:
   /// prelude forms with their own hard-coded signature (`panic`, `assert`,
   /// ...), a builtin conversion call, a bare variant spelling, or an
   /// undefined-name error.
+  /// Recognizes `name[T](...)` — a compile-time generic call to a top-level
+  /// `static def` function (e.g. `derive_show[point]()`), distinguished
+  /// from ordinary indexing-then-calling by `ident_names_callable_decl`
+  /// (mirrors `infer_index`'s own "generic instantiation, not indexing"
+  /// branch). Types the call as the function's declared return type via the
+  /// ordinary `check_call_against_decl` machinery (`T` isn't substituted
+  /// into the signature — this milestone's only caller, `derive_show`,
+  /// never mentions its type parameter in its own signature, only inside
+  /// its body via reflection) so argument-count/type checking stays real.
+  /// Returns `nullopt` when the shape doesn't match at all, so `infer_call`
+  /// falls through to its ordinary dispatch.
+  auto infer_comptime_generic_call(const ast::call_expr &call,
+                                   const ast::index_expr &index)
+      -> std::optional<type_id> {
+    if (index.object == nullptr || index.index == nullptr ||
+        index.object->kind != ast::node_kind::ident_expr) {
+      return std::nullopt;
+    }
+    const auto &callee_ident =
+        dynamic_cast<const ast::ident_expr &>(*index.object);
+    const ast::func_decl *decl = nullptr;
+    const module_members *owner = module_;
+    auto decl_file = file_id_type{};
+    if (module_ != nullptr) {
+      if (const auto it = module_->functions.find(callee_ident.name);
+          it != module_->functions.end()) {
+        decl = it->second.decl;
+        decl_file = it->second.file_id;
+      }
+    }
+    if (decl == nullptr) {
+      if (const auto *import = find_import(callee_ident.name)) {
+        if (const auto *source = import_source_module(*import)) {
+          const auto member = imported_member_name(*import);
+          if (const auto it = source->functions.find(member);
+              it != source->functions.end()) {
+            decl = it->second.decl;
+            owner = source;
+            decl_file = it->second.file_id;
+          }
+        }
+      }
+    }
+    if (decl == nullptr || !decl->modifiers.is_static ||
+        decl->type_params.empty()) {
+      return std::nullopt;
+    }
+    // The type argument must name either an in-scope generic parameter (a
+    // nested compile-time generic call forwarding its own type parameter)
+    // or a real declared type — anything else falls through to ordinary
+    // indexing so a genuine mistake still gets an ordinary diagnostic
+    // rather than a confusing one from this narrow comptime-only path.
+    if (index.index->kind != ast::node_kind::ident_expr) {
+      return std::nullopt;
+    }
+    const auto &type_arg_name =
+        dynamic_cast<const ast::ident_expr &>(*index.index).name;
+    if (!lookup_type_param(type_arg_name).has_value() &&
+        !find_type_decl_by_name(type_arg_name).has_value()) {
+      return std::nullopt;
+    }
+    return check_call_against_decl(call, *decl, owner, decl_file,
+                                   /*skip_self=*/false);
+  }
+
   auto infer_call(const ast::call_expr &call, type_id expected) -> type_id {
     if (call.callee == nullptr) {
       infer_call_args_loosely(call);
@@ -4019,6 +4098,13 @@ private:
     if (call.callee->kind == ast::node_kind::field_expr) {
       return infer_method_call(
           call, dynamic_cast<const ast::field_expr &>(*call.callee));
+    }
+
+    if (call.callee->kind == ast::node_kind::index_expr) {
+      if (const auto result = infer_comptime_generic_call(
+              call, dynamic_cast<const ast::index_expr &>(*call.callee))) {
+        return *result;
+      }
     }
 
     if (call.callee->kind != ast::node_kind::ident_expr) {
@@ -4348,16 +4434,21 @@ private:
         ident_names_callable_decl(
             dynamic_cast<const ast::ident_expr &>(*index.object))) {
       // A bare identifier naming an in-scope generic parameter (e.g. `T` in
-      // `size_of[T]()` inside a concept/generic bound) is a type argument,
-      // not a value reference — skip ordinary name resolution so it doesn't
-      // spuriously report "undefined name".
-      const auto is_type_param_arg =
+      // `size_of[T]()` inside a concept/generic bound) or a real declared
+      // type (e.g. `point` in a compile-time generic call like
+      // `derive_show[point]()`) is a type argument, not a value reference —
+      // skip ordinary name resolution so it doesn't spuriously report
+      // "undefined name".
+      const auto is_type_argument =
           index.index != nullptr &&
           index.index->kind == ast::node_kind::ident_expr &&
-          lookup_type_param(
-              dynamic_cast<const ast::ident_expr &>(*index.index).name)
-              .has_value();
-      if (index.index != nullptr && !is_type_param_arg) {
+          (lookup_type_param(
+               dynamic_cast<const ast::ident_expr &>(*index.index).name)
+               .has_value() ||
+           find_type_decl_by_name(
+               dynamic_cast<const ast::ident_expr &>(*index.index).name)
+               .has_value());
+      if (index.index != nullptr && !is_type_argument) {
         infer_expr(*index.index, k_unknown_type);
       }
       return k_unknown_type;

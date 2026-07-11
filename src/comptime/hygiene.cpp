@@ -1,6 +1,7 @@
 #include "src/comptime/hygiene.h"
 
 #include <format>
+#include <ranges>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -45,8 +46,8 @@ private:
   /// reference, or a binding form this pass deliberately leaves alone).
   [[nodiscard]] auto lookup(const std::string &name) const
       -> const std::string * {
-    for (auto it = scopes_.rbegin(); it != scopes_.rend(); ++it) {
-      if (const auto found = it->find(name); found != it->end()) {
+    for (const auto &scope : std::views::reverse(scopes_)) {
+      if (const auto found = scope.find(name); found != scope.end()) {
         return &found->second;
       }
     }
