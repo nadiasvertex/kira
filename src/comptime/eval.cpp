@@ -101,6 +101,17 @@ auto encode_string_literal(std::string_view text) -> std::string {
     case '\r':
       encoded += "\\r";
       break;
+    case '{':
+      // `decode_string_body` (`text_escape.cpp`) treats a lone `{` as the
+      // start of a leftover interpolation region and a doubled `{{` as an
+      // escaped literal brace — this value never passed through the
+      // lexer's own interpolation splitting, so it must double any brace
+      // itself to read back as a literal one.
+      encoded += "{{";
+      break;
+    case '}':
+      encoded += "}}";
+      break;
     default:
       encoded.push_back(ch);
       break;
@@ -1611,9 +1622,61 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
       }
       return evaluate_stmts(condition.boolean ? decl.if_body : decl.else_body);
     }
+    case ast::static_decl_kind::for_inline:
+    case ast::static_decl_kind::for_block: {
+      // Mirrors `checker::check_static_decl`'s own top-level `static for`
+      // iteration exactly (`check.cpp`) — that copy only runs for a `static
+      // for` written directly as a module item; this one is what makes the
+      // *same* construct work when nested inside a `static def`'s own body
+      // (e.g. `derive_show[T]()`'s per-field loop), which previously fell
+      // through to the `default` case below and silently did nothing. Only
+      // a single loop pattern is supported, matching the same pre-existing
+      // restriction.
+      if (decl.for_iterable == nullptr || decl.for_iterable->has_error ||
+          decl.for_patterns.size() != 1 || decl.for_patterns[0] == nullptr) {
+        return exec_result{};
+      }
+      auto list_value = evaluate_iterable(*decl.for_iterable);
+      if (list_value.is_error()) {
+        return exec_result{.errored = true};
+      }
+      for (const auto &element_value : list_value.elements) {
+        auto scope = std::unordered_map<std::string, value>{};
+        if (!bind_pattern(*decl.for_patterns[0], element_value, scope)) {
+          return exec_result{.errored = true};
+        }
+        push_locals(std::move(scope));
+        if (decl.for_guard != nullptr) {
+          auto guard = evaluate(*decl.for_guard);
+          if (guard.is_error() || guard.kind != value_kind::boolean) {
+            pop_locals();
+            return exec_result{.errored = true};
+          }
+          if (!guard.boolean) {
+            pop_locals();
+            continue;
+          }
+        }
+        if (decl.decl_kind == ast::static_decl_kind::for_inline) {
+          if (decl.for_yield != nullptr) {
+            auto yielded = evaluate(*decl.for_yield);
+            if (yielded.is_error()) {
+              pop_locals();
+              return exec_result{.errored = true};
+            }
+          }
+          pop_locals();
+        } else {
+          const auto exec = evaluate_stmts(decl.for_body);
+          pop_locals();
+          if (exec.errored || exec.returned) {
+            return exec;
+          }
+        }
+      }
+      return exec_result{};
+    }
     default:
-      // Nested `static for` isn't evaluated for real yet — skip it rather
-      // than fail the whole enclosing body.
       return exec_result{};
     }
   }

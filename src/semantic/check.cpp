@@ -886,6 +886,14 @@ private:
   /// fragments) — see `resolve_item_splices`.
   std::unordered_map<const ast::node *, const ast::impl_decl *>
       item_splice_impls_;
+  /// `type_decl` node -> the `impl_decl` `resolve_deriving_show` spliced in
+  /// for it, so `check_file`'s item loop (and its `sub_module_decl`
+  /// counterpart) know to *also* `check_item` the derived impl, in addition
+  /// to (not instead of, unlike `item_splice_impls_`) checking the
+  /// `type_decl` itself normally — there is no literal splice AST node for
+  /// `deriving show` sugar to swap in for.
+  std::unordered_map<const ast::node *, const ast::impl_decl *>
+      derived_show_impls_;
   /// Owns every literal node synthesized by `materialize_const_literal` —
   /// see `checked_types::synthesized_const_literals`'s doc comment.
   ast::ptr_vec<ast::literal_expr> synthesized_const_literals_;
@@ -7276,9 +7284,23 @@ private:
       // above (which only checks the body/yield once against the element
       // type). Only a single loop pattern is supported for now — multiple
       // patterns (tuple-unpacking `for a, b in ...`) still only
-      // type-check, matching the pre-existing fallback behavior.
-      if (decl.for_iterable != nullptr && !decl.for_iterable->has_error &&
-          decl.for_patterns.size() == 1 && decl.for_patterns[0] != nullptr) {
+      // type-check, matching the pre-existing fallback behavior. Also
+      // skipped entirely while any generic type-parameter scope is active
+      // (e.g. this `static for` sits inside a `static def derive_show[T]()`
+      // body): the iterable may depend on `T`, which has no bound value
+      // until an actual compile-time generic call (`derive_show[point]()`)
+      // provides one — evaluating it now, during ordinary declaration
+      // checking, would spuriously fail every time regardless of whether
+      // the function is ever called. Real iteration for that case instead
+      // happens inside `evaluator::evaluate_stmt`'s own `for_block`/
+      // `for_inline` handling, run once per call with `T` actually bound.
+      const auto inside_generic_scope =
+          std::ranges::any_of(type_params_, [](const auto &scope) -> bool {
+            return !scope.empty();
+          });
+      if (!inside_generic_scope && decl.for_iterable != nullptr &&
+          !decl.for_iterable->has_error && decl.for_patterns.size() == 1 &&
+          decl.for_patterns[0] != nullptr) {
         auto list_value = comptime_eval_.evaluate_iterable(*decl.for_iterable);
         if (!list_value.is_error()) {
           for (const auto &element_value : list_value.elements) {
@@ -7380,6 +7402,10 @@ private:
           check_body_node(*child, k_unknown_type);
         } else {
           check_item(*child, /*at_module_scope=*/true);
+        }
+        if (const auto it = derived_show_impls_.find(child.get());
+            it != derived_show_impls_.end()) {
+          check_item(*it->second, /*at_module_scope=*/true);
         }
       }
       pop_scope();
@@ -7543,6 +7569,10 @@ private:
       } else {
         check_item(*item, /*at_module_scope=*/true);
       }
+      if (const auto it = derived_show_impls_.find(item.get());
+          it != derived_show_impls_.end()) {
+        check_item(*it->second, /*at_module_scope=*/true);
+      }
     }
     pop_scope();
   }
@@ -7608,10 +7638,71 @@ private:
   /// result (found or not) is recorded in `item_splice_impls_` so
   /// `check_file`'s item loop never falls through to re-evaluating it via
   /// `check_body_node`.
+  /// Splices `~derive_show[TypeName]()` in behind the scenes for a
+  /// concrete (non-generic), struct-shaped `type ... deriving show` —
+  /// M7's replacement for the old hardcoded `derived_method_result` type-
+  /// only rule (`show` still stays listed there too, purely as the
+  /// `type_has_trait` bookkeeping every `deriving`d trait needs; the *real*
+  /// runtime method now comes from here). Reuses `resolve_item_splices`'s
+  /// own tail exactly (evaluate, extract the wrapped `impl_decl`, push into
+  /// `index_.modules[...].impls`) via a synthesized call — there's no
+  /// literal `splice_stmt` AST node for this sugar to key off, so nothing
+  /// is recorded in `item_splice_impls_` (nothing will ever look one up
+  /// for a plain `type_decl` item). A generic type or a non-struct
+  /// (sum/refinement) definition is left on the old type-only path
+  /// unchanged: `derive_show[T]()`'s own body only supports a concrete,
+  /// struct-shaped `T` (`T.fields()` — see `reflect.cpp`), and the point of
+  /// this milestone is a real, working derivation, not a diagnostic
+  /// regression for the shapes it doesn't cover yet.
+  auto resolve_deriving_show(const ast::type_decl &decl,
+                             file_id_type owner_file) -> void {
+    if (decl.name.empty() || !decl.type_params.empty() ||
+        decl.definition == nullptr ||
+        decl.definition->kind != ast::node_kind::struct_type_def ||
+        !std::ranges::contains(decl.deriving, std::string("show"))) {
+      return;
+    }
+    auto callee_ident = ast::make<ast::ident_expr>();
+    callee_ident->span = decl.span;
+    callee_ident->name = "derive_show";
+    auto type_ident = ast::make<ast::ident_expr>();
+    type_ident->span = decl.span;
+    type_ident->name = decl.name;
+    auto index = ast::make<ast::index_expr>();
+    index->span = decl.span;
+    index->object = std::move(callee_ident);
+    index->index = std::move(type_ident);
+    auto call = ast::make<ast::call_expr>();
+    call->span = decl.span;
+    call->callee = std::move(index);
+
+    const auto fragment_value = comptime_eval_.evaluate(*call);
+    if (fragment_value.is_error() ||
+        fragment_value.kind != comptime::value_kind::def_expr_fragment ||
+        fragment_value.fragment == nullptr) {
+      return;
+    }
+    const auto *impl =
+        dynamic_cast<const ast::impl_decl *>(fragment_value.fragment);
+    if (impl == nullptr) {
+      return;
+    }
+    index_.modules[module_name_].impls.push_back(impl_ref{
+        .decl = impl, .module_name = module_name_, .file_id = owner_file});
+    synthesized_item_splices_.push_back(
+        synthesized_item_splice{.impl = impl, .owner_module = module_name_});
+    derived_show_impls_[&decl] = impl;
+  }
+
   auto resolve_item_splices(const std::vector<ast::ptr<ast::node>> &items,
                             file_id_type owner_file) -> void {
     for (const auto &item : items) {
       if (item == nullptr || item->has_error) {
+        continue;
+      }
+      if (item->kind == ast::node_kind::type_decl) {
+        resolve_deriving_show(dynamic_cast<const ast::type_decl &>(*item),
+                              owner_file);
         continue;
       }
       if (item->kind == ast::node_kind::sub_module_decl) {

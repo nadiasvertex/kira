@@ -686,12 +686,12 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // `from`/`drop` traits the auto-injected prelude provides, and
   // `prelude.kira` itself now `use`s `std.console` — mirror what
   // `main.cpp` does for every real invocation (this alone now pulls in
-  // `traits.kira`, `prelude.kira`, `io.kira`, `console.kira`, and
-  // `fmt.kira`) rather than hand-listing sources, which would double-add
-  // `io.kira`/`console.kira` under a different path string and trip a
-  // duplicate-module-path diagnostic (`find_stdlib_source_file`'s resolved
-  // path doesn't lexically match a literal `"src/std/io.kira"` under `bazel
-  // test`'s runfiles tree).
+  // `traits.kira`, `prelude.kira`, `io.kira`, `console.kira`, `fmt.kira`,
+  // and `derive.kira`) rather than hand-listing sources, which would
+  // double-add `io.kira`/`console.kira` under a different path string and
+  // trip a duplicate-module-path diagnostic (`find_stdlib_source_file`'s
+  // resolved path doesn't lexically match a literal `"src/std/io.kira"`
+  // under `bazel test`'s runfiles tree).
   kira::driver::inject_stdlib_prelude(cfg);
 
   auto report = kira::driver::compile_sources(cfg, false);
@@ -699,9 +699,9 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 5,
-         "expected std.io, std.console, std.traits, std.fmt, and prelude to "
-         "all emit metadata");
+  expect(report->modules.size() == 6,
+         "expected std.io, std.console, std.traits, std.fmt, std.derive, "
+         "and prelude to all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.
@@ -1432,6 +1432,72 @@ auto test_run_scalar_static_let_referenced_by_name() -> void {
          "value (3) directly, with no splice syntax required");
 }
 
+/// M7 end-to-end check: `type ... deriving show` on a concrete struct now
+/// gets a *real*, dynamically-derived `show()` method — not just a type
+/// that happens to check `p.show(): str` with no runtime body, which is all
+/// `deriving show` ever did before this milestone (`checker::
+/// derived_method_result` only ever provided a result *type*, and the one
+/// existing runtime path for it — string interpolation's implicit `.show()`
+/// dispatch — explicitly refused to lower it: "this type's capability comes
+/// only from `deriving`, which has no runtime body yet"). `checker::
+/// resolve_deriving_show` now splices `~derive_show[point]()`
+/// (`src/std/derive.kira`) in behind the scenes for every concrete, struct-
+/// shaped `deriving show`, so `p.show()` here calls a method built at
+/// compile time from `point`'s own real field list via reflection
+/// (`T.fields()`) and the AST-builder intrinsics — proven by checking the
+/// program's actual stdout, not just its exit code, since only the real
+/// formatted text (not just "did it compile") distinguishes a working
+/// derivation from a lucky compile.
+auto test_build_derives_show_via_deriving_clause() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_show.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_derive_show_bin";
+
+  write_file(source_path, "module sample\n"
+                          "type point = { x: int32, y: int32 } deriving show\n"
+                          "def main() -> int32:\n"
+                          "  let p: point = { x: 3, y: 4 }\n"
+                          "  println(p.show())\n"
+                          "  return 0\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `type point = {...} deriving show` to compile cleanly: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  expect(close_status == 0, "expected the linked executable to exit cleanly");
+  expect(
+      output == "point { x: 3, y: 4 }\n",
+      std::format("unexpected stdout from the derived `show()`: `{}`", output));
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -1474,6 +1540,7 @@ auto main() -> int {
     test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site();
     test_run_reflects_struct_field_count_into_runtime_constant();
     test_run_scalar_static_let_referenced_by_name();
+    test_build_derives_show_via_deriving_clause();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;

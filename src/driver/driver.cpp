@@ -77,9 +77,13 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   // effect on resolution — the whole session's module index is built
   // before any file is checked. `fmt.kira` backs string-interpolation
   // formatting (`spec/string-formatting-design.md`) and is always needed
-  // once any source file contains a `"{expr}"` interpolation.
-  for (const auto *filename :
-       {"traits.kira", "prelude.kira", "io.kira", "console.kira", "fmt.kira"}) {
+  // once any source file contains a `"{expr}"` interpolation. `deriving.kira`
+  // provides the real `static def derive_show[T]()` that `deriving show`
+  // sugar splices in (`semantic::checker::resolve_deriving_show`) — always
+  // injected, exactly like the others, so it's available to every session
+  // even though most sessions never actually reference it by name.
+  for (const auto *filename : {"traits.kira", "prelude.kira", "io.kira",
+                               "console.kira", "fmt.kira", "deriving.kira"}) {
     const auto found = find_stdlib_source_file(cfg.program_name, filename);
     if (found && !already_present(*found)) {
       cfg.sources.push_back(found->string());
