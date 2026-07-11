@@ -68,6 +68,17 @@ public:
     return globals_.contains(name);
   }
 
+  /// The memoized value bound for `name`, or `nullptr` if `name` has no
+  /// binding yet — callers that need the actual value (rather than just
+  /// "is it bound") after a `has_global` check or their own `bind_global`
+  /// call, e.g. `checker::resolve_ident` embedding a scalar `static let`'s
+  /// value directly into referencing code.
+  [[nodiscard]] auto global_value(const std::string &name) const
+      -> const value * {
+    const auto it = globals_.find(name);
+    return it != globals_.end() ? &it->second : nullptr;
+  }
+
   /// Registers a top-level `static let` for lazy, order-independent
   /// evaluation: if some other compile-time expression references `name`
   /// before `checker` reaches this declaration in file order, the

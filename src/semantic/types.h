@@ -421,6 +421,21 @@ struct checked_types {
   /// Every item-level splice resolved to an injected `impl` block — see
   /// `synthesized_item_splice`'s doc comment.
   std::vector<synthesized_item_splice> synthesized_item_splices;
+  /// Owns every literal node synthesized to embed a scalar (integer/
+  /// float/bool) top-level `static let`'s compile-time-evaluated value
+  /// directly into referencing code — see `checker::materialize_const_
+  /// literal`. Same lifetime rationale as `synthesized_decls`.
+  ast::ptr_vec<ast::literal_expr> synthesized_const_literals;
+  /// Every `ident_expr` that resolved to a scalar-valued top-level
+  /// `static let`, mapped to the literal node embedding its value — see
+  /// `checker::resolve_ident`. `hir::lower_ident` looks a reference up
+  /// here first and, when present, lowers the literal in its place
+  /// instead of emitting an unresolvable `hir_local_ref`: a plain scalar
+  /// `static let` has no other route to a runtime representation — there
+  /// is no HIR/bytecode notion of "load global constant", only locals and
+  /// (indirectly, via splicing) quoted fragments.
+  std::unordered_map<const ast::node *, const ast::literal_expr *>
+      static_const_values;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

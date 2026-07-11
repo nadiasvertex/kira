@@ -753,7 +753,9 @@ public:
         .synthesized_types = std::move(synthesized_types_),
         .spliced_fragments = std::move(spliced_fragments_),
         .synthesized_fragments = comptime_eval_.take_synthesized_fragments(),
-        .synthesized_item_splices = std::move(synthesized_item_splices_)};
+        .synthesized_item_splices = std::move(synthesized_item_splices_),
+        .synthesized_const_literals = std::move(synthesized_const_literals_),
+        .static_const_values = std::move(static_const_values_)};
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
@@ -884,6 +886,13 @@ private:
   /// fragments) — see `resolve_item_splices`.
   std::unordered_map<const ast::node *, const ast::impl_decl *>
       item_splice_impls_;
+  /// Owns every literal node synthesized by `materialize_const_literal` —
+  /// see `checked_types::synthesized_const_literals`'s doc comment.
+  ast::ptr_vec<ast::literal_expr> synthesized_const_literals_;
+  /// See `checked_types::static_const_values`'s doc comment. Populated by
+  /// `resolve_ident`.
+  std::unordered_map<const ast::node *, const ast::literal_expr *>
+      static_const_values_;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -2449,7 +2458,9 @@ private:
       }
       if (const auto it = module_->statics.find(name);
           it != module_->statics.end()) {
-        return static_binding_type(*it->second.decl, module_);
+        const auto type = static_binding_type(*it->second.decl, module_);
+        record_static_const_reference(ident, *it->second.decl, type);
+        return type;
       }
     }
 
@@ -2462,7 +2473,9 @@ private:
         }
         if (const auto it = source->statics.find(member);
             it != source->statics.end()) {
-          return static_binding_type(*it->second.decl, source);
+          const auto type = static_binding_type(*it->second.decl, source);
+          record_static_const_reference(ident, *it->second.decl, type);
+          return type;
         }
       }
       return k_unknown_type;
@@ -2535,6 +2548,101 @@ private:
     statics_in_progress_.erase(&decl);
     static_types_.emplace(&decl, type);
     return type;
+  }
+
+  /// Ensures `decl`'s compile-time value is evaluated and bound in
+  /// `comptime_eval_`, then returns it — or `nullptr` if there's no
+  /// initializer, it already failed to check, or evaluation itself
+  /// failed. Skips re-evaluating (and potentially re-diagnosing) an
+  /// initializer a forward reference already resolved, exactly like
+  /// `check_static_decl`'s own `binding` case (which is in fact one of
+  /// this helper's two callers, refactored to share it) — `resolve_ident`
+  /// is the other, since a name's *first* reference in file-checking
+  /// order might be an ordinary expression far from the `static let`'s
+  /// own declaration, and every reference needs the same confluent,
+  /// order-independent evaluation the rest of this compile-time subsystem
+  /// already guarantees.
+  auto ensure_static_binding_evaluated(const ast::static_decl &decl)
+      -> const comptime::value * {
+    if (decl.initializer == nullptr || decl.initializer->has_error ||
+        decl.name.empty()) {
+      return nullptr;
+    }
+    if (!comptime_eval_.has_global(decl.name)) {
+      const auto evaluated = comptime_eval_.evaluate(*decl.initializer);
+      if (evaluated.is_error()) {
+        return nullptr;
+      }
+      comptime_eval_.bind_global(decl.name, evaluated);
+    }
+    return comptime_eval_.global_value(decl.name);
+  }
+
+  /// If `decl` (the `static let` a name just resolved to) evaluates to a
+  /// materializable scalar, records `ident -> literal` in
+  /// `static_const_values_` so `hir::lower_ident` can embed the value
+  /// directly instead of emitting an unresolvable `hir_local_ref` — see
+  /// `ensure_static_binding_evaluated`/`materialize_const_literal`'s doc
+  /// comments for why evaluation must happen here (not just at `decl`'s
+  /// own declaration site) and what "materializable" means. `type` is
+  /// `ident`'s already-resolved checked type (`static_binding_type`),
+  /// passed in rather than recomputed so the synthesized literal can be
+  /// given the exact same type in `node_types_` — lowering requires every
+  /// node it visits, including one this pass synthesizes, to already have
+  /// a recorded checked type.
+  auto record_static_const_reference(const ast::ident_expr &ident,
+                                     const ast::static_decl &decl, type_id type)
+      -> void {
+    const auto *value = ensure_static_binding_evaluated(decl);
+    if (value == nullptr) {
+      return;
+    }
+    if (const auto *lit = materialize_const_literal(*value, ident.span, type)) {
+      static_const_values_[&ident] = lit;
+    }
+  }
+
+  /// Synthesizes an `ast::literal_expr` embedding `value`'s exact
+  /// compile-time content — with `span` and `type` (recorded into
+  /// `node_types_`, exactly like every other checked expression) taken
+  /// from the reference site being replaced, since the synthesized node
+  /// itself was never independently type-checked. Owned session-wide in
+  /// `synthesized_const_literals_` (same stable-address
+  /// `vector<unique_ptr<T>>` pattern as `synthesized_decls_`/
+  /// `synthesized_types_`) — lets a scalar `static let` reference lower
+  /// as a real literal instead of an unresolvable `hir_local_ref` (see
+  /// `resolve_ident`). Deliberately narrow, mirroring `comptime::
+  /// try_eval_expr_builder_call`'s own `expr.lit` scope exactly: only
+  /// integer/floating/boolean values materialize; anything else (a
+  /// string, list, struct, ...) returns `nullptr`, leaving that reference
+  /// to fall back to the pre-existing (unresolvable-at-runtime) behavior
+  /// rather than risk mis-encoding something like a string's escape
+  /// sequences into a synthesized literal's raw spelling.
+  auto materialize_const_literal(const comptime::value &value, source_span span,
+                                 type_id type) -> const ast::literal_expr * {
+    auto lit = ast::make<ast::literal_expr>();
+    lit->span = span;
+    switch (value.kind) {
+    case comptime::value_kind::integer:
+      lit->lit_kind = token_kind::int_lit;
+      lit->value = std::to_string(value.integer);
+      break;
+    case comptime::value_kind::floating:
+      lit->lit_kind = token_kind::float_lit;
+      lit->value = std::to_string(value.floating);
+      break;
+    case comptime::value_kind::boolean:
+      lit->lit_kind =
+          value.boolean ? token_kind::kw_true : token_kind::kw_false;
+      lit->value = value.boolean ? "true" : "false";
+      break;
+    default:
+      return nullptr;
+    }
+    const auto *raw = lit.get();
+    synthesized_const_literals_.push_back(std::move(lit));
+    record_expr_type(*raw, type);
+    return raw;
   }
 
   // ==========================================================================
@@ -6996,17 +7104,12 @@ private:
       }
       static_types_.insert_or_assign(
           &decl, decl.type_annotation != nullptr ? declared : found);
-      if (decl.initializer != nullptr && !decl.initializer->has_error &&
-          !decl.name.empty() && !comptime_eval_.has_global(decl.name)) {
-        // A forward reference from an earlier-checked `static let` may
-        // already have resolved this binding lazily (see
-        // `register_comptime_globals`/`evaluator::resolve_pending_static`);
-        // skip re-evaluating (and potentially re-diagnosing) it here.
-        const auto evaluated = comptime_eval_.evaluate(*decl.initializer);
-        if (!evaluated.is_error()) {
-          comptime_eval_.bind_global(decl.name, evaluated);
-        }
-      }
+      // A forward reference from an earlier-checked `static let` (or an
+      // ordinary expression that reached this name first — see
+      // `resolve_ident`) may already have resolved this binding lazily;
+      // `ensure_static_binding_evaluated` skips re-evaluating (and
+      // potentially re-diagnosing) it in that case.
+      ensure_static_binding_evaluated(decl);
       return;
     }
     case ast::static_decl_kind::assertion:

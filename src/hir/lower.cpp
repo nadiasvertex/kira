@@ -571,6 +571,17 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
     return ok_expr(make<hir_variant_init>(ident.span, *type, ident.name,
                                           ptr_vec<hir_expr>{}));
   }
+  // A reference to a scalar (integer/float/bool) top-level `static let` —
+  // `semantic::checker::resolve_ident` already evaluated it and recorded
+  // the literal to embed here. There's no other route to a runtime
+  // representation for a plain `static let`: it's neither a real local
+  // (no `declare_local` call ever registers one for it) nor a function,
+  // so falling through to the ordinary `hir_local_ref` path below would
+  // produce a symbol nothing can ever resolve.
+  if (const auto it = checked_.static_const_values.find(&ident);
+      it != checked_.static_const_values.end()) {
+    return lower_literal(*it->second);
+  }
   const auto symbol = resolve_reference(ident.name);
   return ok_expr(make<hir_local_ref>(ident.span, *type, symbol, ident.name));
 }
