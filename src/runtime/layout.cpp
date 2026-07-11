@@ -381,7 +381,7 @@ auto is_struct_packed(const type_table &types, semantic::type_id id) -> bool {
 auto struct_layout(const type_table &types, semantic::type_id id)
     -> layout_info {
   const auto result =
-      walk_struct_layout(types, id, [](size_t, size_t, size_t) {});
+      walk_struct_layout(types, id, [](size_t, size_t, size_t) -> void {});
   return result.value_or(layout_info{});
 }
 
@@ -389,7 +389,7 @@ auto struct_field_offset(const type_table &types, semantic::type_id id,
                          std::string_view name) -> std::optional<size_t> {
   auto found = std::optional<size_t>{};
   const auto result =
-      walk_struct_layout(types, id, [&](size_t index, size_t offset, size_t) {
+      walk_struct_layout(types, id, [&](size_t index, size_t offset, size_t) -> void {
         const auto *fields = struct_fields_of(types.entry(id));
         if (fields != nullptr && (*fields)[index].name == name) {
           found = offset;
