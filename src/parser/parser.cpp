@@ -4539,7 +4539,86 @@ auto parser::parse_quote_expr() -> ast::ptr<ast::quote_expr> {
   }
 
   qexpr->span = start.merge(previous_span());
+  classify_and_parse_quote_fragment(*qexpr);
   return qexpr;
+}
+
+namespace {
+
+/// Whether `kind` plausibly opens an item-level declaration (as opposed to
+/// an ordinary statement or expression) — the same leading-keyword set
+/// `parse_top_level_item`/`parse_stmt` dispatch on for `impl`/`trait`/
+/// `extend`/`concept`, which `parse_stmt` itself never handles at
+/// statement scope. Visibility and function/type modifier keywords are
+/// included too, since they only ever prefix a declaration.
+auto starts_item(token_kind kind) -> bool {
+  switch (kind) {
+  case token_kind::kw_use:
+  case token_kind::kw_type:
+  case token_kind::kw_trait:
+  case token_kind::kw_impl:
+  case token_kind::kw_extend:
+  case token_kind::kw_concept:
+  case token_kind::kw_def:
+  case token_kind::kw_module:
+  case token_kind::kw_dep:
+  case token_kind::kw_pub:
+  case token_kind::kw_internal:
+  case token_kind::kw_super:
+  case token_kind::kw_priv:
+  case token_kind::kw_pure:
+  case token_kind::kw_async:
+  case token_kind::kw_machine:
+  case token_kind::kw_static:
+  case token_kind::kw_packed:
+    return true;
+  default:
+    return false;
+  }
+}
+
+} // namespace
+
+void parser::classify_and_parse_quote_fragment(ast::quote_expr &qexpr) {
+  if (qexpr.tokens.empty()) {
+    return;
+  }
+
+  auto content = qexpr.tokens;
+  auto eof = token{};
+  eof.kind = token_kind::eof;
+  eof.span = previous_span();
+  content.push_back(eof);
+
+  auto sub = parser(std::move(content), file_id_, diag_);
+
+  if (starts_item(sub.current())) {
+    auto item = sub.parse_top_level_item();
+    if (item != nullptr) {
+      qexpr.fragment_kind = ast::quote_fragment_kind::def_expr;
+      qexpr.parsed_body = std::move(item);
+      qexpr.has_error = qexpr.has_error || qexpr.parsed_body->has_error;
+    }
+    return;
+  }
+
+  auto parsed = sub.parse_stmt();
+  if (parsed == nullptr) {
+    return;
+  }
+  // `error_stmt` also tags itself `node_kind::expr_stmt` (it has no
+  // dedicated kind of its own), so a plain kind check isn't enough to tell
+  // it apart from a real `expr_stmt` — use a pointer cast and fall back to
+  // treating anything that doesn't actually downcast as a bare statement.
+  if (auto *wrapper = dynamic_cast<ast::expr_stmt *>(parsed.get());
+      wrapper != nullptr) {
+    qexpr.fragment_kind = ast::quote_fragment_kind::expr;
+    qexpr.parsed_body = std::move(wrapper->expr);
+  } else {
+    qexpr.fragment_kind = ast::quote_fragment_kind::stmt;
+    qexpr.parsed_body = std::move(parsed);
+  }
+  qexpr.has_error = qexpr.has_error || qexpr.parsed_body->has_error;
 }
 
 auto parser::parse_splice_expr_inner() -> ast::ptr<ast::splice_expr> {

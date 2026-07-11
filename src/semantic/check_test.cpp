@@ -362,7 +362,7 @@ auto test_reports_quote_type_annotation_mismatch() -> void {
   const auto analyzed =
       analyze_test_data_file("report_quote_type_annotation_mismatch.kira");
   expect(analyzed.error_count > 0,
-        "expected a quote-type (`expr`) annotation mismatch to fail");
+         "expected a quote-type (`expr`) annotation mismatch to fail");
   expect_diagnostic(analyzed, "expected `expr`, found `str`",
                     "expected quote-type annotation mismatch diagnostic; "
                     "quote_type must resolve to its own builtin instead of "

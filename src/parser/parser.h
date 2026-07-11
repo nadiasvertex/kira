@@ -745,6 +745,14 @@ private:
   [[nodiscard]] auto parse_block_expr() -> ast::ptr<ast::block_expr>;
   /// Parses quasi-quoted syntax expressions.
   [[nodiscard]] auto parse_quote_expr() -> ast::ptr<ast::quote_expr>;
+  /// Re-parses a quote's already-captured raw `tokens` into a structured
+  /// subtree, populating `qexpr.parsed_body`/`fragment_kind`. Runs a fresh,
+  /// nested `parser` instance over the captured tokens (sharing this
+  /// parser's `diag_` bag and `file_id_`) rather than trying to splice the
+  /// content back into the outer token stream, so recursive-descent
+  /// functions don't need to know they're re-entering already-consumed
+  /// input.
+  void classify_and_parse_quote_fragment(ast::quote_expr &qexpr);
   /// Parses the inner operand of a splice expression.
   [[nodiscard]] auto parse_splice_expr_inner() -> ast::ptr<ast::splice_expr>;
   /// Parses `static expr` metaprogramming forms.

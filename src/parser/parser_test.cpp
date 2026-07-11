@@ -627,7 +627,8 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
       "\n"
       "static def derive_show[T]() -> def_expr:\n"
       "  let fields = T.fields()\n"
-      "  return `impl show for ~(expr.ty[T]())`\n"
+      "  let target = describe[T]()\n"
+      "  return `impl show for point:`\n"
       "\n"
       "static let increment: expr = `(x + 1)`\n"
       "\n"
@@ -1075,6 +1076,109 @@ auto test_parser_splits_string_interpolation() -> void {
   }
 }
 
+auto test_parser_classifies_quote_fragment_kind() -> void {
+  // `value` — a bare identifier, no statement structure: expr fragment.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "\n"
+                               "def run(value):\n"
+                               "  let quoted = `value`\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *run_func = expect_node<kira::ast::func_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+        "expected run function");
+    auto *let_quoted = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+        "expected let-quoted statement");
+    auto *quote = expect_expr<kira::ast::quote_expr>(
+        let_quoted->initializer.get(), kira::ast::node_kind::quote_expr,
+        "expected a quote_expr initializer");
+    expect(quote->fragment_kind == kira::ast::quote_fragment_kind::expr,
+           "expected `value` to classify as an expr fragment");
+    expect_node<kira::ast::ident_expr>(quote->parsed_body.get(),
+                                       kira::ast::node_kind::ident_expr,
+                                       "expected the fragment body to be the "
+                                       "bare identifier `value`");
+  }
+
+  // `(value + 1)` — the outer `(...)` right after the opening backtick is
+  // consumed by `parse_quote_expr` itself as a grouping delimiter for the
+  // quote syntax (so nested backticks stay unambiguous), not literal
+  // parenthesized-expression content — so the captured tokens are just
+  // `value + 1`, an ordinary binary expression, still an expr fragment.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "\n"
+                               "def run(value):\n"
+                               "  let grouped = `(value + 1)`\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *run_func = expect_node<kira::ast::func_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+        "expected run function");
+    auto *let_grouped = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+        "expected let-grouped statement");
+    auto *quote = expect_expr<kira::ast::quote_expr>(
+        let_grouped->initializer.get(), kira::ast::node_kind::quote_expr,
+        "expected a quote_expr initializer");
+    expect(quote->fragment_kind == kira::ast::quote_fragment_kind::expr,
+           "expected `(value + 1)` to classify as an expr fragment");
+    expect_node<kira::ast::binary_expr>(
+        quote->parsed_body.get(), kira::ast::node_kind::binary_expr,
+        "expected the fragment body to be the binary expression `value + 1`, "
+        "with the wrapping parens consumed as quote-grouping syntax rather "
+        "than becoming a group_expr node");
+  }
+
+  // `x = 5` — real statement structure: stmt fragment.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "\n"
+                               "def run(x):\n"
+                               "  let assigned = `x = 5`\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *run_func = expect_node<kira::ast::func_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+        "expected run function");
+    auto *let_assigned = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+        "expected let-assigned statement");
+    auto *quote = expect_expr<kira::ast::quote_expr>(
+        let_assigned->initializer.get(), kira::ast::node_kind::quote_expr,
+        "expected a quote_expr initializer");
+    expect(quote->fragment_kind == kira::ast::quote_fragment_kind::stmt,
+           "expected `x = 5` to classify as a stmt fragment");
+    expect_node<kira::ast::assign_stmt>(
+        quote->parsed_body.get(), kira::ast::node_kind::assign_stmt,
+        "expected the fragment body to be an assignment statement");
+  }
+
+  // `impl show for point:` — an item: def_expr fragment. `static def`
+  // doesn't exist in the grammar yet (see comptime-evaluation plan's R1),
+  // so this uses a plain `static let` binding instead of the reference
+  // doc's `static def derive_show[T]()` shape — classification doesn't
+  // care which kind of `static` form is holding the quote.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "\n"
+                               "static let derive_show: def_expr = "
+                               "`impl show for point:`\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *derive_decl = expect_node<kira::ast::static_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::static_decl,
+        "expected the derive_show static let");
+    auto *quote = expect_expr<kira::ast::quote_expr>(
+        derive_decl->initializer.get(), kira::ast::node_kind::quote_expr,
+        "expected the static binding's initializer to be a quote_expr");
+    expect(quote->fragment_kind == kira::ast::quote_fragment_kind::def_expr,
+           "expected `impl show for point:` to classify as a def_expr "
+           "fragment");
+    expect_node<kira::ast::impl_decl>(
+        quote->parsed_body.get(), kira::ast::node_kind::impl_decl,
+        "expected the fragment body to be an impl declaration");
+  }
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -1083,7 +1187,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 16> tests = {{
+  const std::array<named_test, 17> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -1112,6 +1216,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_mut_binding_pattern},
       {.name = "string_interpolation",
        .fn = test_parser_splits_string_interpolation},
+      {.name = "quote_fragment_kind",
+       .fn = test_parser_classifies_quote_fragment_kind},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

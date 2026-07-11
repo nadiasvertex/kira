@@ -1,7 +1,8 @@
 module stress.expr_generic_calls_and_splice
 
 static def derive_show[T]() -> def_expr:
-  `impl show for ~(expr.ty[T]())`
+  let target = describe[T]()
+  `impl show for point:`
 
 def run(raw_index):
   let sender = channel[str](capacity: 32)

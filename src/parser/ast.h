@@ -1078,10 +1078,39 @@ struct block_expr : expr {
   block_expr() : expr(node_kind::block_expr) {}
 };
 
+/// @brief Which of the four quote-value shapes a `quote_expr`'s re-parsed
+/// content turned out to be. `none` means `parsed_body` was never populated
+/// (e.g. the content was empty or re-parsing hasn't happened yet).
+///
+/// `type_expr` is not produced by content-shape classification alone — a
+/// bare identifier/path is lexically ambiguous between an expression and a
+/// type expression (both parse as ordinary primary syntax), so choosing
+/// `type_expr` needs the surrounding declared-type context, not just the
+/// quoted tokens. That disambiguation is deferred to the semantic layer.
+enum class quote_fragment_kind : uint8_t {
+  none,
+  expr,
+  stmt,
+  def_expr,
+  type_expr,
+};
+
 /// Quasi-quote: `` `(content)` `` or `` `content` ``
 struct quote_expr : expr {
   std::vector<token>
       tokens; ///< Raw quoted tokens preserved for macro-like consumers.
+
+  /// Which shape `parsed_body` was parsed as; `none` until re-parsing runs.
+  quote_fragment_kind fragment_kind = quote_fragment_kind::none;
+
+  /// Structured re-parse of `tokens`, produced by the parser immediately
+  /// after capturing them (see `parser::classify_and_parse_quote_fragment`)
+  /// — an ordinary owned child, exactly like any other AST subtree, so
+  /// nothing downstream needs to treat quoted content as opaque.  Concrete
+  /// dynamic type depends on `fragment_kind`: `ast::expr` for `expr`,
+  /// `ast::stmt` (or another `node` statement/expr_stmt shape) for `stmt`,
+  /// an item node (`func_decl`, `impl_decl`, ...) for `def_expr`.
+  ptr<node> parsed_body;
 
   quote_expr() : expr(node_kind::quote_expr) {}
 };
