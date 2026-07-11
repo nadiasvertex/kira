@@ -2,9 +2,13 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 cc_library(
     name = "comptime",
-    srcs = ["eval.cpp"],
+    srcs = [
+        "eval.cpp",
+        "hygiene.cpp",
+    ],
     hdrs = [
         "eval.h",
+        "hygiene.h",
         "value.h",
     ],
     visibility = ["//visibility:public"],

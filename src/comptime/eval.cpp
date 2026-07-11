@@ -7,6 +7,7 @@
 #include <ranges>
 #include <string>
 
+#include "src/comptime/hygiene.h"
 #include "src/parser/text_escape.h"
 
 namespace kira::comptime {
@@ -560,6 +561,23 @@ auto evaluator::eval_module_path(const ast::module_path_expr &path) -> value {
 auto evaluator::eval_quote(const ast::quote_expr &quote) -> value {
   if (quote.parsed_body == nullptr) {
     return report(quote.span, "this quoted fragment could not be parsed");
+  }
+  // Hygiene (design plan section 5): rename this fragment's own internal
+  // `let`/`var`/... bindings to fresh names before it's ever spliced
+  // anywhere, so a spliced `` `(let temp = 99)` `` can't silently clobber a
+  // same-named binding already active at the splice site. Only `expr`/
+  // `stmt` fragments get spliced into an *existing* scope this way — a
+  // `def_expr`'s own methods get their own fresh function scope regardless,
+  // so renaming would be a harmless no-op there; skipped to keep this
+  // narrowly scoped to the case that actually needs it.
+  // `quote.parsed_body.get()`/`*quote.parsed_body` are non-const despite
+  // `quote` itself being `const`: `unique_ptr::get()`/`operator*()` don't
+  // propagate constness to the pointee, so mutating through them here
+  // doesn't need (and must not use) a `const_cast`.
+  if ((quote.fragment_kind == ast::quote_fragment_kind::expr ||
+       quote.fragment_kind == ast::quote_fragment_kind::stmt) &&
+      hygiene_renamed_.insert(quote.parsed_body.get()).second) {
+    rename_internal_bindings(*quote.parsed_body, hygiene_next_id_);
   }
   switch (quote.fragment_kind) {
   case ast::quote_fragment_kind::expr:

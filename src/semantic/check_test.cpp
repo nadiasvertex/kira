@@ -394,9 +394,11 @@ auto test_accepts_splice_stmt_reifies_quoted_statement() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_splice_stmt_reifies_quoted_statement.kira");
   expect(analyzed.error_count == 0,
-         std::string("expected `~make_binding` to graft the quoted `let "
-                     "y: int32 = 10` statement into `run`'s body, binding "
-                     "`y` for the following `return y`:\n") +
+         std::string("expected `~make_binding` to graft the quoted `if "
+                     "true: let y = 10 return y` statement into `run`'s "
+                     "body, with `y`'s declaration and its own reference "
+                     "both inside the same quote resolving consistently "
+                     "under M5 hygiene renaming:\n") +
              analyzed.diagnostics);
 }
 
@@ -447,6 +449,20 @@ auto test_reports_splice_expr_wrong_fragment_kind() -> void {
   expect_diagnostic(analyzed, "must resolve to a quoted expression",
                     "expected a diagnostic explaining that a quoted "
                     "statement can't be spliced into expression position");
+}
+
+auto test_reports_hygiene_prevents_spliced_binding_leak() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "report_hygiene_prevents_spliced_binding_leak.kira");
+  expect(analyzed.error_count > 0,
+         "expected `y` (declared only inside the spliced `` `let y: int32 = "
+         "10` `` fragment) to be undefined once referenced by hand-written "
+         "code at the splice site — M5 hygiene renames it to a fresh "
+         "synthetic name so it no longer leaks out as plain `y`");
+  expect_diagnostic(analyzed, "undefined name `y`",
+                    "expected an undefined-name diagnostic for `y`, proving "
+                    "hygiene renamed the spliced binding rather than "
+                    "leaving it visible under its original name");
 }
 
 auto test_reports_splice_requires_quote_value() -> void {
@@ -1078,6 +1094,7 @@ auto main() -> int {
     test_reports_static_assert_evaluates_false();
     test_reports_static_for_evaluates_each_iteration();
     test_reports_splice_expr_wrong_fragment_kind();
+    test_reports_hygiene_prevents_spliced_binding_leak();
     test_reports_splice_requires_quote_value();
     test_reports_integer_literal_overflow();
     test_reports_mixed_numeric_types();

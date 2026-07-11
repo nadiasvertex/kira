@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -199,6 +200,19 @@ private:
   /// only moves the pointer on growth, never the pointee — mirrors
   /// `checker::synthesized_decls_`/`synthesized_types_` (`check.cpp`).
   ast::ptr_vec<ast::node> synthesized_fragments_;
+
+  /// Monotonic counter feeding `comptime::rename_internal_bindings`'s
+  /// synthetic names — session-lifetime (not reset per fragment) so two
+  /// different quoted fragments, each with their own internal `let`, never
+  /// mint the same fresh name and collide with *each other* once both are
+  /// spliced into the same scope. See `eval_quote`'s doc comment.
+  std::uint64_t hygiene_next_id_ = 0;
+
+  /// Fragments already renamed by `eval_quote`, so evaluating the same
+  /// `quote_expr` node more than once (e.g. one written inline inside a
+  /// `static for` loop body, rather than behind a memoized `static let`)
+  /// doesn't rename its bindings again on top of already-renamed ones.
+  std::unordered_set<const ast::node *> hygiene_renamed_;
 };
 
 } // namespace kira::comptime

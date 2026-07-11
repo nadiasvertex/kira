@@ -1,7 +1,10 @@
 module sample
 
-static let make_binding: stmt = `let y: int32 = 10`
+static let make_binding: stmt = `(if true:
+    let y: int32 = 10
+    return y
+)`
 
 def run() -> int32:
     ~make_binding
-    return y
+    return 0

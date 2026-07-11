@@ -1291,6 +1291,55 @@ auto test_run_executes_item_level_splice_injected_impl() -> void {
          "actually execute it, returning 42");
 }
 
+/// M5 end-to-end check: hygiene must prevent a spliced `let` from
+/// *clobbering* a splice-site binding of the same name, not just avoid a
+/// compile error. `main` binds its own `temp` to `1`, then splices a quoted
+/// `let temp: int32 = 99` right after it — `check_body_node`'s `splice_stmt`
+/// case reuses the enclosing scope (no push), so without hygiene the
+/// spliced `let` would silently rebind `temp` in that same scope, and
+/// `return temp` would come back `99`, not `1`. `comptime::
+/// rename_internal_bindings` (`hygiene.cpp`) renames the fragment's own
+/// `temp` to a fresh synthetic name before it's ever spliced, so the two
+/// bindings coexist independently — proven here by checking the actual
+/// runtime value, which a mere "compiles without error" check couldn't
+/// distinguish from the old, unhygienic behavior.
+auto test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site()
+    -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_hygiene.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample\n"
+                          "static let make_temp: stmt = `let temp: int32 = "
+                          "99`\n"
+                          "def main() -> int32:\n"
+                          "  let temp: int32 = 1\n"
+                          "  ~make_temp\n"
+                          "  return temp\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected splicing a quoted `let temp = 99` next to an existing "
+         "`temp` binding to compile cleanly under hygiene: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded, "expected `main` to run without panicking");
+  expect(report->run->exit_code == 1,
+         "expected `main`'s own `temp` (1) to survive the spliced `let "
+         "temp = 99` untouched — hygiene renamed the spliced binding, so "
+         "it didn't clobber the splice site's `temp`");
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -1330,6 +1379,7 @@ auto main() -> int {
     test_run_executes_spliced_quoted_expression();
     test_run_executes_spliced_builder_constructed_expression();
     test_run_executes_item_level_splice_injected_impl();
+    test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;
