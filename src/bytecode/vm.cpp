@@ -707,6 +707,60 @@ constexpr size_t k_max_call_depth = 4096;
 [[nodiscard]] auto ptr_to_slot(void *raw) -> slot_value {
   return slot_value{static_cast<uint64_t>(reinterpret_cast<uintptr_t>(raw))};
 }
+[[nodiscard]] auto raw_bytes_of(slot_value ptr) -> uint8_t * {
+  return reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(ptr.u));
+}
+
+/// Zero-extended `size`-byte (1/2/4/8) read at `data`, the width-aware
+/// sibling of the old "always a whole `slot_value`" load — `size` is always
+/// one of these four values (`runtime::layout_info::size_bytes` for a
+/// scalar, or the fixed 8 every uniform-slot construct still passes). Uses
+/// `std::memcpy` rather than a typed `reinterpret_cast` load since a packed
+/// struct's byte offset is not generally aligned to `size`.
+[[nodiscard]] auto load_sized(const uint8_t *data, uint8_t size) -> uint64_t {
+  switch (size) {
+  case 1:
+    return *data;
+  case 2: {
+    uint16_t v = 0;
+    std::memcpy(&v, data, sizeof(v));
+    return v;
+  }
+  case 4: {
+    uint32_t v = 0;
+    std::memcpy(&v, data, sizeof(v));
+    return v;
+  }
+  default: {
+    uint64_t v = 0;
+    std::memcpy(&v, data, sizeof(v));
+    return v;
+  }
+  }
+}
+
+/// Writes the low `size` bytes (1/2/4/8) of `value` at `data` — the
+/// width-aware sibling of the old "always a whole `slot_value`" store.
+auto store_sized(uint8_t *data, uint8_t size, uint64_t value) -> void {
+  switch (size) {
+  case 1:
+    *data = static_cast<uint8_t>(value);
+    return;
+  case 2: {
+    const auto v = static_cast<uint16_t>(value);
+    std::memcpy(data, &v, sizeof(v));
+    return;
+  }
+  case 4: {
+    const auto v = static_cast<uint32_t>(value);
+    std::memcpy(data, &v, sizeof(v));
+    return;
+  }
+  default:
+    std::memcpy(data, &value, sizeof(value));
+    return;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Call frames — see vm.h's doc comment for why this is an explicit
@@ -1263,9 +1317,8 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
 
       case opcode::op_alloc: {
         const uint8_t dst = code[ip];
-        const uint16_t slot_count = read_u16(code, ip + 1);
-        auto *raw = kira::runtime::global_arena().allocate(
-            static_cast<size_t>(slot_count) * sizeof(slot_value));
+        const uint16_t byte_size = read_u16(code, ip + 1);
+        auto *raw = kira::runtime::global_arena().allocate(byte_size);
         f.registers[dst] = ptr_to_slot(raw);
         f.pc = ip + 3;
         break;
@@ -1273,17 +1326,21 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       case opcode::op_load_slot: {
         const uint8_t dst = code[ip];
         const uint8_t ptr_reg = code[ip + 1];
-        const uint16_t slot_index = read_u16(code, ip + 2);
-        f.registers[dst] = slots_of(f.registers[ptr_reg])[slot_index];
-        f.pc = ip + 4;
+        const uint16_t byte_offset = read_u16(code, ip + 2);
+        const uint8_t field_size = code[ip + 4];
+        f.registers[dst] = slot_value{load_sized(
+            raw_bytes_of(f.registers[ptr_reg]) + byte_offset, field_size)};
+        f.pc = ip + 5;
         break;
       }
       case opcode::op_store_slot: {
         const uint8_t ptr_reg = code[ip];
-        const uint16_t slot_index = read_u16(code, ip + 1);
+        const uint16_t byte_offset = read_u16(code, ip + 1);
         const uint8_t src = code[ip + 3];
-        slots_of(f.registers[ptr_reg])[slot_index] = f.registers[src];
-        f.pc = ip + 4;
+        const uint8_t field_size = code[ip + 4];
+        store_sized(raw_bytes_of(f.registers[ptr_reg]) + byte_offset,
+                    field_size, f.registers[src].u);
+        f.pc = ip + 5;
         break;
       }
 
@@ -1305,60 +1362,34 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const uint8_t dst = code[ip];
         const uint8_t ptr_reg = code[ip + 1];
         const uint8_t index_reg = code[ip + 2];
+        const uint8_t elem_size = code[ip + 3];
         const auto index = f.registers[index_reg].u;
-        f.registers[dst] = slots_of(f.registers[ptr_reg])[index];
-        f.pc = ip + 3;
+        f.registers[dst] = slot_value{load_sized(
+            raw_bytes_of(f.registers[ptr_reg]) + index * elem_size, elem_size)};
+        f.pc = ip + 4;
         break;
       }
       case opcode::op_store_indexed: {
         const uint8_t ptr_reg = code[ip];
         const uint8_t index_reg = code[ip + 1];
         const uint8_t src = code[ip + 2];
+        const uint8_t elem_size = code[ip + 3];
         const auto index = f.registers[index_reg].u;
-        slots_of(f.registers[ptr_reg])[index] = f.registers[src];
-        f.pc = ip + 3;
-        break;
-      }
-      case opcode::op_store_byte: {
-        const uint8_t ptr_reg = code[ip];
-        const uint16_t byte_offset = read_u16(code, ip + 1);
-        const uint8_t src = code[ip + 3];
-        auto *data = reinterpret_cast<uint8_t *>(
-            static_cast<uintptr_t>(f.registers[ptr_reg].u));
-        data[byte_offset] = static_cast<uint8_t>(f.registers[src].u);
+        store_sized(raw_bytes_of(f.registers[ptr_reg]) + index * elem_size,
+                    elem_size, f.registers[src].u);
         f.pc = ip + 4;
-        break;
-      }
-      case opcode::op_load_byte_indexed: {
-        const uint8_t dst = code[ip];
-        const uint8_t ptr_reg = code[ip + 1];
-        const uint8_t index_reg = code[ip + 2];
-        const auto index = f.registers[index_reg].u;
-        const auto *data = reinterpret_cast<const uint8_t *>(
-            static_cast<uintptr_t>(f.registers[ptr_reg].u));
-        f.registers[dst] = slot_value{static_cast<uint64_t>(data[index])};
-        f.pc = ip + 3;
-        break;
-      }
-      case opcode::op_store_byte_indexed: {
-        const uint8_t ptr_reg = code[ip];
-        const uint8_t index_reg = code[ip + 1];
-        const uint8_t src = code[ip + 2];
-        const auto index = f.registers[index_reg].u;
-        auto *data = reinterpret_cast<uint8_t *>(
-            static_cast<uintptr_t>(f.registers[ptr_reg].u));
-        data[index] = static_cast<uint8_t>(f.registers[src].u);
-        f.pc = ip + 3;
         break;
       }
       case opcode::op_list_push: {
         const uint8_t header_reg = code[ip];
         const uint8_t value_reg = code[ip + 1];
+        const uint8_t elem_size = code[ip + 2];
         auto *header = reinterpret_cast<uint64_t *>(
             static_cast<uintptr_t>(f.registers[header_reg].u));
-        auto *slot = kira::runtime::list_reserve_slot(header);
-        *slot = f.registers[value_reg].u;
-        f.pc = ip + 2;
+        auto *slot = kira::runtime::list_reserve_slot(header, elem_size);
+        store_sized(static_cast<uint8_t *>(slot), elem_size,
+                    f.registers[value_reg].u);
+        f.pc = ip + 3;
         break;
       }
 

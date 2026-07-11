@@ -78,30 +78,95 @@ namespace kira::runtime {
 [[nodiscard]] auto sum_max_payload_slots(const semantic::type_table &types,
                                          semantic::type_id id) -> size_t;
 
+// ==========================================================================
+//  Byte-precise layout — size/alignment/offset, as opposed to the ordinal
+//  slot-index API above. Added to generalize `array[byte,N]`'s pre-existing
+//  tight-packing special case into the general rule (every `array[T,N]` is
+//  N contiguous elements of T's own natural size) and to give struct field
+//  layout real alignment/padding (or, with the `packed` modifier, none at
+//  all) instead of the uniform "every field costs 8 bytes" scheme above.
+//  Tuples and sum-type payloads deliberately stay on the ordinal/uniform
+//  scheme (`struct_field_slot`/`sum_*` above) — not in scope for this pass;
+//  `array[T,N]`/struct are the only two constructs this API covers.
+// ==========================================================================
+
+/// A type's natural (or, for a `packed` struct, packed) size and alignment
+/// in bytes.
+struct layout_info {
+  size_t size_bytes = 0;
+  size_t align_bytes = 1;
+};
+
+/// The size/alignment `id` occupies as a field/element of a contiguous
+/// block: builtin scalars get their natural width (`bool`/`byte`/`int8`/
+/// `uint8` = 1, `int16`/`uint16` = 2, `int32`/`uint32`/`char` = 4,
+/// `int64`/`uint64`/`isize`/`usize`/`float64` = 8, `float32` = 4, `unit` =
+/// size 0 align 1); every heap-referenced kind (`str`, prelude generics,
+/// tuple, array, struct, sum, `fn`/closure, `ref`/`ptr`) is pointer-sized/
+/// aligned (8/8) here — this doesn't change what a value looks like on its
+/// own, only what it costs as one field/element of another aggregate.
+/// `nullopt` only for a genuinely unrepresentable scalar (`int128`/
+/// `uint128`/`float128` — mirrors `bytecode::numeric_kind_of`'s existing
+/// `nullopt` gap for the same three types) or an unresolvable type.
+[[nodiscard]] auto layout_of(const semantic::type_table &types,
+                             semantic::type_id id)
+    -> std::optional<layout_info>;
+
+/// Whether struct-kind `id`'s declaration carries the `packed` modifier
+/// (`ast::type_modifiers::is_packed`). `false` for a non-struct `id`.
+[[nodiscard]] auto is_struct_packed(const semantic::type_table &types,
+                                    semantic::type_id id) -> bool;
+
+/// The whole-struct size/alignment of struct-kind `id`: fields placed in
+/// declaration order, each rounded up to its own alignment before being
+/// placed (no rounding at all, back-to-back, if `is_struct_packed`), final
+/// size rounded up to the widest field's alignment (packed: no rounding,
+/// align 1). `{0, 1}` for a non-struct or field-less `id`.
+[[nodiscard]] auto struct_layout(const semantic::type_table &types,
+                                 semantic::type_id id) -> layout_info;
+
+/// The byte offset of field `name` within struct-kind `id`, computed by the
+/// same padded/packed algorithm as `struct_layout`. `nullopt` if `id` is not
+/// a struct, has no such field, or a field's own layout is unrepresentable
+/// (see `layout_of`).
+[[nodiscard]] auto struct_field_offset(const semantic::type_table &types,
+                                       semantic::type_id id,
+                                       std::string_view name)
+    -> std::optional<size_t>;
+
 /// Grows (if necessary) the `list[T]` value whose 3-slot header
 /// `{ u64 len; u64 cap; T* data; }` (this file's top comment) begins at
-/// `header` so it has room for one more element, bumps `len`, and returns a
-/// pointer to the newly-reserved slot at the old `len` index — the caller
-/// stores its own 8-byte payload there directly. Growth allocates a fresh,
-/// larger `data` block via `global_arena()` (copying every existing element
-/// across) when the list is already at capacity — starting capacity 4,
-/// doubling thereafter, the same "simplest thing that works" placeholder
-/// growth strategy `bump_arena` itself already uses. Returning a slot
-/// address for the caller to store through (rather than taking the value as
-/// a parameter here) mirrors how every other heap write in this codebase —
+/// `header` so it has room for one more `elem_size`-byte element (1/2/4/8 —
+/// `runtime::layout_of(element_type).size_bytes`, generalizing what used to
+/// be a hardcoded `sizeof(uint64_t)` element width so a `list[bool]`/
+/// `list[int16]` doesn't waste 8 bytes per element the same way an array's
+/// own element storage no longer does), bumps `len`, and returns a pointer
+/// to the newly-reserved element's address (`data + old_len * elem_size`)
+/// — the caller stores its own `elem_size`-byte payload there directly.
+/// Growth allocates a fresh, larger `data` block via `global_arena()`
+/// (copying every existing element across, `old_len * elem_size` bytes)
+/// when the list is already at capacity — starting capacity 4, doubling
+/// thereafter, the same "simplest thing that works" placeholder growth
+/// strategy `bump_arena` itself already uses. Returning an address for the
+/// caller to store through (rather than taking the value as a parameter
+/// here) mirrors how every other heap write in this codebase —
 /// `str`/tuple/struct/sum-payload construction — is a plain store at a
 /// computed address, never a value-passing runtime call: it means this
 /// function doesn't need to know or care whether the pushed value is a
-/// scalar bit pattern or a heap pointer, only how many bytes it is. A plain
-/// C++ function so `bytecode::vm` can call it directly with no ABI boundary
-/// to cross (mirrors `global_arena()`'s own doc comment in `arena.h`);
+/// scalar bit pattern or a heap pointer, only how many bytes it is. Returns
+/// `void*`, not `uint64_t*`, since the reserved address is not generally
+/// 8-byte-aligned once `elem_size` can be 1/2/4. A plain C++ function so
+/// `bytecode::vm` can call it directly with no ABI boundary to cross
+/// (mirrors `global_arena()`'s own doc comment in `arena.h`);
 /// `kira_rt_list_reserve_slot` below is the `extern "C"` wrapper generated
 /// IR calls instead.
-[[nodiscard]] auto list_reserve_slot(uint64_t *header) -> uint64_t *;
+[[nodiscard]] auto list_reserve_slot(uint64_t *header, size_t elem_size)
+    -> void *;
 
 /// `extern "C"` wrapper around `list_reserve_slot` for generated IR to call
 /// by name (`src/llvm_codegen/codegen.h`'s `kListReserveSlotSymbolName`) —
 /// mirrors `kira_rt_alloc` (`arena.h`)'s JIT/AOT-boundary rationale exactly.
-extern "C" auto kira_rt_list_reserve_slot(uint64_t *header) -> uint64_t *;
+extern "C" auto kira_rt_list_reserve_slot(uint64_t *header, uint64_t elem_size)
+    -> void *;
 
 } // namespace kira::runtime

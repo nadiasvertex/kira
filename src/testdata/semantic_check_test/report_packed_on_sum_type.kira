@@ -1,0 +1,4 @@
+module sample
+packed type shape = @circle(float64) | @empty
+def main() -> unit:
+    return unit

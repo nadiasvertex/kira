@@ -91,13 +91,25 @@ visibility = "pub" | "internal" | "super" | "priv" ;
 (* ----------------------------------------------------------------- *)
 
 type_decl
-    = [ visibility ] "type" IDENT [ type_params ] "=" type_def
+    = [ visibility ] type_prefix "type" IDENT [ type_params ] "=" type_def
       [ "deriving" deriving_list ] NEWLINE
-    | [ visibility ] "type" IDENT [ type_params ] "=" type_def
+    | [ visibility ] type_prefix "type" IDENT [ type_params ] "=" type_def
       NEWLINE INDENT
           [ deriving_clause ]
           [ invariant_clause ]
       DEDENT
+    ;
+
+type_prefix
+    = { type_modifier }
+    ;
+
+type_modifier
+    = "packed"    (* struct-only: fields byte-packed back to back, no
+                     alignment padding; semantically rejected on a sum
+                     type/alias/refinement type definition, not a grammar
+                     error — mirrors func_modifier's semantics-constrain-
+                     combinations note below. *)
     ;
 
 type_def

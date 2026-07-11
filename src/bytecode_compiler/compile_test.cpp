@@ -569,6 +569,54 @@ auto test_fixed_array_construction_and_indexing() -> void {
   expect(main_result->value.i == 30, "expected main()'s third(2) == 30");
 }
 
+auto test_packed_struct_field_access() -> void {
+  auto module = compile_fixture(load_fixture("packed_struct_layout.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "combine"),
+                       std::array{bc::slot_value{uint64_t{7}},
+                                  bc::slot_value{uint64_t{3}},
+                                  bc::slot_value{uint64_t{42}}});
+  expect(result.has_value(),
+         "expected combine() on a packed struct to succeed");
+  expect(result->value.i == 7'003'042,
+         "expected each packed field to read back at its own value despite "
+         "no padding between them");
+
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() to succeed");
+  expect(main_result->value.i == 7'003'042,
+         "expected main()'s combine(7, 3, 42) == 7003042");
+}
+
+auto test_padded_struct_field_access() -> void {
+  auto module = compile_fixture(load_fixture("padded_struct_layout.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "combine"),
+                       std::array{bc::slot_value{uint64_t{7}},
+                                  bc::slot_value{uint64_t{3}},
+                                  bc::slot_value{uint64_t{42}}});
+  expect(result.has_value(),
+         "expected combine() on a default-padded struct to succeed");
+  expect(result->value.i == 7'003'042,
+         "expected each padded field to still read back at its own value");
+}
+
+auto test_narrow_element_array_construction_and_indexing() -> void {
+  auto module = compile_fixture(load_fixture("narrow_element_array.kira"));
+  const auto vm = bc::vm{module};
+  auto result = vm.run(
+      function_index(module, "sum_all"),
+      std::array{bc::slot_value{uint64_t{0}}, bc::slot_value{uint64_t{4}}});
+  expect(result.has_value(), "expected sum_all(0, 4) to succeed");
+  expect(result->value.i == 60,
+         "expected the first and last 2-byte-wide array[int16,5] elements "
+         "(10 + 50) to round-trip contiguously at their own natural width");
+
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() to succeed");
+  expect(main_result->value.i == 60, "expected main()'s sum_all(0, 4) == 60");
+}
+
 auto test_array_index_out_of_bounds_panics() -> void {
   auto module = compile_fixture(load_fixture("array_out_of_bounds.kira"));
   const auto vm = bc::vm{module};
@@ -891,6 +939,9 @@ auto main() -> int {
     test_tuple_construction_and_projection();
     test_struct_literal_and_field_access();
     test_fixed_array_construction_and_indexing();
+    test_packed_struct_field_access();
+    test_padded_struct_field_access();
+    test_narrow_element_array_construction_and_indexing();
     test_array_index_out_of_bounds_panics();
     test_array_fill_form_repeats_the_same_value();
     test_sum_type_variant_with_payload_encodes_tag_and_slot();

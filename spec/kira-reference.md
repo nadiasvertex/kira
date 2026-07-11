@@ -498,6 +498,26 @@ type shape =
 
 Constructors are lowercase. You always use `match` to inspect a sum type.
 
+### Struct Layout: Padding and `packed`
+
+By default, a struct's fields are laid out the way a systems language lays out a C struct: each field is placed at its own natural alignment (inserting padding before it if needed), and the whole struct's size is rounded up to its widest field's alignment. This wastes a little space in exchange for fields the hardware can load/store efficiently.
+
+```kira
+type mixed = { a: bool, b: int32, c: bool }
+# a @ offset 0 (1 byte), 3 bytes padding, b @ offset 4 (4 bytes),
+# c @ offset 8 (1 byte), 3 bytes trailing padding -> size 12, align 4
+```
+
+Sometimes padding isn't acceptable — matching a fixed C struct layout, a hardware register block, or a wire-protocol frame. Prefix the declaration with `packed` to byte-pack fields back to back with no padding at all:
+
+```kira
+packed type header = { magic: uint16, flags: byte, len: uint32 }
+# magic @ offset 0 (2 bytes), flags @ offset 2 (1 byte),
+# len @ offset 3 (4 bytes) -> size 7, align 1
+```
+
+`packed` only applies to struct types — writing it before a sum type, type alias, or refinement type is a compiler error, since those have no field layout to pack.
+
 ### Type Aliases
 
 ```kira
@@ -1734,7 +1754,10 @@ machine def fast_sum(data: slice[float32], len: usize) -> float32:
 Available inside `machine` functions:
 - Raw pointer types `*T` and `*mut T`
 - Pointer arithmetic
-- Explicit memory layout (`layout`, `align`, `offset`)
+- Explicit memory layout: struct field padding is controllable today via the
+  `packed` modifier (see "Struct Layout: Padding and `packed`" above, not
+  `machine`-gated — usable on any struct declaration); finer-grained
+  per-field `layout`/`align`/`offset` control remains aspirational
 - SIMD intrinsics
 - Unsafe casts (`transmute`)
 - Inline assembly: `asm { ... }`

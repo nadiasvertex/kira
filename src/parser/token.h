@@ -72,6 +72,12 @@ enum class token_kind : uint8_t {
                 ///< backed by a native implementation per backend.
 
   // ------------------------------------------------------------------
+  //  Type-declaration modifiers
+  // ------------------------------------------------------------------
+  kw_packed, ///< Struct-only `type` modifier: fields byte-packed back to
+             ///< back, no alignment padding.
+
+  // ------------------------------------------------------------------
   //  Visibility keywords
   // ------------------------------------------------------------------
   kw_pub,      ///< Widest visibility for exported declarations.
@@ -332,6 +338,16 @@ struct token {
            kind == token_kind::kw_intrinsic;
   }
 
+  /// @brief Returns whether this token is a `type`-declaration modifier
+  /// keyword — currently just `packed`. A dedicated predicate (rather than
+  /// checking `kw_packed` directly at the one call site) mirrors
+  /// `is_func_modifier`'s shape so a future addition (`spec/kira-
+  /// reference.md`'s aspirational `layout`/`align`/`offset`) has one place
+  /// to join without another rename.
+  [[nodiscard]] constexpr auto is_type_modifier() const noexcept -> bool {
+    return kind == token_kind::kw_packed;
+  }
+
   /// @brief Returns whether this token can form an assignment statement
   /// operator.
   ///
@@ -458,6 +474,7 @@ struct token {
     case token_kind::kw_async:
     case token_kind::kw_machine:
     case token_kind::kw_intrinsic:
+    case token_kind::kw_packed:
     case token_kind::tilde:
     case token_kind::newline:
       return true;
@@ -490,6 +507,7 @@ struct token {
     case token_kind::kw_async:
     case token_kind::kw_machine:
     case token_kind::kw_intrinsic:
+    case token_kind::kw_packed:
     case token_kind::tilde:
     case token_kind::newline:
       return true;
@@ -666,6 +684,9 @@ struct token {
     if (text == "par") {
       return token_kind::kw_par;
     }
+    if (text == "packed") {
+      return token_kind::kw_packed;
+    }
     if (text == "pre") {
       return token_kind::kw_pre;
     }
@@ -825,6 +846,9 @@ struct token {
     return "`machine`";
   case token_kind::kw_intrinsic:
     return "`intrinsic`";
+
+  case token_kind::kw_packed:
+    return "`packed`";
 
   case token_kind::kw_pub:
     return "`pub`";

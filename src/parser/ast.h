@@ -1461,9 +1461,21 @@ struct use_decl : node {
 };
 
 /// `type Name[Params] = TypeDef`
+/// Type-declaration modifier flags. Distinct from `func_modifiers` since
+/// these apply to `type` declarations, not `def`s — currently just
+/// `packed`, which is only meaningful on a struct-shaped definition
+/// (`struct_type_def`); a `packed` sum type/alias/refinement type is
+/// grammatically legal (mirrors how `func_modifiers`' combinations are
+/// grammar-legal but semantically restricted) but rejected by
+/// `semantic::check.cpp`.
+struct type_modifiers {
+  bool is_packed = false; ///< Struct-only: fields byte-packed, no padding.
+};
+
 struct type_decl : node {
   visibility visibility = visibility::def; ///< Declared visibility of the type.
-  std::string name; ///< Type name introduced by the declaration.
+  type_modifiers modifiers; ///< Semantic modifiers attached to the declaration.
+  std::string name;         ///< Type name introduced by the declaration.
   std::vector<type_param>
       type_params; ///< Generic parameters in declaration order.
   /// The type definition body — one of: struct_body, sum_body, type_expr,

@@ -418,6 +418,31 @@ auto test_fixed_array_construction_and_indexing() -> void {
   expect(result->value.i == 30, "expected a[2] == 30");
 }
 
+auto test_packed_struct_field_access() -> void {
+  auto jf = jit_fixture_for(load_fixture("packed_struct_layout.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i64);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 7'003'042,
+         "expected combine(7, 3, 42) == 7003042 via a packed struct");
+}
+
+auto test_padded_struct_field_access() -> void {
+  auto jf = jit_fixture_for(load_fixture("padded_struct_layout.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i64);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 7'003'042,
+         "expected combine(7, 3, 42) == 7003042 via a default-padded struct");
+}
+
+auto test_narrow_element_array_construction_and_indexing() -> void {
+  auto jf = jit_fixture_for(load_fixture("narrow_element_array.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 60,
+         "expected the first and last array[int16,5] elements (10 + 50) to "
+         "round-trip");
+}
+
 auto test_array_index_out_of_bounds_panics() -> void {
   auto jf = jit_fixture_for(load_fixture("array_out_of_bounds.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -581,6 +606,9 @@ auto main() -> int {
     test_tuple_construction_and_projection();
     test_struct_literal_and_field_access();
     test_fixed_array_construction_and_indexing();
+    test_packed_struct_field_access();
+    test_padded_struct_field_access();
+    test_narrow_element_array_construction_and_indexing();
     test_array_index_out_of_bounds_panics();
     test_array_fill_form_repeats_the_same_value();
     test_match_dispatches_on_literal_and_wildcard_patterns();

@@ -178,17 +178,83 @@ auto test_result_variant_tags_and_payload_arity() -> void {
          "expected result's payload area to be sized for one payload slot");
 }
 
+auto test_layout_of_scalar_sizes_and_alignment() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def main() -> int32:\n"
+                               "    return 1\n");
+  auto &types = fixture.checked.types;
+  const auto bool_layout = runtime::layout_of(types, types.bool_type());
+  expect(bool_layout.has_value() && bool_layout->size_bytes == 1 &&
+             bool_layout->align_bytes == 1,
+         "expected bool to be 1 byte, 1-aligned");
+  const auto usize_layout = runtime::layout_of(types, types.usize_type());
+  expect(usize_layout.has_value() && usize_layout->size_bytes == 8 &&
+             usize_layout->align_bytes == 8,
+         "expected usize to be 8 bytes, 8-aligned");
+  const auto char_layout = runtime::layout_of(types, types.char_type());
+  expect(char_layout.has_value() && char_layout->size_bytes == 4 &&
+             char_layout->align_bytes == 4,
+         "expected char to be 4 bytes, 4-aligned (widened Unicode scalar)");
+  const auto str_layout = runtime::layout_of(types, types.builtin("str"));
+  expect(str_layout.has_value() && str_layout->size_bytes == 8 &&
+             str_layout->align_bytes == 8,
+         "expected str to be pointer-sized as a nested field/element");
+}
+
+auto test_struct_field_offset_padded() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "type mixed = { pub a: bool, pub b: int32, pub c: bool }\n"
+                    "def main() -> mixed:\n"
+                    "    return { a: true, b: 1, c: false }\n");
+  const auto id = struct_or_sum_type_of_main_return(fixture);
+  auto &types = fixture.checked.types;
+  expect(!runtime::is_struct_packed(types, id),
+         "expected an ordinary struct to default to padded layout");
+  expect(runtime::struct_field_offset(types, id, "a") == 0,
+         "expected a bool-first field at offset 0");
+  expect(runtime::struct_field_offset(types, id, "b") == 4,
+         "expected int32 field b padded up to offset 4");
+  expect(runtime::struct_field_offset(types, id, "c") == 8,
+         "expected bool field c immediately after b at offset 8");
+  const auto layout = runtime::struct_layout(types, id);
+  expect(layout.size_bytes == 12 && layout.align_bytes == 4,
+         "expected trailing padding to round the struct up to 12 bytes, "
+         "align 4");
+}
+
+auto test_struct_field_offset_packed() -> void {
+  auto fixture = check_fixture(
+      "module sample\n"
+      "packed type mixed = { pub a: bool, pub b: int32, pub c: bool }\n"
+      "def main() -> mixed:\n"
+      "    return { a: true, b: 1, c: false }\n");
+  const auto id = struct_or_sum_type_of_main_return(fixture);
+  auto &types = fixture.checked.types;
+  expect(runtime::is_struct_packed(types, id),
+         "expected the packed modifier to be recorded on the struct type");
+  expect(runtime::struct_field_offset(types, id, "a") == 0,
+         "expected packed field a at offset 0");
+  expect(runtime::struct_field_offset(types, id, "b") == 1,
+         "expected packed field b immediately after a, offset 1");
+  expect(runtime::struct_field_offset(types, id, "c") == 5,
+         "expected packed field c immediately after b, offset 5");
+  const auto layout = runtime::struct_layout(types, id);
+  expect(layout.size_bytes == 6 && layout.align_bytes == 1,
+         "expected a packed struct's size to be the exact byte sum, align 1");
+}
+
 auto test_list_reserve_slot_grows_and_preserves_existing_elements() -> void {
   uint64_t header[3] = {0, 0, 0};
 
-  auto *slot0 = runtime::list_reserve_slot(header);
+  auto *slot0 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
   expect(header[0] == 1, "expected len to become 1 after the first reserve");
   expect(header[1] == 4, "expected the first growth to start at capacity 4");
   *slot0 = 10;
 
-  auto *slot1 = runtime::list_reserve_slot(header);
-  auto *slot2 = runtime::list_reserve_slot(header);
-  auto *slot3 = runtime::list_reserve_slot(header);
+  auto *slot1 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
+  auto *slot2 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
+  auto *slot3 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
   *slot1 = 20;
   *slot2 = 30;
   *slot3 = 40;
@@ -197,7 +263,7 @@ auto test_list_reserve_slot_grows_and_preserves_existing_elements() -> void {
 
   // A fifth reserve exceeds capacity 4, forcing growth to 8 and copying
   // every existing element across.
-  auto *slot4 = runtime::list_reserve_slot(header);
+  auto *slot4 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
   *slot4 = 50;
   expect(header[0] == 5, "expected len == 5 after the growth-triggering push");
   expect(header[1] == 8, "expected capacity to double to 8");
@@ -205,6 +271,24 @@ auto test_list_reserve_slot_grows_and_preserves_existing_elements() -> void {
   expect(data[0] == 10 && data[1] == 20 && data[2] == 30 && data[3] == 40 &&
              data[4] == 50,
          "expected every element to survive the growth copy in order");
+}
+
+auto test_list_reserve_slot_narrow_elements() -> void {
+  // A `list[bool]`/`list[int16]`-shaped push sequence — verifies
+  // `list_reserve_slot`'s generalized `elem_size` keeps elements tightly
+  // packed (2 bytes/element here) rather than the old hardcoded 8.
+  uint64_t header[3] = {0, 0, 0};
+  for (uint16_t i = 0; i < 5; ++i) {
+    auto *slot = static_cast<uint16_t *>(runtime::list_reserve_slot(header, 2));
+    *slot = static_cast<uint16_t>(i * 10);
+  }
+  expect(header[0] == 5, "expected len == 5 after five narrow pushes");
+  expect(header[1] == 8, "expected capacity to have doubled 4 -> 8");
+  const auto *data =
+      reinterpret_cast<const uint16_t *>(static_cast<uintptr_t>(header[2]));
+  expect(data[0] == 0 && data[1] == 10 && data[2] == 20 && data[3] == 30 &&
+             data[4] == 40,
+         "expected every 2-byte element to survive growth in order");
 }
 
 } // namespace
@@ -215,7 +299,11 @@ auto main() -> int {
     test_sum_variant_tags_and_payload_arity();
     test_option_variant_tags_and_payload_arity();
     test_result_variant_tags_and_payload_arity();
+    test_layout_of_scalar_sizes_and_alignment();
+    test_struct_field_offset_padded();
+    test_struct_field_offset_packed();
     test_list_reserve_slot_grows_and_preserves_existing_elements();
+    test_list_reserve_slot_narrow_elements();
   } catch (const std::exception &ex) {
     std::cerr << "layout_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -232,12 +232,30 @@ enum class opcode : uint8_t {
   //  generic over "a flat block of 8-byte slots" (`src/runtime/layout.h`),
   //  matching the same "parameterize, don't combinatorially enumerate"
   //  choice `numeric_kind` already made for arithmetic.
-  op_alloc,          ///< u8 dst, u16 slot_count — reg[dst] = a fresh, zeroed
-                     ///< `slot_count * 8`-byte block from the arena.
-  op_load_slot,      ///< u8 dst, u8 ptr, u16 slot_index — reg[dst] =
-                     ///< *(reg[ptr] as slot_value* + slot_index).
-  op_store_slot,     ///< u8 ptr, u16 slot_index, u8 src —
-                     ///< *(reg[ptr] as slot_value* + slot_index) = reg[src].
+  op_alloc,          ///< u8 dst, u16 byte_size — reg[dst] = a fresh, zeroed
+                     ///< `byte_size`-byte block from the arena. Despite the
+                     ///< name, this has always just allocated a byte count
+                     ///< (`slot_count * 8` for the uniform-slot constructs
+                     ///< that still use it that way) — callers compute
+                     ///< whatever byte size their own representation needs
+                     ///< (a byte-precise `runtime::struct_layout` size for a
+                     ///< struct, `field_count * 8` for a tuple/sum/closure).
+  op_load_slot,      ///< u8 dst, u8 ptr, u16 byte_offset, u8 field_size —
+                     ///< reg[dst] = a `field_size`-byte (1/2/4/8), zero-
+                     ///< extended-to-64-bit read at
+                     ///< *(reg[ptr] as uint8_t* + byte_offset). Every
+                     ///< uniform-8-byte-slot construct (tuple, sum-type
+                     ///< payload, closure env) passes `field_size = 8,
+                     ///< byte_offset = slot_index * 8`, unchanged in
+                     ///< observable behavior; a struct's own byte-precise
+                     ///< `field_size`/`byte_offset` come from
+                     ///< `runtime::struct_field_offset`/`layout_of`.
+  op_store_slot,     ///< u8 ptr, u16 byte_offset, u8 src, u8 field_size —
+                     ///< *(reg[ptr] as uint8_t* + byte_offset) = the low
+                     ///< `field_size` bytes (1/2/4/8) of reg[src]. Write-side
+                     ///< counterpart to `op_load_slot`; same
+                     ///< `field_size = 8` convention for uniform-slot
+                     ///< constructs.
   op_load_str_const, ///< u8 dst, u16 string_const_index — reg[dst] = a
                      ///< fresh 2-slot `str` heap value `{ len; data_ptr }`
                      ///< whose `data_ptr` points directly at
@@ -245,44 +263,32 @@ enum class opcode : uint8_t {
                      ///< bytes (no arena copy — the function outlives the
                      ///< run, so this is safe, and literal string bytes are
                      ///< never mutated through a `str` value).
-  op_load_indexed,   ///< u8 dst, u8 ptr, u8 index — reg[dst] =
-                     ///< *(reg[ptr] as slot_value* + reg[index].u). The
-                     ///< runtime-indexed counterpart to `op_load_slot`'s
-                     ///< compile-time-constant slot index — used for fixed
+  op_load_indexed,   ///< u8 dst, u8 ptr, u8 index, u8 elem_size — reg[dst] =
+                     ///< a `elem_size`-byte (1/2/4/8), zero-extended read at
+                     ///< *(reg[ptr] as uint8_t* + reg[index].u * elem_size).
+                     ///< The runtime-indexed counterpart to `op_load_slot`'s
+                     ///< compile-time-constant offset — used for fixed
                      ///< `array[T, N]` element access, where the index is an
                      ///< ordinary runtime value the compiler bounds-checks
                      ///< itself (via `op_ge`/`op_panic_if`) before emitting
                      ///< this, not baked into the instruction stream.
-  op_store_indexed,  ///< u8 ptr, u8 index, u8 src —
-                     ///< *(reg[ptr] as slot_value* + reg[index].u) = reg[src].
-  op_store_byte,     ///< u8 ptr, u16 byte_offset, u8 src —
-                     ///< *(reg[ptr] as uint8_t* + byte_offset) = low byte of
-                     ///< reg[src]. Byte-granular, compile-time-constant-offset
-                     ///< counterpart to `op_store_slot` — used for `array
-                     ///< [byte, N]`'s tightly-packed (1 byte/element, not one
-                     ///< 8-byte slot/element) representation, the one element
-                     ///< type that must byte-address so it can alias a
-                     ///< `str`/`slice[byte]` view without a copy (see
-                     ///< `spec/stdlib.md`'s `std.io` byte-buffer notes).
-  op_load_byte_indexed, ///< u8 dst, u8 ptr, u8 index — reg[dst] = zero-
-                        ///< extended *(reg[ptr] as uint8_t* + reg[index].u).
-                        ///< Byte-granular, runtime-indexed counterpart to
-                        ///< `op_load_indexed`, for reading one element out of a
-                        ///< byte-packed `array[byte, N]`.
-  op_store_byte_indexed, ///< u8 ptr, u8 index, u8 src —
-  ///< *(reg[ptr] as uint8_t* + reg[index].u) = low byte of
-  ///< reg[src]. Byte-granular, runtime-indexed counterpart
-  ///< to `op_store_indexed` — the write-side sibling of
-  ///< `op_load_byte_indexed`/`op_store_byte`, unused by
-  ///< any construct compiled today (nothing assigns
-  ///< through a runtime-indexed `array[byte, N]` element
-  ///< yet) but kept alongside its load counterpart so a
-  ///< future one doesn't need its own opcode-design pass.
-  op_list_push, ///< u8 header_ptr, u8 value — appends reg[value] onto
-                ///< the `list[T]` value at reg[header_ptr] (a 3-slot
-                ///< `{ len; cap; data }` header, `src/runtime/
-                ///< layout.h`), growing/copying to a larger `data`
-                ///< block when already at capacity. Unlike
+                     ///< `elem_size` is `runtime::layout_of(element_type)`'s
+                     ///< natural size, generalizing what used to be a single
+                     ///< hardcoded 8-byte stride (with a separate one-off
+                     ///< `array[byte,N]` 1-byte special case) into one
+                     ///< opcode parameterized the same "parameterize, don't
+                     ///< enumerate" way `numeric_kind` already is.
+  op_store_indexed,  ///< u8 ptr, u8 index, u8 src, u8 elem_size —
+                     ///< *(reg[ptr] as uint8_t* + reg[index].u * elem_size)
+                     ///< = the low `elem_size` bytes of reg[src].
+  op_list_push, ///< u8 header_ptr, u8 value, u8 elem_size — appends the low
+                ///< `elem_size` bytes of reg[value] onto the `list[T]`
+                ///< value at reg[header_ptr] (a 3-slot `{ len; cap; data }`
+                ///< header, `src/runtime/layout.h`, `data` itself a
+                ///< contiguous `elem_size`-byte-per-element block —
+                ///< `elem_size` generalizes what used to be a hardcoded
+                ///< 8-byte-per-element push), growing/copying to a larger
+                ///< `data` block when already at capacity. Unlike
                 ///< `op_load_slot`/`op_store_slot`, this is one
                 ///< opcode rather than several composed primitives:
                 ///< growth needs a real conditional allocate-and-copy

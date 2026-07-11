@@ -6137,6 +6137,27 @@ private:
       }
     }
 
+    if (decl.modifiers.is_packed && decl.definition != nullptr &&
+        decl.definition->kind != ast::node_kind::struct_type_def) {
+      const auto *kind_name = [&]() -> const char * {
+        switch (decl.definition->kind) {
+        case ast::node_kind::sum_type_def:
+          return "a sum type";
+        case ast::node_kind::refinement_type:
+          return "a refinement type";
+        default:
+          return "a type alias";
+        }
+      }();
+      error_with_help(
+          decl.span,
+          std::format("`packed` only applies to struct types; `{}` is {}",
+                      decl.name, kind_name),
+          "has no field layout to pack",
+          "Remove `packed` here — only a struct-shaped `type` declaration "
+          "has fields whose byte layout `packed` controls.");
+    }
+
     if (decl.definition != nullptr) {
       switch (decl.definition->kind) {
       case ast::node_kind::struct_type_def: {

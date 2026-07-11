@@ -729,6 +729,16 @@ auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
     return make_error_node(peek().span, "expected function declaration");
   }
 
+  case token_kind::kw_packed: {
+    auto mods = parse_type_modifiers();
+    if (at(token_kind::kw_type)) {
+      return parse_type_decl(vis, mods);
+    }
+    emit_unexpected("`type` after type modifiers");
+    synchronize_to_newline();
+    return make_error_node(peek().span, "expected type declaration");
+  }
+
   case token_kind::kw_static: {
     if (peek_at(1).is(token_kind::kw_def) ||
         (peek_at(1).is_func_modifier() &&
@@ -998,10 +1008,35 @@ auto parser::parse_dep_decl() -> ast::ptr<ast::dep_decl> {
 //  Type declarations
 // ==========================================================================
 
-auto parser::parse_type_decl(ast::visibility vis) -> ast::ptr<ast::type_decl> {
+auto parser::parse_type_modifiers() -> ast::type_modifiers {
+  ast::type_modifiers mods;
+  bool keep_going = true;
+  while (keep_going) {
+    switch (current()) {
+    case token_kind::kw_packed:
+      if (mods.is_packed) {
+        emit(diagnostic(diagnostic_level::warning,
+                        "duplicate `packed` modifier — you only need it once",
+                        file_id_)
+                 .with_label(peek().span, "this `packed` is redundant"));
+      }
+      mods.is_packed = true;
+      advance();
+      break;
+    default:
+      keep_going = false;
+      break;
+    }
+  }
+  return mods;
+}
+
+auto parser::parse_type_decl(ast::visibility vis, ast::type_modifiers mods)
+    -> ast::ptr<ast::type_decl> {
   auto decl = ast::make<ast::type_decl>();
   auto start = peek().span;
   decl->visibility = vis;
+  decl->modifiers = mods;
 
   expect(token_kind::kw_type);
   auto name_tok = expect(token_kind::ident);
@@ -2304,6 +2339,15 @@ auto parser::parse_stmt() -> ast::ptr<ast::node> {
     return parse_use_decl(ast::visibility::def);
   case token_kind::kw_type:
     return parse_type_decl(ast::visibility::def);
+  case token_kind::kw_packed: {
+    auto mods = parse_type_modifiers();
+    if (at(token_kind::kw_type)) {
+      return parse_type_decl(ast::visibility::def, mods);
+    }
+    emit_unexpected("`type` after type modifiers");
+    synchronize_to_newline();
+    return make_error_node(peek().span);
+  }
   case token_kind::kw_static: {
     if (peek_at(1).is(token_kind::kw_def) ||
         (peek_at(1).is_func_modifier() &&
@@ -2329,8 +2373,9 @@ auto parser::parse_stmt() -> ast::ptr<ast::node> {
         return parse_func_decl(vis, std::move(mods));
       }
     }
-    if (at(token_kind::kw_type)) {
-      return parse_type_decl(vis);
+    if (at(token_kind::kw_type) || peek().is_type_modifier()) {
+      auto mods = parse_type_modifiers();
+      return parse_type_decl(vis, mods);
     }
     if (at(token_kind::kw_static)) {
       return parse_static_decl(vis);

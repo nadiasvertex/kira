@@ -513,9 +513,16 @@ private:
 
   // ---- Type declarations ----
 
-  /// Parses a user-defined type declaration.
-  [[nodiscard]] auto parse_type_decl(ast::visibility vis)
+  /// Parses a user-defined type declaration. `mods` carries any leading
+  /// type-modifier keywords (`packed`) already consumed by the caller —
+  /// mirrors `parse_func_decl` taking already-parsed `func_modifiers`.
+  [[nodiscard]] auto parse_type_decl(ast::visibility vis,
+                                     ast::type_modifiers mods = {})
       -> ast::ptr<ast::type_decl>;
+  /// Parses a run of leading `type`-declaration modifier keywords
+  /// (currently just `packed`) before a `type` keyword — mirrors
+  /// `parse_func_modifiers`.
+  [[nodiscard]] auto parse_type_modifiers() -> ast::type_modifiers;
   /// Parses the right-hand side of a type declaration after the name.
   [[nodiscard]] auto parse_type_def() -> ast::ptr<ast::node>;
   /// Parses a struct-style field body for a type declaration.

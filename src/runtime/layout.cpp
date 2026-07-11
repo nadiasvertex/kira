@@ -181,28 +181,249 @@ auto sum_max_payload_slots(const type_table &types, semantic::type_id id)
   return max_slots;
 }
 
-auto list_reserve_slot(uint64_t *header) -> uint64_t * {
+namespace {
+
+/// Rounds `offset` up to the next multiple of `align` (`align` is always a
+/// power of two here — every alignment this file ever produces comes from
+/// `scalar_layout`/the fixed 8-byte heap-pointer alignment).
+[[nodiscard]] constexpr auto round_up(size_t offset, size_t align) -> size_t {
+  return (offset + align - 1) / align * align;
+}
+
+/// Natural size/alignment table for builtin scalars — mirrors
+/// `bytecode::numeric_kind_of`'s name-to-representation mapping
+/// (`src/bytecode/value.cpp`) exactly, but expressed as byte size/align
+/// rather than a `numeric_kind`, since `runtime` sits below `bytecode` in
+/// the dependency graph (`bytecode`'s `vm` library depends on `runtime`,
+/// not the reverse) and so can't reuse that table directly.
+[[nodiscard]] auto scalar_layout(std::string_view name)
+    -> std::optional<layout_info> {
+  if (name == "bool" || name == "int8" || name == "uint8" || name == "byte") {
+    return layout_info{.size_bytes = 1, .align_bytes = 1};
+  }
+  if (name == "int16" || name == "uint16") {
+    return layout_info{.size_bytes = 2, .align_bytes = 2};
+  }
+  if (name == "int32" || name == "uint32" || name == "char") {
+    return layout_info{.size_bytes = 4, .align_bytes = 4};
+  }
+  if (name == "int64" || name == "uint64" || name == "isize" ||
+      name == "usize" || name == "float64") {
+    return layout_info{.size_bytes = 8, .align_bytes = 8};
+  }
+  if (name == "float32") {
+    return layout_info{.size_bytes = 4, .align_bytes = 4};
+  }
+  if (name == "unit") {
+    return layout_info{.size_bytes = 0, .align_bytes = 1};
+  }
+  // int128/uint128/float128 and every non-scalar builtin (str is handled by
+  // the heap-pointer branch in `layout_of` before this is reached) fall
+  // through to `nullopt` — same 128-bit gap `numeric_kind_of` documents.
+  return std::nullopt;
+}
+
+/// Whether `entry`'s kind is one of the heap-referenced representations
+/// (`src/runtime/layout.h`'s top comment) that is pointer-sized/aligned as
+/// a field/element of another aggregate.
+[[nodiscard]] auto is_heap_kind(const type_entry &entry) -> bool {
+  switch (entry.kind) {
+  case type_kind::tuple_kind:
+  case type_kind::array_kind:
+  case type_kind::struct_kind:
+  case type_kind::sum_kind:
+  case type_kind::opaque_kind:
+  case type_kind::fn_kind:
+  case type_kind::ref_kind:
+  case type_kind::ptr_kind:
+  case type_kind::builtin_generic_kind:
+    return true;
+  case type_kind::builtin_kind:
+    return entry.name == "str";
+  default:
+    return false;
+  }
+}
+
+/// Resolves one struct field's declared type_expr to a `layout_info`
+/// *without* the checker's full generic-substitution machinery
+/// (`semantic::check.cpp`'s private `resolve_type`, which needs a live
+/// `checker` instance this module doesn't have — see `types.h`'s own doc
+/// comment on why field *types* aren't otherwise exposed). This is possible
+/// because layout only cares about a field's top-level size/alignment, and
+/// every compound/aggregate type (struct, sum, tuple, array, `list[T]`, a
+/// qualified/generic-argumented named type, `&T`/`*T`, `fn(...)`) is
+/// uniformly pointer-sized/aligned as a field regardless of what it
+/// contains — the one case that genuinely needs the *instance*'s own
+/// substitution is a field typed as a bare, unqualified, argument-less name
+/// that is itself one of the struct's own generic parameters (`T`), handled
+/// below by indexing `instance.args` directly rather than a general
+/// substitution walk.
+[[nodiscard]] auto field_layout(const type_table &types,
+                                const type_entry &instance,
+                                const ast::type_expr &expr)
+    -> std::optional<layout_info>;
+
+[[nodiscard]] auto layout_of_entry(const type_entry &entry)
+    -> std::optional<layout_info> {
+  if (entry.kind == type_kind::builtin_kind) {
+    if (entry.name == "str") {
+      return layout_info{.size_bytes = 8, .align_bytes = 8};
+    }
+    return scalar_layout(entry.name);
+  }
+  if (is_heap_kind(entry)) {
+    return layout_info{.size_bytes = 8, .align_bytes = 8};
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] auto field_layout(const type_table &types,
+                                const type_entry &instance,
+                                const ast::type_expr &expr)
+    -> std::optional<layout_info> {
+  if (expr.has_error) {
+    return std::nullopt;
+  }
+  if (expr.kind != ast::node_kind::named_type) {
+    // Every other type_expr shape (tuple/slice/array/ref/ptr/fn/quote/
+    // union/refinement) denotes a heap-referenced or pointer-sized
+    // representation as a field, regardless of its contents.
+    return layout_info{.size_bytes = 8, .align_bytes = 8};
+  }
+  const auto &named = dynamic_cast<const ast::named_type &>(expr);
+  if (named.path.size() != 1 || !named.type_args.empty()) {
+    // A qualified path (`std.foo.bar`) or a generic application
+    // (`list[T]`, `option[int32]`, a user generic struct/sum) — all
+    // heap-referenced as a field.
+    return layout_info{.size_bytes = 8, .align_bytes = 8};
+  }
+  const auto &name = named.path.front();
+  if (const auto scalar = scalar_layout(name); scalar.has_value()) {
+    return scalar;
+  }
+  if (name == "str") {
+    return layout_info{.size_bytes = 8, .align_bytes = 8};
+  }
+  // A bare single-segment name that isn't a scalar/`str` is either one of
+  // the struct's own generic parameters (needs `instance.args`
+  // substitution) or another named type (user struct/sum/alias, always
+  // heap-referenced as a field).
+  if (instance.decl != nullptr) {
+    for (size_t i = 0; i < instance.decl->type_params.size(); ++i) {
+      const auto &param = instance.decl->type_params[i];
+      if (param.is_value_param || param.name != name) {
+        continue;
+      }
+      if (i >= instance.args.size()) {
+        return std::nullopt; // unresolved generic parameter
+      }
+      return layout_of(types, instance.args[i]);
+    }
+  }
+  return layout_info{.size_bytes = 8, .align_bytes = 8};
+}
+
+/// Shared padded/packed field walk driving both `struct_layout` and
+/// `struct_field_offset` — invokes `visit(field_index, offset, field_size)`
+/// for each field of struct-kind `id` in declaration order (packed or
+/// padded per `is_struct_packed`), returning the whole struct's final
+/// `layout_info`, or `nullopt` if `id` isn't a struct or any field's own
+/// layout is unrepresentable.
+template <typename Visit>
+[[nodiscard]] auto walk_struct_layout(const type_table &types,
+                                      semantic::type_id id, Visit &&visit)
+    -> std::optional<layout_info> {
+  const auto &instance = types.entry(id);
+  const auto *fields = struct_fields_of(instance);
+  if (fields == nullptr) {
+    return std::nullopt;
+  }
+  const auto packed = is_struct_packed(types, id);
+  auto offset = size_t{0};
+  auto max_align = size_t{1};
+  for (size_t i = 0; i < fields->size(); ++i) {
+    const auto &field = (*fields)[i];
+    if (field.type == nullptr) {
+      return std::nullopt;
+    }
+    const auto field_layout_info = field_layout(types, instance, *field.type);
+    if (!field_layout_info.has_value()) {
+      return std::nullopt;
+    }
+    if (!packed) {
+      max_align = std::max(max_align, field_layout_info->align_bytes);
+      offset = round_up(offset, field_layout_info->align_bytes);
+    }
+    visit(i, offset, field_layout_info->size_bytes);
+    offset += field_layout_info->size_bytes;
+  }
+  const auto size = packed ? offset : round_up(offset, max_align);
+  return layout_info{.size_bytes = size,
+                     .align_bytes = packed ? size_t{1} : max_align};
+}
+
+} // namespace
+
+auto layout_of(const type_table &types, semantic::type_id id)
+    -> std::optional<layout_info> {
+  return layout_of_entry(types.entry(id));
+}
+
+auto is_struct_packed(const type_table &types, semantic::type_id id) -> bool {
+  const auto &entry = types.entry(id);
+  if (entry.kind != type_kind::struct_kind || entry.decl == nullptr) {
+    return false;
+  }
+  return entry.decl->modifiers.is_packed;
+}
+
+auto struct_layout(const type_table &types, semantic::type_id id)
+    -> layout_info {
+  const auto result =
+      walk_struct_layout(types, id, [](size_t, size_t, size_t) {});
+  return result.value_or(layout_info{});
+}
+
+auto struct_field_offset(const type_table &types, semantic::type_id id,
+                         std::string_view name) -> std::optional<size_t> {
+  auto found = std::optional<size_t>{};
+  const auto result =
+      walk_struct_layout(types, id, [&](size_t index, size_t offset, size_t) {
+        const auto *fields = struct_fields_of(types.entry(id));
+        if (fields != nullptr && (*fields)[index].name == name) {
+          found = offset;
+        }
+      });
+  if (!result.has_value()) {
+    return std::nullopt;
+  }
+  return found;
+}
+
+auto list_reserve_slot(uint64_t *header, size_t elem_size) -> void * {
   const auto len = header[0];
   auto cap = header[1];
   if (len >= cap) {
     const auto new_cap = cap == 0 ? uint64_t{4} : cap * 2;
-    auto *new_data = static_cast<uint64_t *>(
-        global_arena().allocate(new_cap * sizeof(uint64_t)));
+    auto *new_data =
+        static_cast<uint8_t *>(global_arena().allocate(new_cap * elem_size));
     if (cap > 0) {
-      auto *old_data =
-          reinterpret_cast<uint64_t *>(static_cast<uintptr_t>(header[2]));
-      std::copy(old_data, old_data + len, new_data);
+      const auto *old_data =
+          reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(header[2]));
+      std::copy(old_data, old_data + (len * elem_size), new_data);
     }
     header[1] = new_cap;
     header[2] = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(new_data));
   }
-  auto *data = reinterpret_cast<uint64_t *>(static_cast<uintptr_t>(header[2]));
+  auto *data = reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(header[2]));
   header[0] = len + 1;
-  return data + len;
+  return data + (len * elem_size);
 }
 
-extern "C" auto kira_rt_list_reserve_slot(uint64_t *header) -> uint64_t * {
-  return list_reserve_slot(header);
+extern "C" auto kira_rt_list_reserve_slot(uint64_t *header, uint64_t elem_size)
+    -> void * {
+  return list_reserve_slot(header, elem_size);
 }
 
 } // namespace kira::runtime

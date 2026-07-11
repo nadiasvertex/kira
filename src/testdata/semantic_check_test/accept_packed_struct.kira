@@ -1,0 +1,4 @@
+module sample
+packed type header = { pub magic: uint16, pub flags: byte, pub len: uint32 }
+def main() -> header:
+    return { magic: 1, flags: 0, len: 2 }

@@ -36,6 +36,7 @@
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
 #include "src/parser/source_location.h"
+#include "src/runtime/layout.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
@@ -269,6 +270,56 @@ auto run_llvm(const fs::path &path, const hir::hir_module &module,
   return slots[slot_index];
 }
 
+// The bytecode tier's array/list element storage is now natural-stride
+// (`runtime::layout_of`'s size, generalizing the old uniform-8-byte-slot
+// scheme — `bytecode_compiler::function_compiler::element_stride` is the
+// production code this mirrors), while the LLVM tier's hasn't migrated off
+// the uniform 8-byte-slot representation yet (`is_byte_array_type`/
+// `slot_address` in `llvm_codegen/codegen.cpp`) — so `values_equal` below
+// reads the two sides at different strides: `bytecode_element_stride`
+// picks the width for `a_bits` (always the bytecode VM's result, see
+// `run_one`), while `b_bits` (always the LLVM JIT's result) keeps using
+// `read_slot`'s fixed 8-byte stride.
+[[nodiscard]] auto
+bytecode_element_stride(const kira::semantic::type_table &types,
+                        kira::semantic::type_id elem_type) -> uint8_t {
+  const auto layout = kira::runtime::layout_of(types, elem_type);
+  if (!layout.has_value() || layout->size_bytes == 0 ||
+      layout->size_bytes > 8) {
+    return 8;
+  }
+  return static_cast<uint8_t>(layout->size_bytes);
+}
+
+// Zero-extended `width`-byte (1/2/4/8) read at `base + byte_offset` — the
+// width-aware sibling `read_slot` needs once bytecode-side elements are no
+// longer uniformly 8 bytes apart.
+[[nodiscard]] auto read_at(uint64_t base, uint64_t byte_offset, uint8_t width)
+    -> uint64_t {
+  const auto *data =
+      reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(base)) +
+      byte_offset;
+  switch (width) {
+  case 1:
+    return *data;
+  case 2: {
+    uint16_t v = 0;
+    std::memcpy(&v, data, sizeof(v));
+    return v;
+  }
+  case 4: {
+    uint32_t v = 0;
+    std::memcpy(&v, data, sizeof(v));
+    return v;
+  }
+  default: {
+    uint64_t v = 0;
+    std::memcpy(&v, data, sizeof(v));
+    return v;
+  }
+  }
+}
+
 [[nodiscard]] auto is_deep_comparable(const kira::semantic::type_table &types,
                                       kira::semantic::type_id id) -> bool {
   if (bc::numeric_kind_of(types, id).has_value()) {
@@ -326,8 +377,10 @@ auto run_llvm(const fs::path &path, const hir::hir_module &module,
     const auto data_a = read_slot(a_bits, 2);
     const auto data_b = read_slot(b_bits, 2);
     const auto elem_type = entry.args.front();
+    const auto stride_a = bytecode_element_stride(types, elem_type);
     for (uint64_t i = 0; i < len_a; ++i) {
-      if (!values_equal(types, elem_type, read_slot(data_a, i),
+      if (!values_equal(types, elem_type,
+                        read_at(data_a, i * stride_a, stride_a),
                         read_slot(data_b, i))) {
         return false;
       }
@@ -344,8 +397,10 @@ auto run_llvm(const fs::path &path, const hir::hir_module &module,
     return true;
   case kira::semantic::type_kind::array_kind: {
     const auto count = entry.array_size.value_or(0);
+    const auto stride_a = bytecode_element_stride(types, entry.result);
     for (uint64_t i = 0; i < count; ++i) {
-      if (!values_equal(types, entry.result, read_slot(a_bits, i),
+      if (!values_equal(types, entry.result,
+                        read_at(a_bits, i * stride_a, stride_a),
                         read_slot(b_bits, i))) {
         return false;
       }

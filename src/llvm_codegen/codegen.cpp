@@ -1603,7 +1603,9 @@ private:
         if (!value.has_value()) {
           return std::unexpected(value.error());
         }
-        auto *slot = builder_.CreateCall(list_reserve_slot_fn_, {header});
+        auto *slot = builder_.CreateCall(
+            list_reserve_slot_fn_,
+            {header, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 8)});
         builder_.CreateStore(*value, slot);
       }
       return header;
@@ -1650,7 +1652,9 @@ private:
     builder_.CreateCondBr(cond, body_bb, end_bb);
 
     builder_.SetInsertPoint(body_bb);
-    auto *slot = builder_.CreateCall(list_reserve_slot_fn_, {header});
+    auto *slot = builder_.CreateCall(
+        list_reserve_slot_fn_,
+        {header, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 8)});
     builder_.CreateStore(*fill_value, slot);
     auto *next_idx = builder_.CreateAdd(
         idx, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1));
@@ -2758,7 +2762,9 @@ private:
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    auto *slot = builder_.CreateCall(list_reserve_slot_fn_, {*target});
+    auto *slot = builder_.CreateCall(
+        list_reserve_slot_fn_,
+        {*target, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 8)});
     builder_.CreateStore(*value, slot);
     return false;
   }
@@ -2808,10 +2814,19 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
                               /*isVarArg=*/false),
       llvm::Function::ExternalLinkage, kAllocSymbolName, llvm_module);
 
+  // `runtime::list_reserve_slot`/`kira_rt_list_reserve_slot` (layout.h) grew
+  // an `elem_size` parameter to generalize a `list[T]`'s push stride beyond
+  // a hardcoded 8 bytes/element — this tier still always passes a constant
+  // `8` (see the three call sites below) since LLVM-side `list[T]` storage
+  // hasn't yet migrated off the uniform-8-byte-slot representation the way
+  // the bytecode tier's arrays/structs have; the parameter still has to be
+  // declared and supplied here to keep the real native function's ABI
+  // (2 args now, not 1) correct across the JIT/AOT call boundary.
   auto *list_reserve_slot_fn = llvm::Function::Create(
-      llvm::FunctionType::get(llvm::PointerType::get(ctx, 0),
-                              {llvm::PointerType::get(ctx, 0)},
-                              /*isVarArg=*/false),
+      llvm::FunctionType::get(
+          llvm::PointerType::get(ctx, 0),
+          {llvm::PointerType::get(ctx, 0), llvm::Type::getInt64Ty(ctx)},
+          /*isVarArg=*/false),
       llvm::Function::ExternalLinkage, kListReserveSlotSymbolName, llvm_module);
 
   // `intrinsic def` declarations (src/intrinsics.h): fixed native entry

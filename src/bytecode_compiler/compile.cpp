@@ -342,10 +342,7 @@ public:
       if (!reg.has_value()) {
         return std::unexpected(reg.error());
       }
-      writer_.emit_opcode(opcode::op_load_slot);
-      writer_.emit_u8(*reg);
-      writer_.emit_u8(*env_reg);
-      writer_.emit_u16(static_cast<uint16_t>(i));
+      emit_load_slot(*reg, *env_reg, static_cast<uint16_t>(i));
       locals_.emplace(free_vars[i], *reg);
     }
     return compile_body_and_finish(
@@ -484,6 +481,114 @@ private:
     const auto &elem = types_.entry(entry.result);
     return elem.kind == semantic::type_kind::builtin_kind &&
            elem.name == "byte";
+  }
+
+  // ------------------------------------------------------------------
+  //  Byte-precise opcode emission helpers (`src/bytecode/opcodes.h`'s
+  //  `op_alloc`/`op_load_slot`/`op_store_slot`/`op_load_indexed`/
+  //  `op_store_indexed`/`op_list_push`) — every call site below goes
+  //  through these rather than emitting raw operand bytes directly, so the
+  //  uniform-8-byte-slot convention (tuple/sum-payload/closure-env/list-
+  //  header) and the byte-precise convention (struct fields, any array's
+  //  natural-size elements) share one place that knows the wire format.
+  // ------------------------------------------------------------------
+
+  /// `runtime::layout_of(types_, element_type)`'s natural byte width
+  /// (1/2/4/8), the stride every fixed `array[T,N]`/`list[T]` element read/
+  /// write/push uses — generalizes what used to be a hardcoded 8 (with a
+  /// hardcoded 1-byte-per-element special case for `array[byte,N]` only)
+  /// into the one general rule. Falls back to 8 (the old uniform-slot
+  /// width) for a genuinely unrepresentable element type — this should not
+  /// arise for anything the checker accepts as an array/list element type
+  /// today, but a defensive fallback here is cheaper than threading a new
+  /// `compile_error` path through every array/list call site for a case
+  /// that can't currently occur.
+  [[nodiscard]] auto element_stride(type_id element_type) const -> uint8_t {
+    const auto layout = runtime::layout_of(types_, element_type);
+    if (!layout.has_value() || layout->size_bytes == 0 ||
+        layout->size_bytes > 8) {
+      return 8;
+    }
+    return static_cast<uint8_t>(layout->size_bytes);
+  }
+
+  /// Allocates a fresh, zeroed `byte_size`-byte heap block into `dst`.
+  auto emit_alloc(uint8_t dst, uint16_t byte_size) -> void {
+    writer_.emit_opcode(opcode::op_alloc);
+    writer_.emit_u8(dst);
+    writer_.emit_u16(byte_size);
+  }
+
+  /// `emit_alloc`'s uniform-8-byte-slot convenience form — tuple/sum-
+  /// payload/closure-env/`array[byte,N]`'s slot-count-worth-of-words/
+  /// list-header construction all still allocate by *count*, not a
+  /// pre-computed byte size.
+  auto emit_alloc_slots(uint8_t dst, uint16_t slot_count) -> void {
+    emit_alloc(dst, static_cast<uint16_t>(slot_count * 8));
+  }
+
+  /// reg[dst] = a `field_size`-byte (1/2/4/8) read at
+  /// `*(reg[ptr] + byte_offset)`.
+  auto emit_load_field(uint8_t dst, uint8_t ptr, uint16_t byte_offset,
+                       uint8_t field_size) -> void {
+    writer_.emit_opcode(opcode::op_load_slot);
+    writer_.emit_u8(dst);
+    writer_.emit_u8(ptr);
+    writer_.emit_u16(byte_offset);
+    writer_.emit_u8(field_size);
+  }
+
+  /// `emit_load_field`'s uniform-8-byte-slot convenience form —
+  /// `byte_offset = slot_index * 8, field_size = 8`.
+  auto emit_load_slot(uint8_t dst, uint8_t ptr, uint16_t slot_index) -> void {
+    emit_load_field(dst, ptr, static_cast<uint16_t>(slot_index * 8), 8);
+  }
+
+  /// `*(reg[ptr] + byte_offset) = the low `field_size` bytes of reg[src].
+  auto emit_store_field(uint8_t ptr, uint16_t byte_offset, uint8_t src,
+                        uint8_t field_size) -> void {
+    writer_.emit_opcode(opcode::op_store_slot);
+    writer_.emit_u8(ptr);
+    writer_.emit_u16(byte_offset);
+    writer_.emit_u8(src);
+    writer_.emit_u8(field_size);
+  }
+
+  /// `emit_store_field`'s uniform-8-byte-slot convenience form.
+  auto emit_store_slot(uint8_t ptr, uint16_t slot_index, uint8_t src) -> void {
+    emit_store_field(ptr, static_cast<uint16_t>(slot_index * 8), src, 8);
+  }
+
+  /// reg[dst] = a `elem_size`-byte read at
+  /// `*(reg[ptr] + reg[index_reg] * elem_size)`.
+  auto emit_load_indexed(uint8_t dst, uint8_t ptr, uint8_t index_reg,
+                         uint8_t elem_size) -> void {
+    writer_.emit_opcode(opcode::op_load_indexed);
+    writer_.emit_u8(dst);
+    writer_.emit_u8(ptr);
+    writer_.emit_u8(index_reg);
+    writer_.emit_u8(elem_size);
+  }
+
+  /// `*(reg[ptr] + reg[index_reg] * elem_size) = the low `elem_size` bytes
+  /// of reg[src].
+  auto emit_store_indexed(uint8_t ptr, uint8_t index_reg, uint8_t src,
+                          uint8_t elem_size) -> void {
+    writer_.emit_opcode(opcode::op_store_indexed);
+    writer_.emit_u8(ptr);
+    writer_.emit_u8(index_reg);
+    writer_.emit_u8(src);
+    writer_.emit_u8(elem_size);
+  }
+
+  /// Appends the low `elem_size` bytes of reg[value] onto the `list[T]`
+  /// value at reg[header].
+  auto emit_list_push(uint8_t header, uint8_t value, uint8_t elem_size)
+      -> void {
+    writer_.emit_opcode(opcode::op_list_push);
+    writer_.emit_u8(header);
+    writer_.emit_u8(value);
+    writer_.emit_u8(elem_size);
   }
 
   // ------------------------------------------------------------------
@@ -931,9 +1036,7 @@ private:
         return std::unexpected(reg.error());
       }
       env_reg = *reg;
-      writer_.emit_opcode(opcode::op_alloc);
-      writer_.emit_u8(env_reg);
-      writer_.emit_u16(static_cast<uint16_t>(free_vars.size()));
+      emit_alloc_slots(env_reg, static_cast<uint16_t>(free_vars.size()));
       for (size_t i = 0; i < free_vars.size(); ++i) {
         const auto src = lookup_local(free_vars[i]);
         if (!src.has_value()) {
@@ -944,10 +1047,7 @@ private:
                          "function's locals — capture analysis and register "
                          "allocation have gotten out of sync"});
         }
-        writer_.emit_opcode(opcode::op_store_slot);
-        writer_.emit_u8(env_reg);
-        writer_.emit_u16(static_cast<uint16_t>(i));
-        writer_.emit_u8(*src);
+        emit_store_slot(env_reg, static_cast<uint16_t>(i), *src);
       }
     }
 
@@ -1046,8 +1146,12 @@ private:
 
   /// Allocates a `values.size()`-slot heap block into `dst` and stores each
   /// element's compiled value at its corresponding slot, in order — the
-  /// shared shape behind tuple construction, the explicit-list form of an
-  /// array literal, and (via `compile_struct_init`) struct construction.
+  /// shape behind tuple construction, the only remaining uniform-8-byte-
+  /// slot construct that still uses this (struct construction moved to
+  /// `compile_struct_init`'s byte-precise path below, and fixed-array
+  /// construction to `compile_array_init`'s element-stride path — tuples
+  /// stay on the uniform scheme, out of scope for this pass, matching
+  /// sum-type payloads and closure envs).
   [[nodiscard]] auto
   compile_slots_init(const hir::ptr_vec<hir::hir_expr> &values, uint8_t dst,
                      source_span span) -> std::expected<void, compile_error> {
@@ -1059,34 +1163,39 @@ private:
                      "which this bytecode format's u16 slot-count operand "
                      "cannot address"});
     }
-    writer_.emit_opcode(opcode::op_alloc);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(static_cast<uint16_t>(values.size()));
+    emit_alloc_slots(dst, static_cast<uint16_t>(values.size()));
     for (size_t i = 0; i < values.size(); ++i) {
       auto value_reg = compile_expr(*values[i]);
       if (!value_reg.has_value()) {
         return std::unexpected(value_reg.error());
       }
-      writer_.emit_opcode(opcode::op_store_slot);
-      writer_.emit_u8(dst);
-      writer_.emit_u16(static_cast<uint16_t>(i));
-      writer_.emit_u8(*value_reg);
+      emit_store_slot(dst, static_cast<uint16_t>(i), *value_reg);
     }
     return {};
   }
 
+  /// Allocates a byte-precise struct block (`runtime::struct_layout` —
+  /// padded by default, byte-packed with no padding if the struct's own
+  /// `type` declaration carries `packed`) and stores each field at its own
+  /// `runtime::struct_field_offset`, at its own natural width (from the
+  /// field value's already-resolved HIR `type`) rather than every field
+  /// costing a uniform 8 bytes.
   [[nodiscard]] auto compile_struct_init(const hir::hir_struct_init &init,
                                          uint8_t dst)
       -> std::expected<void, compile_error> {
-    const auto field_count =
-        runtime::struct_field_names(types_, init.type).size();
-    writer_.emit_opcode(opcode::op_alloc);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(static_cast<uint16_t>(field_count));
+    const auto layout = runtime::struct_layout(types_, init.type);
+    if (layout.size_bytes > 0xFFFF) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::register_limit_exceeded,
+          .span = init.span,
+          .message = "this struct literal's total size exceeds the "
+                     "bytecode format's u16 byte-size operand"});
+    }
+    emit_alloc(dst, static_cast<uint16_t>(layout.size_bytes));
     for (const auto &field : init.fields) {
-      const auto slot =
-          runtime::struct_field_slot(types_, init.type, field.name);
-      if (!slot.has_value()) {
+      const auto offset =
+          runtime::struct_field_offset(types_, init.type, field.name);
+      if (!offset.has_value()) {
         return std::unexpected(compile_error{
             .kind = compile_error_kind::unsupported_construct,
             .span = init.span,
@@ -1099,104 +1208,58 @@ private:
       if (!value_reg.has_value()) {
         return std::unexpected(value_reg.error());
       }
-      writer_.emit_opcode(opcode::op_store_slot);
-      writer_.emit_u8(dst);
-      writer_.emit_u16(static_cast<uint16_t>(*slot));
-      writer_.emit_u8(*value_reg);
+      const auto field_size = element_stride(field.value->type);
+      emit_store_field(dst, static_cast<uint16_t>(*offset), *value_reg,
+                       field_size);
     }
     return {};
   }
 
-  /// Allocates a byte-packed `array[byte, N]` (`is_byte_array_type`) —
-  /// `ceil(N/8)` slots' worth of raw bytes, one byte per element via
-  /// `op_store_byte`, mirroring `compile_slots_init`/the fill-form branch of
-  /// `compile_array_init` exactly except for storing a byte instead of a
-  /// whole slot per element. `N` is always a compile-time constant here
-  /// (checked already, by the caller and by `check.cpp`'s requirement that a
-  /// fixed array's size be statically known), so — like the slot-packed fill
-  /// form this mirrors — the per-element stores are unrolled at compile
-  /// time rather than emitting a runtime loop.
-  [[nodiscard]] auto compile_byte_array_init(const hir::hir_array_init &init,
-                                             uint64_t count, uint8_t dst)
-      -> std::expected<void, compile_error> {
-    const auto slot_count = static_cast<uint16_t>((count + 7) / 8);
-    writer_.emit_opcode(opcode::op_alloc);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(slot_count);
-    if (init.fill_value == nullptr) {
-      for (size_t i = 0; i < init.elements.size(); ++i) {
-        auto value_reg = compile_expr(*init.elements[i]);
-        if (!value_reg.has_value()) {
-          return std::unexpected(value_reg.error());
-        }
-        writer_.emit_opcode(opcode::op_store_byte);
-        writer_.emit_u8(dst);
-        writer_.emit_u16(static_cast<uint16_t>(i));
-        writer_.emit_u8(*value_reg);
-      }
-      return {};
-    }
-    // See `compile_array_init`'s fill form for why `fill_value` is evaluated
-    // once, not re-evaluated per element.
-    auto fill_reg = compile_expr(*init.fill_value);
-    if (!fill_reg.has_value()) {
-      return std::unexpected(fill_reg.error());
-    }
-    for (uint64_t i = 0; i < count; ++i) {
-      writer_.emit_opcode(opcode::op_store_byte);
-      writer_.emit_u8(dst);
-      writer_.emit_u16(static_cast<uint16_t>(i));
-      writer_.emit_u8(*fill_reg);
-    }
-    return {};
-  }
-
+  /// Allocates a `count`-element, `elem_size`-bytes-per-element contiguous
+  /// heap block (generalizing what used to be a uniform 8-bytes/element
+  /// slot block, with a hardcoded 1-byte/element special case for
+  /// `array[byte,N]` — that's now just the `elem_size == 1` case of this
+  /// one path) and stores each element at its own compile-time-constant
+  /// byte offset, unrolled rather than a runtime loop since `N` is always
+  /// statically known for a fixed array.
   [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init,
                                         uint8_t dst)
       -> std::expected<void, compile_error> {
     if (is_list_type(init.type)) {
       return compile_list_init(init, dst);
     }
-    if (is_byte_array_type(init.type)) {
-      // `check.cpp` requires an explicit-elements array literal's element
-      // count to match its declared size exactly, so `array_size` is the
-      // right count either way — fill or explicit-elements form.
-      const auto count = types_.entry(init.type).array_size.value();
-      if (count > 0xFFFF) {
-        return std::unexpected(compile_error{
-            .kind = compile_error_kind::register_limit_exceeded,
-            .span = init.span,
-            .message = "this array literal has more than 65535 elements, "
-                       "which this bytecode format's u16 byte-offset operand "
-                       "cannot address"});
-      }
-      return compile_byte_array_init(init, count, dst);
-    }
-    if (init.fill_value == nullptr) {
-      return compile_slots_init(init.elements, dst, init.span);
-    }
     const auto &array_entry = types_.entry(init.type);
     if (!array_entry.array_size.has_value()) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = init.span,
-          .message = "this array literal's fill count is not statically "
+          .message = "this array literal's element count is not statically "
                      "known, which the bytecode compiler needs to size its "
                      "heap allocation"});
     }
     const auto count = *array_entry.array_size;
-    if (count > 0xFFFF) {
+    const auto elem_size = element_stride(array_entry.result);
+    const auto byte_size = count * elem_size;
+    if (byte_size > 0xFFFF) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::register_limit_exceeded,
           .span = init.span,
-          .message = "this array literal has more than 65535 elements, "
-                     "which this bytecode format's u16 slot-count operand "
-                     "cannot address"});
+          .message = "this array literal's total size exceeds the "
+                     "bytecode format's u16 byte-size operand"});
     }
-    writer_.emit_opcode(opcode::op_alloc);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(static_cast<uint16_t>(count));
-    // Evaluated once, then its slot bits are copied into every element —
+    emit_alloc(dst, static_cast<uint16_t>(byte_size));
+    if (init.fill_value == nullptr) {
+      for (size_t i = 0; i < init.elements.size(); ++i) {
+        auto value_reg = compile_expr(*init.elements[i]);
+        if (!value_reg.has_value()) {
+          return std::unexpected(value_reg.error());
+        }
+        emit_store_field(dst, static_cast<uint16_t>(i * elem_size), *value_reg,
+                         elem_size);
+      }
+      return {};
+    }
+    // Evaluated once, then its bits are copied into every element —
     // aliasing rather than re-evaluating `fill_value` per element, correct
     // for value semantics and the only sane choice if `fill_value` has a
     // side effect (a `[f(); n]` literal must call `f()` exactly once, the
@@ -1206,10 +1269,8 @@ private:
       return std::unexpected(fill_reg.error());
     }
     for (uint64_t i = 0; i < count; ++i) {
-      writer_.emit_opcode(opcode::op_store_slot);
-      writer_.emit_u8(dst);
-      writer_.emit_u16(static_cast<uint16_t>(i));
-      writer_.emit_u8(*fill_reg);
+      emit_store_field(dst, static_cast<uint16_t>(i * elem_size), *fill_reg,
+                       elem_size);
     }
     return {};
   }
@@ -1229,9 +1290,11 @@ private:
   [[nodiscard]] auto compile_list_init(const hir::hir_array_init &init,
                                        uint8_t dst)
       -> std::expected<void, compile_error> {
-    writer_.emit_opcode(opcode::op_alloc);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(3);
+    const auto &list_entry = types_.entry(init.type);
+    const auto elem_size = list_entry.args.empty()
+                               ? uint8_t{8}
+                               : element_stride(list_entry.args.front());
+    emit_alloc_slots(dst, 3);
 
     if (init.fill_value == nullptr) {
       for (const auto &elem : init.elements) {
@@ -1239,9 +1302,7 @@ private:
         if (!value_reg.has_value()) {
           return std::unexpected(value_reg.error());
         }
-        writer_.emit_opcode(opcode::op_list_push);
-        writer_.emit_u8(dst);
-        writer_.emit_u8(*value_reg);
+        emit_list_push(dst, *value_reg, elem_size);
       }
       return {};
     }
@@ -1285,9 +1346,7 @@ private:
     writer_.emit_u8(*cmp_reg);
     const auto exit_placeholder = writer_.emit_jump_placeholder();
 
-    writer_.emit_opcode(opcode::op_list_push);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*fill_reg);
+    emit_list_push(dst, *fill_reg, elem_size);
 
     const auto one_const = writer_.add_constant(slot_value{uint64_t{1}});
     auto one_reg = alloc_register(init.span);
@@ -1326,18 +1385,15 @@ private:
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
     }
-    writer_.emit_opcode(opcode::op_load_slot);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*object_reg);
-    writer_.emit_u16(0);
+    emit_load_slot(dst, *object_reg, 0);
     return {};
   }
 
   [[nodiscard]] auto compile_field(const hir::hir_field &field, uint8_t dst)
       -> std::expected<void, compile_error> {
-    const auto slot = runtime::struct_field_slot(types_, field.object->type,
-                                                 field.field_name);
-    if (!slot.has_value()) {
+    const auto offset = runtime::struct_field_offset(types_, field.object->type,
+                                                     field.field_name);
+    if (!offset.has_value()) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = field.span,
@@ -1350,10 +1406,8 @@ private:
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
     }
-    writer_.emit_opcode(opcode::op_load_slot);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*object_reg);
-    writer_.emit_u16(static_cast<uint16_t>(*slot));
+    emit_load_field(dst, *object_reg, static_cast<uint16_t>(*offset),
+                    element_stride(field.type));
     return {};
   }
 
@@ -1364,10 +1418,7 @@ private:
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
     }
-    writer_.emit_opcode(opcode::op_load_slot);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*object_reg);
-    writer_.emit_u16(static_cast<uint16_t>(node.index));
+    emit_load_slot(dst, *object_reg, static_cast<uint16_t>(node.index));
     return {};
   }
 
@@ -1478,20 +1529,14 @@ private:
       if (!len_reg_exp.has_value()) {
         return std::unexpected(len_reg_exp.error());
       }
-      writer_.emit_opcode(opcode::op_load_slot);
-      writer_.emit_u8(*len_reg_exp);
-      writer_.emit_u8(*object_reg);
-      writer_.emit_u16(0);
+      emit_load_slot(*len_reg_exp, *object_reg, 0);
       len_reg = *len_reg_exp;
 
       auto data_reg_exp = alloc_register(node.span);
       if (!data_reg_exp.has_value()) {
         return std::unexpected(data_reg_exp.error());
       }
-      writer_.emit_opcode(opcode::op_load_slot);
-      writer_.emit_u8(*data_reg_exp);
-      writer_.emit_u8(*object_reg);
-      writer_.emit_u16(1);
+      emit_load_slot(*data_reg_exp, *object_reg, 1);
       data_reg = *data_reg_exp;
     }
 
@@ -1546,17 +1591,9 @@ private:
     writer_.emit_u8(*start_reg);
     writer_.emit_numeric_kind(numeric_kind::u64);
 
-    writer_.emit_opcode(opcode::op_alloc);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(2);
-    writer_.emit_opcode(opcode::op_store_slot);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(0);
-    writer_.emit_u8(*new_len_reg_exp);
-    writer_.emit_opcode(opcode::op_store_slot);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(1);
-    writer_.emit_u8(*new_data_reg_exp);
+    emit_alloc_slots(dst, 2);
+    emit_store_slot(dst, 0, *new_len_reg_exp);
+    emit_store_slot(dst, 1, *new_data_reg_exp);
     return {};
   }
 
@@ -1612,6 +1649,12 @@ private:
       return std::unexpected(index_reg.error());
     }
 
+    const auto elem_size =
+        indexing_list ? (object_entry.args.empty()
+                             ? uint8_t{8}
+                             : element_stride(object_entry.args.front()))
+                      : element_stride(object_entry.result);
+
     uint8_t len_reg;
     uint8_t data_reg;
     if (indexing_list) {
@@ -1619,20 +1662,14 @@ private:
       if (!len_reg_exp.has_value()) {
         return std::unexpected(len_reg_exp.error());
       }
-      writer_.emit_opcode(opcode::op_load_slot);
-      writer_.emit_u8(*len_reg_exp);
-      writer_.emit_u8(*object_reg);
-      writer_.emit_u16(0);
+      emit_load_slot(*len_reg_exp, *object_reg, 0);
       len_reg = *len_reg_exp;
 
       auto data_reg_exp = alloc_register(node.span);
       if (!data_reg_exp.has_value()) {
         return std::unexpected(data_reg_exp.error());
       }
-      writer_.emit_opcode(opcode::op_load_slot);
-      writer_.emit_u8(*data_reg_exp);
-      writer_.emit_u8(*object_reg);
-      writer_.emit_u16(2);
+      emit_load_slot(*data_reg_exp, *object_reg, 2);
       data_reg = *data_reg_exp;
     } else {
       const auto len_const = writer_.add_constant(
@@ -1662,12 +1699,7 @@ private:
     writer_.emit_u8(
         static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
 
-    writer_.emit_opcode(is_byte_array_type(node.object->type)
-                            ? opcode::op_load_byte_indexed
-                            : opcode::op_load_indexed);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(data_reg);
-    writer_.emit_u8(*index_reg);
+    emit_load_indexed(dst, data_reg, *index_reg, elem_size);
     return {};
   }
 
@@ -1692,9 +1724,7 @@ private:
     }
     const auto payload_slots =
         runtime::sum_max_payload_slots(types_, init.type);
-    writer_.emit_opcode(opcode::op_alloc);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(static_cast<uint16_t>(1 + payload_slots));
+    emit_alloc_slots(dst, static_cast<uint16_t>(1 + payload_slots));
 
     const auto tag_const =
         writer_.add_constant(slot_value{static_cast<int64_t>(*tag)});
@@ -1705,20 +1735,14 @@ private:
     writer_.emit_opcode(opcode::op_load_const);
     writer_.emit_u8(*tag_reg);
     writer_.emit_u16(tag_const);
-    writer_.emit_opcode(opcode::op_store_slot);
-    writer_.emit_u8(dst);
-    writer_.emit_u16(0);
-    writer_.emit_u8(*tag_reg);
+    emit_store_slot(dst, 0, *tag_reg);
 
     for (size_t i = 0; i < init.args.size(); ++i) {
       auto value_reg = compile_expr(*init.args[i]);
       if (!value_reg.has_value()) {
         return std::unexpected(value_reg.error());
       }
-      writer_.emit_opcode(opcode::op_store_slot);
-      writer_.emit_u8(dst);
-      writer_.emit_u16(static_cast<uint16_t>(1 + i));
-      writer_.emit_u8(*value_reg);
+      emit_store_slot(dst, static_cast<uint16_t>(1 + i), *value_reg);
     }
     return {};
   }
@@ -1746,10 +1770,7 @@ private:
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
     }
-    writer_.emit_opcode(opcode::op_load_slot);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*object_reg);
-    writer_.emit_u16(static_cast<uint16_t>(1 + node.index));
+    emit_load_slot(dst, *object_reg, static_cast<uint16_t>(1 + node.index));
     return {};
   }
 
@@ -1886,10 +1907,7 @@ private:
         if (!elem_reg.has_value()) {
           return std::unexpected(elem_reg.error());
         }
-        writer_.emit_opcode(opcode::op_load_slot);
-        writer_.emit_u8(*elem_reg);
-        writer_.emit_u8(value_reg);
-        writer_.emit_u16(static_cast<uint16_t>(i));
+        emit_load_slot(*elem_reg, value_reg, static_cast<uint16_t>(i));
         const auto elem_type = i < entry.args.size()
                                    ? std::optional<type_id>(entry.args[i])
                                    : std::nullopt;
@@ -1930,16 +1948,15 @@ private:
                        "subject type, which this position doesn't have yet"});
       }
       const auto &entry = types_.entry(*value_type);
+      const auto elem_size = element_stride(entry.result);
       auto result_reg = std::optional<uint8_t>{};
       for (size_t i = 0; i < arr.elements.size(); ++i) {
         auto elem_reg = alloc_register(pattern.span);
         if (!elem_reg.has_value()) {
           return std::unexpected(elem_reg.error());
         }
-        writer_.emit_opcode(opcode::op_load_slot);
-        writer_.emit_u8(*elem_reg);
-        writer_.emit_u8(value_reg);
-        writer_.emit_u16(static_cast<uint16_t>(i));
+        emit_load_field(*elem_reg, value_reg,
+                        static_cast<uint16_t>(i * elem_size), elem_size);
         auto sub = compile_pattern_test(*arr.elements[i], *elem_reg,
                                         std::optional<type_id>(entry.result));
         if (!sub.has_value()) {
@@ -2035,10 +2052,7 @@ private:
       if (!tag_reg.has_value()) {
         return std::unexpected(tag_reg.error());
       }
-      writer_.emit_opcode(opcode::op_load_slot);
-      writer_.emit_u8(*tag_reg);
-      writer_.emit_u8(value_reg);
-      writer_.emit_u16(0);
+      emit_load_slot(*tag_reg, value_reg, 0);
       auto const_reg = alloc_register(pattern.span);
       if (!const_reg.has_value()) {
         return std::unexpected(const_reg.error());
@@ -2290,13 +2304,14 @@ private:
       -> std::expected<void, compile_error> {
     if (assign.target->kind == hir_node_kind::hir_field) {
       // `self.field = value` — the struct's own value is already a heap
-      // pointer (`compile_field`'s own `op_load_slot` reads through it the
-      // same way), so writing a field is just `op_store_slot` through that
-      // same pointer at the field's statically-known slot index.
+      // pointer (`compile_field`'s own `emit_load_field` reads through it
+      // the same way), so writing a field is just a byte-offset store
+      // through that same pointer at the field's own
+      // `runtime::struct_field_offset`/natural width.
       const auto &field = dynamic_cast<const hir::hir_field &>(*assign.target);
-      const auto slot = runtime::struct_field_slot(types_, field.object->type,
-                                                   field.field_name);
-      if (!slot.has_value()) {
+      const auto offset = runtime::struct_field_offset(
+          types_, field.object->type, field.field_name);
+      if (!offset.has_value()) {
         return std::unexpected(compile_error{
             .kind = compile_error_kind::unsupported_construct,
             .span = assign.span,
@@ -2321,10 +2336,8 @@ private:
       if (!value_reg.has_value()) {
         return std::unexpected(value_reg.error());
       }
-      writer_.emit_opcode(opcode::op_store_slot);
-      writer_.emit_u8(*object_reg);
-      writer_.emit_u16(static_cast<uint16_t>(*slot));
-      writer_.emit_u8(*value_reg);
+      emit_store_field(*object_reg, static_cast<uint16_t>(*offset), *value_reg,
+                       element_stride(field.type));
       return {};
     }
     if (assign.target->kind != hir_node_kind::hir_local_ref) {
@@ -2492,9 +2505,7 @@ private:
     if (!value_reg.has_value()) {
       return std::unexpected(value_reg.error());
     }
-    writer_.emit_opcode(opcode::op_list_push);
-    writer_.emit_u8(*target_reg);
-    writer_.emit_u8(*value_reg);
+    emit_list_push(*target_reg, *value_reg, element_stride(node.value->type));
     return {};
   }
 

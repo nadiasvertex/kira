@@ -1,0 +1,6 @@
+module sample
+def sum_all(i: usize, j: usize) -> int32:
+    let a: array[int16, 5] = [10, 20, 30, 40, 50]
+    return (a[i] as int32) + (a[j] as int32)
+def main() -> int32:
+    return sum_all(0, 4)

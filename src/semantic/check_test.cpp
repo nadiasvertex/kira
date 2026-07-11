@@ -209,6 +209,12 @@ auto test_accepts_structs_and_methods() -> void {
          "expected struct/impl program to check cleanly");
 }
 
+auto test_accepts_packed_struct() -> void {
+  const auto analyzed = analyze_test_data_file("accept_packed_struct.kira");
+  expect(analyzed.error_count == 0,
+         "expected a packed struct declaration to check cleanly");
+}
+
 auto test_accepts_collections_and_lambdas() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_collections_and_lambdas.kira");
@@ -332,6 +338,16 @@ auto test_reports_undefined_type() -> void {
   expect(analyzed.error_count > 0, "expected undefined type to fail");
   expect_diagnostic(analyzed, "undefined type `pont`",
                     "expected undefined-type diagnostic");
+}
+
+auto test_reports_packed_on_sum_type() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_packed_on_sum_type.kira");
+  expect(analyzed.error_count > 0, "expected `packed` on a sum type to fail");
+  expect_diagnostic(analyzed, "`packed` only applies to struct types",
+                    "expected a packed-on-non-struct diagnostic");
+  expect_diagnostic(analyzed, "has no field layout to pack",
+                    "expected the diagnostic to explain why");
 }
 
 auto test_reports_annotation_mismatch() -> void {
@@ -857,6 +873,7 @@ auto main() -> int {
   try {
     test_accepts_typed_core_program();
     test_accepts_structs_and_methods();
+    test_accepts_packed_struct();
     test_accepts_collections_and_lambdas();
     test_accepts_option_result_flow();
     test_accepts_cross_module_qualified_types();
@@ -873,6 +890,7 @@ auto main() -> int {
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
+    test_reports_packed_on_sum_type();
     test_reports_annotation_mismatch();
     test_reports_integer_literal_overflow();
     test_reports_mixed_numeric_types();

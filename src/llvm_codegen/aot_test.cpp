@@ -105,9 +105,19 @@ auto build_and_run(const fs::path &dir, const std::string &kira_source) -> int {
   const auto output_path = dir / "program";
 
   compile_to_object(kira_source, object_path);
-  write_file(stub_path, "#include <stdlib.h>\n"
+  // `kira_rt_alloc` (`src/runtime/arena.h`'s real bump-allocator
+  // implementation, not linked into this hand-built test binary) backs
+  // every heap allocation a compiled program's struct/array/str/list
+  // construction needs — a plain `malloc` stands in here, matching this
+  // stub's own "not about the real runtime's behavior, just about
+  // producing a linkable, runnable object" scope.
+  write_file(stub_path, "#include <stdint.h>\n"
+                        "#include <stdlib.h>\n"
                         "void kira_codegen_panic(unsigned char reason) {\n"
                         "  exit(100 + reason);\n"
+                        "}\n"
+                        "void *kira_rt_alloc(uint64_t bytes) {\n"
+                        "  return calloc(1, bytes);\n"
                         "}\n");
 
   const auto link_command =
@@ -154,6 +164,28 @@ auto test_panic_reaches_the_process_exit_code() -> void {
                      WEXITSTATUS(status)));
 }
 
+auto test_packed_struct_and_narrow_array_exit_codes() -> void {
+  // Closes the gap the byte-precise layout work (`runtime::layout.h`'s
+  // `struct_field_offset`/`struct_layout`, the `packed` modifier) left in
+  // AOT-specific coverage: everything else exercising it runs through the
+  // bytecode VM or the JIT, never a real linked `kira build` binary.
+  auto dir = make_temp_dir();
+  const auto status =
+      build_and_run(dir, "module sample\n"
+                         "packed type header = { pub magic: uint16, pub "
+                         "flags: byte, pub len: uint32 }\n"
+                         "def main() -> int8:\n"
+                         "    let h: header = { magic: 7, flags: 3, len: 42 }\n"
+                         "    let xs: array[int16, 5] = [10, 20, 30, 40, 50]\n"
+                         "    return (h.flags as int8) + (xs[0] as int8) + "
+                         "(xs[4] as int8)\n");
+  expect(WIFEXITED(status) != 0, "expected the program to exit normally");
+  expect(WEXITSTATUS(status) == 63,
+         std::format("expected 3 (packed struct field) + 10 + 50 (narrow "
+                     "array elements) == 63, got {}",
+                     WEXITSTATUS(status)));
+}
+
 } // namespace
 
 auto main() -> int {
@@ -161,6 +193,7 @@ auto main() -> int {
     test_emits_links_and_runs_to_the_right_exit_code();
     test_unit_returning_main_exits_zero();
     test_panic_reaches_the_process_exit_code();
+    test_packed_struct_and_narrow_array_exit_codes();
   } catch (const std::exception &ex) {
     std::cerr << "aot_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);

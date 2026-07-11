@@ -1,0 +1,7 @@
+module sample
+type header = { pub magic: uint16, pub flags: byte, pub len: uint32 }
+def combine(magic: uint16, flags: byte, len: uint32) -> int64:
+    let h: header = { magic: magic, flags: flags, len: len }
+    return (h.magic as int64) * 1000000 + (h.flags as int64) * 1000 + (h.len as int64)
+def main() -> int64:
+    return combine(7, 3, 42)
