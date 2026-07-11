@@ -127,8 +127,7 @@ struct value {
   }
   [[nodiscard]] static auto make_type_expr_fragment(const ast::node *fragment)
       -> value {
-    return value{.kind = value_kind::type_expr_fragment,
-                 .fragment = fragment};
+    return value{.kind = value_kind::type_expr_fragment, .fragment = fragment};
   }
   [[nodiscard]] static auto make_error() -> value {
     return value{.kind = value_kind::diagnostic_marker};
