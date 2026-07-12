@@ -93,26 +93,6 @@ type        := s | ? | d | x | X | o | b | e | E | f | g | G | c
 fill_char   := any character except { } : = \
 ```
 
-Two corrections relative to the earlier (rejected) proposal:
-
-- **`sign` now has three values, not two: `+`, `-`, and `' '` (space).**
-  The old proposal's `format_spec.sign_mode` runtime type had an `@space`
-  variant with no spec syntax that could ever produce it — a dead enum
-  case. `' '` now means "reserve a column for the sign: `-` for negative,
-  a literal space for non-negative" (matches Python's `' '` sign flag).
-- **`.precision` on the default/`s` string style truncates to N Unicode
-  scalar values.** The old proposal left this undefined. `"{name :.3}"`
-  with `name = "Alice"` renders `"Ali"`.
-- `{expr}` in `width`/`precision` is unchanged from the old proposal: an
-  ordinary runtime expression, evaluated and substituted; it must produce
-  `usize` or it's a compile error.
-- `0` before `width` is **not** sugar for `fill_align` `0>`. It is its own
-  flag (`format_spec.zero_pad: bool`) with dedicated sign/prefix-aware
-  padding semantics — see "Padding, alignment, and zero-padding" below. (The
-  old proposal's claim that `0` is "shorthand for `fill_align` of `0>`" is
-  incorrect once a sign or `#`-prefix is in play; this is the single most
-  concrete correctness fix in this revision.)
-
 ---
 
 ## Format Spec Reference
@@ -403,47 +383,6 @@ step 2 of compile-time checking, then routing the result through
 efficient formatter chain": for a literal, fully-static format spec, the
 call chain monomorphizes and inlines exactly like any other generic
 function call — no runtime spec parsing, matching design goal 1.
-
----
-
-## Implementation Staging
-
-This cannot literally run through the quote/splice interpreter yet, for the
-same reason `deriving` — despite being described in exactly this vocabulary
-in `kira-reference.md` — doesn't either: **nothing in the compiler lowers
-`quote_expr`/`splice_expr` to HIR today**, and `static` bindings/`static
-for` are type-checked but not evaluated (`src/semantic/check.cpp:6327` only
-checks the pieces; `src/hir/lower.cpp` has no handling for any of these
-node kinds). `deriving` is actually implemented as a hardcoded compiler
-special case (`check.cpp:3162-3178`, `5838-5854`), not by running the
-`derive_show`-style quote/splice code the reference doc shows as
-illustration.
-
-String-interpolation formatting is a **lighter lift than `deriving`**: it
-needs no compile-time reflection (no `T.fields()`), only (a) splitting a
-string literal into literal/expression segments — new lexer/parser work,
-since today the whole string is one `string_lit` token
-(`src/parser/lexer.h:946-947`, `src/parser/text_escape.h:21-24`) — and (b)
-ordinary per-segment trait-bound resolution. Recommended v1, mirroring how
-`deriving` actually shipped:
-
-1. **Parser**: split each `string_lit` into a new `interpolated_string_expr`
-   AST node — a sequence of literal-text segments and `(expr, self_doc,
-   format_spec)` segments — instead of one opaque token. Parse
-   `format_spec` text into the `std.fmt.format_spec` shape at this stage
-   (it's a compile-time constant, never re-parsed later).
-2. **Semantic**: resolve each embedded `expr` normally; run the
-   capability check (see "Compile-Time Checking") against its static type;
-   attach the resolved trait method to the segment.
-3. **HIR/codegen (both backends)**: lower `interpolated_string_expr`
-   directly to a sequence of `std.fmt` builder/`pad_str`/`pad_integral`
-   calls — the same shape the quote/splice desugaring above describes, just
-   emitted directly by the compiler instead of by an interpreted macro.
-
-Once quote/splice and reflection are real, this v1 pass can be re-expressed
-as an actual library macro without changing the surface language — the
-desugaring section above is written as the target shape for exactly that
-reason, not because v1 needs it.
 
 ---
 

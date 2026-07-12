@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Kira is an early-stage language and compiler project written in C++26 (Clang 22.1+), built with Bazel/bzlmod. The implemented surface is: a hand-written lexer + recursive-descent parser, a semantic analysis pipeline (module graph, name resolution, type checking), and a CLI compile driver that emits protobuf-backed module metadata. There is no typed IR, LLVM lowering, or executable linker yet.
 
+- Language reference: spec/kira-reference.md
+- Standard library reference: spec/stdlib-reference.md
+
 ## Commands
 
 ```sh
