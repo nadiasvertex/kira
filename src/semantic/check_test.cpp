@@ -1120,15 +1120,78 @@ auto test_reports_generator_return_with_value() -> void {
 }
 
 auto test_reports_existential_type_outside_generator() -> void {
+  // `some iterator[T]` is a perfectly legal *general* existential return
+  // type now (not only generator sugar) — but `yield` still requires a
+  // real `generator def`, and a bare `yield 1` gives this function no
+  // concrete value to back the existential type with either, so it still
+  // fails, just via two different (and more specific) diagnostics than the
+  // old blanket "only supported on generator def" rejection.
   const auto analyzed =
       analyze_test_data_file("report_existential_type_outside_generator.kira");
   expect(analyzed.error_count > 0,
-         "expected `some Trait[Args]` on a non-generator function to fail");
+         "expected `yield` outside a generator, with no concrete return "
+         "value, to fail");
+  expect_diagnostic(analyzed, "`yield` outside a `generator def` body",
+                    "expected a yield-outside-generator diagnostic");
+  expect_diagnostic(analyzed,
+                    "could not infer a concrete return type for `counter`",
+                    "expected a no-concrete-value diagnostic");
+}
+
+auto test_accepts_existential_return_type() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_existential_return_type.kira");
+  expect(analyzed.error_count == 0,
+         "expected a general `some Trait` return type, backed by a real "
+         "impl, to check cleanly");
+}
+
+auto test_accepts_existential_return_type_combined_bounds() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_existential_return_type_combined_bounds.kira");
+  expect(analyzed.error_count == 0,
+         "expected `some A + B` and a chained call staying opaque to check "
+         "cleanly");
+}
+
+auto test_reports_existential_return_type_in_parameter() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "report_existential_return_type_in_parameter.kira");
+  expect(analyzed.error_count > 0,
+         "expected `some Trait` in parameter position to fail");
   expect_diagnostic(
       analyzed,
-      "`some Trait[Args]` return types are only supported on `generator "
-      "def` functions",
-      "expected an opaque-return-type-not-supported diagnostic");
+      "`some Trait[Args]` is only supported as a function's return type",
+      "expected an existential-not-allowed-here diagnostic");
+}
+
+auto test_reports_existential_bound_not_satisfied() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_existential_bound_not_satisfied.kira");
+  expect(analyzed.error_count > 0,
+         "expected a concrete type missing the bound trait to fail");
+  expect_diagnostic(analyzed, "`box_thing` does not implement `describable`",
+                    "expected an existential-bound-not-satisfied diagnostic");
+}
+
+auto test_reports_existential_return_type_mismatch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_existential_return_type_mismatch.kira");
+  expect(analyzed.error_count > 0,
+         "expected two branches returning different concrete types to fail");
+  expect_diagnostic(analyzed,
+                    "existential return branches have mismatched "
+                    "types",
+                    "expected an existential-return-mismatch diagnostic");
+}
+
+auto test_reports_existential_method_not_in_bound() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_existential_method_not_in_bound.kira");
+  expect(analyzed.error_count > 0,
+         "expected field access on an opaque existential value to fail");
+  expect_diagnostic(analyzed, "no field `n` on the existential type",
+                    "expected an existential-field-access diagnostic");
 }
 
 } // namespace
@@ -1166,6 +1229,8 @@ auto main() -> int {
     test_accepts_type_reflection_primitives();
     test_accepts_generator_yields_typed_values();
     test_accepts_for_loop_over_generator();
+    test_accepts_existential_return_type();
+    test_accepts_existential_return_type_combined_bounds();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
@@ -1196,6 +1261,10 @@ auto main() -> int {
     test_reports_generator_yield_type_mismatch();
     test_reports_generator_return_with_value();
     test_reports_existential_type_outside_generator();
+    test_reports_existential_return_type_in_parameter();
+    test_reports_existential_bound_not_satisfied();
+    test_reports_existential_return_type_mismatch();
+    test_reports_existential_method_not_in_bound();
     test_reports_unannotated_pub_function();
     test_reports_duplicate_trait_impl();
     test_reports_incomplete_trait_impl();

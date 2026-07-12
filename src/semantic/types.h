@@ -48,10 +48,22 @@ enum class type_kind : uint8_t {
   struct_kind,          ///< User struct type, possibly instantiated.
   sum_kind,             ///< User sum type, possibly instantiated.
   opaque_kind,          ///< User alias/opaque type declaration.
+  existential_kind,     ///< `some Trait[Args] + Other` on a function's
+                        ///< return type; see the doc comment below.
   type_param_kind,      ///< In-scope generic parameter such as `T`.
   type_var_kind,        ///< Fresh inference variable; see `fresh_type_var`.
   const_value_kind,     ///< A literal compile-time value used as a const
                         ///< generic argument, e.g. the `3` in `vec[T, 3]`.
+};
+
+/// One trait requirement in an existential type's bound list
+/// (`some Trait[Args] + Other`), resolved from source: the trait's bare name
+/// (looked up session-wide via `find_trait_anywhere`, not stored as a
+/// `type_id` since traits aren't themselves interned into `type_table`) plus
+/// its resolved generic arguments.
+struct bound_trait_ref {
+  std::string trait_name;
+  std::vector<type_id> trait_args;
 };
 
 /// The interned data behind one `type_id`. Which fields are meaningful
@@ -59,6 +71,19 @@ enum class type_kind : uint8_t {
 /// generic arguments for `builtin_generic_kind`/`struct_kind`/`sum_kind`, and
 /// `result` holds the referenced/pointed-to/array-element type for
 /// `ref_kind`/`ptr_kind`/`array_kind` but the return type for `fn_kind`.
+/// `existential_kind` reuses `result` too, for its concrete backing type
+/// (`k_unknown_type` until `check_function` finishes checking the declaring
+/// function's body and backfills it via `mutable_entry`; see
+/// `checker::resolve_existential_type`/`check_function`, `check.cpp`) and
+/// uses the dedicated `existential_bound` field for its trait requirements
+/// — a value of this kind is a *nominal* fiction, minted fresh (never
+/// structurally interned) once per `some Trait[Args]` written in source, so
+/// two occurrences with identical bounds are still distinct types, exactly
+/// like Rust's `-> impl Trait`. Lowering unwraps every `existential_kind`
+/// type back to its `result` before HIR ever sees it (`hir::lowerer::
+/// resolve_opaque`) — opacity is purely a checker-level view enforced by
+/// restricting which operations `infer_method_call` allows on a receiver of
+/// this kind, not a distinct runtime representation.
 struct type_entry {
   type_kind kind = type_kind::unknown_kind;
   std::string name;                     ///< Builtin/user/parameter name.
@@ -68,6 +93,7 @@ struct type_entry {
   type_id result = k_unknown_type;      ///< fn result or ref/ptr/array inner.
   bool is_mut = false;                  ///< Mutability for ref/ptr types.
   std::optional<uint64_t> array_size;   ///< Array length when statically known.
+  std::vector<bound_trait_ref> existential_bound; ///< `existential_kind` only.
 };
 
 /// Owns every `type_entry` produced while checking one session, interning
@@ -119,10 +145,25 @@ public:
   /// `k_unknown_type` everywhere (`is_unknown`, `compatible`, `display`), so
   /// a var that escapes unresolved is harmless rather than a false positive.
   [[nodiscard]] auto fresh_type_var() -> type_id;
+  /// Mints a fresh, never-interned `existential_kind` type for one
+  /// `some Trait[Args] + Other` written in source — like `fresh_type_var`,
+  /// always pushes a new entry rather than consulting `interned_`, since two
+  /// syntactically-identical existential types at different declarations
+  /// must stay distinct (see `type_entry`'s doc comment). `result` (the
+  /// eventual concrete backing type) starts as `k_unknown_type`; the caller
+  /// backfills it later via `mutable_entry` once it's known.
+  [[nodiscard]] auto fresh_existential(std::string display_name,
+                                       std::vector<bound_trait_ref> bound)
+      -> type_id;
 
   /// Looks up the data behind `id`; returns the `unknown` entry for an
   /// out-of-range id.
   [[nodiscard]] auto entry(type_id id) const -> const type_entry &;
+  /// Mutable access to an already-minted entry, for backfilling a field that
+  /// wasn't known at mint time (currently only `existential_kind`'s `result`
+  /// — see `type_entry`'s doc comment). `id` must already be a valid,
+  /// in-range id; unlike `entry`, this does not fall back to `unknown`.
+  [[nodiscard]] auto mutable_entry(type_id id) -> type_entry &;
   /// Renders `id` as the user-facing type spelling used in diagnostics
   /// (e.g. `list[int32]`, `fn(int32) -> str`).
   [[nodiscard]] auto display(type_id id) const -> std::string;

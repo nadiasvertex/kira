@@ -1,0 +1,20 @@
+module sample
+
+trait describable:
+    def describe(self) -> int32
+
+type counter = { pub n: int32 }
+type other_thing = { pub m: int32 }
+
+impl describable for counter:
+    def describe(self) -> int32:
+        return self.n
+
+impl describable for other_thing:
+    def describe(self) -> int32:
+        return self.m
+
+def make_thing(flag: bool) -> some describable:
+    if flag:
+        return counter{ n: 1 }
+    return other_thing{ m: 2 }

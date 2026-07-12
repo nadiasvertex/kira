@@ -210,12 +210,30 @@ auto type_table::fresh_type_var() -> type_id {
   return id;
 }
 
+/// Always pushes a new entry rather than consulting `interned_` — see
+/// `type_entry`'s doc comment on why existential types are nominal, not
+/// structural.
+auto type_table::fresh_existential(std::string display_name,
+                                   std::vector<bound_trait_ref> bound)
+    -> type_id {
+  const auto id = static_cast<type_id>(entries_.size());
+  entries_.push_back(type_entry{.kind = type_kind::existential_kind,
+                                .name = std::move(display_name),
+                                .existential_bound = std::move(bound)});
+  return id;
+}
+
 /// Bounds-checks `id`, falling back to the `unknown` entry rather than
 /// indexing out of range.
 auto type_table::entry(type_id id) const -> const type_entry & {
   if (static_cast<size_t>(id) >= entries_.size()) {
     return entries_[k_unknown_type];
   }
+  return entries_[id];
+}
+
+/// See the header: no bounds fallback, `id` must already be valid.
+auto type_table::mutable_entry(type_id id) -> type_entry & {
   return entries_[id];
 }
 
@@ -247,6 +265,7 @@ auto type_table::display(type_id id) const -> std::string {
     return "<error>";
   case type_kind::builtin_kind:
   case type_kind::type_param_kind:
+  case type_kind::existential_kind:
     return item.name;
   case type_kind::builtin_generic_kind:
   case type_kind::struct_kind:

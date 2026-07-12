@@ -231,7 +231,20 @@ private:
                   "lowering only accepts fully type-checked, fully-annotated "
                   "code (spec/typed-ir-design.md Decision 1)");
     }
-    return found->second;
+    return resolve_opaque(found->second);
+  }
+
+  /// Unwraps an `existential_kind` type (`some Trait[Args]`) to its concrete
+  /// backing type. Opacity is purely a checker-level view — `type_entry`'s
+  /// doc comment (`semantic/types.h`) — enforced by restricting which
+  /// operations `infer_method_call` allowed on a value of this kind; by the
+  /// time lowering runs, every function's opaque return type has already
+  /// been backfilled with a real concrete type, and HIR/bytecode/LLVM never
+  /// need to know an opaque view existed. A non-existential id passes
+  /// through unchanged.
+  [[nodiscard]] auto resolve_opaque(type_id id) const -> type_id {
+    const auto &entry = checked_.types.entry(id);
+    return entry.kind == type_kind::existential_kind ? entry.result : id;
   }
 
   // ------------------------------------------------------------------

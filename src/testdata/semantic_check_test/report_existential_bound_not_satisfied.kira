@@ -1,0 +1,9 @@
+module sample
+
+trait describable:
+    def describe(self) -> int32
+
+type box_thing = { pub n: int32 }
+
+def make_thing() -> some describable:
+    return box_thing{ n: 1 }

@@ -926,6 +926,16 @@ private:
   /// match `generator_item_type_` (see `infer_yield`/`check_function`).
   bool in_generator_ = false;
   type_id generator_item_type_ = k_unknown_type;
+  /// Whether the function body currently being checked declares a general
+  /// `some Trait[Args]` existential return type (never true together with
+  /// `in_generator_` — a `generator def`'s `some iterator[T]` stays on its
+  /// own dedicated path, see `check_function`). While true, every
+  /// return-point's inferred type is joined into `existential_underlying_`
+  /// instead of being checked against `return_type_` directly, since
+  /// `return_type_` here is the fresh opaque id itself, not a real shape any
+  /// concrete expression could match.
+  bool checking_existential_return_ = false;
+  type_id existential_underlying_ = k_unknown_type;
   std::unordered_set<std::string> reported_undefined_;
 
   // --- caches ---------------------------------------------------------------
@@ -954,6 +964,13 @@ private:
   /// `methods_` by.
   std::unordered_map<std::string, std::vector<method_entry>>
       extend_methods_by_builtin_;
+  /// Memoizes `resolve_existential_type`'s minted `existential_kind` id per
+  /// AST node, so the many independent `resolve_type` calls that can all
+  /// reach the same `some Trait[Args]` node (a function's own return-type
+  /// resolution in `check_function`, plus every external caller's view of
+  /// it via `signature_return_type`) agree on one id instead of each
+  /// minting a fresh, structurally-identical-but-distinct existential type.
+  std::unordered_map<const ast::existential_type *, type_id> existential_types_;
 
   // ==========================================================================
   //  Diagnostics helpers
@@ -1185,6 +1202,27 @@ private:
     const std::unordered_map<std::string, type_id> *param_bindings = nullptr;
     bool use_type_param_stack = false;
     bool quiet = false;
+    /// Whether `some Trait[Args]` (`existential_type`) may resolve to a real
+    /// opaque type here. Only set for a function's own return-type position
+    /// (`check_function`'s `decl.return_type` resolution and
+    /// `signature_return_type`'s external view of the same node) — every
+    /// other position (parameters, `let`/`var` annotations, struct fields,
+    /// `where` bounds) rejects it with a targeted diagnostic instead, since
+    /// there is no monomorphization to give it meaning anywhere else (see
+    /// the existential-type-system plan's scope notes).
+    bool existential_allowed = false;
+    /// Set alongside `existential_allowed` when resolving a `generator
+    /// def`'s own return type. `some iterator[T]` there is pure syntactic
+    /// sugar `check_function` substitutes for the concrete `generator[T]`
+    /// (see its doc comment) — it never actually needs `iterator` to be a
+    /// real, in-scope trait declaration (unlike the general existential
+    /// mechanism), so `resolve_existential_type` skips trait-existence
+    /// validation here. Without this, every generator fixture across the
+    /// codebase (many written standalone, without `std.iter` in scope —
+    /// generator semantics predate the general existential system and
+    /// were never meant to depend on it) would need to import `std.iter`
+    /// purely to satisfy a validation generator lowering doesn't use.
+    bool is_generator_return = false;
   };
 
   /// The resolve context for types written in the body of the
@@ -1300,29 +1338,101 @@ private:
     }
   }
 
-  /// Resolves `some Bound` (`existential_type`) in isolation. Only
-  /// `some iterator[T]` — the single-term, single-type-argument shape a
-  /// `generator def`'s return type must have — is given real meaning here,
-  /// where it's sugar for the concrete backing type `generator[T]`
-  /// (see `check_function`'s generator handling, and the "opaque return
-  /// types" scope note there). Anything else resolves to `k_unknown_type`;
-  /// `check_function` is where the real, better-contextualized diagnostic
-  /// for a misused `some Trait[Args]` gets reported, not here.
+  /// Resolves `some Bound` (`existential_type`) to a fresh, nominal
+  /// `existential_kind` type — one per AST node, memoized in
+  /// `existential_types_` so every caller resolving the same node (a
+  /// function's own return-type resolution plus every external call site's
+  /// `signature_return_type` view of it) agrees on the same id. Only legal
+  /// in a function's return-type position (`ctx.existential_allowed`);
+  /// anywhere else this reports "not allowed here" and returns
+  /// `k_unknown_type`, unless `ctx.quiet` (an external, best-effort view
+  /// that shouldn't double-report a diagnostic the declaration's own check
+  /// already reports).
+  ///
+  /// `ctx.is_generator_return` takes a completely separate path: a
+  /// `generator def`'s `some iterator[T]` must resolve straight to the
+  /// concrete `generator[T]` for *every* caller (this function's own body
+  /// check and every external call site's `signature_return_type` view
+  /// alike, since both call through here on the same AST node) — never the
+  /// general opaque wrapper, which only `check_function`'s own local
+  /// `return_type_` could see, not a caller resolving a call's type
+  /// elsewhere. Generator semantics predate, and stay fully independent of,
+  /// the general existential mechanism below; this is exactly the old,
+  /// pre-generalization behavior, preserved verbatim under this flag.
   auto resolve_existential_type(const ast::existential_type &ety,
                                 const resolve_ctx &ctx) -> type_id {
-    if (ety.value.terms.size() != 1 || ety.value.terms[0].type == nullptr ||
-        ety.value.terms[0].type->kind != ast::node_kind::named_type) {
+    if (!ctx.existential_allowed) {
+      if (!ctx.quiet) {
+        error_with_help(
+            ety.span,
+            "`some Trait[Args]` is only supported as a function's return "
+            "type",
+            "existential type not allowed here",
+            "`some Trait` names an opaque type chosen by whatever function "
+            "returns it; write a concrete type (or a generic type "
+            "parameter) here instead.");
+      }
       return k_unknown_type;
     }
-    const auto &named =
-        dynamic_cast<const ast::named_type &>(*ety.value.terms[0].type);
-    if (named.path.size() != 1 || named.path.front() != "iterator" ||
-        named.type_args.size() != 1) {
-      return k_unknown_type;
+    if (ctx.is_generator_return) {
+      if (ety.value.terms.size() != 1 || ety.value.terms[0].type == nullptr ||
+          ety.value.terms[0].type->kind != ast::node_kind::named_type) {
+        return k_unknown_type;
+      }
+      const auto &named =
+          dynamic_cast<const ast::named_type &>(*ety.value.terms[0].type);
+      if (named.path.size() != 1 || named.path.front() != "iterator" ||
+          named.type_args.size() != 1) {
+        return k_unknown_type;
+      }
+      auto args = resolve_type_args(named, ctx);
+      const auto item = args.empty() ? k_unknown_type : args.front();
+      return types_.builtin_generic("generator", {item});
     }
-    auto args = resolve_type_args(named, ctx);
-    const auto item = args.empty() ? k_unknown_type : args.front();
-    return types_.builtin_generic("generator", {item});
+    if (const auto found = existential_types_.find(&ety);
+        found != existential_types_.end()) {
+      return found->second;
+    }
+    auto bound = std::vector<bound_trait_ref>{};
+    auto display_name = std::string("some ");
+    for (const auto &term : ety.value.terms) {
+      if (term.type == nullptr ||
+          term.type->kind != ast::node_kind::named_type) {
+        continue;
+      }
+      const auto &named = dynamic_cast<const ast::named_type &>(*term.type);
+      if (named.path.empty()) {
+        continue;
+      }
+      const auto &trait_name = named.path.back();
+      if (!ctx.quiet && !find_trait_anywhere(trait_name).has_value()) {
+        error_with_help(
+            term.span, std::format("`{}` is not a known trait", trait_name),
+            "unknown trait in existential bound",
+            "`some Trait` requires a real `trait` declaration in scope.");
+      }
+      auto args = resolve_type_args(named, ctx);
+      if (!bound.empty()) {
+        display_name += " + ";
+      }
+      display_name += trait_name;
+      if (!args.empty()) {
+        display_name += "[";
+        for (size_t i = 0; i < args.size(); ++i) {
+          if (i != 0) {
+            display_name += ", ";
+          }
+          display_name += types_.display(args[i]);
+        }
+        display_name += "]";
+      }
+      bound.push_back(bound_trait_ref{.trait_name = trait_name,
+                                      .trait_args = std::move(args)});
+    }
+    const auto id =
+        types_.fresh_existential(std::move(display_name), std::move(bound));
+    existential_types_.emplace(&ety, id);
+    return id;
   }
 
   /// A quoted `` `(int32)` `` or `` `(std.foo.bar)` `` classifies as an
@@ -1996,10 +2106,13 @@ private:
                                types_.type_param(type_param.name));
       }
     }
-    const auto ctx = resolve_ctx{.module = owner,
-                                 .param_bindings = &param_bindings,
-                                 .use_type_param_stack = false,
-                                 .quiet = true};
+    const auto ctx =
+        resolve_ctx{.module = owner,
+                    .param_bindings = &param_bindings,
+                    .use_type_param_stack = false,
+                    .quiet = true,
+                    .existential_allowed = true,
+                    .is_generator_return = decl.modifiers.is_generator};
     return resolve_type(*decl.return_type, ctx);
   }
 
@@ -3901,6 +4014,53 @@ private:
       infer_call_args_loosely(call);
       return k_error_type;
     }
+    case type_kind::existential_kind: {
+      // Only the bound traits' own methods are callable on an existential
+      // receiver — the concrete underlying type (`entry.result`) is a
+      // checker-internal detail, not something the caller may otherwise
+      // touch. Dispatch itself is ordinary static `find_method` against the
+      // underlying type once the name is confirmed to belong to the bound.
+      const auto in_bound = std::ranges::any_of(
+          entry.existential_bound,
+          [&](const bound_trait_ref &required) -> bool {
+            const auto trait = find_trait_anywhere(required.trait_name);
+            return trait.has_value() &&
+                   trait_declares_method(*trait->first, field.field_name);
+          });
+      if (!in_bound) {
+        error_with_help(
+            field.span,
+            std::format("no method `{}` on the existential type `{}`",
+                        field.field_name, entry.name),
+            "method not in bound",
+            std::format("`{}` only exposes {}.", entry.name,
+                        existential_bound_names(entry)));
+        infer_call_args_loosely(call);
+        return k_error_type;
+      }
+      const auto &underlying = types_.entry(entry.result);
+      if (const auto *method = find_method(underlying, field.field_name)) {
+        record_expr_type(field, fn_type_of(*method->decl, method->owner));
+        record_instance_method_callee(call, *method, underlying.name,
+                                      *field.object);
+        const auto result = check_call_against_decl(
+            call, *method->decl, method->owner, file_id_, /*skip_self=*/true);
+        // A method that hands back the receiver's own concrete type (e.g. a
+        // builder-style trait method returning `Self`) stays opaque to the
+        // caller, exactly like the value that produced it.
+        return types_.compatible(entry.result, result) ? object : result;
+      }
+      error_with_help(
+          field.span,
+          std::format("`{}` provides `{}` but no concrete implementation "
+                      "was found",
+                      entry.name, field.field_name),
+          "method not implemented",
+          "This is likely a trait default that hasn't been given a body — "
+          "check the `impl` providing this trait for the underlying type.");
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
     default: {
       // Builtin inherent methods take priority; an `extend` block fills in
       // only when the name isn't one of the hardcoded builtin methods.
@@ -4396,6 +4556,27 @@ private:
           "sum types have no fields",
           "Inspect a sum-type value with `match` to reach the data inside "
           "its variants.");
+      return k_error_type;
+    }
+    case type_kind::existential_kind: {
+      // Plain (non-call) field/method-value access — `infer_method_call`'s
+      // own `existential_kind` case handles the call-syntax form
+      // (`x.method(...)`) with the same restriction; this covers
+      // `x.method` used as a value and any attempt to reach a field. Both
+      // are rejected outright rather than falling through to a silent
+      // `k_unknown_type` (the `default` case's builtin-method fallback)
+      // that would otherwise cascade into a confusing, undiagnosed lowering
+      // failure later — the whole point of existential opacity is that
+      // only the bound traits' methods (and only by calling them) are
+      // reachable.
+      error_with_help(
+          span,
+          std::format("no field `{}` on the existential type `{}`", name,
+                      entry.name),
+          "existential types have no accessible fields",
+          std::format("`{}` only exposes {} — call one of its methods "
+                      "instead.",
+                      entry.name, existential_bound_names(entry)));
       return k_error_type;
     }
     default: {
@@ -6351,8 +6532,15 @@ private:
         return types_.builtin("never");
       }
       if (stmt.value != nullptr) {
-        const auto found = infer_expr(*stmt.value, return_type_);
-        if (return_annotated_ && !types_.compatible(return_type_, found)) {
+        const auto expected_for_value =
+            checking_existential_return_ ? k_unknown_type : return_type_;
+        const auto found = infer_expr(*stmt.value, expected_for_value);
+        if (checking_existential_return_) {
+          existential_underlying_ =
+              join_branch_type(existential_underlying_, found, stmt.value->span,
+                               "existential return");
+        } else if (return_annotated_ &&
+                   !types_.compatible(return_type_, found)) {
           auto diag = diagnostic(
               diagnostic_level::error,
               std::format("return type mismatch: expected `{}`, found `{}`",
@@ -6366,7 +6554,8 @@ private:
           diag_.emit(diag);
           mark_error();
         }
-      } else if (return_annotated_ && !types_.is_unit(return_type_) &&
+      } else if (!checking_existential_return_ && return_annotated_ &&
+                 !types_.is_unit(return_type_) &&
                  !types_.is_unknown(return_type_)) {
         error_with_help(
             stmt.span,
@@ -6664,6 +6853,11 @@ private:
       const auto &param = decl.params[i];
       auto type = k_unknown_type;
       if (param.type_annotation != nullptr) {
+        // `current_resolve_ctx()` leaves `existential_allowed` at its
+        // default `false`, so a `some Trait[Args]` annotation here is
+        // rejected by `resolve_existential_type` itself with a clear
+        // "not allowed here" diagnostic — parameters get no dedicated
+        // message of their own.
         type = resolve_type(*param.type_annotation, current_resolve_ctx());
       } else if (i == 0 && param_name_of(param) == "self") {
         type = self_type_;
@@ -6694,8 +6888,11 @@ private:
     const auto saved_return = return_type_;
     const auto saved_annotated = return_annotated_;
     return_annotated_ = decl.return_type != nullptr;
+    auto return_ctx = current_resolve_ctx();
+    return_ctx.existential_allowed = true;
+    return_ctx.is_generator_return = decl.modifiers.is_generator;
     return_type_ = return_annotated_
-                       ? resolve_type(*decl.return_type, current_resolve_ctx())
+                       ? resolve_type(*decl.return_type, return_ctx)
                        : k_unknown_type;
     if (decl.return_type != nullptr) {
       // Same rationale as the parameter loop above: a declared return type
@@ -6704,22 +6901,15 @@ private:
       record_expr_type(*decl.return_type, return_type_);
     }
 
-    if (!decl.modifiers.is_generator && decl.return_type != nullptr &&
-        decl.return_type->kind == ast::node_kind::existential_type) {
-      error_with_help(
-          decl.return_type->span,
-          std::format("`some Trait[Args]` return types are only supported "
-                      "on `generator def` functions"),
-          "opaque return type not supported here",
-          "Only a `generator def`'s `some iterator[T]` return type has "
-          "real support today; declare a concrete return type instead.");
-    }
-
     const auto saved_in_generator = in_generator_;
     const auto saved_generator_item = generator_item_type_;
     in_generator_ = decl.modifiers.is_generator;
     generator_item_type_ = k_unknown_type;
     if (in_generator_) {
+      // `return_ctx.is_generator_return` (set above) already made
+      // `resolve_type` resolve `some iterator[T]` straight to the concrete
+      // `generator[T]` — see `resolve_existential_type`'s doc comment —
+      // so `return_type_` here is never the general opaque wrapper.
       const auto &return_entry = types_.entry(return_type_);
       const auto is_generator_type =
           return_annotated_ &&
@@ -6746,6 +6936,22 @@ private:
             "Give the generator an indented block body and `yield` values "
             "from inside it.");
       }
+    }
+
+    // A general `some Trait[Args]` existential return type (not the
+    // generator sugar above): the body's concrete return points are
+    // inferred and joined via `join_branch_type` into
+    // `existential_underlying_` rather than checked against `return_type_`
+    // directly, since `return_type_` is the fresh opaque id itself — no
+    // concrete expression could ever match it.
+    const auto saved_checking_existential = checking_existential_return_;
+    const auto saved_existential_underlying = existential_underlying_;
+    checking_existential_return_ = false;
+    existential_underlying_ = k_unknown_type;
+    const auto existential_return_id = return_type_;
+    if (!in_generator_ && return_annotated_ &&
+        types_.entry(return_type_).kind == type_kind::existential_kind) {
+      checking_existential_return_ = true;
     }
 
     for (const auto &constraint : decl.where_constraints) {
@@ -6775,18 +6981,37 @@ private:
         check_body_nodes(decl.body_stmts, k_unknown_type);
       }
     } else if (decl.body_expr != nullptr) {
-      const auto found = infer_expr(
-          *decl.body_expr, return_annotated_ ? return_type_ : k_unknown_type);
-      if (return_annotated_) {
+      const auto expected_for_body =
+          checking_existential_return_
+              ? k_unknown_type
+              : (return_annotated_ ? return_type_ : k_unknown_type);
+      const auto found = infer_expr(*decl.body_expr, expected_for_body);
+      if (checking_existential_return_) {
+        existential_underlying_ =
+            join_branch_type(existential_underlying_, found,
+                             decl.body_expr->span, "existential return");
+      } else if (return_annotated_) {
         type_mismatch(decl.body_expr->span, return_type_, found,
                       "as the function result");
       }
     } else if (!decl.body_stmts.empty()) {
-      const auto tail = check_body_nodes(
-          decl.body_stmts, return_annotated_ ? return_type_ : k_unknown_type);
-      if (return_annotated_ && !types_.is_unit(return_type_) &&
-          !types_.is_unknown(return_type_) && !types_.is_unknown(tail) &&
-          !types_.is_unit(tail) && !types_.compatible(return_type_, tail)) {
+      const auto expected_for_body =
+          checking_existential_return_
+              ? k_unknown_type
+              : (return_annotated_ ? return_type_ : k_unknown_type);
+      const auto tail = check_body_nodes(decl.body_stmts, expected_for_body);
+      if (checking_existential_return_) {
+        if (!types_.is_unit(tail) && !types_.is_unknown(tail)) {
+          existential_underlying_ = join_branch_type(
+              existential_underlying_, tail,
+              decl.body_stmts.back() != nullptr ? decl.body_stmts.back()->span
+                                                : decl.span,
+              "existential return");
+        }
+      } else if (return_annotated_ && !types_.is_unit(return_type_) &&
+                 !types_.is_unknown(return_type_) && !types_.is_unknown(tail) &&
+                 !types_.is_unit(tail) &&
+                 !types_.compatible(return_type_, tail)) {
         error(decl.body_stmts.back() != nullptr ? decl.body_stmts.back()->span
                                                 : decl.span,
               std::format("function `{}` returns `{}`, but its final "
@@ -6797,6 +7022,43 @@ private:
       }
     }
 
+    if (checking_existential_return_) {
+      if (types_.is_unknown(existential_underlying_)) {
+        error_with_help(
+            decl.span,
+            std::format("could not infer a concrete return type for `{}`",
+                        decl.name),
+            "existential return type has no concrete value",
+            "An existential return type still needs a real value flowing "
+            "out of the function on every path — return or produce a "
+            "concrete value, not just `panic`/an infinite loop.");
+      } else {
+        auto &existential_entry = types_.mutable_entry(existential_return_id);
+        if (types_.is_unknown(existential_entry.result)) {
+          existential_entry.result = existential_underlying_;
+          const auto &underlying_entry = types_.entry(existential_underlying_);
+          for (const auto &required : existential_entry.existential_bound) {
+            if (!type_has_trait(underlying_entry, required.trait_name)) {
+              error_with_help(
+                  decl.return_type->span,
+                  std::format("`{}` does not implement `{}`",
+                              types_.display(existential_underlying_),
+                              required.trait_name),
+                  "existential bound not satisfied",
+                  std::format(
+                      "Add `impl {} for {}: ...` providing the trait's "
+                      "methods, or return a type that already implements "
+                      "it.",
+                      required.trait_name,
+                      types_.display(existential_underlying_)));
+            }
+          }
+        }
+      }
+    }
+
+    checking_existential_return_ = saved_checking_existential;
+    existential_underlying_ = saved_existential_underlying;
     in_generator_ = saved_in_generator;
     generator_item_type_ = saved_generator_item;
     return_type_ = saved_return;
@@ -6951,6 +7213,35 @@ private:
       return std::pair{found->decl, owner};
     }
     return std::nullopt;
+  }
+
+  /// Whether `trait` declares a method item named `name` — used to check
+  /// whether a method call on an existential-typed receiver is within its
+  /// bound (`infer_method_call`'s `existential_kind` case). Supertrait
+  /// requirements aren't walked; a method only reachable through a
+  /// supertrait isn't yet considered part of the bound.
+  auto trait_declares_method(const ast::trait_decl &trait,
+                             std::string_view name) -> bool {
+    for (const auto &item : trait.items) {
+      if (item != nullptr && item->kind == ast::node_kind::func_decl &&
+          dynamic_cast<const ast::func_decl &>(*item).name == name) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Comma-separated `` `Trait[Args]` `` list for an existential type's
+  /// bound, used in "only exposes ..." diagnostics.
+  auto existential_bound_names(const type_entry &entry) -> std::string {
+    auto out = std::string{};
+    for (const auto &required : entry.existential_bound) {
+      if (!out.empty()) {
+        out += ", ";
+      }
+      out += std::format("`{}`", required.trait_name);
+    }
+    return out;
   }
 
   /// Checks an `impl` block: resolves its target type and (if present) its

@@ -1,0 +1,25 @@
+module sample
+
+trait describable:
+    def describe(self) -> int32
+
+trait bumpable:
+    def bump(self) -> counter
+
+type counter = { pub n: int32 }
+
+impl describable for counter:
+    def describe(self) -> int32:
+        return self.n
+
+impl bumpable for counter:
+    def bump(self) -> counter:
+        return counter{ n: self.n + 1 }
+
+def make_thing() -> some describable + bumpable:
+    return counter{ n: 1 }
+
+def use_thing() -> int32:
+    let thing = make_thing()
+    let bumped = thing.bump()
+    return bumped.describe()

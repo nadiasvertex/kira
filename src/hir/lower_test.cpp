@@ -1978,6 +1978,50 @@ auto test_lowers_generator_function() -> void {
          "hir_yield");
 }
 
+// A general `some Trait[Args]` existential return type is a checker-only
+// fiction (see `semantic::type_kind::existential_kind`'s doc comment):
+// lowering must unwrap it back to the real concrete backing type
+// everywhere, via `hir::lowerer::resolve_opaque`, so the bytecode/LLVM
+// tiers never need to know opacity existed. Confirms both ends of that: the
+// producing function's own `hir_function::return_type` is the concrete
+// `counter` struct type (not a synthetic existential id), and a caller
+// binding the result via `let` gets that same concrete type on its local.
+auto test_lowers_existential_return_type_to_concrete_backing_type() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "trait describable:\n"
+                               "    def describe(self) -> int32\n"
+                               "type counter = { pub n: int32 }\n"
+                               "impl describable for counter:\n"
+                               "    def describe(self) -> int32:\n"
+                               "        return self.n\n"
+                               "def make_thing() -> some describable:\n"
+                               "    return counter{ n: 42 }\n"
+                               "def use_thing() -> int32:\n"
+                               "    let thing = make_thing()\n"
+                               "    return thing.describe()\n");
+
+  const auto &counter_decl = find_func(*fixture.ast_file, "make_thing");
+  auto producer = hir::lower_function(counter_decl, fixture.checked);
+  expect(producer.has_value(),
+         "expected the existential-returning function to lower");
+  const auto &counter_entry =
+      fixture.checked.types.entry((*producer)->return_type);
+  expect(counter_entry.kind == kira::semantic::type_kind::struct_kind &&
+             counter_entry.name == "counter",
+         "expected the lowered function's return type to be the concrete "
+         "`counter` struct, not the existential wrapper");
+
+  const auto &use_decl = find_func(*fixture.ast_file, "use_thing");
+  auto consumer = hir::lower_function(use_decl, fixture.checked);
+  expect(consumer.has_value(),
+         "expected the existential-consuming function to lower");
+  const auto &let_node =
+      dynamic_cast<const hir::hir_let &>(*(*consumer)->body->stmts.front());
+  expect(let_node.initializer->type == (*producer)->return_type,
+         "expected the caller's `let thing = make_thing()` to bind the same "
+         "concrete backing type the producer returns");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -2041,6 +2085,7 @@ auto main() -> int {
     test_lowers_nested_comprehension();
     test_rejects_comprehension_over_user_defined_type();
     test_lowers_generator_function();
+    test_lowers_existential_return_type_to_concrete_backing_type();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -1,0 +1,7 @@
+module sample
+
+trait describable:
+    def describe(self) -> int32
+
+def use_it(x: some describable) -> int32:
+    return x.describe()
