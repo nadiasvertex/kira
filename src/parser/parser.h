@@ -731,6 +731,9 @@ private:
   [[nodiscard]] auto parse_for_expr() -> ast::ptr<ast::for_expr>;
   /// Parses `await` expressions.
   [[nodiscard]] auto parse_await_expr() -> ast::ptr<ast::await_expr>;
+  /// Parses value-carrying `yield` expressions (generator suspension
+  /// points).
+  [[nodiscard]] auto parse_yield_expr() -> ast::ptr<ast::yield_expr>;
   /// Parses `async` expressions.
   [[nodiscard]] auto parse_async_expr() -> ast::ptr<ast::async_expr>;
   /// Parses `par` expressions.

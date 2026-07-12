@@ -1841,6 +1841,26 @@ auto lowerer::lower_stmt(const ast::node &node)
         }
       }
     }
+    // `yield expr` — a generator's suspension point. Lowered directly to
+    // `hir_yield` (a statement peer of `hir_return`) rather than through
+    // the ordinary `lower_expr`/`hir_expr_stmt` path, mirroring how
+    // `return_stmt` below builds `hir_return` directly. `yield` in any
+    // other expression position (e.g. `let x = yield v`) is rejected by
+    // `lower_expr`'s dispatch instead — see its `yield_expr` case.
+    if (expr_stmt.expr->kind == ast::node_kind::yield_expr) {
+      const auto &yield_ast =
+          dynamic_cast<const ast::yield_expr &>(*expr_stmt.expr);
+      if (yield_ast.value == nullptr) {
+        return fail(lowering_error_kind::unsupported_construct,
+                    yield_ast.span, "`yield` with no value is not supported");
+      }
+      auto value = lower_expr(*yield_ast.value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      return one_stmt(ptr<hir_node>(
+          make<hir_yield>(yield_ast.span, std::move(*value))));
+    }
     auto lowered = lower_expr(*expr_stmt.expr);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
@@ -3072,7 +3092,14 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     body =
         make<hir_block>(decl.body_expr->span, *return_type, std::move(stmts));
   } else {
-    body = lower_block(decl.body_stmts, decl.span, *return_type);
+    // A generator body's tail isn't a return value the way an ordinary
+    // function's is (its only output channel is `yield`, checked at the
+    // semantic layer against the item type, not the function's own
+    // `generator[T]` return type) — pass `k_unknown_type` so a trailing
+    // `if`/`match` statement isn't force-typed against `generator[T]`.
+    body = lower_block(decl.body_stmts, decl.span,
+                       decl.modifiers.is_generator ? k_unknown_type
+                                                    : *return_type);
     if (body.has_value() && !param_prelude.empty()) {
       auto merged = std::move(param_prelude);
       for (auto &stmt_ptr : (*body)->stmts) {
@@ -3086,8 +3113,21 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     return std::unexpected(body.error());
   }
 
+  // A `generator def`'s declared return type resolved (via `check_function`,
+  // `src/semantic/check.cpp`) to the concrete `generator[T]` — extract `T`
+  // the same way `?`/`for`-loop lowering elsewhere in this file unwraps a
+  // builtin generic's type argument.
+  auto item_type = k_unknown_type;
+  if (decl.modifiers.is_generator) {
+    const auto &return_entry = checked_.types.entry(*return_type);
+    if (!return_entry.args.empty()) {
+      item_type = return_entry.args.front();
+    }
+  }
+
   return make<hir_function>(decl.span, decl.name, std::move(params),
-                            *return_type, std::move(*body));
+                            *return_type, std::move(*body),
+                            decl.modifiers.is_generator, item_type);
 }
 
 } // namespace

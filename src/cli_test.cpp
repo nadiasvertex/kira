@@ -684,12 +684,12 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   };
   // `io.kira`'s `impl from[...]`/`impl drop for file` rely on the real
   // `from`/`drop` traits the auto-injected prelude provides, and
-  // `prelude.kira` itself now `use`s `std.console` — mirror what
+  // `prelude.kira` itself now `use`s `std.console`/`std.iter` — mirror what
   // `main.cpp` does for every real invocation (this alone now pulls in
-  // `traits.kira`, `prelude.kira`, `io.kira`, `console.kira`, `fmt.kira`,
-  // and `derive.kira`) rather than hand-listing sources, which would
-  // double-add `io.kira`/`console.kira` under a different path string and
-  // trip a duplicate-module-path diagnostic (`find_stdlib_source_file`'s
+  // `traits.kira`, `iter.kira`, `prelude.kira`, `io.kira`, `console.kira`,
+  // `fmt.kira`, and `derive.kira`) rather than hand-listing sources, which
+  // would double-add `io.kira`/`console.kira` under a different path string
+  // and trip a duplicate-module-path diagnostic (`find_stdlib_source_file`'s
   // resolved path doesn't lexically match a literal `"src/std/io.kira"`
   // under `bazel test`'s runfiles tree).
   kira::driver::inject_stdlib_prelude(cfg);
@@ -699,9 +699,9 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 6,
-         "expected std.io, std.console, std.traits, std.fmt, std.derive, "
-         "and prelude to all emit metadata");
+  expect(report->modules.size() == 7,
+         "expected std.io, std.console, std.traits, std.iter, std.fmt, "
+         "std.derive, and prelude to all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.

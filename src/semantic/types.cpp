@@ -29,7 +29,7 @@ struct generic_arity_entry {
 };
 
 /// Prelude container names and their allowed generic-argument arities.
-constexpr std::array<generic_arity_entry, 12> k_builtin_generic_arities = {{
+constexpr std::array<generic_arity_entry, 13> k_builtin_generic_arities = {{
     {.name = "list", .min_args = 1, .max_args = 1},
     {.name = "option", .min_args = 1, .max_args = 1},
     {.name = "result", .min_args = 2, .max_args = 2},
@@ -42,6 +42,10 @@ constexpr std::array<generic_arity_entry, 12> k_builtin_generic_arities = {{
     {.name = "watch", .min_args = 1, .max_args = 1},
     {.name = "mutex", .min_args = 1, .max_args = 1},
     {.name = "atomic", .min_args = 1, .max_args = 1},
+    // The concrete type backing a `generator def`'s `some iterator[T]`
+    // return value — see `check_function`'s generator handling in
+    // `src/semantic/check.cpp`. `T` is the generator's item type.
+    {.name = "generator", .min_args = 1, .max_args = 1},
 }};
 
 /// Appends a bracketed, comma-separated list of `args` ids to `key`, for

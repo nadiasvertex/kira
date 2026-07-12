@@ -1,0 +1,4 @@
+module sample
+
+def counter() -> some iterator[int32]:
+    yield 1

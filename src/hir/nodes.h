@@ -116,6 +116,9 @@ enum class hir_node_kind : uint8_t {
   hir_assign,
   hir_expr_stmt,
   hir_return,
+  hir_yield, ///< `yield expr` inside a `generator def` — a suspension
+             ///< point, not a block terminator (unlike `hir_return`,
+             ///< lowering/codegen must keep walking `stmts` after it).
   hir_while,
   hir_while_let,
   hir_list_push,
@@ -749,6 +752,17 @@ struct hir_return : hir_stmt {
       : hir_stmt(hir_node_kind::hir_return, s), value(std::move(v)) {}
 };
 
+/// `yield value` — a generator's suspension point. Unlike `hir_return`,
+/// this does not terminate the enclosing block; lowering/codegen must keep
+/// walking `stmts` after it. `value` is never null — the surface grammar
+/// has no bare `yield` form.
+struct hir_yield : hir_stmt {
+  ptr<hir_expr> value;
+
+  hir_yield(source_span s, ptr<hir_expr> v)
+      : hir_stmt(hir_node_kind::hir_yield, s), value(std::move(v)) {}
+};
+
 // ==========================================================================
 //  Items
 // ==========================================================================
@@ -761,11 +775,20 @@ struct hir_function : hir_item {
   std::vector<hir_param> params;
   type_id return_type = k_unknown_type;
   ptr<hir_block> body;
+  /// Whether this function was declared `generator def`. When true,
+  /// `return_type` is the concrete `generator[T]` value the function
+  /// itself produces, and `item_type` is `T` — the type each `hir_yield`
+  /// in `body` hands back to the caller. See `hir::live_across_yield` for
+  /// the analysis backends need to lower a generator body.
+  bool is_generator = false;
+  type_id item_type = k_unknown_type;
 
   hir_function(source_span s, std::string n, std::vector<hir_param> p,
-               type_id ret, ptr<hir_block> b)
+               type_id ret, ptr<hir_block> b, bool generator = false,
+               type_id item = k_unknown_type)
       : hir_item(hir_node_kind::hir_function, s), name(std::move(n)),
-        params(std::move(p)), return_type(ret), body(std::move(b)) {}
+        params(std::move(p)), return_type(ret), body(std::move(b)),
+        is_generator(generator), item_type(item) {}
 };
 
 /// Lowered module: every function lowered from one module's contributing

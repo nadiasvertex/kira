@@ -69,8 +69,8 @@ auto find_std_dir() -> kira::testing::fs::path {
 }
 
 /// Fixtures for the real auto-injected prelude (`std/traits.kira`,
-/// `std/prelude.kira`, `std/io.kira`, `std/console.kira`, `std/fmt.kira`) —
-/// mirrors
+/// `std/iter.kira`, `std/prelude.kira`, `std/io.kira`, `std/console.kira`,
+/// `std/fmt.kira`) — mirrors
 /// `inject_stdlib_prelude` (`src/driver/driver.cpp`), which every real
 /// `kira` invocation prepends to its session, so bound positions like
 /// `T: eq` and `impl show for point`, and `prelude.kira`'s `use
@@ -82,6 +82,11 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
           .path = "std/traits.kira",
           .text = kira::testing::load_test_data_file(std_dir.string(),
                                                      "traits.kira"),
+      },
+      source_fixture{
+          .path = "std/iter.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "iter.kira"),
       },
       source_fixture{
           .path = "std/prelude.kira",
@@ -1063,6 +1068,62 @@ auto test_reports_unannotated_intrinsic() -> void {
                     "expected missing-annotation diagnostic");
 }
 
+auto test_accepts_generator_yields_typed_values() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_generator_yields_typed_values.kira");
+  expect(analyzed.error_count == 0,
+         "expected a well-typed generator to check cleanly");
+}
+
+auto test_reports_yield_outside_generator() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_yield_outside_generator.kira");
+  expect(analyzed.error_count > 0,
+         "expected `yield` outside a generator to fail");
+  expect_diagnostic(analyzed, "`yield` outside a `generator def` body",
+                    "expected a yield-outside-generator diagnostic");
+}
+
+auto test_reports_generator_missing_return_type() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_generator_missing_return_type.kira");
+  expect(analyzed.error_count > 0,
+         "expected a generator with no declared return type to fail");
+  expect_diagnostic(analyzed, "must declare a `some iterator[T]` return type",
+                    "expected a missing-generator-return-type diagnostic");
+}
+
+auto test_reports_generator_yield_type_mismatch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_generator_yield_type_mismatch.kira");
+  expect(analyzed.error_count > 0,
+         "expected a mismatched yield value to fail");
+  expect_diagnostic(analyzed, "expected `int32`, found `str`",
+                    "expected a yield type-mismatch diagnostic");
+}
+
+auto test_reports_generator_return_with_value() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_generator_return_with_value.kira");
+  expect(analyzed.error_count > 0,
+         "expected `return <value>` inside a generator to fail");
+  expect_diagnostic(
+      analyzed, "`return <value>` is not allowed inside a `generator def`",
+      "expected a return-with-value-in-generator diagnostic");
+}
+
+auto test_reports_existential_type_outside_generator() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_existential_type_outside_generator.kira");
+  expect(analyzed.error_count > 0,
+         "expected `some Trait[Args]` on a non-generator function to fail");
+  expect_diagnostic(
+      analyzed,
+      "`some Trait[Args]` return types are only supported on `generator "
+      "def` functions",
+      "expected an opaque-return-type-not-supported diagnostic");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1096,6 +1157,7 @@ auto main() -> int {
     test_accepts_expr_builder_constructs_fragment();
     test_accepts_item_splice_injects_impl();
     test_accepts_type_reflection_primitives();
+    test_accepts_generator_yields_typed_values();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
@@ -1121,6 +1183,11 @@ auto main() -> int {
     test_reports_try_in_plain_function();
     test_reports_unknown_intrinsic();
     test_reports_unannotated_intrinsic();
+    test_reports_yield_outside_generator();
+    test_reports_generator_missing_return_type();
+    test_reports_generator_yield_type_mismatch();
+    test_reports_generator_return_with_value();
+    test_reports_existential_type_outside_generator();
     test_reports_unannotated_pub_function();
     test_reports_duplicate_trait_impl();
     test_reports_incomplete_trait_impl();

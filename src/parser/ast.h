@@ -112,6 +112,7 @@ struct match_expr;
 struct if_expr;
 struct for_expr;
 struct await_expr;
+struct yield_expr;
 struct async_expr;
 struct par_expr;
 struct race_expr;
@@ -207,6 +208,13 @@ enum class node_kind : uint8_t {
   // Types
   named_type,      ///< Named type path with optional arguments.
   bound_type,      ///< Bound list adapted into a type slot.
+  existential_type, ///< `some Bound` — "some concrete type satisfying
+                     ///< Bound," in type position. Currently only given
+                     ///< real meaning on a `generator def`'s return type
+                     ///< (see semantic `resolve_type`); reuses the same
+                     ///< `bound` shape as `bound_type` rather than
+                     ///< `named_type`, since it's a constraint standing in
+                     ///< for a type, not a nominal reference.
   tuple_type,      ///< Tuple type expression.
   slice_type,      ///< Slice type expression.
   array_type,      ///< Fixed-length array type expression.
@@ -251,6 +259,12 @@ enum class node_kind : uint8_t {
   for_expr,         ///< Comprehension or generator expression.
   await_expr,       ///< Await expression.
   async_expr,       ///< Async block expression.
+  yield_expr,       ///< `yield expr` — a generator's value-carrying
+                    ///< suspension point. Distinct from `await_expr::
+                    ///< is_yield` (`await yield`, a no-value cancellation
+                    ///< checkpoint) and from `for_expr`'s comprehension
+                    ///< result expression (unrelated, no control-flow
+                    ///< meaning).
   par_expr,         ///< Parallel-branch expression.
   race_expr,        ///< Racing-branch expression.
   crew_expr,        ///< Crew expression.
@@ -557,6 +571,19 @@ struct bound_type : type_expr {
   bound value;
 
   bound_type() : type_expr(node_kind::bound_type) {}
+};
+
+/// `some Bound` — an existential type naming "some concrete type satisfying
+/// `Bound`" without naming which one. Reuses `bound` (the same `+`-joined
+/// trait-term list `bound_type` already builds for constraint positions)
+/// rather than overloading `named_type`, since this is semantically a
+/// constraint being asked to stand in for a type. Semantic analysis
+/// currently only accepts this on a `generator def`'s return type — see the
+/// generator design notes near `check_function` in `src/semantic/check.cpp`.
+struct existential_type : type_expr {
+  bound value;
+
+  existential_type() : type_expr(node_kind::existential_type) {}
 };
 
 /// @brief Constraint from a trailing `where` clause.
@@ -1052,6 +1079,20 @@ struct await_expr : expr {
       false; ///< Distinguishes the coroutine handoff form from ordinary await.
 
   await_expr() : expr(node_kind::await_expr) {}
+};
+
+/// `yield expr` — a generator's value-carrying suspension point. Distinct
+/// from `await_expr::is_yield` (`await yield`, a no-value cancellation
+/// checkpoint borrowed from async's vocabulary) and from `for_expr`'s
+/// per-iteration comprehension result (not a control-flow node at all).
+/// Only valid inside a `generator def` body; semantic analysis rejects it
+/// everywhere else.
+struct yield_expr : expr {
+  ptr<expr> value; ///< The value handed back to the caller at this
+                    ///< suspension point. Always non-null — this grammar
+                    ///< has no bare `yield` form.
+
+  yield_expr() : expr(node_kind::yield_expr) {}
 };
 
 /// `async: ...`
@@ -1652,6 +1693,8 @@ struct func_modifiers {
                                 ///< declaration backed by a native
                                 ///< implementation per backend, not a body.
   ptr<type_expr> async_context; ///< Optional explicit async context type.
+  bool is_generator = false; ///< Whether the body compiles into a suspendable
+                              ///< coroutine driven by `yield`.
 };
 
 /// Contract clause: `pre expr [, message]` or `post expr [, message]`

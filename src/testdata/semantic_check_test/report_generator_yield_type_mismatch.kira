@@ -1,0 +1,4 @@
+module sample
+
+generator def counter() -> some iterator[int32]:
+    yield "not an int"

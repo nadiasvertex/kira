@@ -875,6 +875,87 @@ auto test_parser_rejects_intrinsic_def_with_body() -> void {
          "expected a body on an intrinsic def to be reported as an error");
 }
 
+auto test_parser_accepts_generator_def_and_yield() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "generator def counter() -> some iterator[int32]:\n"
+                             "  yield 1\n"
+                             "  yield 2\n"
+                             "pure generator def counter2() -> some iterator[int32]:\n"
+                             "  yield 1\n"
+                             "generator pure def counter3() -> some iterator[int32]:\n"
+                             "  yield 1\n"
+                             "def check_await(source):\n"
+                             "  await yield\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 4, "expected four function declarations");
+
+  auto *counter = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected counter to parse as a function declaration");
+  expect(counter->modifiers.is_generator,
+         "expected counter to carry the generator modifier");
+  expect(counter->return_type != nullptr, "expected counter return type");
+  expect(counter->return_type->kind == kira::ast::node_kind::existential_type,
+         "expected `some iterator[int32]` to parse as an existential type");
+  auto *ety = static_cast<kira::ast::existential_type *>(
+      counter->return_type.get());
+  expect(ety->value.terms.size() == 1, "expected one bound term");
+  expect(ety->value.terms[0].type != nullptr,
+         "expected the bound term's type to be present");
+  expect(ety->value.terms[0].type->kind == kira::ast::node_kind::named_type,
+         "expected `iterator[int32]` to parse as a named type");
+  auto *iterator_type = static_cast<kira::ast::named_type *>(
+      ety->value.terms[0].type.get());
+  expect(iterator_type->path.size() == 1 &&
+             iterator_type->path[0] == "iterator",
+         "expected bound term to name `iterator`");
+  expect(iterator_type->type_args.size() == 1,
+         "expected `iterator[int32]` to carry one type argument");
+
+  expect(counter->body_stmts.size() == 2,
+         "expected two yield statements in counter's body");
+  auto *first_yield_stmt = expect_node<kira::ast::expr_stmt>(
+      counter->body_stmts[0].get(), kira::ast::node_kind::expr_stmt,
+      "expected first yield to parse as an expression statement");
+  auto *first_yield = expect_expr<kira::ast::yield_expr>(
+      first_yield_stmt->expr.get(), kira::ast::node_kind::yield_expr,
+      "expected `yield 1` to parse as a yield expression");
+  expect(first_yield->value != nullptr, "expected yield to carry a value");
+
+  auto *counter2 = expect_node<kira::ast::func_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+      "expected counter2 to parse as a function declaration");
+  expect(counter2->modifiers.is_pure && counter2->modifiers.is_generator,
+         "expected `pure generator def` to set both modifiers");
+
+  auto *counter3 = expect_node<kira::ast::func_decl>(
+      parsed.file->items[2].get(), kira::ast::node_kind::func_decl,
+      "expected counter3 to parse as a function declaration");
+  expect(counter3->modifiers.is_pure && counter3->modifiers.is_generator,
+         "expected `generator pure def` to set both modifiers regardless of "
+         "order");
+
+  // Regression: `await yield` (the no-value coroutine handoff form) must
+  // still parse unchanged now that bare `yield <expr>` is also a primary
+  // expression — the two are disambiguated by leading token.
+  auto *check_await = expect_node<kira::ast::func_decl>(
+      parsed.file->items[3].get(), kira::ast::node_kind::func_decl,
+      "expected check_await to parse as a function declaration");
+  expect(check_await->body_stmts.size() == 1,
+         "expected a single statement in check_await's body");
+  auto *await_stmt = expect_node<kira::ast::expr_stmt>(
+      check_await->body_stmts[0].get(), kira::ast::node_kind::expr_stmt,
+      "expected `await yield` to parse as an expression statement");
+  auto *await_yield = expect_expr<kira::ast::await_expr>(
+      await_stmt->expr.get(), kira::ast::node_kind::await_expr,
+      "expected `await yield` to parse as an await expression");
+  expect(await_yield->is_yield,
+         "expected `await yield` to set the no-value coroutine handoff flag");
+  expect(await_yield->operand == nullptr,
+         "expected `await yield` to carry no operand");
+}
+
 auto test_parser_accepts_mut_binding_pattern() -> void {
   auto parsed = parse_source("module sample\n"
                              "trait drop:\n"
@@ -1240,7 +1321,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 18> tests = {{
+  const std::array<named_test, 19> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -1265,6 +1346,8 @@ auto main(int argc, char *argv[]) -> int {
       {.name = "intrinsic_def", .fn = test_parser_accepts_intrinsic_def},
       {.name = "intrinsic_def_rejects_body",
        .fn = test_parser_rejects_intrinsic_def_with_body},
+      {.name = "generator_def_and_yield",
+       .fn = test_parser_accepts_generator_def_and_yield},
       {.name = "mut_binding_pattern",
        .fn = test_parser_accepts_mut_binding_pattern},
       {.name = "string_interpolation",

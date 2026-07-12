@@ -5,12 +5,14 @@ cc_library(
     srcs = [
         "captures.cpp",
         "link.cpp",
+        "live_across_yield.cpp",
         "lower.cpp",
     ],
     hdrs = [
         "captures.h",
         "ids.h",
         "link.h",
+        "live_across_yield.h",
         "lower.h",
         "nodes.h",
     ],
@@ -58,6 +60,17 @@ cc_test(
 cc_test(
     name = "captures_test",
     srcs = ["captures_test.cpp"],
+    deps = [
+        ":hir",
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "live_across_yield_test",
+    srcs = ["live_across_yield_test.cpp"],
     deps = [
         ":hir",
         "//src/parser:parser",

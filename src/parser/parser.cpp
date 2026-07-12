@@ -719,7 +719,8 @@ auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
   case token_kind::kw_pure:
   case token_kind::kw_async:
   case token_kind::kw_machine:
-  case token_kind::kw_intrinsic: {
+  case token_kind::kw_intrinsic:
+  case token_kind::kw_generator: {
     auto mods = parse_func_modifiers();
     if (at(token_kind::kw_def)) {
       return parse_func_decl(vis, std::move(mods));
@@ -1311,6 +1312,19 @@ auto parser::parse_prim_type_expr() -> ast::ptr<ast::type_expr> {
     return named;
   }
 
+  case token_kind::kw_some: {
+    // `some Bound` — an existential type. Reuses the exact `+`-joined
+    // bound-term parsing `where`/type-param constraints already use, just
+    // legal here in type position too.
+    auto start = peek().span;
+    advance(); // consume `some`
+    auto bound = parse_bound();
+    auto ety = ast::make<ast::existential_type>();
+    ety->value = std::move(bound);
+    ety->span = start.merge(previous_span());
+    return ety;
+  }
+
   case token_kind::lparen: {
     // Could be tuple type or grouped type.
     auto start = peek().span;
@@ -1726,7 +1740,7 @@ auto parser::parse_trait_decl(ast::visibility vis)
         decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_def) ||
                  at_any(token_kind::kw_pure, token_kind::kw_async,
-                        token_kind::kw_machine)) {
+                        token_kind::kw_machine, token_kind::kw_generator)) {
         auto mods = parse_func_modifiers();
         if (at(token_kind::kw_def)) {
           decl->items.push_back(
@@ -1881,7 +1895,7 @@ auto parser::parse_impl_decl() -> ast::ptr<ast::impl_decl> {
         decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_def) ||
                  at_any(token_kind::kw_pure, token_kind::kw_async,
-                        token_kind::kw_machine)) {
+                        token_kind::kw_machine, token_kind::kw_generator)) {
         auto mods = parse_func_modifiers();
         if (at(token_kind::kw_def)) {
           decl->items.push_back(
@@ -1941,7 +1955,7 @@ auto parser::parse_extend_decl() -> ast::ptr<ast::extend_decl> {
 
       if (at(token_kind::kw_def) ||
           at_any(token_kind::kw_pure, token_kind::kw_async,
-                 token_kind::kw_machine)) {
+                 token_kind::kw_machine, token_kind::kw_generator)) {
         auto mods = parse_func_modifiers();
         if (at(token_kind::kw_def)) {
           decl->items.push_back(parse_func_decl(item_vis, std::move(mods)));
@@ -2026,6 +2040,15 @@ auto parser::parse_func_modifiers() -> ast::func_modifiers {
                  .with_label(peek().span, "redundant"));
       }
       mods.is_intrinsic = true;
+      advance();
+      break;
+    case token_kind::kw_generator:
+      if (mods.is_generator) {
+        emit(diagnostic(diagnostic_level::warning,
+                        "duplicate `generator` modifier", file_id_)
+                 .with_label(peek().span, "redundant"));
+      }
+      mods.is_generator = true;
       advance();
       break;
     default:
@@ -2422,7 +2445,8 @@ auto parser::parse_stmt() -> ast::ptr<ast::node> {
 
   case token_kind::kw_pure:
   case token_kind::kw_async:
-  case token_kind::kw_machine: {
+  case token_kind::kw_machine:
+  case token_kind::kw_generator: {
     auto mods = parse_func_modifiers();
     if (at(token_kind::kw_def)) {
       return parse_func_decl(ast::visibility::def, std::move(mods));
@@ -3362,6 +3386,10 @@ auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
   // Await expression.
   case token_kind::kw_await:
     return parse_await_expr();
+
+  // Value-carrying yield (generator suspension point).
+  case token_kind::kw_yield:
+    return parse_yield_expr();
 
   case token_kind::kw_async:
     return parse_async_expr();
@@ -4303,6 +4331,21 @@ auto parser::parse_await_expr() -> ast::ptr<ast::await_expr> {
   return aexpr;
 }
 
+/// `yield expr` — a generator's value-carrying suspension point. Unlike
+/// `parse_await_expr`'s `await yield` (no operand), this form always
+/// requires one; the two are disambiguated purely by leading token
+/// (`kw_await` vs `kw_yield`), so there's no lookahead conflict.
+auto parser::parse_yield_expr() -> ast::ptr<ast::yield_expr> {
+  auto yexpr = ast::make<ast::yield_expr>();
+  auto start = peek().span;
+
+  expect(token_kind::kw_yield);
+  yexpr->value = parse_expr();
+
+  yexpr->span = start.merge(previous_span());
+  return yexpr;
+}
+
 auto parser::parse_async_expr() -> ast::ptr<ast::async_expr> {
   auto aexpr = ast::make<ast::async_expr>();
   auto start = peek().span;
@@ -4615,6 +4658,7 @@ auto starts_item(token_kind kind) -> bool {
   case token_kind::kw_pure:
   case token_kind::kw_async:
   case token_kind::kw_machine:
+  case token_kind::kw_generator:
   case token_kind::kw_static:
   case token_kind::kw_packed:
     return true;

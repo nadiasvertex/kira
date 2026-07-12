@@ -70,6 +70,8 @@ enum class token_kind : uint8_t {
               ///< semantics.
   kw_intrinsic, ///< Function modifier marking a signature-only declaration
                 ///< backed by a native implementation per backend.
+  kw_generator, ///< Function modifier compiling the body into a suspendable
+                ///< coroutine satisfying `iterator[T]` via `yield`.
 
   // ------------------------------------------------------------------
   //  Type-declaration modifiers
@@ -337,7 +339,8 @@ struct token {
   [[nodiscard]] constexpr auto is_func_modifier() const noexcept -> bool {
     return kind == token_kind::kw_pure || kind == token_kind::kw_async ||
            kind == token_kind::kw_machine || kind == token_kind::kw_static ||
-           kind == token_kind::kw_intrinsic;
+           kind == token_kind::kw_intrinsic ||
+           kind == token_kind::kw_generator;
   }
 
   /// @brief Returns whether this token is a `type`-declaration modifier
@@ -433,6 +436,7 @@ struct token {
     case token_kind::kw_match:
     case token_kind::kw_for:
     case token_kind::kw_await:
+    case token_kind::kw_yield:
     case token_kind::kw_async:
     case token_kind::kw_par:
     case token_kind::kw_race:
@@ -476,6 +480,7 @@ struct token {
     case token_kind::kw_async:
     case token_kind::kw_machine:
     case token_kind::kw_intrinsic:
+    case token_kind::kw_generator:
     case token_kind::kw_packed:
     case token_kind::tilde:
     case token_kind::newline:
@@ -509,6 +514,7 @@ struct token {
     case token_kind::kw_async:
     case token_kind::kw_machine:
     case token_kind::kw_intrinsic:
+    case token_kind::kw_generator:
     case token_kind::kw_packed:
     case token_kind::tilde:
     case token_kind::newline:
@@ -607,6 +613,11 @@ struct token {
     }
     if (text == "fn") {
       return token_kind::kw_fn;
+    }
+    break;
+  case 'g':
+    if (text == "generator") {
+      return token_kind::kw_generator;
     }
     break;
   case 'i':
@@ -836,6 +847,8 @@ struct token {
     return "`machine`";
   case token_kind::kw_intrinsic:
     return "`intrinsic`";
+  case token_kind::kw_generator:
+    return "`generator`";
 
   case token_kind::kw_packed:
     return "`packed`";

@@ -1,0 +1,4 @@
+module std.iter
+
+pub trait iterator[T]:
+    def next(mut self) -> option[T]

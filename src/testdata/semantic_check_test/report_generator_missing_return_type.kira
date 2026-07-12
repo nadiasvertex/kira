@@ -1,0 +1,4 @@
+module sample
+
+generator def counter():
+    yield 1

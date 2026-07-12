@@ -1,0 +1,5 @@
+module sample
+
+generator def counter() -> some iterator[int32]:
+    yield 1
+    return 5

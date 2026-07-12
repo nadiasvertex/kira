@@ -921,6 +921,11 @@ private:
   type_id return_type_ = k_unknown_type;
   bool return_annotated_ = false;
   bool in_contract_ = false;
+  /// Whether the function body currently being checked belongs to a
+  /// `generator def`; when true, `yield` is legal and its operand must
+  /// match `generator_item_type_` (see `infer_yield`/`check_function`).
+  bool in_generator_ = false;
+  type_id generator_item_type_ = k_unknown_type;
   std::unordered_set<std::string> reported_undefined_;
 
   // --- caches ---------------------------------------------------------------
@@ -1287,9 +1292,37 @@ private:
       const auto &splice = dynamic_cast<const ast::splice_type &>(type);
       return resolve_splice_type(splice, ctx);
     }
+    case ast::node_kind::existential_type:
+      return resolve_existential_type(
+          dynamic_cast<const ast::existential_type &>(type), ctx);
     default:
       return k_unknown_type;
     }
+  }
+
+  /// Resolves `some Bound` (`existential_type`) in isolation. Only
+  /// `some iterator[T]` — the single-term, single-type-argument shape a
+  /// `generator def`'s return type must have — is given real meaning here,
+  /// where it's sugar for the concrete backing type `generator[T]`
+  /// (see `check_function`'s generator handling, and the "opaque return
+  /// types" scope note there). Anything else resolves to `k_unknown_type`;
+  /// `check_function` is where the real, better-contextualized diagnostic
+  /// for a misused `some Trait[Args]` gets reported, not here.
+  auto resolve_existential_type(const ast::existential_type &ety,
+                                const resolve_ctx &ctx) -> type_id {
+    if (ety.value.terms.size() != 1 || ety.value.terms[0].type == nullptr ||
+        ety.value.terms[0].type->kind != ast::node_kind::named_type) {
+      return k_unknown_type;
+    }
+    const auto &named =
+        dynamic_cast<const ast::named_type &>(*ety.value.terms[0].type);
+    if (named.path.size() != 1 || named.path.front() != "iterator" ||
+        named.type_args.size() != 1) {
+      return k_unknown_type;
+    }
+    auto args = resolve_type_args(named, ctx);
+    const auto item = args.empty() ? k_unknown_type : args.front();
+    return types_.builtin_generic("generator", {item});
   }
 
   /// A quoted `` `(int32)` `` or `` `(std.foo.bar)` `` classifies as an
@@ -3186,8 +3219,8 @@ private:
     if (file_no_prelude_) {
       return std::nullopt;
     }
-    static constexpr std::array<std::string_view, 2>
-        k_prelude_reexport_modules = {"prelude", "std.traits"};
+    static constexpr std::array<std::string_view, 3>
+        k_prelude_reexport_modules = {"prelude", "std.traits", "std.iter"};
     for (const auto module_name : k_prelude_reexport_modules) {
       if (const auto *source = index_.find_module(module_name)) {
         if (const auto it = source->traits.find(std::string(name));
@@ -4967,6 +5000,32 @@ private:
     return operand; // awaiting a non-task is validated once tasks are typed
   }
 
+  /// Types `yield expr` — only legal inside a `generator def` body. Checks
+  /// the yielded value against the enclosing generator's item type
+  /// (`generator_item_type_`), the same way a `return` statement checks
+  /// against `return_type_`. A `yield` expression itself always has type
+  /// `unit` — it's a statement-shaped suspension point, not a
+  /// value-producing expression, even though it's grammatically an `expr`
+  /// so it can appear as an expression-statement without extra plumbing.
+  auto infer_yield(const ast::yield_expr &expr) -> type_id {
+    if (!in_generator_) {
+      error(expr.span, "`yield` outside a `generator def` body",
+            "not inside a generator");
+      if (expr.value != nullptr) {
+        infer_expr(*expr.value, k_unknown_type);
+      }
+      return types_.builtin("unit");
+    }
+    const auto found = expr.value != nullptr
+                           ? infer_expr(*expr.value, generator_item_type_)
+                           : k_unknown_type;
+    if (!types_.is_unknown(generator_item_type_)) {
+      type_mismatch(expr.span, generator_item_type_, found,
+                    "as the yielded value");
+    }
+    return types_.builtin("unit");
+  }
+
   /// Returns the element type yielded by iterating `iterable` (array/list/
   /// slice/range/option element, or `char` for `str`), used by `for`
   /// loops/comprehensions. Reports a not-iterable error for a known
@@ -5096,6 +5155,8 @@ private:
       return infer_for_expr(dynamic_cast<const ast::for_expr &>(expr));
     case ast::node_kind::await_expr:
       return infer_await(dynamic_cast<const ast::await_expr &>(expr));
+    case ast::node_kind::yield_expr:
+      return infer_yield(dynamic_cast<const ast::yield_expr &>(expr));
     case ast::node_kind::async_expr:
       check_body_nodes(dynamic_cast<const ast::async_expr &>(expr).body,
                        k_unknown_type);
@@ -6265,6 +6326,20 @@ private:
 
     case ast::node_kind::return_stmt: {
       const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
+      if (in_generator_) {
+        // A generator's only output channel is `yield`; `return` just marks
+        // exhaustion (translates to the iterator's `next()` returning
+        // `none` forever after), so a value here would have nowhere to go.
+        if (stmt.value != nullptr) {
+          error_with_help(
+              stmt.span,
+              "`return <value>` is not allowed inside a `generator def`",
+              "generators have no second return channel",
+              "Use `yield` to hand values back to the caller, and a bare "
+              "`return` to end the generator early.");
+        }
+        return types_.builtin("never");
+      }
       if (stmt.value != nullptr) {
         const auto found = infer_expr(*stmt.value, return_type_);
         if (return_annotated_ && !types_.compatible(return_type_, found)) {
@@ -6619,6 +6694,50 @@ private:
       record_expr_type(*decl.return_type, return_type_);
     }
 
+    if (!decl.modifiers.is_generator && decl.return_type != nullptr &&
+        decl.return_type->kind == ast::node_kind::existential_type) {
+      error_with_help(
+          decl.return_type->span,
+          std::format("`some Trait[Args]` return types are only supported "
+                      "on `generator def` functions"),
+          "opaque return type not supported here",
+          "Only a `generator def`'s `some iterator[T]` return type has "
+          "real support today; declare a concrete return type instead.");
+    }
+
+    const auto saved_in_generator = in_generator_;
+    const auto saved_generator_item = generator_item_type_;
+    in_generator_ = decl.modifiers.is_generator;
+    generator_item_type_ = k_unknown_type;
+    if (in_generator_) {
+      const auto &return_entry = types_.entry(return_type_);
+      const auto is_generator_type =
+          return_annotated_ &&
+          return_entry.kind == type_kind::builtin_generic_kind &&
+          return_entry.name == "generator" && !return_entry.args.empty();
+      if (is_generator_type) {
+        generator_item_type_ = return_entry.args.front();
+      } else {
+        error_with_help(
+            decl.span,
+            std::format("generator `{}` must declare a `some iterator[T]` "
+                        "return type",
+                        decl.name),
+            "missing or invalid generator return type",
+            "Write `-> some iterator[T]`, naming the type of value each "
+            "`yield` produces.");
+      }
+      if (decl.body_expr != nullptr) {
+        error_with_help(
+            decl.span,
+            std::format("generator `{}` cannot use a compact expression body",
+                        decl.name),
+            "expression-bodied generators aren't supported",
+            "Give the generator an indented block body and `yield` values "
+            "from inside it.");
+      }
+    }
+
     for (const auto &constraint : decl.where_constraints) {
       if (constraint.subject != nullptr) {
         resolve_type(*constraint.subject, current_resolve_ctx());
@@ -6636,7 +6755,16 @@ private:
     }
     in_contract_ = false;
 
-    if (decl.body_expr != nullptr) {
+    if (in_generator_) {
+      // A generator body's tail statement isn't a return value the way an
+      // ordinary function's is — its only output channel is `yield`
+      // (checked in place via `infer_yield`, which reads
+      // `generator_item_type_` directly) — so there's nothing to compare
+      // against `return_type_` here.
+      if (decl.body_expr == nullptr) {
+        check_body_nodes(decl.body_stmts, k_unknown_type);
+      }
+    } else if (decl.body_expr != nullptr) {
       const auto found = infer_expr(
           *decl.body_expr, return_annotated_ ? return_type_ : k_unknown_type);
       if (return_annotated_) {
@@ -6659,6 +6787,8 @@ private:
       }
     }
 
+    in_generator_ = saved_in_generator;
+    generator_item_type_ = saved_generator_item;
     return_type_ = saved_return;
     return_annotated_ = saved_annotated;
     reported_undefined_ = std::move(saved_reported);

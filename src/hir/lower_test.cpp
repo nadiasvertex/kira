@@ -1900,6 +1900,37 @@ auto test_rejects_comprehension_over_user_defined_type() -> void {
          "expected the specific unsupported_construct error kind");
 }
 
+auto test_lowers_generator_function() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "generator def counter() -> some iterator[int32]:\n"
+                    "    yield 1\n"
+                    "    if true:\n"
+                    "        yield 2\n");
+  const auto &decl = find_func(*fixture.ast_file, "counter");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a generator function to lower");
+  expect((*result)->is_generator,
+         "expected the lowered function to be marked as a generator");
+  expect(!fixture.checked.types.is_unknown((*result)->item_type),
+         "expected the generator's item type to resolve");
+
+  expect((*result)->body->stmts.size() == 2,
+         "expected two top-level statements: the first yield and the if");
+  expect((*result)->body->stmts.front()->kind == hir::hir_node_kind::hir_yield,
+         "expected the first statement to lower directly to hir_yield");
+
+  const auto &tail_stmt =
+      dynamic_cast<const hir::hir_expr_stmt &>(*(*result)->body->stmts.back());
+  const auto &if_node = dynamic_cast<const hir::hir_if &>(*tail_stmt.expr);
+  expect(if_node.branches.size() == 1, "expected a single if branch");
+  expect(if_node.branches.front().body->stmts.front()->kind ==
+             hir::hir_node_kind::hir_yield,
+         "expected the nested yield inside the if branch to also lower to "
+         "hir_yield");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1961,6 +1992,7 @@ auto main() -> int {
     test_lowers_comprehension_with_guard();
     test_lowers_nested_comprehension();
     test_rejects_comprehension_over_user_defined_type();
+    test_lowers_generator_function();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';
