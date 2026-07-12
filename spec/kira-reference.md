@@ -385,6 +385,8 @@ for name in names:
     println("Hello, {name}")
 ```
 
+A range with no upper bound (`0..`) is also valid. It never ends on its own, so it is meant to be paired with something that stops it — `break`, or an adapter like `take`/`take_while` when it feeds an iterator chain (see `std.iter` in the standard library documentation) — rather than driving a bare `for` to completion.
+
 `for` is also an expression that collects results:
 
 ```kira
@@ -780,6 +782,17 @@ let front = first_half(&data)    # a view; data stays borrowed while front is al
 
 A view's borrow is still tracked — a view can never outlive the collection it looks into — but you never write a lifetime for it. The compiler infers that a returned view borrows from the argument it was sliced from, and keeps the source borrowed for as long as the view lives. When you need a result that escapes and stands on its own, return an owned value or a handle (an index) rather than a view.
 
+This inference is not limited to returning a bare view — it extends to any struct that *stores* a view in one of its fields:
+
+```kira
+type window[T] = { s: slice[T], pos: usize }
+
+def make_window[T](xs: &list[T]) -> window[T]:
+    window{ s: xs.as_slice(), pos: 0 }
+```
+
+`make_window` returns an ordinary struct, not a `slice[T]` directly, but the compiler traces the view stored in its `s` field back to `xs` all the same: the returned `window[T]` keeps `xs` borrowed for as long as it lives, exactly as if `make_window` had returned the slice on its own. This is what lets a hand-written iterator type carry a `slice[T]` cursor over a collection without any lifetime annotation — the same rule, one level of indirection deeper.
+
 ### Single-Element Views: `cell[T]` and `mut cell[T]`
 
 A `slice[T]` covers a contiguous run of elements, but sometimes you need a borrowed view of a single element — the result of a hash-map lookup, a tree search, or an array access. For that Kira provides `cell[T]` (read-only) and `mut cell[T]` (mutable):
@@ -1167,6 +1180,39 @@ async def fetch_name(id: int32) -> result[str, network_error]:
 ```
 
 `async` functions return `task[T, E, C]` — a value describing the computation. Nothing runs until something awaits or runs the task.
+
+### Generators: `generator` and `yield`
+
+`async` compiles a function into a suspendable state machine: locals live across `await` points, and the function is resumed from wherever it last paused. A `generator` is that exact same transform with a different reason to pause. Where `await` suspends waiting on another computation, `yield` suspends to hand a value back to the caller:
+
+```kira
+generator def fibonacci() -> some iterator[uint64]:
+    var a: uint64 = 0
+    var b: uint64 = 1
+    loop:
+        yield a
+        (a, b) = (b, a + b)
+```
+
+`generator def` produces `some iterator[T]` — the same trait an ordinary hand-written `next()` implementation satisfies (see Traits, and `std.iter` in the standard library documentation). Nothing about calling a generator differs from calling any other iterator; `for x in fibonacci().take(10)` works whether `fibonacci`'s `next()` was written by hand or generated from a `yield`-based body. This is why `generator` is additive rather than a new concept to learn at every call site: it only changes how a body is *written*, never how the result is *used*.
+
+Because `async` and `generator` are two surface names over one coroutine lowering, they compose the same way other prefixes do:
+
+```kira
+async generator def lines_from(url: str) -> some iterator[str]:
+    let conn = await connect(url)?
+    loop:
+        let chunk = await conn.read_chunk()?
+        if chunk.is_empty(): break
+        for line in chunk.split("\n"):
+            yield line
+```
+
+A function that is both `async` and `generator` produces a *stream* — a value that suspends on `await` while producing values with `yield`. There is no third lowering to write or maintain for this case; it falls out of the two suspension protocols sharing one state-machine transform.
+
+`yield` inside a generator suspended mid-body can be holding locals with live destructors, the same as `await` can — a generator abandoned before it runs to completion must still run `drop` on anything it was holding, exactly as an early `return` would. This is not a special case for `generator`; it is the same "every path out of a scope runs drops" rule that already applies to functions in general (see Destructors: `drop`).
+
+A generator that calls itself recursively does not automatically compose into one flat state machine — each recursive call is its own coroutine, resumed by the one that called it. This is fine for shallow, bounded recursion, but a deeply recursive generator (walking a tree structure and `yield`ing each node, for example) pays a per-level cost on every element it produces. Prefer an explicit stack over recursion in a generator when depth may be large.
 
 ### `crew` — Structured Concurrency
 
@@ -1761,6 +1807,24 @@ Available inside `machine` functions:
 - SIMD intrinsics
 - Unsafe casts (`transmute`)
 - Inline assembly: `asm { ... }`
+- `uninit[T, N]` — a fixed-capacity buffer of `N` slots, sized and aligned for `T`, that carries no guarantee any slot holds a valid `T`. Ordinary code cannot read or write into it; a handful of `machine` functions do:
+
+```kira
+pub type uninit[T, N: usize]     # opaque; N slots, sized/aligned for T
+
+machine def slot_ptr[T, N: usize](buf: &uninit[T, N], i: usize) -> *mut T: ...
+machine def write_slot[T, N: usize](buf: &mut uninit[T, N], i: usize, value: T) -> unit: ...
+machine def read_slot[T, N: usize](buf: &mut uninit[T, N], i: usize) -> T: ...
+    # moves the value out of slot i — the caller must not treat it as initialized afterward
+machine def drop_first[T, N: usize](buf: &mut uninit[T, N], len: usize) -> unit: ...
+    # runs T's drop over slots 0..len only; slots len..N are assumed never initialized
+machine def as_slice[T, N: usize](buf: &uninit[T, N], len: usize) -> slice[T]: ...
+    # claims slots 0..len are initialized and hands back an ordinary view over them
+```
+
+Only the four functions above need the `machine` prefix — the unsafety is contained entirely inside them. Ordinary, non-`machine` code is free to call them, the same way `fast_sum` above can be called from anywhere; a type built on `uninit[T, N]` calls these once, internally, and exposes a fully safe API to everyone else (see `small_list[T, N]` in the standard library documentation).
+
+`uninit[T, N]` exists for exactly one purpose: building a type that holds a *variable* number of `T` values, up to `N`, inline — no heap allocation for the common small case. Its alignment tracks `T`'s natural alignment automatically; this is a narrower guarantee than the general per-field `align`/`offset` control noted above, which remains aspirational, but sizing and aligning a buffer to match a type the compiler already lays out is not new work. `std.collections`'s `small_list[T, N]` (see the standard library documentation) is the motivating use.
 
 Prefixes compose:
 
@@ -1940,6 +2004,8 @@ no_prelude
 | `pure` prefix | Compiler-verified referential transparency; enables use in contracts and proof obligations |
 | Quoting and splicing (`` ` `` and `~`) | Code generation uses ordinary Kira; no separate macro language; hygienic by default |
 | Second-class borrows | `&`/`&mut` are call-scoped passing modes, never stored or returned, so there are no lifetime annotations; `slice`/`str` views cover borrowed windows |
+| View inference extends through structs | A struct that stores a view in a field is tracked the same as a bare returned view; hand-written iterator types need no lifetime annotations either |
+| `generator`/`yield` share `async`'s coroutine lowering | One state-machine transform, two suspension protocols (`await` vs. `yield`); async generators (`stream[T]`) require no separate mechanism |
 | Structured concurrency (`crew`) | Tasks cannot outlive their crew; async leaks are impossible; spawned closures may borrow local data |
 | Typed execution contexts (`task[T, E, C]`) | A task's required context is part of its type; running work on the wrong executor is a type error; `on` bridges contexts; multi-threaded contexts require `send`/`share` |
 | Ownership + concurrency unified | Many-readers-or-one-writer is enforced statically for scoped sharing and by locks for `shared`; `send`/`share` concepts gate task boundaries |
