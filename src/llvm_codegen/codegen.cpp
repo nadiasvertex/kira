@@ -1687,8 +1687,8 @@ private:
 
   [[nodiscard]] auto compile_field(const hir::hir_field &field)
       -> std::expected<llvm::Value *, codegen_error> {
-    const auto offset = runtime::struct_field_offset(types_, field.object->type,
-                                                     field.field_name);
+    const auto offset = runtime::struct_field_offset(
+        types_, strip_refs(types_, field.object->type), field.field_name);
     if (!offset.has_value()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,

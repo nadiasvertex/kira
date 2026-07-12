@@ -1,21 +1,24 @@
 module std.derive
 
-# Real, working `deriving show` for a concrete, struct-shaped type — the
-# compile-time evaluation subsystem's own worked example (spec/kira-
-# reference.md, "Generating definitions") made runnable end to end. Called
-# implicitly by `semantic::checker::resolve_deriving_show` for every
-# `type ... deriving show` on a concrete struct; also callable directly as
-# `~derive_show[SomeType]()` at module top level.
+# Real, working `deriving show`/`eq`/`debug` for a concrete, struct-shaped
+# type — the compile-time evaluation subsystem's own worked example (spec/
+# kira-reference.md, "Generating definitions") made runnable end to end, and
+# extended to the other traits that have enough runtime support to back a
+# real generated method body (`ord`/`hash` do not yet — see
+# `semantic::checker::resolve_deriving_traits`'s doc comment). Each is
+# called implicitly by `resolve_deriving_traits` for every
+# `type ... deriving <trait>` on a concrete struct; each is also callable
+# directly, e.g. `~derive_show[SomeType]()`, at module top level.
 #
-# Builds `self`'s formatted string incrementally via `expr.interp_concat`,
-# one field at a time (`static for` over `T.fields()`), then splices the
-# result into a freshly quoted `impl show for <T>: def show(self) -> str: ...`.
+# All three build up a value incrementally over `static for f in T.fields():`
+# and splice the result into a freshly quoted `impl <trait> for <T>: ...`.
 # The type-position splice — `~(expr.ident(T.name()))` — and the returned
-# `body` both reference `derive_show`'s own local bindings from *inside* a
+# body both reference these functions' own local bindings from *inside* a
 # nested quote, which only resolves correctly because quote construction
 # eagerly materializes any splice found within it (see
 # `comptime::evaluator::materialize_quote`) instead of leaving it as literal
-# syntax to be re-evaluated later, after this call's own locals are gone.
+# syntax to be re-evaluated later, after each call's own locals are gone.
+
 static def derive_show[T]() -> def_expr:
     var body: expr = expr.lit(T.name())
     body = expr.interp_concat(body, expr.lit(" \{ "))
@@ -31,4 +34,52 @@ static def derive_show[T]() -> def_expr:
     body = expr.interp_concat(body, expr.lit(" \}"))
     return `(impl show for ~(expr.ident(T.name())):
         def show(self) -> str:
+            return ~body)`
+
+# Same shape as `derive_show`, but each field's value is embedded via
+# `expr.debug` (a `:?`-formatted interpolation segment, matching what
+# `"{x:?}"` would produce) instead of the default `.show()`-style
+# formatting — so a nested field that only implements `debug` (not `show`)
+# still renders, and a field's `str`-typed value renders quoted/escaped
+# instead of as raw text.
+static def derive_debug[T]() -> def_expr:
+    var body: expr = expr.lit(T.name())
+    body = expr.interp_concat(body, expr.lit(" \{ "))
+    var first: bool = true
+    static for f in T.fields():
+        if first:
+            first = false
+        else:
+            body = expr.interp_concat(body, expr.lit(", "))
+        body = expr.interp_concat(body, expr.lit(f.name))
+        body = expr.interp_concat(body, expr.lit(": "))
+        body = expr.interp_concat(
+            body, expr.debug(expr.field(expr.ident("self"), f.name)))
+    body = expr.interp_concat(body, expr.lit(" \}"))
+    return `(impl debug for ~(expr.ident(T.name())):
+        def debug(self) -> str:
+            return ~body)`
+
+# Builds `self.f1 == other.f1 and self.f2 == other.f2 and ...` across every
+# field via `expr.binary`. An empty struct (no fields at all) trivially
+# derives to `true` (`body` starts there and the loop never runs) — two
+# empty-struct instances of the same type are equal, matching the usual
+# convention. `other`'s `&self` parameter type is literal, unspliced quoted
+# syntax (an ordinary trait-required reference to the implementing type,
+# same as any hand-written `impl eq` would write) — only the target type and
+# the returned comparison chain are generated content.
+static def derive_eq[T]() -> def_expr:
+    var body: expr = expr.lit(true)
+    var first: bool = true
+    static for f in T.fields():
+        let field_eq: expr = expr.binary(
+            "==", expr.field(expr.ident("self"), f.name),
+            expr.field(expr.ident("other"), f.name))
+        if first:
+            body = field_eq
+            first = false
+        else:
+            body = expr.binary("and", body, field_eq)
+    return `(impl eq for ~(expr.ident(T.name())):
+        def eq(self, other: &self) -> bool:
             return ~body)`

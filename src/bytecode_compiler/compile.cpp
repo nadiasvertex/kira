@@ -1391,8 +1391,8 @@ private:
 
   [[nodiscard]] auto compile_field(const hir::hir_field &field, uint8_t dst)
       -> std::expected<void, compile_error> {
-    const auto offset = runtime::struct_field_offset(types_, field.object->type,
-                                                     field.field_name);
+    const auto offset = runtime::struct_field_offset(
+        types_, strip_refs(field.object->type), field.field_name);
     if (!offset.has_value()) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,

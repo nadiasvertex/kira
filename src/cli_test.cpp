@@ -1440,9 +1440,10 @@ auto test_run_scalar_static_let_referenced_by_name() -> void {
 /// existing runtime path for it — string interpolation's implicit `.show()`
 /// dispatch — explicitly refused to lower it: "this type's capability comes
 /// only from `deriving`, which has no runtime body yet"). `checker::
-/// resolve_deriving_show` now splices `~derive_show[point]()`
-/// (`src/std/derive.kira`) in behind the scenes for every concrete, struct-
-/// shaped `deriving show`, so `p.show()` here calls a method built at
+/// resolve_deriving_traits` now splices `~derive_show[point]()`
+/// (`src/std/deriving.kira`, module `std.derive`) in behind the scenes for
+/// every concrete, struct-shaped `deriving show`, so `p.show()` here calls
+/// a method built at
 /// compile time from `point`'s own real field list via reflection
 /// (`T.fields()`) and the AST-builder intrinsics — proven by checking the
 /// program's actual stdout, not just its exit code, since only the real
@@ -1498,6 +1499,86 @@ auto test_build_derives_show_via_deriving_clause() -> void {
       std::format("unexpected stdout from the derived `show()`: `{}`", output));
 }
 
+/// M7 follow-up ("make everything use the new style"): `eq` and `debug`
+/// re-derived for real too, the same way `show` was — `checker::
+/// resolve_deriving_traits` now splices in `derive_eq`/`derive_debug`
+/// (`src/std/deriving.kira`) alongside `derive_show` for every trait named
+/// in `deriving` that has one. `derive_eq`'s generated `def eq(self, other:
+/// &self) -> bool` is what caught a real, independent, pre-existing bug in
+/// *both* backends: field access through a `&self`-typed reference operand
+/// (`other.x`) failed with "field access `.x` is only supported on struct
+/// values" — confirmed with a hand-written `impl eq` with no comptime
+/// involvement at all, so this wasn't specific to generated code. Root
+/// cause: `bytecode_compiler::compile_field`/`llvm_codegen::compile_field`
+/// looked up the field's byte offset directly against `field.object`'s
+/// recorded type, which still carries the unstripped `&T` the checker
+/// records (per `strip_refs`'s own doc comment in both files) — every other
+/// call site already stripped refs before a type-kind-sensitive lookup;
+/// these two didn't. Fixed by routing the `runtime::struct_field_offset`
+/// lookup through `strip_refs` in both. `ord`/`hash` are deliberately not
+/// covered here — `ordering` has no real variants or runtime representation
+/// anywhere yet, and no builtin scalar implements `.hash()`; both still use
+/// the old type-check-only `derived_method_result` path.
+auto test_build_derives_eq_and_debug_via_deriving_clause() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_eq_debug.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_derive_eq_debug_bin";
+
+  write_file(
+      source_path,
+      "module sample\n"
+      "type point = { x: int32, y: int32 } deriving show, eq, debug\n"
+      "def main() -> int32:\n"
+      "  let a: point = { x: 3, y: 4 }\n"
+      "  let b: point = { x: 3, y: 4 }\n"
+      "  let c: point = { x: 3, y: 5 }\n"
+      "  println(a.debug())\n"
+      "  if a.eq(&b) and not a.eq(&c):\n"
+      "    return 42\n"
+      "  return 0\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `deriving show, eq, debug` to compile cleanly: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  expect(output == "point { x: 3, y: 4 }\n",
+         std::format("unexpected stdout from the derived `debug()`: `{}`",
+                     output));
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(close_status) == 42,
+         "expected `a.eq(&b)` true and `a.eq(&c)` false from the derived "
+         "`eq()`, i.e. exit code 42");
+#endif
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -1541,6 +1622,7 @@ auto main() -> int {
     test_run_reflects_struct_field_count_into_runtime_constant();
     test_run_scalar_static_let_referenced_by_name();
     test_build_derives_show_via_deriving_clause();
+    test_build_derives_eq_and_debug_via_deriving_clause();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;
