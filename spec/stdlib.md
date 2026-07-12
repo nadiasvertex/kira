@@ -31,12 +31,16 @@ specified in `spec/kira-reference.md`, including `generator`/`yield` and the
   interpolation and lets types opt in to width/precision/fill handling via
   per-capability traits; a type that only implements `show` still works
   everywhere. The full design lives in `spec/string-formatting-design.md`.
-- **Algorithms bind to the weakest currency that does the job.** Reading and
-  transforming take `some iterator[T]`; random-access reads take `slice[T]`;
-  in-place rearrangement takes `mut slice[T]`. There is no separate
-  iterator-category hierarchy layered on top — random access and mutability
-  were never distinct concerns to begin with, they come from which view type
-  a function accepts.
+- **Algorithms bind to the weakest capability that does the job.** Every
+  function asks for the least it can get away with, and the thing it asks for
+  is a *name* — `some iterator[T]` to read forward once, `some forward[T]` to
+  read twice, `some bidirectional[T]` to read backwards, `some
+  random_access[T]` to jump. A caller never has to work out from a function's
+  body what it secretly needs; the signature says it. Mutation is the one
+  capability that is *not* on that ladder: rearranging elements in place takes
+  `mut slice[T]`, because "I can hand you back an element to overwrite" is a
+  property of the storage, not of a cursor walking over it (see The Capability
+  Ladder in `std.iter`, and `std.algorithm`).
 - **No addressable view where none exists.** A collection implements
   `iterable`, or an indexing-style accessor, only where an element genuinely
   has an address a `cell[T]` can point to. `heap[T]` and `bitset[n]` both
@@ -296,14 +300,12 @@ uses the generator form throughout because most adapters here read exactly
 like their informal description (`zip`, `chain`, `enumerate`, `step_by`, and
 the windowing adapters below all follow the same pattern).
 
-### The capability hierarchy
+### The capability ladder
 
 `iterator[T]` alone gives every algorithm that only needs to read forward
 once. Multi-pass, bidirectional, and random-access algorithms need more, and
 each level is a `requires` step up from the one below (see `requires` —
-Trait Dependencies). `list[T]` and `array[T, n]` (prelude) are contiguously
-backed, so their `iter()` satisfies `random_access` — and therefore
-`bidirectional` and `forward` too, `random_access` requiring both:
+Trait Dependencies):
 
 ```kira
 pub trait forward[T] requires iterator[T]:
@@ -316,14 +318,98 @@ pub trait bidirectional[T] requires forward[T]:
 
     def rev(self) -> some iterator[T]: ...   # default, built on next_back()
 
-pub trait random_access[T] requires bidirectional[T]:
-    def len(self) -> usize
-    def skip_to(mut self, n: usize) -> unit
-
 pub trait exact_size[T] requires iterator[T]:
     def remaining(self) -> usize
-        # lets collect() pre-allocate instead of growing as it goes
+        # how many elements are still to come, known without walking them
+
+pub trait random_access[T] requires bidirectional[T] + exact_size[T]:
+    def skip_to(mut self, n: usize) -> unit
 ```
+
+`exact_size` is a rung of its own rather than a member of `random_access`
+because the two capabilities genuinely come apart: `map[K, V]` knows exactly
+how many entries it will produce and can say so in O(1), but it cannot jump to
+the 400th one. `random_access` requires it (a cursor that can jump certainly
+knows how far it has left to go, which is why it needs no separate `len()`),
+but plenty of sized things are not jumpable.
+
+Its payoff is `collect()`. That default is written to ask, at compile time,
+whether the concrete iterator it was monomorphized for satisfies `exact_size`;
+when it does, it allocates `remaining()` elements once instead of growing the
+list as it goes. Nothing about the call changes — `xs.cursor().map(f).collect()`
+is spelled the same either way — but `list`, `slice`, `deque`, and `map`
+sources land in the pre-sized path, while `filter` and `take_while`, whose
+output length genuinely is not knowable up front, land in the growing one and
+are right to.
+
+### `iter()` and `cursor()`
+
+A trait method's return type is fixed by the trait. `iterable[T]` declares
+`iter(self) -> some iterator[T]`, and an `impl` supplies some concrete type
+satisfying `iterator[T]` — but it cannot *widen the promise the trait made to
+its callers*, because generic code bounded by `[C: iterable[T]]` was compiled
+against `iterator[T]` and can only ever see that much. So `iter()` is, and
+stays, the weakest rung.
+
+Collections that can do better publish it under a second name. `cursor()` is
+that name, and it always means "the strongest cursor this type can give":
+
+```kira
+extend slice[T]:
+    def cursor(self) -> some random_access[T]: ...
+
+extend list[T]:
+    def cursor(self) -> some random_access[T]: self.as_slice().cursor()
+
+extend array[T, n]:
+    def cursor(self) -> some random_access[T]: self.as_slice().cursor()
+```
+
+These are extensions on prelude types, which needs no coherence exception and
+no language change (see Extensions in `spec/kira-reference.md`): an extension
+makes no global claim, so `std.iter` may attach `cursor()` to `slice[T]`
+freely, and it is visible wherever `std.iter` is `use`d.
+
+The split is the same one Rust draws between an inherent `Vec::iter` and the
+`IntoIterator` impl, and this document already had a case of it before the
+capability ladder was named: `btree_map.range()` returns `some
+bidirectional[...]` precisely because the `iterable` impl could not. The rule
+for a reader is short — **`for` loops and `iterable`-generic code take
+`iter()`; an algorithm that needs a rung above `iterator` asks for
+`cursor()`** — and the compiler enforces it, since passing `xs.iter()` where
+`some random_access[T]` was wanted is an error naming the rung that is missing.
+
+(Collapsing the two would need `iterable` to carry a *bounded* associated
+cursor type — `type cursor: iterator[T]`, with impls free to satisfy it with
+something stronger. The grammar's `associated_type_decl` has no bound today;
+it is logged under Compiler and Language Changes Required below, and it is a
+simplification, not a blocker.)
+
+### Which types have which capability
+
+You should never have to read a collection's implementation to find out what it
+can do. Every type's strongest cursor, and the accessor that yields it:
+
+| Source | Strongest cursor | Reached by | Why that rung |
+|---|---|---|---|
+| `slice[T]`, `list[T]`, `array[T, n]` | `random_access` | `cursor()` | contiguously backed |
+| `deque[T]` | `random_access` | `cursor()` | ring buffer — indexable, though not contiguous |
+| `btree_map`, `btree_set` | `bidirectional` | `range()` | ordered tree cursor: walks both ways, can't jump |
+| `map[K, V]`, `set[T]` | `exact_size` | `keys()`, `values()`, `entries()` | hash order: the count is known, a position is not |
+| `bitset[n]` | `iterator` | `iter_ones()` | word-skipping scan, one pass |
+| `heap[T]` | — | — | heap order is not a meaningful sequence; see `std.collections` |
+| generators (`generator def`) | `iterator` | the generator call itself | a suspended function has no cursor to save |
+
+Every row that has a cursor at all also answers `iter()` at the `iterator` rung,
+via `iterable` — that is what `for x in xs` uses, and it is all a function
+bounded by `[C: iterable[T]]` can rely on.
+
+The adapters preserve what they can: `rev`, `enumerate`, and `map` keep
+whatever the base had; `filter`, `take_while`, and `scan` drop to plain
+`iterator`, because none of them can say how many elements survive without
+running the predicate. This is not a limitation to route around — it is the
+ladder reporting the truth. `xs.cursor().filter(p)` really has lost random
+access, and an algorithm that then demands it is right to reject the result.
 
 `rev()` needs `bidirectional`; `windows`/`chunks`/predicate-based grouping
 need `forward`, because producing one window means holding a saved cursor
@@ -401,8 +487,26 @@ two-line composition already covers.
 ```kira
 module std.collections
 
-use std.iter.{ iterable, iterator, forward, bidirectional }
+use std.iter.{ iterable, iterator, forward, bidirectional, random_access, exact_size }
+
+pub concept key[K]:
+    K: hash + eq
 ```
+
+`key` is the one constraint bundle this library names. `map`, `set`, and both
+`*_from_iter` constructors all require exactly `hash + eq` and always will —
+the two are meaningless apart, since a hash table needs to bucket a key *and*
+to confirm a hit within the bucket. Naming it means the error a user sees when
+they hand a `map` an unhashable key is one the compiler can explain in the
+library's vocabulary ("`point` cannot be a `key`: it implements `eq` but not
+`hash` — add `deriving hash`") rather than restating a bound.
+
+That is also why it is the *only* concept here. A concept earns its name by
+bundling constraints that recur together; almost every other bound in this
+library is a single trait (`[T: ord]`, `[T: eq]`, `[T: send]`), and wrapping
+one trait in a concept adds a layer of indirection a reader has to unwrap for
+nothing. Concepts are how a generic function states what it requires — they do
+not multiply just because a library is large.
 
 ### `deque[T]`
 
@@ -419,9 +523,28 @@ extend deque[T]:
     def pop_front(mut self) -> option[T]: ...
     def pop_back(mut self) -> option[T]: ...
 
+extend deque[T]:
+    def cursor(self) -> some random_access[T]: ...
+
 impl iterable[T] for deque[T]:
     def iter(self) -> some iterator[T]: ...
 ```
+
+`deque[T]` follows the `iter()`/`cursor()` convention from `std.iter`: `iter()`
+for `for` loops and `iterable`-generic code, `cursor()` for the strongest thing
+it has. And a ring buffer's strongest thing is `random_access` — element *i*
+lives at `(head + i) % buf.len()`, so it is indexable even though it is not
+contiguous and has no `slice[T]` to hand out.
+
+That combination is what makes the ladder pay for itself. Every read-only
+positional algorithm in `std.algorithm` (`binary_search` and the bound-finding
+family) binds to `some random_access[T]` rather than to `slice[T]`, so all of
+them accept `d.cursor()` and work on a sorted `deque[T]` directly. Binding them
+to `slice[T]` — the obvious shortcut, since a slice *has* random access — would
+have forced a `deque` to copy itself into a `list` before it could be searched,
+paying an allocation and a full element copy to prove a property it already
+had. The capability was the thing the algorithm needed; contiguity was never
+more than one way to supply it.
 
 `list[T]` already *is* a stack (`push`/`pop` at the back) and `deque[T]`
 already *is* a queue (`push_back`/`pop_front`); neither gets a name-only
@@ -600,7 +723,7 @@ over the map's own backing storage, not exposed as public API:
 
 ```kira
 type slot[K, V] = @empty | @occupied(K, V) | @tombstone
-pub type map[K, V] = { slots: list[slot[K, V]], len: usize }
+pub type map[K: key, V] = { slots: list[slot[K, V]], len: usize }
 
 impl iterable[(K, V)] for map[K, V]:
     generator def iter(self) -> some iterator[(cell[K], cell[V])]:
@@ -608,18 +731,27 @@ impl iterable[(K, V)] for map[K, V]:
             if let @occupied(k, v) = &self.slots[i]:
                 yield (cell(k), cell(v))
 
-extend map[K: hash + eq, V]:
-    def keys(self) -> some iterator[cell[K]]: ...
-    def values(self) -> some iterator[cell[V]]: ...
-    def entries(self) -> some iterator[(cell[K], cell[V])]: self.iter()
+extend map[K: key, V]:
+    def keys(self) -> some exact_size[cell[K]]: ...
+    def values(self) -> some exact_size[cell[V]]: ...
+    def entries(self) -> some exact_size[(cell[K], cell[V])]: ...
     def get_mut(mut self, k: &K) -> option[mut cell[V]]: ...
     def insert(mut self, k: K, v: V) -> option[V]: ...
 
-pub def map_from_iter[K: hash + eq, V](it: some iterator[(K, V)]) -> map[K, V]: ...
+pub def map_from_iter[K: key, V](it: some iterator[(K, V)]) -> map[K, V]: ...
 
-pub type set[T] = { inner: map[T, unit] }
-pub def set_from_iter[T: hash + eq](it: some iterator[T]) -> set[T]: ...
+pub type set[T: key] = { inner: map[T, unit] }
+pub def set_from_iter[T: key](it: some iterator[T]) -> set[T]: ...
 ```
+
+`keys`/`values`/`entries` return `some exact_size[...]` — the same
+inherent-method-alongside-the-impl shape as `deque.cursor()` above. A map knows
+its own `len` without walking its slots, so `m.values().collect()` (the
+documented way to get an owned `list[V]` out of a map) sizes its list once up
+front rather than doubling its way there. Hash order still isn't a *position*,
+so these cursors stop at `exact_size` and never claim `forward` or above:
+knowing how many are left and being able to jump to the *n*th are different
+powers, and a map has exactly the first.
 
 `iter()`'s generator body reaches `self.slots` across every suspension at
 `yield`, so the state the compiler synthesizes for it captures a borrow of
@@ -710,18 +842,31 @@ work `std.format` already specifies.
 
 ## `std.algorithm`
 
-Everything here binds to one of `some iterator[T]`, `slice[T]`, or
-`mut slice[T]` — the "weakest currency" principle from Design Principles
-above applied concretely. That single choice absorbs what C++ needs an
-`InputIterator`/`ForwardIterator`/`BidirectionalIterator`/`RandomAccessIterator`
-concept hierarchy for: `sort` doesn't need a "random-access iterator"
-concept, it needs `mut slice[T]`, and random access was never a separate
-thing to prove once the argument is a view type that already has it.
+Every function here binds to the weakest capability that does its job, and
+names that capability in its signature. There are two axes, and they are not
+the same axis:
+
+- **How much of the sequence a function needs to see** — one forward pass
+  (`some iterator[T]`), two (`some forward[T]`), backwards (`some
+  bidirectional[T]`), or by position (`some random_access[T]`). These are the
+  rungs of the ladder in `std.iter`, and an algorithm asks for a rung.
+- **Whether it writes** — in-place rearrangement takes `mut slice[T]`, and
+  nothing on the ladder above will do. Handing back an element to overwrite is
+  a property of *storage*, not of a cursor: it is the thing C++ needed output
+  iterators and proxy references for, and the reason `vector<bool>` broke. A
+  `mut slice[T]` is honest about it. `sort` therefore takes `mut slice[T]`, not
+  `mut random_access[T]`, and there is no such trait to take.
+
+So the read-only algorithms follow the ladder and the mutating ones follow the
+storage, and each says which in its own signature. A caller reading `def
+binary_search[T: ord](s: some random_access[T], ...)` knows what to bring
+without knowing how binary search is implemented, and `deque[T]` — indexable,
+but with no `slice` to offer — gets to use it.
 
 ```kira
 module std.algorithm
 
-use std.iter.{ iterator }
+use std.iter.{ iterator, forward, bidirectional, random_access }
 ```
 
 ### Reading — `some iterator[T]`
@@ -743,6 +888,37 @@ pub def max_element[T: ord](it: some iterator[T]) -> option[T]: ...
 There is no `for_each`. `for x in xs: ...` already reads better than
 threading a lambda through a call, and unlike C++ circa 1998, `for` was
 never missing to begin with.
+
+### Reading more than once — `some forward[T]`
+
+Finding a *subsequence* is not a single-pass problem: a failed match at one
+position has to resume from the element after where the attempt started, not
+from where it gave up. That is `save()`, and so these take `some forward[T]`:
+
+```kira
+pub def search[T: eq](haystack: some forward[T], needle: some forward[T]) -> option[usize]: ...
+pub def find_end[T: eq](haystack: some forward[T], needle: some forward[T]) -> option[usize]: ...
+pub def is_sorted[T: ord](it: some forward[T]) -> bool: ...
+```
+
+`is_sorted` is on this rung for a subtler reason, and it is the reason the
+`pre` contracts below can exist at all. Checking sortedness by walking a
+one-pass iterator would *consume the very sequence the caller was about to
+use*, so a precondition written against `some iterator[T]` could never be
+anything but a lie. Against `some forward[T]` it costs a `save()` and leaves
+the caller's cursor exactly where it was.
+
+### Reading backwards — `some bidirectional[T]`
+
+```kira
+pub def rfind[T](it: some bidirectional[T], pred: fn(&T) -> bool) -> option[T]: ...
+pub def ends_with[T: eq](it: some bidirectional[T], suffix: some bidirectional[T]) -> bool: ...
+```
+
+Searching from the back is one `next_back()` call away when the source can do
+it, and requires buffering the entire sequence when it can't — so it asks, and
+a caller who only has a one-pass iterator gets a compile error naming
+`bidirectional` instead of quietly paying for a full copy.
 
 ### Rearranging in place — `mut slice[T]`
 
@@ -781,43 +957,71 @@ let r = xs.iter().rev().collect()                    # reverse_copy
 let f = xs.iter().filter(x => keep(&x)).collect()     # remove_copy_if, inverted
 ```
 
-### Read-only random access, with a contract — `slice[T]`
+### Read-only random access, with a contract — `some random_access[T]`
+
+Halving a search interval means jumping to the middle, which is `skip_to` —
+the one thing the top rung of the ladder adds:
 
 ```kira
-pub def binary_search[T: ord](s: slice[T], target: &T) -> option[usize]
-    pre is_sorted(s), "binary_search requires a sorted slice":
+pub def binary_search[T: ord](s: some random_access[T], target: &T) -> option[usize]
+    pre is_sorted(s), "binary_search requires a sorted sequence":
     ...
 
-pub def lower_bound[T: ord](s: slice[T], target: &T) -> usize
-    pre is_sorted(s), "lower_bound requires a sorted slice":
+pub def lower_bound[T: ord](s: some random_access[T], target: &T) -> usize
+    pre is_sorted(s), "lower_bound requires a sorted sequence":
     ...
 
-pub def upper_bound[T: ord](s: slice[T], target: &T) -> usize
-    pre is_sorted(s), "upper_bound requires a sorted slice":
+pub def upper_bound[T: ord](s: some random_access[T], target: &T) -> usize
+    pre is_sorted(s), "upper_bound requires a sorted sequence":
     ...
 
-pub def equal_range[T: ord](s: slice[T], target: &T) -> (usize, usize)
-    pre is_sorted(s), "equal_range requires a sorted slice":
+pub def equal_range[T: ord](s: some random_access[T], target: &T) -> (usize, usize)
+    pre is_sorted(s), "equal_range requires a sorted sequence":
     ...
 ```
 
-Calling any of these on an unsorted slice is a debug-time panic naming the
-precondition, not the silently wrong index C++ returns in release and the
-undefined behavior it invites in principle.
+Binding to the capability rather than to `slice[T]` is what lets a sorted
+`deque[T]` be searched without first being copied into contiguous memory.
+`cursor()` on a `list`, an `array`, a `slice`, or a `deque` all yield
+`random_access`, so one signature serves every one of them:
+
+```kira
+let i = binary_search(names.cursor(), &target)   # names: list[str] — or deque[str]
+```
+
+The `pre` contracts are the second half of the argument for the ladder. Each
+one calls `is_sorted`, which needs `forward` — and `random_access` requires
+`bidirectional`, which requires `forward`, so the contract is checkable on
+exactly the sequences these functions accept, using `save()` to leave the
+caller's cursor undisturbed. A precondition like this simply cannot be written
+against `some iterator[T]`: checking it would consume the sequence the caller
+was about to search. Calling any of these on an unsorted sequence is therefore
+a debug-time panic naming the precondition, not the silently wrong index C++
+returns in release and the undefined behavior it invites in principle.
 
 ### Parallel
 
 ```kira
 pub def par_reduce[T: send](s: slice[T], f: fn(T, T) -> T) -> option[T]: ...
 pub def par_sort[T: ord + send](s: mut slice[T]) -> unit: ...
-pub def par_for_each[T: send](s: slice[T], f: fn(&T) -> unit) -> unit: ...
+pub def par_for_each[T: share](s: slice[T], f: fn(&T) -> unit) -> unit: ...
 ```
 
-`[T: send]` is a real, checked bound (see Data-Race Freedom), not an
-unchecked assertion — where C++'s `std::execution::par` trusts the caller's
-callable is thread-safe with nothing verifying it, handing `par_reduce` a
-type or closure that isn't actually `send` is a compile error naming the
-concept, the same as it would be at any other task boundary.
+The three bounds differ, and the difference is the whole point. `par_reduce`
+and `par_sort` *move* elements between threads — a reduction hands partial
+results across, a parallel sort merges chunks owned by different threads — so
+they require `send`. `par_for_each` moves nothing: it hands each worker a `&T`
+into a slice that stays put, which means `T` must be safe to *observe from
+several threads at once*, and that is `share`, not `send`. The two are not
+interchangeable, and a type can satisfy one without the other (see Data-Race
+Freedom).
+
+These are real, checked bounds, not unchecked assertions. Where C++'s
+`std::execution::par` trusts that the caller's callable is thread-safe with
+nothing verifying it, handing `par_for_each` a type that isn't `share` is a
+compile error naming the concept and explaining which way the data was about
+to cross a thread boundary — the same check, in the same words, as at any
+other task boundary.
 
 ---
 
@@ -842,6 +1046,20 @@ checklist of compiler work it depends on, grouped by phase.
       on this splitting existing. See `spec/string-formatting-design.md`
       ("Implementation Staging") for the recommended v1 approach — a direct
       compiler pass rather than waiting on the quote/splice interpreter.
+
+### Optional: bounded associated types
+
+- [ ] **Not a blocker — a simplification.** `associated_type_decl`
+      (`spec/kira-grammar.ebnf`) permits `type IDENT [= type_expr]` with no
+      bound, so a trait cannot say "my impls must pick a cursor type, and it
+      must at least satisfy `iterator[T]`". That is why `std.iter` splits
+      `iter()` (fixed by `iterable` at the `iterator` rung) from `cursor()`
+      (inherent, as strong as the collection can manage). Allowing a bound —
+      `type cursor: iterator[T]` — plus `where`-clause refinement at use sites
+      (`where C.cursor: random_access[T]`) would let a single `iter()` carry
+      each collection's true capability and retire `cursor()`. Everything in
+      this document works without it; nothing in it should be redesigned around
+      the assumption that it will arrive.
 
 ### Running the stdlib: HIR lowering gaps
 
