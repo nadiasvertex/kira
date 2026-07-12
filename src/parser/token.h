@@ -339,8 +339,7 @@ struct token {
   [[nodiscard]] constexpr auto is_func_modifier() const noexcept -> bool {
     return kind == token_kind::kw_pure || kind == token_kind::kw_async ||
            kind == token_kind::kw_machine || kind == token_kind::kw_static ||
-           kind == token_kind::kw_intrinsic ||
-           kind == token_kind::kw_generator;
+           kind == token_kind::kw_intrinsic || kind == token_kind::kw_generator;
   }
 
   /// @brief Returns whether this token is a `type`-declaration modifier

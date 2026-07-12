@@ -82,9 +82,9 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   // sugar splices in (`semantic::checker::resolve_deriving_show`) — always
   // injected, exactly like the others, so it's available to every session
   // even though most sessions never actually reference it by name.
-  for (const auto *filename : {"traits.kira", "iter.kira", "prelude.kira",
-                               "io.kira", "console.kira", "fmt.kira",
-                               "deriving.kira"}) {
+  for (const auto *filename :
+       {"traits.kira", "iter.kira", "prelude.kira", "io.kira", "console.kira",
+        "fmt.kira", "deriving.kira"}) {
     const auto found = find_stdlib_source_file(cfg.program_name, filename);
     if (found && !already_present(*found)) {
       cfg.sources.push_back(found->string());

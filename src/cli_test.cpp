@@ -1525,18 +1525,17 @@ auto test_build_derives_eq_and_debug_via_deriving_clause() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_derive_eq_debug_bin";
 
-  write_file(
-      source_path,
-      "module sample\n"
-      "type point = { x: int32, y: int32 } deriving show, eq, debug\n"
-      "def main() -> int32:\n"
-      "  let a: point = { x: 3, y: 4 }\n"
-      "  let b: point = { x: 3, y: 4 }\n"
-      "  let c: point = { x: 3, y: 5 }\n"
-      "  println(a.debug())\n"
-      "  if a.eq(&b) and not a.eq(&c):\n"
-      "    return 42\n"
-      "  return 0\n");
+  write_file(source_path,
+             "module sample\n"
+             "type point = { x: int32, y: int32 } deriving show, eq, debug\n"
+             "def main() -> int32:\n"
+             "  let a: point = { x: 3, y: 4 }\n"
+             "  let b: point = { x: 3, y: 4 }\n"
+             "  let c: point = { x: 3, y: 5 }\n"
+             "  println(a.debug())\n"
+             "  if a.eq(&b) and not a.eq(&c):\n"
+             "    return 42\n"
+             "  return 0\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",

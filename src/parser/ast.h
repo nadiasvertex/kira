@@ -206,25 +206,25 @@ enum class node_kind : uint8_t {
   splice_stmt,               ///< Statement-position splice node.
 
   // Types
-  named_type,      ///< Named type path with optional arguments.
-  bound_type,      ///< Bound list adapted into a type slot.
+  named_type,       ///< Named type path with optional arguments.
+  bound_type,       ///< Bound list adapted into a type slot.
   existential_type, ///< `some Bound` — "some concrete type satisfying
-                     ///< Bound," in type position. Currently only given
-                     ///< real meaning on a `generator def`'s return type
-                     ///< (see semantic `resolve_type`); reuses the same
-                     ///< `bound` shape as `bound_type` rather than
-                     ///< `named_type`, since it's a constraint standing in
-                     ///< for a type, not a nominal reference.
-  tuple_type,      ///< Tuple type expression.
-  slice_type,      ///< Slice type expression.
-  array_type,      ///< Fixed-length array type expression.
-  ref_type,        ///< Reference type expression.
-  ptr_type,        ///< Raw pointer type expression.
-  fn_type,         ///< Function type expression.
-  quote_type,      ///< Quote-type marker for syntax values.
-  splice_type,     ///< Type-position splice: `~(expr)`.
-  union_type,      ///< Union-style type expression.
-  refinement_type, ///< Refinement type with predicate clause.
+                    ///< Bound," in type position. Currently only given
+                    ///< real meaning on a `generator def`'s return type
+                    ///< (see semantic `resolve_type`); reuses the same
+                    ///< `bound` shape as `bound_type` rather than
+                    ///< `named_type`, since it's a constraint standing in
+                    ///< for a type, not a nominal reference.
+  tuple_type,       ///< Tuple type expression.
+  slice_type,       ///< Slice type expression.
+  array_type,       ///< Fixed-length array type expression.
+  ref_type,         ///< Reference type expression.
+  ptr_type,         ///< Raw pointer type expression.
+  fn_type,          ///< Function type expression.
+  quote_type,       ///< Quote-type marker for syntax values.
+  splice_type,      ///< Type-position splice: `~(expr)`.
+  union_type,       ///< Union-style type expression.
+  refinement_type,  ///< Refinement type with predicate clause.
 
   // Statements
   let_stmt,    ///< Immutable binding statement.
@@ -1089,8 +1089,8 @@ struct await_expr : expr {
 /// everywhere else.
 struct yield_expr : expr {
   ptr<expr> value; ///< The value handed back to the caller at this
-                    ///< suspension point. Always non-null — this grammar
-                    ///< has no bare `yield` form.
+                   ///< suspension point. Always non-null — this grammar
+                   ///< has no bare `yield` form.
 
   yield_expr() : expr(node_kind::yield_expr) {}
 };
@@ -1694,7 +1694,7 @@ struct func_modifiers {
                                 ///< implementation per backend, not a body.
   ptr<type_expr> async_context; ///< Optional explicit async context type.
   bool is_generator = false; ///< Whether the body compiles into a suspendable
-                              ///< coroutine driven by `yield`.
+                             ///< coroutine driven by `yield`.
 };
 
 /// Contract clause: `pre expr [, message]` or `post expr [, message]`

@@ -85,8 +85,8 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
       },
       source_fixture{
           .path = "std/iter.kira",
-          .text = kira::testing::load_test_data_file(std_dir.string(),
-                                                     "iter.kira"),
+          .text =
+              kira::testing::load_test_data_file(std_dir.string(), "iter.kira"),
       },
       source_fixture{
           .path = "std/prelude.kira",
@@ -1096,8 +1096,7 @@ auto test_reports_generator_missing_return_type() -> void {
 auto test_reports_generator_yield_type_mismatch() -> void {
   const auto analyzed =
       analyze_test_data_file("report_generator_yield_type_mismatch.kira");
-  expect(analyzed.error_count > 0,
-         "expected a mismatched yield value to fail");
+  expect(analyzed.error_count > 0, "expected a mismatched yield value to fail");
   expect_diagnostic(analyzed, "expected `int32`, found `str`",
                     "expected a yield type-mismatch diagnostic");
 }
@@ -1107,9 +1106,9 @@ auto test_reports_generator_return_with_value() -> void {
       analyze_test_data_file("report_generator_return_with_value.kira");
   expect(analyzed.error_count > 0,
          "expected `return <value>` inside a generator to fail");
-  expect_diagnostic(
-      analyzed, "`return <value>` is not allowed inside a `generator def`",
-      "expected a return-with-value-in-generator diagnostic");
+  expect_diagnostic(analyzed,
+                    "`return <value>` is not allowed inside a `generator def`",
+                    "expected a return-with-value-in-generator diagnostic");
 }
 
 auto test_reports_existential_type_outside_generator() -> void {

@@ -33,8 +33,7 @@ auto stmt_contains_yield(const hir_node &node) -> bool {
         return true;
       }
     }
-    return node2.else_body != nullptr &&
-           block_contains_yield(*node2.else_body);
+    return node2.else_body != nullptr && block_contains_yield(*node2.else_body);
   }
   case hir_node_kind::hir_match: {
     const auto &node2 = dynamic_cast<const hir_match &>(node);

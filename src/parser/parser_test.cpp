@@ -876,16 +876,17 @@ auto test_parser_rejects_intrinsic_def_with_body() -> void {
 }
 
 auto test_parser_accepts_generator_def_and_yield() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "generator def counter() -> some iterator[int32]:\n"
-                             "  yield 1\n"
-                             "  yield 2\n"
-                             "pure generator def counter2() -> some iterator[int32]:\n"
-                             "  yield 1\n"
-                             "generator pure def counter3() -> some iterator[int32]:\n"
-                             "  yield 1\n"
-                             "def check_await(source):\n"
-                             "  await yield\n");
+  auto parsed =
+      parse_source("module sample\n"
+                   "generator def counter() -> some iterator[int32]:\n"
+                   "  yield 1\n"
+                   "  yield 2\n"
+                   "pure generator def counter2() -> some iterator[int32]:\n"
+                   "  yield 1\n"
+                   "generator pure def counter3() -> some iterator[int32]:\n"
+                   "  yield 1\n"
+                   "def check_await(source):\n"
+                   "  await yield\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 4, "expected four function declarations");
@@ -898,15 +899,15 @@ auto test_parser_accepts_generator_def_and_yield() -> void {
   expect(counter->return_type != nullptr, "expected counter return type");
   expect(counter->return_type->kind == kira::ast::node_kind::existential_type,
          "expected `some iterator[int32]` to parse as an existential type");
-  auto *ety = static_cast<kira::ast::existential_type *>(
-      counter->return_type.get());
+  auto *ety =
+      static_cast<kira::ast::existential_type *>(counter->return_type.get());
   expect(ety->value.terms.size() == 1, "expected one bound term");
   expect(ety->value.terms[0].type != nullptr,
          "expected the bound term's type to be present");
   expect(ety->value.terms[0].type->kind == kira::ast::node_kind::named_type,
          "expected `iterator[int32]` to parse as a named type");
-  auto *iterator_type = static_cast<kira::ast::named_type *>(
-      ety->value.terms[0].type.get());
+  auto *iterator_type =
+      static_cast<kira::ast::named_type *>(ety->value.terms[0].type.get());
   expect(iterator_type->path.size() == 1 &&
              iterator_type->path[0] == "iterator",
          "expected bound term to name `iterator`");

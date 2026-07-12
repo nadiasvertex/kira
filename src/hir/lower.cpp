@@ -1851,15 +1851,15 @@ auto lowerer::lower_stmt(const ast::node &node)
       const auto &yield_ast =
           dynamic_cast<const ast::yield_expr &>(*expr_stmt.expr);
       if (yield_ast.value == nullptr) {
-        return fail(lowering_error_kind::unsupported_construct,
-                    yield_ast.span, "`yield` with no value is not supported");
+        return fail(lowering_error_kind::unsupported_construct, yield_ast.span,
+                    "`yield` with no value is not supported");
       }
       auto value = lower_expr(*yield_ast.value);
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      return one_stmt(ptr<hir_node>(
-          make<hir_yield>(yield_ast.span, std::move(*value))));
+      return one_stmt(
+          ptr<hir_node>(make<hir_yield>(yield_ast.span, std::move(*value))));
     }
     auto lowered = lower_expr(*expr_stmt.expr);
     if (!lowered.has_value()) {
@@ -3099,7 +3099,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     // `if`/`match` statement isn't force-typed against `generator[T]`.
     body = lower_block(decl.body_stmts, decl.span,
                        decl.modifiers.is_generator ? k_unknown_type
-                                                    : *return_type);
+                                                   : *return_type);
     if (body.has_value() && !param_prelude.empty()) {
       auto merged = std::move(param_prelude);
       for (auto &stmt_ptr : (*body)->stmts) {
