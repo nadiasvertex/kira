@@ -802,6 +802,21 @@ auto evaluator::materialize_quote(const ast::node &node)
     // support than this milestone offers.
     return cloned;
   }
+  case ast::node_kind::ref_type: {
+    const auto &ref = dynamic_cast<const ast::ref_type &>(node);
+    if (ref.inner == nullptr) {
+      return nullptr;
+    }
+    auto inner_clone = materialize_quote(*ref.inner);
+    if (inner_clone == nullptr) {
+      return nullptr;
+    }
+    auto cloned = ast::make<ast::ref_type>();
+    cloned->span = ref.span;
+    cloned->is_mut = ref.is_mut;
+    cloned->inner = as_owned<ast::type_expr>(std::move(inner_clone));
+    return cloned;
+  }
   case ast::node_kind::return_stmt: {
     const auto &ret = dynamic_cast<const ast::return_stmt &>(node);
     auto cloned = ast::make<ast::return_stmt>();
@@ -842,9 +857,17 @@ auto evaluator::materialize_quote(const ast::node &node)
         cloned_pattern->is_mut = binding.is_mut;
         cloned_param.pattern = std::move(cloned_pattern);
       }
-      // `type_annotation`/`default_value` deliberately left null: a plain
-      // `self` parameter (the only shape this materializer supports) never
-      // has either.
+      if (orig_param.type_annotation != nullptr) {
+        auto type_clone = materialize_quote(*orig_param.type_annotation);
+        if (type_clone == nullptr) {
+          return nullptr;
+        }
+        cloned_param.type_annotation =
+            as_owned<ast::type_expr>(std::move(type_clone));
+      }
+      // `default_value` deliberately left null: no parameter shape this
+      // materializer's callers produce (a plain `self`, or `other: &self`)
+      // has one.
       cloned->params.push_back(std::move(cloned_param));
     }
     if (fn.return_type != nullptr) {
@@ -973,6 +996,23 @@ auto evaluator::call_function(
 auto evaluator::clone_expr_fragment(const ast::node &node)
     -> ast::ptr<ast::expr> {
   switch (node.kind) {
+  case ast::node_kind::binary_expr: {
+    const auto &bin = dynamic_cast<const ast::binary_expr &>(node);
+    if (bin.lhs == nullptr || bin.rhs == nullptr) {
+      return nullptr;
+    }
+    auto cloned_lhs = clone_expr_fragment(*bin.lhs);
+    auto cloned_rhs = clone_expr_fragment(*bin.rhs);
+    if (cloned_lhs == nullptr || cloned_rhs == nullptr) {
+      return nullptr;
+    }
+    auto cloned = ast::make<ast::binary_expr>();
+    cloned->span = bin.span;
+    cloned->op = bin.op;
+    cloned->lhs = std::move(cloned_lhs);
+    cloned->rhs = std::move(cloned_rhs);
+    return cloned;
+  }
   case ast::node_kind::ident_expr: {
     const auto &ident = dynamic_cast<const ast::ident_expr &>(node);
     auto cloned = ast::make<ast::ident_expr>();
@@ -1009,19 +1049,11 @@ auto evaluator::clone_expr_fragment(const ast::node &node)
     auto cloned = ast::make<ast::interpolated_string_expr>();
     cloned->span = interp.span;
     for (const auto &segment : interp.segments) {
-      auto cloned_segment = ast::interp_segment{};
-      cloned_segment.is_literal = segment.is_literal;
-      cloned_segment.literal_text = segment.literal_text;
-      if (!segment.is_literal) {
-        if (segment.value == nullptr) {
-          return nullptr;
-        }
-        cloned_segment.value = clone_expr_fragment(*segment.value);
-        if (cloned_segment.value == nullptr) {
-          return nullptr;
-        }
+      auto cloned_segment = clone_interp_segment(segment);
+      if (!cloned_segment.has_value()) {
+        return nullptr;
       }
-      cloned->segments.push_back(std::move(cloned_segment));
+      cloned->segments.push_back(std::move(*cloned_segment));
     }
     return cloned;
   }
@@ -1062,21 +1094,13 @@ auto evaluator::append_interp_segments(const ast::node &fragment,
     const auto &interp =
         dynamic_cast<const ast::interpolated_string_expr &>(fragment);
     for (const auto &segment : interp.segments) {
-      auto cloned_segment = ast::interp_segment{};
-      cloned_segment.is_literal = segment.is_literal;
-      cloned_segment.literal_text = segment.literal_text;
-      if (!segment.is_literal) {
-        if (segment.value == nullptr) {
-          return false;
-        }
-        cloned_segment.value = clone_expr_fragment(*segment.value);
-        if (cloned_segment.value == nullptr) {
-          report(span, "`expr.interp_concat` could not clone a nested "
-                       "interpolation value");
-          return false;
-        }
+      auto cloned_segment = clone_interp_segment(segment);
+      if (!cloned_segment.has_value()) {
+        report(span, "`expr.interp_concat` could not clone a nested "
+                     "interpolation value");
+        return false;
       }
-      out.push_back(std::move(cloned_segment));
+      out.push_back(std::move(*cloned_segment));
     }
     return true;
   }
@@ -1090,6 +1114,47 @@ auto evaluator::append_interp_segments(const ast::node &fragment,
   out.push_back(
       ast::interp_segment{.is_literal = false, .value = std::move(cloned)});
   return true;
+}
+
+auto evaluator::clone_interp_segment(const ast::interp_segment &segment)
+    -> std::optional<ast::interp_segment> {
+  auto cloned = ast::interp_segment{};
+  cloned.is_literal = segment.is_literal;
+  cloned.literal_text = segment.literal_text;
+  if (!segment.is_literal) {
+    if (segment.value == nullptr) {
+      return std::nullopt;
+    }
+    cloned.value = clone_expr_fragment(*segment.value);
+    if (cloned.value == nullptr) {
+      return std::nullopt;
+    }
+  }
+  cloned.self_doc = segment.self_doc;
+  cloned.source_text = segment.source_text;
+  cloned.has_spec = segment.has_spec;
+  if (segment.has_spec) {
+    cloned.spec.fill = segment.spec.fill;
+    cloned.spec.align = segment.spec.align;
+    cloned.spec.sign = segment.spec.sign;
+    cloned.spec.alternate = segment.spec.alternate;
+    cloned.spec.zero_pad = segment.spec.zero_pad;
+    cloned.spec.has_explicit_align = segment.spec.has_explicit_align;
+    cloned.spec.type_char = segment.spec.type_char;
+    cloned.spec.span = segment.spec.span;
+    // `width`/`precision` only carried over when literal (`monostate`/
+    // `size_t`) — a dynamic `{expr}` width/precision is dropped rather than
+    // cloned, since no AST-builder intrinsic in this milestone ever
+    // produces one and this narrow materializer has no general fallback
+    // for an arbitrary pre-existing dynamic spec.
+    if (std::holds_alternative<size_t>(segment.spec.width)) {
+      cloned.spec.width = std::get<size_t>(segment.spec.width);
+    }
+    if (std::holds_alternative<size_t>(segment.spec.precision)) {
+      cloned.spec.precision = std::get<size_t>(segment.spec.precision);
+    }
+  }
+  return cloned;
 }
 
 auto evaluator::try_eval_expr_builder_call(const ast::call_expr &call)
@@ -1250,11 +1315,113 @@ auto evaluator::try_eval_expr_builder_call(const ast::call_expr &call)
     return value::make_expr_fragment(raw);
   }
 
+  if (field.field_name == "debug") {
+    if (call.args.size() != 1 || call.args.front().value == nullptr) {
+      return report(call.span, "`expr.debug` takes exactly one `expr` "
+                               "argument");
+    }
+    auto arg = evaluate(*call.args.front().value);
+    if (arg.is_error()) {
+      return arg;
+    }
+    if (arg.kind != value_kind::expr_fragment || arg.fragment == nullptr) {
+      return report(call.args.front().value->span,
+                    "`expr.debug`'s argument must be a quoted or "
+                    "constructed `expr` value");
+    }
+    auto cloned = clone_expr_fragment(*arg.fragment);
+    if (cloned == nullptr) {
+      return report(call.args.front().value->span,
+                    "this quoted `expr` value's syntax is too complex for "
+                    "`expr.debug` to embed");
+    }
+    auto result = ast::make<ast::interpolated_string_expr>();
+    result->span = call.span;
+    auto segment = ast::interp_segment{};
+    segment.is_literal = false;
+    segment.value = std::move(cloned);
+    // A single value segment formatted with the `?` debug type char — the
+    // same shape `"{x:?}"` produces at parse time, just built directly
+    // instead of parsed, so a value embedded via `expr.debug` renders with
+    // `.debug()`-style formatting instead of the `interp_concat` default
+    // (`.show()`-style) when the surrounding string is finally assembled.
+    segment.has_spec = true;
+    segment.spec.type_char = '?';
+    result->segments.push_back(std::move(segment));
+    const auto *raw = result.get();
+    synthesized_fragments_.push_back(std::move(result));
+    return value::make_expr_fragment(raw);
+  }
+
+  if (field.field_name == "binary") {
+    if (call.args.size() != 3 || call.args[0].value == nullptr ||
+        call.args[1].value == nullptr || call.args[2].value == nullptr) {
+      return report(call.span, "`expr.binary` takes exactly three "
+                               "arguments: an operator name string and two "
+                               "`expr` operands");
+    }
+    auto op_arg = evaluate(*call.args[0].value);
+    if (op_arg.is_error()) {
+      return op_arg;
+    }
+    if (op_arg.kind != value_kind::string) {
+      return report(call.args[0].value->span,
+                    "`expr.binary`'s first argument must be a string "
+                    "naming the operator");
+    }
+    // Deliberately narrow — only the operators `derive_eq`/a similar
+    // caller actually needs, not a general mirror of `ast::binary_op`.
+    const auto op = op_arg.string == "=="    ? ast::binary_op::eq_eq
+                    : op_arg.string == "!="  ? ast::binary_op::bang_eq
+                    : op_arg.string == "and" ? ast::binary_op::logical_and
+                    : op_arg.string == "or"  ? ast::binary_op::logical_or
+                                             : std::optional<ast::binary_op>{};
+    if (!op.has_value()) {
+      return report(call.args[0].value->span,
+                    std::format("`expr.binary` does not recognize the "
+                                "operator `{}` (supported: `==`, `!=`, "
+                                "`and`, `or`)",
+                                op_arg.string));
+    }
+    auto lhs = evaluate(*call.args[1].value);
+    if (lhs.is_error()) {
+      return lhs;
+    }
+    if (lhs.kind != value_kind::expr_fragment || lhs.fragment == nullptr) {
+      return report(call.args[1].value->span,
+                    "`expr.binary`'s operands must be quoted or "
+                    "constructed `expr` values");
+    }
+    auto rhs = evaluate(*call.args[2].value);
+    if (rhs.is_error()) {
+      return rhs;
+    }
+    if (rhs.kind != value_kind::expr_fragment || rhs.fragment == nullptr) {
+      return report(call.args[2].value->span,
+                    "`expr.binary`'s operands must be quoted or "
+                    "constructed `expr` values");
+    }
+    auto cloned_lhs = clone_expr_fragment(*lhs.fragment);
+    auto cloned_rhs = clone_expr_fragment(*rhs.fragment);
+    if (cloned_lhs == nullptr || cloned_rhs == nullptr) {
+      return report(call.span, "one of `expr.binary`'s operands' syntax is too "
+                               "complex to embed");
+    }
+    auto result = ast::make<ast::binary_expr>();
+    result->span = call.span;
+    result->op = *op;
+    result->lhs = std::move(cloned_lhs);
+    result->rhs = std::move(cloned_rhs);
+    const auto *raw = result.get();
+    synthesized_fragments_.push_back(std::move(result));
+    return value::make_expr_fragment(raw);
+  }
+
   return report(call.span,
                 std::format("`expr.{}` is not a recognized AST-builder "
                             "intrinsic (only `expr.lit`/`expr.ident`/"
-                            "`expr.field`/`expr.interp_concat` are "
-                            "supported)",
+                            "`expr.field`/`expr.interp_concat`/`expr.debug`/"
+                            "`expr.binary` are supported)",
                             field.field_name));
 }
 

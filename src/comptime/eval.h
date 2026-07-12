@@ -178,6 +178,15 @@ private:
   [[nodiscard]] auto clone_expr_fragment(const ast::node &node)
       -> ast::ptr<ast::expr>;
 
+  /// Deep-clones one `interp_segment` (a literal-text run, or a value
+  /// segment with its `expr` cloned via `clone_expr_fragment` and its
+  /// format spec's scalar fields copied — a dynamic `{expr}` width/
+  /// precision is dropped rather than cloned, since nothing this
+  /// milestone's callers build ever sets one). Returns `nullopt` if the
+  /// segment's value expression can't be cloned.
+  [[nodiscard]] auto clone_interp_segment(const ast::interp_segment &segment)
+      -> std::optional<ast::interp_segment>;
+
   /// Appends the segment(s) needed to represent `fragment` inside a larger
   /// `interpolated_string_expr` being assembled by `expr.interp_concat` —
   /// see the `.cpp` doc comment for the exact per-shape rules. Reports and

@@ -3733,8 +3733,10 @@ private:
     if (field.object->kind == ast::node_kind::ident_expr &&
         dynamic_cast<const ast::ident_expr &>(*field.object).name == "expr") {
       infer_call_args_loosely(call);
-      if (field.field_name != "lit" && field.field_name != "ident" &&
-          field.field_name != "field" && field.field_name != "interp_concat") {
+      static constexpr std::array<std::string_view, 6> k_expr_builder_names = {
+          "lit", "ident", "field", "interp_concat", "debug", "binary"};
+      if (std::ranges::find(k_expr_builder_names, field.field_name) ==
+          k_expr_builder_names.end()) {
         error_with_help(
             field.span,
             std::format("`expr.{}` is not a recognized AST-builder "
@@ -3742,8 +3744,9 @@ private:
                         field.field_name),
             "unknown AST-builder call",
             "Only `expr.lit(value)`, `expr.ident(name)`, "
-            "`expr.field(object, name)`, and `expr.interp_concat(a, b)` "
-            "construct a new `expr` quote value programmatically.");
+            "`expr.field(object, name)`, `expr.interp_concat(a, b)`, "
+            "`expr.debug(value)`, and `expr.binary(op, lhs, rhs)` construct "
+            "a new `expr` quote value programmatically.");
         return k_error_type;
       }
       return types_.builtin("expr");
