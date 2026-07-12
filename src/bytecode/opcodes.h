@@ -346,6 +346,63 @@ enum class opcode : uint8_t {
                     ///< module-level function (a closure value held in a
                     ///< local, an immediately-invoked lambda literal, or any
                     ///< other computed callee expression).
+
+  // --- Generators ------------------------------------------------------
+  //
+  // A `generator def`'s declared name compiles to a small *constructor*
+  // function (unchanged calling convention — ordinary `op_call` reaches
+  // it); the function body itself compiles separately into a *step*
+  // function, reachable only via a generator object's own
+  // `step_function_index` slot, never by name. A generator object is a
+  // fixed 4-slot heap block `{ step_function_index; state_ptr;
+  // resume_index; finished }`, laid out like a closure's `{
+  // function_index; env_ptr }` pair plus two more fields. `state_ptr`
+  // points at a second flat slot block — one slot per symbol
+  // `hir::live_across_yield` found live for the generator's parameters and
+  // locals — populated/read via `op_store_slot`/`op_load_slot` exactly
+  // like a closure's env block, just resynced on every suspend/resume
+  // instead of being write-once. `resume_index` is `0` at first call (run
+  // the step function's body from the top) and `k` after the `k`th
+  // `op_yield` — an index into the step function's own leading
+  // resume-dispatch chain, not a raw saved program counter.
+  op_make_generator, ///< u8 dst, u16 step_function_index, u8 state_ptr —
+                     ///< reg[dst] = a fresh 4-slot heap block
+  ///< `{ step_function_index; reg[state_ptr]; resume_index=0;
+  ///< finished=0 }`. `state_ptr` is the sentinel `0`
+  ///< when the generator has no state to preserve
+  ///< (mirrors `op_make_closure`'s null-env convention).
+  ///< Emitted by a generator's constructor function, not
+  ///< at its call sites — calling a generator function
+  ///< is an ordinary `op_call` into the constructor.
+  op_yield,          ///< u8 value_reg, u8 generator_reg, u8 next_resume_index —
+                     ///< writes `some(reg[value_reg])` into the *caller's*
+                     ///< result register (the same `result_reg`/
+                     ///< `has_caller` bookkeeping `op_return_value` already
+                     ///< threads through `frame`), sets
+                     ///< reg[generator_reg]'s `resume_index` slot to
+                     ///< `next_resume_index` (a compile-time constant —
+                     ///< this yield's own ordinal), and pops the current
+                     ///< frame *without* setting `finished` — the
+                     ///< coroutine analog of `op_return_value`, just
+                     ///< leaving the generator resumable instead of done.
+                     ///< Every locally-live symbol due to survive this
+                     ///< suspension is synced into `state_ptr` via ordinary
+                     ///< `op_store_slot`s immediately before this opcode,
+                     ///< not by this opcode itself.
+  op_generator_next, ///< u8 dst, u8 generator_reg — the compiled form of
+                     ///< `.next()`. If reg[generator_reg]'s `finished` slot
+                     ///< is set, writes `none` into dst directly (no frame
+                     ///< push). Otherwise pushes a frame for the
+                     ///< generator's `step_function_index`, with register 0
+                     ///< = `state_ptr`, register 1 = `resume_index`,
+                     ///< register 2 = reg[generator_reg] itself (so a
+                     ///< nested `op_yield`/fall-through-return can address
+                     ///< it), and transfers control — the step function
+                     ///< either hits an `op_yield` (writes `some(...)` into
+                     ///< dst per above) or falls off the end / hits a bare
+                     ///< `return` (compiled to build `none`, set
+                     ///< `finished=1` on the generator object, and
+                     ///< `op_return_value` it).
 };
 
 } // namespace kira::bytecode

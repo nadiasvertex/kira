@@ -990,6 +990,168 @@ auto test_non_capturing_closure_is_called_indirectly() -> void {
   expect(result->value.i == 42, "expected (x => x * 2)(21) == 42");
 }
 
+// ==========================================================================
+//  Generators — `generator def`/`yield`/`.next()` end to end. `counter`
+//  compiles to two bytecode_functions (a constructor under its own name,
+//  plus an internal step function reachable only via the generator object's
+//  `step_function_index` slot); calling `counter(...)` and then `.next()`
+//  repeatedly should produce `some(0), some(1), ..., none, none, ...`.
+// ==========================================================================
+
+auto option_tag_and_payload(bc::slot_value option_value)
+    -> std::pair<int64_t, bc::slot_value> {
+  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+      static_cast<uintptr_t>(option_value.u));
+  return {slots[0].i, slots[1]};
+}
+
+auto test_generator_sequential_next_calls_yield_then_exhaust() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "generator def counter() -> some "
+                                "iterator[int32]:\n"
+                                "  yield 1\n"
+                                "  yield 2\n"
+                                "def make() -> generator[int32]:\n"
+                                "  return counter()\n"
+                                "def next_of(g: generator[int32]) -> "
+                                "option[int32]:\n"
+                                "  return g.next()\n");
+  const auto vm = bc::vm{module};
+  auto gen_result = vm.run(function_index(module, "make"), {});
+  expect(gen_result.has_value(), "expected make() to succeed");
+  const auto gen = gen_result->value;
+
+  auto first = vm.run(function_index(module, "next_of"), std::array{gen});
+  expect(first.has_value(), "expected the first next() to succeed");
+  auto [first_tag, first_payload] = option_tag_and_payload(first->value);
+  expect(first_tag == 0, "expected the first next() to be some(...)");
+  expect(first_payload.i == 1, "expected the first yielded value to be 1");
+
+  auto second = vm.run(function_index(module, "next_of"), std::array{gen});
+  expect(second.has_value(), "expected the second next() to succeed");
+  auto [second_tag, second_payload] = option_tag_and_payload(second->value);
+  expect(second_tag == 0, "expected the second next() to be some(...)");
+  expect(second_payload.i == 2, "expected the second yielded value to be 2");
+
+  auto third = vm.run(function_index(module, "next_of"), std::array{gen});
+  expect(third.has_value(), "expected the third next() to succeed");
+  auto [third_tag, third_payload] = option_tag_and_payload(third->value);
+  (void)third_payload;
+  expect(third_tag == 1, "expected the generator to be exhausted (none)");
+
+  auto fourth = vm.run(function_index(module, "next_of"), std::array{gen});
+  expect(fourth.has_value(), "expected a next() call after exhaustion to "
+                             "still succeed");
+  auto [fourth_tag, fourth_payload] = option_tag_and_payload(fourth->value);
+  (void)fourth_payload;
+  expect(fourth_tag == 1,
+         "expected the generator to stay exhausted on further calls");
+}
+
+auto test_generator_loop_with_yield_sums_values() -> void {
+  auto module = compile_fixture(
+      "module sample\n"
+      "generator def counter(limit: int32) -> some iterator[int32]:\n"
+      "  var n = 0\n"
+      "  while n < limit:\n"
+      "    yield n\n"
+      "    n = n + 1\n"
+      "def sum_via_generator(limit: int32) -> int32:\n"
+      "  let g = counter(limit)\n"
+      "  var total = 0\n"
+      "  while let @some(x) = g.next():\n"
+      "    total = total + x\n"
+      "  return total\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "sum_via_generator"),
+                       std::array{bc::slot_value{int64_t{5}}});
+  expect(result.has_value(), "expected sum_via_generator(5) to succeed");
+  expect(result->value.i == 10, "expected 0+1+2+3+4 == 10, the loop-"
+                                "condition local surviving every yield");
+}
+
+auto test_generator_branch_yields_only_matching_values() -> void {
+  auto module = compile_fixture(
+      "module sample\n"
+      "generator def evens(limit: int32) -> some iterator[int32]:\n"
+      "  var n = 0\n"
+      "  while n < limit:\n"
+      "    if n % 2 == 0:\n"
+      "      yield n\n"
+      "    n = n + 1\n"
+      "def sum_evens(limit: int32) -> int32:\n"
+      "  let g = evens(limit)\n"
+      "  var total = 0\n"
+      "  while let @some(x) = g.next():\n"
+      "    total = total + x\n"
+      "  return total\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "sum_evens"),
+                       std::array{bc::slot_value{int64_t{10}}});
+  expect(result.has_value(), "expected sum_evens(10) to succeed");
+  expect(result->value.i == 20, "expected 0+2+4+6+8 == 20");
+}
+
+auto test_generator_bare_return_exhausts_early() -> void {
+  auto module = compile_fixture("module sample\n"
+                                "generator def early() -> some "
+                                "iterator[int32]:\n"
+                                "  yield 1\n"
+                                "  yield 2\n"
+                                "  return\n"
+                                "  yield 3\n"
+                                "def count_items() -> int32:\n"
+                                "  let g = early()\n"
+                                "  var count = 0\n"
+                                "  while let @some(x) = g.next():\n"
+                                "    count = count + 1\n"
+                                "  return count\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "count_items"), {});
+  expect(result.has_value(), "expected count_items() to succeed");
+  expect(result->value.i == 2,
+         "expected a bare `return` to exhaust the generator before the "
+         "unreachable third yield");
+}
+
+auto test_generator_nonzero_initial_locals_survive_resume() -> void {
+  // Regression test: a generator-state local's own `var`/`let` binding
+  // must actually initialize the *same* register the state-preload step
+  // already reserved for it, not a second, orphaned one — `locals_.
+  // emplace`'s silent no-op on an already-present key previously let a
+  // nonzero initializer (like `var a = 1` here) get computed and then
+  // discarded, leaving every read of `a`/`b` see the state block's
+  // zero-initialized default forever. `n`-style `var n = 0` locals never
+  // exposed this, since the correct and the (bugged) discarded-initializer
+  // values were coincidentally identical.
+  auto module = compile_fixture(
+      "module sample\n"
+      "generator def pairs(count: int32) -> some iterator[int32]:\n"
+      "  var a = 1\n"
+      "  var b = 100\n"
+      "  var i = 0\n"
+      "  while i < count:\n"
+      "    yield a\n"
+      "    yield b\n"
+      "    a = a + 1\n"
+      "    b = b + 1\n"
+      "    i = i + 1\n"
+      "def sum_pairs(count: int32) -> int32:\n"
+      "  let g = pairs(count)\n"
+      "  var total = 0\n"
+      "  while let @some(x) = g.next():\n"
+      "    total = total + x\n"
+      "  return total\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "sum_pairs"),
+                       std::array{bc::slot_value{int64_t{3}}});
+  expect(result.has_value(), "expected sum_pairs(3) to succeed");
+  // a: 1,2,3  b: 100,101,102 -> (1+2+3)+(100+101+102) = 6+303 = 309
+  expect(result->value.i == 309,
+         "expected both generator-state locals to keep their real, "
+         "nonzero initial values across every resume");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1041,6 +1203,11 @@ auto main() -> int {
     test_list_comprehension_builds_and_reads_back_a_list();
     test_closure_captures_an_outer_parameter_and_is_called_indirectly();
     test_non_capturing_closure_is_called_indirectly();
+    test_generator_sequential_next_calls_yield_then_exhaust();
+    test_generator_loop_with_yield_sums_values();
+    test_generator_branch_yields_only_matching_values();
+    test_generator_bare_return_exhausts_early();
+    test_generator_nonzero_initial_locals_survive_resume();
   } catch (const std::exception &ex) {
     std::cerr << "compile_test failed: unhandled exception: " << ex.what()
               << '\n';

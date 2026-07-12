@@ -900,14 +900,14 @@ auto test_parser_accepts_generator_def_and_yield() -> void {
   expect(counter->return_type->kind == kira::ast::node_kind::existential_type,
          "expected `some iterator[int32]` to parse as an existential type");
   auto *ety =
-      static_cast<kira::ast::existential_type *>(counter->return_type.get());
+      dynamic_cast<kira::ast::existential_type *>(counter->return_type.get());
   expect(ety->value.terms.size() == 1, "expected one bound term");
   expect(ety->value.terms[0].type != nullptr,
          "expected the bound term's type to be present");
   expect(ety->value.terms[0].type->kind == kira::ast::node_kind::named_type,
          "expected `iterator[int32]` to parse as a named type");
   auto *iterator_type =
-      static_cast<kira::ast::named_type *>(ety->value.terms[0].type.get());
+      dynamic_cast<kira::ast::named_type *>(ety->value.terms[0].type.get());
   expect(iterator_type->path.size() == 1 &&
              iterator_type->path[0] == "iterator",
          "expected bound term to name `iterator`");

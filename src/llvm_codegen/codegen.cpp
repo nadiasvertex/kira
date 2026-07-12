@@ -1,5 +1,6 @@
 #include "src/llvm_codegen/codegen.h"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cstdint>
@@ -35,6 +36,7 @@
 #include "src/bytecode/value.h"
 #include "src/hir/captures.h"
 #include "src/hir/ids.h"
+#include "src/hir/live_across_yield.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast.h"
 #include "src/parser/text_escape.h"
@@ -310,6 +312,146 @@ using kira::decode_string_literal;
 }
 
 // ==========================================================================
+//  Generator support helpers — counting yield points, building a
+//  generator's state-block symbol layout, and recovering each
+//  non-parameter state symbol's declared type (needed here, unlike the
+//  bytecode tier, because LLVM allocas/loads are statically typed — a
+//  slot's `llvm::Type*` has to be known up front, not just its byte
+//  width). See `function_compiler::compile_generator_step`.
+// ==========================================================================
+
+[[nodiscard]] auto count_yields(const hir::hir_block &block) -> size_t;
+
+[[nodiscard]] auto count_yields(const hir_node &node) -> size_t {
+  switch (node.kind) {
+  case hir_node_kind::hir_yield:
+    return 1;
+  case hir_node_kind::hir_let_else:
+    return count_yields(
+        *dynamic_cast<const hir::hir_let_else &>(node).else_body);
+  case hir_node_kind::hir_while:
+    return count_yields(*dynamic_cast<const hir::hir_while &>(node).body);
+  case hir_node_kind::hir_while_let:
+    return count_yields(*dynamic_cast<const hir::hir_while_let &>(node).body);
+  case hir_node_kind::hir_if: {
+    const auto &node2 = dynamic_cast<const hir::hir_if &>(node);
+    size_t total = 0;
+    for (const auto &branch : node2.branches) {
+      total += count_yields(*branch.body);
+    }
+    if (node2.else_body != nullptr) {
+      total += count_yields(*node2.else_body);
+    }
+    return total;
+  }
+  case hir_node_kind::hir_match: {
+    const auto &node2 = dynamic_cast<const hir::hir_match &>(node);
+    size_t total = 0;
+    for (const auto &arm : node2.arms) {
+      total += count_yields(*arm.body);
+    }
+    return total;
+  }
+  case hir_node_kind::hir_block:
+    return count_yields(dynamic_cast<const hir::hir_block &>(node));
+  default:
+    return 0;
+  }
+}
+
+auto count_yields(const hir::hir_block &block) -> size_t {
+  size_t total = 0;
+  for (const auto &stmt : block.stmts) {
+    total += count_yields(*stmt);
+  }
+  return total;
+}
+
+/// The state-block layout for a `generator def`'s constructor/step
+/// functions — see `bytecode_compiler::compile.cpp`'s identically-shaped
+/// `generator_state_symbols`: every parameter, in declaration order,
+/// followed by every non-parameter local `hir::live_across_yield` found
+/// live, in the order it returns them.
+[[nodiscard]] auto generator_state_symbols(const hir::hir_function &fn)
+    -> std::vector<hir::symbol_id> {
+  auto symbols = std::vector<hir::symbol_id>{};
+  symbols.reserve(fn.params.size());
+  for (const auto &param : fn.params) {
+    symbols.push_back(param.symbol);
+  }
+  for (const auto sym : hir::live_across_yield(fn)) {
+    if (std::ranges::find(symbols, sym) == symbols.end()) {
+      symbols.push_back(sym);
+    }
+  }
+  return symbols;
+}
+
+/// Recovers the declared type of every `hir_let`-bound symbol reachable
+/// from `block` (not descending into a nested lambda's own body, mirroring
+/// `hir::live_across_yield`'s own traversal boundary) — a generator's
+/// non-parameter state-block symbols are always bound this way (per
+/// `hir_pattern`'s doc comment, every surface pattern binding desugars to
+/// an ordinary `hir_let`), so this is enough to type every state slot
+/// `compile_generator_step` needs to load at entry.
+auto collect_let_types(const hir::hir_block &block,
+                       std::unordered_map<hir::symbol_id, type_id> &out)
+    -> void;
+
+auto collect_let_types(const hir_node &node,
+                       std::unordered_map<hir::symbol_id, type_id> &out)
+    -> void {
+  switch (node.kind) {
+  case hir_node_kind::hir_let: {
+    const auto &let = dynamic_cast<const hir::hir_let &>(node);
+    out.emplace(let.symbol, let.initializer->type);
+    return;
+  }
+  case hir_node_kind::hir_let_else:
+    collect_let_types(*dynamic_cast<const hir::hir_let_else &>(node).else_body,
+                      out);
+    return;
+  case hir_node_kind::hir_while:
+    collect_let_types(*dynamic_cast<const hir::hir_while &>(node).body, out);
+    return;
+  case hir_node_kind::hir_while_let:
+    collect_let_types(*dynamic_cast<const hir::hir_while_let &>(node).body,
+                      out);
+    return;
+  case hir_node_kind::hir_if: {
+    const auto &node2 = dynamic_cast<const hir::hir_if &>(node);
+    for (const auto &branch : node2.branches) {
+      collect_let_types(*branch.body, out);
+    }
+    if (node2.else_body != nullptr) {
+      collect_let_types(*node2.else_body, out);
+    }
+    return;
+  }
+  case hir_node_kind::hir_match: {
+    const auto &node2 = dynamic_cast<const hir::hir_match &>(node);
+    for (const auto &arm : node2.arms) {
+      collect_let_types(*arm.body, out);
+    }
+    return;
+  }
+  case hir_node_kind::hir_block:
+    collect_let_types(dynamic_cast<const hir::hir_block &>(node), out);
+    return;
+  default:
+    return;
+  }
+}
+
+auto collect_let_types(const hir::hir_block &block,
+                       std::unordered_map<hir::symbol_id, type_id> &out)
+    -> void {
+  for (const auto &stmt : block.stmts) {
+    collect_let_types(*stmt, out);
+  }
+}
+
+// ==========================================================================
 //  module_compiler — declares every function's signature up front (so
 //  direct/recursive/mutually-recursive calls always find a real
 //  llvm::Function*), then compiles each body.
@@ -371,7 +513,197 @@ public:
       locals_.emplace(param.symbol, alloca);
     }
 
+    if (fn.is_generator) {
+      return compile_generator_constructor(fn);
+    }
     return compile_body_and_finish(*fn.body);
+  }
+
+  /// Compiles a `generator def`'s declared name into a small *constructor*:
+  /// builds the generator's state block (populated with the current
+  /// parameter values — every other state slot starts zeroed, courtesy of
+  /// `kira_rt_alloc`'s zero-filled arena allocation, populated later by the
+  /// step function the first time it becomes live), synthesizes and
+  /// compiles the step function (an internal-linkage `llvm::Function`
+  /// reachable only through the generator object's own slot, never called
+  /// by name), and returns a 4-slot generator-object handle
+  /// `{ step_fn; state_ptr; resume_index=0; finished=0 }`. Mirrors
+  /// `bytecode_compiler::compile_generator_constructor`/`op_make_generator`
+  /// exactly. Requires `compile`'s param-alloca prelude to have already run
+  /// (this is only ever called from inside `compile`).
+  [[nodiscard]] auto compile_generator_constructor(const hir::hir_function &fn)
+      -> std::expected<void, codegen_error> {
+    const auto state_symbols = generator_state_symbols(fn);
+    auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+
+    llvm::Value *state_block = nullptr;
+    if (state_symbols.empty()) {
+      state_block = llvm::ConstantPointerNull::get(ptr_ty);
+    } else {
+      state_block = compile_heap_alloc(state_symbols.size());
+      for (size_t i = 0; i < fn.params.size(); ++i) {
+        auto *alloca = lookup_local(state_symbols[i]);
+        auto *value = builder_.CreateLoad(alloca->getAllocatedType(), alloca,
+                                          "state.init");
+        builder_.CreateStore(value, slot_address(state_block, i));
+      }
+    }
+
+    auto *step_fn_type = llvm::FunctionType::get(
+        ptr_ty, {ptr_ty, llvm::Type::getInt64Ty(ctx_), ptr_ty},
+        /*isVarArg=*/false);
+    auto *step_fn = llvm::Function::Create(
+        step_fn_type, llvm::Function::InternalLinkage,
+        std::format("generator.step.{}", reinterpret_cast<uintptr_t>(&fn)),
+        current_fn_->getParent());
+
+    auto nested = function_compiler(
+        ctx_, types_, functions_, panic_fn_, alloc_fn_, list_reserve_slot_fn_,
+        intrinsic_fns_, entry_module_name_, current_module_name_);
+    auto step_compiled =
+        nested.compile_generator_step(fn, state_symbols, step_fn);
+    if (!step_compiled.has_value()) {
+      return std::unexpected(step_compiled.error());
+    }
+
+    auto *handle = compile_heap_alloc(4);
+    builder_.CreateStore(step_fn, slot_address(handle, size_t{0}));
+    builder_.CreateStore(state_block, slot_address(handle, size_t{1}));
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
+        slot_address(handle, size_t{2}));
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
+        slot_address(handle, size_t{3}));
+    builder_.CreateRet(handle);
+
+    alloca_marker_->eraseFromParent();
+    return {};
+  }
+
+  /// Compiles a generator's actual body into its step function
+  /// (`llvm_fn`, already declared by `compile_generator_constructor` with
+  /// signature `[ptr state, i64 resume_index, ptr generator_self] -> ptr`).
+  /// Every `state_symbols` entry is loaded out of the state block into a
+  /// fresh local alloca up front — exactly like a closure loads its
+  /// captures — typed via `fn.params[i].type` for parameters or
+  /// `collect_let_types`'s scan for every other live local. A leading
+  /// resume-dispatch chain (`resume_index == k` ⇒ branch to the block right
+  /// after the `k`th `hir_yield`) makes `resume_index == 0` fall through to
+  /// start the body from the top, mirroring
+  /// `bytecode_compiler::compile_generator_step` exactly, just built from
+  /// real `llvm::BasicBlock`s instead of a bytecode jump-patch table.
+  [[nodiscard]] auto
+  compile_generator_step(const hir::hir_function &fn,
+                         const std::vector<hir::symbol_id> &state_symbols,
+                         llvm::Function *llvm_fn)
+      -> std::expected<void, codegen_error> {
+    current_fn_ = llvm_fn;
+    return_is_unit_ = false;
+    return_llvm_type_ = llvm::PointerType::get(ctx_, 0);
+
+    auto *entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_fn);
+    builder_.SetInsertPoint(entry);
+    alloca_marker_ = builder_.CreateAlloca(llvm::Type::getInt1Ty(ctx_), nullptr,
+                                           "alloca.marker");
+
+    auto *state_arg = llvm_fn->getArg(0);
+    auto *resume_arg = llvm_fn->getArg(1);
+    auto *self_arg = llvm_fn->getArg(2);
+    is_generator_step_ = true;
+    generator_state_arg_ = state_arg;
+    generator_self_arg_ = self_arg;
+    generator_state_layout_ = state_symbols;
+
+    auto let_types = std::unordered_map<hir::symbol_id, type_id>{};
+    collect_let_types(*fn.body, let_types);
+
+    for (size_t i = 0; i < state_symbols.size(); ++i) {
+      auto sym_type = hir::k_unknown_type;
+      if (i < fn.params.size()) {
+        sym_type = fn.params[i].type;
+      } else {
+        const auto found = let_types.find(state_symbols[i]);
+        if (found == let_types.end()) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_construct,
+              .span = fn.span,
+              .message = "a generator's live-across-yield local could not "
+                         "be typed — capture analysis and codegen have "
+                         "gotten out of sync"});
+        }
+        sym_type = found->second;
+      }
+      auto ty = storage_type_for(sym_type, fn.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
+      }
+      auto *alloca = create_local_alloca(*ty, "state");
+      auto *loaded =
+          builder_.CreateLoad(*ty, slot_address(state_arg, i), "state");
+      builder_.CreateStore(loaded, alloca);
+      locals_.emplace(state_symbols[i], alloca);
+    }
+
+    const auto yield_total = count_yields(*fn.body);
+    generator_resume_blocks_.clear();
+    generator_resume_blocks_.reserve(yield_total);
+    auto *body_start = llvm::BasicBlock::Create(ctx_, "resume.0", llvm_fn);
+    for (size_t k = 1; k <= yield_total; ++k) {
+      generator_resume_blocks_.push_back(
+          llvm::BasicBlock::Create(ctx_, std::format("resume.{}", k), llvm_fn));
+    }
+    for (size_t k = 1; k <= yield_total; ++k) {
+      auto *cmp = builder_.CreateICmpEQ(
+          resume_arg, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), k),
+          "resume.check");
+      auto *next_check = llvm::BasicBlock::Create(
+          ctx_, std::format("resume.check.{}", k + 1), llvm_fn);
+      builder_.CreateCondBr(cmp, generator_resume_blocks_[k - 1], next_check);
+      builder_.SetInsertPoint(next_check);
+    }
+    builder_.CreateBr(body_start);
+    builder_.SetInsertPoint(body_start);
+
+    generator_next_yield_ordinal_ = 1;
+
+    auto terminated = false;
+    for (const auto &stmt : fn.body->stmts) {
+      auto result = compile_stmt(*stmt);
+      if (!result.has_value()) {
+        return std::unexpected(result.error());
+      }
+      terminated = *result;
+      if (terminated) {
+        break;
+      }
+    }
+    if (!terminated) {
+      auto result = emit_generator_exhausted_return(fn.span);
+      if (!result.has_value()) {
+        return std::unexpected(result.error());
+      }
+    }
+
+    // A resume block reserved for a `yield` that turned out to be
+    // unreachable (dead code after a bare `return`, an exhaustive `if`/
+    // `match`, etc.) never gets `SetInsertPoint`-ed into by the body
+    // compile above, and so is left with no terminator — the LLVM verifier
+    // rejects that regardless of the block's real unreachability. Its only
+    // predecessor is the dispatch chain's own comparison against an
+    // ordinal no `hir_yield` ever actually stores into a generator object
+    // (since the yield that would have produced it never compiled), so the
+    // edge is real but provably never taken at runtime; `unreachable` is
+    // the correct terminator for it.
+    for (auto *block : generator_resume_blocks_) {
+      if (block->getTerminator() == nullptr) {
+        builder_.SetInsertPoint(block);
+        builder_.CreateUnreachable();
+      }
+    }
+
+    alloca_marker_->eraseFromParent();
+    return {};
   }
 
   /// Compiles a lambda's body into a freshly-created `llvm::Function`
@@ -773,6 +1105,9 @@ private:
     case hir_node_kind::hir_container_len:
       return compile_container_len(
           dynamic_cast<const hir::hir_container_len &>(expr));
+    case hir_node_kind::hir_generator_next:
+      return compile_generator_next(
+          dynamic_cast<const hir::hir_generator_next &>(expr));
     case hir_node_kind::hir_block: {
       // A block used in expression position (e.g. a comprehension's
       // desugared accumulator block, `hir::lower_comprehension`) — mirrors
@@ -1949,6 +2284,114 @@ private:
                                "container.len");
   }
 
+  /// Builds `option::some(payload)`/`option::none` as a 2-slot
+  /// `{ tag; payload }` heap block — mirrors `compile_variant_init`'s shape,
+  /// but with the tag/payload-slot-count hardcoded (`some`=0, `none`=1, one
+  /// payload slot) rather than looked up via `runtime::sum_variant_tag`
+  /// against a real `option[T]` `type_id`: a generator's `.next()` result
+  /// type is synthesized here, not read back from a `hir_variant_init` node
+  /// the checker already resolved, so there's no guaranteed-interned
+  /// `option[T]` instance to look one up from `types_` (a `const
+  /// type_table&` at this layer, same constraint as the bytecode tier).
+  /// Matches `bytecode::vm.cpp`'s `op_yield`/`op_generator_next` exactly,
+  /// which hardcode the identical convention for the identical reason.
+  [[nodiscard]] auto build_option_some(llvm::Value *payload) -> llvm::Value * {
+    auto *block = compile_heap_alloc(2);
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
+        slot_address(block, size_t{0}));
+    builder_.CreateStore(payload, slot_address(block, size_t{1}));
+    return block;
+  }
+
+  [[nodiscard]] auto build_option_none() -> llvm::Value * {
+    auto *block = compile_heap_alloc(2);
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1),
+        slot_address(block, size_t{0}));
+    return block;
+  }
+
+  /// Builds `option::none`, marks the generator object (`generator_self_
+  /// arg_`) finished, and returns it — the step function's behavior on a
+  /// bare `return` or falling off the end of the body. Syncs the state
+  /// block first (harmless if nothing will read it again).
+  [[nodiscard]] auto emit_generator_exhausted_return(source_span /*span*/)
+      -> std::expected<void, codegen_error> {
+    for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
+      auto *alloca = lookup_local(generator_state_layout_[i]);
+      if (alloca != nullptr) {
+        auto *loaded = builder_.CreateLoad(alloca->getAllocatedType(), alloca,
+                                           "state.sync");
+        builder_.CreateStore(loaded, slot_address(generator_state_arg_, i));
+      }
+    }
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1),
+        slot_address(generator_self_arg_, size_t{3}));
+    builder_.CreateRet(build_option_none());
+    return {};
+  }
+
+  /// `g.next()` on a `generator[T]` value — mirrors
+  /// `bytecode_compiler::compile_generator_next`/`op_generator_next`: if the
+  /// generator object's `finished` slot is set, produce `none` directly (no
+  /// call); otherwise call through its `step_function`/`state`/`resume_
+  /// index` slots (register/argument order `{state; resume_index; self}`,
+  /// matching the bytecode tier's convention exactly) and use whatever it
+  /// returns. Merges the two paths through a shared result alloca
+  /// (`compile_if`'s `want_result` pattern) rather than an LLVM `phi`, this
+  /// file's uniform style for merging branch values.
+  [[nodiscard]] auto compile_generator_next(const hir::hir_generator_next &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto *gen = *object;
+    auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto *result_alloca = create_local_alloca(ptr_ty, "gen.next.result");
+
+    auto *finished =
+        builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                            slot_address(gen, size_t{3}), "gen.finished");
+    auto *is_finished = builder_.CreateICmpNE(
+        finished, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
+        "gen.finished.bool");
+
+    auto *finished_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.next.finished", current_fn_);
+    auto *call_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.next.call", current_fn_);
+    auto *merge_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.next.merge", current_fn_);
+    builder_.CreateCondBr(is_finished, finished_bb, call_bb);
+
+    builder_.SetInsertPoint(finished_bb);
+    builder_.CreateStore(build_option_none(), result_alloca);
+    builder_.CreateBr(merge_bb);
+
+    builder_.SetInsertPoint(call_bb);
+    auto *step_fn_ptr = builder_.CreateLoad(
+        ptr_ty, slot_address(gen, size_t{0}), "gen.step_fn");
+    auto *state_ptr =
+        builder_.CreateLoad(ptr_ty, slot_address(gen, size_t{1}), "gen.state");
+    auto *resume_idx =
+        builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                            slot_address(gen, size_t{2}), "gen.resume");
+    auto *step_fn_type = llvm::FunctionType::get(
+        ptr_ty, {ptr_ty, llvm::Type::getInt64Ty(ctx_), ptr_ty},
+        /*isVarArg=*/false);
+    auto *call_result =
+        builder_.CreateCall(step_fn_type, step_fn_ptr,
+                            {state_ptr, resume_idx, gen}, "gen.next.call");
+    builder_.CreateStore(call_result, result_alloca);
+    builder_.CreateBr(merge_bb);
+
+    builder_.SetInsertPoint(merge_bb);
+    return builder_.CreateLoad(ptr_ty, result_alloca, "gen.next.value");
+  }
+
   /// Sum-type variant construction `@variant(args...)` — mirrors
   /// `bytecode_compiler::compile_variant_init`: allocates a block sized to
   /// the widest variant's payload (slot 0 is the tag, so any variant of
@@ -2416,6 +2859,18 @@ private:
     case hir_node_kind::hir_return: {
       const auto &ret = dynamic_cast<const hir::hir_return &>(node);
       if (ret.value == nullptr) {
+        // Inside a generator's step function, a bare `return` marks
+        // exhaustion, not the ordinary no-value return — semantic analysis
+        // already rejects `return <value>` inside a generator, so this is
+        // the only `hir_return` shape reachable here while
+        // `is_generator_step_`.
+        if (is_generator_step_) {
+          auto result = emit_generator_exhausted_return(ret.span);
+          if (!result.has_value()) {
+            return std::unexpected(result.error());
+          }
+          return true;
+        }
         builder_.CreateRetVoid();
         return true;
       }
@@ -2429,6 +2884,47 @@ private:
         builder_.CreateRet(*value);
       }
       return true;
+    }
+    case hir_node_kind::hir_yield: {
+      const auto &y = dynamic_cast<const hir::hir_yield &>(node);
+      if (!is_generator_step_ ||
+          generator_next_yield_ordinal_ > generator_resume_blocks_.size()) {
+        // A `yield` nested inside a lambda literal within a generator body
+        // isn't part of the generator's own suspension protocol (a lambda
+        // is its own call frame) — reject cleanly rather than indexing
+        // past `generator_resume_blocks_`.
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = y.span,
+            .message = "`yield` is only supported directly inside a "
+                       "`generator def`'s own body, not inside a nested "
+                       "lambda"});
+      }
+      auto value = compile_expr(*y.value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      // Resync every generator-state symbol's current value back into the
+      // state block immediately before suspending.
+      for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
+        auto *alloca = lookup_local(generator_state_layout_[i]);
+        if (alloca != nullptr) {
+          auto *loaded = builder_.CreateLoad(alloca->getAllocatedType(), alloca,
+                                             "state.sync");
+          builder_.CreateStore(loaded, slot_address(generator_state_arg_, i));
+        }
+      }
+      const auto ordinal = generator_next_yield_ordinal_++;
+      builder_.CreateStore(
+          llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), ordinal),
+          slot_address(generator_self_arg_, size_t{2}));
+      builder_.CreateRet(build_option_some(*value));
+
+      // The landing block a resumed call jumps to — pre-created by
+      // `compile_generator_step`'s dispatch chain; subsequent statements
+      // compile into it, exactly like `compile_if`'s merge block.
+      builder_.SetInsertPoint(generator_resume_blocks_[ordinal - 1]);
+      return false;
     }
     case hir_node_kind::hir_while:
       return compile_while(dynamic_cast<const hir::hir_while &>(node));
@@ -2467,9 +2963,23 @@ private:
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    auto *alloca = create_local_alloca(*ty, let.name);
+    // A generator step function's entry preloads an alloca for every
+    // live-across-yield state symbol *before* compiling the body (so a
+    // resumed call, which jumps straight past this `hir_let`, still has a
+    // valid alloca to read) — when body compilation then reaches the
+    // symbol's own `hir_let` on an actual (non-resumed) run, reuse that
+    // same preloaded alloca instead of allocating a second one:
+    // `locals_.emplace` silently no-ops on an already-present key, so
+    // allocating fresh here would store the initializer's real value into
+    // an alloca nothing ever reads, while every reference to the symbol
+    // keeps resolving to the untouched (zero-initialized) preloaded one.
+    auto *existing = lookup_local(let.symbol);
+    auto *alloca =
+        existing != nullptr ? existing : create_local_alloca(*ty, let.name);
     builder_.CreateStore(*value, alloca);
-    locals_.emplace(let.symbol, alloca);
+    if (existing == nullptr) {
+      locals_.emplace(let.symbol, alloca);
+    }
     return false;
   }
 
@@ -2816,6 +3326,21 @@ private:
   std::unordered_map<hir::symbol_id, llvm::AllocaInst *> locals_;
   bool return_is_unit_ = false;
   llvm::Type *return_llvm_type_ = nullptr;
+
+  // ------------------------------------------------------------------
+  //  Generator step-function state — only meaningful while
+  //  `is_generator_step_` (set by `compile_generator_step`). Mirrors
+  //  `bytecode_compiler::function_compiler`'s identically-named fields;
+  //  `generator_resume_blocks_[k-1]` is the landing `llvm::BasicBlock*` for
+  //  the `k`th `hir_yield`, created up front by the resume-dispatch chain
+  //  and `SetInsertPoint`-ed into right after that yield's suspend sequence.
+  // ------------------------------------------------------------------
+  bool is_generator_step_ = false;
+  llvm::Value *generator_state_arg_ = nullptr;
+  llvm::Value *generator_self_arg_ = nullptr;
+  std::vector<hir::symbol_id> generator_state_layout_;
+  std::vector<llvm::BasicBlock *> generator_resume_blocks_;
+  size_t generator_next_yield_ordinal_ = 1;
 };
 
 } // namespace

@@ -542,6 +542,10 @@ private:
   [[nodiscard]] auto parse_prim_type_expr() -> ast::ptr<ast::type_expr>;
   /// Parses a named type path with optional generic/value arguments.
   [[nodiscard]] auto parse_named_type() -> ast::ptr<ast::named_type>;
+  /// Parses an optional `[T, U, ...]` suffix directly onto an
+  /// already-path-populated `named_type` — see its doc comment in
+  /// parser.cpp.
+  auto parse_generic_args_suffix(ast::named_type &named) -> void;
   /// Wraps a parsed bound list in a `bound_type` node for AST uniformity.
   [[nodiscard]] auto make_bound_type(ast::bound bound)
       -> ast::ptr<ast::bound_type>;

@@ -1436,6 +1436,73 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         push_frame(frames, module_.functions.at(fn_idx), call_args, true, dst);
         continue; // `f` is invalidated by push_frame's push_back.
       }
+
+      case opcode::op_make_generator: {
+        const uint8_t dst = code[ip];
+        const uint16_t step_fn_idx = read_u16(code, ip + 1);
+        const uint8_t state_ptr_reg = code[ip + 3];
+        f.pc = ip + 4;
+        auto *header =
+            kira::runtime::global_arena().allocate(4 * sizeof(slot_value));
+        auto *slots = static_cast<slot_value *>(header);
+        slots[0] = slot_value{static_cast<uint64_t>(step_fn_idx)};
+        slots[1] = f.registers[state_ptr_reg];
+        slots[2] = slot_value{uint64_t{0}}; // resume_index
+        slots[3] = slot_value{uint64_t{0}}; // finished
+        f.registers[dst] = ptr_to_slot(header);
+        break;
+      }
+      case opcode::op_yield: {
+        const uint8_t value_reg = code[ip];
+        const uint8_t generator_reg = code[ip + 1];
+        const uint8_t next_resume_index = code[ip + 2];
+        f.pc = ip + 3;
+        // `option::some(value)` — a 2-slot `{ tag=0; payload }` block,
+        // matching `option`'s hardcoded variant order (`some`=0, `none`=1;
+        // see `runtime::layout.cpp`'s `make_two_variants("some", 1, "none",
+        // 0)` and `sum_variant_tag`'s declaration-index tagging).
+        auto *header =
+            kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+        auto *slots = static_cast<slot_value *>(header);
+        slots[0] = slot_value{int64_t{0}};
+        slots[1] = f.registers[value_reg];
+        const slot_value result = ptr_to_slot(header);
+
+        auto *gen_slots = slots_of(f.registers[generator_reg]);
+        gen_slots[2] = slot_value{static_cast<uint64_t>(next_resume_index)};
+
+        const bool has_caller = f.has_caller;
+        const uint8_t result_reg = f.result_reg;
+        frames.pop_back();
+        if (!has_caller) {
+          return vm_result{.has_value = true, .value = result};
+        }
+        frames.back().registers[result_reg] = result;
+        continue;
+      }
+      case opcode::op_generator_next: {
+        const uint8_t dst = code[ip];
+        const uint8_t generator_reg = code[ip + 1];
+        f.pc = ip + 2;
+        auto *gen_slots = slots_of(f.registers[generator_reg]);
+        if (gen_slots[3].u != 0) {
+          // `option::none` — a 2-slot `{ tag=1; payload }` block; the
+          // payload slot is never read back for `none`, left zeroed.
+          auto *header =
+              kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+          auto *slots = static_cast<slot_value *>(header);
+          slots[0] = slot_value{int64_t{1}};
+          slots[1] = slot_value{};
+          f.registers[dst] = ptr_to_slot(header);
+          break;
+        }
+        const auto step_fn_idx = static_cast<uint16_t>(gen_slots[0].u);
+        const std::array<slot_value, 3> call_args = {
+            gen_slots[1], gen_slots[2], f.registers[generator_reg]};
+        push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
+                   dst);
+        continue; // `f` is invalidated by push_frame's push_back.
+      }
       }
     }
   } catch (const panic_error &err) {

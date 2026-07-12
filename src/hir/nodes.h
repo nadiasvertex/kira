@@ -101,6 +101,9 @@ enum class hir_node_kind : uint8_t {
   hir_variant_init,    ///< Sum-type variant construction `@variant(args...)`.
   hir_container_len,   ///< A container's element count (`for`-loop lowering
                        ///< only).
+  hir_generator_next,  ///< `g.next()` on a `generator[T]` value — no
+                       ///< backing `func_decl`, same rationale as
+                       ///< `hir_container_len`.
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,
@@ -425,6 +428,19 @@ struct hir_container_len : hir_expr {
 
   hir_container_len(source_span s, type_id t, ptr<hir_expr> obj)
       : hir_expr(hir_node_kind::hir_container_len, s, t),
+        object(std::move(obj)) {}
+};
+
+/// `g.next()` on a `generator[T]` value. Same rationale as
+/// `hir_container_len`: `builtin_method_result` (`semantic::check.cpp`)
+/// types this call with no backing `func_decl` to resolve, so it can't go
+/// through the ordinary call-lowering path — a dedicated node with no
+/// callee/args to compile instead. `type` is always `option[T]`.
+struct hir_generator_next : hir_expr {
+  ptr<hir_expr> object;
+
+  hir_generator_next(source_span s, type_id t, ptr<hir_expr> obj)
+      : hir_expr(hir_node_kind::hir_generator_next, s, t),
         object(std::move(obj)) {}
 };
 

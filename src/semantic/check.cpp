@@ -3693,6 +3693,16 @@ private:
       }
       return k_unknown_type;
     }
+    if (object.kind == type_kind::builtin_generic_kind &&
+        object.name == "generator") {
+      // The `next()` a `generator def` implicitly provides, satisfying
+      // `iterator[T]` — see `check_function`'s generator handling and
+      // `hir::lower_call`'s `generator_next` interception.
+      if (name == "next") {
+        return types_.builtin_generic("option", {element});
+      }
+      return k_unknown_type;
+    }
     return k_unknown_type;
   }
 

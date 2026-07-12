@@ -1,5 +1,6 @@
 #include "src/bytecode_compiler/compile.h"
 
+#include <algorithm>
 #include <bit>
 #include <charconv>
 #include <cstdint>
@@ -16,6 +17,7 @@
 #include "src/bytecode/value.h"
 #include "src/hir/captures.h"
 #include "src/hir/ids.h"
+#include "src/hir/live_across_yield.h"
 #include "src/hir/nodes.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast.h"
@@ -279,6 +281,79 @@ using kira::decode_string_literal;
 }
 
 // ==========================================================================
+//  Generator support helpers — counting yield points and building a
+//  generator's state-block symbol layout ahead of compiling its step
+//  function. See `function_compiler::compile_generator_step`.
+// ==========================================================================
+
+[[nodiscard]] auto count_yields(const hir::hir_block &block) -> size_t;
+
+[[nodiscard]] auto count_yields(const hir_node &node) -> size_t {
+  switch (node.kind) {
+  case hir_node_kind::hir_yield:
+    return 1;
+  case hir_node_kind::hir_let_else:
+    return count_yields(
+        *dynamic_cast<const hir::hir_let_else &>(node).else_body);
+  case hir_node_kind::hir_while:
+    return count_yields(*dynamic_cast<const hir::hir_while &>(node).body);
+  case hir_node_kind::hir_while_let:
+    return count_yields(*dynamic_cast<const hir::hir_while_let &>(node).body);
+  case hir_node_kind::hir_if: {
+    const auto &node2 = dynamic_cast<const hir::hir_if &>(node);
+    size_t total = 0;
+    for (const auto &branch : node2.branches) {
+      total += count_yields(*branch.body);
+    }
+    if (node2.else_body != nullptr) {
+      total += count_yields(*node2.else_body);
+    }
+    return total;
+  }
+  case hir_node_kind::hir_match: {
+    const auto &node2 = dynamic_cast<const hir::hir_match &>(node);
+    size_t total = 0;
+    for (const auto &arm : node2.arms) {
+      total += count_yields(*arm.body);
+    }
+    return total;
+  }
+  case hir_node_kind::hir_block:
+    return count_yields(dynamic_cast<const hir::hir_block &>(node));
+  default:
+    return 0;
+  }
+}
+
+auto count_yields(const hir::hir_block &block) -> size_t {
+  size_t total = 0;
+  for (const auto &stmt : block.stmts) {
+    total += count_yields(*stmt);
+  }
+  return total;
+}
+
+/// The state-block layout for a `generator def`'s constructor/step
+/// functions: every parameter (in declaration order, so the constructor's
+/// initial population loop can index by position), followed by every
+/// non-parameter local `hir::live_across_yield` found live, in the order it
+/// returns them.
+[[nodiscard]] auto generator_state_symbols(const hir::hir_function &fn)
+    -> std::vector<hir::symbol_id> {
+  auto symbols = std::vector<hir::symbol_id>{};
+  symbols.reserve(fn.params.size());
+  for (const auto &param : fn.params) {
+    symbols.push_back(param.symbol);
+  }
+  for (const auto sym : hir::live_across_yield(fn)) {
+    if (std::ranges::find(symbols, sym) == symbols.end()) {
+      symbols.push_back(sym);
+    }
+  }
+  return symbols;
+}
+
+// ==========================================================================
 //  function_compiler — walks one hir_function, emitting into its own
 //  chunk_writer. Not reusable across functions (mirrors hir::lowerer's own
 //  "one instance per function" shape).
@@ -311,8 +386,232 @@ public:
       }
       locals_.emplace(param.symbol, *reg);
     }
+    if (fn.is_generator) {
+      return compile_generator_constructor(fn);
+    }
     return compile_body_and_finish(*fn.body, fn.span, fn.name,
                                    static_cast<uint16_t>(fn.params.size()));
+  }
+
+  /// Compiles a `generator def`'s declared name into a small *constructor*
+  /// function: it builds the generator's state block (populated with the
+  /// current — i.e. argument — values of every parameter; any other
+  /// generator-state slot starts zeroed, populated later by the step
+  /// function the first time it becomes live), compiles the function's
+  /// actual body into a separate step function (appended to
+  /// `lambda_functions_`, exactly like a lambda gets a stable function-table
+  /// index with no name of its own), and returns an `op_make_generator`
+  /// value. Calling the generator by name (an ordinary `op_call`) reaches
+  /// this constructor unchanged — no call-site special-casing is needed.
+  [[nodiscard]] auto compile_generator_constructor(const hir::hir_function &fn)
+      -> std::expected<bytecode::bytecode_function, compile_error> {
+    const auto state_symbols = generator_state_symbols(fn);
+
+    auto state_ptr_reg = alloc_register(fn.span);
+    if (!state_ptr_reg.has_value()) {
+      return std::unexpected(state_ptr_reg.error());
+    }
+    if (state_symbols.empty()) {
+      const auto null_const = writer_.add_constant(slot_value{uint64_t{0}});
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(*state_ptr_reg);
+      writer_.emit_u16(null_const);
+    } else {
+      emit_alloc_slots(*state_ptr_reg,
+                       static_cast<uint16_t>(state_symbols.size()));
+      for (size_t i = 0; i < fn.params.size(); ++i) {
+        const auto src = lookup_local(state_symbols[i]);
+        if (src.has_value()) {
+          emit_store_slot(*state_ptr_reg, static_cast<uint16_t>(i), *src);
+        }
+      }
+    }
+
+    auto step_compiler = function_compiler(
+        types_, functions_, lambda_functions_, function_table_base_,
+        entry_module_name_, current_module_name_);
+    auto step_compiled =
+        step_compiler.compile_generator_step(fn, state_symbols);
+    if (!step_compiled.has_value()) {
+      return std::unexpected(step_compiled.error());
+    }
+    lambda_functions_.push_back(std::move(*step_compiled));
+    const auto step_fn_index = static_cast<uint16_t>(
+        function_table_base_ + lambda_functions_.size() - 1);
+
+    auto obj_reg = alloc_register(fn.span);
+    if (!obj_reg.has_value()) {
+      return std::unexpected(obj_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_make_generator);
+    writer_.emit_u8(*obj_reg);
+    writer_.emit_u16(step_fn_index);
+    writer_.emit_u8(*state_ptr_reg);
+    writer_.emit_opcode(opcode::op_return_value);
+    writer_.emit_u8(*obj_reg);
+
+    if (next_register_ > 256) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::register_limit_exceeded,
+          .span = fn.span,
+          .message = std::format("generator `{}` needs more than 256 "
+                                 "registers, which this bytecode format's "
+                                 "u8 register operands cannot address",
+                                 fn.name)});
+    }
+    return std::move(writer_).finish(fn.name,
+                                     static_cast<uint16_t>(fn.params.size()),
+                                     static_cast<uint16_t>(next_register_));
+  }
+
+  /// Compiles a generator's actual body into its step function — the
+  /// closure calling convention, extended with two more reserved
+  /// registers: register 0 is `state_ptr` (as with a closure's `env_reg`),
+  /// register 1 is the caller-supplied `resume_index`, register 2 is the
+  /// generator object itself (so a nested `hir_yield` can update its
+  /// `resume_index`/reach it for `op_yield`'s `generator_reg` operand).
+  /// Every `state_symbols` entry is loaded out of the state block into a
+  /// fresh local register up front, exactly like a closure loads its
+  /// captures — the rest of the body then reads/writes it as an ordinary
+  /// local. A leading resume-dispatch chain (`resume_index == k` ⇒ jump to
+  /// the point right after the `k`th `hir_yield`) makes `resume_index == 0`
+  /// fall through to start the body from the top.
+  [[nodiscard]] auto
+  compile_generator_step(const hir::hir_function &fn,
+                         const std::vector<hir::symbol_id> &state_symbols)
+      -> std::expected<bytecode::bytecode_function, compile_error> {
+    const auto state_reg = alloc_register(fn.span);
+    const auto resume_reg = alloc_register(fn.span);
+    const auto self_reg = alloc_register(fn.span);
+    if (!state_reg.has_value()) {
+      return std::unexpected(state_reg.error());
+    }
+    if (!resume_reg.has_value()) {
+      return std::unexpected(resume_reg.error());
+    }
+    if (!self_reg.has_value()) {
+      return std::unexpected(self_reg.error());
+    }
+    is_generator_step_ = true;
+    generator_state_reg_ = *state_reg;
+    generator_self_reg_ = *self_reg;
+    generator_state_layout_ = state_symbols;
+
+    for (size_t i = 0; i < state_symbols.size(); ++i) {
+      const auto reg = alloc_register(fn.span);
+      if (!reg.has_value()) {
+        return std::unexpected(reg.error());
+      }
+      emit_load_slot(*reg, *state_reg, static_cast<uint16_t>(i));
+      locals_.emplace(state_symbols[i], *reg);
+    }
+
+    const auto yield_total = count_yields(*fn.body);
+    if (yield_total > 255) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::register_limit_exceeded,
+          .span = fn.span,
+          .message = std::format("generator `{}` has more than 255 `yield` "
+                                 "points, which this bytecode format's u8 "
+                                 "resume-index operand cannot address",
+                                 fn.name)});
+    }
+    generator_resume_placeholders_.clear();
+    generator_resume_placeholders_.reserve(yield_total);
+    for (size_t k = 1; k <= yield_total; ++k) {
+      const auto k_const =
+          writer_.add_constant(slot_value{static_cast<uint64_t>(k)});
+      auto k_reg = alloc_register(fn.span);
+      if (!k_reg.has_value()) {
+        return std::unexpected(k_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_load_const);
+      writer_.emit_u8(*k_reg);
+      writer_.emit_u16(k_const);
+      auto cmp_reg = alloc_register(fn.span);
+      if (!cmp_reg.has_value()) {
+        return std::unexpected(cmp_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_eq);
+      writer_.emit_u8(*cmp_reg);
+      writer_.emit_u8(*resume_reg);
+      writer_.emit_u8(*k_reg);
+      writer_.emit_numeric_kind(numeric_kind::u64);
+      writer_.emit_opcode(opcode::op_jump_if_true);
+      writer_.emit_u8(*cmp_reg);
+      generator_resume_placeholders_.push_back(writer_.emit_jump_placeholder());
+    }
+    generator_next_yield_ordinal_ = 1;
+
+    for (const auto &stmt : fn.body->stmts) {
+      if (auto result = compile_stmt(*stmt); !result.has_value()) {
+        return std::unexpected(result.error());
+      }
+    }
+    if (auto result = emit_generator_exhausted_return(fn.span);
+        !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+
+    if (next_register_ > 256) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::register_limit_exceeded,
+          .span = fn.span,
+          .message = std::format("generator `{}` needs more than 256 "
+                                 "registers, which this bytecode format's "
+                                 "u8 register operands cannot address",
+                                 fn.name)});
+    }
+    return std::move(writer_).finish(
+        std::format("<generator step> {}", fn.name), 3,
+        static_cast<uint16_t>(next_register_));
+  }
+
+  /// Builds `option::none`, marks the generator object (`generator_self_
+  /// reg_`) finished, and returns it — the step function's behavior on a
+  /// bare `return` or falling off the end of the body. Syncs the state
+  /// block first (harmless if nothing will read it again, and cheap).
+  [[nodiscard]] auto emit_generator_exhausted_return(source_span span)
+      -> std::expected<void, compile_error> {
+    for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
+      const auto local_reg = lookup_local(generator_state_layout_[i]);
+      if (local_reg.has_value()) {
+        emit_store_slot(generator_state_reg_, static_cast<uint16_t>(i),
+                        *local_reg);
+      }
+    }
+
+    auto one_reg = alloc_register(span);
+    if (!one_reg.has_value()) {
+      return std::unexpected(one_reg.error());
+    }
+    const auto one_const = writer_.add_constant(slot_value{uint64_t{1}});
+    writer_.emit_opcode(opcode::op_load_const);
+    writer_.emit_u8(*one_reg);
+    writer_.emit_u16(one_const);
+    emit_store_slot(generator_self_reg_, 3, *one_reg);
+
+    auto none_reg = alloc_register(span);
+    if (!none_reg.has_value()) {
+      return std::unexpected(none_reg.error());
+    }
+    emit_alloc_slots(*none_reg, 2);
+    // `option::none` — a 2-slot `{ tag=1; payload }` block, matching
+    // `option`'s hardcoded variant order (see `op_yield`'s doc comment in
+    // `src/bytecode/opcodes.h`).
+    auto none_tag_reg = alloc_register(span);
+    if (!none_tag_reg.has_value()) {
+      return std::unexpected(none_tag_reg.error());
+    }
+    const auto none_tag_const = writer_.add_constant(slot_value{int64_t{1}});
+    writer_.emit_opcode(opcode::op_load_const);
+    writer_.emit_u8(*none_tag_reg);
+    writer_.emit_u16(none_tag_const);
+    emit_store_slot(*none_reg, 0, *none_tag_reg);
+
+    writer_.emit_opcode(opcode::op_return_value);
+    writer_.emit_u8(*none_reg);
+    return {};
   }
 
   /// Compiles a lambda's body into its own `bytecode_function`, using the
@@ -702,6 +1001,9 @@ private:
     case hir_node_kind::hir_container_len:
       return compile_container_len(
           dynamic_cast<const hir::hir_container_len &>(expr), dst);
+    case hir_node_kind::hir_generator_next:
+      return compile_generator_next(
+          dynamic_cast<const hir::hir_generator_next &>(expr), dst);
     case hir_node_kind::hir_block:
       // A block used in expression position (e.g. a comprehension's
       // desugared accumulator block, `hir::lower_comprehension`) — its
@@ -1386,6 +1688,19 @@ private:
       return std::unexpected(object_reg.error());
     }
     emit_load_slot(dst, *object_reg, 0);
+    return {};
+  }
+
+  [[nodiscard]] auto compile_generator_next(const hir::hir_generator_next &node,
+                                            uint8_t dst)
+      -> std::expected<void, compile_error> {
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_generator_next);
+    writer_.emit_u8(dst);
+    writer_.emit_u8(*object_reg);
     return {};
   }
 
@@ -2253,6 +2568,14 @@ private:
     case hir_node_kind::hir_return: {
       const auto &ret = dynamic_cast<const hir::hir_return &>(node);
       if (ret.value == nullptr) {
+        // Inside a generator's step function, a bare `return` marks
+        // exhaustion, not the ordinary no-value return — semantic analysis
+        // (`check_function`) already rejects `return <value>` inside a
+        // generator, so this is the only `hir_return` shape that can reach
+        // here while `is_generator_step_`.
+        if (is_generator_step_) {
+          return emit_generator_exhausted_return(ret.span);
+        }
         writer_.emit_opcode(opcode::op_return_unit);
         return {};
       }
@@ -2262,6 +2585,42 @@ private:
       }
       writer_.emit_opcode(opcode::op_return_value);
       writer_.emit_u8(*reg);
+      return {};
+    }
+    case hir_node_kind::hir_yield: {
+      const auto &y = dynamic_cast<const hir::hir_yield &>(node);
+      if (!is_generator_step_ || generator_next_yield_ordinal_ >
+                                     generator_resume_placeholders_.size()) {
+        // A `yield` nested inside a lambda literal within a generator body
+        // isn't part of the generator's own suspension protocol (a lambda
+        // is its own call frame) — reject cleanly rather than indexing
+        // past `generator_resume_placeholders_`.
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = y.span,
+            .message = "`yield` is only supported directly inside a "
+                       "`generator def`'s own body, not inside a nested "
+                       "lambda"});
+      }
+      auto value_reg = compile_expr(*y.value);
+      if (!value_reg.has_value()) {
+        return std::unexpected(value_reg.error());
+      }
+      // Resync every generator-state symbol's current register value back
+      // into the state block immediately before suspending.
+      for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
+        const auto local_reg = lookup_local(generator_state_layout_[i]);
+        if (local_reg.has_value()) {
+          emit_store_slot(generator_state_reg_, static_cast<uint16_t>(i),
+                          *local_reg);
+        }
+      }
+      const auto ordinal = generator_next_yield_ordinal_++;
+      writer_.emit_opcode(opcode::op_yield);
+      writer_.emit_u8(*value_reg);
+      writer_.emit_u8(generator_self_reg_);
+      writer_.emit_u8(ordinal);
+      writer_.patch_jump_to_here(generator_resume_placeholders_[ordinal - 1]);
       return {};
     }
     case hir_node_kind::hir_while:
@@ -2288,15 +2647,35 @@ private:
 
   [[nodiscard]] auto compile_let(const hir::hir_let &let)
       -> std::expected<void, compile_error> {
-    auto reg = alloc_register(let.span);
-    if (!reg.has_value()) {
-      return std::unexpected(reg.error());
+    // A generator step function's entry preloads a register for every
+    // live-across-yield state symbol *before* compiling the body (so a
+    // resumed call, which jumps straight past this `hir_let`, still has a
+    // valid register to read) — when body compilation then reaches the
+    // symbol's own `hir_let` on an actual (non-resumed) run, reuse that
+    // same preloaded register instead of allocating a second one:
+    // `locals_.emplace` silently no-ops on an already-present key, so
+    // allocating fresh here would leave the initializer's real value
+    // written to an orphaned register nothing ever reads, while every
+    // reference to the symbol keeps resolving to the untouched
+    // (zero-initialized) preloaded one.
+    const auto existing = lookup_local(let.symbol);
+    uint8_t reg = 0;
+    if (existing.has_value()) {
+      reg = *existing;
+    } else {
+      auto allocated = alloc_register(let.span);
+      if (!allocated.has_value()) {
+        return std::unexpected(allocated.error());
+      }
+      reg = *allocated;
     }
-    if (auto result = compile_expr_into(*let.initializer, *reg);
+    if (auto result = compile_expr_into(*let.initializer, reg);
         !result.has_value()) {
       return std::unexpected(result.error());
     }
-    locals_.emplace(let.symbol, *reg);
+    if (!existing.has_value()) {
+      locals_.emplace(let.symbol, reg);
+    }
     return {};
   }
 
@@ -2526,6 +2905,20 @@ private:
   chunk_writer writer_;
   std::unordered_map<hir::symbol_id, uint8_t> locals_;
   size_t next_register_ = 0;
+
+  // ------------------------------------------------------------------
+  //  Generator step-function state — only meaningful while
+  //  `is_generator_step_` (set by `compile_generator_step`). Mirrors the
+  //  closure calling convention's `env_reg`, just with two more reserved
+  //  registers (`resume_index`, the generator object itself) and a
+  //  resume-dispatch chain patched as each `hir_yield` is compiled.
+  // ------------------------------------------------------------------
+  bool is_generator_step_ = false;
+  uint8_t generator_state_reg_ = 0;
+  uint8_t generator_self_reg_ = 0;
+  std::vector<hir::symbol_id> generator_state_layout_;
+  std::vector<size_t> generator_resume_placeholders_;
+  uint8_t generator_next_yield_ordinal_ = 1;
 };
 
 } // namespace

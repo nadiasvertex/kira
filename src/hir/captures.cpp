@@ -249,6 +249,14 @@ struct walker {
       }
       return;
     }
+    case hir_node_kind::hir_yield:
+      // A lambda body shouldn't contain `yield` (it's its own call frame,
+      // not part of an enclosing generator's suspension protocol — the
+      // bytecode compiler rejects this case explicitly), but walk its
+      // value defensively rather than falling into the `hir_expr`
+      // downcast below, which `hir_yield` (an `hir_stmt`) would fail.
+      walk_expr(*dynamic_cast<const hir_yield &>(node).value);
+      return;
     case hir_node_kind::hir_while: {
       const auto &node2 = dynamic_cast<const hir_while &>(node);
       walk_expr(*node2.condition);

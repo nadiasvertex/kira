@@ -653,6 +653,126 @@ auto test_non_capturing_closure_is_called_indirectly() -> void {
 }
 
 // ==========================================================================
+//  Generators — `generator def`/`yield`/`.next()` end to end. Mirrors
+//  src/bytecode_compiler/compile_test.cpp's identically-named generator
+//  tests, driving the exact same source through this backend instead — a
+//  generator's declared name compiles to a constructor `llvm::Function`
+//  under that name (calling it is an ordinary `run(...)`), with the actual
+//  body compiled separately into an internal-linkage step function reached
+//  only through the generator object's own slot.
+// ==========================================================================
+
+auto test_generator_loop_with_yield_sums_values() -> void {
+  auto jf = jit_fixture_for(
+      "module sample\n"
+      "generator def counter(limit: int32) -> some iterator[int32]:\n"
+      "  var n = 0\n"
+      "  while n < limit:\n"
+      "    yield n\n"
+      "    n = n + 1\n"
+      "def main() -> int32:\n"
+      "  let g = counter(5)\n"
+      "  var total = 0\n"
+      "  while let @some(x) = g.next():\n"
+      "    total = total + x\n"
+      "  return total\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 10, "expected 0+1+2+3+4 == 10, the loop-"
+                                "condition local surviving every yield");
+}
+
+auto test_generator_branch_yields_only_matching_values() -> void {
+  auto jf = jit_fixture_for(
+      "module sample\n"
+      "generator def evens(limit: int32) -> some iterator[int32]:\n"
+      "  var n = 0\n"
+      "  while n < limit:\n"
+      "    if n % 2 == 0:\n"
+      "      yield n\n"
+      "    n = n + 1\n"
+      "def main() -> int32:\n"
+      "  let g = evens(10)\n"
+      "  var total = 0\n"
+      "  while let @some(x) = g.next():\n"
+      "    total = total + x\n"
+      "  return total\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 20, "expected 0+2+4+6+8 == 20");
+}
+
+auto test_generator_bare_return_exhausts_early() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "generator def early() -> some "
+                            "iterator[int32]:\n"
+                            "  yield 1\n"
+                            "  yield 2\n"
+                            "  return\n"
+                            "  yield 3\n"
+                            "def main() -> int32:\n"
+                            "  let g = early()\n"
+                            "  var count = 0\n"
+                            "  while let @some(x) = g.next():\n"
+                            "    count = count + 1\n"
+                            "  return count\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 2,
+         "expected a bare `return` to exhaust the generator before the "
+         "unreachable third yield");
+}
+
+auto test_generator_next_after_exhaustion_stays_none() -> void {
+  auto jf = jit_fixture_for("module sample\n"
+                            "generator def counter() -> some iterator[int32]:\n"
+                            "  yield 1\n"
+                            "def main() -> int32:\n"
+                            "  let g = counter()\n"
+                            "  var total = 0\n"
+                            "  while let @some(x) = g.next():\n"
+                            "    total = total + x\n"
+                            "  var extra = 0\n"
+                            "  while let @some(x) = g.next():\n"
+                            "    extra = extra + 1000\n"
+                            "  return total + extra\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 1,
+         "expected the generator to stay exhausted on further next() calls "
+         "after the first loop drained it");
+}
+
+auto test_generator_nonzero_initial_locals_survive_resume() -> void {
+  // LLVM-tier counterpart of
+  // src/bytecode_compiler/compile_test.cpp's identically-named regression
+  // test — see its doc comment for the bug this guards against.
+  auto jf = jit_fixture_for(
+      "module sample\n"
+      "generator def pairs(count: int32) -> some iterator[int32]:\n"
+      "  var a = 1\n"
+      "  var b = 100\n"
+      "  var i = 0\n"
+      "  while i < count:\n"
+      "    yield a\n"
+      "    yield b\n"
+      "    a = a + 1\n"
+      "    b = b + 1\n"
+      "    i = i + 1\n"
+      "def main() -> int32:\n"
+      "  let g = pairs(3)\n"
+      "  var total = 0\n"
+      "  while let @some(x) = g.next():\n"
+      "    total = total + x\n"
+      "  return total\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 309,
+         "expected both generator-state locals to keep their real, "
+         "nonzero initial values across every resume");
+}
+
+// ==========================================================================
 //  Optimization (`llvm_codegen::optimization_level`/`optimize_module`) —
 //  these build the same fixture at `-O2` (via `jit_module::create`'s
 //  optional `level` parameter) as an already-passing `-O0` test above, and
@@ -764,6 +884,11 @@ auto main() -> int {
     test_list_comprehension_builds_and_reads_back_a_list();
     test_closure_captures_an_outer_parameter_and_is_called_indirectly();
     test_non_capturing_closure_is_called_indirectly();
+    test_generator_loop_with_yield_sums_values();
+    test_generator_branch_yields_only_matching_values();
+    test_generator_bare_return_exhausts_early();
+    test_generator_next_after_exhaustion_stays_none();
+    test_generator_nonzero_initial_locals_survive_resume();
     test_recursive_call_computes_factorial_at_o2();
     test_checked_add_still_panics_on_overflow_at_o2();
     test_parse_optimization_level_accepts_0_through_3_only();

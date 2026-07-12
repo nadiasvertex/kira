@@ -663,6 +663,21 @@ auto lowerer::lower_call(const ast::call_expr &call)
       // the `str` value lowers completely unchanged.
       return lower_expr(*field.object);
     }
+    if (field.object != nullptr && field.field_name == "next") {
+      auto object_type = checked_type_of(*field.object);
+      if (object_type.has_value()) {
+        const auto &object_entry = checked_.types.entry(*object_type);
+        if (object_entry.kind == type_kind::builtin_generic_kind &&
+            object_entry.name == "generator") {
+          auto object = lower_expr(*field.object);
+          if (!object.has_value()) {
+            return std::unexpected(object.error());
+          }
+          return ok_expr(
+              make<hir_generator_next>(call.span, *type, std::move(*object)));
+        }
+      }
+    }
   }
 
   // `@variant(args...)` parses as a call whose callee is the variant's

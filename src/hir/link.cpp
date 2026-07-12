@@ -141,6 +141,9 @@ struct collector {
     case hir_node_kind::hir_container_len:
       walk_expr(*dynamic_cast<const hir_container_len &>(expr).object);
       return;
+    case hir_node_kind::hir_generator_next:
+      walk_expr(*dynamic_cast<const hir_generator_next &>(expr).object);
+      return;
     default:
       return;
     }
@@ -223,6 +226,9 @@ struct collector {
       }
       return;
     }
+    case hir_node_kind::hir_yield:
+      walk_expr(*dynamic_cast<const hir_yield &>(node).value);
+      return;
     case hir_node_kind::hir_while: {
       const auto &node2 = dynamic_cast<const hir_while &>(node);
       walk_expr(*node2.condition);

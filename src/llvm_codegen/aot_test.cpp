@@ -186,6 +186,33 @@ auto test_packed_struct_and_narrow_array_exit_codes() -> void {
                      WEXITSTATUS(status)));
 }
 
+auto test_generator_drives_a_loop_to_the_right_exit_code() -> void {
+  // Closes the gap generator support leaves in AOT-specific coverage:
+  // src/bytecode_compiler/compile_test.cpp and this file's own
+  // codegen_test.cpp sibling exercise `generator def`/`yield`/`.next()`
+  // through the bytecode VM and the in-process JIT respectively, but
+  // neither runs through a real linked `kira build` binary — a generator's
+  // constructor/step-function split is a codegen-shape change AOT-specific
+  // linking could plausibly break even when the JIT agrees.
+  auto dir = make_temp_dir();
+  const auto status = build_and_run(
+      dir, "module sample\n"
+           "generator def counter(limit: int32) -> some iterator[int32]:\n"
+           "    var n = 0\n"
+           "    while n < limit:\n"
+           "        yield n\n"
+           "        n = n + 1\n"
+           "def main() -> int32:\n"
+           "    let g = counter(5)\n"
+           "    var total = 0\n"
+           "    while let @some(x) = g.next():\n"
+           "        total = total + x\n"
+           "    return total\n");
+  expect(WIFEXITED(status) != 0, "expected the program to exit normally");
+  expect(WEXITSTATUS(status) == 10,
+         std::format("expected 0+1+2+3+4 == 10, got {}", WEXITSTATUS(status)));
+}
+
 } // namespace
 
 auto main() -> int {
@@ -194,6 +221,7 @@ auto main() -> int {
     test_unit_returning_main_exits_zero();
     test_panic_reaches_the_process_exit_code();
     test_packed_struct_and_narrow_array_exit_codes();
+    test_generator_drives_a_loop_to_the_right_exit_code();
   } catch (const std::exception &ex) {
     std::cerr << "aot_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);

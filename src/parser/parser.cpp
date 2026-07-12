@@ -1312,6 +1312,23 @@ auto parser::parse_prim_type_expr() -> ast::ptr<ast::type_expr> {
     return named;
   }
 
+  case token_kind::kw_generator: {
+    // `generator` is a keyword (function modifier), but in type position
+    // `generator[T]` names the concrete type a `generator def` produces —
+    // the structural escape hatch `some iterator[T]` sugars over (see
+    // `check_function`'s generator handling). Reuses the same `[...]`
+    // argument grammar `parse_named_type` uses, just without routing
+    // through `parse_module_path` (which only recognizes ordinary
+    // identifiers).
+    auto tok = advance();
+    auto named = ast::make<ast::named_type>();
+    named->span = tok.span;
+    named->path.emplace_back("generator");
+    parse_generic_args_suffix(*named);
+    named->span.extend_to(previous_span());
+    return named;
+  }
+
   case token_kind::kw_some: {
     // `some Bound` — an existential type. Reuses the exact `+`-joined
     // bound-term parsing `where`/type-param constraints already use, just
@@ -1436,52 +1453,61 @@ auto parser::parse_optional_type_annotation() -> ast::ptr<ast::type_expr> {
   return parse_type_expr();
 }
 
+/// Parses an optional `[T, U, ...]` generic/value argument suffix directly
+/// onto `named` (which must already have its `path` set) — shared by
+/// `parse_named_type` and any other type-position production that builds a
+/// `named_type` from a keyword rather than an ordinary path (e.g.
+/// `generator[T]` — `generator` is a keyword, so it can't route through
+/// `parse_module_path`, but still wants the same `[...]` argument grammar).
+auto parser::parse_generic_args_suffix(ast::named_type &named) -> void {
+  if (!at(token_kind::lbracket)) {
+    return;
+  }
+  advance(); // consume `[`
+  while (!at(token_kind::rbracket) && !at_eof()) {
+    skip_newlines();
+    if (at(token_kind::rbracket)) {
+      break;
+    }
+
+    ast::type_arg type_arg;
+    type_arg.span = peek().span;
+
+    if (at(token_kind::ident) && peek_at(1).is(token_kind::colon)) {
+      auto name_tok = advance();
+      type_arg.name = std::string(name_tok.text);
+      advance(); // consume `:`
+      type_arg.value = parse_type_expr();
+    } else {
+      auto arg_start = pos_;
+      auto maybe_type = parse_type_expr();
+      if (maybe_type && at_any(token_kind::comma, token_kind::rbracket)) {
+        type_arg.value = std::move(maybe_type);
+      } else {
+        pos_ = arg_start;
+        type_arg.value = parse_expr();
+      }
+    }
+
+    if (type_arg.value) {
+      type_arg.span.extend_to(type_arg.value->span);
+      named.type_args.push_back(std::move(type_arg));
+    }
+
+    if (!match(token_kind::comma)) {
+      break;
+    }
+    skip_newlines();
+  }
+  expect(token_kind::rbracket);
+}
+
 auto parser::parse_named_type() -> ast::ptr<ast::named_type> {
   auto named = ast::make<ast::named_type>();
   named->span = peek().span;
 
   named->path = parse_module_path();
-
-  // Optional type arguments: `[T, U, ...]`
-  if (at(token_kind::lbracket)) {
-    advance(); // consume `[`
-    while (!at(token_kind::rbracket) && !at_eof()) {
-      skip_newlines();
-      if (at(token_kind::rbracket)) {
-        break;
-      }
-
-      ast::type_arg type_arg;
-      type_arg.span = peek().span;
-
-      if (at(token_kind::ident) && peek_at(1).is(token_kind::colon)) {
-        auto name_tok = advance();
-        type_arg.name = std::string(name_tok.text);
-        advance(); // consume `:`
-        type_arg.value = parse_type_expr();
-      } else {
-        auto arg_start = pos_;
-        auto maybe_type = parse_type_expr();
-        if (maybe_type && at_any(token_kind::comma, token_kind::rbracket)) {
-          type_arg.value = std::move(maybe_type);
-        } else {
-          pos_ = arg_start;
-          type_arg.value = parse_expr();
-        }
-      }
-
-      if (type_arg.value) {
-        type_arg.span.extend_to(type_arg.value->span);
-        named->type_args.push_back(std::move(type_arg));
-      }
-
-      if (!match(token_kind::comma)) {
-        break;
-      }
-      skip_newlines();
-    }
-    expect(token_kind::rbracket);
-  }
+  parse_generic_args_suffix(*named);
 
   named->span.extend_to(previous_span());
   return named;
