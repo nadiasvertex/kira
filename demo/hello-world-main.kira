@@ -1,0 +1,4 @@
+module main
+
+def main() -> int32:
+  println("hello world!")

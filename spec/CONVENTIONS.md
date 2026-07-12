@@ -29,7 +29,7 @@
 ## 5) Modern features (when supported by our Clang)
 - Ranges & algorithms; `[[no_unique_address]]` for EBO/layout wins (only when measured).
 - Template QoL: variadic friends, pack indexing, structured‑binding in conditions, etc. (feature‑test gate).
-- Use concepts, constexpr, consteval when valuable
+- Use concepts, constexpr, consteval, static if, static assert, etc. when valuable
 
 ## 6) API surface & readability
 - Use `auto f(args) -> return_type` form; make ownership & mutability explicit.
