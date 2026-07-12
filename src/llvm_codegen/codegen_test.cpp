@@ -772,6 +772,24 @@ auto test_generator_nonzero_initial_locals_survive_resume() -> void {
          "nonzero initial values across every resume");
 }
 
+auto test_for_loop_over_generator_sums_values() -> void {
+  auto jf = jit_fixture_for(
+      "module sample\n"
+      "generator def counter(limit: int32) -> some iterator[int32]:\n"
+      "  var n = 0\n"
+      "  while n < limit:\n"
+      "    yield n\n"
+      "    n = n + 1\n"
+      "def main() -> int32:\n"
+      "  var total = 0\n"
+      "  for x in counter(5):\n"
+      "    total = total + x\n"
+      "  return total\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 10, "expected 0+1+2+3+4 == 10");
+}
+
 // ==========================================================================
 //  Optimization (`llvm_codegen::optimization_level`/`optimize_module`) —
 //  these build the same fixture at `-O2` (via `jit_module::create`'s
@@ -889,6 +907,7 @@ auto main() -> int {
     test_generator_bare_return_exhausts_early();
     test_generator_next_after_exhaustion_stays_none();
     test_generator_nonzero_initial_locals_survive_resume();
+    test_for_loop_over_generator_sums_values();
     test_recursive_call_computes_factorial_at_o2();
     test_checked_add_still_panics_on_overflow_at_o2();
     test_parse_optimization_level_accepts_0_through_3_only();

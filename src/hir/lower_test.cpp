@@ -1756,6 +1756,53 @@ auto test_lowers_option_for_loop() -> void {
          "expected the `none` arm to be an empty block");
 }
 
+auto test_lowers_generator_for_loop() -> void {
+  auto fixture = check_fixture(
+      "module sample\n"
+      "generator def counter(limit: int32) -> some iterator[int32]:\n"
+      "    yield 1\n"
+      "def sum_gen() -> int32:\n"
+      "    var total = 0\n"
+      "    for x in counter(5):\n"
+      "        total = total + x\n"
+      "    return total\n");
+  const auto &decl = find_func(*fixture.ast_file, "sum_gen");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected `generator[T]` iteration to lower");
+
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 4,
+         "expected total-let, the generator-handle let, the desugared "
+         "while_let, and the return");
+  expect(function.body->stmts[1]->kind == hir::hir_node_kind::hir_let,
+         "expected the generator handle to be bound once, ahead of the loop");
+  expect(function.body->stmts[2]->kind == hir::hir_node_kind::hir_while_let,
+         "expected `generator[T]` iteration to desugar to a hir_while_let, "
+         "not a counting loop");
+  const auto &loop =
+      dynamic_cast<const hir::hir_while_let &>(*function.body->stmts[2]);
+  expect(loop.subject->kind == hir::hir_node_kind::hir_generator_next,
+         "expected the while_let subject to be a fresh `.next()` call, "
+         "re-evaluated every pass");
+  const auto &next_call =
+      dynamic_cast<const hir::hir_generator_next &>(*loop.subject);
+  expect(next_call.object->kind == hir::hir_node_kind::hir_local_ref,
+         "expected `.next()` to be called on the once-evaluated generator "
+         "handle, not a fresh call to `counter(5)` every iteration");
+
+  const auto &pattern =
+      dynamic_cast<const hir::hir_constructor_pattern &>(*loop.pattern);
+  expect(pattern.variant_name == "some",
+         "expected the while_let pattern to match `some`");
+  expect(loop.body->stmts.size() == 2,
+         "expected the synthesized `let x = <payload>` plus the loop body");
+  const auto &x_let = dynamic_cast<const hir::hir_let &>(*loop.body->stmts[0]);
+  expect(x_let.name == "x", "expected the bound name to be `x`");
+  expect(x_let.initializer->kind == hir::hir_node_kind::hir_variant_payload,
+         "expected `x` to be bound from the `some` payload");
+}
+
 auto test_lowers_simple_comprehension() -> void {
   auto fixture = check_fixture("module sample\n"
                                "def squares(n: int32) -> list[int32]:\n"
@@ -1988,6 +2035,7 @@ auto main() -> int {
     test_lowers_array_for_loop_with_static_length();
     test_lowers_str_for_loop_yields_char();
     test_lowers_option_for_loop();
+    test_lowers_generator_for_loop();
     test_lowers_simple_comprehension();
     test_lowers_comprehension_with_guard();
     test_lowers_nested_comprehension();

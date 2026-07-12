@@ -1075,6 +1075,14 @@ auto test_accepts_generator_yields_typed_values() -> void {
          "expected a well-typed generator to check cleanly");
 }
 
+auto test_accepts_for_loop_over_generator() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_for_loop_over_generator.kira");
+  expect(analyzed.error_count == 0,
+         "expected `for x in <generator>` to check cleanly, binding `x` to "
+         "the generator's item type");
+}
+
 auto test_reports_yield_outside_generator() -> void {
   const auto analyzed =
       analyze_test_data_file("report_yield_outside_generator.kira");
@@ -1157,6 +1165,7 @@ auto main() -> int {
     test_accepts_item_splice_injects_impl();
     test_accepts_type_reflection_primitives();
     test_accepts_generator_yields_typed_values();
+    test_accepts_for_loop_over_generator();
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();

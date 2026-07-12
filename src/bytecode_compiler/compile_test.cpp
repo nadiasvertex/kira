@@ -1152,6 +1152,51 @@ auto test_generator_nonzero_initial_locals_survive_resume() -> void {
          "nonzero initial values across every resume");
 }
 
+auto test_for_loop_over_generator_sums_values() -> void {
+  auto module = compile_fixture(
+      "module sample\n"
+      "generator def counter(limit: int32) -> some iterator[int32]:\n"
+      "  var n = 0\n"
+      "  while n < limit:\n"
+      "    yield n\n"
+      "    n = n + 1\n"
+      "def sum_via_for(limit: int32) -> int32:\n"
+      "  var total = 0\n"
+      "  for x in counter(limit):\n"
+      "    total = total + x\n"
+      "  return total\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "sum_via_for"),
+                       std::array{bc::slot_value{int64_t{5}}});
+  expect(result.has_value(), "expected sum_via_for(5) to succeed");
+  expect(result->value.i == 10, "expected 0+1+2+3+4 == 10");
+}
+
+auto test_for_loop_over_generator_evaluates_iterable_once() -> void {
+  // The generator handle (`counter()`, a fresh generator each call) must be
+  // evaluated exactly once by the `for` loop, not re-invoked every
+  // iteration — otherwise the loop would restart from scratch each pass
+  // and never terminate (or, since a fresh generator's `n` always starts
+  // at 0 < limit, spin forever). A finite, correct sum proves the loop
+  // used one single generator instance throughout.
+  auto module = compile_fixture(
+      "module sample\n"
+      "generator def counter(limit: int32) -> some iterator[int32]:\n"
+      "  var n = 0\n"
+      "  while n < limit:\n"
+      "    yield n\n"
+      "    n = n + 1\n"
+      "def sum_via_for() -> int32:\n"
+      "  var total = 0\n"
+      "  for x in counter(4):\n"
+      "    total = total + x\n"
+      "  return total\n");
+  const auto vm = bc::vm{module};
+  auto result = vm.run(function_index(module, "sum_via_for"), {});
+  expect(result.has_value(), "expected sum_via_for() to succeed");
+  expect(result->value.i == 6, "expected 0+1+2+3 == 6");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1208,6 +1253,8 @@ auto main() -> int {
     test_generator_branch_yields_only_matching_values();
     test_generator_bare_return_exhausts_early();
     test_generator_nonzero_initial_locals_survive_resume();
+    test_for_loop_over_generator_sums_values();
+    test_for_loop_over_generator_evaluates_iterable_once();
   } catch (const std::exception &ex) {
     std::cerr << "compile_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -5049,7 +5049,7 @@ private:
     case type_kind::builtin_generic_kind:
       if (entry.name == "list" || entry.name == "slice" ||
           entry.name == "slice_mut" || entry.name == "range" ||
-          entry.name == "option") {
+          entry.name == "option" || entry.name == "generator") {
         return entry.args.empty() ? k_unknown_type : entry.args[0];
       }
       return k_unknown_type;

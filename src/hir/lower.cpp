@@ -345,6 +345,19 @@ private:
       const ast::binding_pattern &loop_var,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
           &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error>;
+  /// The `generator[T]` shape: `for x in g(): ...` evaluates the generator
+  /// handle exactly once (a `hir_let`, so a call like `g()` isn't
+  /// re-invoked every iteration), then desugars to the same shape as a
+  /// hand-written `while let @some(x) = <that handle>.next(): ...` —
+  /// `hir_while_let`'s `subject` (a fresh `hir_generator_next` each
+  /// iteration) is what actually drives repeated evaluation; no new node
+  /// kind or backend support is needed; both `compile_while_let`s already
+  /// re-run `subject` every pass.
+  [[nodiscard]] auto lower_generator_loop(
+      source_span span, const ast::expr &iterable, type_id iterable_type,
+      const ast::binding_pattern &loop_var,
+      const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
+          &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error>;
   /// Shared tail `lower_range_loop`/`lower_indexed_loop` need: binds the
   /// loop variable to `loop_var_value()` at the top of the loop body,
   /// splices in `inner_stmts()`, then increments the index by one.
@@ -2092,6 +2105,11 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
     return lower_option_loop(for_stmt.span, *for_stmt.iterable, *iterable_type,
                              loop_var, inner_stmts);
   }
+  if (iterable_entry.kind == type_kind::builtin_generic_kind &&
+      iterable_entry.name == "generator") {
+    return lower_generator_loop(for_stmt.span, *for_stmt.iterable,
+                                *iterable_type, loop_var, inner_stmts);
+  }
   return lower_indexed_loop(for_stmt.span, *for_stmt.iterable, *iterable_type,
                             loop_var, inner_stmts);
 }
@@ -2394,6 +2412,84 @@ auto lowerer::lower_option_loop(
   auto result = ptr_vec<hir_node>{};
   result.push_back(
       ptr<hir_node>(make<hir_expr_stmt>(span, std::move(match_expr))));
+  return result;
+}
+
+auto lowerer::lower_generator_loop(
+    source_span span, const ast::expr &iterable, type_id iterable_type,
+    const ast::binding_pattern &loop_var,
+    const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
+        &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error> {
+  const auto &entry = checked_.types.entry(iterable_type);
+  const auto element_type = entry.args.empty() ? k_unknown_type : entry.args[0];
+  if (element_type == k_unknown_type || element_type == k_error_type) {
+    return fail(lowering_error_kind::unresolved_type, span,
+                "the generator's item type did not resolve to a concrete "
+                "type");
+  }
+
+  // Evaluate the generator handle exactly once — `for x in g(): ...` must
+  // not call `g()` again on every iteration, only `.next()` on the handle
+  // it already produced.
+  auto generator_value = lower_expr(iterable);
+  if (!generator_value.has_value()) {
+    return std::unexpected(generator_value.error());
+  }
+  auto result = ptr_vec<hir_node>{};
+  const auto generator_symbol = mint_symbol();
+  result.push_back(ptr<hir_node>(make<hir_let>(iterable.span, generator_symbol,
+                                               std::string("<for generator>"),
+                                               std::move(*generator_value))));
+
+  // `option[T]` for this exact `T` may not already be interned — a
+  // for-loop's desugaring never writes a literal `.next()` call for the
+  // checker to have interned one for. Safe to intern now anyway: a
+  // `type_table`'s `intern` is a pure, memoized, append-only operation,
+  // and lowering only ever runs after checking has fully populated the
+  // table, so this can't retroactively change anything checking already
+  // decided — it only adds an entry checking simply never had occasion to
+  // add itself.
+  const auto option_type = const_cast<semantic::type_table &>(checked_.types)
+                               .builtin_generic("option", {element_type});
+
+  const auto subject_symbol = mint_symbol();
+  auto subject = ptr<hir_expr>(make<hir_generator_next>(
+      span, option_type,
+      ptr<hir_expr>(make<hir_local_ref>(iterable.span, iterable_type,
+                                        generator_symbol,
+                                        std::string("<for generator>")))));
+
+  push_scope();
+  const auto loop_var_symbol = declare_local(loop_var.name, element_type);
+  auto body_stmts = ptr_vec<hir_node>{};
+  body_stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, loop_var_symbol, loop_var.name,
+      ptr<hir_expr>(make<hir_variant_payload>(
+          span, element_type,
+          ptr<hir_expr>(make<hir_local_ref>(span, option_type, subject_symbol,
+                                            std::string("<for subject>"))),
+          std::string("some"), size_t{0})))));
+
+  auto inner = inner_stmts();
+  if (!inner.has_value()) {
+    pop_scope();
+    return std::unexpected(inner.error());
+  }
+  for (auto &stmt_ptr : *inner) {
+    body_stmts.push_back(std::move(stmt_ptr));
+  }
+  auto body_block =
+      make<hir_block>(span, k_unknown_type, std::move(body_stmts));
+  pop_scope();
+
+  auto some_args = ptr_vec<hir_pattern>{};
+  some_args.push_back(ptr<hir_pattern>(make<hir_wildcard_pattern>(span)));
+  auto pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
+      span, std::string("some"), std::move(some_args)));
+
+  result.push_back(ptr<hir_node>(
+      make<hir_while_let>(span, std::move(subject), subject_symbol,
+                          std::move(pattern), std::move(body_block))));
   return result;
 }
 

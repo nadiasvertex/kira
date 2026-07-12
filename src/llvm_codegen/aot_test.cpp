@@ -213,6 +213,26 @@ auto test_generator_drives_a_loop_to_the_right_exit_code() -> void {
          std::format("expected 0+1+2+3+4 == 10, got {}", WEXITSTATUS(status)));
 }
 
+auto test_for_loop_over_generator_drives_a_loop_to_the_right_exit_code()
+    -> void {
+  auto dir = make_temp_dir();
+  const auto status = build_and_run(
+      dir, "module sample\n"
+           "generator def counter(limit: int32) -> some iterator[int32]:\n"
+           "    var n = 0\n"
+           "    while n < limit:\n"
+           "        yield n\n"
+           "        n = n + 1\n"
+           "def main() -> int32:\n"
+           "    var total = 0\n"
+           "    for x in counter(5):\n"
+           "        total = total + x\n"
+           "    return total\n");
+  expect(WIFEXITED(status) != 0, "expected the program to exit normally");
+  expect(WEXITSTATUS(status) == 10,
+         std::format("expected 0+1+2+3+4 == 10, got {}", WEXITSTATUS(status)));
+}
+
 } // namespace
 
 auto main() -> int {
@@ -222,6 +242,7 @@ auto main() -> int {
     test_panic_reaches_the_process_exit_code();
     test_packed_struct_and_narrow_array_exit_codes();
     test_generator_drives_a_loop_to_the_right_exit_code();
+    test_for_loop_over_generator_drives_a_loop_to_the_right_exit_code();
   } catch (const std::exception &ex) {
     std::cerr << "aot_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);

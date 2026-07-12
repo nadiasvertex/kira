@@ -1,0 +1,13 @@
+module sample
+
+generator def counter(limit: int32) -> some iterator[int32]:
+    var n = 0
+    while n < limit:
+        yield n
+        n = n + 1
+
+def sum_via_for() -> int32:
+    var total = 0
+    for x in counter(5):
+        total = total + x
+    return total
