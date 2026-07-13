@@ -1,0 +1,362 @@
+module std.platform
+
+# The target/build-info accessor functions (`target_arch`, `target_os`,
+# `target_vendor`, `target_env`, `target_endianness`, `target_pointer_width`,
+# `kira_version`, `kira_implementation`, `kira_compiler`, `kira_build_date`)
+# are spliced in right here by the driver
+# (`generate_platform_target_accessors`/`assemble_platform_module_source`,
+# `src/driver/driver.cpp`) — this checked-in file is a fragment, not
+# something the compiler ever reads directly. They can't be a separate,
+# checked-in-elsewhere module (a module path can only be declared by one
+# file), and each embeds its value as a literal directly in the function
+# body rather than being generated as a `pub static` this file's own
+# functions then read by name — see `generate_platform_target_accessors`'s
+# doc comment for the bytecode-lowering bug that rules that out.
+
+# `io_error`/`io_errno` are declared in the genuinely separate `std.io`
+# module; a struct literal's type name must be a single identifier (the
+# parser doesn't accept a qualified path directly before `{`, e.g.
+# `std.io.io_errno { code: 0 }`), so this module-scope alias — otherwise
+# transparent to name/impl resolution — gives `io_errno { ... }` construction
+# below somewhere to bind to.
+type io_error = std.io.io_error
+type io_errno = std.io.io_errno
+
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+
+pub type architecture = @x86_64 | @aarch64 | @arm | @riscv32 | @riscv64 | @wasm32 | @wasm64 | @other(str)
+
+pub type os_family = @unix | @windows | @macos | @other(str)
+
+pub type endianness = @little | @big
+
+pub type platform_info = {
+    system: str,
+    node: option[str],
+    release: option[str],
+    version: option[str],
+    machine_arch: architecture,
+    processor: option[str],
+    endianness: endianness,
+    pointer_width: usize,
+    os_family: os_family,
+}
+
+pub type kira_build = {
+    version: str,
+    implementation: str,
+    compiler: str,
+    build_date: str,
+}
+
+pub type libc_version = {
+    name: str,
+    version: str,
+}
+
+pub type windows_version = {
+    release: str,
+    version: str,
+    csd_version: str,
+    platform_type: str,
+}
+
+pub type macos_version = {
+    release: str,
+    version: str,
+    dev_stage: str,
+    non_release_version: str,
+    machine_arch: str,
+}
+
+# ---------------------------------------------------------------------------
+# Intrinsics. All six raw structs and intrinsics are declared unconditionally
+# rather than gated per platform — every native implementation
+# (`src/runtime/platform.cpp`, `src/bytecode/vm.cpp`) already reports
+# `io_errno { code: ENOSYS }` gracefully when called on a host it doesn't
+# describe, so the only cost of always declaring them is code size. This
+# also sidesteps two otherwise-tempting `static if` designs that don't
+# actually work today: `intrinsic def` can only be a module-level
+# declaration (the checker rejects one nested inside a `static if` body as
+# if it were a trait/impl member), and even an ordinary `def` selected by
+# item-level `static if`/`else` only affects that file's own compile-time
+# checking — it isn't spliced into the module's ordinary scope for code
+# elsewhere to call (see `release()`/`version()` below, which branch on the
+# *runtime* value `target_os_family()` returns instead, for the same
+# reason).
+# ---------------------------------------------------------------------------
+
+type uname_raw = {
+    sysname: str,
+    nodename: str,
+    release: str,
+    version: str,
+    machine_arch: str,
+}
+
+type winver_raw = {
+    major: uint32,
+    minor: uint32,
+    build: uint32,
+    platform_id: uint32,
+    csd_version: str,
+}
+
+type macver_raw = {
+    release: str,
+    version: str,
+    dev_stage: str,
+    non_release_version: str,
+    machine_arch: str,
+}
+
+intrinsic def rt_uname() -> result[uname_raw, io_errno]
+intrinsic def rt_libc_version() -> result[libc_version, io_errno]
+intrinsic def rt_windows_version() -> result[winver_raw, io_errno]
+intrinsic def rt_macos_version() -> result[macver_raw, io_errno]
+intrinsic def rt_gethostname() -> result[str, io_errno]
+intrinsic def rt_processor_name() -> result[str, io_errno]
+
+# ---------------------------------------------------------------------------
+# Target queries (compile-time) — `pure` because the target never changes at
+# runtime. `target_arch`/`target_os`/`target_vendor`/`target_env`/
+# `target_endianness`/`target_pointer_width`/`target_os_family` are generated
+# above by the driver (see the top-of-file comment). `target_os_family` in
+# particular has to be generated rather than classified here from
+# `target_os()`'s string at runtime (`os == "linux"`-style comparisons):
+# neither backend implements `str` `==` yet ("type `str` has no scalar
+# bytecode/llvm_codegen representation yet ... until spec/codegen-design.md
+# increment 6 (heap types) lands"), confirmed with a two-line repro. The
+# driver already knows the classification in C++ (`detect_target_os`), so it
+# bakes the resulting `@unix`/`@windows`/`@macos`/`@other(...)` variant
+# straight into `target_os_family()`'s body instead.
+# ---------------------------------------------------------------------------
+
+# `os_family` equality has no runtime `==` codegen (only the compile-time
+# evaluator understands sum-type equality — see spec/std-platform.md), so
+# these are spelled with `match` rather than `target_os_family() == @unix`.
+
+pub pure def is_unix() -> bool:
+    match target_os_family():
+        @unix => true
+        _ => false
+
+pub pure def is_windows() -> bool:
+    match target_os_family():
+        @windows => true
+        _ => false
+
+pub pure def is_macos() -> bool:
+    match target_os_family():
+        @macos => true
+        _ => false
+
+# ---------------------------------------------------------------------------
+# Runtime queries — `?` propagates a failing intrinsic call, converting its
+# `io_errno` to `io_error` via `impl from[io_errno] for io_error` (std.io).
+# ---------------------------------------------------------------------------
+
+pub def node() -> result[str, io_error]:
+    let name = rt_gethostname()?
+    return @ok(name)
+
+pub def processor() -> result[str, io_error]:
+    let name = rt_processor_name()?
+    return @ok(name)
+
+# `release()`/`version()` genuinely differ per platform. A `static if`-gated
+# family of definitions (compiling only the branch matching `TARGET_OS_FAMILY`)
+# would be a natural fit, but item-level `static if` only splices its taken
+# branch's declarations in for that same file's own compile-time checking —
+# it doesn't register them in the module's ordinary scope for other
+# functions to call (`target_os_family`/`is_unix` etc. above are declared
+# unconditionally for the same reason `intrinsic def` is, just above). So
+# instead there is one unconditional definition of each, branching on the
+# *runtime* value `target_os_family()` returns.
+
+pub def release() -> result[str, io_error]:
+    match target_os_family():
+        @unix =>:
+            let raw = rt_uname()?
+            return @ok(raw.release)
+        @windows =>:
+            let raw = rt_windows_version()?
+            return @ok("{raw.major}.{raw.minor}")
+        @macos =>:
+            let raw = rt_macos_version()?
+            return @ok(raw.release)
+        @other(_) => @err(io_error.from(io_errno { code: 0 }))  # ENOSYS equivalent
+
+pub def version() -> result[str, io_error]:
+    match target_os_family():
+        @unix =>:
+            let raw = rt_uname()?
+            return @ok(raw.version)
+        @windows =>:
+            let raw = rt_windows_version()?
+            return @ok("{raw.major}.{raw.minor}.{raw.build}")
+        @macos =>:
+            let raw = rt_macos_version()?
+            return @ok(raw.version)
+        @other(_) => @err(io_error.from(io_errno { code: 0 }))
+
+# ---------------------------------------------------------------------------
+# Cross-platform convenience
+# ---------------------------------------------------------------------------
+
+# `?` cannot express "swallow the error and continue" — it only
+# propagates — so converting each `result` to `option` is spelled with an
+# explicit `match`, factored into this one private helper.
+priv def result_to_option(r: result[str, io_error]) -> option[str]:
+    match r:
+        @ok(v) => @some(v)
+        @err(_) => @none
+
+pub def uname() -> platform_info:
+    platform_info {
+        system: target_os(),
+        node: result_to_option(node()),
+        release: result_to_option(release()),
+        version: result_to_option(version()),
+        machine_arch: target_arch(),
+        processor: result_to_option(processor()),
+        endianness: target_endianness(),
+        pointer_width: target_pointer_width(),
+        os_family: target_os_family(),
+    }
+
+pub def platform() -> str:
+    let rel = match release():
+        @ok(s) => s
+        @err(_) => "unknown"
+    let proc = match processor():
+        @ok(s) => s
+        @err(_) => "unknown"
+    return "{target_os()}-{rel}-{target_arch().show()}-{proc}"
+
+# ---------------------------------------------------------------------------
+# Kira runtime information — all compile-time constants. `kira_version`/
+# `kira_implementation`/`kira_compiler`/`kira_build_date` are generated
+# above by the driver (see the top-of-file comment).
+# ---------------------------------------------------------------------------
+
+pub pure def kira_build_info() -> kira_build:
+    kira_build {
+        version: kira_version(),
+        implementation: kira_implementation(),
+        compiler: kira_compiler(),
+        build_date: kira_build_date(),
+    }
+
+# ---------------------------------------------------------------------------
+# Platform-specific queries — `@none` on a platform other than the one they
+# describe, or when the underlying intrinsic fails; the caller uses `if let`.
+# ---------------------------------------------------------------------------
+
+pub def libc_ver() -> option[libc_version]:
+    if not is_unix():
+        return @none
+    match rt_libc_version():
+        @ok(v) => @some(v)
+        @err(_) => @none
+
+pub def win32_ver() -> option[windows_version]:
+    if not is_windows():
+        return @none
+    match rt_windows_version():
+        @ok(v) => @some(parse_windows_version(v))
+        @err(_) => @none
+
+pub def mac_ver() -> option[macos_version]:
+    if not is_macos():
+        return @none
+    match rt_macos_version():
+        @ok(v) => @some(parse_macos_version(v))
+        @err(_) => @none
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+priv def parse_windows_version(raw: winver_raw) -> windows_version:
+    windows_version {
+        release: "{raw.major}.{raw.minor}",
+        version: "{raw.major}.{raw.minor}.{raw.build}",
+        csd_version: raw.csd_version,
+        platform_type: "{raw.platform_id}",
+    }
+
+priv def parse_macos_version(raw: macver_raw) -> macos_version:
+    macos_version {
+        release: raw.release,
+        version: raw.version,
+        dev_stage: raw.dev_stage,
+        non_release_version: raw.non_release_version,
+        machine_arch: raw.machine_arch,
+    }
+
+# ---------------------------------------------------------------------------
+# `show` implementations — hand-written rather than `deriving`: `deriving`
+# only generates real code for struct-shaped types today, so a sum type
+# gains nothing from listing it.
+# ---------------------------------------------------------------------------
+
+impl show for architecture:
+    def show(self) -> str:
+        match self:
+            @x86_64 => "x86_64"
+            @aarch64 => "aarch64"
+            @arm => "arm"
+            @riscv32 => "riscv32"
+            @riscv64 => "riscv64"
+            @wasm32 => "wasm32"
+            @wasm64 => "wasm64"
+            @other(s) => s
+
+impl show for os_family:
+    def show(self) -> str:
+        match self:
+            @unix => "unix"
+            @windows => "windows"
+            @macos => "macos"
+            @other(s) => s
+
+impl show for endianness:
+    def show(self) -> str:
+        match self:
+            @little => "little"
+            @big => "big"
+
+impl show for platform_info:
+    def show(self) -> str:
+        let n = match self.node:
+            @some(s) => s
+            @none => "unknown"
+        let r = match self.release:
+            @some(s) => s
+            @none => "unknown"
+        let v = match self.version:
+            @some(s) => s
+            @none => "unknown"
+        let p = match self.processor:
+            @some(s) => s
+            @none => "unknown"
+        "uname(system={self.system}, node={n}, release={r}, version={v}, machine={self.machine_arch.show()}, processor={p})"
+
+impl show for kira_build:
+    def show(self) -> str:
+        "kira_build(version={self.version}, compiler={self.compiler}, build_date={self.build_date})"
+
+impl show for libc_version:
+    def show(self) -> str:
+        "libc_version(name={self.name}, version={self.version})"
+
+impl show for windows_version:
+    def show(self) -> str:
+        "win32_ver(release={self.release}, version={self.version}, csd={self.csd_version})"
+
+impl show for macos_version:
+    def show(self) -> str:
+        "mac_ver(release={self.release}, version={self.version})"

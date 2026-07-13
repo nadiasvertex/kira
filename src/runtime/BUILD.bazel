@@ -13,12 +13,16 @@ cc_library(
         "fmt.cpp",
         "io.cpp",
         "layout.cpp",
+        "platform.cpp",
+        "platform_query.cpp",
     ],
     hdrs = [
         "arena.h",
         "fmt.h",
         "io.h",
         "layout.h",
+        "platform.h",
+        "platform_query.h",
     ],
     alwayslink = True,
     deps = [

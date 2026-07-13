@@ -17,6 +17,7 @@
 #include "src/intrinsics.h"
 #include "src/runtime/arena.h"
 #include "src/runtime/layout.h"
+#include "src/runtime/platform_query.h"
 #include "src/utf8/utf8.h"
 
 namespace kira::bytecode {
@@ -1124,13 +1125,94 @@ auto intrinsic_rt_fmt_char_from_codepoint(std::span<const slot_value> args)
   return make_runtime_str(out);
 }
 
+// ---------------------------------------------------------------------------
+// `std.platform` runtime intrinsics (spec/std-platform.md). Each queries the
+// host through `src/runtime/platform_query.h` (shared with this tier's
+// AOT/JIT counterpart, `src/runtime/platform.cpp`, so the OS-specific query
+// logic itself isn't duplicated a third time) and encodes the result per
+// this file's existing struct/result conventions.
+// ---------------------------------------------------------------------------
+
+namespace platform_query = kira::runtime::platform_query;
+
+[[nodiscard]] auto intrinsic_rt_uname(std::span<const slot_value>)
+    -> slot_value {
+  const auto info = platform_query::query_uname();
+  if (!info) {
+    return make_result_err(errno);
+  }
+  const std::array<slot_value, 5> fields = {
+      make_runtime_str(info->sysname), make_runtime_str(info->nodename),
+      make_runtime_str(info->release), make_runtime_str(info->version),
+      make_runtime_str(info->machine)};
+  return make_result_ok(alloc_struct(fields));
+}
+
+[[nodiscard]] auto intrinsic_rt_gethostname(std::span<const slot_value>)
+    -> slot_value {
+  const auto name = platform_query::query_hostname();
+  if (!name) {
+    return make_result_err(errno);
+  }
+  return make_result_ok(make_runtime_str(*name));
+}
+
+[[nodiscard]] auto intrinsic_rt_processor_name(std::span<const slot_value>)
+    -> slot_value {
+  const auto name = platform_query::query_processor_name();
+  if (!name) {
+    return make_result_err(errno);
+  }
+  return make_result_ok(make_runtime_str(*name));
+}
+
+[[nodiscard]] auto intrinsic_rt_libc_version(std::span<const slot_value>)
+    -> slot_value {
+  const auto info = platform_query::query_libc_version();
+  if (!info) {
+    return make_result_err(errno);
+  }
+  const std::array<slot_value, 2> fields = {make_runtime_str(info->name),
+                                            make_runtime_str(info->version)};
+  return make_result_ok(alloc_struct(fields));
+}
+
+[[nodiscard]] auto intrinsic_rt_windows_version(std::span<const slot_value>)
+    -> slot_value {
+  const auto info = platform_query::query_windows_version();
+  if (!info) {
+    return make_result_err(errno);
+  }
+  const std::array<slot_value, 5> fields = {
+      slot_value{static_cast<uint64_t>(info->major)},
+      slot_value{static_cast<uint64_t>(info->minor)},
+      slot_value{static_cast<uint64_t>(info->build)},
+      slot_value{static_cast<uint64_t>(info->platform_id)},
+      make_runtime_str(info->csd_version)};
+  return make_result_ok(alloc_struct(fields));
+}
+
+[[nodiscard]] auto intrinsic_rt_macos_version(std::span<const slot_value>)
+    -> slot_value {
+  const auto info = platform_query::query_macos_version();
+  if (!info) {
+    return make_result_err(errno);
+  }
+  const std::array<slot_value, 5> fields = {
+      make_runtime_str(info->release), make_runtime_str(info->version),
+      make_runtime_str(info->dev_stage),
+      make_runtime_str(info->non_release_version),
+      make_runtime_str(info->machine)};
+  return make_result_ok(alloc_struct(fields));
+}
+
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 
 /// Indexed by `op_call_intrinsic`'s `intrinsic_id` operand — must stay in
 /// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 17> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, 23> k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
@@ -1148,6 +1230,12 @@ constexpr std::array<intrinsic_fn, 17> k_intrinsics = {{
     intrinsic_rt_fmt_f64_sci,
     intrinsic_rt_fmt_f64_general,
     intrinsic_rt_fmt_char_from_codepoint,
+    intrinsic_rt_uname,
+    intrinsic_rt_gethostname,
+    intrinsic_rt_processor_name,
+    intrinsic_rt_libc_version,
+    intrinsic_rt_windows_version,
+    intrinsic_rt_macos_version,
 }};
 
 static_assert(k_intrinsics.size() == kira::known_intrinsic_names.size(),

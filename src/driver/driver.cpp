@@ -1,9 +1,12 @@
 #include "driver.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <string_view>
 #include <system_error>
 
 #include "lowering_stage.h"
@@ -18,6 +21,201 @@ using kira::util::append_text;
 using kira::util::normalize_path;
 
 namespace kira::driver {
+
+namespace {
+
+/// The `@architecture` variant constant matching this compiler binary's own
+/// build host CPU. Kira has no `--target` flag yet (no cross-compilation),
+/// so "target" and "build host" are the same thing for now — `TARGET_ARCH`
+/// et al. (spec/std-platform.md) describe whatever this binary was itself
+/// compiled for.
+[[nodiscard]] constexpr auto detect_target_arch() -> std::string_view {
+#if defined(__x86_64__) || defined(_M_X64)
+  return "@x86_64";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+  return "@aarch64";
+#elif defined(__arm__) || defined(_M_ARM)
+  return "@arm";
+#elif defined(__riscv) && __riscv_xlen == 64
+  return "@riscv64";
+#elif defined(__riscv) && __riscv_xlen == 32
+  return "@riscv32";
+#elif defined(__wasm64__)
+  return "@wasm64";
+#elif defined(__wasm32__)
+  return "@wasm32";
+#else
+  return "@other(\"unknown\")";
+#endif
+}
+
+struct target_os_info {
+  std::string_view os;
+  std::string_view family;
+  std::string_view vendor;
+  std::string_view env;
+};
+
+[[nodiscard]] constexpr auto detect_target_os() -> target_os_info {
+#if defined(_WIN32)
+  return {"windows", "windows", "pc", "msvc"};
+#elif defined(__APPLE__)
+  return {"macos", "macos", "apple", "none"};
+#elif defined(__linux__)
+#if defined(__GLIBC__)
+  return {"linux", "unix", "unknown", "gnu"};
+#else
+  return {"linux", "unix", "unknown", "musl"};
+#endif
+#elif defined(__FreeBSD__)
+  return {"freebsd", "unix", "unknown", "none"};
+#elif defined(__OpenBSD__)
+  return {"openbsd", "unix", "unknown", "none"};
+#elif defined(__NetBSD__)
+  return {"netbsd", "unix", "unknown", "none"};
+#else
+  return {"unknown", "unknown", "unknown", "none"};
+#endif
+}
+
+[[nodiscard]] constexpr auto detect_target_endian() -> std::string_view {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+  return "@big";
+#else
+  return "@little";
+#endif
+}
+
+/// Converts the C++ preprocessor's `__DATE__` ("Mon dd yyyy", e.g.
+/// `"Jul 13 2026"`) into `KIRA_BUILD_DATE`'s ISO-8601 form. Bazel's default
+/// toolchain redefines `__DATE__` to the literal `"redacted"` for
+/// reproducible builds (confirmed empirically: this compiler binary itself
+/// reports `__DATE__` as `"redacted"` under `bazelisk build`), so this
+/// returns `"unknown"` for any `__DATE__` that doesn't start with one of the
+/// twelve recognized month abbreviations rather than silently mis-slicing
+/// `"redacted"` into a garbled non-date like `"d-01-ct"`.
+[[nodiscard]] auto iso_build_date() -> std::string {
+  constexpr auto k_months =
+      std::array<std::pair<std::string_view, std::string_view>, 12>{{
+          {"Jan", "01"},
+          {"Feb", "02"},
+          {"Mar", "03"},
+          {"Apr", "04"},
+          {"May", "05"},
+          {"Jun", "06"},
+          {"Jul", "07"},
+          {"Aug", "08"},
+          {"Sep", "09"},
+          {"Oct", "10"},
+          {"Nov", "11"},
+          {"Dec", "12"},
+      }};
+  constexpr std::string_view k_build_date = __DATE__;
+  if (k_build_date.size() != 11) {
+    return "unknown";
+  }
+  const auto month_name = k_build_date.substr(0, 3);
+  auto month = std::string_view{};
+  for (const auto &[name, number] : k_months) {
+    if (name == month_name) {
+      month = number;
+      break;
+    }
+  }
+  if (month.empty()) {
+    return "unknown";
+  }
+  auto day = std::string(k_build_date.substr(4, 2));
+  if (day[0] == ' ') {
+    day[0] = '0';
+  }
+  const auto year = k_build_date.substr(7, 4);
+  return std::format("{}-{}-{}", year, month, day);
+}
+
+/// Generates `module std.platform`'s target/build-info accessor functions
+/// (spec/std-platform.md "Compile-Time Target Constants") as Kira source
+/// text, with no `module` line of its own. This is the one piece of
+/// `std.platform` that cannot be a checked-in `.kira` file: the values
+/// describe the compiler binary's own build host, so they are computed here
+/// from C++ preprocessor macros each time the driver runs and spliced into
+/// the checked-in `platform.kira` body (see `assemble_platform_module_source`).
+///
+/// Each value is embedded directly as the accessor function's own return
+/// literal (`pub pure def target_os() -> str: "macos"`) rather than routed
+/// through a `pub static` the function body then reads by name — a bare
+/// reference to a non-scalar (`str`, sum-type, struct, ...) top-level
+/// `static` lowers to an `hir_local_ref` the bytecode compiler can't
+/// resolve ("reference to `X` is not a local binding"), a pre-existing gap
+/// confirmed with a two-line repro (`type t = @a | @b`, `static X: t = @a`,
+/// `def f() -> t: X`, called from `main`) — only genuinely scalar statics
+/// (e.g. plain `int32`) survive that path. Embedding the literal in the
+/// function body itself sidesteps the bug entirely, since it never becomes
+/// a reference to a binding at all.
+///
+/// `target_os_family()` in particular is generated here rather than
+/// classified from `target_os()`'s string at runtime, because neither
+/// backend implements `str` `==` yet ("type `str` has no scalar
+/// bytecode/llvm_codegen representation yet ... until spec/codegen-design.md
+/// increment 6 (heap types) lands", confirmed with a two-line repro) — the
+/// classification the checked-in file would otherwise compute at runtime is
+/// done here in C++ instead, from the exact same `target_os_info` used for
+/// `target_os()` itself, so the two can't disagree.
+[[nodiscard]] auto generate_platform_target_accessors() -> std::string {
+  const auto os = detect_target_os();
+  const auto os_family_variant =
+      os.family == "unix"      ? std::string("@unix")
+      : os.family == "windows" ? std::string("@windows")
+      : os.family == "macos"   ? std::string("@macos")
+                               : std::format("@other(\"{}\")", os.family);
+  return std::format("pub pure def target_arch() -> architecture: {}\n"
+                     "pub pure def target_os() -> str: \"{}\"\n"
+                     "pub pure def target_os_family() -> os_family: {}\n"
+                     "pub pure def target_vendor() -> str: \"{}\"\n"
+                     "pub pure def target_env() -> str: \"{}\"\n"
+                     "pub pure def target_endianness() -> endianness: {}\n"
+                     "pub pure def target_pointer_width() -> usize: {}\n"
+                     "\n"
+                     "pub pure def kira_version() -> str: \"0.1.0\"\n"
+                     "pub pure def kira_implementation() -> str: \"kira\"\n"
+                     "pub pure def kira_compiler() -> str: \"llvm\"\n"
+                     "pub pure def kira_build_date() -> str: \"{}\"\n"
+                     "\n",
+                     detect_target_arch(), os.os, os_family_variant, os.vendor,
+                     os.env, detect_target_endian(), sizeof(void *),
+                     iso_build_date());
+}
+
+/// Reads the checked-in `platform_source_path` (`src/std/platform.kira`),
+/// strips its leading `module std.platform` line, and splices the
+/// driver-generated target/build-info accessors (see
+/// `generate_platform_target_accessors`'s doc comment for why they can't be
+/// a separate module or a `static` the rest of the file reads by name) in
+/// right after a single `module std.platform` line. Returns `nullopt` if
+/// the file can't be read or doesn't start with the expected module
+/// declaration.
+[[nodiscard]] auto assemble_platform_module_source(
+    const std::filesystem::path &platform_source_path)
+    -> std::optional<std::string> {
+  auto file = std::ifstream(platform_source_path);
+  if (!file) {
+    return std::nullopt;
+  }
+  auto body = std::string(std::istreambuf_iterator<char>(file),
+                          std::istreambuf_iterator<char>());
+  constexpr std::string_view k_expected_first_line = "module std.platform";
+  if (!body.starts_with(k_expected_first_line)) {
+    return std::nullopt;
+  }
+  const auto first_newline = body.find('\n');
+  const auto rest = first_newline == std::string::npos
+                        ? std::string_view{}
+                        : std::string_view(body).substr(first_newline + 1);
+  return std::format("module std.platform\n\n{}{}",
+                     generate_platform_target_accessors(), rest);
+}
+
+} // namespace
 
 /// Locates `filename` under the `src/std` Bazel package, trying every
 /// invocation shape the binary might run under (`bazelisk run`'s runfiles
@@ -88,6 +286,34 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
     const auto found = find_stdlib_source_file(cfg.program_name, filename);
     if (found && !already_present(*found)) {
       cfg.sources.push_back(found->string());
+    }
+  }
+
+  // `std.platform` is assembled rather than injected verbatim: its checked-in
+  // `platform.kira` body is spliced together with the driver-generated
+  // `TARGET_*`/`KIRA_*` constants block (`assemble_platform_module_source`'s
+  // doc comment explains why the two can't be separate modules) and the
+  // result written to a fixed path under the system temp directory. The
+  // content is a pure function of this compiler binary's own build host, so
+  // a stale or concurrently-written copy from another `kira` invocation is
+  // always byte-identical — nothing to race on.
+  if (const auto platform_source =
+          find_stdlib_source_file(cfg.program_name, "platform.kira")) {
+    auto ec = std::error_code{};
+    const auto assembled_path =
+        std::filesystem::temp_directory_path(ec) / "kira-platform.kira";
+    if (!ec && !already_present(assembled_path)) {
+      if (const auto assembled =
+              assemble_platform_module_source(*platform_source)) {
+        auto out = std::ofstream(assembled_path, std::ios::trunc);
+        if (out) {
+          out << *assembled;
+          out.close();
+          if (!out.fail()) {
+            cfg.sources.push_back(assembled_path.string());
+          }
+        }
+      }
     }
   }
 }

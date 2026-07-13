@@ -469,7 +469,7 @@ public:
       const std::unordered_map<std::string, llvm::Function *> &functions,
       llvm::Function *panic_fn, llvm::Function *alloc_fn,
       llvm::Function *list_reserve_slot_fn,
-      const std::array<llvm::Function *, 17> &intrinsic_fns,
+      const std::array<llvm::Function *, 23> &intrinsic_fns,
       std::string entry_module_name = {}, std::string current_module_name = {})
       : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
         alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
@@ -3352,7 +3352,7 @@ private:
   llvm::Function *panic_fn_;
   llvm::Function *alloc_fn_;
   llvm::Function *list_reserve_slot_fn_;
-  std::array<llvm::Function *, 17> intrinsic_fns_;
+  std::array<llvm::Function *, 23> intrinsic_fns_;
   std::string entry_module_name_;
   std::string current_module_name_;
   llvm::IRBuilder<> builder_;
@@ -3430,7 +3430,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   // also builds `io.cpp`/`fmt.cpp`; AOT: ordinary static linking against
   // that same archive).
   auto *ptr_ty = llvm::PointerType::get(ctx, 0);
-  auto intrinsic_fns = std::array<llvm::Function *, 17>{};
+  auto intrinsic_fns = std::array<llvm::Function *, 23>{};
   for (size_t i = 0; i < kira::known_intrinsic_names.size(); ++i) {
     auto param_types =
         std::vector<llvm::Type *>(kira::known_intrinsic_arities[i], ptr_ty);
