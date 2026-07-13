@@ -714,6 +714,49 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
          "expected top-level derive splice statement");
 }
 
+auto test_parser_accepts_if_let_expression() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "\n"
+      "def run(v: option[int], w: option[int]) -> int:\n"
+      "  let n = if let @some(x) = v: x elif let @some(y) = w: y else: 0\n"
+      "  return n\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1,
+         "expected a single top-level function declaration");
+
+  auto *run_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected run function declaration");
+  expect(run_decl->body_stmts.size() == 2,
+         "expected two statements in function body");
+
+  auto *let_stmt = expect_node<kira::ast::let_stmt>(
+      run_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected let-binding statement");
+  auto *if_expr = expect_expr<kira::ast::if_expr>(
+      let_stmt->initializer.get(), kira::ast::node_kind::if_expr,
+      "expected `if let` initializer to parse as an if-expression");
+
+  expect(if_expr->branches.size() == 2,
+         "expected the `if let` and `elif let` branches");
+  expect(if_expr->else_body.size() == 1, "expected the `else` body");
+
+  const auto &if_branch = if_expr->branches[0];
+  expect(if_branch.let_pattern != nullptr,
+         "expected `if let` pattern to be preserved");
+  expect(if_branch.let_expr != nullptr,
+         "expected `if let` scrutinee to be preserved");
+  expect(if_branch.body.size() == 1, "expected the `if let` branch body");
+
+  const auto &elif_branch = if_expr->branches[1];
+  expect(elif_branch.let_pattern != nullptr,
+         "expected `elif let` pattern to be preserved");
+  expect(elif_branch.let_expr != nullptr,
+         "expected `elif let` scrutinee to be preserved");
+}
+
 auto test_parser_accepts_phase1_audit_regressions() -> void {
   auto parsed = parse_source("module sample\n"
                              "\n"
@@ -1322,7 +1365,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 19> tests = {{
+  const std::array<named_test, 20> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -1339,6 +1382,7 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_spec_valid_regressions},
       {.name = "remaining_phase1_constructs",
        .fn = test_parser_accepts_remaining_phase1_constructs},
+      {.name = "if_let_expression", .fn = test_parser_accepts_if_let_expression},
       {.name = "phase1_audit_regressions",
        .fn = test_parser_accepts_phase1_audit_regressions},
       {.name = "index_vs_generic_instantiation",

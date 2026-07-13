@@ -1,0 +1,20 @@
+module codegen_stress.if_let_expression
+
+# `if let` in *expression* position: the branch pattern binding is scoped to
+# its own branch's tail value, chaining through `elif let` just like the
+# statement form does.
+def pick(v: option[int32], w: option[int32]) -> int32:
+    let n = if let @some(x) = v: x * 10 elif let @some(y) = w: y * 100 else: -1
+    return n
+
+def unwrap_or(v: option[int32], fallback: int32) -> int32:
+    return if let @some(n) = v: n else: fallback
+
+def main() -> int32:
+    var total = 0
+    total = total + pick(@some(2), @some(3))
+    total = total + pick(@none, @some(3))
+    total = total + pick(@none, @none)
+    total = total + unwrap_or(@some(7), 0)
+    total = total + unwrap_or(@none, 5)
+    return total
