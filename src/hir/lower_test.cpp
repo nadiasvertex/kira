@@ -1008,8 +1008,8 @@ auto test_lowers_if_let() -> void {
   expect(match.arms[0].pattern->kind ==
              hir::hir_node_kind::hir_constructor_pattern,
          "expected the first arm to test `@some(n)`");
-  const auto &pattern =
-      dynamic_cast<const hir::hir_constructor_pattern &>(*match.arms[0].pattern);
+  const auto &pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[0].pattern);
   expect(pattern.variant_name == "some", "expected the `some` variant");
   expect(match.arms[0].body->stmts.size() == 2,
          "expected the synthesized `let n = <payload>` plus the surface "
@@ -1022,7 +1022,8 @@ auto test_lowers_if_let() -> void {
   expect(match.arms[0].body->stmts[1]->kind == hir::hir_node_kind::hir_return,
          "expected the surface `return n`");
 
-  expect(match.arms[1].pattern->kind == hir::hir_node_kind::hir_wildcard_pattern,
+  expect(match.arms[1].pattern->kind ==
+             hir::hir_node_kind::hir_wildcard_pattern,
          "expected the fallback arm to be a wildcard");
   expect(match.arms[1].body->stmts.size() == 1,
          "expected the `else` body under the wildcard arm");
@@ -1034,14 +1035,15 @@ auto test_lowers_elif_let_chain() -> void {
   // A chain that mixes both branch forms: the leading plain `if` stays a
   // `hir_if`, and everything after it — the `elif let` and the `else` — is
   // what that `hir_if`'s else block holds.
-  auto fixture = check_fixture("module sample\n"
-                               "def pick(flag: bool, v: option[int32]) -> int32:\n"
-                               "    if flag:\n"
-                               "        return 0\n"
-                               "    elif let @some(n) = v:\n"
-                               "        return n\n"
-                               "    else:\n"
-                               "        return -1\n");
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def pick(flag: bool, v: option[int32]) -> int32:\n"
+                    "    if flag:\n"
+                    "        return 0\n"
+                    "    elif let @some(n) = v:\n"
+                    "        return n\n"
+                    "    else:\n"
+                    "        return -1\n");
   const auto &decl = find_func(*fixture.ast_file, "pick");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1060,8 +1062,8 @@ auto test_lowers_elif_let_chain() -> void {
   expect(conditional.else_body->stmts.size() == 1,
          "expected the rest of the chain to be the else block's one statement");
 
-  const auto &tail =
-      dynamic_cast<const hir::hir_expr_stmt &>(*conditional.else_body->stmts[0]);
+  const auto &tail = dynamic_cast<const hir::hir_expr_stmt &>(
+      *conditional.else_body->stmts[0]);
   expect(tail.expr->kind == hir::hir_node_kind::hir_match,
          "expected the `elif let` to lower to a hir_match in the else block");
   const auto &match = dynamic_cast<const hir::hir_match &>(*tail.expr);
