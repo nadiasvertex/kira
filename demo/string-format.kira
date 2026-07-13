@@ -1,0 +1,12 @@
+module main
+
+def main() -> int32:
+  let name = "Alice"
+  let age = 30
+  let pi = 3.1415926535
+
+  println("Name: {name :>10}")
+  println("Age:  {age :03}")
+  println("Pi:   {pi :.2f}")
+  println("Hex:  {255 :04x}")
+  println("Bin:  {255 :08b}")
