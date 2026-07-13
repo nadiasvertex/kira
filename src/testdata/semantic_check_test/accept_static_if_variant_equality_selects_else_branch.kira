@@ -1,0 +1,13 @@
+module sample
+
+type os_family = @unix | @windows | @other(str) deriving eq
+
+static CURRENT: os_family = @windows
+
+static if CURRENT == @unix:
+    static assert totally_undefined_condition, "unreachable — must not be checked"
+else:
+    static assert 1 == 1, "reachable — the `else` branch was correctly taken"
+
+def run() -> unit:
+    return unit

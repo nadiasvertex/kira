@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -98,6 +99,26 @@ public:
   /// declaration independently of `checker`'s own module-scoped lookup —
   /// see `checker::register_comptime_globals`, the only caller.
   void register_pending_type(std::string name, const ast::type_decl &decl);
+
+  /// A node -> (sum type name, variant name) lookup, backed by `checker`'s
+  /// own already-resolved `node_types_` (see `checker::resolve_variant_tag`,
+  /// the only real implementation). The evaluator needs this because the
+  /// parser drops the leading `@` from a variant constructor entirely —
+  /// `@unix` and a plain identifier `unix` produce the exact same
+  /// `ident_expr` node — so telling them apart requires the type checker's
+  /// resolution, not anything recoverable from syntax alone.
+  using variant_resolver_fn =
+      std::function<std::optional<std::pair<std::string, std::string>>(
+          const ast::node &)>;
+
+  /// Installs the checker's variant-resolution callback (see
+  /// `variant_resolver_fn`). Unset by default, in which case `eval_ident`/
+  /// `eval_call` never attempt variant construction — every existing
+  /// standalone use of `evaluator` (tests, anything not wired to a live
+  /// `checker`) keeps working unchanged.
+  void set_variant_resolver(variant_resolver_fn resolver) {
+    variant_resolver_ = std::move(resolver);
+  }
 
   /// Evaluates `iterable` in `static for` position to a `list` value.
   /// Supports list/array literals and integer ranges (`a..b`, `a..=b`);
@@ -255,6 +276,17 @@ private:
   [[nodiscard]] auto resolve_type_reference(const ast::ident_expr &ident)
       -> const ast::type_decl *;
 
+  /// Asks `variant_resolver_` (if installed) whether `node` is a resolved
+  /// variant constructor, then finds the matching `sum_variant` inside
+  /// `pending_types_[type_name]` — the `type` declaration must have been
+  /// registered via `register_pending_type` for this to succeed, mirroring
+  /// the same "must be compile-time visible" requirement
+  /// `resolve_type_reference` already imposes for reflection targets. Returns
+  /// `nullopt` if no resolver is installed, `node` doesn't resolve to a
+  /// sum-typed variant, or the resolved type was never registered.
+  [[nodiscard]] auto resolve_variant(const ast::node &node) -> std::optional<
+      std::pair<const ast::type_decl *, const ast::sum_variant *>>;
+
   [[nodiscard]] auto
   call_function(const ast::func_decl &fn, const std::string &name,
                 std::vector<value> args, source_span span,
@@ -296,6 +328,10 @@ private:
   /// Every registered `type` declaration, by name — see
   /// `register_pending_type` and `try_eval_type_reflection_call`.
   std::unordered_map<std::string, const ast::type_decl *> pending_types_;
+
+  /// See `set_variant_resolver`; unset (empty `std::function`) until
+  /// `checker` installs it.
+  variant_resolver_fn variant_resolver_;
 
   std::vector<std::unordered_map<std::string, value>> locals_;
   int call_depth_ = 0;

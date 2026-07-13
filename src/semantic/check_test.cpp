@@ -559,6 +559,38 @@ auto test_accepts_static_if_selects_taken_branch() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_static_if_selects_branch_by_sum_type_equality() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_static_if_selects_branch_by_sum_type_equality.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `static if CURRENT == @unix` to evaluate the "
+                     "sum-type equality at compile time and select the `if` "
+                     "branch, so the `else` branch's undefined-name "
+                     "reference is never reached:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_accepts_static_if_variant_equality_selects_else_branch() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_static_if_variant_equality_selects_else_branch.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `static if CURRENT == @unix` (CURRENT bound "
+                     "to `@windows`) to evaluate false at compile time and "
+                     "select the `else` branch, so the `if` branch's "
+                     "undefined-name reference is never reached:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_accepts_static_assert_compares_variant_payloads() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_static_assert_compares_variant_payloads.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `@other(\"bsd\") == @other(\"bsd\")` to "
+                     "compare equal, differing payloads/tags to compare "
+                     "unequal, all at compile time:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_reports_integer_literal_overflow() -> void {
   const auto analyzed =
       analyze_test_data_file("report_integer_literal_overflow.kira");
@@ -1343,6 +1375,9 @@ auto main() -> int {
     test_accepts_string_interpolation();
     test_accepts_static_let_evaluates();
     test_accepts_static_if_selects_taken_branch();
+    test_accepts_static_if_selects_branch_by_sum_type_equality();
+    test_accepts_static_if_variant_equality_selects_else_branch();
+    test_accepts_static_assert_compares_variant_payloads();
     test_accepts_quote_expr_typed_by_fragment_kind();
     test_accepts_static_def_call_evaluates();
     test_accepts_static_struct_value_evaluates();

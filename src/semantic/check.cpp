@@ -783,7 +783,10 @@ public:
   checker(program_index &index, diagnostic_bag &diag,
           std::vector<bool> &file_has_errors)
       : index_(index), diag_(diag), file_has_errors_(file_has_errors),
-        comptime_eval_(diag, 0) {}
+        comptime_eval_(diag, 0) {
+    comptime_eval_.set_variant_resolver(
+        [this](const ast::node &node) { return resolve_variant_tag(node); });
+  }
 
   /// Entry point: validates impl coherence session-wide, then checks every
   /// input file in turn.
@@ -2648,8 +2651,8 @@ private:
       if (fact.label.empty()) {
         continue;
       }
-      const auto relevant =
-          std::ranges::any_of(fact.poly.terms, [&](const poly_term &term) -> bool {
+      const auto relevant = std::ranges::any_of(
+          fact.poly.terms, [&](const poly_term &term) -> bool {
             return mentioned.contains(term.var);
           });
       if (relevant) {
@@ -10232,6 +10235,40 @@ private:
   /// missing evaluator feature degrades to a diagnostic rather than a
   /// crash. `static for` still only type-checks its body once against the
   /// element type — iteration is a later milestone.
+  /// The `checker`-side half of `comptime::evaluator::variant_resolver_fn`
+  /// (installed on `comptime_eval_` in the constructor): given a node the
+  /// evaluator is about to evaluate, reports whether `infer_expr` already
+  /// resolved it as a sum-type variant constructor (bare `@unix` parses to
+  /// a plain `ident_expr` named `"unix"`, and `@other(s)` to a `call_expr`
+  /// whose callee is an `ident_expr` named `"other"` — the parser drops the
+  /// `@` entirely, so this is the only place that distinguishes a variant
+  /// reference from an ordinary identifier/call). Requires `node` to already
+  /// have an entry in `node_types_`, which every caller of
+  /// `comptime_eval_.evaluate(...)` on a full expression tree (`static if`/
+  /// `static assert` conditions, `static let` initializers) already
+  /// guarantees by calling `infer_expr`/`require_bool` first.
+  auto resolve_variant_tag(const ast::node &node)
+      -> std::optional<std::pair<std::string, std::string>> {
+    const auto it = node_types_.find(&node);
+    if (it == node_types_.end()) {
+      return std::nullopt;
+    }
+    const auto &entry = types_.entry(strip_refs(it->second));
+    if (entry.kind != type_kind::sum_kind) {
+      return std::nullopt;
+    }
+    if (const auto *ident = dynamic_cast<const ast::ident_expr *>(&node)) {
+      return std::make_pair(entry.name, ident->name);
+    }
+    if (const auto *call = dynamic_cast<const ast::call_expr *>(&node)) {
+      if (const auto *callee =
+              dynamic_cast<const ast::ident_expr *>(call->callee.get())) {
+        return std::make_pair(entry.name, callee->name);
+      }
+    }
+    return std::nullopt;
+  }
+
   auto check_static_decl(const ast::static_decl &decl) -> void {
     comptime_eval_.set_file(file_id_);
     switch (decl.decl_kind) {

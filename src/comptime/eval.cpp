@@ -132,6 +132,45 @@ struct numeric_pair {
   int64_t ri = 0;
 };
 
+/// Structural equality for `==`/`!=` on `variant_instance` values: same sum
+/// type, same tag, and (recursively, since a payload value can itself be a
+/// nested variant, list, etc.) equal payloads element-for-element. Kinds
+/// this evaluator has no other equality rule for (`struct_instance`,
+/// `closure`, quote fragments, ...) compare unequal rather than reporting —
+/// callers only reach this once at least one side is known to be a variant,
+/// so a payload of an unsupported kind is a real "can't compare this"
+/// answer, not a diagnostic-worthy evaluator bug.
+auto variant_values_equal(const value &lhs, const value &rhs) -> bool {
+  if (lhs.kind != rhs.kind) {
+    return false;
+  }
+  switch (lhs.kind) {
+  case value_kind::unit:
+    return true;
+  case value_kind::boolean:
+    return lhs.boolean == rhs.boolean;
+  case value_kind::integer:
+    return lhs.integer == rhs.integer;
+  case value_kind::floating:
+    return lhs.floating == rhs.floating;
+  case value_kind::string:
+    return lhs.string == rhs.string;
+  case value_kind::variant_instance:
+    if (lhs.type_name != rhs.type_name || lhs.variant_tag != rhs.variant_tag ||
+        lhs.elements.size() != rhs.elements.size()) {
+      return false;
+    }
+    for (std::size_t i = 0; i < lhs.elements.size(); ++i) {
+      if (!variant_values_equal(lhs.elements[i], rhs.elements[i])) {
+        return false;
+      }
+    }
+    return true;
+  default:
+    return false;
+  }
+}
+
 } // namespace
 
 namespace {
@@ -279,6 +318,9 @@ auto evaluator::resolve_name(const std::string &name, source_span span)
 }
 
 auto evaluator::eval_ident(const ast::ident_expr &ident) -> value {
+  if (const auto variant = resolve_variant(ident)) {
+    return value::make_variant(variant->first->name, variant->second->name, {});
+  }
   return resolve_name(ident.name, ident.span);
 }
 
@@ -366,6 +408,23 @@ auto evaluator::eval_binary(const ast::binary_expr &bin) -> value {
     }
     if (lhs.kind == value_kind::boolean && rhs.kind == value_kind::boolean) {
       const auto equal = lhs.boolean == rhs.boolean;
+      return value::make_bool(bin.op == ast::binary_op::eq_eq ? equal : !equal);
+    }
+    if (lhs.kind == value_kind::variant_instance ||
+        rhs.kind == value_kind::variant_instance) {
+      if (lhs.kind != rhs.kind || lhs.type_name != rhs.type_name) {
+        return report(
+            bin.span,
+            std::format("cannot compare `{}` and `{}` at compile time — "
+                        "they are not the same sum type",
+                        lhs.kind == value_kind::variant_instance
+                            ? lhs.type_name
+                            : std::string("<non-variant>"),
+                        rhs.kind == value_kind::variant_instance
+                            ? rhs.type_name
+                            : std::string("<non-variant>")));
+      }
+      const auto equal = variant_values_equal(lhs, rhs);
       return value::make_bool(bin.op == ast::binary_op::eq_eq ? equal : !equal);
     }
   }
@@ -1435,6 +1494,33 @@ auto evaluator::resolve_type_reference(const ast::ident_expr &ident)
   return it != pending_types_.end() ? it->second : nullptr;
 }
 
+auto evaluator::resolve_variant(const ast::node &node) -> std::optional<
+    std::pair<const ast::type_decl *, const ast::sum_variant *>> {
+  if (!variant_resolver_) {
+    return std::nullopt;
+  }
+  auto resolved = variant_resolver_(node);
+  if (!resolved) {
+    return std::nullopt;
+  }
+  const auto type_it = pending_types_.find(resolved->first);
+  if (type_it == pending_types_.end()) {
+    return std::nullopt;
+  }
+  const auto *decl = type_it->second;
+  const auto *sum_def =
+      dynamic_cast<const ast::sum_type_def *>(decl->definition.get());
+  if (sum_def == nullptr) {
+    return std::nullopt;
+  }
+  for (const auto &variant : sum_def->body.variants) {
+    if (variant.name == resolved->second) {
+      return std::make_pair(decl, &variant);
+    }
+  }
+  return std::nullopt;
+}
+
 auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
     -> std::optional<value> {
   if (call.callee == nullptr ||
@@ -1492,6 +1578,26 @@ auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
 auto evaluator::eval_call(const ast::call_expr &call) -> value {
   if (call.callee == nullptr) {
     return value::make_error();
+  }
+  if (const auto variant = resolve_variant(call)) {
+    auto payload = std::vector<value>{};
+    payload.reserve(call.args.size());
+    for (const auto &arg : call.args) {
+      if (arg.name.has_value()) {
+        return report(arg.span, "named arguments are not supported when "
+                                "constructing a variant at compile time");
+      }
+      if (arg.value == nullptr) {
+        return value::make_error();
+      }
+      auto arg_value = evaluate(*arg.value);
+      if (arg_value.is_error()) {
+        return arg_value;
+      }
+      payload.push_back(std::move(arg_value));
+    }
+    return value::make_variant(variant->first->name, variant->second->name,
+                               std::move(payload));
   }
   if (auto builder = try_eval_expr_builder_call(call)) {
     return *builder;

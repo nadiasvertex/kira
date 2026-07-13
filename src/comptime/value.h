@@ -25,6 +25,18 @@ enum class value_kind : uint8_t {
   list,
   /// A compile-time struct instance built from a `struct_expr` literal.
   struct_instance,
+  /// A compile-time sum-type variant instance, e.g. `@x86_64` or
+  /// `@other("foo")` — the type's name and the specific variant's tag are
+  /// held in `type_name`/`variant_tag`; any payload values (e.g. `"foo"` in
+  /// `@other("foo")`) reuse `elements`, positionally, one per declared
+  /// payload type. Constructed only through `variant_resolver_fn`
+  /// (`evaluator::resolve_variant`), which asks the type checker's own
+  /// already-resolved type for the node whether it names a variant — the
+  /// parser drops the leading `@` entirely (`@unix` becomes a plain
+  /// `ident_expr` named `"unix"`), so the evaluator has no syntactic way to
+  /// tell a variant constructor apart from an ordinary identifier without
+  /// that resolved-type context.
+  variant_instance,
   /// A reference to a `static def` function, callable from other
   /// compile-time expressions.
   closure,
@@ -78,6 +90,10 @@ struct value {
   /// Field values for `struct_instance`.
   std::unordered_map<std::string, value> fields;
 
+  /// Variant tag for `variant_instance` (e.g. `"unix"`, `"x86_64"`,
+  /// `"other"`); `type_name` (above) holds the sum type's own name.
+  std::string variant_tag;
+
   /// Target function for `closure`; never owning — function declarations
   /// live for the whole checking session.
   const ast::func_decl *function = nullptr;
@@ -117,6 +133,14 @@ struct value {
     return value{.kind = value_kind::struct_instance,
                  .type_name = std::move(type_name),
                  .fields = std::move(fields)};
+  }
+  [[nodiscard]] static auto make_variant(std::string type_name,
+                                         std::string variant_tag,
+                                         std::vector<value> payload) -> value {
+    return value{.kind = value_kind::variant_instance,
+                 .elements = std::move(payload),
+                 .type_name = std::move(type_name),
+                 .variant_tag = std::move(variant_tag)};
   }
   [[nodiscard]] static auto make_closure(std::string name,
                                          const ast::func_decl *function)

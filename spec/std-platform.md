@@ -7,10 +7,12 @@ Cross-platform and platform-specific runtime and compile-time introspection. Thi
 ## Design Principles
 
 - **Compile-time target vs. runtime host.** Kira binaries are compiled for a target triple (`arch-vendor-os-env`). Most properties of the *target* — architecture, pointer width, endianness, OS family — are known when the binary is built and are exposed as `static` constants. Properties of the *host* the binary is running on — hostname, detailed OS release, processor name — are queried at runtime through thin intrinsics.
+- **Error propagation uses `?`, not combinators.** Kira does not have `result`/`option` combinator methods (`.map`, `.map_err`, `.ok()`); the primitive is `?`. A function that returns `result[T, io_error]` propagates a failing intrinsic call with `let x = rt_thing()?`, and `?` converts the intrinsic's `io_errno` to `io_error` automatically via the same `from` mechanism used elsewhere in the language (see `impl from[io_errno] for io_error` below). Where an error must be *swallowed* rather than propagated (turning a `result` into an `@none`), that is spelled with an explicit `match`, since `?` only propagates.
 - **Best-effort convenience, explicit precision.** `uname()` returns a struct whose runtime-queried fields are `option[str]`, making "could not determine" (`@none`) distinguishable from "genuinely empty" (`@some("")`). The `show` implementation collapses `@none` into `"unknown"` for the common "print it and continue" use case. Individual field queries (`node()`, `release()`, `processor()`) return `result[T, io_error]` so that code that must handle failure explicitly can do so.
 - **Platform-specific functions return `option`, not `result`.** Calling `libc_ver()` on Windows is not an error — the information simply does not apply. Returning `option` makes `if let` the natural way to consume platform-specific data.
 - **Extensible sum types.** `architecture` and `os_family` enumerate the common cases but carry an `@other(str)` variant so that ports to new platforms do not require immediate standard library changes.
-- **`static if` at module boundaries.** Platform-specific intrinsics and parsing helpers are compiled only on the platform they target. A Windows binary does not contain `rt_uname()` or the code that parses POSIX `utsname` buffers.
+- **`static if` at module boundaries.** Platform-specific intrinsics and function definitions are compiled only on the platform they target. A Windows binary does not contain `rt_uname()` or the code that parses POSIX `utsname` buffers. Every `static if` in this module branches on the raw string constant `TARGET_OS_FAMILY`, not on a call to `target_os_family()` — a `static if` condition can only reference other compile-time-evaluable expressions (`static let`/`static` constants, literals, and calls to `static def` functions), and `target_os_family()` is an ordinary `pub pure def`, evaluated only at runtime. `TARGET_OS_FAMILY == "unix"` is plain compile-time string equality, which the evaluator has always supported.
+- **`target_os_family()`/`is_unix()` use `match`, not `==`, at runtime.** Compile-time equality (`static if`/`static assert`) does understand sum-type equality, including payload comparison (`@other("bsd") == @other("bsd")`) — that's how `static if TARGET_OS_FAMILY == "unix"`-shaped conditions resolve at all. But that is the compile-time evaluator specifically; the *runtime* codegen backends (bytecode VM and LLVM) do not yet generate code for `==` on a user-defined sum type. So `is_unix()`/`is_windows()`/`is_macos()`, which run at *runtime*, still use `match` on `target_os_family()`'s result rather than comparing it with `==`.
 
 ---
 
@@ -21,6 +23,7 @@ These are provided by the compiler driver and build system. They describe the pl
 ```kira
 pub static TARGET_ARCH: architecture = ...           # e.g. @x86_64
 pub static TARGET_OS: str = ...                    # e.g. "linux", "windows", "macos"
+pub static TARGET_OS_FAMILY: str = ...             # "unix", "windows", "macos", or the raw TARGET_OS for anything else
 pub static TARGET_VENDOR: str = ...                # e.g. "unknown", "pc", "apple"
 pub static TARGET_ENV: str = ...                  # e.g. "gnu", "musl", "msvc"
 pub static TARGET_ENDIAN: endianness = ...         # @little or @big
@@ -31,6 +34,8 @@ pub static KIRA_IMPLEMENTATION: str = "kira"
 pub static KIRA_COMPILER: str = "llvm"
 pub static KIRA_BUILD_DATE: str = "2026-07-13"
 ```
+
+`TARGET_OS_FAMILY` exists solely so that `static if` conditions in this module stay inside the compile-time evaluator's supported subset (plain `str` equality). It carries the same grouping as `os_family` (`@unix`/`@windows`/`@macos`/`@other`) but as a string, since the sum type itself cannot be compared at compile time. `target_os_family()` below derives the ergonomic enum from `TARGET_OS` for runtime use — it does not read `TARGET_OS_FAMILY`, so the two never need to be kept in sync by hand beyond the driver computing both from the same target triple.
 
 ---
 
@@ -48,18 +53,17 @@ pub type architecture =
     | @wasm32
     | @wasm64
     | @other(str)
-    deriving eq, show
 
 pub type os_family =
     | @unix
     | @windows
     | @macos
     | @other(str)
-    deriving eq, show
 
 pub type endianness = @little | @big
-    deriving eq, show
 ```
+
+`show` is implemented by hand for each of these below rather than with `deriving`: `deriving` only generates real code for struct-shaped types today, so a sum type gains nothing from listing it and the explicit `impl show` is what actually runs.
 
 ### Information structs
 
@@ -108,10 +112,10 @@ pub type macos_version = {
 
 ## Intrinsics
 
-Platform-specific intrinsics are compiled only on the platforms that need them. Each is a thin wrapper around one OS call.
+Platform-specific intrinsics are compiled only on the platforms that need them, gated by `TARGET_OS_FAMILY` so the branch not taken is neither compiled nor type-checked. Each is a thin wrapper around one OS call.
 
 ```kira
-static if target_os_family() == @unix:
+static if TARGET_OS_FAMILY == "unix":
     type uname_raw = {
         sysname: str,
         nodename: str,
@@ -122,7 +126,7 @@ static if target_os_family() == @unix:
     intrinsic def rt_uname() -> result[uname_raw, io_errno]
     intrinsic def rt_libc_version() -> result[str, io_errno]
 
-static if target_os_family() == @windows:
+static if TARGET_OS_FAMILY == "windows":
     type winver_raw = {
         major: uint32,
         minor: uint32,
@@ -132,7 +136,7 @@ static if target_os_family() == @windows:
     }
     intrinsic def rt_windows_version() -> result[winver_raw, io_errno]
 
-static if target_os_family() == @macos:
+static if TARGET_OS_FAMILY == "macos":
     type macver_raw = {
         release: str,
         version: str,
@@ -142,7 +146,8 @@ static if target_os_family() == @macos:
     }
     intrinsic def rt_macos_version() -> result[macver_raw, io_errno]
 
-# Available on all platforms where a processor identifier can be queried.
+# Available on all platforms.
+intrinsic def rt_gethostname() -> result[str, io_errno]
 intrinsic def rt_processor_name() -> result[str, io_errno]
 ```
 
@@ -166,48 +171,79 @@ pub pure def target_os_family() -> os_family:
 
 ### Convenience predicates
 
+`os_family` equality is not something the compiler generates `==` for, so these are spelled with `match` rather than `target_os_family() == @unix`.
+
 ```kira
-pub pure def is_unix() -> bool: target_os_family() == @unix
-pub pure def is_windows() -> bool: target_os_family() == @windows
-pub pure def is_macos() -> bool: target_os_family() == @macos
+pub pure def is_unix() -> bool:
+    match target_os_family():
+        @unix => true
+        _ => false
+
+pub pure def is_windows() -> bool:
+    match target_os_family():
+        @windows => true
+        _ => false
+
+pub pure def is_macos() -> bool:
+    match target_os_family():
+        @macos => true
+        _ => false
 ```
 
 ---
 
 ## Runtime Queries
 
-These query the host system at runtime and may fail if the underlying OS call fails.
+These query the host system at runtime and may fail if the underlying OS call fails. Each uses `?` to propagate a failing intrinsic call — `?` converts the intrinsic's `io_errno` to the function's `io_error` return type automatically, via `impl from[io_errno] for io_error`.
 
 ```kira
 pub def node() -> result[str, io_error]:
-    static if target_os_family() == @unix:
-        rt_uname().map_err(io_error.from).map(raw => raw.nodename)
-    else:
-        # Windows and other platforms: separate intrinsic or fallback
-        rt_gethostname().map_err(io_error.from)
-
-pub def release() -> result[str, io_error]:
-    static if target_os_family() == @unix:
-        rt_uname().map_err(io_error.from).map(raw => raw.release)
-    static if target_os_family() == @windows:
-        rt_windows_version().map_err(io_error.from).map(raw => raw.release)
-    static if target_os_family() == @macos:
-        rt_macos_version().map_err(io_error.from).map(raw => raw.release)
-    else:
-        @err(io_error.from(io_errno { code: 0 }))  # ENOSYS equivalent
-
-pub def version() -> result[str, io_error]:
-    static if target_os_family() == @unix:
-        rt_uname().map_err(io_error.from).map(raw => raw.version)
-    static if target_os_family() == @windows:
-        rt_windows_version().map_err(io_error.from).map(raw => raw.version)
-    static if target_os_family() == @macos:
-        rt_macos_version().map_err(io_error.from).map(raw => raw.version)
-    else:
-        @err(io_error.from(io_errno { code: 0 }))
+    let name = rt_gethostname()?
+    return @ok(name)
 
 pub def processor() -> result[str, io_error]:
-    rt_processor_name().map_err(io_error.from)
+    let name = rt_processor_name()?
+    return @ok(name)
+```
+
+`release()` and `version()` genuinely differ per platform, so each platform gets its own definition of the function, selected by a chain of item-level `static if`/`else` — only the taken branch is compiled:
+
+```kira
+static if TARGET_OS_FAMILY == "unix":
+    pub def release() -> result[str, io_error]:
+        let raw = rt_uname()?
+        return @ok(raw.release)
+else:
+    static if TARGET_OS_FAMILY == "windows":
+        pub def release() -> result[str, io_error]:
+            let raw = rt_windows_version()?
+            return @ok("{raw.major}.{raw.minor}")
+    else:
+        static if TARGET_OS_FAMILY == "macos":
+            pub def release() -> result[str, io_error]:
+                let raw = rt_macos_version()?
+                return @ok(raw.release)
+        else:
+            pub def release() -> result[str, io_error]:
+                return @err(io_error.from(io_errno { code: 0 }))  # ENOSYS equivalent
+
+static if TARGET_OS_FAMILY == "unix":
+    pub def version() -> result[str, io_error]:
+        let raw = rt_uname()?
+        return @ok(raw.version)
+else:
+    static if TARGET_OS_FAMILY == "windows":
+        pub def version() -> result[str, io_error]:
+            let raw = rt_windows_version()?
+            return @ok("{raw.major}.{raw.minor}.{raw.build}")
+    else:
+        static if TARGET_OS_FAMILY == "macos":
+            pub def version() -> result[str, io_error]:
+                let raw = rt_macos_version()?
+                return @ok(raw.version)
+        else:
+            pub def version() -> result[str, io_error]:
+                return @err(io_error.from(io_errno { code: 0 }))
 ```
 
 ---
@@ -216,17 +252,22 @@ pub def processor() -> result[str, io_error]:
 
 ### `uname` — structured platform info
 
-Best-effort: fields that cannot be determined are `@none`. This is the common-case convenience; it never fails.
+Best-effort: fields that cannot be determined are `@none`. This is the common-case convenience; it never fails. `?` cannot express "swallow the error and continue" — it only propagates — so converting each `result` to `option` here is spelled with an explicit `match`, factored into one private helper.
 
 ```kira
+priv def result_to_option(r: result[str, io_error]) -> option[str]:
+    match r:
+        @ok(v) => @some(v)
+        @err(_) => @none
+
 pub def uname() -> platform_info:
     platform_info {
         system: target_os(),
-        node: node().ok(),
-        release: release().ok(),
-        version: version().ok(),
+        node: result_to_option(node()),
+        release: result_to_option(release()),
+        version: result_to_option(version()),
         machine: target_arch(),
-        processor: processor().ok(),
+        processor: result_to_option(processor()),
         endianness: target_endianness(),
         pointer_width: target_pointer_width(),
         os_family: target_os_family(),
@@ -268,14 +309,14 @@ pub pure def kira_build_info() -> kira_build:
 
 ## Platform-Specific Queries
 
-These return `@none` when called on a platform other than the one they describe. The caller uses `if let` to consume them.
+These return `@none` when called on a platform other than the one they describe. The caller uses `if let` to consume them. The error from the underlying intrinsic is discarded (not `?`-propagated) since these functions never fail — they only report "not applicable" or "queried and failed" as the same `@none`.
 
 ### Unix — libc version
 
 ```kira
 pub def libc_ver() -> option[libc_version]:
     if not is_unix(): return @none
-    match rt_libc_version().map_err(io_error.from):
+    match rt_libc_version():
         @ok(v) => @some(parse_libc_version(v))
         @err(_) => @none
 ```
@@ -285,7 +326,7 @@ pub def libc_ver() -> option[libc_version]:
 ```kira
 pub def win32_ver() -> option[windows_version]:
     if not is_windows(): return @none
-    match rt_windows_version().map_err(io_error.from):
+    match rt_windows_version():
         @ok(v) => @some(parse_windows_version(v))
         @err(_) => @none
 ```
@@ -295,7 +336,7 @@ pub def win32_ver() -> option[windows_version]:
 ```kira
 pub def mac_ver() -> option[macos_version]:
     if not is_macos(): return @none
-    match rt_macos_version().map_err(io_error.from):
+    match rt_macos_version():
         @ok(v) => @some(parse_macos_version(v))
         @err(_) => @none
 ```
@@ -305,7 +346,7 @@ pub def mac_ver() -> option[macos_version]:
 ## Internal Helpers
 
 ```kira
-file pure def classify_os_family(os: str) -> os_family:
+priv pure def classify_os_family(os: str) -> os_family:
     let lower = os.to_lowercase()
     match lower:
         "linux" => @unix
@@ -319,14 +360,14 @@ file pure def classify_os_family(os: str) -> os_family:
         "macos" => @macos
         _ => @other(os)
 
-file def parse_libc_version(s: str) -> libc_version:
+priv def parse_libc_version(s: str) -> libc_version:
     let parts = s.split(" ")
     if parts.len() >= 2:
         libc_version { name: parts[0], version: parts[1] }
     else:
         libc_version { name: s, version: "" }
 
-file def parse_windows_version(raw: winver_raw) -> windows_version:
+priv def parse_windows_version(raw: winver_raw) -> windows_version:
     windows_version {
         release: "{raw.major}.{raw.minor}",
         version: "{raw.major}.{raw.minor}.{raw.build}",
@@ -334,7 +375,7 @@ file def parse_windows_version(raw: winver_raw) -> windows_version:
         platform_type: "{raw.platform_id}",
     }
 
-file def parse_macos_version(raw: macver_raw) -> macos_version:
+priv def parse_macos_version(raw: macver_raw) -> macos_version:
     macos_version {
         release: raw.release,
         version: raw.version,
@@ -442,9 +483,12 @@ def main() -> unit:
 |---|---|
 | Target info is `static` / `pure` | The target triple is baked into the binary; there is no runtime cost and no failure mode |
 | Host info is `result[T, io_error]` | OS calls can genuinely fail; the type forces the caller to decide what to do |
+| Error propagation uses `?`, not `.map`/`.map_err`/`.ok()` | Kira has no result/option combinator methods; `?` is the language's one propagation primitive, with implicit `from`-based error conversion; swallow-the-error conversions use `match` instead |
+| `static if` branches on the raw `TARGET_OS_FAMILY` string, not a call to `target_os_family()` | A `static if` condition can only reference other compile-time constants and `static def` calls; `target_os_family()` is an ordinary runtime `pure def`. Compile-time sum-type equality itself (`@other("bsd") == @other("bsd")`) does work, given `deriving eq` |
+| Runtime OS-family checks use `match`, not `==` | The compiler does not generate `==` for user-defined sum types, so `is_unix()` etc. match on `target_os_family()` instead of comparing it |
 | `uname()` uses `option[str]` for runtime fields | `@none` (could not query) and `@some("")` (genuinely empty from OS) are distinguishable; no magic-value sentinel |
 | `platform()` never fails | It is a formatting convenience; `"unknown"` is an acceptable fallback |
 | Platform-specific functions return `option` | Calling `libc_ver()` on Windows is not an error — the information simply does not apply |
-| `architecture` / `os_family` are sum types with `@other` | Makes invalid states unrepresentable for known platforms while remaining extensible |
-| `static if` guards platform-specific intrinsics | A Windows binary does not contain POSIX `uname` parsing code, and vice versa |
-| `is_unix()`, `is_windows()`, `is_macos()` predicates | Common branches that read better than `target_os_family() == @unix` |
+| `architecture` / `os_family` are sum types with `@other` | Makes invalid states unrepresentable for known platforms while remaining extensible; `show` is hand-written since `deriving` only generates real code for structs |
+| `static if` guards platform-specific intrinsics and function definitions | A Windows binary does not contain POSIX `uname` parsing code, and vice versa |
+| `is_unix()`, `is_windows()`, `is_macos()` predicates | Common branches that read better than a `match` on `target_os_family()` inline |

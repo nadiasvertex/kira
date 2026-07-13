@@ -1,0 +1,15 @@
+module sample
+
+type os_family = @unix | @windows | @other(str) deriving eq
+
+static A: os_family = @other("bsd")
+static B: os_family = @other("bsd")
+static C: os_family = @other("sysv")
+static D: os_family = @unix
+
+static assert A == B, "same tag and same payload must compare equal"
+static assert A != C, "same tag but different payload must compare unequal"
+static assert A != D, "different tags of the same sum type must compare unequal"
+
+def run() -> unit:
+    return unit
