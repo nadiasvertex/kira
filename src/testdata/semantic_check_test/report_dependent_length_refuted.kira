@@ -1,0 +1,11 @@
+module deps.refuted
+
+type vec[T, n: usize] = { data: array[T, n] }
+
+def head[T, n: usize](v: vec[T, n + 1]) -> unit:
+    ()
+
+# `n + 1` can never be `0` for `n: usize` — calling `head` on an empty vec is
+# the spec's own example of an arithmetic impossibility, not a mere mismatch.
+def head_of_empty(v: vec[int32, 0]) -> unit:
+    head(v)

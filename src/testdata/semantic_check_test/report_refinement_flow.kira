@@ -1,0 +1,29 @@
+module demo.flow
+
+type positive = int32 where self > 0
+
+def needs_positive(x: positive) -> int32:
+    x
+
+# Path condition: inside the branch, `y > 0` holds.
+def narrowed(y: int32) -> int32:
+    if y > 0:
+        needs_positive(y)
+    else:
+        0
+
+# The `else` gets the negation, which does *not* discharge `y > 0`.
+def not_narrowed_in_else(y: int32) -> int32:
+    if y > 0:
+        0
+    else:
+        needs_positive(y)
+
+# Mutation invalidates: `y` is no longer the value the condition was about.
+def invalidated_by_assignment(z: int32) -> int32:
+    var y = z
+    if y > 0:
+        y = 0 - 1
+        needs_positive(y)
+    else:
+        0

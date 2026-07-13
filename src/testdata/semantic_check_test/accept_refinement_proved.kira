@@ -1,0 +1,33 @@
+module deps.proved
+
+type positive = int32 where self > 0
+type index[n: usize] = usize where self < n
+
+def needs_positive(x: positive) -> int32:
+    x
+
+# Proved from the literal itself.
+def from_literal() -> int32:
+    needs_positive(5)
+
+# Proved because the value already carries the predicate.
+def from_refined(p: positive) -> int32:
+    needs_positive(p)
+
+# Widening is free: `positive` is an `int32` to every operator.
+def widening_is_free(p: positive) -> int32:
+    p + 1
+
+# `n` is pinned to 4 by the array argument, so `2 < 4` is provable — and the
+# bounds check on `v[i]` inside `safe_get` is proved away entirely.
+def safe_get[T, n: usize](v: array[T, n], i: index[n]) -> T:
+    v[i]
+
+def in_range(v: array[int32, 4]) -> int32:
+    safe_get(v, 2)
+
+# The escape hatch: what the solver cannot prove, a runtime check can.
+def from_proof(raw: int32) -> int32:
+    match positive.try_from(raw):
+        @some(p) => needs_positive(p)
+        @none    => 0

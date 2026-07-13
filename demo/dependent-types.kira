@@ -1,0 +1,52 @@
+module main
+
+# ==========================================================================
+#  Dependent and refinement types.
+#
+#  The compiler proves what it can, refuses what it can disprove, and hands
+#  you a runtime check for the rest. See spec/dependent-types-design.md.
+#
+#  (Kept free of generic functions only because HIR does not lower those yet
+#  — the checking below works identically for `safe_get[T, n: usize]`.)
+# ==========================================================================
+
+# A refinement constrains a type with a predicate over `self`.
+type positive = int32 where self > 0
+
+# `index4` is a `usize` that is provably a valid index into a 4-element array.
+type index4 = usize where self < 4
+
+def needs_positive(x: positive) -> int32:
+    x
+
+# `i < 4` (from the refinement) and `len(v) == 4` (from the array's type) are
+# both known here, so `i < len(v)` is *proved* and the bounds check is elided:
+# this compiles to a bare load.
+def safe_get(v: array[int32, 4], i: index4) -> int32:
+    v[i]
+
+# The escape hatch: what the solver cannot prove, a runtime check can. The
+# unwrap *is* the proof — `p` simply has type `positive` inside the branch,
+# with nothing further to discharge.
+def classify(raw: int32) -> int32:
+    match positive.try_from(raw):
+        @some(p) => needs_positive(p)
+        @none    => 0
+
+def main() -> int32:
+    # Proved from the literal itself — no runtime check emitted.
+    println("literal:  {needs_positive(7)}")
+
+    # Proved from the branch: inside the `if`, the fact `x > 0` holds, so `x`
+    # satisfies `positive` with no annotation and no cast.
+    let x = 3
+    if x > 0:
+        println("narrowed: {needs_positive(x)}")
+
+    # Proved against the array's length, which the type carries.
+    let v: array[int32, 4] = [10, 20, 30, 40]
+    println("indexed:  {safe_get(v, 2)}")
+
+    # Checked at runtime, because nothing here is knowable statically.
+    println("try_from: {classify(9)} then {classify(0 - 9)}")
+    0

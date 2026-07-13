@@ -1,0 +1,13 @@
+module deps.contract_bad
+
+def reserve(n: usize) -> unit
+pre n > 0, "cannot reserve zero bytes"
+pre n < 4096, "requested size exceeds maximum"
+: ()
+
+# Statically knowable violations, so compile errors — not runtime panics.
+def zero() -> unit:
+    reserve(0)
+
+def too_big() -> unit:
+    reserve(9000)

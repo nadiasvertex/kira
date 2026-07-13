@@ -1,0 +1,29 @@
+module deps.flow_ok
+
+type positive = int32 where self > 0
+
+def needs_positive(x: positive) -> int32:
+    x
+
+# The path condition discharges the obligation: no annotation, no `try_from`.
+def narrowed(y: int32) -> int32:
+    if y > 0:
+        needs_positive(y)
+    else:
+        0
+
+# A conjunction narrows too, and only the relevant conjunct is needed.
+def narrowed_by_conjunction(y: int32, z: int32) -> int32:
+    if y > 10 and z > 0:
+        needs_positive(y)
+    else:
+        0
+
+# Reaching a later branch means the earlier ones were refuted.
+def narrowed_by_elif(y: int32) -> int32:
+    if y < 1:
+        0
+    elif y < 100:
+        needs_positive(y)
+    else:
+        0

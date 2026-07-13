@@ -1,0 +1,20 @@
+module deps.refuted_value
+
+type positive = int32 where self > 0
+type index[n: usize] = usize where self < n
+
+def needs_positive(x: positive) -> int32:
+    x
+
+def safe_get[T, n: usize](v: array[T, n], i: index[n]) -> T:
+    v[i]
+
+# Not unproven — *dis*proved. The compiler can see this is wrong.
+def from_negative() -> int32:
+    needs_positive(0 - 3)
+
+def out_of_range(v: array[int32, 4]) -> int32:
+    safe_get(v, 9)
+
+def literal_out_of_bounds(v: array[int32, 4]) -> int32:
+    v[9]

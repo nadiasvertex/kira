@@ -1,0 +1,33 @@
+module deps.contract_ok
+
+type positive = int32 where self > 0
+
+def needs_positive(p: positive) -> int32:
+    p
+
+def reserve(n: usize) -> unit
+pre n > 0, "cannot reserve zero bytes"
+pre n < 4096, "requested size exceeds maximum"
+: ()
+
+# Both preconditions are provable, so both checks compile away entirely.
+def proved() -> unit:
+    reserve(64)
+
+# Nothing is known about `n`, so the checks stay and run. Not an error — this
+# is what a contract is for.
+def unproven(n: usize) -> unit:
+    reserve(n)
+
+# A precondition is a *fact* inside the callee, which is what lets it satisfy
+# a refinement with no further proof.
+def precondition_is_a_fact(x: int32) -> int32
+pre x > 0
+: needs_positive(x)
+
+# So is a struct invariant, for every value of the type.
+type positive_int = { value: int32 }
+    invariant self.value > 0
+
+def invariant_is_a_fact(p: positive_int) -> int32:
+    needs_positive(p.value)

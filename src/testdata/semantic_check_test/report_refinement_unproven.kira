@@ -1,0 +1,11 @@
+module deps.unproven
+
+type positive = int32 where self > 0
+
+def needs_positive(x: positive) -> int32:
+    x
+
+# Nothing is known about `y`, so the predicate cannot be discharged. This is
+# the graceful path: the diagnostic must name the goal and both ways out.
+def from_unknown(y: int32) -> int32:
+    needs_positive(y)

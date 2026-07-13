@@ -1,0 +1,18 @@
+module deps.symbolic
+
+# A length carried in the type, and a signature that arithmetic on it.
+type vec[T, n: usize] = { data: array[T, n] }
+
+# `n + 1` means "at least one element" — an empty vec cannot match it.
+def head[T, n: usize](v: vec[T, n + 1]) -> unit:
+    ()
+
+def concat[T, m: usize, n: usize](a: vec[T, m], b: vec[T, n]) -> vec[T, m + n]:
+    vec { data: a.data }
+
+def head_of_three(v: vec[int32, 3]) -> unit:
+    head(v)
+
+# `m + n` and `n + m` must canonicalize to one type, or this fails to match.
+def commutes[T, m: usize, n: usize](a: vec[T, m], b: vec[T, n]) -> vec[T, n + m]:
+    concat(a, b)

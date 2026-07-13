@@ -1,0 +1,150 @@
+module stress.dependent_types
+
+# ==========================================================================
+#  Dependent and refinement types at the edges of the reasoning fragment
+#  (spec/dependent-types-design.md). Everything here must check cleanly:
+#  either the solver discharges the obligation, or the obligation is one the
+#  fragment declines to raise. Nothing here should need a diagnostic.
+# ==========================================================================
+
+# --- Symbolic const generics ---------------------------------------------
+
+type vec[T, n: usize] = { data: array[T, n] }
+
+def head[T, n: usize](v: vec[T, n + 1]) -> unit:
+    ()
+
+def concat[T, m: usize, n: usize](a: vec[T, m], b: vec[T, n]) -> vec[T, m + n]:
+    vec { data: a.data }
+
+# `m + n` and `n + m` are the same type, or these two disagree.
+def commutes[T, m: usize, n: usize](a: vec[T, m], b: vec[T, n]) -> vec[T, n + m]:
+    concat(a, b)
+
+# Nested arithmetic still folds into one canonical polynomial.
+def reassociates[T, k: usize](a: vec[T, k + 1], b: vec[T, 2]) -> vec[T, k + 3]:
+    concat(a, b)
+
+def head_of_nonempty(v: vec[int32, 7]) -> unit:
+    head(v)
+
+# --- Refinements ----------------------------------------------------------
+
+type positive = int32 where self > 0
+type small = int32 where self < 100
+type index[n: usize] = usize where self < n
+
+def needs_positive(x: positive) -> int32:
+    x
+
+def needs_small(x: small) -> int32:
+    x
+
+# Proved from the literal.
+def from_literal() -> int32:
+    needs_positive(5) + needs_small(5)
+
+# Proved because the value already carries the predicate.
+def already_refined(p: positive) -> int32:
+    needs_positive(p)
+
+# Widening is free, in both directions of an operator.
+def widens(p: positive, q: small) -> int32:
+    p + q
+
+# A refined value compares against its base without ceremony.
+def compares(p: positive, raw: int32) -> bool:
+    p > raw
+
+# --- Indexing -------------------------------------------------------------
+
+def safe_get[T, n: usize](v: array[T, n], i: index[n]) -> T:
+    v[i]
+
+def in_bounds(v: array[int32, 8], i: index[8]) -> int32:
+    safe_get(v, i)
+
+# The array argument pins `n`, so a literal index can be proved against it.
+def literal_index(v: array[int32, 8]) -> int32:
+    safe_get(v, 3)
+
+# An index the compiler cannot prove keeps its runtime check. Silent, not an
+# error: refinements are opt-in, and code that doesn't use them pays nothing.
+def unproven_index(v: array[int32, 8], i: usize) -> int32:
+    v[i]
+
+# --- Flow-sensitive narrowing --------------------------------------------
+
+def narrowed(y: int32) -> int32:
+    if y > 0:
+        needs_positive(y)
+    else:
+        0
+
+def narrowed_by_conjunction(y: int32) -> int32:
+    if y > 0 and y < 100:
+        needs_positive(y) + needs_small(y)
+    else:
+        0
+
+# --- Runtime proofs -------------------------------------------------------
+
+def proved_at_runtime(raw: int32) -> int32:
+    match positive.try_from(raw):
+        @some(p) => needs_positive(p)
+        @none    => 0
+
+def parameterized_proof(v: array[int32, 8], raw: usize) -> int32:
+    match index[8].try_from(raw):
+        @some(i) => safe_get(v, i)
+        @none    => 0
+
+# --- Contracts ------------------------------------------------------------
+
+def reserve(n: usize) -> unit
+pre n > 0, "cannot reserve zero bytes"
+pre n < 4096, "requested size exceeds maximum"
+: ()
+
+def reserves() -> unit:
+    reserve(64)
+
+# A precondition is a fact inside the body it guards.
+def precondition_is_a_fact(x: int32) -> int32
+pre x > 0
+: needs_positive(x)
+
+type positive_int = { value: int32 }
+    invariant self.value > 0
+
+def invariant_is_a_fact(p: positive_int) -> int32:
+    needs_positive(p.value)
+
+# --- Outside the fragment -------------------------------------------------
+# Nonlinear arithmetic leaves the fragment entirely. It is not an error: the
+# slot simply becomes `unknown`, which unifies with everything and diagnoses
+# nothing — the compiler's standing answer to "I don't know".
+
+type matrix[rows: usize, cols: usize] = { cells: array[int32, rows] }
+
+def nonlinear[m: usize, n: usize](a: matrix[m, n]) -> unit:
+    ()
+
+# State machines in types: variant-valued parameters, compared by identity.
+type conn_state = @open | @closed
+
+type connection[S: conn_state] = { fd: int32 }
+
+def connect() -> connection[closed]:
+    connection { fd: 0 }
+
+def open_it(c: connection[closed]) -> connection[open]:
+    connection { fd: c.fd }
+
+def send(c: connection[open], data: int32) -> unit:
+    ()
+
+def session() -> unit:
+    let c = connect()
+    let live = open_it(c)
+    send(live, 1)
