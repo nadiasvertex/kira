@@ -1,0 +1,23 @@
+module main
+
+use std.platform
+
+def main() -> int32:
+  println("Compiled for {std.platform.target_arch().show()}-{std.platform.target_os()}")
+  println("Pointer width: {std.platform.target_pointer_width()}")
+
+  let info = std.platform.uname()
+  println("Running on: {info.show()}")
+  println("Platform string: {std.platform.platform()}")
+
+  match std.platform.node():
+      @ok(hostname) => println("Hostname: {hostname}")
+      @err(_) => println("Could not get hostname")
+
+  if let @some(libc) = std.platform.libc_ver():
+      println("libc: {libc.name} {libc.version}")
+
+  println("Kira version: {std.platform.kira_version()}")
+  println("Kira build: {std.platform.kira_build_info().show()}")
+
+  return 0
