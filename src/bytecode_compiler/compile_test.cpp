@@ -709,6 +709,37 @@ auto test_array_index_out_of_bounds_panics() -> void {
          "expected the panic reason to be index_out_of_bounds");
 }
 
+auto test_violated_precondition_panics() -> void {
+  auto module = compile_fixture(load_fixture("contract_violation.kira"));
+
+  // `half(-4)` violates `pre x >= 0`, and the caller is opaque to the
+  // checker, so the check is the callee's to make — and it fails.
+  auto main_result = run_main(module);
+  expect(!main_result.has_value(),
+         "expected main()'s half(-8) to violate half's precondition");
+  expect(main_result.error() == bc::panic_reason::precondition_violated,
+         "expected the panic reason to name the broken precondition");
+
+  // The same function, called with an argument that honours the contract,
+  // runs to completion — the checks are guards, not a toll on every call.
+  const auto vm = bc::vm{module};
+  auto ok = vm.run(function_index(module, "half"),
+                   std::array{bc::slot_value{int64_t{8}}});
+  expect(ok.has_value(), "expected half(8) to satisfy its own contract");
+  expect(ok->value.i == 4, "expected half(8) to return 4");
+}
+
+// Every exit is an explicit `return`, so each one carries the postcondition
+// check itself — and the one that breaks the promise panics.
+auto test_violated_postcondition_in_diverging_tail_panics() -> void {
+  auto module = compile_fixture(load_fixture("contract_diverging_tail.kira"));
+  auto main_result = run_main(module);
+  expect(!main_result.has_value(),
+         "expected broken_abs(-7) to violate its postcondition");
+  expect(main_result.error() == bc::panic_reason::postcondition_violated,
+         "expected the panic reason to name the broken postcondition");
+}
+
 auto test_array_fill_form_repeats_the_same_value() -> void {
   auto module = compile_fixture(load_fixture("array_fill.kira"));
   const auto vm = bc::vm{module};
@@ -1229,6 +1260,8 @@ auto main() -> int {
     test_narrow_element_array_construction_and_indexing();
     test_narrow_element_array_has_no_padding_in_memory();
     test_array_index_out_of_bounds_panics();
+    test_violated_precondition_panics();
+    test_violated_postcondition_in_diverging_tail_panics();
     test_array_fill_form_repeats_the_same_value();
     test_sum_type_variant_with_payload_encodes_tag_and_slot();
     test_sum_type_unit_variant_encodes_its_tag();

@@ -281,6 +281,13 @@ struct walker {
       walk_expr(*node2.value);
       return;
     }
+    case hir_node_kind::hir_contract_check:
+      // A contract condition is ordinary code — it reads locals and calls
+      // pure functions like any other expression, and this walk must see
+      // those reads. (It can't fall through to the `hir_expr` downcast
+      // below: `hir_contract_check` is a statement.)
+      walk_expr(*dynamic_cast<const hir_contract_check &>(node).condition);
+      return;
     default:
       // Every expression kind can also appear directly as a "statement"
       // node in this walk (e.g. a match compiled in statement position is

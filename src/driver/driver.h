@@ -28,12 +28,19 @@ struct cli_config {
              ///< Requested via `--show-compile-details`.
   bool parse_only = false; ///< Skip name resolution and type checking
                            ///< (parser-focused drivers).
-  bool run = false;        ///< Compile to bytecode and execute `run_function`
-                           ///< via the tier-0 VM (`src/bytecode/vm.h`) after a
-                           ///< successful compile. `parse_args` defaults this
-                           ///< to true whenever `--compile` was not
-                           ///< requested, so plain `kira SOURCE` runs it
-                           ///< without needing an explicit `--run`.
+  bool contract_checks =
+      true; ///< Whether a `pre`/`post`/`invariant` the checker could not
+            ///< prove becomes a runtime check that panics when violated.
+            ///< `--no-contract-checks` is the spec's release elision
+            ///< ("Release builds may elide runtime contract checks with an
+            ///< explicit flag — doing so is the programmer's assertion that
+            ///< all contracts hold by other means").
+  bool run = false; ///< Compile to bytecode and execute `run_function`
+                    ///< via the tier-0 VM (`src/bytecode/vm.h`) after a
+                    ///< successful compile. `parse_args` defaults this
+                    ///< to true whenever `--compile` was not
+                    ///< requested, so plain `kira SOURCE` runs it
+                    ///< without needing an explicit `--run`.
   std::string run_function =
       std::string(k_default_run_function); ///< Zero-argument function to
                                            ///< execute when `run` is set.

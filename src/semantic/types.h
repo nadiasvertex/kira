@@ -618,12 +618,15 @@ struct checked_types {
   /// absent from this set is unproven, not unsafe — it simply keeps its
   /// check, exactly as every index does today.
   std::unordered_set<const ast::index_expr *> proven_in_bounds;
-  /// Every `pre` condition the solver proved holds at a given call site
-  /// (`checker::check_call_preconditions`). Lowering may emit nothing at all
-  /// for these: the contract is satisfied by construction, so the runtime
-  /// check would be dead code that can never fail. A contract absent from
-  /// this set was not disproved — it was simply not proved, which is the
-  /// ordinary case and the reason contracts have a runtime form at all.
+  /// Every `pre` condition the solver proved from the callee's own parameter
+  /// types — a refinement, a `usize` domain, an earlier `pre` — and so from
+  /// nothing the caller supplies (`checker::collect_function_facts`).
+  /// Lowering emits nothing at all for these: the contract is satisfied by
+  /// construction on *every* call, so its check (`hir_contract_check`, emitted
+  /// once at the callee's entry) would be dead code that can never fail. A
+  /// contract absent from this set was not disproved — it was simply not
+  /// proved, which is the ordinary case and the reason contracts have a
+  /// runtime form at all.
   std::unordered_set<const ast::contract_clause *> elided_contracts;
 };
 

@@ -66,8 +66,9 @@ auto lower_and_emit_modules(const cli_config &cfg,
     if (module_name.empty()) {
       module_name = source_stem_or_default(input.source_path);
     }
-    auto lowered_result =
-        hir::lower_module(*input.ast_file, module_name, checked);
+    auto lowered_result = hir::lower_module(
+        *input.ast_file, module_name, checked,
+        hir::lowering_options{.contract_checks = cfg.contract_checks});
     report.hir_modules.push_back(
         lowered_result.has_value()
             ? hir_lowering_result{.module_path = module_name, .lowered = true}

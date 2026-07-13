@@ -920,6 +920,22 @@ private:
   //  reified as control flow instead of a C++ exception.
   // ------------------------------------------------------------------
 
+  /// Which panic a failing contract raises — kept identical to
+  /// `bytecode_compiler`'s own mapping so a `pre` that panics on the VM
+  /// panics the same way, and says the same thing, once compiled.
+  [[nodiscard]] static auto panic_reason_for(hir::contract_kind kind) noexcept
+      -> panic_reason {
+    switch (kind) {
+    case hir::contract_kind::precondition:
+      return panic_reason::precondition_violated;
+    case hir::contract_kind::postcondition:
+      return panic_reason::postcondition_violated;
+    case hir::contract_kind::invariant:
+      return panic_reason::invariant_violated;
+    }
+    return panic_reason::explicit_panic;
+  }
+
   auto guard_panic(llvm::Value *panic_if_true, panic_reason reason) -> void {
     auto *panic_bb = llvm::BasicBlock::Create(ctx_, "panic", current_fn_);
     auto *ok_bb = llvm::BasicBlock::Create(ctx_, "ok", current_fn_);
@@ -2854,6 +2870,22 @@ private:
       if (!result.has_value()) {
         return std::unexpected(result.error());
       }
+      return false;
+    }
+    case hir_node_kind::hir_contract_check: {
+      // The same shape as every other guard in this file: compute a
+      // "should panic" bool — here, the contract condition *negated* — and
+      // hand it to `guard_panic`, which branches to a call into the runtime
+      // followed by `unreachable`. Control falls through to a fresh block on
+      // the condition-held path, so this statement never terminates its
+      // block.
+      const auto &check = dynamic_cast<const hir::hir_contract_check &>(node);
+      auto condition = compile_expr(*check.condition);
+      if (!condition.has_value()) {
+        return std::unexpected(condition.error());
+      }
+      guard_panic(builder_.CreateNot(*condition, "contract.violated"),
+                  panic_reason_for(check.kind));
       return false;
     }
     case hir_node_kind::hir_return: {

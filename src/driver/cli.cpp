@@ -148,6 +148,14 @@ static const std::unordered_map<std::string_view, cli_converter>
             cfg.show_compile_details = true;
             return std::monostate{};
           }}},
+        {"--no-contract-checks",
+         {.name = "--no-contract-checks",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.contract_checks = false;
+            return std::monostate{};
+          }}},
         {"-O",
          {.name = "-O",
           .needs_value = false,
@@ -317,6 +325,11 @@ auto render_help(std::string_view program_name) -> std::string {
       "  --parse-only             Run only the lexer and parser,\n"
       "                          skipping semantic name resolution and\n"
       "                          type checking\n"
+      "  --no-contract-checks     Do not emit runtime checks for `pre`/\n"
+      "                          `post`/`invariant` conditions the compiler\n"
+      "                          could not prove. This asserts that they all\n"
+      "                          hold by other means; if one doesn't, the\n"
+      "                          program misbehaves instead of panicking\n"
       "  --show-compile-details   Print the per-module compile/HIR-lowering\n"
       "                          listing (silent by default, especially in\n"
       "                          the default interpreting mode, where\n"

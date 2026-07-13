@@ -873,6 +873,11 @@ private:
   bool allow_lambda_expr_{true}; ///< Context flag that suppresses lambda
                                  ///< parsing when `=>` is a delimiter.
 
+  /// Inside a `pre`/`post` condition (`parse_contract_clause`), the keyword
+  /// `return` names the returned value rather than starting a return
+  /// statement — see `parse_primary_expr`.
+  bool contract_return_allowed_{false};
+
   /// Some contexts, like `for ... in expr if guard`, need `if` to delimit the
   /// surrounding construct rather than start a trailing conditional expression.
   bool allow_trailing_if_expr_{true}; ///< Context flag that keeps `if` from

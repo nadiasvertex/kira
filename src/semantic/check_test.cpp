@@ -876,6 +876,19 @@ auto test_reports_refuted_precondition() -> void {
                     "expected the contract's message to be surfaced");
 }
 
+auto test_reports_return_outside_a_postcondition() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_contract_return_misuse.kira");
+  expect(analyzed.error_count > 0,
+         "expected `return` outside a postcondition to be an error");
+  expect_diagnostic(analyzed, "may only appear in a `post` condition",
+                    "expected `pre return > 0` to explain that a precondition "
+                    "runs before there is a returned value");
+  expect_diagnostic(analyzed, "this function returns `unit`",
+                    "expected a `post` about a `unit` result to say why it "
+                    "can never constrain anything");
+}
+
 auto test_check_program_persists_expression_types() -> void {
   // `check_program` used to return `void`, discarding every type it computed
   // the moment it returned. This confirms the replacement `checked_types` —
@@ -1391,6 +1404,7 @@ auto main() -> int {
     test_accepts_flow_narrowed_refinement();
     test_reports_refinement_outside_narrowed_path();
     test_accepts_proved_contracts();
+    test_reports_return_outside_a_postcondition();
     test_reports_refuted_precondition();
 
     test_check_program_persists_expression_types();

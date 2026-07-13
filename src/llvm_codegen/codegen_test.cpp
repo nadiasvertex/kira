@@ -523,6 +523,28 @@ auto test_array_index_out_of_bounds_panics() -> void {
          "expected the panic reason to be index_out_of_bounds");
 }
 
+auto test_violated_precondition_panics() -> void {
+  auto jf = jit_fixture_for(load_fixture("contract_violation.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(!result.has_value(),
+         "expected main()'s half(-8) to violate half's precondition");
+  expect(result.error() == bc::panic_reason::precondition_violated,
+         "expected the compiled check to panic exactly as the VM's does");
+}
+
+// The same program the VM runs — and the reason this test exists on this tier
+// too: a check appended after the diverging `if` would be an instruction after
+// a terminator, so `compile_module` itself would fail verification here long
+// before the panic could be observed.
+auto test_violated_postcondition_in_diverging_tail_panics() -> void {
+  auto jf = jit_fixture_for(load_fixture("contract_diverging_tail.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(!result.has_value(),
+         "expected broken_abs(-7) to violate its postcondition");
+  expect(result.error() == bc::panic_reason::postcondition_violated,
+         "expected the panic reason to name the broken postcondition");
+}
+
 auto test_array_fill_form_repeats_the_same_value() -> void {
   auto jf = jit_fixture_for(load_fixture("array_fill.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -885,6 +907,8 @@ auto main() -> int {
     test_narrow_element_array_construction_and_indexing();
     test_narrow_element_array_has_no_padding_in_memory();
     test_array_index_out_of_bounds_panics();
+    test_violated_precondition_panics();
+    test_violated_postcondition_in_diverging_tail_panics();
     test_array_fill_form_repeats_the_same_value();
     test_match_dispatches_on_literal_and_wildcard_patterns();
     test_match_or_pattern_matches_any_alternative();

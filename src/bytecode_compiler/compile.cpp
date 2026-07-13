@@ -2565,6 +2565,9 @@ private:
       }
       return {};
     }
+    case hir_node_kind::hir_contract_check:
+      return compile_contract_check(
+          dynamic_cast<const hir::hir_contract_check &>(node));
     case hir_node_kind::hir_return: {
       const auto &ret = dynamic_cast<const hir::hir_return &>(node);
       if (ret.value == nullptr) {
@@ -2886,6 +2889,45 @@ private:
     }
     emit_list_push(*target_reg, *value_reg, element_stride(node.value->type));
     return {};
+  }
+
+  /// A contract the checker couldn't discharge (`hir_contract_check`):
+  /// evaluate the condition, and panic if it came out false. `op_panic_if`
+  /// panics when its register is *true*, so the condition is negated first —
+  /// the same "compute a should-panic bool, then guard on it" shape every
+  /// bounds check in this file already emits, with a `panic_reason` that
+  /// names which promise broke.
+  [[nodiscard]] auto
+  compile_contract_check(const hir::hir_contract_check &check)
+      -> std::expected<void, compile_error> {
+    auto condition_reg = compile_expr(*check.condition);
+    if (!condition_reg.has_value()) {
+      return std::unexpected(condition_reg.error());
+    }
+    auto violated_reg = alloc_register(check.span);
+    if (!violated_reg.has_value()) {
+      return std::unexpected(violated_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_not_bool);
+    writer_.emit_u8(*violated_reg);
+    writer_.emit_u8(*condition_reg);
+    writer_.emit_opcode(opcode::op_panic_if);
+    writer_.emit_u8(*violated_reg);
+    writer_.emit_u8(static_cast<uint8_t>(panic_reason_for(check.kind)));
+    return {};
+  }
+
+  [[nodiscard]] static auto panic_reason_for(hir::contract_kind kind) noexcept
+      -> bytecode::panic_reason {
+    switch (kind) {
+    case hir::contract_kind::precondition:
+      return bytecode::panic_reason::precondition_violated;
+    case hir::contract_kind::postcondition:
+      return bytecode::panic_reason::postcondition_violated;
+    case hir::contract_kind::invariant:
+      return bytecode::panic_reason::invariant_violated;
+    }
+    return bytecode::panic_reason::explicit_panic;
   }
 
   const type_table &types_;

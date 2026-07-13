@@ -2230,7 +2230,14 @@ auto parser::parse_contract_clause() -> ast::contract_clause {
     expect(token_kind::kw_post);
   }
 
+  // `return` parses in *either* clause kind, even though only a postcondition
+  // may legitimately name the returned value: `pre return > 0` is far better
+  // served by the checker's explanation of why there is no returned value yet
+  // on entry (`check_function`, semantic/check.cpp) than by a bare syntax
+  // error here.
+  contract_return_allowed_ = true;
   clause.condition = parse_expr();
+  contract_return_allowed_ = false;
 
   if (match(token_kind::comma)) {
     auto msg_tok = expect(token_kind::string_lit);
@@ -3355,6 +3362,21 @@ auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base)
 }
 
 auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
+  // Inside a postcondition, `return` is not the statement — it *names* the
+  // value the function returns (spec/kira-reference.md, "Contracts": "It is
+  // deliberately not called `result`, which would collide with the `result`
+  // type"). It parses as an ordinary identifier spelled `return`, which no
+  // other production can produce (`return` is a keyword everywhere else), so
+  // the checker and HIR lowering can resolve it by name like any other
+  // binding instead of carrying a node kind that exists for one construct.
+  if (contract_return_allowed_ && at(token_kind::kw_return)) {
+    auto ident = ast::make<ast::ident_expr>();
+    ident->span = peek().span;
+    ident->name = "return";
+    advance();
+    return ident;
+  }
+
   switch (current()) {
   // Literals.
   case token_kind::int_lit:

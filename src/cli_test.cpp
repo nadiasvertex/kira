@@ -1169,6 +1169,60 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
          "expected --show-compile-details to include the run's return value");
 }
 
+/// A contract the compiler can neither prove nor refute is enforced where it
+/// always could be: at run time. `--no-contract-checks` is the one thing that
+/// takes that enforcement away — the spec's release elision, and the
+/// programmer's assertion that the contract holds by other means.
+auto test_run_enforces_unproven_contract_unless_disabled() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_contract.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  // `opaque` hides the argument from the reasoning solver, so the call is
+  // neither proved nor refuted at compile time.
+  write_file(source_path, "module sample\n"
+                          "def opaque(x: int32) -> int32:\n"
+                          "  return x\n"
+                          "def half(x: int32) -> int32\n"
+                          "pre x >= 0, \"x must be non-negative\"\n"
+                          ": x / 2\n"
+                          "def main() -> int32:\n"
+                          "  return half(opaque(0 - 8))\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto checked = kira::driver::compile_sources(cfg, false);
+  expect(checked.has_value(), "expected compile driver to return a report");
+  expect(checked->error_count == 0,
+         "expected an unprovable contract to compile cleanly: " +
+             checked->diagnostics);
+  expect(checked->run.has_value(), "expected a run outcome to be recorded");
+  expect(!checked->run->succeeded,
+         "expected the violated precondition to panic at run time");
+  expect(checked->run->message.find("precondition violated") !=
+             std::string::npos,
+         "expected the panic to name the broken precondition: " +
+             checked->run->message);
+
+  cfg.contract_checks = false;
+  auto elided = kira::driver::compile_sources(cfg, false);
+  expect(elided.has_value(), "expected compile driver to return a report");
+  expect(elided->run.has_value(), "expected a run outcome to be recorded");
+  expect(elided->run->succeeded,
+         "expected `--no-contract-checks` to drop the check entirely, letting "
+         "the same call run: " +
+             elided->run->message);
+  expect(elided->run->exit_code == -4,
+         "expected the unchecked call to compute half(-8) == -4");
+}
+
 /// M4 end-to-end check: a `static let` bound to a quoted expression
 /// (`` `(...)` ``), spliced back into `main`'s body with `~`, must actually
 /// execute the quoted arithmetic under `--run` — not just type-check. This
@@ -1614,6 +1668,7 @@ auto main() -> int {
     test_build_at_o2_still_links_and_runs_correctly();
     test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();
+    test_run_enforces_unproven_contract_unless_disabled();
     test_run_executes_spliced_quoted_expression();
     test_run_executes_spliced_builder_constructed_expression();
     test_run_executes_item_level_splice_injected_impl();

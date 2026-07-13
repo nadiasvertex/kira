@@ -1,0 +1,13 @@
+module deps.contract_return_misuse
+
+# `return` names the value the function returns, so it belongs in a `post`
+# and nowhere else: on entry there is no returned value to talk about yet.
+def early(x: int32) -> int32
+pre return > 0
+: x
+
+# And a `unit`-returning function has only one possible result, so a `post`
+# about it could never say anything.
+def nothing(x: int32) -> unit
+post return > 0
+: ()

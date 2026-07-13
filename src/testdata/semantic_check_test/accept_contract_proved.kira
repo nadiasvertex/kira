@@ -10,7 +10,9 @@ pre n > 0, "cannot reserve zero bytes"
 pre n < 4096, "requested size exceeds maximum"
 : ()
 
-# Both preconditions are provable, so both checks compile away entirely.
+# Both preconditions hold here, so this call is safe — but `reserve`'s own
+# entry checks stay, because they answer for every caller, including
+# `unproven` below.
 def proved() -> unit:
     reserve(64)
 
@@ -18,6 +20,13 @@ def proved() -> unit:
 # is what a contract is for.
 def unproven(n: usize) -> unit:
     reserve(n)
+
+# A `pre` a parameter's own type already guarantees is the one that does
+# compile away (`checked_types::elided_contracts`): no call, from anywhere,
+# could pass a `positive` that isn't positive.
+def redundant_precondition(p: positive) -> int32
+pre p > 0
+: p
 
 # A precondition is a *fact* inside the callee, which is what lets it satisfy
 # a refinement with no further proof.

@@ -4,3 +4,9 @@ def run(x: int) -> int
 pre x > 0, "positive"
 post x > 0, "still positive"
 : x
+
+# In a postcondition, `return` names the value the function returns.
+def doubled(x: int32) -> int32
+pre x > 0
+post return > x, "doubling a positive grows it"
+: x * 2

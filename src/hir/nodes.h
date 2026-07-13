@@ -125,6 +125,8 @@ enum class hir_node_kind : uint8_t {
   hir_while,
   hir_while_let,
   hir_list_push,
+  hir_contract_check, ///< A `pre`/`post`/`invariant` the checker could not
+                      ///< discharge statically, reified as a runtime check.
   // items
   hir_function,
   hir_module,
@@ -749,6 +751,41 @@ struct hir_list_push : hir_stmt {
   hir_list_push(source_span s, ptr<hir_expr> t, ptr<hir_expr> v)
       : hir_stmt(hir_node_kind::hir_list_push, s), target(std::move(t)),
         value(std::move(v)) {}
+};
+
+/// Which face of a contract a `hir_contract_check` enforces. Backends map
+/// this straight onto a `bytecode::panic_reason`, so a failing check says
+/// *whose* promise broke: a `pre` blames the caller, a `post` blames the
+/// function, an `invariant` blames whoever last wrote the value.
+enum class contract_kind : uint8_t {
+  precondition,
+  postcondition,
+  invariant,
+};
+
+/// A contract condition (`pre`/`post`/`invariant`) that survived static
+/// reasoning: `condition` is a `bool` expression, and reaching this statement
+/// with it false panics. Everything the checker *proved* is gone by now
+/// (`semantic::checked_types::elided_contracts`), so a check that exists here
+/// is one whose truth genuinely depends on runtime values — the case the
+/// spec's "enforces them at runtime otherwise" is about. Lowering places a
+/// `precondition` at the function's entry, a `postcondition` at each of its
+/// exits (with `return` bound to the value being returned), and an
+/// `invariant` after each construction or field-assignment of the type that
+/// declares it.
+struct hir_contract_check : hir_stmt {
+  ptr<hir_expr> condition;
+  contract_kind kind;
+  /// The contract's `, "message"`, if it was given one. Unused by the
+  /// backends today — this tier's panics carry a fixed `panic_reason` and no
+  /// string (see bytecode/panic.h) — but carried so that whichever tier grows
+  /// real panic messages first doesn't have to re-derive it from the AST.
+  std::string message;
+
+  hir_contract_check(source_span s, ptr<hir_expr> c, contract_kind k,
+                     std::string msg)
+      : hir_stmt(hir_node_kind::hir_contract_check, s), condition(std::move(c)),
+        kind(k), message(std::move(msg)) {}
 };
 
 /// Expression evaluated for its side effect (or, as a block's trailing

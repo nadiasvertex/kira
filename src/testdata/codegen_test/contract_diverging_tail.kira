@@ -1,0 +1,18 @@
+module sample
+
+def opaque(x: int32) -> int32:
+    x
+
+# Every path out of the body is an explicit `return`, so the postcondition is
+# checked inside each branch and nothing may be appended after the `if` — an
+# instruction placed after a terminator fails LLVM's verifier outright.
+def broken_abs(x: int32) -> int32
+post return >= 0
+:
+    if x < 0:
+        return x
+    else:
+        return x
+
+def main() -> int32:
+    return broken_abs(opaque(0 - 7))

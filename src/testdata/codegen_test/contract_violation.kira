@@ -1,0 +1,15 @@
+module sample
+
+# Launders its argument past the reasoning solver: the checker can't see what
+# `half` is really called with, so `half`'s precondition can't be proved away
+# and has to be enforced where it always could be — at run time.
+def opaque(x: int32) -> int32:
+    x
+
+def half(x: int32) -> int32
+pre x >= 0, "x must be non-negative"
+post return >= 0
+: x / 2
+
+def main() -> int32:
+    return half(opaque(0 - 8))

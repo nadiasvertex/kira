@@ -20,7 +20,7 @@
 // calling it: this is a standalone AOT runtime meant to link against
 // nothing but the object `emit_object_file` produces, and calling into
 // `panic.cpp` would pull `//src/bytecode:bytecode`'s archive into every
-// `kira build` output for one string table — cheaper to keep four
+// `kira build` output for one string table — cheaper to keep this handful of
 // messages in sync by hand than to grow this runtime's link graph for it.
 extern "C" [[noreturn]] void kira_codegen_panic(uint8_t reason) {
   const char *message;
@@ -39,6 +39,15 @@ extern "C" [[noreturn]] void kira_codegen_panic(uint8_t reason) {
     break;
   case kira::bytecode::panic_reason::index_out_of_bounds:
     message = "index out of bounds";
+    break;
+  case kira::bytecode::panic_reason::precondition_violated:
+    message = "precondition violated";
+    break;
+  case kira::bytecode::panic_reason::postcondition_violated:
+    message = "postcondition violated";
+    break;
+  case kira::bytecode::panic_reason::invariant_violated:
+    message = "invariant violated";
     break;
   default:
     message = "unknown panic";

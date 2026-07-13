@@ -2022,6 +2022,192 @@ auto test_lowers_existential_return_type_to_concrete_backing_type() -> void {
          "concrete backing type the producer returns");
 }
 
+// An unproven `pre` becomes a check at the function's entry — before the body
+// it guards, and once per call, not once per call site.
+auto test_lowers_unproven_precondition_to_entry_check() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def half(x: int32) -> int32\n"
+                               "pre x >= 0, \"x must be non-negative\"\n"
+                               ": x / 2\n");
+  const auto &decl = find_func(*fixture.ast_file, "half");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a function with a `pre` to lower");
+
+  const auto &stmts = (*result)->body->stmts;
+  expect(stmts.size() == 2, "expected the entry check plus the body");
+  expect(stmts.front()->kind == hir::hir_node_kind::hir_contract_check,
+         "expected the precondition check to come first");
+  const auto &check =
+      dynamic_cast<const hir::hir_contract_check &>(*stmts.front());
+  expect(check.kind == hir::contract_kind::precondition,
+         "expected the check to be tagged as a precondition");
+  // Carried verbatim from the AST, quotes and all (`contract_clause::message`
+  // holds the literal's source spelling).
+  expect(check.message == "\"x must be non-negative\"",
+         "expected the contract's message to survive lowering");
+  expect(check.condition->type == fixture.checked.types.bool_type(),
+         "expected the lowered condition to be a bool");
+  expect(stmts.back()->kind == hir::hir_node_kind::hir_return,
+         "expected the body to follow the check");
+}
+
+// A `post` is checked at every exit, against the value that exit returns —
+// which the condition names `return`.
+auto test_lowers_postcondition_at_each_exit() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def clamp_low(x: int32) -> int32\n"
+                               "post return >= 0\n"
+                               ":\n"
+                               "    if x < 0:\n"
+                               "        return 0 - x\n"
+                               "    x\n");
+  const auto &decl = find_func(*fixture.ast_file, "clamp_low");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected a function with a `post` to lower");
+
+  // Each exit expands to `let return = <value>`, the check, then the return.
+  const auto count_checks = [](const hir::hir_block &block) -> size_t {
+    auto found = size_t{0};
+    for (const auto &stmt : block.stmts) {
+      if (stmt->kind == hir::hir_node_kind::hir_contract_check) {
+        ++found;
+      }
+    }
+    return found;
+  };
+
+  const auto &body = *(*result)->body;
+  expect(count_checks(body) == 1,
+         "expected the fall-off-the-end exit to check the postcondition");
+  const auto &early = dynamic_cast<const hir::hir_if &>(*body.stmts.front());
+  expect(count_checks(*early.branches.front().body) == 1,
+         "expected the early `return` to check the postcondition too");
+
+  // The checked value is the one being returned, bound as `return`.
+  const auto &bound = dynamic_cast<const hir::hir_let &>(
+      *early.branches.front().body->stmts[0]);
+  expect(bound.name == "return",
+         "expected the returned value to be bound as `return`");
+}
+
+// When every path out of the body is an explicit `return`, nothing falls off
+// the end — so no check may be appended there. (Doing so is not merely dead
+// code: it puts an instruction after a terminator, which LLVM's verifier
+// rejects outright.)
+auto test_postcondition_adds_nothing_after_a_diverging_tail() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def abs_val(x: int32) -> int32\n"
+                               "post return >= 0\n"
+                               ":\n"
+                               "    if x < 0:\n"
+                               "        return 0 - x\n"
+                               "    else:\n"
+                               "        return x\n");
+  const auto &decl = find_func(*fixture.ast_file, "abs_val");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected the function to lower");
+
+  const auto &stmts = (*result)->body->stmts;
+  expect(stmts.size() == 1,
+         "expected the body to be exactly the `if`, with nothing appended "
+         "after it");
+  const auto &tail = *stmts.front();
+  expect(tail.kind == hir::hir_node_kind::hir_expr_stmt,
+         "expected the tail `if` to be the whole body");
+  const auto &branch = dynamic_cast<const hir::hir_if &>(
+      *dynamic_cast<const hir::hir_expr_stmt &>(tail).expr);
+  expect(branch.branches.front().body->stmts.size() == 3 &&
+             branch.branches.front().body->stmts[1]->kind ==
+                 hir::hir_node_kind::hir_contract_check,
+         "expected each branch's own `return` to carry the check instead");
+}
+
+// A `pre` the checker proved from the parameters' own types is not a runtime
+// check at all — `positive`'s refinement already guarantees it on every call.
+auto test_omits_proved_precondition() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type positive = int32 where self > 0\n"
+                               "def scale(p: positive) -> int32\n"
+                               "pre p > 0\n"
+                               ": p * 2\n");
+  const auto &decl = find_func(*fixture.ast_file, "scale");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected the function to lower");
+  for (const auto &stmt : (*result)->body->stmts) {
+    expect(stmt->kind != hir::hir_node_kind::hir_contract_check,
+           "expected a precondition implied by the parameter's refinement to "
+           "compile away entirely");
+  }
+}
+
+// `--no-contract-checks`: the release elision the spec allows.
+auto test_contract_checks_can_be_disabled() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def half(x: int32) -> int32\n"
+                               "pre x >= 0\n"
+                               "post return >= 0\n"
+                               ": x / 2\n");
+  const auto &decl = find_func(*fixture.ast_file, "half");
+
+  auto result = hir::lower_function(decl, fixture.checked,
+                                    hir::lowering_options{
+                                        .contract_checks = false,
+                                    });
+  expect(result.has_value(), "expected the function to lower");
+  for (const auto &stmt : (*result)->body->stmts) {
+    expect(stmt->kind != hir::hir_node_kind::hir_contract_check,
+           "expected `--no-contract-checks` to emit no checks at all");
+  }
+}
+
+// A struct invariant is checked where the value is made, and again wherever a
+// field of it is written.
+auto test_lowers_struct_invariant_at_construction_and_mutation() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type positive_int = { pub value: int32 }\n"
+                               "    invariant self.value > 0\n"
+                               "def make(n: int32) -> int32:\n"
+                               "    var p = positive_int{value: n}\n"
+                               "    p.value = n\n"
+                               "    return p.value\n");
+  const auto &decl = find_func(*fixture.ast_file, "make");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected the function to lower");
+
+  const auto &stmts = (*result)->body->stmts;
+  // `let p = { let self = <init>; check; self }`, then the assignment, then a
+  // re-bind of `self` and a second check, then the return.
+  const auto &binding = dynamic_cast<const hir::hir_let &>(*stmts.front());
+  expect(binding.initializer->kind == hir::hir_node_kind::hir_block,
+         "expected construction to become a block that checks the invariant "
+         "before handing the value back");
+  const auto &construction =
+      dynamic_cast<const hir::hir_block &>(*binding.initializer);
+  expect(construction.stmts.size() == 3 &&
+             construction.stmts[1]->kind ==
+                 hir::hir_node_kind::hir_contract_check,
+         "expected the construction block to bind, check, then yield");
+  expect(dynamic_cast<const hir::hir_contract_check &>(*construction.stmts[1])
+                 .kind == hir::contract_kind::invariant,
+         "expected the check to be tagged as an invariant");
+
+  auto after_write = size_t{0};
+  for (size_t i = 0; i < stmts.size(); ++i) {
+    if (stmts[i]->kind == hir::hir_node_kind::hir_assign) {
+      after_write = i;
+    }
+  }
+  expect(after_write != 0, "expected the field assignment to lower");
+  expect(stmts[after_write + 2]->kind == hir::hir_node_kind::hir_contract_check,
+         "expected the field write to be followed by a re-bound `self` and a "
+         "fresh invariant check");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -2086,6 +2272,12 @@ auto main() -> int {
     test_rejects_comprehension_over_user_defined_type();
     test_lowers_generator_function();
     test_lowers_existential_return_type_to_concrete_backing_type();
+    test_lowers_unproven_precondition_to_entry_check();
+    test_lowers_postcondition_at_each_exit();
+    test_postcondition_adds_nothing_after_a_diverging_tail();
+    test_omits_proved_precondition();
+    test_contract_checks_can_be_disabled();
+    test_lowers_struct_invariant_at_construction_and_mutation();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';

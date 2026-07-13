@@ -22,6 +22,15 @@ enum class panic_reason : uint8_t {
   explicit_panic,
   stack_overflow,
   index_out_of_bounds,
+  // The three contract kinds get three reasons rather than one shared
+  // "contract violated": which side of the contract broke is the first thing
+  // the reader needs to know (a failed `pre` blames the caller, a failed
+  // `post` blames the callee, a failed `invariant` blames whoever last
+  // touched the value), and with no string channel in this tier the reason
+  // *is* the whole message.
+  precondition_violated,
+  postcondition_violated,
+  invariant_violated,
 };
 
 [[nodiscard]] auto panic_reason_message(panic_reason reason) noexcept

@@ -33,6 +33,19 @@ struct lowering_error {
   std::string message;
 };
 
+/// Knobs the driver hands lowering, as opposed to facts it reads out of the
+/// checker.
+struct lowering_options {
+  /// Whether a contract the checker could not discharge statically becomes a
+  /// runtime `hir_contract_check`. False is the spec's release elision
+  /// ("Release builds may elide runtime contract checks with an explicit
+  /// flag — doing so is the programmer's assertion that all contracts hold by
+  /// other means", spec/kira-reference.md), reached via `--no-contract-checks`.
+  /// It is deliberately not the default: a contract that is only *believed*
+  /// silently is worth less than one that is checked.
+  bool contract_checks = true;
+};
+
 /// Lowers one free function to HIR. Requires (Decision 1, Decision 2, and
 /// this milestone's Non-Goals): no generic parameters, every parameter
 /// explicitly annotated, an explicit declared return type, and a body built
@@ -40,7 +53,8 @@ struct lowering_error {
 /// binary/unary ops, calls with positional arguments, field/index access,
 /// blocks, `let`, `if` as a statement or expression, `return`).
 [[nodiscard]] auto lower_function(const ast::func_decl &decl,
-                                  const semantic::checked_types &checked)
+                                  const semantic::checked_types &checked,
+                                  const lowering_options &options = {})
     -> std::expected<ptr<hir_function>, lowering_error>;
 
 /// Lowers every top-level free function declared directly in `file`'s item
@@ -50,7 +64,8 @@ struct lowering_error {
 /// module isn't lowered yet, not that the offending function was silently
 /// dropped from the result.
 [[nodiscard]] auto lower_module(const ast::file &file, std::string module_name,
-                                const semantic::checked_types &checked)
+                                const semantic::checked_types &checked,
+                                const lowering_options &options = {})
     -> std::expected<ptr<hir_module>, lowering_error>;
 
 } // namespace kira::hir

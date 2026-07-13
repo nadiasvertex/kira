@@ -1024,6 +1024,10 @@ private:
   type_id return_type_ = k_unknown_type;
   bool return_annotated_ = false;
   bool in_contract_ = false;
+  /// Whether the contract condition currently being checked is a `post` —
+  /// the only place `return` (the value the function returns, not the
+  /// statement) may be named. See `resolve_ident`.
+  bool in_postcondition_ = false;
   /// Whether the function body currently being checked belongs to a
   /// `generator def`; when true, `yield` is legal and its operand must
   /// match `generator_item_type_` (see `infer_yield`/`check_function`).
@@ -2952,10 +2956,25 @@ private:
       }
     }
 
+    // Each `pre` is now weighed against everything already known — the
+    // parameters' own types (a refinement or a `usize` domain is a fact
+    // about every value that could ever be passed) plus the preconditions
+    // ahead of it, which are checked before it at run time and so hold by
+    // the time it is evaluated. A `pre` that follows from those needs no
+    // runtime check: it cannot fail on any call, from anywhere, for the same
+    // reason `p: positive` makes `pre p > 0` say nothing new. That — and not
+    // "some call site happened to satisfy it" — is what makes an elision
+    // sound for a check the callee performs once on entry, on behalf of
+    // callers it may never see (`checked_types::elided_contracts`).
     for (const auto &contract : decl.contracts) {
       if (!contract.is_pre || contract.condition == nullptr ||
           contract.condition->has_error) {
         continue;
+      }
+      if (const auto goal =
+              goal_from(*contract.condition, predicate_subst{}, false);
+          !goal.empty() && solve(facts_, goal) == proof_result::proved) {
+        elided_contracts_.insert(&contract);
       }
       for (auto &fact :
            facts_from(*contract.condition, predicate_subst{}, false)) {
@@ -3772,12 +3791,15 @@ private:
   /// (`collect_function_facts`), and at every call site it is an *obligation*
   /// the caller must meet. This is the obligation half.
   ///
-  /// Proved: the check is compiled away — recorded in `elided_contracts` so
-  /// lowering emits nothing for it. Refuted: a compile error, because the call
-  /// is wrong on every execution that reaches it, and the spec says so
-  /// outright ("When a condition is statically knowable, violation is a
-  /// compile error"). Unproven: silence, and a runtime check, which is the
-  /// contract's designed behavior and not a failure of anything.
+  /// Refuted: a compile error, because the call is wrong on every execution
+  /// that reaches it, and the spec says so outright ("When a condition is
+  /// statically knowable, violation is a compile error"). Proved or unproven:
+  /// silence. Neither one *elides* anything, and that is deliberate — the
+  /// runtime check lives at the callee's entry, where it stands in for every
+  /// call site at once, so a proof about this one call says nothing about the
+  /// next one. The elision a callee-entry check can honour is the one
+  /// `collect_function_facts` computes instead: a `pre` that follows from the
+  /// parameters' own types, and so cannot fail on any call at all.
   auto check_call_preconditions(const ast::call_expr &call,
                                 const ast::func_decl &decl,
                                 const std::vector<fn_param_info> &params)
@@ -3820,7 +3842,8 @@ private:
       }
       switch (solve(facts_, goal)) {
       case proof_result::proved:
-        elided_contracts_.insert(&contract);
+        // Nothing to do: this call is safe, and the callee's own entry check
+        // (which every *other* call site also relies on) stays put.
         break;
       case proof_result::refuted: {
         auto diag = diagnostic(
@@ -4177,6 +4200,37 @@ private:
       }
       emit_undefined_variant(ident.span, name, expected);
       return k_error_type;
+    }
+
+    // `return` inside a contract condition (the parser only ever produces an
+    // identifier spelled `return` there) names the value the function
+    // returns. It exists in a `post`, where the function has produced one,
+    // and nowhere else.
+    if (name == "return" && in_contract_) {
+      if (!in_postcondition_) {
+        error_with_help(
+            ident.span,
+            "`return` names the value the function returns, so it may only "
+            "appear in a `post` condition",
+            "there is no returned value here",
+            "A `pre` condition runs on entry, before the function has produced "
+            "anything, and a type `invariant` describes a value that has no "
+            "call in progress at all. Move this to a `post` condition if it "
+            "describes the result.");
+        return k_error_type;
+      }
+      if (types_.is_unit(return_type_)) {
+        error_with_help(
+            ident.span,
+            "`return` names the value the function returns, and this function "
+            "returns `unit`",
+            "no meaningful value to constrain",
+            "A `unit`-returning function has only one possible result, so a "
+            "`post` condition about it can never say anything. Constrain a "
+            "parameter instead, or give the function a return type.");
+        return k_error_type;
+      }
+      return return_type_;
     }
 
     if (const auto *binding = lookup_value(name)) {
@@ -9093,9 +9147,11 @@ private:
     in_contract_ = true;
     for (const auto &contract : decl.contracts) {
       if (contract.condition != nullptr && !contract.condition->has_error) {
+        in_postcondition_ = !contract.is_pre;
         require_bool(*contract.condition, "a contract condition");
       }
     }
+    in_postcondition_ = false;
     in_contract_ = false;
 
     // Only now, with every parameter bound and every contract checked, is

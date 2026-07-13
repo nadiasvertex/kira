@@ -1669,7 +1669,9 @@ type positive_int = { value: int32 }
     invariant self.value > 0
 ```
 
-When a condition is statically knowable, violation is a compile error. When it depends on runtime values, violation panics in debug builds. Release builds may elide runtime contract checks with an explicit flag — doing so is the programmer's assertion that all contracts hold by other means.
+When a condition is statically knowable, violation is a compile error. When it depends on runtime values, violation panics in debug builds. Release builds may elide runtime contract checks with an explicit flag (`--no-contract-checks`) — doing so is the programmer's assertion that all contracts hold by other means.
+
+A `pre` is checked once on entry to the function, so it answers for every caller, including ones the compiler never sees; a `post` is checked at each of the function's exits; an `invariant` is checked wherever a value of the type is constructed or one of its fields is written. A condition the compiler can already prove from the signature alone — `pre p > 0` on a parameter whose type is `positive` — is not checked at run time at all, because it cannot fail.
 
 Only `pure` functions may appear in `pre`/`post` conditions. This guarantees that contract evaluation has no side effects.
 

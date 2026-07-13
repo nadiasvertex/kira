@@ -1,5 +1,6 @@
 #include "src/hir/lower.h"
 
+#include <algorithm>
 #include <format>
 #include <functional>
 #include <optional>
@@ -114,6 +115,45 @@ template <typename T>
   }
 }
 
+/// Whether control can never reach the statement *after* `node` — every path
+/// through it returns. Postcondition lowering asks this about a function
+/// body's tail: a tail that always returns has already checked the
+/// postcondition at each of those returns, and appending anything after it
+/// would be not just dead code but invalid (both backends terminate the
+/// current basic block on the last `return`, and LLVM's verifier rejects an
+/// instruction that follows a terminator).
+[[nodiscard]] auto always_returns(const hir_node &node) -> bool {
+  switch (node.kind) {
+  case hir_node_kind::hir_return:
+    return true;
+  case hir_node_kind::hir_expr_stmt:
+    return always_returns(*dynamic_cast<const hir_expr_stmt &>(node).expr);
+  case hir_node_kind::hir_block: {
+    const auto &block = dynamic_cast<const hir_block &>(node);
+    return std::ranges::any_of(block.stmts, [](const auto &stmt) -> bool {
+      return always_returns(*stmt);
+    });
+  }
+  case hir_node_kind::hir_if: {
+    const auto &node2 = dynamic_cast<const hir_if &>(node);
+    // Without an `else`, the condition can simply be false, and control
+    // arrives at whatever follows.
+    return node2.else_body != nullptr && always_returns(*node2.else_body) &&
+           std::ranges::all_of(node2.branches, [](const auto &branch) -> bool {
+             return always_returns(*branch.body);
+           });
+  }
+  case hir_node_kind::hir_match: {
+    const auto &node2 = dynamic_cast<const hir_match &>(node);
+    return std::ranges::all_of(node2.arms, [](const auto &arm) -> bool {
+      return always_returns(*arm.body);
+    });
+  }
+  default:
+    return false;
+  }
+}
+
 /// A variant-constructor expression (`@some(x)`) parses to an `ident_expr`
 /// whose span still covers the leading `@` — this must stay exactly in
 /// sync with the identically-named, identically-implemented predicate in
@@ -129,7 +169,8 @@ template <typename T>
 /// comment on `symbol_id` below).
 class lowerer {
 public:
-  explicit lowerer(const checked_types &checked) : checked_(checked) {}
+  lowerer(const checked_types &checked, const lowering_options &options)
+      : checked_(checked), options_(options) {}
 
   [[nodiscard]] auto lower_function(const ast::func_decl &decl)
       -> std::expected<ptr<hir_function>, lowering_error>;
@@ -418,6 +459,158 @@ private:
           &innermost) -> std::expected<ptr_vec<hir_node>, lowering_error>;
 
   // ------------------------------------------------------------------
+  //  Contracts (spec/kira-reference.md, "Contracts")
+  //
+  //  The checker has already had its say by the time these run: a contract
+  //  it refuted is a compile error the program never got past, and one it
+  //  proved is in `checked_.elided_contracts` and lowers to nothing at all.
+  //  What is left is the residue — conditions whose truth depends on values
+  //  that don't exist until the program runs — and this is where they become
+  //  code: a `hir_contract_check` the backends turn into "test it, panic if
+  //  it's false".
+  // ------------------------------------------------------------------
+
+  /// Whether `contract` still needs a runtime check: it has a usable
+  /// condition, the checker didn't prove it, and the build didn't ask for
+  /// contracts to be dropped wholesale (`lowering_options::contract_checks`).
+  [[nodiscard]] auto
+  needs_runtime_check(const ast::contract_clause &contract) const -> bool {
+    return options_.contract_checks && contract.condition != nullptr &&
+           !contract.condition->has_error &&
+           !checked_.elided_contracts.contains(&contract);
+  }
+
+  /// Lowers one contract condition into the check statement that enforces it.
+  /// The condition is lowered in whatever scope the caller has set up, which
+  /// is the whole trick: a `pre` sees the parameters, a `post` additionally
+  /// sees `return` (bound by `lower_return_value`), and an `invariant` sees
+  /// `self` (bound by `check_invariant_of`).
+  [[nodiscard]] auto lower_contract_check(const ast::contract_clause &contract,
+                                          contract_kind kind)
+      -> std::expected<ptr<hir_node>, lowering_error> {
+    auto condition = lower_expr(*contract.condition);
+    if (!condition.has_value()) {
+      return std::unexpected(condition.error());
+    }
+    return ptr<hir_node>(
+        make<hir_contract_check>(contract.span, std::move(*condition), kind,
+                                 contract.message.value_or(std::string{})));
+  }
+
+  /// Builds a function exit: binds the value being returned to `return` — the
+  /// name a postcondition uses for it — checks every postcondition against
+  /// that binding, then returns it. With no postconditions to check this is
+  /// just `return value`, which is why every exit can route through here.
+  ///
+  /// Each exit gets its own `return` binding rather than one shared function-
+  /// wide slot: two `hir_let`s carrying the same `symbol_id` would collide in
+  /// the backends' `locals_` maps (whose `emplace` keeps the *first* register
+  /// bound to a symbol), so the second exit would read the first one's value.
+  [[nodiscard]] auto lower_return_value(source_span span, ptr<hir_expr> value)
+      -> std::expected<ptr_vec<hir_node>, lowering_error> {
+    auto stmts = ptr_vec<hir_node>{};
+    if (post_contracts_.empty()) {
+      stmts.push_back(ptr<hir_node>(make<hir_return>(span, std::move(value))));
+      return stmts;
+    }
+
+    const auto type = value->type;
+    push_scope();
+    const auto symbol = declare_local("return", type);
+    stmts.push_back(ptr<hir_node>(
+        make<hir_let>(span, symbol, std::string("return"), std::move(value))));
+    for (const auto *contract : post_contracts_) {
+      auto check =
+          lower_contract_check(*contract, contract_kind::postcondition);
+      if (!check.has_value()) {
+        pop_scope();
+        return std::unexpected(check.error());
+      }
+      stmts.push_back(std::move(*check));
+    }
+    pop_scope();
+    stmts.push_back(ptr<hir_node>(make<hir_return>(
+        span, ptr<hir_expr>(make<hir_local_ref>(span, type, symbol,
+                                                std::string("return"))))));
+    return stmts;
+  }
+
+  /// Rebuilds a *place* expression — a chain of pure projections rooted at a
+  /// local (`p`, `p.inner`, `p.0`) — so it can be evaluated a second time.
+  /// Only these shapes: re-reading them is free of side effects and yields
+  /// the same value, which is exactly the property `lower_pattern`'s
+  /// `make_place` factories rely on. Anything else (a call, an index with a
+  /// computed subscript) is refused rather than silently duplicated.
+  [[nodiscard]] auto clone_place(const hir_expr &place)
+      -> std::expected<ptr<hir_expr>, lowering_error> {
+    switch (place.kind) {
+    case hir_node_kind::hir_local_ref: {
+      const auto &ref = dynamic_cast<const hir_local_ref &>(place);
+      return ptr<hir_expr>(make<hir_local_ref>(ref.span, ref.type, ref.symbol,
+                                               ref.name, ref.owner_module));
+    }
+    case hir_node_kind::hir_field: {
+      const auto &field = dynamic_cast<const hir_field &>(place);
+      auto object = clone_place(*field.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      return ptr<hir_expr>(make<hir_field>(
+          field.span, field.type, std::move(*object), field.field_name));
+    }
+    case hir_node_kind::hir_tuple_index: {
+      const auto &index = dynamic_cast<const hir_tuple_index &>(place);
+      auto object = clone_place(*index.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      return ptr<hir_expr>(make<hir_tuple_index>(
+          index.span, index.type, std::move(*object), index.index));
+    }
+    default:
+      return fail(lowering_error_kind::unsupported_construct, place.span,
+                  "this value's type declares an `invariant`, but the "
+                  "expression being assigned through is not a simple place "
+                  "(a local, or a field/tuple projection of one), so the "
+                  "invariant cannot be re-checked after the write yet");
+    }
+  }
+
+  /// The `invariant` clause declared on `type`'s `type` declaration, if it
+  /// has one and it is still worth checking at run time.
+  [[nodiscard]] auto invariant_of(type_id type) const -> const ast::expr * {
+    if (!options_.contract_checks) {
+      return nullptr;
+    }
+    const auto &entry = checked_.types.entry(type);
+    if (entry.decl == nullptr || entry.decl->invariant == nullptr ||
+        entry.decl->invariant->has_error) {
+      return nullptr;
+    }
+    return entry.decl->invariant.get();
+  }
+
+  /// Checks `type`'s invariant against the value bound to `self_symbol`. The
+  /// invariant is written in terms of `self` (`invariant self.value > 0`), so
+  /// lowering it is a matter of putting `self` in scope pointing at the value
+  /// whose construction or mutation is being guarded.
+  [[nodiscard]] auto check_invariant_of(const ast::expr &invariant,
+                                        type_id type, symbol_id self_symbol,
+                                        source_span span)
+      -> std::expected<ptr<hir_node>, lowering_error> {
+    push_scope();
+    scopes_.back().emplace("self", self_symbol);
+    local_types_.emplace(self_symbol, type);
+    auto condition = lower_expr(invariant);
+    pop_scope();
+    if (!condition.has_value()) {
+      return std::unexpected(condition.error());
+    }
+    return ptr<hir_node>(make<hir_contract_check>(
+        span, std::move(*condition), contract_kind::invariant, std::string{}));
+  }
+
+  // ------------------------------------------------------------------
   //  match / patterns
   // ------------------------------------------------------------------
 
@@ -449,10 +642,16 @@ private:
       -> std::expected<ptr<hir_match>, lowering_error>;
 
   const checked_types &checked_;
+  lowering_options options_;
   std::vector<std::unordered_map<std::string, symbol_id>> scopes_;
   std::unordered_map<std::string, symbol_id> global_refs_;
   std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
+  /// The enclosing function's postconditions that still need checking — read
+  /// by `lower_return_value` at every exit. Empty while lowering a lambda
+  /// body, where a `return` returns from the lambda and settles nothing about
+  /// the enclosing function's promise (see `lower_lambda`).
+  std::vector<const ast::contract_clause *> post_contracts_;
 };
 
 auto lowerer::lower_expr(const ast::expr &expr)
@@ -1063,7 +1262,33 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
         .value = ptr<hir_expr>(make<hir_local_ref>(field.span, found->second,
                                                    symbol, field.name))});
   }
-  return ok_expr(make<hir_struct_init>(literal.span, *type, std::move(fields)));
+  auto init = ptr<hir_expr>(
+      make<hir_struct_init>(literal.span, *type, std::move(fields)));
+
+  // "Struct invariants are checked at construction and mutation boundaries"
+  // (spec/kira-reference.md). This is the construction boundary: the value
+  // exists, nothing has looked at it yet, and it must already be true of
+  // itself. The check needs a name to talk about it by, so the literal
+  // becomes a small block — bind, check, hand the value back — which both
+  // backends already compile as an expression (`compile_block_as_value`).
+  const auto *invariant = invariant_of(*type);
+  if (invariant == nullptr) {
+    return ok_expr(std::move(init));
+  }
+  const auto self_symbol = mint_symbol();
+  auto stmts = ptr_vec<hir_node>{};
+  stmts.push_back(ptr<hir_node>(make<hir_let>(
+      literal.span, self_symbol, std::string("self"), std::move(init))));
+  auto check = check_invariant_of(*invariant, *type, self_symbol, literal.span);
+  if (!check.has_value()) {
+    return std::unexpected(check.error());
+  }
+  stmts.push_back(std::move(*check));
+  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      literal.span,
+      ptr<hir_expr>(make<hir_local_ref>(literal.span, *type, self_symbol,
+                                        std::string("self"))))));
+  return ok_expr(make<hir_block>(literal.span, *type, std::move(stmts)));
 }
 
 auto lowerer::lower_cast(const ast::cast_expr &cast)
@@ -1154,16 +1379,27 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
 
   const auto return_type = entry.result;
 
+  // A `return` inside a lambda body returns from the *lambda* — it says
+  // nothing about whether the enclosing function kept its promise, and the
+  // lambda has no return value of its own to hand a `post` condition. So the
+  // enclosing function's postconditions are out of scope for the duration.
+  auto enclosing_posts = std::exchange(post_contracts_, {});
+  const auto restore_posts = [&] {
+    post_contracts_ = std::move(enclosing_posts);
+  };
+
   auto body = std::expected<ptr<hir_block>, lowering_error>{};
   if (lambda.body_expr != nullptr) {
     auto expr_type = checked_type_of(*lambda.body_expr);
     if (!expr_type.has_value()) {
       pop_scope();
+      restore_posts();
       return std::unexpected(expr_type.error());
     }
     auto value = lower_expr(*lambda.body_expr);
     if (!value.has_value()) {
       pop_scope();
+      restore_posts();
       return std::unexpected(value.error());
     }
     auto ret = ptr<hir_node>(
@@ -1183,6 +1419,7 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     }
   }
   pop_scope();
+  restore_posts();
   if (!body.has_value()) {
     return std::unexpected(body.error());
   }
@@ -1934,8 +2171,9 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    return one_stmt(
-        ptr<hir_node>(make<hir_return>(ret.span, std::move(*value))));
+    // Not necessarily one statement: an exit from a function with
+    // postconditions is a whole little sequence (bind, check, return).
+    return lower_return_value(ret.span, std::move(*value));
   }
   case ast::node_kind::if_stmt: {
     const auto &if_s = dynamic_cast<const ast::if_stmt &>(node);
@@ -1987,8 +2225,49 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    return one_stmt(ptr<hir_node>(hir::make<hir_assign>(
+    // The mutation boundary (spec/kira-reference.md: "Struct invariants are
+    // checked at construction and mutation boundaries"): writing `p.value`
+    // can only break `p`'s invariant, so the check goes on `p` — the object
+    // the field belongs to — right after the write lands. The object is read
+    // off the *lowered* target rather than the AST one, because `p.value`
+    // parses as a `module_path_expr` and only becomes a recognizable
+    // field access once `lower_module_path` has resolved its root (see its
+    // doc comment).
+    const auto *object =
+        (*target)->kind == hir_node_kind::hir_field
+            ? dynamic_cast<const hir_field &>(**target).object.get()
+            : nullptr;
+    const auto *invariant =
+        object == nullptr ? nullptr : invariant_of(object->type);
+
+    // Moving the `ptr` doesn't move the node, so `object` stays valid — it
+    // points into the `hir_assign` this now owns.
+    auto stmts = one_stmt(ptr<hir_node>(hir::make<hir_assign>(
         assign.span, assign.op, std::move(*target), std::move(*value))));
+    if (invariant == nullptr) {
+      return stmts;
+    }
+
+    // `self` names the mutated object. Binding it with a `let` re-reads the
+    // object rather than reusing the assignment's own target expression
+    // (which is now owned by the `hir_assign`), so the check sees the value
+    // the write just produced.
+    auto self_value = clone_place(*object);
+    if (!self_value.has_value()) {
+      return std::unexpected(self_value.error());
+    }
+    const auto object_type = object->type;
+    const auto self_symbol = mint_symbol();
+    stmts.push_back(ptr<hir_node>(make<hir_let>(assign.span, self_symbol,
+                                                std::string("self"),
+                                                std::move(*self_value))));
+    auto check =
+        check_invariant_of(*invariant, object_type, self_symbol, assign.span);
+    if (!check.has_value()) {
+      return std::unexpected(check.error());
+    }
+    stmts.push_back(std::move(*check));
+    return stmts;
   }
   case ast::node_kind::while_stmt: {
     const auto &while_s = dynamic_cast<const ast::while_stmt &>(node);
@@ -3132,6 +3411,20 @@ auto lowerer::lower_function(const ast::func_decl &decl)
                             "annotated signatures",
                             decl.name));
   }
+  // A generator's body isn't a function body: it compiles into a step
+  // function resumed once per `next()`, so a `pre` prepended to it would run
+  // on every resumption rather than once on entry, and its `return` statements
+  // mean "exhausted", not "here is the result". Both faces of a contract lose
+  // their meaning under that translation, so refuse rather than emit checks
+  // that fire at the wrong times (Decision 1: lowering fails closed).
+  if (decl.modifiers.is_generator && !decl.contracts.empty()) {
+    return fail(lowering_error_kind::unsupported_construct, decl.span,
+                std::format("`pre`/`post` conditions on the `generator def` "
+                            "`{}` are checked statically but are not lowered "
+                            "to runtime checks yet, because a generator's body "
+                            "runs in steps rather than as one call",
+                            decl.name));
+  }
 
   push_scope();
 
@@ -3213,22 +3506,52 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     return std::unexpected(return_type.error());
   }
 
+  // Preconditions run before the body does — that is the whole of what "pre"
+  // means — so they go at the front, after the parameter prelude that binds
+  // the names they talk about. Postconditions can't be placed until an exit
+  // exists to place them at, so they're parked here for `lower_return_value`
+  // to pick up at each one.
+  for (const auto &contract : decl.contracts) {
+    if (!needs_runtime_check(contract)) {
+      continue;
+    }
+    if (!contract.is_pre) {
+      post_contracts_.push_back(&contract);
+      continue;
+    }
+    auto check = lower_contract_check(contract, contract_kind::precondition);
+    if (!check.has_value()) {
+      pop_scope();
+      post_contracts_.clear();
+      return std::unexpected(check.error());
+    }
+    param_prelude.push_back(std::move(*check));
+  }
+
   auto body = std::expected<ptr<hir_block>, lowering_error>{};
   if (decl.body_expr != nullptr) {
     auto expr_type = checked_type_of(*decl.body_expr);
     if (!expr_type.has_value()) {
       pop_scope();
+      post_contracts_.clear();
       return std::unexpected(expr_type.error());
     }
     auto value = lower_expr(*decl.body_expr);
     if (!value.has_value()) {
       pop_scope();
+      post_contracts_.clear();
       return std::unexpected(value.error());
     }
-    auto ret = ptr<hir_node>(
-        make<hir_return>(decl.body_expr->span, std::move(*value)));
+    auto exit = lower_return_value(decl.body_expr->span, std::move(*value));
+    if (!exit.has_value()) {
+      pop_scope();
+      post_contracts_.clear();
+      return std::unexpected(exit.error());
+    }
     auto stmts = std::move(param_prelude);
-    stmts.push_back(std::move(ret));
+    for (auto &stmt_ptr : *exit) {
+      stmts.push_back(std::move(stmt_ptr));
+    }
     body =
         make<hir_block>(decl.body_expr->span, *return_type, std::move(stmts));
   } else {
@@ -3247,8 +3570,56 @@ auto lowerer::lower_function(const ast::func_decl &decl)
       }
       (*body)->stmts = std::move(merged);
     }
+    // Falling off the end of the body is an exit too, and the one a `post`
+    // most often has to cover — every explicit `return` inside the body was
+    // already routed through `lower_return_value` by `lower_stmt`. There are
+    // three shapes of end:
+    //
+    //   - The body never reaches its end (`always_returns`): every exit is a
+    //     `return` that has already been checked. Nothing to add — and adding
+    //     anything would be code after a terminator, which LLVM rejects.
+    //   - It ends in a trailing expression, which *is* the returned value: it
+    //     becomes an explicit `return` (which both backends compile
+    //     identically to the implicit one) with the postconditions checked
+    //     against it.
+    //   - It just runs off the end, returning `unit`. There is nothing for
+    //     `return` to name (the checker rejects `return` in a `unit`
+    //     function's `post`), so the checks simply go last.
+    if (body.has_value() && !post_contracts_.empty()) {
+      auto &stmts = (*body)->stmts;
+      auto *tail = stmts.empty() ? nullptr : stmts.back().get();
+      if (tail != nullptr && always_returns(*tail)) {
+        // Nothing to do — see the first case above.
+      } else if (tail != nullptr &&
+                 tail->kind == hir_node_kind::hir_expr_stmt) {
+        auto &tail_stmt = dynamic_cast<hir_expr_stmt &>(*tail);
+        auto exit =
+            lower_return_value(tail_stmt.span, std::move(tail_stmt.expr));
+        if (!exit.has_value()) {
+          pop_scope();
+          post_contracts_.clear();
+          return std::unexpected(exit.error());
+        }
+        stmts.pop_back();
+        for (auto &stmt_ptr : *exit) {
+          stmts.push_back(std::move(stmt_ptr));
+        }
+      } else {
+        for (const auto *contract : post_contracts_) {
+          auto check =
+              lower_contract_check(*contract, contract_kind::postcondition);
+          if (!check.has_value()) {
+            pop_scope();
+            post_contracts_.clear();
+            return std::unexpected(check.error());
+          }
+          stmts.push_back(std::move(*check));
+        }
+      }
+    }
   }
   pop_scope();
+  post_contracts_.clear();
   if (!body.has_value()) {
     return std::unexpected(body.error());
   }
@@ -3273,9 +3644,10 @@ auto lowerer::lower_function(const ast::func_decl &decl)
 } // namespace
 
 auto lower_function(const ast::func_decl &decl,
-                    const semantic::checked_types &checked)
+                    const semantic::checked_types &checked,
+                    const lowering_options &options)
     -> std::expected<ptr<hir_function>, lowering_error> {
-  auto walker = lowerer(checked);
+  auto walker = lowerer(checked, options);
   return walker.lower_function(decl);
 }
 
@@ -3310,7 +3682,8 @@ auto lower_function(const ast::func_decl &decl,
 /// non-goal).
 [[nodiscard]] auto lower_impl_associated_functions(
     const ast::impl_decl &impl, const semantic::checked_types &checked,
-    ptr_vec<hir_function> &functions) -> std::expected<void, lowering_error> {
+    const lowering_options &options, ptr_vec<hir_function> &functions)
+    -> std::expected<void, lowering_error> {
   if (!impl.type_params.empty()) {
     return {};
   }
@@ -3326,7 +3699,7 @@ auto lower_function(const ast::func_decl &decl,
     if (decl.modifiers.is_intrinsic || !decl.type_params.empty()) {
       continue;
     }
-    auto lowered = lower_function(decl, checked);
+    auto lowered = lower_function(decl, checked, options);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -3343,6 +3716,7 @@ auto lower_function(const ast::func_decl &decl,
 /// just a plain per-item lowering.
 [[nodiscard]] auto lower_extend_methods(const ast::extend_decl &extend,
                                         const semantic::checked_types &checked,
+                                        const lowering_options &options,
                                         ptr_vec<hir_function> &functions)
     -> std::expected<void, lowering_error> {
   const auto target_name = simple_impl_target_name(extend.for_type.get());
@@ -3357,7 +3731,7 @@ auto lower_function(const ast::func_decl &decl,
     if (decl.modifiers.is_intrinsic || !decl.type_params.empty()) {
       continue;
     }
-    auto lowered = lower_function(decl, checked);
+    auto lowered = lower_function(decl, checked, options);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -3368,7 +3742,8 @@ auto lower_function(const ast::func_decl &decl,
 }
 
 auto lower_module(const ast::file &file, std::string module_name,
-                  const semantic::checked_types &checked)
+                  const semantic::checked_types &checked,
+                  const lowering_options &options)
     -> std::expected<ptr<hir_module>, lowering_error> {
   auto functions = ptr_vec<hir_function>{};
   for (const auto &item : file.items) {
@@ -3377,15 +3752,17 @@ auto lower_module(const ast::file &file, std::string module_name,
     }
     if (item->kind == ast::node_kind::impl_decl) {
       auto result = lower_impl_associated_functions(
-          dynamic_cast<const ast::impl_decl &>(*item), checked, functions);
+          dynamic_cast<const ast::impl_decl &>(*item), checked, options,
+          functions);
       if (!result.has_value()) {
         return std::unexpected(result.error());
       }
       continue;
     }
     if (item->kind == ast::node_kind::extend_decl) {
-      auto result = lower_extend_methods(
-          dynamic_cast<const ast::extend_decl &>(*item), checked, functions);
+      auto result =
+          lower_extend_methods(dynamic_cast<const ast::extend_decl &>(*item),
+                               checked, options, functions);
       if (!result.has_value()) {
         return std::unexpected(result.error());
       }
@@ -3412,7 +3789,7 @@ auto lower_module(const ast::file &file, std::string module_name,
       // code.
       continue;
     }
-    auto lowered = lower_function(decl, checked);
+    auto lowered = lower_function(decl, checked, options);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -3427,7 +3804,7 @@ auto lower_module(const ast::file &file, std::string module_name,
     if (synthesized.owner_module != module_name) {
       continue;
     }
-    auto lowered = lower_function(*synthesized.decl, checked);
+    auto lowered = lower_function(*synthesized.decl, checked, options);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -3444,8 +3821,8 @@ auto lower_module(const ast::file &file, std::string module_name,
     if (splice.owner_module != module_name || splice.impl == nullptr) {
       continue;
     }
-    auto result =
-        lower_impl_associated_functions(*splice.impl, checked, functions);
+    auto result = lower_impl_associated_functions(*splice.impl, checked,
+                                                  options, functions);
     if (!result.has_value()) {
       return std::unexpected(result.error());
     }
