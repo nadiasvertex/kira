@@ -176,7 +176,7 @@ struct target_os_info {
                      "pub pure def target_endianness() -> endianness: {}\n"
                      "pub pure def target_pointer_width() -> usize: {}\n"
                      "\n"
-                     "pub pure def kira_version() -> str: \"0.1.0\"\n"
+                     "pub pure def kira_version() -> str: \"0.2.0\"\n"
                      "pub pure def kira_implementation() -> str: \"kira\"\n"
                      "pub pure def kira_compiler() -> str: \"llvm\"\n"
                      "pub pure def kira_build_date() -> str: \"{}\"\n"
