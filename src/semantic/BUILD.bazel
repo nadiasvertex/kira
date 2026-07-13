@@ -6,8 +6,10 @@ cc_library(
         "analysis.cpp",
         "binding_walk.cpp",
         "check.cpp",
+        "linear_poly.cpp",
         "module_index.cpp",
         "move_check.cpp",
+        "reason.cpp",
         "resolution.cpp",
         "scopes.cpp",
         "session.cpp",
@@ -19,8 +21,10 @@ cc_library(
         "binding_walk.h",
         "check.h",
         "ids.h",
+        "linear_poly.h",
         "module_index.h",
         "move_check.h",
+        "reason.h",
         "resolution.h",
         "scopes.h",
         "session.h",
@@ -72,6 +76,15 @@ cc_test(
     deps = [
         ":semantic",
         "//src/parser:parser",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "reason_test",
+    srcs = ["reason_test.cpp"],
+    deps = [
+        ":semantic",
         "//src/testing",
     ],
 )

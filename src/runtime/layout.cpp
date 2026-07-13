@@ -305,6 +305,15 @@ namespace {
   if (name == "str") {
     return layout_info{.size_bytes = 8, .align_bytes = 8};
   }
+  // A refinement lays out as the type it refines — the predicate is a
+  // compile-time fact with no representation of its own — so a field typed
+  // `positive` occupies exactly what its `int32` base does, not the 8-byte
+  // heap slot the fallback below would give it. That distinction is invisible
+  // in an ordinary struct (writer and reader agree either way) and load-
+  // bearing in a `packed` one.
+  if (const auto base = types.refinement_base_named(name)) {
+    return layout_of(types, *base);
+  }
   // A bare single-segment name that isn't a scalar/`str` is either one of
   // the struct's own generic parameters (needs `instance.args`
   // substitution) or another named type (user struct/sum/alias, always
@@ -367,7 +376,15 @@ template <typename Visit>
 
 auto layout_of(const type_table &types, semantic::type_id id)
     -> std::optional<layout_info> {
-  return layout_of_entry(types.entry(id));
+  // A refinement is its base at runtime — the predicate is a compile-time fact
+  // with no representation of its own (`spec/dependent-types-design.md` 3.1),
+  // so a `positive` lays out exactly as the `int32` it refines. The checker
+  // erases refinements from every type it hands downstream
+  // (`type_table::erase_refinements`), so this should already be unreachable;
+  // it is here so that a layout query made straight against the type table
+  // — as `struct_layout` does for a substituted generic argument — cannot
+  // silently answer "heap pointer" for a value that is really a machine word.
+  return layout_of_entry(types.entry(types.strip_refinement(id)));
 }
 
 auto is_struct_packed(const type_table &types, semantic::type_id id) -> bool {

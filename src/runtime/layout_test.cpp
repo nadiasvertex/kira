@@ -244,6 +244,32 @@ auto test_struct_field_offset_packed() -> void {
          "expected a packed struct's size to be the exact byte sum, align 1");
 }
 
+auto test_refinement_field_lays_out_as_its_base() -> void {
+  // A refinement is its base at runtime — the predicate is a compile-time
+  // fact with no representation (`spec/dependent-types-design.md` section 3.1).
+  // So a field typed `positive` must occupy exactly what its `int32` base
+  // does. `packed` is what makes this observable: an ordinary struct would
+  // agree with itself whatever layout it chose, but a packed one promises an
+  // exact byte layout, and a refinement-typed field silently taking 8 bytes
+  // instead of 4 would break that promise.
+  auto fixture = check_fixture(
+      "module sample\n"
+      "type positive = int32 where self > 0\n"
+      "packed type refined = { pub a: bool, pub b: positive, pub c: bool }\n"
+      "def main() -> refined:\n"
+      "    return { a: true, b: 1, c: false }\n");
+  const auto id = struct_or_sum_type_of_main_return(fixture);
+  auto &types = fixture.checked.types;
+  expect(runtime::struct_field_offset(types, id, "b") == 1,
+         "expected the refinement-typed field to start right after the bool");
+  expect(runtime::struct_field_offset(types, id, "c") == 5,
+         "expected the refinement-typed field to occupy its base's 4 bytes, "
+         "not a heap pointer's 8");
+  const auto layout = runtime::struct_layout(types, id);
+  expect(layout.size_bytes == 6 && layout.align_bytes == 1,
+         "expected a refinement-typed field to lay out exactly as its base");
+}
+
 auto test_list_reserve_slot_grows_and_preserves_existing_elements() -> void {
   uint64_t header[3] = {0, 0, 0};
 
@@ -302,6 +328,7 @@ auto main() -> int {
     test_layout_of_scalar_sizes_and_alignment();
     test_struct_field_offset_padded();
     test_struct_field_offset_packed();
+    test_refinement_field_lays_out_as_its_base();
     test_list_reserve_slot_grows_and_preserves_existing_elements();
     test_list_reserve_slot_narrow_elements();
   } catch (const std::exception &ex) {

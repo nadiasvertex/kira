@@ -32,4 +32,17 @@ struct clone_error {
 [[nodiscard]] auto clone_func_decl(const func_decl &decl)
     -> std::expected<ptr<func_decl>, clone_error>;
 
+/// Deep-clones a single expression, over the same bounded node set
+/// `clone_func_decl` covers (identifiers, literals, operators, field access,
+/// indexing, calls, `?`, array literals) — and failing, rather than silently
+/// dropping, on anything outside it.
+///
+/// Exposed for `semantic::check.cpp`'s refinement `try_from` desugaring
+/// (`spec/dependent-types-design.md` §7), which has to rewrite a
+/// refinement's `where` predicate to speak about a concrete value rather than
+/// `self`, and cannot mutate the declaration's own AST to do it — several
+/// call sites share that one predicate node, and each needs its own copy.
+[[nodiscard]] auto clone_expr(const expr &e)
+    -> std::expected<ptr<expr>, clone_error>;
+
 } // namespace kira::ast

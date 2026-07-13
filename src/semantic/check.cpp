@@ -17,6 +17,7 @@
 #include "src/intrinsics.h"
 #include "src/parser/ast_clone.h"
 #include "src/semantic/module_index.h"
+#include "src/semantic/reason.h"
 #include "src/semantic/types.h"
 
 namespace kira::semantic {
@@ -25,6 +26,42 @@ namespace {
 // ==========================================================================
 //  Small helpers
 // ==========================================================================
+
+/// How an operator is spelled in source — used to echo a predicate back to
+/// the user in a proof diagnostic, so ``cannot prove `i < n` `` quotes the
+/// condition the way they would have written it.
+auto binary_op_spelling(ast::binary_op op) -> std::string_view {
+  switch (op) {
+  case ast::binary_op::eq_eq:
+    return "==";
+  case ast::binary_op::bang_eq:
+    return "!=";
+  case ast::binary_op::lt:
+    return "<";
+  case ast::binary_op::lt_eq:
+    return "<=";
+  case ast::binary_op::gt:
+    return ">";
+  case ast::binary_op::gt_eq:
+    return ">=";
+  case ast::binary_op::add:
+    return "+";
+  case ast::binary_op::sub:
+    return "-";
+  case ast::binary_op::mul:
+    return "*";
+  case ast::binary_op::div:
+    return "/";
+  case ast::binary_op::mod:
+    return "%";
+  case ast::binary_op::logical_and:
+    return "and";
+  case ast::binary_op::logical_or:
+    return "or";
+  default:
+    return "?";
+  }
+}
 
 /// Bounded Levenshtein distance used for "did you mean" suggestions.
 auto edit_distance(std::string_view a, std::string_view b) -> size_t {
@@ -531,6 +568,19 @@ private:
   /// still-open variable, or `k_unknown_type` if this pass doesn't
   /// recognize the shape (walked for side effects only, in that case).
   auto walk_expr(const ast::expr &expr) -> type_id {
+    // An error node is not what its `kind` claims to be. Recovery placeholders
+    // borrow a benign kind — `ast::error_expr` reports itself as an
+    // `ident_expr` — and mark themselves with `has_error` instead of adding a
+    // kind of their own, so the tree stays structurally walkable after a parse
+    // failure. The price is that `kind` alone no longer licenses a
+    // `dynamic_cast`, and every consumer must check `has_error` first, exactly
+    // as `checker::infer_expr_impl` does. Skipping this check is not a missed
+    // optimization, it is a `std::bad_cast` — and `if let` plants an
+    // `error_expr` in `branch.condition` on *every* parse, error or not, so
+    // this is reachable from correct code.
+    if (expr.has_error) {
+      return k_unknown_type;
+    }
     switch (expr.kind) {
     case ast::node_kind::ident_expr: {
       const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
@@ -601,6 +651,11 @@ private:
   }
 
   auto walk_node(const ast::node &node) -> void {
+    // Same reason as `walk_expr`: an `ast::error_stmt` reports itself as an
+    // `expr_stmt` and is not one.
+    if (node.has_error) {
+      return;
+    }
     switch (node.kind) {
     case ast::node_kind::let_stmt: {
       const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
@@ -737,8 +792,40 @@ public:
   /// Hands the session's interned types and per-expression type map to the
   /// caller, once `run` has finished. Moves both out of the checker, so call
   /// this at most once, after `run` returns.
+  /// Everything the checker synthesized that must outlive it: the compile-
+  /// time evaluator's quoted fragments, plus the desugared body of every
+  /// `try_from`. Both are pointed at by `spliced_fragments`, which lowering
+  /// reads long after the checker is gone.
+  auto take_synthesized_fragments() -> ast::ptr_vec<ast::node> {
+    auto fragments = comptime_eval_.take_synthesized_fragments();
+    for (auto &fragment : proof_fragments_) {
+      fragments.push_back(std::move(fragment));
+    }
+    proof_fragments_.clear();
+    return fragments;
+  }
+
   auto take_checked_types() -> checked_types {
     const auto fmt_types = resolve_fmt_runtime_types();
+    // Refinements have done their work by now — every obligation is raised
+    // and discharged during checking, and a predicate has no runtime
+    // existence. Erase them here, once, at the boundary, so no downstream
+    // pass (HIR, layout, either backend) ever has to know they existed. This
+    // is the same trick `resolve_opaque` plays for existential types, applied
+    // one layer earlier because a refinement can hide *inside* a type
+    // (`option[index[n]]`) where an unwrap at the use site wouldn't reach it.
+    for (auto &[node, type] : node_types_) {
+      type = types_.erase_refinements(type);
+    }
+    for (auto &[field, type] : struct_pattern_field_types_) {
+      type = types_.erase_refinements(type);
+    }
+    for (auto &[field, type] : struct_literal_field_types_) {
+      type = types_.erase_refinements(type);
+    }
+    for (auto &[node, dispatch] : interp_dispatches_) {
+      dispatch.value_type = types_.erase_refinements(dispatch.value_type);
+    }
     return checked_types{
         .types = std::move(types_),
         .node_types = std::move(node_types_),
@@ -752,10 +839,12 @@ public:
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
         .synthesized_types = std::move(synthesized_types_),
         .spliced_fragments = std::move(spliced_fragments_),
-        .synthesized_fragments = comptime_eval_.take_synthesized_fragments(),
+        .synthesized_fragments = take_synthesized_fragments(),
         .synthesized_item_splices = std::move(synthesized_item_splices_),
         .synthesized_const_literals = std::move(synthesized_const_literals_),
-        .static_const_values = std::move(static_const_values_)};
+        .static_const_values = std::move(static_const_values_),
+        .proven_in_bounds = std::move(proven_in_bounds_),
+        .elided_contracts = std::move(elided_contracts_)};
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
@@ -902,6 +991,20 @@ private:
   /// `resolve_ident`.
   std::unordered_map<const ast::node *, const ast::literal_expr *>
       static_const_values_;
+  /// See `checked_types::proven_in_bounds`'s doc comment. Populated by
+  /// `check_index_in_bounds`.
+  std::unordered_set<const ast::index_expr *> proven_in_bounds_;
+  /// Owns the desugared body of every `try_from` call — see
+  /// `build_try_from_fragment`. Handed to `checked_types::
+  /// synthesized_fragments` at the end of checking, since `spliced_fragments`
+  /// points into these and `hir::lower` runs after the checker is gone.
+  ast::ptr_vec<ast::node> proof_fragments_;
+  /// See `checked_types::elided_contracts`'s doc comment. Populated by
+  /// `check_call_preconditions`.
+  std::unordered_set<const ast::contract_clause *> elided_contracts_;
+  /// Numbers the compiler-introduced binding each `try_from` desugaring needs,
+  /// so two proofs in one function never collide.
+  size_t proof_temporaries_ = 0;
 
   // --- current file / module context -------------------------------------
   const module_members *module_ = nullptr;
@@ -937,6 +1040,13 @@ private:
   bool checking_existential_return_ = false;
   type_id existential_underlying_ = k_unknown_type;
   std::unordered_set<std::string> reported_undefined_;
+  /// Everything known about the values in scope at the point currently being
+  /// checked — value-parameter domains, refined parameters' predicates, array
+  /// lengths, preconditions, and (inside a branch) path conditions. Rebuilt
+  /// per function by `collect_function_facts`, extended and truncated
+  /// lexically by `fact_scope`. This is the left-hand side of every proof the
+  /// compiler attempts; see `src/semantic/reason.h`.
+  fact_set facts_;
 
   // --- caches ---------------------------------------------------------------
   std::unordered_map<const ast::static_decl *, type_id> static_types_;
@@ -1004,12 +1114,85 @@ private:
     mark_error();
   }
 
+  /// Explains, in the user's own arithmetic, *why* two types with the same
+  /// shape still don't match — because somewhere inside them a compile-time
+  /// value slot cannot line up. Without this, calling `head` on an empty
+  /// `vec` reports a bare "expected `vec[T, n + 1]`, found `vec[int32, 0]`"
+  /// and leaves the reader to work out that the lengths are the problem, and
+  /// then that no `n: usize` could ever close the gap. Returns `nullopt` when
+  /// the mismatch isn't about a value slot, which is the common case.
+  auto value_slot_conflict(type_id expected, type_id found)
+      -> std::optional<std::string> {
+    const auto &expected_entry = types_.entry(expected);
+    const auto &found_entry = types_.entry(found);
+
+    if (is_value_kind(expected_entry.kind) && is_value_kind(found_entry.kind)) {
+      if (types_.compatible(expected, found)) {
+        return std::nullopt;
+      }
+      if (expected_entry.kind == type_kind::const_variant_kind ||
+          found_entry.kind == type_kind::const_variant_kind) {
+        return std::format(
+            "This value is in state `{}`, but state `{}` is required here — "
+            "and a state is a fact about the value, not a conversion you can "
+            "perform. Route the value through whatever operation produces "
+            "state `{}`.",
+            found_entry.name, expected_entry.name, expected_entry.name);
+      }
+      auto unknowns = std::vector<std::string>{};
+      for (const auto &term : expected_entry.value.terms) {
+        unknowns.push_back(term.var);
+      }
+      for (const auto &term : found_entry.value.terms) {
+        unknowns.push_back(term.var);
+      }
+      if (unknowns.empty()) {
+        return std::nullopt; // two constants; the displayed types say it all
+      }
+      std::ranges::sort(unknowns);
+      unknowns.erase(std::ranges::unique(unknowns).begin(), unknowns.end());
+      const auto domain = types_.display(is_value_kind(expected_entry.kind) &&
+                                                 expected_entry.result != 0
+                                             ? expected_entry.result
+                                             : found_entry.result);
+      return std::format(
+          "`{}` can never equal `{}` for `{}: {}` — there is no value of `{}` "
+          "that would make these lengths agree.",
+          expected_entry.name, found_entry.name, join_strings(unknowns, "`, `"),
+          domain, join_strings(unknowns, "`, `"));
+    }
+
+    if (expected_entry.kind != found_entry.kind) {
+      return std::nullopt;
+    }
+    for (size_t i = 0;
+         i < expected_entry.args.size() && i < found_entry.args.size(); ++i) {
+      if (auto conflict = value_slot_conflict(expected_entry.args[i],
+                                              found_entry.args[i])) {
+        return conflict;
+      }
+    }
+    if (expected_entry.result != found_entry.result) {
+      return value_slot_conflict(expected_entry.result, found_entry.result);
+    }
+    return std::nullopt;
+  }
+
   /// Emits a "type mismatch" error if `found` is not `compatible` with
   /// `expected`; a no-op otherwise. Adds a conversion hint when both sides
   /// are numeric, since Kira never converts numbers implicitly.
+  ///
+  /// `value`, where a caller has the expression to hand, is what makes this
+  /// the single chokepoint for *coercion* rather than just for shape: a value
+  /// flowing into a refined type owes a proof, and this is every place a
+  /// value flows into a declared type (argument, initializer, assignment,
+  /// field, element, return). Passing `nullptr` simply forgoes that check —
+  /// used where there is no expression, such as a pattern's implied type.
   auto type_mismatch(source_span span, type_id expected, type_id found,
-                     std::string_view context) -> void {
+                     std::string_view context, const ast::expr *value = nullptr)
+      -> void {
     if (types_.compatible(expected, found)) {
+      check_narrowing(expected, found, value, span, context);
       return;
     }
     auto diag =
@@ -1019,7 +1202,9 @@ private:
                    file_id_);
     diag.with_label(span, std::format("expected `{}` {}",
                                       types_.display(expected), context));
-    if (types_.is_numeric(expected) && types_.is_numeric(found)) {
+    if (auto conflict = value_slot_conflict(expected, found)) {
+      diag.with_help(*conflict);
+    } else if (types_.is_numeric(expected) && types_.is_numeric(found)) {
       diag.with_help(std::format(
           "Kira never converts numbers implicitly; write `{}(...)` to convert "
           "this value explicitly.",
@@ -1076,6 +1261,24 @@ private:
 
   /// Closes the innermost generic-parameter scope.
   auto pop_type_params() -> void { type_params_.pop_back(); }
+
+  /// Binds each compile-time *value* parameter (`n: usize`) as an ordinary
+  /// value in the current scope. A value parameter has two lives: it is a
+  /// type argument to `resolve_type` (so `vec[T, n]` means something) and a
+  /// plain value to `infer_expr` (so `self < n` and `for i in 0..n` mean
+  /// something). This is the second one.
+  auto bind_value_params(const std::vector<ast::type_param> &params) -> void {
+    for (const auto &param : params) {
+      if (!param.is_value_param || param.name.empty()) {
+        continue;
+      }
+      const auto type =
+          param.bound_or_type != nullptr
+              ? resolve_type(*param.bound_or_type, current_resolve_ctx())
+              : k_unknown_type;
+      bind_value(param.name, type, binding_origin::parameter, param.span);
+    }
+  }
 
   /// Looks up an in-scope generic parameter by name, searching from the
   /// innermost scope outward.
@@ -1271,15 +1474,10 @@ private:
       const auto element = array.element != nullptr
                                ? resolve_type(*array.element, ctx)
                                : k_unknown_type;
-      auto size = std::optional<uint64_t>{};
-      if (array.size != nullptr &&
-          array.size->kind == ast::node_kind::literal_expr) {
-        const auto &lit = dynamic_cast<const ast::literal_expr &>(*array.size);
-        if (lit.lit_kind == token_kind::int_lit) {
-          size = parse_integer_literal(lit.value);
-        }
-      }
-      return types_.array_of(element, size);
+      const auto length = array.size != nullptr
+                              ? resolve_length_arg(*array.size, ctx)
+                              : k_unknown_type;
+      return array_with_length(element, length);
     }
     case ast::node_kind::ref_type: {
       const auto &ref = dynamic_cast<const ast::ref_type &>(type);
@@ -1307,9 +1505,22 @@ private:
       return types_.fn_of(std::move(params), result);
     }
     case ast::node_kind::refinement_type: {
+      // An *inline* refinement (`x: int32 where self > 0`) — one written with
+      // no declaration to name it. A refinement written as a `type`
+      // declaration never reaches here; it is minted, nominally, by
+      // `make_refinement_type`.
       const auto &refinement = dynamic_cast<const ast::refinement_type &>(type);
-      return refinement.base != nullptr ? resolve_type(*refinement.base, ctx)
-                                        : k_unknown_type;
+      const auto base = refinement.base != nullptr
+                            ? resolve_type(*refinement.base, ctx)
+                            : k_unknown_type;
+      const auto *predicate =
+          dynamic_cast<const ast::expr *>(refinement.predicate.get());
+      if (predicate == nullptr || predicate->has_error) {
+        return base;
+      }
+      return types_.refinement_of(
+          nullptr, std::format("{} where ...", types_.display(base)),
+          module_name_, base, {}, predicate);
     }
     case ast::node_kind::quote_type: {
       const auto &quote = dynamic_cast<const ast::quote_type &>(type);
@@ -1507,20 +1718,245 @@ private:
     return k_error_type;
   }
 
-  /// Resolves each generic argument slot of a named type. A slot holding a
-  /// type expression resolves to that type; a slot holding a bare integer
-  /// literal (a const generic argument, e.g. the `3` in `vec[T, 3]`) interns
-  /// as a `const_value` so distinct literals produce distinct types; a slot
-  /// holding a bare identifier that names an in-scope value type-parameter
-  /// (e.g. `n` inside `def head[T, n: usize](v: vec[T, n])`) resolves to
-  /// that parameter, keeping the slot fully generic. Any other compile-time
-  /// value expression (arithmetic such as `m + n`, calls, ...) is not
-  /// evaluated and resolves to `unknown` — see `spec/dependent-types-
-  /// design.md` for why this is deliberately not a constraint solver yet.
-  /// `decl_params`, when given, is the target declaration's own type
-  /// parameters, used only to look up a literal argument's declared
-  /// underlying scalar type by position; it may be shorter than `named`'s
-  /// argument list (arity mismatches are diagnosed by the caller).
+  // ==========================================================================
+  //  Compile-time value slots (`spec/dependent-types-design.md` §2)
+  //
+  //  A type-argument slot may hold a *value* rather than a type: the `3` in
+  //  `vec[T, 3]`, the `n + 1` in `vec[T, n + 1]`, the `open` in
+  //  `connection[open]`. Closed values fold; open ones become canonical
+  //  linear polynomials; variants stay identities. Everything else leaves the
+  //  fragment and resolves to `unknown`, which unifies with everything and
+  //  diagnoses nothing — the standing policy for "I don't know".
+  // ==========================================================================
+
+  /// Looks up the value slot an in-scope name denotes — a value
+  /// type-parameter (`n`), or whatever a caller already substituted for it.
+  auto lookup_value_binding(std::string_view name, const resolve_ctx &ctx)
+      -> std::optional<type_id> {
+    if (ctx.param_bindings != nullptr) {
+      if (const auto it = ctx.param_bindings->find(std::string(name));
+          it != ctx.param_bindings->end()) {
+        return it->second;
+      }
+    }
+    if (ctx.use_type_param_stack) {
+      if (const auto param = lookup_type_param(name)) {
+        return *param;
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// The polynomial a bare name contributes. An unsubstituted value parameter
+  /// is the unknown `n` itself; a substituted one contributes whatever the
+  /// caller passed (a constant, or another polynomial — which is what makes
+  /// `concat`'s `vec[T, m + n]` compose when `m` is itself `k + 1`).
+  auto name_poly(std::string_view name, const resolve_ctx &ctx)
+      -> std::optional<linear_poly> {
+    const auto slot = lookup_value_binding(name, ctx);
+    if (!slot.has_value()) {
+      return std::nullopt;
+    }
+    const auto &entry = types_.entry(*slot);
+    switch (entry.kind) {
+    case type_kind::type_param_kind:
+      return poly_variable(std::string(name));
+    case type_kind::const_value_kind:
+    case type_kind::symbolic_value_kind:
+      return entry.value;
+    default:
+      return std::nullopt;
+    }
+  }
+
+  /// Builds the canonical polynomial denoted by a compile-time value
+  /// expression, or `nullopt` when the expression falls outside the linear
+  /// fragment (`m * n`, `n / 2`, a call, a field access — see the design doc
+  /// §2.1 and §4.4). A bare name arrives here as a `named_type` rather than
+  /// an `ident_expr`, because `vec[T, n]`'s `n` parses as a type before the
+  /// parser has any way to know the slot wants a value; both spellings are
+  /// accepted.
+  auto value_poly(const ast::node &node, const resolve_ctx &ctx)
+      -> std::optional<linear_poly> {
+    switch (node.kind) {
+    case ast::node_kind::literal_expr: {
+      const auto &lit = dynamic_cast<const ast::literal_expr &>(node);
+      if (lit.lit_kind != token_kind::int_lit) {
+        return std::nullopt;
+      }
+      const auto value = parse_integer_literal(lit.value);
+      if (!value.has_value()) {
+        return std::nullopt;
+      }
+      return poly_constant(static_cast<int64_t>(*value));
+    }
+    case ast::node_kind::ident_expr:
+      return name_poly(dynamic_cast<const ast::ident_expr &>(node).name, ctx);
+    case ast::node_kind::named_type: {
+      const auto &named = dynamic_cast<const ast::named_type &>(node);
+      if (named.path.size() != 1 || !named.type_args.empty()) {
+        return std::nullopt;
+      }
+      return name_poly(named.path.front(), ctx);
+    }
+    case ast::node_kind::unary_expr: {
+      const auto &unary = dynamic_cast<const ast::unary_expr &>(node);
+      if (unary.op != ast::unary_op::neg || unary.operand == nullptr) {
+        return std::nullopt;
+      }
+      const auto operand = value_poly(*unary.operand, ctx);
+      return operand.has_value() ? std::optional{poly_negate(*operand)}
+                                 : std::nullopt;
+    }
+    case ast::node_kind::binary_expr: {
+      const auto &binary = dynamic_cast<const ast::binary_expr &>(node);
+      if (binary.lhs == nullptr || binary.rhs == nullptr) {
+        return std::nullopt;
+      }
+      const auto left = value_poly(*binary.lhs, ctx);
+      const auto right = value_poly(*binary.rhs, ctx);
+      if (!left.has_value() || !right.has_value()) {
+        return std::nullopt;
+      }
+      switch (binary.op) {
+      case ast::binary_op::add:
+        return poly_add(*left, *right);
+      case ast::binary_op::sub:
+        return poly_sub(*left, *right);
+      case ast::binary_op::mul:
+        // Linear means linear: one side has to be closed, or the product
+        // isn't a polynomial we can decide anything about.
+        if (left->is_constant()) {
+          return poly_scale(*right, left->constant);
+        }
+        if (right->is_constant()) {
+          return poly_scale(*left, right->constant);
+        }
+        return std::nullopt;
+      default:
+        return std::nullopt;
+      }
+    }
+    default:
+      return std::nullopt;
+    }
+  }
+
+  /// The bare name a value-argument node spells, if it is one — the `open` in
+  /// `connection[open]` (a `named_type`, since it looks like a type) or in
+  /// `connection[@open]` (an `ident_expr`, since `@` makes it unambiguously a
+  /// variant). Both spellings mean the same state.
+  auto value_arg_name(const ast::node &node) -> std::optional<std::string> {
+    if (node.kind == ast::node_kind::ident_expr) {
+      return dynamic_cast<const ast::ident_expr &>(node).name;
+    }
+    if (node.kind == ast::node_kind::named_type) {
+      const auto &named = dynamic_cast<const ast::named_type &>(node);
+      if (named.path.size() == 1 && named.type_args.empty()) {
+        return named.path.front();
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// Resolves one argument written for a declared *value* parameter
+  /// (`n: usize`, `S: conn_state`). A sum-typed parameter takes a variant
+  /// name; an integer-typed one takes an expression in the linear fragment.
+  auto resolve_value_arg(const ast::node &node, const ast::type_param &param,
+                         const resolve_ctx &ctx, source_span span) -> type_id {
+    const auto declared =
+        param.bound_or_type != nullptr
+            ? resolve_type(*param.bound_or_type, quiet_ctx(ctx))
+            : types_.usize_type();
+
+    const auto &declared_entry = types_.entry(declared);
+    if (declared_entry.kind == type_kind::sum_kind &&
+        declared_entry.decl != nullptr) {
+      const auto name = value_arg_name(node);
+      if (!name.has_value()) {
+        return k_unknown_type;
+      }
+      const auto &sum = dynamic_cast<const ast::sum_type_def &>(
+          *declared_entry.decl->definition);
+      for (const auto &variant : sum.body.variants) {
+        if (variant.name == *name) {
+          return types_.const_variant(*declared_entry.decl,
+                                      declared_entry.module_name, *name);
+        }
+      }
+      if (!ctx.quiet) {
+        auto names = std::vector<std::string>{};
+        for (const auto &variant : sum.body.variants) {
+          names.push_back(variant.name);
+        }
+        auto diag = diagnostic(diagnostic_level::error,
+                               std::format("`{}` is not a state of `{}`", *name,
+                                           declared_entry.name),
+                               file_id_);
+        diag.with_label(span, "not a variant of this parameter's type");
+        diag.with_help(std::format(
+            "The `{}` parameter of this type ranges over `{}`, whose states "
+            "are {}.",
+            param.name, declared_entry.name, join_strings(names, ", ")));
+        diag_.emit(diag);
+        mark_error();
+      }
+      return k_error_type;
+    }
+
+    const auto poly = value_poly(node, ctx);
+    if (!poly.has_value()) {
+      return k_unknown_type;
+    }
+    return types_.symbolic_value(declared, *poly);
+  }
+
+  /// A copy of `ctx` that reports nothing — used when resolving a type purely
+  /// to inspect it (a value parameter's declared type, say), where any
+  /// diagnostic would be a duplicate of one the declaration's own check emits.
+  auto quiet_ctx(const resolve_ctx &ctx) -> resolve_ctx {
+    auto quiet = ctx;
+    quiet.quiet = true;
+    return quiet;
+  }
+
+  /// The length slot of an `array[T, n]`: the same value grammar as any const
+  /// generic argument, over `usize` (an array length has no other type).
+  auto resolve_length_arg(const ast::node &node, const resolve_ctx &ctx)
+      -> type_id {
+    const auto poly = value_poly(node, ctx);
+    return poly.has_value() ? types_.symbolic_value(types_.usize_type(), *poly)
+                            : k_unknown_type;
+  }
+
+  /// The closed length of a value slot, when it has one — what layout and
+  /// both backends need. `nullopt` for a symbolic length, which is a length
+  /// no runtime representation can have.
+  auto closed_length(type_id length) -> std::optional<uint64_t> {
+    const auto &entry = types_.entry(length);
+    if (entry.kind != type_kind::const_value_kind || entry.value.constant < 0) {
+      return std::nullopt;
+    }
+    return static_cast<uint64_t>(entry.value.constant);
+  }
+
+  /// Interns `array[T, <length>]` from a resolved length value slot, keeping
+  /// the plain integer size in sync for the backends.
+  auto array_with_length(type_id element, type_id length) -> type_id {
+    return types_.array_of(element, closed_length(length), length);
+  }
+
+  /// Resolves each generic argument slot of a named type. A slot declared as
+  /// a *value* parameter routes through `resolve_value_arg` (see the section
+  /// comment above). A slot declared as — or, absent `decl_params`, simply
+  /// looking like — a type resolves structurally.
+  ///
+  /// `decl_params` is the target declaration's own type parameters, which is
+  /// what tells a value slot from a type slot; it may be shorter than
+  /// `named`'s argument list (arity mismatches are diagnosed by the caller).
+  /// Without it — a prelude container, whose parameters are all types — the
+  /// old positional heuristics still apply, so a bare integer literal or an
+  /// in-scope value parameter still lands as a value.
   auto
   resolve_type_args(const ast::named_type &named, const resolve_ctx &ctx,
                     const std::vector<ast::type_param> *decl_params = nullptr)
@@ -1533,10 +1969,18 @@ private:
         args.push_back(k_unknown_type);
         continue;
       }
+
+      const auto *param = decl_params != nullptr && i < decl_params->size()
+                              ? &(*decl_params)[i]
+                              : nullptr;
+      if (param != nullptr && param->is_value_param) {
+        args.push_back(resolve_value_arg(*arg.value, *param, ctx, arg.span));
+        continue;
+      }
+
       // A type argument slot may hold a type or a compile-time value; only
       // type expressions resolve to types here.
       switch (arg.value->kind) {
-      case ast::node_kind::named_type:
       case ast::node_kind::tuple_type:
       case ast::node_kind::slice_type:
       case ast::node_kind::array_type:
@@ -1550,48 +1994,987 @@ private:
         args.push_back(resolve_type(
             dynamic_cast<const ast::type_expr &>(*arg.value), ctx));
         break;
-      case ast::node_kind::literal_expr: {
-        const auto &lit = dynamic_cast<const ast::literal_expr &>(*arg.value);
-        const auto value = lit.lit_kind == token_kind::int_lit
-                               ? parse_integer_literal(lit.value)
-                               : std::nullopt;
-        if (!value.has_value()) {
-          args.push_back(k_unknown_type);
-          break;
-        }
-        auto underlying = types_.usize_type();
-        if (decl_params != nullptr && i < decl_params->size() &&
-            (*decl_params)[i].is_value_param &&
-            (*decl_params)[i].bound_or_type != nullptr) {
-          underlying = resolve_type(*(*decl_params)[i].bound_or_type, ctx);
-        }
-        args.push_back(types_.const_value(underlying, *value));
+      case ast::node_kind::named_type:
+        // A bare name resolves through the ordinary type path, which already
+        // consults `param_bindings` and the type-parameter stack — so a slot
+        // a caller has substituted a value into comes back as that value.
+        args.push_back(resolve_type(
+            dynamic_cast<const ast::named_type &>(*arg.value), ctx));
         break;
-      }
       case ast::node_kind::ident_expr: {
         const auto &ident = dynamic_cast<const ast::ident_expr &>(*arg.value);
-        if (ctx.param_bindings != nullptr) {
-          if (const auto it = ctx.param_bindings->find(ident.name);
-              it != ctx.param_bindings->end()) {
-            args.push_back(it->second);
-            break;
-          }
-        }
-        if (ctx.use_type_param_stack) {
-          if (const auto param = lookup_type_param(ident.name)) {
-            args.push_back(*param);
-            break;
-          }
-        }
-        args.push_back(k_unknown_type);
+        const auto slot = lookup_value_binding(ident.name, ctx);
+        args.push_back(slot.value_or(k_unknown_type));
         break;
       }
+      case ast::node_kind::literal_expr:
+      case ast::node_kind::unary_expr:
+      case ast::node_kind::binary_expr:
+        // An unlabelled value slot (a prelude container, or a declaration
+        // whose parameter list we couldn't consult): the value's own type
+        // isn't declared anywhere, so it takes the `usize` the language uses
+        // for every unannotated compile-time count.
+        args.push_back(resolve_length_arg(*arg.value, ctx));
+        break;
       default:
         args.push_back(k_unknown_type);
         break;
       }
     }
     return args;
+  }
+
+  // ==========================================================================
+  //  Reasoning — building facts and goals from source
+  //
+  //  The bridge between the AST and `src/semantic/reason.h`. A predicate the
+  //  user wrote (`self < n`, `x > 0`, `i < v.len()`) becomes a `goal_form`
+  //  when it must be *proved* and a `fact_set` when it may be *assumed* —
+  //  the same translation either way, differing only in what happens to the
+  //  parts that fall outside the fragment: an unrepresentable goal cannot be
+  //  proved, while an unrepresentable fact is simply forgotten.
+  //
+  //  Both translations carry a substitution, because a predicate is always
+  //  written about `self` and the declaring type's value parameters, and must
+  //  be re-stated about the actual value and the actual arguments before it
+  //  means anything at a use site: `index[n]`'s `self < n`, applied to the
+  //  argument `i` at a call in a function with its own `n`, is the goal
+  //  `i < n`.
+  // ==========================================================================
+
+  /// Re-states a predicate about a concrete value. `values` maps each name
+  /// the predicate is written in terms of (`self`, and the declaration's
+  /// value parameters) to the polynomial that stands in for it here;
+  /// `spellings` maps the same names to their source spelling, purely so the
+  /// diagnostic can echo the goal back in the user's own words.
+  struct predicate_subst {
+    std::unordered_map<std::string, linear_poly> values;
+    std::unordered_map<std::string, std::string> spellings;
+  };
+
+  /// What a call site has pinned each of the callee's value parameters to.
+  using value_bindings = std::unordered_map<std::string, linear_poly>;
+
+  /// A narrowing obligation raised by one call argument, held back until the
+  /// whole argument list has been seen — see `check_call_args_against`.
+  struct deferred_narrowing {
+    type_id expected = k_unknown_type;
+    type_id found = k_unknown_type;
+    const ast::expr *value = nullptr;
+    source_span span;
+  };
+
+  /// The atom key standing for an expression the solver cannot look inside —
+  /// a field access, or a call to a `pure` function. Uninterpreted: `f(x)`
+  /// equals `f(x)` and nothing else is known about it, so the key must be
+  /// canonical (two spellings of the same argument must produce one key) and
+  /// injective (two different arguments must not).
+  auto atom_key(const ast::expr &expr, const predicate_subst &subst)
+      -> std::optional<std::string> {
+    switch (expr.kind) {
+    case ast::node_kind::ident_expr: {
+      const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
+      if (const auto it = subst.values.find(ident.name);
+          it != subst.values.end()) {
+        return it->second.display();
+      }
+      return ident.name;
+    }
+    case ast::node_kind::field_expr: {
+      const auto &field = dynamic_cast<const ast::field_expr &>(expr);
+      if (field.object == nullptr) {
+        return std::nullopt;
+      }
+      const auto object = atom_key(*field.object, subst);
+      return object.has_value() ? std::optional{std::format("{}.{}", *object,
+                                                            field.field_name)}
+                                : std::nullopt;
+    }
+    case ast::node_kind::module_path_expr: {
+      // `p.value` and `self.value` parse as *paths*, not field accesses —
+      // `a.b` is ambiguous between a projection and a module member until
+      // names are resolved, and the parser does not resolve names. So the
+      // shape a predicate about a struct field actually arrives in is this
+      // one, and treating it as an atom keyed on the written path is both
+      // correct and exactly what makes an `invariant self.value > 0`
+      // discharge a `positive` at `p.value`: the fact and the goal key alike.
+      const auto &path = dynamic_cast<const ast::module_path_expr &>(expr);
+      if (path.segments.empty()) {
+        return std::nullopt;
+      }
+      auto segments = path.segments;
+      if (const auto it = subst.values.find(segments.front());
+          it != subst.values.end()) {
+        segments.front() = it->second.display();
+      }
+      return join_strings(segments, ".");
+    }
+    case ast::node_kind::call_expr: {
+      // A method call `v.len()` keys as `len(v)`, a free call `f(x)` as
+      // `f(x)` — so a fact stated one way discharges a goal stated the other.
+      const auto &call = dynamic_cast<const ast::call_expr &>(expr);
+      if (call.callee == nullptr) {
+        return std::nullopt;
+      }
+      auto name = std::string{};
+      auto arguments = std::vector<std::string>{};
+      if (call.callee->kind == ast::node_kind::field_expr) {
+        const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+        if (field.object == nullptr) {
+          return std::nullopt;
+        }
+        const auto receiver = atom_key(*field.object, subst);
+        if (!receiver.has_value()) {
+          return std::nullopt;
+        }
+        name = field.field_name;
+        arguments.push_back(*receiver);
+      } else if (call.callee->kind == ast::node_kind::ident_expr) {
+        name = dynamic_cast<const ast::ident_expr &>(*call.callee).name;
+      } else {
+        return std::nullopt;
+      }
+      for (const auto &arg : call.args) {
+        if (arg.value == nullptr) {
+          return std::nullopt;
+        }
+        const auto key = atom_key(*arg.value, subst);
+        if (!key.has_value()) {
+          return std::nullopt;
+        }
+        arguments.push_back(*key);
+      }
+      return std::format("{}({})", name, join_strings(arguments, ","));
+    }
+    default:
+      return std::nullopt;
+    }
+  }
+
+  /// Translates a value expression into a solver polynomial, treating what it
+  /// cannot decompose as an opaque atom. `nullopt` means the expression left
+  /// the fragment entirely (`m * n`, `n / 2`, an index, a cast) — see
+  /// `spec/dependent-types-design.md` §4.4.
+  auto solver_poly(const ast::expr &expr, const predicate_subst &subst)
+      -> std::optional<linear_poly> {
+    switch (expr.kind) {
+    case ast::node_kind::literal_expr: {
+      const auto &lit = dynamic_cast<const ast::literal_expr &>(expr);
+      if (lit.lit_kind != token_kind::int_lit) {
+        return std::nullopt;
+      }
+      const auto value = parse_integer_literal(lit.value);
+      return value.has_value()
+                 ? std::optional{poly_constant(static_cast<int64_t>(*value))}
+                 : std::nullopt;
+    }
+    case ast::node_kind::ident_expr: {
+      const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
+      if (const auto it = subst.values.find(ident.name);
+          it != subst.values.end()) {
+        return it->second;
+      }
+      return poly_variable(ident.name);
+    }
+    case ast::node_kind::unary_expr: {
+      const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+      if (unary.op != ast::unary_op::neg || unary.operand == nullptr) {
+        return std::nullopt;
+      }
+      const auto operand = solver_poly(*unary.operand, subst);
+      return operand.has_value() ? std::optional{poly_negate(*operand)}
+                                 : std::nullopt;
+    }
+    case ast::node_kind::binary_expr: {
+      const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+      if (binary.lhs == nullptr || binary.rhs == nullptr) {
+        return std::nullopt;
+      }
+      const auto left = solver_poly(*binary.lhs, subst);
+      const auto right = solver_poly(*binary.rhs, subst);
+      if (!left.has_value() || !right.has_value()) {
+        return std::nullopt;
+      }
+      switch (binary.op) {
+      case ast::binary_op::add:
+        return poly_add(*left, *right);
+      case ast::binary_op::sub:
+        return poly_sub(*left, *right);
+      case ast::binary_op::mul:
+        if (left->is_constant()) {
+          return poly_scale(*right, left->constant);
+        }
+        if (right->is_constant()) {
+          return poly_scale(*left, right->constant);
+        }
+        return std::nullopt;
+      default:
+        return std::nullopt;
+      }
+    }
+    case ast::node_kind::field_expr:
+    case ast::node_kind::module_path_expr:
+    case ast::node_kind::call_expr: {
+      const auto key = atom_key(expr, subst);
+      return key.has_value() ? std::optional{poly_variable(*key)}
+                             : std::nullopt;
+    }
+    default:
+      return std::nullopt;
+    }
+  }
+
+  /// The comparison a relational operator makes, once `negated` has been
+  /// folded in — `not (a < b)` is `a >= b`, so negation is a rewrite of the
+  /// operator, never a wrapper around the constraint.
+  static auto negate_comparison(ast::binary_op op) -> ast::binary_op {
+    switch (op) {
+    case ast::binary_op::eq_eq:
+      return ast::binary_op::bang_eq;
+    case ast::binary_op::bang_eq:
+      return ast::binary_op::eq_eq;
+    case ast::binary_op::lt:
+      return ast::binary_op::gt_eq;
+    case ast::binary_op::lt_eq:
+      return ast::binary_op::gt;
+    case ast::binary_op::gt:
+      return ast::binary_op::lt_eq;
+    case ast::binary_op::gt_eq:
+      return ast::binary_op::lt;
+    default:
+      return op;
+    }
+  }
+
+  /// Builds `lhs OP rhs` as a constraint `poly REL 0`. `<` and `<=` have no
+  /// relation of their own — they are the same statement about the negated
+  /// polynomial — and `<`/`>` shift the constant by one because the fragment
+  /// is over integers, where `a > b` *is* `a >= b + 1`.
+  auto comparison_constraint(ast::binary_op op, const linear_poly &lhs,
+                             const linear_poly &rhs, std::string label)
+      -> std::optional<constraint> {
+    const auto difference = poly_sub(lhs, rhs);
+    auto shifted = [&](int64_t by) -> linear_poly {
+      auto poly = difference;
+      poly.constant += by;
+      return poly;
+    };
+    switch (op) {
+    case ast::binary_op::eq_eq:
+      return constraint{
+          .poly = difference, .rel = relation::eq, .label = std::move(label)};
+    case ast::binary_op::bang_eq:
+      return constraint{
+          .poly = difference, .rel = relation::ne, .label = std::move(label)};
+    case ast::binary_op::gt_eq:
+      return constraint{
+          .poly = difference, .rel = relation::ge, .label = std::move(label)};
+    case ast::binary_op::gt:
+      return constraint{
+          .poly = shifted(-1), .rel = relation::ge, .label = std::move(label)};
+    case ast::binary_op::lt_eq:
+      return constraint{.poly = poly_negate(difference),
+                        .rel = relation::ge,
+                        .label = std::move(label)};
+    case ast::binary_op::lt:
+      return constraint{.poly = poly_negate(shifted(1)),
+                        .rel = relation::ge,
+                        .label = std::move(label)};
+    default:
+      return std::nullopt;
+    }
+  }
+
+  /// Renders a predicate back into source-like text with the substitution
+  /// applied, so a diagnostic about `index[n]`'s `self < n` can say
+  /// ``cannot prove `i < n` `` rather than quoting a predicate the user never
+  /// wrote about a `self` that isn't there.
+  auto describe(const ast::expr &expr, const predicate_subst &subst)
+      -> std::string {
+    switch (expr.kind) {
+    case ast::node_kind::literal_expr:
+      return std::string(dynamic_cast<const ast::literal_expr &>(expr).value);
+    case ast::node_kind::ident_expr: {
+      const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
+      if (const auto it = subst.spellings.find(ident.name);
+          it != subst.spellings.end()) {
+        return it->second;
+      }
+      return ident.name;
+    }
+    case ast::node_kind::field_expr: {
+      const auto &field = dynamic_cast<const ast::field_expr &>(expr);
+      return field.object != nullptr
+                 ? std::format("{}.{}", describe(*field.object, subst),
+                               field.field_name)
+                 : field.field_name;
+    }
+    case ast::node_kind::module_path_expr: {
+      const auto &path = dynamic_cast<const ast::module_path_expr &>(expr);
+      auto segments = path.segments;
+      if (!segments.empty()) {
+        if (const auto it = subst.spellings.find(segments.front());
+            it != subst.spellings.end()) {
+          segments.front() = it->second;
+        }
+      }
+      return join_strings(segments, ".");
+    }
+    case ast::node_kind::call_expr: {
+      const auto &call = dynamic_cast<const ast::call_expr &>(expr);
+      auto arguments = std::vector<std::string>{};
+      for (const auto &arg : call.args) {
+        arguments.push_back(arg.value != nullptr ? describe(*arg.value, subst)
+                                                 : "_");
+      }
+      const auto callee =
+          call.callee != nullptr ? describe(*call.callee, subst) : "_";
+      return std::format("{}({})", callee, join_strings(arguments, ", "));
+    }
+    case ast::node_kind::unary_expr: {
+      const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+      const auto operand =
+          unary.operand != nullptr ? describe(*unary.operand, subst) : "_";
+      switch (unary.op) {
+      case ast::unary_op::neg:
+        return std::format("-{}", operand);
+      case ast::unary_op::logical_not:
+        return std::format("not {}", operand);
+      default:
+        return operand;
+      }
+    }
+    case ast::node_kind::binary_expr: {
+      const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+      const auto left =
+          binary.lhs != nullptr ? describe(*binary.lhs, subst) : "_";
+      const auto right =
+          binary.rhs != nullptr ? describe(*binary.rhs, subst) : "_";
+      return std::format("{} {} {}", left, binary_op_spelling(binary.op),
+                         right);
+    }
+    default:
+      return "...";
+    }
+  }
+
+  /// Translates a boolean predicate into a goal in disjunctive normal form.
+  /// An empty result means "not expressible", which upstream reads as "not
+  /// provable" — the graceful path, never a silent acceptance.
+  auto goal_from(const ast::expr &expr, const predicate_subst &subst,
+                 bool negated) -> goal_form {
+    switch (expr.kind) {
+    case ast::node_kind::unary_expr: {
+      const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+      if (unary.op == ast::unary_op::logical_not && unary.operand != nullptr) {
+        return goal_from(*unary.operand, subst, !negated);
+      }
+      break;
+    }
+    case ast::node_kind::binary_expr: {
+      const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+      if (binary.lhs == nullptr || binary.rhs == nullptr) {
+        break;
+      }
+      // De Morgan: negation swaps the connective, so one traversal handles
+      // both polarities.
+      const auto conjunctive =
+          (binary.op == ast::binary_op::logical_and) != negated;
+      if (binary.op == ast::binary_op::logical_and ||
+          binary.op == ast::binary_op::logical_or) {
+        const auto left = goal_from(*binary.lhs, subst, negated);
+        const auto right = goal_from(*binary.rhs, subst, negated);
+        if (!conjunctive) {
+          // Disjunction: either alternative will do, so an inexpressible side
+          // just drops out and the other still stands on its own.
+          auto combined = left;
+          combined.insert(combined.end(), right.begin(), right.end());
+          return combined;
+        }
+        // Conjunction: every conjunct must be proved, so an inexpressible
+        // side sinks the whole goal.
+        if (left.empty() || right.empty()) {
+          return {};
+        }
+        auto combined = goal_form{};
+        for (const auto &left_alt : left) {
+          for (const auto &right_alt : right) {
+            auto merged = left_alt;
+            merged.insert(merged.end(), right_alt.begin(), right_alt.end());
+            combined.push_back(std::move(merged));
+          }
+        }
+        return combined;
+      }
+
+      const auto left = solver_poly(*binary.lhs, subst);
+      const auto right = solver_poly(*binary.rhs, subst);
+      if (!left.has_value() || !right.has_value()) {
+        return {};
+      }
+      const auto op = negated ? negate_comparison(binary.op) : binary.op;
+      auto built =
+          comparison_constraint(op, *left, *right, describe(expr, subst));
+      if (!built.has_value()) {
+        return {};
+      }
+      return goal_form{fact_set{std::move(*built)}};
+    }
+    default:
+      break;
+    }
+
+    // Any other boolean term — a call to a `pure` predicate function, say —
+    // enters as `atom == 1`. Deliberately the weakest useful rule: an
+    // identical fact discharges it, and nothing else does.
+    const auto atom = atom_key(expr, subst);
+    if (!atom.has_value()) {
+      return {};
+    }
+    auto poly = poly_variable(*atom);
+    poly.constant -= 1;
+    return goal_form{fact_set{constraint{
+        .poly = std::move(poly),
+        .rel = negated ? relation::ne : relation::eq,
+        .label = describe(expr, subst),
+    }}};
+  }
+
+  /// Translates a boolean predicate into facts that may be *assumed*. Unlike
+  /// a goal this is a plain conjunction: a disjunctive fact carries no
+  /// information the solver's fragment can use, so it is dropped — sound,
+  /// because forgetting a fact can only make the compiler prove less.
+  auto facts_from(const ast::expr &expr, const predicate_subst &subst,
+                  bool negated) -> fact_set {
+    const auto goal = goal_from(expr, subst, negated);
+    return goal.size() == 1 ? goal.front() : fact_set{};
+  }
+
+  /// The polynomial standing for a resolved value slot (`3`, `n + 1`, an
+  /// unsubstituted value parameter). This is how a refinement's arguments
+  /// reach its predicate: `index[n + 1]`'s `self < n` must become
+  /// `self < n + 1`.
+  auto slot_poly(type_id slot) -> std::optional<linear_poly> {
+    const auto &entry = types_.entry(slot);
+    switch (entry.kind) {
+    case type_kind::const_value_kind:
+    case type_kind::symbolic_value_kind:
+      return entry.value;
+    case type_kind::type_param_kind:
+      return poly_variable(entry.name);
+    default:
+      return std::nullopt;
+    }
+  }
+
+  /// The substitution under which a refinement's predicate speaks about
+  /// `value` (a concrete expression, rendered as `spelling`): `self` becomes
+  /// the value, and each of the declaration's value parameters becomes the
+  /// argument supplied for it. `nullopt` when an argument falls outside the
+  /// fragment, which makes the whole predicate unusable rather than
+  /// half-substituted.
+  auto refinement_subst(const type_entry &refinement, const linear_poly &value,
+                        std::string spelling, const value_bindings *solved)
+      -> std::optional<predicate_subst> {
+    auto subst = predicate_subst{};
+    subst.values.emplace("self", value);
+    subst.spellings.emplace("self", std::move(spelling));
+
+    if (refinement.decl == nullptr) {
+      return subst;
+    }
+    for (size_t i = 0; i < refinement.decl->type_params.size(); ++i) {
+      const auto &param = refinement.decl->type_params[i];
+      if (!param.is_value_param || i >= refinement.args.size()) {
+        continue;
+      }
+      auto poly = slot_poly(refinement.args[i]);
+      if (!poly.has_value()) {
+        return std::nullopt;
+      }
+      // At a call site, the callee's own value parameters have been pinned by
+      // the other arguments: `index[n]`'s `n` is the `4` that `v: array[T, 4]`
+      // just supplied. Substituting here is what turns an obligation stated in
+      // the callee's terms into one the caller can actually be held to.
+      if (solved != nullptr) {
+        poly = poly_substitute(*poly, *solved);
+      }
+      subst.spellings.emplace(param.name, poly->display());
+      subst.values.emplace(param.name, *poly);
+    }
+    return subst;
+  }
+
+  /// Builds the goal that narrowing `value` to `refined` owes: the
+  /// refinement's predicate, re-stated about this value. Walks a refinement
+  /// of a refinement down to the base, conjoining every predicate on the way.
+  auto narrowing_goal(type_id refined, const ast::expr &value,
+                      const value_bindings *solved) -> goal_form {
+    const auto subst_value = solver_poly(value, predicate_subst{});
+    if (!subst_value.has_value()) {
+      return {};
+    }
+    const auto spelling = describe(value, predicate_subst{});
+
+    auto goal = goal_form{};
+    for (auto current = refined;
+         types_.entry(current).kind == type_kind::refinement_kind;
+         current = types_.entry(current).result) {
+      const auto &entry = types_.entry(current);
+      if (entry.predicate == nullptr) {
+        continue;
+      }
+      const auto subst =
+          refinement_subst(entry, *subst_value, spelling, solved);
+      if (!subst.has_value()) {
+        return {};
+      }
+      const auto part = goal_from(*entry.predicate, *subst, false);
+      if (part.empty()) {
+        return {};
+      }
+      if (goal.empty()) {
+        goal = part;
+        continue;
+      }
+      auto combined = goal_form{};
+      for (const auto &left : goal) {
+        for (const auto &right : part) {
+          auto merged = left;
+          merged.insert(merged.end(), right.begin(), right.end());
+          combined.push_back(std::move(merged));
+        }
+      }
+      goal = std::move(combined);
+    }
+    return goal;
+  }
+
+  /// The facts currently in scope, rendered for a diagnostic. Only the ones
+  /// that actually mention something the goal mentions are worth showing —
+  /// a reader who wants to know why `i < n` didn't follow is not helped by
+  /// being told what is known about `k`.
+  auto known_facts_note(const goal_form &goal) -> std::optional<std::string> {
+    auto mentioned = std::unordered_set<std::string>{};
+    for (const auto &alternative : goal) {
+      for (const auto &item : alternative) {
+        for (const auto &term : item.poly.terms) {
+          mentioned.insert(term.var);
+        }
+      }
+    }
+    if (mentioned.empty()) {
+      // The goal is arithmetic on constants (`9 < 4`). There is nothing to
+      // know about it, and saying "nothing is known" would read as a failure
+      // of the compiler rather than of the code.
+      return std::nullopt;
+    }
+    auto shown = std::vector<std::string>{};
+    for (const auto &fact : facts_) {
+      if (fact.label.empty()) {
+        continue;
+      }
+      const auto relevant =
+          std::ranges::any_of(fact.poly.terms, [&](const poly_term &term) {
+            return mentioned.contains(term.var);
+          });
+      if (relevant) {
+        shown.push_back(std::format("`{}`", fact.label));
+      }
+    }
+    if (shown.empty()) {
+      return "nothing is known about the values in this condition here";
+    }
+    return std::format("known here: {}", join_strings(shown, ", "));
+  }
+
+  /// The one goal that every alternative shares, for a diagnostic's headline
+  /// — a goal is almost always a single constraint, and when it isn't, its
+  /// first alternative is still the honest thing to lead with.
+  ///
+  /// `fallback` is what to say when the goal is *empty*, which is not an
+  /// internal failure but a real and expected outcome: the predicate fell
+  /// outside the reasoning fragment (a float bound, `n * n`), so there is no
+  /// constraint to name and the compiler must quote the source instead. A
+  /// placeholder like "the refinement's predicate" would read as the compiler
+  /// having lost track of something, when in fact it knows exactly which
+  /// predicate it is and exactly why it can't decide it.
+  auto goal_label(const goal_form &goal, std::string_view fallback)
+      -> std::string {
+    for (const auto &alternative : goal) {
+      for (const auto &item : alternative) {
+        if (!item.label.empty()) {
+          return item.label;
+        }
+      }
+    }
+    return std::string(fallback);
+  }
+
+  /// The source text of a refinement's predicate, restated about `value` —
+  /// the honest thing to quote when the predicate is real but undecidable.
+  auto predicate_text(type_id refined, const ast::expr &value) -> std::string {
+    const auto &entry = types_.entry(refined);
+    if (entry.predicate == nullptr) {
+      return std::format("the predicate of `{}`", types_.display(refined));
+    }
+    auto subst = predicate_subst{};
+    subst.spellings.emplace("self", describe(value, predicate_subst{}));
+    return describe(*entry.predicate, subst);
+  }
+
+  /// Spells a refinement the way it reads *at this site*, with the callee's
+  /// value parameters replaced by what the call site pinned them to — so the
+  /// diagnostic says "expected `index[4]`" rather than "expected `index[n]`"
+  /// and quotes an `n` the reader cannot see from where they are standing.
+  auto display_refined(type_id refined, const value_bindings *solved)
+      -> std::string {
+    const auto &entry = types_.entry(refined);
+    if (solved == nullptr || entry.decl == nullptr || entry.args.empty()) {
+      return types_.display(refined);
+    }
+    auto arguments = std::vector<std::string>{};
+    for (const auto arg : entry.args) {
+      const auto poly = slot_poly(arg);
+      arguments.push_back(poly.has_value()
+                              ? poly_substitute(*poly, *solved).display()
+                              : types_.display(arg));
+    }
+    return std::format("{}[{}]", entry.decl->name,
+                       join_strings(arguments, ", "));
+  }
+
+  /// Discharges the obligation a *narrowing* incurs: using a value where a
+  /// more refined type is required. Widening is free and never lands here
+  /// (`compatible` accepts both directions structurally — see `types.h`);
+  /// this is the sole place the predicate is actually made to hold.
+  ///
+  /// Proved: silent. Refuted: an error, because the code is wrong on every
+  /// path that reaches it. Unproven: the graceful path — a diagnostic naming
+  /// the goal, the facts, and both routes out.
+  auto check_narrowing(type_id expected, type_id found, const ast::expr *value,
+                       source_span span, std::string_view context,
+                       const value_bindings *solved = nullptr) -> void {
+    if (value == nullptr ||
+        types_.entry(expected).kind != type_kind::refinement_kind) {
+      return;
+    }
+    // Already at least as refined as required: no debt. `found` being the
+    // same refinement (or a refinement *of* it) carries the predicate along
+    // with it, which is the whole point of the type surviving assignment.
+    if (refines(found, expected)) {
+      return;
+    }
+    // A value whose type isn't even the right shape has a type error already
+    // reported against it; adding an unprovable-predicate error on top would
+    // be noise about a value that was never going to work.
+    if (types_.is_unknown(types_.strip_refinement(found))) {
+      return;
+    }
+
+    const auto goal = narrowing_goal(expected, *value, solved);
+    const auto outcome =
+        goal.empty() ? proof_result::unknown : solve(facts_, goal);
+    if (outcome == proof_result::proved) {
+      return;
+    }
+
+    const auto refined_name = display_refined(expected, solved);
+    const auto base_name = types_.display(types_.strip_refinement(expected));
+    const auto goal_text = goal_label(goal, predicate_text(expected, *value));
+    const auto message =
+        outcome == proof_result::refuted
+            ? std::format("`{}` is never true here, so this value can never "
+                          "be a `{}`",
+                          goal_text, refined_name)
+            : std::format("cannot prove `{}` {}", goal_text, context);
+
+    auto diag = diagnostic(diagnostic_level::error, message, file_id_);
+    diag.with_label(span, std::format("expected `{}`, found `{}`", refined_name,
+                                      types_.display(found)));
+    if (const auto known = known_facts_note(goal)) {
+      diag.children.push_back(
+          diagnostic(diagnostic_level::note, *known, file_id_));
+    }
+    if (outcome == proof_result::refuted) {
+      diag.with_help(std::format(
+          "This isn't a gap in the compiler's reasoning — the facts in scope "
+          "rule the predicate out. Either the value or the `{}` bound is "
+          "wrong.",
+          refined_name));
+    } else {
+      diag.with_help(std::format(
+          "Either constrain the value upstream — take it as a `{}` in the "
+          "first place, or add a `pre` that says so — or prove it here:\n"
+          "    if let @some(proof) = {}.try_from(<value>):\n"
+          "        ...\n"
+          "which turns the `{}` into a `{}` by checking the predicate at "
+          "runtime.",
+          refined_name, refined_name, base_name, refined_name));
+    }
+    diag_.emit(diag);
+    mark_error();
+  }
+
+  /// Solves a callee's value parameters against a concrete argument type, by
+  /// walking the two types in parallel and reading off every value slot the
+  /// argument determines: matching `array[T, n]` against `array[int32, 4]`
+  /// binds `n := 4`; matching `vec[T, n + 1]` against `vec[int32, 3]` binds
+  /// `n := 2`.
+  ///
+  /// This is what makes a dependent signature usable from outside itself. The
+  /// callee's `index[n]` means nothing at a call site until `n` is known, and
+  /// this is where it becomes known — from the *other* argument, which is
+  /// exactly how `safe_get(v, i)` ties the index to the array.
+  auto solve_value_params(type_id param, type_id argument, value_bindings &out)
+      -> void {
+    // Identical types determine nothing new, and stopping here is also what
+    // keeps a recursive type (whose argument list can point back at itself)
+    // from walking forever.
+    if (param == argument) {
+      return;
+    }
+    const auto &param_entry = types_.entry(param);
+    const auto &argument_entry = types_.entry(argument);
+
+    if (is_value_kind(param_entry.kind) ||
+        param_entry.kind == type_kind::type_param_kind) {
+      const auto pattern = slot_poly(param);
+      const auto value = slot_poly(argument);
+      if (!pattern.has_value() || !value.has_value()) {
+        return;
+      }
+      if (auto solved = solve_for_unknown(*pattern, *value)) {
+        // First binding wins: a second, conflicting one means the call is
+        // already ill-typed (`compatible` will have said so), and guessing
+        // between them would only add a confusing second diagnostic.
+        out.emplace(std::move(solved->first), std::move(solved->second));
+      }
+      return;
+    }
+
+    if (param_entry.kind != argument_entry.kind) {
+      // A `&T` parameter taking a lent `T` (and the reverse) is the one shape
+      // difference that still carries the same structure underneath.
+      if (param_entry.kind == type_kind::ref_kind) {
+        solve_value_params(param_entry.result, argument, out);
+      } else if (argument_entry.kind == type_kind::ref_kind) {
+        solve_value_params(param, argument_entry.result, out);
+      }
+      return;
+    }
+
+    for (size_t i = 0;
+         i < param_entry.args.size() && i < argument_entry.args.size(); ++i) {
+      solve_value_params(param_entry.args[i], argument_entry.args[i], out);
+    }
+    if (param_entry.result != k_unknown_type &&
+        argument_entry.result != k_unknown_type) {
+      solve_value_params(param_entry.result, argument_entry.result, out);
+    }
+  }
+
+  /// Restores `facts_` to its length on entry when it goes out of scope, so a
+  /// branch's path conditions and a block's local refinements are visible
+  /// exactly within the region that dominates them and nowhere else.
+  class fact_scope {
+  public:
+    explicit fact_scope(fact_set &facts)
+        : facts_(&facts), depth_(facts.size()) {}
+    fact_scope(const fact_scope &) = delete;
+    fact_scope(fact_scope &&) = delete;
+    auto operator=(const fact_scope &) -> fact_scope & = delete;
+    auto operator=(fact_scope &&) -> fact_scope & = delete;
+    ~fact_scope() { facts_->resize(depth_); }
+
+  private:
+    fact_set *facts_;
+    size_t depth_;
+  };
+
+  /// Everything the *type* of a binding says about its value, added to the
+  /// facts in scope: a refined type contributes its predicate (with `self`
+  /// bound to the name), and an array contributes its length
+  /// (`len(v) = n`) — which is what lets an index into it be proved in bounds
+  /// against a matching `index[n]`.
+  auto assume_binding(std::string_view name, type_id type) -> void {
+    const auto value = poly_variable(std::string(name));
+
+    const auto bare = strip_refs(type);
+    for (auto current = bare;
+         types_.entry(current).kind == type_kind::refinement_kind;
+         current = types_.entry(current).result) {
+      const auto &entry = types_.entry(current);
+      if (entry.predicate == nullptr) {
+        continue;
+      }
+      const auto subst =
+          refinement_subst(entry, value, std::string(name), nullptr);
+      if (!subst.has_value()) {
+        continue;
+      }
+      for (auto &fact : facts_from(*entry.predicate, *subst, false)) {
+        facts_.push_back(std::move(fact));
+      }
+    }
+
+    const auto &entry = types_.entry(types_.strip_refinement(bare));
+    if (entry.kind == type_kind::array_kind && !entry.args.empty()) {
+      if (const auto length = slot_poly(entry.args.front())) {
+        auto poly =
+            poly_sub(poly_variable(std::format("len({})", name)), *length);
+        facts_.push_back(constraint{
+            .poly = std::move(poly),
+            .rel = relation::eq,
+            .label = std::format("len({}) == {}", name, length->display()),
+        });
+      }
+    }
+
+    // A struct's `invariant` holds of *every* value of that type, everywhere —
+    // that is what makes it an invariant rather than a precondition. So it
+    // enters the environment for any binding of the type, which is what lets
+    // a `positive_int` whose `invariant self.value > 0` satisfy a `positive`
+    // with no further proof (`kira-reference.md` §Contracts).
+    if (entry.decl != nullptr && entry.decl->invariant != nullptr &&
+        !entry.decl->invariant->has_error) {
+      auto subst = predicate_subst{};
+      subst.values.emplace("self", value);
+      subst.spellings.emplace("self", std::string(name));
+      for (auto &fact : facts_from(*entry.decl->invariant, subst, false)) {
+        facts_.push_back(std::move(fact));
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  //  Flow-sensitive narrowing (`spec/dependent-types-design.md` §5.1, item 6)
+  //
+  //  Inside `if x > 0:`, the fact `x > 0` holds — so passing `x` where a
+  //  `positive` is expected discharges statically, with no `try_from` and no
+  //  annotation. The `else` gets the negation. Facts are scoped exactly to
+  //  the region the condition dominates, and any assignment to a name drops
+  //  everything known about it.
+  //
+  //  This is ergonomics, not expressiveness: the language is already complete
+  //  without it, because `try_from` covers everything. It is deliberately the
+  //  last thing built, and deliberately does not try to be clever — nothing
+  //  narrows through a function call, a closure, or an `&mut`.
+  // ------------------------------------------------------------------------
+
+  /// Assumes a condition (or its negation) for the region it dominates.
+  auto assume_condition(const ast::expr *condition, bool negated) -> void {
+    // An `if let` plants an `error_expr` in `condition` on every parse (see
+    // `param_usage_inferrer::walk_expr`); it says nothing about any value.
+    if (condition == nullptr || condition->has_error) {
+      return;
+    }
+    for (auto &fact : facts_from(*condition, predicate_subst{}, negated)) {
+      facts_.push_back(std::move(fact));
+    }
+  }
+
+  /// Whether a solver atom is *about* `name` — the name itself (`x`), a
+  /// projection of it (`x.len`), or a call over it (`len(x)`, `f(x, y)`).
+  /// Used to decide what an assignment invalidates, so it errs toward
+  /// forgetting too much rather than too little: a fact wrongly kept is
+  /// unsound, a fact wrongly dropped merely costs a proof.
+  static auto atom_mentions(std::string_view atom, std::string_view name)
+      -> bool {
+    for (size_t at = atom.find(name); at != std::string_view::npos;
+         at = atom.find(name, at + 1)) {
+      const auto before = at == 0 ? ' ' : atom[at - 1];
+      const auto after =
+          at + name.size() >= atom.size() ? ' ' : atom[at + name.size()];
+      const auto is_name_char = [](char c) -> bool {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+               (c >= '0' && c <= '9') || c == '_';
+      };
+      if (!is_name_char(before) && !is_name_char(after)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Forgets everything known about `name`. Called when a value is assigned
+  /// to, or lent mutably — at which point every fact that mentioned it
+  /// describes a value that no longer exists.
+  auto invalidate_facts(std::string_view name) -> void {
+    if (name.empty()) {
+      return;
+    }
+    std::erase_if(facts_, [&](const constraint &fact) -> bool {
+      return std::ranges::any_of(fact.poly.terms,
+                                 [&](const poly_term &term) -> bool {
+                                   return atom_mentions(term.var, name);
+                                 });
+    });
+  }
+
+  /// Builds the facts that hold on entry to a function body, in the order the
+  /// design doc lays out (§5.1): value-parameter domains, then each
+  /// parameter's type, then the preconditions. A `pre` is an *obligation* at
+  /// every call site and a *fact* inside the callee — that duality is the
+  /// whole of contract reasoning, and this is the half of it that assumes.
+  auto collect_function_facts(const ast::func_decl &decl) -> void {
+    for (const auto &param : decl.type_params) {
+      if (!param.is_value_param || param.name.empty()) {
+        continue;
+      }
+      const auto declared =
+          param.bound_or_type != nullptr
+              ? resolve_type(*param.bound_or_type, current_resolve_ctx())
+              : types_.usize_type();
+      const auto &entry = types_.entry(declared);
+      const auto unsigned_domain =
+          entry.kind == type_kind::builtin_kind &&
+          (entry.name.starts_with("uint") || entry.name == "usize" ||
+           entry.name == "byte");
+      if (unsigned_domain) {
+        facts_.push_back(constraint{
+            .poly = poly_variable(param.name),
+            .rel = relation::ge,
+            .label = std::format("{} >= 0", param.name),
+        });
+      }
+    }
+
+    for (const auto &param : decl.params) {
+      if (param.pattern == nullptr ||
+          param.pattern->kind != ast::node_kind::binding_pattern) {
+        continue;
+      }
+      const auto &binding =
+          dynamic_cast<const ast::binding_pattern &>(*param.pattern);
+      if (const auto *found = lookup_value(binding.name)) {
+        assume_binding(binding.name, found->type);
+      }
+    }
+
+    for (const auto &contract : decl.contracts) {
+      if (!contract.is_pre || contract.condition == nullptr ||
+          contract.condition->has_error) {
+        continue;
+      }
+      for (auto &fact :
+           facts_from(*contract.condition, predicate_subst{}, false)) {
+        facts_.push_back(std::move(fact));
+      }
+    }
+  }
+
+  /// Whether `found` already carries at least the predicate `expected`
+  /// demands — the same refinement, or one layered on top of it.
+  auto refines(type_id found, type_id expected) -> bool {
+    for (auto current = found;
+         types_.entry(current).kind == type_kind::refinement_kind;
+         current = types_.entry(current).result) {
+      if (current == expected) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Builds the candidate name list for "did you mean" suggestions on an
@@ -1669,6 +3052,61 @@ private:
     return make_user_type(decl, owner_module, args);
   }
 
+  /// The parameter substitution a declaration's own body is resolved under:
+  /// each declared parameter bound to the argument supplied for it (or left
+  /// `unknown` when the caller wrote no arguments at all, which is legal).
+  auto bindings_for_decl(const ast::type_decl &decl,
+                         const std::vector<type_id> &args)
+      -> std::unordered_map<std::string, type_id> {
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    for (size_t i = 0; i < decl.type_params.size(); ++i) {
+      bindings.emplace(decl.type_params[i].name,
+                       i < args.size() ? args[i] : k_unknown_type);
+    }
+    return bindings;
+  }
+
+  /// Mints the nominal type of a refinement *declaration*
+  /// (`type index[n: usize] = usize where self < n`). Declaration-nominal, so
+  /// `index[n]` is spelled `index[n]` in every diagnostic and stays distinct
+  /// from any other refinement of `usize` — while the predicate rides along
+  /// on the type entry for the solver, which sees straight through the name
+  /// (`spec/dependent-types-design.md` §3).
+  auto make_refinement_type(const ast::type_decl &decl,
+                            std::string_view owner_module,
+                            std::vector<type_id> args) -> type_id {
+    const auto &refinement =
+        dynamic_cast<const ast::refinement_type &>(*decl.definition);
+
+    auto bindings = bindings_for_decl(decl, args);
+    const auto *owner = index_.find_module(owner_module);
+    const auto ctx = resolve_ctx{.module = owner != nullptr ? owner : module_,
+                                 .param_bindings = &bindings,
+                                 .use_type_param_stack = false,
+                                 .quiet = true};
+    const auto base = refinement.base != nullptr
+                          ? resolve_type(*refinement.base, ctx)
+                          : k_unknown_type;
+
+    auto display_name = decl.name;
+    if (!args.empty()) {
+      display_name += '[';
+      for (size_t i = 0; i < args.size(); ++i) {
+        if (i != 0) {
+          display_name += ", ";
+        }
+        display_name += types_.display(args[i]);
+      }
+      display_name += ']';
+    }
+
+    const auto *predicate =
+        dynamic_cast<const ast::expr *>(refinement.predicate.get());
+    return types_.refinement_of(
+        &decl, display_name, owner_module, base, std::move(args),
+        predicate != nullptr && !predicate->has_error ? predicate : nullptr);
+  }
+
   /// Builds a user type id, expanding alias declarations to their target.
   auto make_user_type(const ast::type_decl &decl, std::string_view owner_module,
                       std::vector<type_id> args) -> type_id {
@@ -1680,15 +3118,22 @@ private:
       return types_.user_type(decl, owner_module, std::move(args));
     }
 
-    // Alias (`type meters = float64`) or refinement — expand to the target.
+    // A refinement declaration is a type in its own right, not an alias for
+    // its base — that is the whole of Phase 2.
+    if (decl.definition->kind == ast::node_kind::refinement_type) {
+      if (!aliases_in_progress_.insert(&decl).second) {
+        return k_unknown_type; // cycle; reported by declaration checking
+      }
+      const auto result = make_refinement_type(decl, owner_module, args);
+      aliases_in_progress_.erase(&decl);
+      return result;
+    }
+
+    // Alias (`type meters = float64`) — expand to the target.
     if (!aliases_in_progress_.insert(&decl).second) {
       return k_unknown_type; // alias cycle; reported by declaration checking
     }
-    auto param_bindings = std::unordered_map<std::string, type_id>{};
-    for (size_t i = 0; i < decl.type_params.size(); ++i) {
-      param_bindings.emplace(decl.type_params[i].name,
-                             i < args.size() ? args[i] : k_unknown_type);
-    }
+    auto param_bindings = bindings_for_decl(decl, args);
     const auto *owner = index_.find_module(owner_module);
     auto ctx = resolve_ctx{.module = owner != nullptr ? owner : module_,
                            .param_bindings = &param_bindings,
@@ -1779,10 +3224,20 @@ private:
       return types_.builtin(name);
     }
     if (name == "array") {
-      // `array[T, n]` through named-type syntax.
-      auto args = resolve_type_args(named, ctx);
-      return types_.array_of(args.empty() ? k_unknown_type : args.front(),
-                             std::nullopt);
+      // `array[T, n]` through named-type syntax — the element type in the
+      // first slot, the length value in the second.
+      const auto *element_node = named.type_args.empty()
+                                     ? nullptr
+                                     : dynamic_cast<const ast::type_expr *>(
+                                           named.type_args.front().value.get());
+      const auto element = element_node != nullptr
+                               ? resolve_type(*element_node, ctx)
+                               : k_unknown_type;
+      const auto length =
+          named.type_args.size() < 2 || named.type_args[1].value == nullptr
+              ? k_unknown_type
+              : resolve_length_arg(*named.type_args[1].value, ctx);
+      return array_with_length(element, length);
     }
     if (const auto arity = builtin_generic_arity(name)) {
       auto args = resolve_type_args(named, ctx);
@@ -1841,6 +3296,15 @@ private:
 
     emit_undefined_type(named, name);
     return k_error_type;
+  }
+
+  /// The type a value *acts* as once every compile-time-only wrapper is
+  /// peeled away: the target behind a reference, and the base behind a
+  /// refinement. What an operator sees, in other words. The one thing that
+  /// must never see through a refinement is a narrowing coercion, which is
+  /// the obligation itself.
+  auto base_shape(type_id id) -> type_id {
+    return types_.strip_refinement(strip_refs(types_.strip_refinement(id)));
   }
 
   /// Follows ref types to the value type they lend.
@@ -2153,6 +3617,9 @@ private:
     auto args_by_param = std::vector<const ast::expr *>(params.size(), nullptr);
     auto next_positional = size_t{0};
     auto seen_named = false;
+    // See the deferral comment in the argument loop below.
+    auto solved_values = value_bindings{};
+    auto deferred = std::vector<deferred_narrowing>{};
 
     for (const auto &arg : call.args) {
       const fn_param_info *target = nullptr;
@@ -2219,9 +3686,30 @@ private:
         const auto expected = target != nullptr ? target->type : k_unknown_type;
         const auto found = infer_expr(*arg.value, expected);
         if (target != nullptr) {
+          // Structure is decided now; a *proof* has to wait. A refined
+          // parameter's predicate is written in the callee's value parameters
+          // (`index[n]`'s `n`), and which arguments pin those down isn't known
+          // until every argument has been seen — `safe_get(v, i)` learns `n`
+          // from `v`, which for a differently-ordered signature could just as
+          // easily come after `i`. So the shape check runs in place and the
+          // obligation is collected for the second pass below.
           type_mismatch(arg.value->span, expected, found, "for this argument");
+          solve_value_params(expected, found, solved_values);
+          if (types_.entry(expected).kind == type_kind::refinement_kind) {
+            deferred.push_back(deferred_narrowing{
+                .expected = expected,
+                .found = found,
+                .value = arg.value.get(),
+                .span = arg.value->span,
+            });
+          }
         }
       }
+    }
+
+    for (const auto &obligation : deferred) {
+      check_narrowing(obligation.expected, obligation.found, obligation.value,
+                      obligation.span, "for this argument", &solved_values);
     }
 
     for (size_t i = 0; i < params.size(); ++i) {
@@ -2273,7 +3761,99 @@ private:
     check_call_args_against(
         call, params, decl.name,
         source_location{.file_id = decl_file, .span = decl.span});
+    check_call_preconditions(call, decl, params);
     return signature_return_type(decl, owner);
+  }
+
+  /// Holds a callee's `pre` conditions to account at the call site.
+  ///
+  /// A precondition has two faces, and they are the whole of contract
+  /// reasoning: inside the callee it is a *fact* it may assume
+  /// (`collect_function_facts`), and at every call site it is an *obligation*
+  /// the caller must meet. This is the obligation half.
+  ///
+  /// Proved: the check is compiled away — recorded in `elided_contracts` so
+  /// lowering emits nothing for it. Refuted: a compile error, because the call
+  /// is wrong on every execution that reaches it, and the spec says so
+  /// outright ("When a condition is statically knowable, violation is a
+  /// compile error"). Unproven: silence, and a runtime check, which is the
+  /// contract's designed behavior and not a failure of anything.
+  auto check_call_preconditions(const ast::call_expr &call,
+                                const ast::func_decl &decl,
+                                const std::vector<fn_param_info> &params)
+      -> void {
+    if (decl.contracts.empty()) {
+      return;
+    }
+    const auto mapping = call_argument_mappings_.find(&call);
+    if (mapping == call_argument_mappings_.end()) {
+      return;
+    }
+
+    // Restate the precondition in the caller's terms: each parameter becomes
+    // the argument actually supplied for it. A parameter left to its default,
+    // or one whose argument falls outside the fragment, simply doesn't enter
+    // the substitution — the condition then mentions a name nothing is known
+    // about, and comes back `unknown`, which is exactly right.
+    auto subst = predicate_subst{};
+    for (size_t i = 0;
+         i < params.size() && i < mapping->second.args_by_param.size(); ++i) {
+      const auto *argument = mapping->second.args_by_param[i];
+      if (argument == nullptr || params[i].name.empty()) {
+        continue;
+      }
+      if (const auto poly = solver_poly(*argument, predicate_subst{})) {
+        subst.values.emplace(params[i].name, *poly);
+        subst.spellings.emplace(params[i].name,
+                                describe(*argument, predicate_subst{}));
+      }
+    }
+
+    for (const auto &contract : decl.contracts) {
+      if (!contract.is_pre || contract.condition == nullptr ||
+          contract.condition->has_error) {
+        continue;
+      }
+      const auto goal = goal_from(*contract.condition, subst, false);
+      if (goal.empty()) {
+        continue;
+      }
+      switch (solve(facts_, goal)) {
+      case proof_result::proved:
+        elided_contracts_.insert(&contract);
+        break;
+      case proof_result::refuted: {
+        auto diag = diagnostic(
+            diagnostic_level::error,
+            std::format("precondition `{}` is never true at this call",
+                        goal_label(goal, "the precondition")),
+            file_id_);
+        diag.with_label(call.span,
+                        std::format("calling `{}` here always violates its "
+                                    "contract",
+                                    decl.name));
+        if (const auto known = known_facts_note(goal)) {
+          diag.children.push_back(
+              diagnostic(diagnostic_level::note, *known, file_id_));
+        }
+        diag.with_help(
+            contract.message.has_value()
+                ? std::format("`{}` documents this as: {}", decl.name,
+                              *contract.message)
+                : std::format("`{}` requires this to hold on entry. The "
+                              "compiler can see that it doesn't — this is not "
+                              "a check it failed to prove, but one it "
+                              "disproved.",
+                              decl.name));
+        diag_.emit(diag);
+        mark_error();
+        break;
+      }
+      case proof_result::unknown:
+        // The check stays, and runs. This is what a contract is for.
+        break;
+      }
+    }
   }
 
   /// Infers each argument's type with no expectation, for a call whose
@@ -2382,7 +3962,7 @@ private:
           payload_found = infer_expr(*arg.value, payload_expected);
           if (payload_expected != k_unknown_type) {
             type_mismatch(arg.value->span, payload_expected, payload_found,
-                          "for this constructor value");
+                          "for this constructor value", arg.value.get());
           }
         }
       }
@@ -2939,14 +4519,20 @@ private:
   /// converting either side, since Kira never converts numbers implicitly.
   auto infer_arithmetic(const ast::binary_expr &binary, type_id expected)
       -> type_id {
-    const auto numeric_expected =
-        types_.is_numeric(strip_refs(expected)) ? expected : k_unknown_type;
+    // Operands participate as their *base* type: a `positive` is an `int32`
+    // to `+`, and `p + 1` is an `int32`, not a `positive` — arithmetic does
+    // not carry a predicate through it, and pretending otherwise would be
+    // unsound (`p + 1` overflows to a negative). Widening is free; this is
+    // where it is free (`spec/dependent-types-design.md` §3.1).
+    const auto numeric_expected = types_.is_numeric(strip_refs(expected))
+                                      ? base_shape(expected)
+                                      : k_unknown_type;
     const auto lhs = binary.lhs != nullptr
-                         ? strip_refs(infer_expr(*binary.lhs, numeric_expected))
+                         ? base_shape(infer_expr(*binary.lhs, numeric_expected))
                          : k_unknown_type;
     const auto rhs_expected = types_.is_numeric(lhs) ? lhs : numeric_expected;
     const auto rhs = binary.rhs != nullptr
-                         ? strip_refs(infer_expr(*binary.rhs, rhs_expected))
+                         ? base_shape(infer_expr(*binary.rhs, rhs_expected))
                          : k_unknown_type;
     const auto op_name = ast::binary_op_name(binary.op);
 
@@ -2999,11 +4585,15 @@ private:
   /// implement `eq`/`ord`. Always yields `bool`.
   auto infer_comparison(const ast::binary_expr &binary, bool is_equality)
       -> type_id {
+    // Comparison, like arithmetic, sees a refined value as its base — an
+    // `index[n]` compares against a `usize` without ceremony, and the trait
+    // lookup below (`ord`/`eq`) is asked of `usize`, which is what actually
+    // implements it.
     const auto lhs = binary.lhs != nullptr
-                         ? strip_refs(infer_expr(*binary.lhs, k_unknown_type))
+                         ? base_shape(infer_expr(*binary.lhs, k_unknown_type))
                          : k_unknown_type;
     const auto rhs = binary.rhs != nullptr
-                         ? strip_refs(infer_expr(*binary.rhs, lhs))
+                         ? base_shape(infer_expr(*binary.rhs, lhs))
                          : k_unknown_type;
     const auto bool_type = types_.builtin("bool");
     if (types_.is_unknown(lhs) || types_.is_unknown(rhs)) {
@@ -3240,6 +4830,16 @@ private:
     case ast::unary_op::addr_of:
       return types_.ref_to(stripped, false);
     case ast::unary_op::addr_of_mut: {
+      // Lending a value mutably hands someone else the right to change it, so
+      // nothing known about it survives the loan. The design doc is explicit
+      // that narrowing does not flow through an `&mut`
+      // (`spec/dependent-types-design.md` §5.1); this is where that is
+      // enforced, rather than by trying to track what the callee does.
+      if (unary.operand != nullptr) {
+        if (const auto *root = assignment_root_ident(*unary.operand)) {
+          invalidate_facts(root->name);
+        }
+      }
       // `&mut container[a..b]` — `infer_index`'s range-slice result is
       // always the immutable `slice[T]` (the same range-index expression
       // written bare, or under a plain `&`, should stay immutable) — but
@@ -3721,7 +5321,7 @@ private:
       const auto expected = fn_entry.args[i];
       const auto found = infer_expr(*call.args[i].value, expected);
       type_mismatch(call.args[i].value->span, expected, found,
-                    "for this argument");
+                    "for this argument", call.args[i].value.get());
     }
     return fn_entry.result;
   }
@@ -4310,6 +5910,10 @@ private:
       return k_unknown_type;
     }
 
+    if (const auto proof = infer_refinement_try_from(call)) {
+      return *proof;
+    }
+
     if (call.callee->kind == ast::node_kind::field_expr) {
       return infer_method_call(
           call, dynamic_cast<const ast::field_expr &>(*call.callee));
@@ -4655,6 +6259,461 @@ private:
            find_import(ident.name) != nullptr;
   }
 
+  /// Tries to prove `i < len(v)` for an indexing expression, and records the
+  /// answer. This is the payoff the whole feature is for: an index the
+  /// compiler can *prove* in bounds needs no runtime bounds check, so a
+  /// `safe_get(v: array[T, n], i: index[n])` compiles to a bare load.
+  ///
+  /// A *refuted* index (`v[9]` into an `array[T, 4]`) is an error — the code
+  /// cannot run correctly. An index that is merely unproven is silent: the
+  /// bounds check stays, which is the status quo and perfectly safe. Only the
+  /// deliberate act of writing a dependent signature buys the elision, and
+  /// failing to buy it costs nothing.
+  auto check_index_in_bounds(const ast::index_expr &index, type_id object,
+                             type_id key) -> void {
+    if (index.index == nullptr || index.object == nullptr ||
+        !types_.is_integer(key)) {
+      return;
+    }
+    const auto &entry = types_.entry(object);
+    if (entry.kind != type_kind::array_kind || entry.args.empty()) {
+      return;
+    }
+    const auto length = slot_poly(entry.args.front());
+    const auto position = solver_poly(*index.index, predicate_subst{});
+    if (!length.has_value() || !position.has_value()) {
+      return;
+    }
+
+    // `i < len(v)`, as `len(v) - i - 1 >= 0`.
+    auto poly = poly_sub(poly_sub(*length, *position), poly_constant(1));
+    const auto subst = predicate_subst{};
+    const auto goal = goal_form{fact_set{constraint{
+        .poly = std::move(poly),
+        .rel = relation::ge,
+        .label = std::format("{} < {}", describe(*index.index, subst),
+                             length->display()),
+    }}};
+
+    switch (solve(facts_, goal)) {
+    case proof_result::proved:
+      proven_in_bounds_.insert(&index);
+      return;
+    case proof_result::refuted: {
+      auto diag =
+          diagnostic(diagnostic_level::error,
+                     std::format("index out of bounds: `{}` is never true",
+                                 goal_label(goal, "the index bound")),
+                     file_id_);
+      diag.with_label(index.index->span,
+                      std::format("indexing a `{}`", types_.display(object)));
+      if (const auto known = known_facts_note(goal)) {
+        diag.children.push_back(
+            diagnostic(diagnostic_level::note, *known, file_id_));
+      }
+      diag.with_help(
+          "This access is out of range on every execution that reaches it — "
+          "it is not a check the compiler failed to prove, but one it "
+          "disproved.");
+      diag_.emit(diag);
+      mark_error();
+      return;
+    }
+    case proof_result::unknown:
+      // The bounds check stays. Nothing to say: not every index needs to be
+      // proved, and nagging about the ones that aren't would make the feature
+      // a tax on code that never asked for it.
+      return;
+    }
+  }
+
+  // ==========================================================================
+  //  Typed runtime proofs — `try_from`
+  //  (`spec/dependent-types-design.md` §7)
+  //
+  //  The escape hatch that lets the reasoning fragment stay small without
+  //  making the language incomplete. Everything the solver cannot prove, a
+  //  `try_from` can *check*:
+  //
+  //      if let @some(i) = index[n].try_from(raw):
+  //          v[i]        # `i` is an `index[n]` — the unwrap *is* the proof
+  //
+  //  No flow analysis is needed to see that: `i` simply has the refined type,
+  //  because that is what the intrinsic returns.
+  // ==========================================================================
+
+  /// Recognizes `<refinement>.try_from(value)` — either `positive.try_from(x)`
+  /// or, for a parameterized refinement, `index[n].try_from(x)` — and returns
+  /// the refinement type it names.
+  auto try_from_target(const ast::call_expr &call) -> std::optional<type_id> {
+    if (call.callee == nullptr ||
+        call.callee->kind != ast::node_kind::field_expr) {
+      return std::nullopt;
+    }
+    const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+    if (field.field_name != "try_from" || field.object == nullptr) {
+      return std::nullopt;
+    }
+
+    // `positive` — a bare name. `index[n]` — parsed as an *index* expression,
+    // since at parse time there is no telling a generic instantiation from a
+    // subscript.
+    const auto *name_node = field.object.get();
+    const ast::index_expr *instantiation = nullptr;
+    if (name_node->kind == ast::node_kind::index_expr) {
+      instantiation = &dynamic_cast<const ast::index_expr &>(*name_node);
+      name_node = instantiation->object.get();
+    }
+    if (name_node == nullptr || name_node->kind != ast::node_kind::ident_expr) {
+      return std::nullopt;
+    }
+    const auto &name = dynamic_cast<const ast::ident_expr &>(*name_node).name;
+
+    const auto found = find_type_decl_by_name(name);
+    if (!found.has_value() || found->first == nullptr ||
+        found->first->definition == nullptr ||
+        found->first->definition->kind != ast::node_kind::refinement_type) {
+      return std::nullopt;
+    }
+
+    // Rebuild the instantiation's arguments the same way a type annotation
+    // would, so `index[n]` here and `index[n]` in a signature are one type.
+    auto args = std::vector<type_id>{};
+    if (instantiation != nullptr && instantiation->index != nullptr) {
+      const auto &params = found->first->type_params;
+      if (!params.empty()) {
+        args.push_back(resolve_value_arg(*instantiation->index, params.front(),
+                                         current_resolve_ctx(),
+                                         instantiation->index->span));
+      }
+    }
+    return make_user_type(*found->first, found->second, std::move(args));
+  }
+
+  /// Types and desugars a `try_from` call.
+  ///
+  /// Types it as `option[refined]`, and rewrites it into ordinary Kira that
+  /// any backend already knows how to lower — no new HIR node, no new opcode,
+  /// no intrinsic:
+  ///
+  ///     block:
+  ///         let <tmp> = <value>
+  ///         if <predicate with self := tmp>:
+  ///             @some(<tmp>)
+  ///         else:
+  ///             @none
+  ///
+  /// The binding is what makes this honest: `<value>` is evaluated exactly
+  /// once, even though it is *mentioned* twice, so a `try_from` of an
+  /// effectful expression behaves the way the reader expects. The rewrite is
+  /// recorded in `spliced_fragments`, which `hir::lower_expr` already consults
+  /// to redirect a node to the syntax it was rewritten to.
+  auto infer_refinement_try_from(const ast::call_expr &call)
+      -> std::optional<type_id> {
+    const auto refined = try_from_target(call);
+    if (!refined.has_value()) {
+      return std::nullopt;
+    }
+    const auto &entry = types_.entry(*refined);
+    const auto base = entry.result;
+    const auto result_type = types_.builtin_generic("option", {*refined});
+
+    if (call.args.size() != 1 || call.args.front().value == nullptr) {
+      error_with_help(
+          call.span,
+          std::format("`{}.try_from` takes exactly one argument",
+                      types_.display(*refined)),
+          "wrong number of arguments",
+          std::format("Pass the `{}` you want to check, and match on the "
+                      "`option[{}]` it returns.",
+                      types_.display(base), types_.display(*refined)));
+      return result_type;
+    }
+
+    const auto &value = *call.args.front().value;
+    const auto found = infer_expr(value, base);
+    type_mismatch(value.span, base, found, "for this value to be checked");
+
+    if (entry.predicate == nullptr) {
+      // The predicate failed to parse or check; its own declaration already
+      // said so. Type the call anyway so nothing cascades.
+      return result_type;
+    }
+
+    auto fragment = build_try_from_fragment(call, value, entry, base, *refined);
+    if (fragment != nullptr) {
+      spliced_fragments_[&call] = fragment;
+    }
+    return record_expr_type(call, result_type);
+  }
+
+  /// Builds (and type-checks) the rewritten body described by
+  /// `infer_refinement_try_from`, returning the synthesized `block_expr` — or
+  /// `nullptr` if the predicate or the value uses syntax the cloner doesn't
+  /// cover, in which case the call still types correctly and only its lowering
+  /// is refused, with a diagnostic.
+  auto build_try_from_fragment(const ast::call_expr &call,
+                               const ast::expr &value, const type_entry &entry,
+                               type_id base, type_id refined)
+      -> const ast::node * {
+    auto predicate = ast::clone_expr(*entry.predicate);
+    if (!predicate.has_value()) {
+      error_with_help(
+          call.span,
+          std::format("`{}.try_from` cannot be compiled here: {}",
+                      types_.display(refined), predicate.error().message),
+          "this proof cannot be lowered",
+          "A refinement's predicate has to be an ordinary expression the "
+          "compiler can re-emit as the runtime check this proof compiles "
+          "into. Simplify the predicate, or check the value with a hand-"
+          "written `if` instead.");
+      return nullptr;
+    }
+
+    const auto parameters = refinement_constants(entry);
+    if (!parameters.has_value()) {
+      error_with_help(
+          call.span,
+          std::format("`{}.try_from` needs its parameters to be known here",
+                      types_.display(refined)),
+          "this refinement is still generic",
+          std::format(
+              "The check this compiles into compares the value against the "
+              "refinement's parameters, so they have to be real values at "
+              "this point — `{}.try_from(...)` with a literal, not one "
+              "written in terms of a value parameter the caller supplies.",
+              types_.display(types_.strip_refinement(refined))));
+      return nullptr;
+    }
+
+    // A name no source file can collide with, since `#` is not an identifier
+    // character — this binding is the compiler's, not the user's, and must
+    // never shadow something they wrote.
+    const auto temp_name = std::format("#proof{}", proof_temporaries_++);
+    specialize_predicate(*predicate, temp_name, *parameters);
+
+    auto binding = ast::make<ast::binding_pattern>();
+    binding->span = call.span;
+    binding->name = temp_name;
+
+    // The value is *not* cloned. A placeholder stands in for it, redirected
+    // through `spliced_fragments` to the expression the user actually wrote —
+    // which the checker has already typed, node for node. Cloning would mean
+    // re-inferring the copy (re-reporting any diagnostic inside it) and would
+    // limit `try_from` to whatever `ast::clone_expr` happens to cover. This
+    // way the argument may be any expression at all, and it is evaluated
+    // exactly once, where the user wrote it.
+    auto placeholder = make_ident(temp_name, value.span, /*is_variant=*/false);
+    const auto *placeholder_node = placeholder.get();
+    spliced_fragments_[placeholder_node] = &value;
+    record_expr_type(*placeholder_node, base);
+
+    auto bind = ast::make<ast::let_stmt>();
+    bind->span = call.span;
+    bind->pattern = std::move(binding);
+    bind->initializer = std::move(placeholder);
+
+    auto some_call = make_variant_call("some", temp_name, call.span);
+    auto none_value = make_variant_call("none", {}, call.span);
+    const auto *some_expr = some_call.get();
+    const auto *none_expr = none_value.get();
+    const auto *predicate_expr = predicate->get();
+
+    auto branch = ast::if_branch{};
+    branch.span = call.span;
+    branch.condition = std::move(*predicate);
+    branch.body.push_back(wrap_in_stmt(std::move(some_call)));
+
+    auto conditional = ast::make<ast::if_expr>();
+    conditional->span = call.span;
+    conditional->branches.push_back(std::move(branch));
+    conditional->else_body.push_back(wrap_in_stmt(std::move(none_value)));
+    const auto *conditional_expr = conditional.get();
+
+    auto block = ast::make<ast::block_expr>();
+    block->span = call.span;
+    const auto *bound_pattern = bind->pattern.get();
+    block->stmts.push_back(std::move(bind));
+    block->stmts.push_back(wrap_in_stmt(std::move(conditional)));
+
+    // Type the fragment the way the checker types anything else, so every
+    // synthesized node lands in `node_types` and lowering can read it back.
+    // The binding is introduced twice, deliberately: as the *base* type while
+    // the predicate is checked (the predicate asks a question about a plain
+    // `int32`), then as the *refined* type inside the `@some`, where the
+    // branch we are in is itself the proof that the predicate holds. That
+    // second binding is the entire mechanism — it is why unwrapping the
+    // option hands back a value that simply *has* the refined type, with no
+    // further obligation and no flow analysis.
+    push_scope();
+    bind_value(temp_name, base, binding_origin::let_binding, call.span);
+    record_expr_type(*bound_pattern, base);
+    require_bool(*predicate_expr, "a refinement predicate");
+    bind_value(temp_name, refined, binding_origin::let_binding, call.span);
+    const auto result_type = types_.builtin_generic("option", {refined});
+    infer_expr(*some_expr, result_type);
+    infer_expr(*none_expr, result_type);
+    record_expr_type(*conditional_expr, result_type);
+    record_expr_type(*block, result_type);
+    pop_scope();
+
+    const auto *fragment = block.get();
+    proof_fragments_.push_back(std::move(block));
+    return fragment;
+  }
+
+  /// Rewrites a cloned predicate so it speaks about *this* proof: `self`
+  /// becomes the local the value was bound to, and each of the refinement's
+  /// value parameters becomes the constant this instantiation supplied.
+  ///
+  /// Both substitutions are needed, and for the same reason. The predicate of
+  /// `index[n]` is `self < n`; the check generated for `index[8].try_from(x)`
+  /// has to be `#proof0 < 8`. Neither `self` nor `n` exists at runtime — one
+  /// is the abstract value, the other a compile-time parameter — so both must
+  /// be gone before the predicate can be compiled as ordinary code.
+  ///
+  /// Takes the owning pointer, not a reference, because replacing `n` with
+  /// `8` swaps one node for another rather than editing it in place.
+  auto specialize_predicate(
+      ast::ptr<ast::expr> &slot, const std::string &value_binding,
+      const std::unordered_map<std::string, int64_t> &parameters) -> void {
+    if (slot == nullptr) {
+      return;
+    }
+    switch (slot->kind) {
+    case ast::node_kind::ident_expr: {
+      auto &ident = dynamic_cast<ast::ident_expr &>(*slot);
+      if (ident.name == "self") {
+        ident.name = value_binding;
+        return;
+      }
+      if (const auto it = parameters.find(ident.name); it != parameters.end()) {
+        auto literal = ast::make<ast::literal_expr>();
+        literal->span = ident.span;
+        literal->lit_kind = token_kind::int_lit;
+        literal->value = std::to_string(it->second);
+        slot = std::move(literal);
+      }
+      return;
+    }
+    case ast::node_kind::binary_expr: {
+      auto &binary = dynamic_cast<ast::binary_expr &>(*slot);
+      specialize_predicate(binary.lhs, value_binding, parameters);
+      specialize_predicate(binary.rhs, value_binding, parameters);
+      return;
+    }
+    case ast::node_kind::unary_expr: {
+      auto &unary = dynamic_cast<ast::unary_expr &>(*slot);
+      specialize_predicate(unary.operand, value_binding, parameters);
+      return;
+    }
+    case ast::node_kind::field_expr: {
+      auto &field = dynamic_cast<ast::field_expr &>(*slot);
+      specialize_predicate(field.object, value_binding, parameters);
+      return;
+    }
+    case ast::node_kind::module_path_expr: {
+      // `self.value` is a path, not a field access — see `atom_key`.
+      auto &path = dynamic_cast<ast::module_path_expr &>(*slot);
+      if (!path.segments.empty() && path.segments.front() == "self") {
+        path.segments.front() = value_binding;
+      }
+      return;
+    }
+    case ast::node_kind::index_expr: {
+      auto &index = dynamic_cast<ast::index_expr &>(*slot);
+      specialize_predicate(index.object, value_binding, parameters);
+      specialize_predicate(index.index, value_binding, parameters);
+      return;
+    }
+    case ast::node_kind::call_expr: {
+      auto &call = dynamic_cast<ast::call_expr &>(*slot);
+      specialize_predicate(call.callee, value_binding, parameters);
+      for (auto &arg : call.args) {
+        specialize_predicate(arg.value, value_binding, parameters);
+      }
+      return;
+    }
+    default:
+      return;
+    }
+  }
+
+  /// The constant each of a refinement's value parameters was instantiated
+  /// with at this use. `nullopt` when one of them is still open (an `index[n]`
+  /// inside a function generic over `n`) — which means no runtime check can be
+  /// generated for it, because the value it would compare against does not
+  /// exist until monomorphization, and this compiler does not monomorphize
+  /// const generics.
+  auto refinement_constants(const type_entry &entry)
+      -> std::optional<std::unordered_map<std::string, int64_t>> {
+    auto constants = std::unordered_map<std::string, int64_t>{};
+    if (entry.decl == nullptr) {
+      return constants;
+    }
+    for (size_t i = 0; i < entry.decl->type_params.size(); ++i) {
+      const auto &param = entry.decl->type_params[i];
+      if (!param.is_value_param || i >= entry.args.size()) {
+        continue;
+      }
+      const auto &slot = types_.entry(entry.args[i]);
+      if (slot.kind != type_kind::const_value_kind) {
+        return std::nullopt;
+      }
+      constants.emplace(param.name, slot.value.constant);
+    }
+    return constants;
+  }
+
+  /// A synthesized identifier.
+  ///
+  /// The span is not decoration. `is_variant_ident` tells `@some` from `some`
+  /// by the span being one byte *wider* than the name — the `@` — since the
+  /// parser lowers both to a plain `ident_expr`. A synthesized name therefore
+  /// has to carry a span of exactly its own width, or the checker reads it as
+  /// a variant and hunts for a sum type that declares it. `is_variant` sizes
+  /// the span accordingly, which is how `@some` and `#proof0` are built by the
+  /// same function without one being mistaken for the other.
+  auto make_ident(std::string_view name, source_span span, bool is_variant)
+      -> ast::ptr<ast::ident_expr> {
+    auto ident = ast::make<ast::ident_expr>();
+    ident->name = std::string(name);
+    ident->span = source_span{
+        .start = span.start,
+        .end = span.start + static_cast<uint32_t>(name.size()) +
+               (is_variant ? 1U : 0U),
+    };
+    return ident;
+  }
+
+  /// `@some(<binding>)`, or a bare `@none` when `binding` is empty.
+  auto make_variant_call(std::string_view variant, std::string_view binding,
+                         source_span span) -> ast::ptr<ast::expr> {
+    auto name = make_ident(variant, span, /*is_variant=*/true);
+    if (binding.empty()) {
+      return name;
+    }
+
+    auto argument = make_ident(binding, span, /*is_variant=*/false);
+    const auto argument_span = argument->span;
+
+    auto call = ast::make<ast::call_expr>();
+    call->span = span;
+    call->callee = std::move(name);
+    call->args.push_back(ast::call_arg{.span = argument_span,
+                                       .name = std::nullopt,
+                                       .value = std::move(argument)});
+    return call;
+  }
+
+  /// Wraps an expression as a statement, the shape every block body wants.
+  auto wrap_in_stmt(ast::ptr<ast::expr> value) -> ast::ptr<ast::node> {
+    auto stmt = ast::make<ast::expr_stmt>();
+    stmt->span = value->span;
+    stmt->expr = std::move(value);
+    return stmt;
+  }
+
   /// Types an indexing expression `object[key]`. Distinguishes generic
   /// instantiation (`size_of[usize]`) from real indexing via
   /// `ident_names_callable_decl`, then, for `array`/`list`/`slice`/`str`,
@@ -4690,12 +6749,13 @@ private:
       return k_unknown_type;
     }
 
-    const auto object = strip_refs(infer_expr(*index.object, k_unknown_type));
+    const auto object = base_shape(infer_expr(*index.object, k_unknown_type));
     const auto &entry = types_.entry(object);
     const auto key =
         index.index != nullptr
             ? strip_refs(infer_expr(*index.index, types_.builtin("usize")))
             : k_unknown_type;
+    check_index_in_bounds(index, object, key);
     const auto key_is_range =
         types_.entry(key).kind == type_kind::builtin_generic_kind &&
         types_.entry(key).name == "range";
@@ -4872,7 +6932,7 @@ private:
       if (field.value != nullptr) {
         found = infer_expr(*field.value, field_expected);
         type_mismatch(field.value->span, field_expected, found,
-                      "for this field");
+                      "for this field", field.value.get());
       } else if (const auto *binding = lookup_value(field.name)) {
         // Shorthand `{name}` binds the in-scope value of the same name.
         found = binding->type;
@@ -5066,6 +7126,16 @@ private:
     for (const auto &branch : expr.branches) {
       check_if_branch_header(branch);
       push_scope();
+      // Inside a branch, its condition holds — and so does the refutation of
+      // every branch before it, since reaching this one means those failed.
+      auto assumed = fact_scope(facts_);
+      for (const auto &earlier : expr.branches) {
+        if (&earlier == &branch) {
+          break;
+        }
+        assume_condition(earlier.condition.get(), /*negated=*/true);
+      }
+      assume_condition(branch.condition.get(), /*negated=*/false);
       if (branch.let_pattern != nullptr && branch.let_expr == nullptr) {
         check_pattern(dynamic_cast<const ast::pattern &>(*branch.let_pattern),
                       k_unknown_type);
@@ -5080,6 +7150,11 @@ private:
                            "`if`");
     }
     if (!expr.else_body.empty()) {
+      // Reaching the `else` means every branch condition was false.
+      auto refuted = fact_scope(facts_);
+      for (const auto &branch : expr.branches) {
+        assume_condition(branch.condition.get(), /*negated=*/true);
+      }
       const auto else_type = check_body_nodes(expr.else_body, expected);
       result = join_branch_type(result, else_type,
                                 expr.else_body.back() != nullptr
@@ -5273,7 +7348,14 @@ private:
   /// the one place that needs to — every `infer_*` helper is reached only
   /// through here (recursively, for nested expressions too).
   auto infer_expr(const ast::expr &expr, type_id expected) -> type_id {
-    return record_expr_type(expr, infer_expr_impl(expr, expected));
+    // A refined `expected` is an *obligation*, not a shape hint. Inference
+    // gets the base type, so an expression only ever comes back refined by
+    // actually being one (a `positive` parameter read back, a `try_from`
+    // unwrapped) — never by having been asked for one. Without this,
+    // `needs_positive(0 - 3)` would infer its own argument *as* a `positive`
+    // and the narrowing check would find nothing left to prove.
+    return record_expr_type(
+        expr, infer_expr_impl(expr, types_.strip_refinement(expected)));
   }
 
   auto infer_expr_impl(const ast::expr &expr, type_id expected) -> type_id {
@@ -5758,8 +7840,13 @@ private:
           }
         }
       }
-      return expected_is_list ? types_.builtin_generic("list", {element})
-                              : types_.array_of(element, count);
+      if (expected_is_list) {
+        return types_.builtin_generic("list", {element});
+      }
+      const auto length = count.has_value()
+                              ? types_.const_value(types_.usize_type(), *count)
+                              : k_unknown_type;
+      return array_with_length(element, length);
     }
 
     auto element = element_expected;
@@ -5771,7 +7858,8 @@ private:
       if (types_.is_unknown(element)) {
         element = found;
       } else {
-        type_mismatch(item->span, element, found, "for this element");
+        type_mismatch(item->span, element, found, "for this element",
+                      item.get());
       }
     }
 
@@ -5787,7 +7875,9 @@ private:
                           *expected_entry.array_size),
               "wrong number of elements");
       }
-      return types_.array_of(element, array.elements.size());
+      return array_with_length(
+          element,
+          types_.const_value(types_.usize_type(), array.elements.size()));
     }
     return types_.builtin_generic("list", {element});
   }
@@ -5824,6 +7914,14 @@ private:
                  binding.is_mut ? binding_origin::mut_binding
                                 : binding_origin::pattern_binding,
                  binding.span);
+      // The name a pattern binds carries its type's facts, exactly as a `let`
+      // does. This is what makes `try_from` work: after
+      // `@some(i) => ...`, `i` has type `index[8]`, and it is *this* line that
+      // turns that type into the usable fact `i < 8`. Mutable bindings are
+      // skipped for the same reason a `var` is — see `assume_binding`.
+      if (!binding.is_mut) {
+        assume_binding(binding.name, stripped);
+      }
       return;
     }
     case ast::node_kind::literal_pattern: {
@@ -6341,6 +8439,15 @@ private:
   auto check_assignment(const ast::assign_stmt &stmt) -> void {
     auto target_type = k_unknown_type;
 
+    // Everything known about the assigned value described the *old* one. Drop
+    // it before checking the new value, so nothing proved about `x` before an
+    // `x = read()` can be used after it.
+    if (stmt.target != nullptr) {
+      if (const auto *root = assignment_root_ident(*stmt.target)) {
+        invalidate_facts(root->name);
+      }
+    }
+
     if (stmt.target != nullptr) {
       if (stmt.target->kind == ast::node_kind::ident_expr) {
         const auto &ident = dynamic_cast<const ast::ident_expr &>(*stmt.target);
@@ -6420,7 +8527,7 @@ private:
       const auto found = infer_expr(*stmt.value, stripped);
       if (stmt.op == ast::assign_op::assign) {
         type_mismatch(stmt.value->span, stripped, found,
-                      "from the assignment target");
+                      "from the assignment target", stmt.value.get());
       }
     }
   }
@@ -6452,7 +8559,7 @@ private:
         found = infer_expr(*stmt.initializer, declared);
         if (stmt.type_annotation != nullptr) {
           type_mismatch(stmt.initializer->span, declared, found,
-                        "from the annotation");
+                        "from the annotation", stmt.initializer.get());
         }
       }
       const auto binding_type =
@@ -6473,6 +8580,13 @@ private:
                      binding.is_mut ? binding_origin::mut_binding
                                     : binding_origin::let_binding,
                      binding.span);
+          // An immutable binding's type is a permanent fact about it: a `let
+          // i: index[n]` is an `i < n` for the rest of the block. (A `var` is
+          // deliberately *not* assumed — see `check_assignment`, which has to
+          // invalidate what assignment breaks.)
+          if (!binding.is_mut) {
+            assume_binding(binding.name, binding_type);
+          }
         } else {
           check_pattern(*stmt.pattern, strip_refs(binding_type));
         }
@@ -6491,7 +8605,7 @@ private:
         found = infer_expr(*stmt.initializer, declared);
         if (stmt.type_annotation != nullptr) {
           type_mismatch(stmt.initializer->span, declared, found,
-                        "from the annotation");
+                        "from the annotation", stmt.initializer.get());
         }
       }
       const auto binding_type =
@@ -6553,6 +8667,11 @@ private:
                           types_.display(return_type_)));
           diag_.emit(diag);
           mark_error();
+        } else if (return_annotated_) {
+          // Structurally fine — but returning into a refined return type is
+          // still a narrowing, and owes the same proof an argument would.
+          check_narrowing(return_type_, found, stmt.value.get(),
+                          stmt.value->span, "for this returned value");
         }
       } else if (!checking_existential_return_ && return_annotated_ &&
                  !types_.is_unit(return_type_) &&
@@ -6584,6 +8703,16 @@ private:
       for (const auto &branch : stmt.branches) {
         check_if_branch_header(branch);
         push_scope();
+        // Path conditions, exactly as in `infer_if_expr` — see the section
+        // comment on `assume_condition`.
+        auto assumed = fact_scope(facts_);
+        for (const auto &earlier : stmt.branches) {
+          if (&earlier == &branch) {
+            break;
+          }
+          assume_condition(earlier.condition.get(), /*negated=*/true);
+        }
+        assume_condition(branch.condition.get(), /*negated=*/false);
         if (branch.let_pattern != nullptr && branch.let_expr == nullptr) {
           check_pattern(dynamic_cast<const ast::pattern &>(*branch.let_pattern),
                         k_unknown_type);
@@ -6598,6 +8727,10 @@ private:
                                   "`if`");
       }
       if (!stmt.else_body.empty()) {
+        auto refuted = fact_scope(facts_);
+        for (const auto &branch : stmt.branches) {
+          assume_condition(branch.condition.get(), /*negated=*/true);
+        }
         const auto else_type = check_body_nodes(stmt.else_body, expected_tail);
         result = join_branch_type(result, else_type,
                                   stmt.else_body.back() != nullptr
@@ -6834,19 +8967,13 @@ private:
     push_scope();
     auto saved_reported = std::move(reported_undefined_);
     reported_undefined_.clear();
+    // A function proves things only from what *its own* signature and body
+    // establish; a sibling's facts are not in scope here any more than its
+    // locals are.
+    auto saved_facts = std::move(facts_);
+    facts_.clear();
 
-    // Compile-time value parameters (`n: usize`) are ordinary values inside
-    // the body.
-    for (const auto &type_param : decl.type_params) {
-      if (type_param.is_value_param && !type_param.name.empty()) {
-        const auto type =
-            type_param.bound_or_type != nullptr
-                ? resolve_type(*type_param.bound_or_type, current_resolve_ctx())
-                : k_unknown_type;
-        bind_value(type_param.name, type, binding_origin::parameter,
-                   type_param.span);
-      }
-    }
+    bind_value_params(decl.type_params);
 
     const auto &inferred_types = param_types_for(decl, module_);
     for (size_t i = 0; i < decl.params.size(); ++i) {
@@ -6971,6 +9098,11 @@ private:
     }
     in_contract_ = false;
 
+    // Only now, with every parameter bound and every contract checked, is
+    // there anything to assume — `assume_binding` reads the parameters' types
+    // back out of the scope the loop above filled in.
+    collect_function_facts(decl);
+
     if (in_generator_) {
       // A generator body's tail statement isn't a return value the way an
       // ordinary function's is — its only output channel is `yield`
@@ -6992,7 +9124,7 @@ private:
                              decl.body_expr->span, "existential return");
       } else if (return_annotated_) {
         type_mismatch(decl.body_expr->span, return_type_, found,
-                      "as the function result");
+                      "as the function result", decl.body_expr.get());
       }
     } else if (!decl.body_stmts.empty()) {
       const auto expected_for_body =
@@ -7064,6 +9196,7 @@ private:
     return_type_ = saved_return;
     return_annotated_ = saved_annotated;
     reported_undefined_ = std::move(saved_reported);
+    facts_ = std::move(saved_facts);
     scopes_ = std::move(saved_scopes);
     pop_type_params();
   }
@@ -7163,7 +9296,17 @@ private:
             const auto saved_self = self_type_;
             self_type_ = base;
             bind_value("self", base, binding_origin::parameter, decl.span);
+            // The declaration's value parameters are ordinary values inside
+            // its predicate — `index[n]`'s `self < n` reads `n` as a `usize`,
+            // not as a type. Same rule as a `def`'s value parameters inside
+            // its body (`check_function`).
+            bind_value_params(decl.type_params);
+            // A refinement predicate is a contract on a value, and lives
+            // under the same purity rule as `pre`/`post`: it must be a
+            // question about the value, not an action taken on the way past.
+            in_contract_ = true;
             require_bool(*predicate, "a refinement predicate");
+            in_contract_ = false;
             self_type_ = saved_self;
             pop_scope();
           }
@@ -7633,7 +9776,7 @@ private:
         found = infer_expr(*decl.initializer, declared);
         if (decl.type_annotation != nullptr) {
           type_mismatch(decl.initializer->span, declared, found,
-                        "from the annotation");
+                        "from the annotation", decl.initializer.get());
         }
       }
       static_types_.insert_or_assign(

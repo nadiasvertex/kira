@@ -6,11 +6,13 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "src/parser/ast.h"
 #include "src/parser/source_location.h"
 #include "src/semantic/analysis.h"
+#include "src/semantic/linear_poly.h"
 
 namespace kira::semantic {
 
@@ -54,7 +56,25 @@ enum class type_kind : uint8_t {
   type_var_kind,        ///< Fresh inference variable; see `fresh_type_var`.
   const_value_kind,     ///< A literal compile-time value used as a const
                         ///< generic argument, e.g. the `3` in `vec[T, 3]`.
+  symbolic_value_kind,  ///< A compile-time value that isn't closed: a
+                        ///< canonical linear polynomial over value
+                        ///< parameters, e.g. the `n + 1` in `vec[T, n + 1]`.
+  const_variant_kind,   ///< A sum-type variant used as a compile-time value
+                        ///< argument, e.g. the `open` in `connection[open]`.
+  refinement_kind,      ///< A base type constrained by a `where` predicate;
+                        ///< see the doc comment below.
 };
+
+/// The three `type_kind`s that describe a compile-time *value* occupying a
+/// type-argument slot, rather than a type: a closed integer, an open linear
+/// polynomial, and a sum-type variant. Grouped because every value slot is
+/// compared, displayed, and substituted the same way regardless of which of
+/// the three it happens to be (`spec/dependent-types-design.md` §2).
+[[nodiscard]] constexpr auto is_value_kind(type_kind kind) -> bool {
+  return kind == type_kind::const_value_kind ||
+         kind == type_kind::symbolic_value_kind ||
+         kind == type_kind::const_variant_kind;
+}
 
 /// One trait requirement in an existential type's bound list
 /// (`some Trait[Args] + Other`), resolved from source: the trait's bare name
@@ -94,6 +114,17 @@ struct type_entry {
   bool is_mut = false;                  ///< Mutability for ref/ptr types.
   std::optional<uint64_t> array_size;   ///< Array length when statically known.
   std::vector<bound_trait_ref> existential_bound; ///< `existential_kind` only.
+  /// The value of a `const_value_kind` / `symbolic_value_kind` slot, always
+  /// in canonical form — constant for the former, open for the latter. One
+  /// field rather than two so every consumer (compatibility, display,
+  /// substitution, the solver) reads a value slot exactly one way regardless
+  /// of whether it happened to close.
+  linear_poly value;
+  /// The `where` predicate of a `refinement_kind`, an expression over `self`
+  /// (the value being constrained) and the declaration's value parameters.
+  /// Borrowed from the AST — never owned; refinements are checker-level
+  /// facts, so nothing outlives the session that produced them.
+  const ast::expr *predicate = nullptr;
 };
 
 /// Owns every `type_entry` produced while checking one session, interning
@@ -112,10 +143,17 @@ public:
                                      std::vector<type_id> args) -> type_id;
   /// Interns a tuple type `(A, B, C)` from its element types.
   [[nodiscard]] auto tuple_of(std::vector<type_id> elements) -> type_id;
-  /// Interns `array[T, n]`; `size` is `nullopt` when the length is not
-  /// statically known (e.g. a non-literal size expression).
-  [[nodiscard]] auto array_of(type_id element, std::optional<uint64_t> size)
-      -> type_id;
+  /// Interns `array[T, n]`. `length` is the *value slot* holding the length
+  /// — a `const_value_kind`/`symbolic_value_kind`/`type_param_kind` id, or
+  /// `k_unknown_type` when the length wasn't written or fell outside the
+  /// reasoning fragment. `size` mirrors `length` as a plain integer when (and
+  /// only when) the length is a closed constant, because layout and both
+  /// backends need a byte count, not a proof term; it is `nullopt` for a
+  /// symbolic length, which is exactly the case a backend must never see (see
+  /// `spec/dependent-types-design.md` §3.1 — lowering rejects a runtime type
+  /// whose length is still open).
+  [[nodiscard]] auto array_of(type_id element, std::optional<uint64_t> size,
+                              type_id length = k_unknown_type) -> type_id;
   /// Interns a function type `fn(params...) -> result`.
   [[nodiscard]] auto fn_of(std::vector<type_id> params, type_id result)
       -> type_id;
@@ -136,6 +174,37 @@ public:
   /// are distinct types while two instantiations with the same literal
   /// collapse to one id.
   [[nodiscard]] auto const_value(type_id underlying, uint64_t value) -> type_id;
+  /// Interns an *open* compile-time value — a canonical linear polynomial
+  /// over in-scope value parameters, e.g. the `n + 1` in `vec[T, n + 1]`.
+  /// Keyed on the polynomial's canonical form, so `m + n` and `n + m` intern
+  /// to the same id and the table's id-equality invariant survives symbolic
+  /// arithmetic. A polynomial that turns out to be closed is *not*
+  /// representable here — it degrades to `const_value` instead, so every
+  /// value has exactly one representation (`spec/dependent-types-design.md`
+  /// §2.1).
+  [[nodiscard]] auto symbolic_value(type_id underlying, linear_poly value)
+      -> type_id;
+  /// Interns a sum-type variant used as a compile-time value argument (the
+  /// `open` in `connection[open]`), keyed on the sum declaration and the
+  /// variant name so distinct states are distinct types. Variants compare by
+  /// identity and nothing else — which is all §State Machines in Types needs,
+  /// and is total.
+  [[nodiscard]] auto const_variant(const ast::type_decl &sum_decl,
+                                   std::string_view module_name,
+                                   std::string_view variant_name) -> type_id;
+  /// Interns a refinement type — a `base` constrained by a `where`
+  /// `predicate` over `self`. Identity is *declaration-nominal*: keyed on
+  /// `decl` (plus its resolved `args`, so `index[3]` and `index[5]` differ),
+  /// which makes two identically-predicated declarations distinct types to
+  /// the user while the solver still sees straight through both to
+  /// `(base, predicate)`. An inline refinement (`x: int32 where self > 0`,
+  /// with no declaration to name it) passes `decl == nullptr` and is keyed on
+  /// its predicate node instead — one type per written occurrence.
+  [[nodiscard]] auto refinement_of(const ast::type_decl *decl,
+                                   std::string_view display_name,
+                                   std::string_view module_name, type_id base,
+                                   std::vector<type_id> args,
+                                   const ast::expr *predicate) -> type_id;
   /// Mints a fresh, globally-unique inference variable for local parameter
   /// inference (see `src/semantic/check.cpp`'s unification engine). Unlike
   /// every other `type_table` constructor, this never structurally interns —
@@ -185,6 +254,48 @@ public:
   /// element type of a desugared `for` loop over a `str`.
   [[nodiscard]] auto char_type() const -> type_id;
 
+  /// Follows a `refinement_kind` to the type it refines, transitively (a
+  /// refinement of a refinement is legal), and returns `id` unchanged for
+  /// every other kind. A refinement *is* its base at runtime — the predicate
+  /// is a compile-time fact, not a representation — so every question about
+  /// representation, arithmetic, or layout asks it of the base. The one thing
+  /// that must **not** strip is a narrowing coercion, which is precisely the
+  /// place the predicate has to be discharged (`checker::check_narrowing`).
+  [[nodiscard]] auto strip_refinement(type_id id) const -> type_id;
+
+  /// Rewrites `id` with every refinement inside it replaced by its base,
+  /// however deeply nested — `option[index[n]]` becomes `option[usize]`,
+  /// `array[positive, 4]` becomes `array[int32, 4]`.
+  ///
+  /// `strip_refinement` peels only the outermost layer, which is all the
+  /// *checker* ever needs (an obligation is always about one value). Lowering
+  /// needs more: a refinement is a compile-time fact with no runtime
+  /// existence, and a backend that met one nested inside a container would
+  /// have to invent a layout for something that has none. So the checker runs
+  /// every type it hands downstream through this, and HIR, the VM, and LLVM
+  /// never encounter a `refinement_kind` at all.
+  ///
+  /// Interning, so the result is an ordinary type id like any other.
+  [[nodiscard]] auto erase_refinements(type_id id) -> type_id;
+
+  /// The base type of the refinement *declared* under `name`, if exactly one
+  /// is — `int32` for a `type positive = int32 where self > 0`.
+  ///
+  /// Exists for `runtime/layout.cpp`, which resolves a struct field's type
+  /// from its declared AST name and has no module index to look a user type
+  /// up in. Without this, a field typed `positive` would fall through to
+  /// layout's "some named type, therefore heap-referenced" default and be
+  /// given 8 bytes instead of the 4 its `int32` base actually occupies —
+  /// harmless for an ordinary struct (writer and reader agree), but wrong for
+  /// a `packed` one, whose whole purpose is an exact byte layout.
+  ///
+  /// `nullopt` when no refinement is declared under `name`, and also when
+  /// *several* are (two modules may each declare a `positive` over different
+  /// bases): a name alone cannot disambiguate them, and guessing a layout is
+  /// worse than declining to.
+  [[nodiscard]] auto refinement_base_named(std::string_view name) const
+      -> std::optional<type_id>;
+
   /// Whether `id` is `unknown`, `error`, or a type parameter — anything the
   /// checker treats as "don't know, don't complain."
   [[nodiscard]] auto is_unknown(type_id id) const -> bool;
@@ -202,12 +313,33 @@ public:
 
   /// Whether a value of `found` is acceptable where `expected` is required.
   /// Unknown and error types are compatible with everything by design.
+  ///
+  /// This is *structural* compatibility only. Refinements are compared by
+  /// their base — a `positive` is structurally an `int32` and vice versa —
+  /// because the predicate is not a shape question: narrowing an `int32` to a
+  /// `positive` is a **proof obligation**, raised and discharged by the
+  /// checker (`check_narrowing`), not a type mismatch to report here. Were
+  /// this to return `false` for the narrowing direction, every such site would
+  /// report "type mismatch" and the solver would never get to prove anything.
+  ///
+  /// Value slots (`vec[T, n + 1]` against `vec[T, 3]`) compare by asking
+  /// whether the equation between their polynomials is *satisfiable*, not
+  /// whether they are identical — see `equation_satisfiable`. So a value slot
+  /// that could still be solved stays compatible, exactly as an unsolved `T`
+  /// does, while one that provably cannot (`n + 1 = 0` for `n: usize`) is
+  /// rejected.
   [[nodiscard]] auto compatible(type_id expected, type_id found) const -> bool;
 
 private:
   /// Returns the existing id for `key` if already interned, otherwise
   /// stores `entry` and returns its new id.
   [[nodiscard]] auto intern(std::string key, type_entry entry) -> type_id;
+  /// Whether two value slots could denote the same value — see `compatible`.
+  [[nodiscard]] auto values_compatible(type_id expected, type_id found) const
+      -> bool;
+  /// Whether a value slot's unknowns are unsigned (so `>= 0`).
+  [[nodiscard]] auto value_vars_non_negative(const type_entry &slot) const
+      -> bool;
 
   // A `std::deque`, not `std::vector`: `entry()` returns `const type_entry &`
   // that callers routinely hold across further calls into this table (e.g.
@@ -477,6 +609,22 @@ struct checked_types {
   /// (indirectly, via splicing) quoted fragments.
   std::unordered_map<const ast::node *, const ast::literal_expr *>
       static_const_values;
+  /// Every `v[i]` the reasoning solver proved in bounds
+  /// (`checker::check_index_in_bounds`) — an index whose safety is a
+  /// *compile-time* fact, so lowering may omit the runtime bounds check
+  /// entirely. This is what a dependent signature buys: `safe_get(v: array[T,
+  /// n], i: index[n])` indexes with no check at all, because `i < n` and
+  /// `len(v) == n` were established before the program ever ran. An index
+  /// absent from this set is unproven, not unsafe — it simply keeps its
+  /// check, exactly as every index does today.
+  std::unordered_set<const ast::index_expr *> proven_in_bounds;
+  /// Every `pre` condition the solver proved holds at a given call site
+  /// (`checker::check_call_preconditions`). Lowering may emit nothing at all
+  /// for these: the contract is satisfied by construction, so the runtime
+  /// check would be dead code that can never fail. A contract absent from
+  /// this set was not disproved — it was simply not proved, which is the
+  /// ordinary case and the reason contracts have a runtime form at all.
+  std::unordered_set<const ast::contract_clause *> elided_contracts;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

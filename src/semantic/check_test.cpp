@@ -780,6 +780,102 @@ auto test_reports_string_interpolation_bad_dynamic_width() -> void {
 //  Persisted checked types (checked_types / check_program)
 // ==========================================================================
 
+// ==========================================================================
+//  Dependent and refinement types (`spec/dependent-types-design.md`)
+// ==========================================================================
+
+auto test_accepts_dependent_length_arithmetic() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_dependent_length_arithmetic.kira");
+  expect(analyzed.error_count == 0,
+         "expected symbolic const-generic arithmetic to check cleanly");
+}
+
+auto test_reports_dependent_length_refuted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_dependent_length_refuted.kira");
+  expect(analyzed.error_count > 0,
+         "expected `head` on an empty vec to be rejected");
+  // The diagnostic must explain the *arithmetic*, not just report a mismatch:
+  // the whole point is that the reader learns why no `n` could ever work.
+  expect_diagnostic(analyzed, "`n + 1` can never equal `0` for `n: usize`",
+                    "expected the arithmetic impossibility to be explained");
+}
+
+auto test_accepts_proved_refinements() -> void {
+  const auto analyzed = analyze_test_data_file("accept_refinement_proved.kira");
+  expect(analyzed.error_count == 0,
+         "expected provable refinement obligations to check cleanly");
+}
+
+auto test_reports_unproven_refinement() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_refinement_unproven.kira");
+  expect(analyzed.error_count > 0,
+         "expected an unprovable refinement obligation to be reported");
+  // The failure UX *is* the feature (design doc section 6): name the goal, and
+  // give both ways out. A bad message here makes the compiler feel broken
+  // rather than conservative, so it is asserted on rather than left to drift.
+  expect_diagnostic(analyzed, "cannot prove `y > 0`",
+                    "expected the unproven goal to be named in source terms");
+  expect_diagnostic(analyzed, "try_from",
+                    "expected the runtime-proof escape hatch to be offered");
+}
+
+auto test_reports_refuted_refinement() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_refinement_refuted.kira");
+  expect(analyzed.error_count > 0,
+         "expected refuted refinement obligations to be reported");
+  expect_diagnostic(analyzed, "`0 - 3 > 0` is never true here",
+                    "expected a refuted narrowing to be reported as refuted, "
+                    "not merely unproven");
+  expect_diagnostic(analyzed, "`9 < 4` is never true here",
+                    "expected an out-of-range refined index to be refuted");
+  expect_diagnostic(analyzed, "index out of bounds: `9 < 4` is never true",
+                    "expected a provably out-of-bounds index to be rejected");
+}
+
+auto test_accepts_flow_narrowed_refinement() -> void {
+  const auto analyzed = analyze_test_data_file("accept_refinement_flow.kira");
+  expect(analyzed.error_count == 0,
+         "expected a path condition to discharge a refinement obligation");
+}
+
+auto test_reports_refinement_outside_narrowed_path() -> void {
+  const auto analyzed = analyze_test_data_file("report_refinement_flow.kira");
+  expect(analyzed.error_count > 0,
+         "expected narrowing to be scoped to the region it dominates");
+  // In the `else`, the *negation* holds — so this isn't merely unproven, it
+  // is refuted, and saying so is more useful than saying "cannot prove".
+  expect_diagnostic(analyzed, "`y > 0` is never true here",
+                    "expected the `else` branch to refute the predicate");
+  // And an assignment must forget what was known: the value the condition
+  // was about no longer exists.
+  expect_diagnostic(analyzed, "cannot prove `y > 0`",
+                    "expected assignment to invalidate a narrowed fact");
+}
+
+auto test_accepts_proved_contracts() -> void {
+  const auto analyzed = analyze_test_data_file("accept_contract_proved.kira");
+  expect(analyzed.error_count == 0,
+         "expected provable and unprovable contracts alike to check cleanly");
+}
+
+auto test_reports_refuted_precondition() -> void {
+  const auto analyzed = analyze_test_data_file("report_contract_refuted.kira");
+  expect(analyzed.error_count > 0,
+         "expected a statically violated precondition to be a compile error");
+  expect_diagnostic(analyzed, "precondition `0 > 0` is never true at this call",
+                    "expected a refuted precondition to name the condition");
+  expect_diagnostic(analyzed,
+                    "precondition `9000 < 4096` is never true at this call",
+                    "expected every refuted precondition to be reported");
+  // The contract's own message is the best explanation available; use it.
+  expect_diagnostic(analyzed, "cannot reserve zero bytes",
+                    "expected the contract's message to be surfaced");
+}
+
 auto test_check_program_persists_expression_types() -> void {
   // `check_program` used to return `void`, discarding every type it computed
   // the moment it returned. This confirms the replacement `checked_types` —
@@ -1286,6 +1382,16 @@ auto main() -> int {
     test_accepts_concept_bound();
     test_reports_state_machine_mismatch();
     test_accepts_state_machine_match();
+
+    test_accepts_dependent_length_arithmetic();
+    test_reports_dependent_length_refuted();
+    test_accepts_proved_refinements();
+    test_reports_unproven_refinement();
+    test_reports_refuted_refinement();
+    test_accepts_flow_narrowed_refinement();
+    test_reports_refinement_outside_narrowed_path();
+    test_accepts_proved_contracts();
+    test_reports_refuted_precondition();
 
     test_check_program_persists_expression_types();
 

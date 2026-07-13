@@ -116,14 +116,17 @@ auto type_table::tuple_of(std::vector<type_id> elements) -> type_id {
                                            .args = std::move(elements)});
 }
 
-/// Interns using the element id and the length (or `?` when not statically
-/// known) as the key.
-auto type_table::array_of(type_id element, std::optional<uint64_t> size)
-    -> type_id {
-  auto key = std::format("a:{}:{}", element,
-                         size.has_value() ? std::to_string(*size) : "?");
+/// Interns on the element id plus the *length value slot* — not on `size`,
+/// which is only a mirror of a closed length: two arrays with the same
+/// element and the same symbolic length (`array[T, n]` in two places) must be
+/// the same type, and two with different symbolic lengths (`array[T, n]` vs
+/// `array[T, m]`) must not be.
+auto type_table::array_of(type_id element, std::optional<uint64_t> size,
+                          type_id length) -> type_id {
+  auto key = std::format("a:{}:{}", element, length);
   return intern(std::move(key), type_entry{.kind = type_kind::array_kind,
                                            .name = "array",
+                                           .args = {length},
                                            .result = element,
                                            .array_size = size});
 }
@@ -195,10 +198,66 @@ auto type_table::type_param(std::string_view name) -> type_id {
 /// const generic arguments are the same type iff they carry the same
 /// literal value of the same underlying type.
 auto type_table::const_value(type_id underlying, uint64_t value) -> type_id {
-  return intern(std::format("c:{}:{}", underlying, value),
-                type_entry{.kind = type_kind::const_value_kind,
-                           .name = std::to_string(value),
-                           .result = underlying});
+  return intern(
+      std::format("c:{}:{}", underlying, value),
+      type_entry{.kind = type_kind::const_value_kind,
+                 .name = std::to_string(value),
+                 .result = underlying,
+                 .value = poly_constant(static_cast<int64_t>(value))});
+}
+
+/// Interns on the polynomial's canonical key, which is what makes `m + n` and
+/// `n + m` one type rather than two. A closed polynomial is redirected to
+/// `const_value` so no value has two representations — see the header.
+auto type_table::symbolic_value(type_id underlying, linear_poly value)
+    -> type_id {
+  if (value.is_constant()) {
+    return const_value(underlying, static_cast<uint64_t>(value.constant));
+  }
+  auto key = std::format("s:{}:{}", underlying, value.key());
+  auto name = value.display();
+  return intern(std::move(key),
+                type_entry{.kind = type_kind::symbolic_value_kind,
+                           .name = std::move(name),
+                           .result = underlying,
+                           .value = std::move(value)});
+}
+
+/// Interns on the sum declaration's address plus the variant name, so two
+/// same-named variants of different sum types never collide.
+auto type_table::const_variant(const ast::type_decl &sum_decl,
+                               std::string_view module_name,
+                               std::string_view variant_name) -> type_id {
+  return intern(std::format("cv:{}:{}", static_cast<const void *>(&sum_decl),
+                            variant_name),
+                type_entry{.kind = type_kind::const_variant_kind,
+                           .name = std::string(variant_name),
+                           .module_name = std::string(module_name),
+                           .decl = &sum_decl});
+}
+
+/// Declaration-nominal when `decl` is given (keyed on the declaration plus its
+/// arguments), occurrence-nominal otherwise (keyed on the predicate node) —
+/// see the header for why refinements are named to the user but structural to
+/// the solver.
+auto type_table::refinement_of(const ast::type_decl *decl,
+                               std::string_view display_name,
+                               std::string_view module_name, type_id base,
+                               std::vector<type_id> args,
+                               const ast::expr *predicate) -> type_id {
+  auto key = decl != nullptr
+                 ? std::format("w:{}", static_cast<const void *>(decl))
+                 : std::format("wi:{}", static_cast<const void *>(predicate));
+  append_args_key(key, args);
+  return intern(std::move(key), type_entry{
+                                    .kind = type_kind::refinement_kind,
+                                    .name = std::string(display_name),
+                                    .module_name = std::string(module_name),
+                                    .decl = decl,
+                                    .args = std::move(args),
+                                    .result = base,
+                                    .predicate = predicate,
+                                });
 }
 
 /// Always pushes a new entry rather than consulting `interned_`, so every
@@ -297,9 +356,8 @@ auto type_table::display(type_id id) const -> std::string {
   }
   case type_kind::array_kind:
     return std::format("array[{}, {}]", display(item.result),
-                       item.array_size.has_value()
-                           ? std::to_string(*item.array_size)
-                           : std::string("_"));
+                       item.args.empty() ? std::string("_")
+                                         : display(item.args.front()));
   case type_kind::fn_kind: {
     auto out = std::string("fn(");
     for (size_t i = 0; i < item.args.size(); ++i) {
@@ -318,9 +376,99 @@ auto type_table::display(type_id id) const -> std::string {
     return std::format("*{}{}", item.is_mut ? "mut " : "",
                        display(item.result));
   case type_kind::const_value_kind:
+  case type_kind::symbolic_value_kind:
+  case type_kind::const_variant_kind:
+  case type_kind::refinement_kind:
     return item.name;
   }
   return "<?>";
+}
+
+/// See the header for semantics.
+auto type_table::strip_refinement(type_id id) const -> type_id {
+  const auto *item = &entry(id);
+  while (item->kind == type_kind::refinement_kind) {
+    id = item->result;
+    item = &entry(id);
+  }
+  return id;
+}
+
+/// Rebuilds the type bottom-up, re-interning as it goes, so the result is a
+/// first-class id and not a special "erased" view. Types with no arguments to
+/// rewrite (the overwhelming majority) are returned unchanged without
+/// interning anything.
+auto type_table::erase_refinements(type_id id) -> type_id {
+  const auto stripped = strip_refinement(id);
+
+  // Copied, not referenced: interning below can push new entries, and while
+  // `std::deque` keeps existing references valid, the recursion also reads
+  // fields after those calls — a copy makes that independent of the table's
+  // storage guarantees rather than reliant on them.
+  const auto item = entry(stripped);
+
+  auto args = std::vector<type_id>{};
+  args.reserve(item.args.size());
+  auto changed = false;
+  for (const auto arg : item.args) {
+    const auto erased = erase_refinements(arg);
+    changed = changed || erased != arg;
+    args.push_back(erased);
+  }
+  const auto result = item.result != k_unknown_type
+                          ? erase_refinements(item.result)
+                          : item.result;
+  changed = changed || result != item.result;
+  if (!changed) {
+    return stripped;
+  }
+
+  switch (item.kind) {
+  case type_kind::builtin_generic_kind:
+    return builtin_generic(item.name, std::move(args));
+  case type_kind::tuple_kind:
+    return tuple_of(std::move(args));
+  case type_kind::array_kind:
+    return array_of(result, item.array_size,
+                    args.empty() ? k_unknown_type : args.front());
+  case type_kind::fn_kind:
+    return fn_of(std::move(args), result);
+  case type_kind::ref_kind:
+    return ref_to(result, item.is_mut);
+  case type_kind::ptr_kind:
+    return ptr_to(result, item.is_mut);
+  case type_kind::struct_kind:
+  case type_kind::sum_kind:
+  case type_kind::opaque_kind:
+    if (item.decl == nullptr) {
+      return stripped;
+    }
+    return user_type(*item.decl, item.module_name, std::move(args));
+  default:
+    // Scalars, value slots, type parameters, existentials: nothing inside to
+    // rewrite, so `changed` can't have been set and this is unreachable in
+    // practice — but returning the stripped id is the right answer anyway.
+    return stripped;
+  }
+}
+
+/// Linear scan: layout asks this once per struct field of a user type, and
+/// the table is small. See the header for why a name is all there is to go on.
+auto type_table::refinement_base_named(std::string_view name) const
+    -> std::optional<type_id> {
+  auto found = std::optional<type_id>{};
+  for (const auto &item : entries_) {
+    if (item.kind != type_kind::refinement_kind || item.decl == nullptr ||
+        item.decl->name != name) {
+      continue;
+    }
+    const auto base = strip_refinement(item.result);
+    if (found.has_value() && *found != base) {
+      return std::nullopt; // ambiguous; see the header
+    }
+    found = base;
+  }
+  return found;
 }
 
 /// See the header for semantics.
@@ -330,15 +478,19 @@ auto type_table::is_unknown(type_id id) const -> bool {
          kind == type_kind::type_param_kind || kind == type_kind::type_var_kind;
 }
 
+// Every scalar-family predicate below strips refinements first: a `positive`
+// *is* an `int32` for every purpose except discharging its own predicate, so
+// it must be numeric, comparable, and formattable exactly like one.
+
 /// See the header for semantics.
 auto type_table::is_boolean(type_id id) const -> bool {
-  const auto &item = entry(id);
+  const auto &item = entry(strip_refinement(id));
   return item.kind == type_kind::builtin_kind && item.name == "bool";
 }
 
 /// See the header for semantics.
 auto type_table::is_integer(type_id id) const -> bool {
-  const auto &item = entry(id);
+  const auto &item = entry(strip_refinement(id));
   if (item.kind != type_kind::builtin_kind) {
     return false;
   }
@@ -348,7 +500,7 @@ auto type_table::is_integer(type_id id) const -> bool {
 
 /// See the header for semantics.
 auto type_table::is_float(type_id id) const -> bool {
-  const auto &item = entry(id);
+  const auto &item = entry(strip_refinement(id));
   return item.kind == type_kind::builtin_kind && item.name.starts_with("float");
 }
 
@@ -359,8 +511,41 @@ auto type_table::is_numeric(type_id id) const -> bool {
 
 /// See the header for semantics.
 auto type_table::is_unit(type_id id) const -> bool {
-  const auto &item = entry(id);
+  const auto &item = entry(strip_refinement(id));
   return item.kind == type_kind::builtin_kind && item.name == "unit";
+}
+
+/// Whether the unknowns of a value slot range over an unsigned type, which is
+/// the fact that refutes `n + 1 = 0`. Read off the slot's underlying type
+/// (`result`), so `n: usize` constrains and `n: int32` doesn't.
+auto type_table::value_vars_non_negative(const type_entry &slot) const -> bool {
+  const auto &underlying = entry(slot.result);
+  return underlying.kind == type_kind::builtin_kind &&
+         (underlying.name.starts_with("uint") || underlying.name == "usize" ||
+          underlying.name == "byte");
+}
+
+/// Compatibility of two *value* slots, per `spec/dependent-types-design.md`
+/// §2.2: satisfiability of the equation between them, not identity. Identical
+/// ids were already handled by `compatible`'s first line, so reaching here
+/// means the two slots differ syntactically and the question is whether they
+/// could still denote the same value.
+auto type_table::values_compatible(type_id expected, type_id found) const
+    -> bool {
+  const auto &expected_entry = entry(expected);
+  const auto &found_entry = entry(found);
+
+  // A variant value is an identity, not a quantity: distinct ids are distinct
+  // states, which is exactly what makes `send(c: connection[open])` reject a
+  // `connection[closed]`.
+  if (expected_entry.kind == type_kind::const_variant_kind ||
+      found_entry.kind == type_kind::const_variant_kind) {
+    return false;
+  }
+
+  return equation_satisfiable(expected_entry.value, found_entry.value,
+                              value_vars_non_negative(expected_entry) ||
+                                  value_vars_non_negative(found_entry));
 }
 
 /// Structural compatibility: identical ids always match; `unknown`/`error`/
@@ -373,8 +558,22 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
     return true;
   }
 
+  // Refinements compare as their base in *both* directions. Widening
+  // (`positive` where `int32` is wanted) is genuinely free. Narrowing
+  // (`int32` where `positive` is wanted) is structurally fine too — what it
+  // owes is a *proof*, not a different shape, and `checker::check_narrowing`
+  // is where that debt is collected. See the header.
+  if (entry(expected).kind == type_kind::refinement_kind ||
+      entry(found).kind == type_kind::refinement_kind) {
+    return compatible(strip_refinement(expected), strip_refinement(found));
+  }
+
   const auto &expected_entry = entry(expected);
   const auto &found_entry = entry(found);
+
+  if (is_value_kind(expected_entry.kind) && is_value_kind(found_entry.kind)) {
+    return values_compatible(expected, found);
+  }
 
   // `never` (panic, propagating return) is acceptable anywhere.
   if (found_entry.kind == type_kind::builtin_kind &&
@@ -427,10 +626,13 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
     return true;
   }
   case type_kind::array_kind:
+    // The length is an ordinary value slot, so `array[T, n + 1]` against
+    // `array[T, 0]` is refuted by the same arithmetic that refutes it for a
+    // user `vec[T, n + 1]` — a written-out length and a const generic are the
+    // same mechanism.
     return compatible(expected_entry.result, found_entry.result) &&
-           (!expected_entry.array_size.has_value() ||
-            !found_entry.array_size.has_value() ||
-            *expected_entry.array_size == *found_entry.array_size);
+           (expected_entry.args.empty() || found_entry.args.empty() ||
+            compatible(expected_entry.args.front(), found_entry.args.front()));
   case type_kind::ref_kind:
   case type_kind::ptr_kind:
     return compatible(expected_entry.result, found_entry.result) &&

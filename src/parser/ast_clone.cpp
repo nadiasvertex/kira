@@ -17,7 +17,7 @@ namespace {
 
 [[nodiscard]] auto clone_type_expr(const type_expr &t)
     -> std::expected<ptr<type_expr>, clone_error>;
-[[nodiscard]] auto clone_expr(const expr &e)
+[[nodiscard]] auto clone_expr_impl(const expr &e)
     -> std::expected<ptr<expr>, clone_error>;
 [[nodiscard]] auto clone_pattern(const pattern &p)
     -> std::expected<ptr<pattern>, clone_error>;
@@ -33,7 +33,7 @@ template <typename T>
   if constexpr (std::is_same_v<T, type_expr>) {
     return clone_type_expr(*original);
   } else if constexpr (std::is_same_v<T, expr>) {
-    return clone_expr(*original);
+    return clone_expr_impl(*original);
   } else if constexpr (std::is_same_v<T, pattern>) {
     return clone_pattern(*original);
   } else if constexpr (std::is_same_v<T, node>) {
@@ -148,7 +148,7 @@ template <typename T>
   return cloned;
 }
 
-[[nodiscard]] auto clone_expr(const expr &e)
+[[nodiscard]] auto clone_expr_impl(const expr &e)
     -> std::expected<ptr<expr>, clone_error> {
   switch (e.kind) {
   case node_kind::ident_expr: {
@@ -258,7 +258,7 @@ template <typename T>
     auto cloned = make<array_expr>();
     cloned->span = array.span;
     for (const auto &element : array.elements) {
-      auto cloned_element = clone_expr(*element);
+      auto cloned_element = clone_expr_impl(*element);
       if (!cloned_element.has_value()) {
         return std::unexpected(cloned_element.error());
       }
@@ -437,7 +437,7 @@ template <typename T>
     // `array_type::size`, a fixed-array length expression, which is
     // typically just a `literal_expr`).
     if (const auto *as_expr = dynamic_cast<const expr *>(&n)) {
-      auto cloned = clone_expr(*as_expr);
+      auto cloned = clone_expr_impl(*as_expr);
       if (!cloned.has_value()) {
         return std::unexpected(cloned.error());
       }
@@ -448,6 +448,11 @@ template <typename T>
 }
 
 } // namespace
+
+/// The public face of the anonymous-namespace cloner above; see the header.
+auto clone_expr(const expr &e) -> std::expected<ptr<expr>, clone_error> {
+  return clone_expr_impl(e);
+}
 
 auto clone_func_decl(const func_decl &decl)
     -> std::expected<ptr<func_decl>, clone_error> {
@@ -501,7 +506,7 @@ auto clone_func_decl(const func_decl &decl)
   cloned->return_type = std::move(*return_type);
 
   if (decl.body_expr != nullptr) {
-    auto body_expr = clone_expr(*decl.body_expr);
+    auto body_expr = clone_expr_impl(*decl.body_expr);
     if (!body_expr.has_value()) {
       return std::unexpected(body_expr.error());
     }

@@ -462,6 +462,22 @@ auto lowerer::lower_expr(const ast::expr &expr)
         lowering_error_kind::unsupported_construct, expr.span,
         "expression carries a parse/recovery error and cannot be lowered");
   }
+
+  // An expression the *checker* rewrote — a `splice` resolved to its quoted
+  // fragment, or a refinement's `try_from` desugared into a plain
+  // predicate-and-option check (`spec/dependent-types-design.md` §7) — lowers
+  // as the syntax it was rewritten to, which the checker already typed node by
+  // node. Redirecting here rather than in each case keeps the rewrite a
+  // property of the *node*, so a new desugaring needs no change to lowering at
+  // all: record the fragment, and it lowers.
+  if (const auto rewritten = checked_.spliced_fragments.find(&expr);
+      rewritten != checked_.spliced_fragments.end()) {
+    if (const auto *fragment =
+            dynamic_cast<const ast::expr *>(rewritten->second)) {
+      return lower_expr(*fragment);
+    }
+  }
+
   switch (expr.kind) {
   case ast::node_kind::group_expr: {
     const auto &group = dynamic_cast<const ast::group_expr &>(expr);
