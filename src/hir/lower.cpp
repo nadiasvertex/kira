@@ -1445,7 +1445,7 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
   // lambda has no return value of its own to hand a `post` condition. So the
   // enclosing function's postconditions are out of scope for the duration.
   auto enclosing_posts = std::exchange(post_contracts_, {});
-  const auto restore_posts = [&] {
+  const auto restore_posts = [&] -> void {
     post_contracts_ = std::move(enclosing_posts);
   };
 

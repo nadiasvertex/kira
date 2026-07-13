@@ -2649,7 +2649,7 @@ private:
         continue;
       }
       const auto relevant =
-          std::ranges::any_of(fact.poly.terms, [&](const poly_term &term) {
+          std::ranges::any_of(fact.poly.terms, [&](const poly_term &term) -> bool {
             return mentioned.contains(term.var);
           });
       if (relevant) {
@@ -2767,8 +2767,7 @@ private:
     diag.with_label(span, std::format("expected `{}`, found `{}`", refined_name,
                                       types_.display(found)));
     if (const auto known = known_facts_note(goal)) {
-      diag.children.push_back(
-          diagnostic(diagnostic_level::note, *known, file_id_));
+      diag.children.emplace_back(diagnostic_level::note, *known, file_id_);
     }
     if (outcome == proof_result::refuted) {
       diag.with_help(std::format(
@@ -4222,8 +4221,7 @@ private:
                                     "contract",
                                     decl.name));
         if (const auto known = known_facts_note(goal)) {
-          diag.children.push_back(
-              diagnostic(diagnostic_level::note, *known, file_id_));
+          diag.children.emplace_back(diagnostic_level::note, *known, file_id_);
         }
         diag.with_help(
             contract.message.has_value()
@@ -6756,8 +6754,7 @@ private:
       diag.with_label(index.index->span,
                       std::format("indexing a `{}`", types_.display(object)));
       if (const auto known = known_facts_note(goal)) {
-        diag.children.push_back(
-            diagnostic(diagnostic_level::note, *known, file_id_));
+        diag.children.emplace_back(diagnostic_level::note, *known, file_id_);
       }
       diag.with_help(
           "This access is out of range on every execution that reaches it — "
