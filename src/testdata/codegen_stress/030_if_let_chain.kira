@@ -1,0 +1,28 @@
+module codegen_stress.if_let_chain
+
+# `if let` binds only inside its own branch, and an `elif let` after a plain
+# `if` (and before a plain `elif`/`else`) has to keep the chain's order.
+def pick(flag: bool, v: option[int32], w: option[int32]) -> int32:
+    if flag:
+        return 1
+    elif let @some(n) = v:
+        return n * 10
+    elif let @some(m) = w:
+        return m * 100
+    else:
+        return -1
+
+def unwrap_or(v: option[int32], fallback: int32) -> int32:
+    if let @some(n) = v:
+        return n
+    return fallback
+
+def main() -> int32:
+    var total = 0
+    total = total + pick(true, @some(2), @some(3))
+    total = total + pick(false, @some(2), @some(3))
+    total = total + pick(false, @none, @some(3))
+    total = total + pick(false, @none, @none)
+    total = total + unwrap_or(@some(7), 0)
+    total = total + unwrap_or(@none, 5)
+    return total

@@ -977,6 +977,100 @@ auto test_lowers_while_let() -> void {
          "expected the surface `return n` as the second statement");
 }
 
+auto test_lowers_if_let() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def unwrap_or(v: option[int32]) -> int32:\n"
+                               "    if let @some(n) = v:\n"
+                               "        return n\n"
+                               "    else:\n"
+                               "        return -1\n");
+  const auto &decl = find_func(*fixture.ast_file, "unwrap_or");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected `if let` to lower");
+
+  // An `if let` has no boolean condition to test, so it lowers to a `match`
+  // over its scrutinee, not to a `hir_if` (see `lower_if`). This one is the
+  // body's trailing statement, so it arrives wrapped as the block's tail
+  // value (`lower_tail_control_flow_stmt`), exactly like a trailing `if`.
+  const auto &function = **result;
+  expect(function.body->stmts.size() == 1, "expected the one `if let`");
+  const auto &tail =
+      dynamic_cast<const hir::hir_expr_stmt &>(*function.body->stmts[0]);
+  expect(tail.expr->kind == hir::hir_node_kind::hir_match,
+         "expected `if let` to lower to a hir_match");
+  const auto &match = dynamic_cast<const hir::hir_match &>(*tail.expr);
+  expect(match.subject->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the subject to be a reference to `v`");
+  expect(match.arms.size() == 2,
+         "expected the pattern's arm plus a wildcard arm for the `else`");
+
+  expect(match.arms[0].pattern->kind ==
+             hir::hir_node_kind::hir_constructor_pattern,
+         "expected the first arm to test `@some(n)`");
+  const auto &pattern =
+      dynamic_cast<const hir::hir_constructor_pattern &>(*match.arms[0].pattern);
+  expect(pattern.variant_name == "some", "expected the `some` variant");
+  expect(match.arms[0].body->stmts.size() == 2,
+         "expected the synthesized `let n = <payload>` plus the surface "
+         "`return n`");
+  const auto &n_let =
+      dynamic_cast<const hir::hir_let &>(*match.arms[0].body->stmts[0]);
+  expect(n_let.name == "n", "expected the bound name to be `n`");
+  expect(n_let.initializer->kind == hir::hir_node_kind::hir_variant_payload,
+         "expected `n` to be bound from the `some` payload");
+  expect(match.arms[0].body->stmts[1]->kind == hir::hir_node_kind::hir_return,
+         "expected the surface `return n`");
+
+  expect(match.arms[1].pattern->kind == hir::hir_node_kind::hir_wildcard_pattern,
+         "expected the fallback arm to be a wildcard");
+  expect(match.arms[1].body->stmts.size() == 1,
+         "expected the `else` body under the wildcard arm");
+  expect(match.arms[1].body->stmts[0]->kind == hir::hir_node_kind::hir_return,
+         "expected the `else` body's `return -1`");
+}
+
+auto test_lowers_elif_let_chain() -> void {
+  // A chain that mixes both branch forms: the leading plain `if` stays a
+  // `hir_if`, and everything after it — the `elif let` and the `else` — is
+  // what that `hir_if`'s else block holds.
+  auto fixture = check_fixture("module sample\n"
+                               "def pick(flag: bool, v: option[int32]) -> int32:\n"
+                               "    if flag:\n"
+                               "        return 0\n"
+                               "    elif let @some(n) = v:\n"
+                               "        return n\n"
+                               "    else:\n"
+                               "        return -1\n");
+  const auto &decl = find_func(*fixture.ast_file, "pick");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected an `elif let` chain to lower");
+
+  const auto &function = **result;
+  const auto &chain =
+      dynamic_cast<const hir::hir_expr_stmt &>(*function.body->stmts[0]);
+  expect(chain.expr->kind == hir::hir_node_kind::hir_if,
+         "expected the leading plain `if` to stay a hir_if");
+  const auto &conditional = dynamic_cast<const hir::hir_if &>(*chain.expr);
+  expect(conditional.branches.size() == 1,
+         "expected only the plain `if flag` branch on the hir_if itself");
+  expect(conditional.else_body != nullptr,
+         "expected the rest of the chain as the hir_if's else block");
+  expect(conditional.else_body->stmts.size() == 1,
+         "expected the rest of the chain to be the else block's one statement");
+
+  const auto &tail =
+      dynamic_cast<const hir::hir_expr_stmt &>(*conditional.else_body->stmts[0]);
+  expect(tail.expr->kind == hir::hir_node_kind::hir_match,
+         "expected the `elif let` to lower to a hir_match in the else block");
+  const auto &match = dynamic_cast<const hir::hir_match &>(*tail.expr);
+  expect(match.arms.size() == 2,
+         "expected `@some(n)`'s arm plus a wildcard arm carrying the `else`");
+  expect(match.arms[1].body->stmts.size() == 1,
+         "expected the trailing `else` body under the wildcard arm");
+}
+
 auto test_rejects_for_loop_over_user_defined_type() -> void {
   // list/array/slice/str iteration lowers now (see
   // test_lowers_list_for_loop and friends) — a user-defined iterable is
@@ -2236,6 +2330,8 @@ auto main() -> int {
     test_lowers_compound_assignment();
     test_lowers_while_loop();
     test_lowers_while_let();
+    test_lowers_if_let();
+    test_lowers_elif_let_chain();
     test_rejects_for_loop_over_user_defined_type();
     test_lowers_tuple_literal();
     test_lowers_array_literal();

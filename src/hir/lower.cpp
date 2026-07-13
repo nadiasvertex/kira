@@ -355,10 +355,44 @@ private:
   /// statement can introduce several bindings.
   [[nodiscard]] auto lower_stmt(const ast::node &node)
       -> std::expected<ptr_vec<hir_node>, lowering_error>;
+  /// An `if`/`elif`/`else` chain. Ordinary condition branches lower to the
+  /// `hir_if` you'd expect; an `if let`/`elif let` branch has no boolean
+  /// condition to test, so it lowers instead to a two-arm `hir_match` over
+  /// its scrutinee — the pattern's arm carries the branch body, and a
+  /// wildcard arm carries *everything after this branch* (the remaining
+  /// `elif`s and the `else`, lowered by recursing into `lower_if_chain`).
+  /// A chain that mixes both forms therefore lowers to alternating
+  /// `hir_if`/`hir_match` nodes, which is why this returns a plain
+  /// `hir_expr`: the top of a chain is a `hir_match` whenever its first
+  /// branch is an `if let`.
   [[nodiscard]] auto lower_if(const std::vector<ast::if_branch> &branches,
                               const std::vector<ast::ptr<ast::node>> &else_body,
                               source_span span, type_id type)
-      -> std::expected<ptr<hir_if>, lowering_error>;
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// Lowers `branches[index:]` plus `else_body` — the tail of a chain whose
+  /// earlier branches have already been lowered.
+  [[nodiscard]] auto
+  lower_if_chain(const std::vector<ast::if_branch> &branches,
+                 const std::vector<ast::ptr<ast::node>> &else_body,
+                 size_t index, source_span span, type_id type)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// The `if let`/`elif let` case of `lower_if_chain` (see `lower_if`).
+  [[nodiscard]] auto
+  lower_if_let_chain(const std::vector<ast::if_branch> &branches,
+                     const std::vector<ast::ptr<ast::node>> &else_body,
+                     size_t index, source_span span, type_id type)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// The block an unmatched/false branch at `index` falls through to: the
+  /// rest of the chain (`branches[index:]` recursively lowered, wrapped as
+  /// the block's tail value), or the `else` body, or nothing at all.
+  /// Returns null only when there is neither — a caller that needs a real
+  /// block (a `match` arm's body, which cannot be null) substitutes an
+  /// empty one.
+  [[nodiscard]] auto
+  lower_if_fallback(const std::vector<ast::if_branch> &branches,
+                    const std::vector<ast::ptr<ast::node>> &else_body,
+                    size_t index, source_span span, type_id type)
+      -> std::expected<ptr<hir_block>, lowering_error>;
   /// Dispatches a `for` loop to whichever iterable shape it matches (see
   /// spec/iterator-protocol-design.md): a range literal written directly
   /// in the loop header, a checked `option`, or a checked
@@ -2331,18 +2365,30 @@ auto lowerer::lower_stmt(const ast::node &node)
 auto lowerer::lower_if(const std::vector<ast::if_branch> &branches,
                        const std::vector<ast::ptr<ast::node>> &else_body,
                        source_span span, type_id type)
-    -> std::expected<ptr<hir_if>, lowering_error> {
+    -> std::expected<ptr<hir_expr>, lowering_error> {
   if (branches.empty()) {
     return fail(lowering_error_kind::unsupported_construct, span,
                 "if has no branches");
   }
+  return lower_if_chain(branches, else_body, 0, span, type);
+}
+
+auto lowerer::lower_if_chain(const std::vector<ast::if_branch> &branches,
+                             const std::vector<ast::ptr<ast::node>> &else_body,
+                             size_t index, source_span span, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  if (branches[index].let_pattern != nullptr) {
+    return lower_if_let_chain(branches, else_body, index, span, type);
+  }
+
+  // A run of ordinary condition branches collapses into one `hir_if`; the
+  // run ends at the first `let` branch (which becomes that `hir_if`'s else
+  // block, via `lower_if_fallback`) or at the end of the chain.
   auto hir_branches = std::vector<hir_if_branch>{};
-  hir_branches.reserve(branches.size());
-  for (const auto &branch : branches) {
-    if (branch.let_pattern != nullptr || branch.let_expr != nullptr) {
-      return fail(lowering_error_kind::unsupported_construct, branch.span,
-                  "`if let` is not lowered by the first milestone");
-    }
+  auto next = index;
+  for (; next < branches.size() && branches[next].let_pattern == nullptr;
+       ++next) {
+    const auto &branch = branches[next];
     if (branch.condition == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, branch.span,
                   "if branch is missing a condition");
@@ -2358,16 +2404,109 @@ auto lowerer::lower_if(const std::vector<ast::if_branch> &branches,
     hir_branches.push_back(hir_if_branch{.condition = std::move(*condition),
                                          .body = std::move(*body)});
   }
-  auto else_block = ptr<hir_block>{};
-  if (!else_body.empty()) {
-    auto lowered_else = lower_block(else_body, span, type);
-    if (!lowered_else.has_value()) {
-      return std::unexpected(lowered_else.error());
-    }
-    else_block = std::move(*lowered_else);
+
+  auto else_block = lower_if_fallback(branches, else_body, next, span, type);
+  if (!else_block.has_value()) {
+    return std::unexpected(else_block.error());
   }
-  return make<hir_if>(span, type, std::move(hir_branches),
-                      std::move(else_block));
+  return ptr<hir_expr>(make<hir_if>(span, type, std::move(hir_branches),
+                                    std::move(*else_block)));
+}
+
+auto lowerer::lower_if_let_chain(
+    const std::vector<ast::if_branch> &branches,
+    const std::vector<ast::ptr<ast::node>> &else_body, size_t index,
+    source_span span, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto &branch = branches[index];
+  if (branch.let_expr == nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, branch.span,
+                "`if let` branch has no scrutinee expression");
+  }
+  auto subject_type = checked_type_of(*branch.let_expr);
+  if (!subject_type.has_value()) {
+    return std::unexpected(subject_type.error());
+  }
+  auto subject_value = lower_expr(*branch.let_expr);
+  if (!subject_value.has_value()) {
+    return std::unexpected(subject_value.error());
+  }
+
+  const auto subject_symbol = mint_symbol();
+  const auto subj_type = *subject_type;
+  const auto subject_span = branch.let_expr->span;
+  const std::function<ptr<hir_expr>()> make_place =
+      [subject_symbol, subj_type, subject_span]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(subject_span, subj_type, subject_symbol,
+                                std::string("<if subject>"))};
+  };
+
+  push_scope();
+  auto pending = std::vector<ptr<hir_node>>{};
+  auto pattern = lower_pattern(*branch.let_pattern, make_place, pending);
+  if (!pattern.has_value()) {
+    pop_scope();
+    return std::unexpected(pattern.error());
+  }
+  auto matched_body = lower_block(branch.body, branch.span, type);
+  if (!matched_body.has_value()) {
+    pop_scope();
+    return std::unexpected(matched_body.error());
+  }
+  pop_scope();
+
+  // The names the pattern binds are `hir_let`s, not part of the pattern (see
+  // `hir_pattern`) — they belong at the front of the arm that matched.
+  if (!pending.empty()) {
+    auto stmts = std::move(pending);
+    for (auto &stmt_ptr : (*matched_body)->stmts) {
+      stmts.push_back(std::move(stmt_ptr));
+    }
+    (*matched_body)->stmts = std::move(stmts);
+  }
+
+  auto unmatched_body =
+      lower_if_fallback(branches, else_body, index + 1, span, type);
+  if (!unmatched_body.has_value()) {
+    return std::unexpected(unmatched_body.error());
+  }
+  if (*unmatched_body == nullptr) {
+    *unmatched_body = make<hir_block>(span, type, ptr_vec<hir_node>{});
+  }
+
+  auto arms = std::vector<hir_match_arm>{};
+  arms.push_back(hir_match_arm{.pattern = std::move(*pattern),
+                               .guard = nullptr,
+                               .body = std::move(*matched_body)});
+  arms.push_back(hir_match_arm{
+      .pattern = ptr<hir_pattern>(make<hir_wildcard_pattern>(branch.span)),
+      .guard = nullptr,
+      .body = std::move(*unmatched_body)});
+
+  return ptr<hir_expr>(make<hir_match>(span, type, std::move(*subject_value),
+                                       subject_symbol, std::move(arms)));
+}
+
+auto lowerer::lower_if_fallback(
+    const std::vector<ast::if_branch> &branches,
+    const std::vector<ast::ptr<ast::node>> &else_body, size_t index,
+    source_span span, type_id type)
+    -> std::expected<ptr<hir_block>, lowering_error> {
+  if (index >= branches.size()) {
+    if (else_body.empty()) {
+      return ptr<hir_block>{};
+    }
+    return lower_block(else_body, span, type);
+  }
+  auto rest = lower_if_chain(branches, else_body, index, span, type);
+  if (!rest.has_value()) {
+    return std::unexpected(rest.error());
+  }
+  const auto rest_span = branches[index].span;
+  auto stmts = ptr_vec<hir_node>{};
+  stmts.push_back(
+      ptr<hir_node>(make<hir_expr_stmt>(rest_span, std::move(*rest))));
+  return make<hir_block>(rest_span, type, std::move(stmts));
 }
 
 auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)

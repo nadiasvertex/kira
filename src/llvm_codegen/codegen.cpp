@@ -1052,13 +1052,17 @@ private:
     case hir_node_kind::hir_lambda:
       return compile_lambda_value(dynamic_cast<const hir::hir_lambda &>(expr));
     case hir_node_kind::hir_if: {
+      // `storage_type_for`, not `numeric_kind_for`: an `if` in expression
+      // position yields a heap value as readily as a scalar one (`if c: "a"
+      // else: "b"`, or the `if`/`else` a refinement's `try_from` desugars
+      // into, whose value is an `option`), exactly like the `hir_match` and
+      // `hir_block` cases below.
       const auto &node = dynamic_cast<const hir::hir_if &>(expr);
-      auto kind = numeric_kind_for(expr.type, expr.span);
-      if (!kind.has_value()) {
-        return std::unexpected(kind.error());
+      auto ty = storage_type_for(expr.type, expr.span);
+      if (!ty.has_value()) {
+        return std::unexpected(ty.error());
       }
-      auto *result =
-          create_local_alloca(llvm_type_for(ctx_, *kind), "if.result");
+      auto *result = create_local_alloca(*ty, "if.result");
       auto terminated = compile_if(node, result);
       if (!terminated.has_value()) {
         return std::unexpected(terminated.error());
@@ -1072,10 +1076,9 @@ private:
         // ("Terminator found in the middle of a basic block"); return an
         // undef value of the right type instead — it is provably dead,
         // never actually observed by anything.
-        return llvm::UndefValue::get(llvm_type_for(ctx_, *kind));
+        return llvm::UndefValue::get(*ty);
       }
-      return builder_.CreateLoad(result->getAllocatedType(), result,
-                                 "if.value");
+      return builder_.CreateLoad(*ty, result, "if.value");
     }
     case hir_node_kind::hir_tuple:
       return compile_slots_init(

@@ -7133,6 +7133,10 @@ private:
 
   /// Checks an `if`/`elif` branch's condition (requiring `bool`) or, for an
   /// `if let` branch, infers the scrutinee and checks the pattern against it.
+  /// Both callers run this with the branch's own scope already open, so the
+  /// names an `if let` pattern binds are visible in that branch's body and
+  /// nowhere else — matching how lowering scopes them (`lower_if_let_chain`,
+  /// `hir/lower.cpp`) and how `while let` already behaves.
   auto check_if_branch_header(const ast::if_branch &branch) -> void {
     if (branch.condition != nullptr) {
       require_bool(*branch.condition, "an `if` condition");
@@ -7178,8 +7182,8 @@ private:
   auto infer_if_expr(const ast::if_expr &expr, type_id expected) -> type_id {
     auto result = expected;
     for (const auto &branch : expr.branches) {
-      check_if_branch_header(branch);
       push_scope();
+      check_if_branch_header(branch);
       // Inside a branch, its condition holds — and so does the refutation of
       // every branch before it, since reaching this one means those failed.
       auto assumed = fact_scope(facts_);
@@ -8755,8 +8759,8 @@ private:
       const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
       auto result = expected_tail;
       for (const auto &branch : stmt.branches) {
-        check_if_branch_header(branch);
         push_scope();
+        check_if_branch_header(branch);
         // Path conditions, exactly as in `infer_if_expr` — see the section
         // comment on `assume_condition`.
         auto assumed = fact_scope(facts_);

@@ -1,0 +1,25 @@
+module codegen_stress.if_let_try_from
+
+type small = int32 where self >= 0 and self < 16
+
+# `small.try_from(raw)` desugars to a block whose tail value is an `if`/`else`
+# yielding an `option` — an `if` in expression position producing a *heap*
+# value, which both tiers have to represent, not just the bytecode VM.
+def check(raw: int32) -> int32:
+    if let @some(i) = small.try_from(raw):
+        return (i as int32) + 1
+    return -1
+
+def describe(raw: int32) -> str:
+    if let @some(i) = small.try_from(raw):
+        return "small"
+    return "big"
+
+def main() -> str:
+    var total = 0
+    total = total + check(0)
+    total = total + check(7)
+    total = total + check(99)
+    if total != 8:
+        return "unexpected"
+    return describe(total)
