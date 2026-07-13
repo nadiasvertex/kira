@@ -45,6 +45,33 @@ using semantic::type_kind;
          "self";
 }
 
+/// Whether `decl` is one of the monomorphized copies the checker made of a
+/// const-generic template (`semantic::const_generic_instance`) — the one kind
+/// of declaration that still carries generic parameters and is nonetheless
+/// fully concrete, because every one of them was substituted before its body
+/// was checked.
+[[nodiscard]] auto is_const_generic_instance(const ast::func_decl &decl,
+                                             const checked_types &checked)
+    -> bool {
+  return std::ranges::any_of(
+      checked.const_generic_instances,
+      [&decl](const auto &instance) -> bool { return instance.decl == &decl; });
+}
+
+/// Whether `decl` is a template generic over compile-time *values* only. It
+/// has no runtime form of its own — `n` is not a parameter anything passes —
+/// so `lower_module` skips it and lowers the instances the checker made of it
+/// instead. This deliberately does not skip a *type*-generic function: that
+/// one is still an unhandled construct, and lowering fails closed on it
+/// rather than quietly dropping a function a call site expects to exist.
+[[nodiscard]] auto is_const_generic_template(const ast::func_decl &decl)
+    -> bool {
+  return !decl.type_params.empty() &&
+         std::ranges::all_of(decl.type_params, [](const auto &param) -> bool {
+           return param.is_value_param && !param.name.empty();
+         });
+}
+
 /// Wraps a freshly-built derived node into the `ptr<hir_expr>` result type
 /// every expression-lowering helper returns.
 template <typename T>
@@ -3538,10 +3565,18 @@ auto lowerer::lower_function(const ast::func_decl &decl)
                 "function declaration carries a parse/recovery error and "
                 "cannot be lowered");
   }
-  if (!decl.type_params.empty()) {
+  // A const-generic *instance* keeps the template's `[n: usize]` parameter
+  // list, but every type in it was already resolved against the constant that
+  // instance stands for (`semantic::checker::instantiate_const_generic`), so
+  // there is nothing generic left to lower — `checked_type_of` reads back
+  // `array[int32, 3]`, not `array[int32, n]`. Every other generic function is
+  // still a template, with no runtime form until it is instantiated.
+  if (!decl.type_params.empty() && !is_const_generic_instance(decl, checked_)) {
     return fail(lowering_error_kind::unsupported_construct, decl.span,
-                "generic functions are not lowered until monomorphization "
-                "exists (spec/typed-ir-design.md Decision 2, phase 5)");
+                "generic functions over *types* are not lowered until type "
+                "monomorphization exists (spec/typed-ir-design.md Decision 2, "
+                "phase 5); a function generic only over compile-time values "
+                "is compiled once per constant it is called with");
   }
   if (decl.return_type == nullptr) {
     return fail(lowering_error_kind::missing_return_type, decl.span,
@@ -3911,6 +3946,11 @@ auto lower_module(const ast::file &file, std::string module_name,
       continue;
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
+    if (is_const_generic_template(decl)) {
+      // Compiled once per constant it is called with, from the instances
+      // loop below — never as itself. See `is_const_generic_template`.
+      continue;
+    }
     if (decl.modifiers.is_intrinsic) {
       // No body to lower — the bytecode compiler recognizes calls to a
       // known intrinsic name by itself (src/intrinsics.h) and emits
@@ -3949,6 +3989,22 @@ auto lower_module(const ast::file &file, std::string module_name,
     }
     (*lowered)->name = std::format("{}::{}", synthesized.target_type_name,
                                    synthesized.decl->name);
+    functions.push_back(std::move(*lowered));
+  }
+  // One `hir_function` per constant some call site instantiated a
+  // const-generic template with (`semantic::checker::instantiate_const_
+  // generic`) — `get$3` and `get$8` are two ordinary functions here, and the
+  // template they came from (skipped in the item walk above) is none. Each
+  // instance's clone already carries its mangled name, which is the same name
+  // `lower_call` emits for the call sites that asked for it.
+  for (const auto &instance : checked.const_generic_instances) {
+    if (instance.owner_module != module_name || instance.decl == nullptr) {
+      continue;
+    }
+    auto lowered = lower_function(*instance.decl, checked, options);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
     functions.push_back(std::move(*lowered));
   }
   // Item-level splices (`semantic::checker::resolve_item_splices`,

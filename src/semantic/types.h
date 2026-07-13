@@ -502,6 +502,26 @@ struct synthesized_item_splice {
   std::string owner_module;
 };
 
+/// One monomorphized instance of a function generic over compile-time *value*
+/// parameters only (`def get[n: usize](v: array[int32, n], i: index[n])`) —
+/// see `checker::instantiate_const_generic` (`check.cpp`), the only place
+/// these are created.
+///
+/// A value parameter has no runtime existence: `n` is not passed, and code
+/// that mentions it (`index[n]`'s bound, a `for i in 0..n`, the runtime check
+/// an `index[n].try_from(raw)` compiles into) can only be emitted once `n` is
+/// a real number. So the template itself is never lowered; instead each call
+/// site whose arguments pin `n` down to a constant gets an instance — a clone
+/// of the declaration, re-checked with `n` bound to that constant, named
+/// `get$3` and lowered like any other function. `decl` is owned by
+/// `checked_types::synthesized_decls`, and its `name` is already the mangled
+/// instance name, so `hir::lower_call` needs nothing beyond the ordinary
+/// `resolved_callee` the call site records against it.
+struct const_generic_instance {
+  const ast::func_decl *decl = nullptr;
+  std::string owner_module;
+};
+
 /// Type ids for `std.fmt`'s runtime-support types (`src/std/fmt.kira`),
 /// resolved once after checking finishes and handed to `hir::lower` so it
 /// can build `format_spec`/box-type struct literals for interpolation
@@ -570,6 +590,12 @@ struct checked_types {
   /// (moved here from the checker) so their lifetime outlives type-checking.
   ast::ptr_vec<ast::func_decl> synthesized_decls;
   std::vector<synthesized_method> synthesized_trait_defaults;
+  /// Every const-generic function instantiated at some call site — see
+  /// `const_generic_instance`'s doc comment. `hir::lower_module` lowers each
+  /// one whose `owner_module` matches the module it's lowering, exactly as it
+  /// does a trait default, and skips the templates they came from (a template
+  /// has no runtime form of its own).
+  std::vector<const_generic_instance> const_generic_instances;
   /// Every `named_type` synthesized by `checker::reinterpret_as_named_type`
   /// when a quoted `expr` fragment (a bare name/dotted path, ambiguous at
   /// parse time between an expression and a type) is used somewhere a type

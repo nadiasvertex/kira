@@ -837,6 +837,7 @@ public:
         .fmt_types = fmt_types,
         .synthesized_decls = std::move(synthesized_decls_),
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
+        .const_generic_instances = std::move(const_generic_instances_),
         .synthesized_types = std::move(synthesized_types_),
         .spliced_fragments = std::move(spliced_fragments_),
         .synthesized_fragments = take_synthesized_fragments(),
@@ -903,6 +904,9 @@ private:
   // free, with no separate bookkeeping of their own.
   program_index &index_;
   diagnostic_bag &diag_;
+  /// Every diagnostic already emitted, keyed by level, file, message, and the
+  /// spans it points at — see `emit_diag`, which is why this exists.
+  std::unordered_set<std::string> emitted_diagnostics_;
   std::vector<bool> &file_has_errors_;
   type_table types_;
   /// Resolved type of every expression node visited by `infer_expr`
@@ -953,6 +957,37 @@ private:
   /// `take_checked_types`.
   ast::ptr_vec<ast::func_decl> synthesized_decls_;
   std::vector<synthesized_method> synthesized_trait_defaults_;
+  /// Every const-generic instance `instantiate_const_generic` produced (see
+  /// `const_generic_instance` in types.h). The clones themselves are owned by
+  /// `synthesized_decls_`, the same way trait-default clones are.
+  std::vector<const_generic_instance> const_generic_instances_;
+  /// One instance per (template, constant tuple), so a call made a thousand
+  /// times with `n == 3` compiles one `get$3` and not a thousand. Keyed by
+  /// `instance_key`; the entry is inserted *before* the clone's body is
+  /// checked, which is what makes a recursive const-generic function
+  /// terminate — the recursive call finds the instance it is already inside.
+  std::unordered_map<std::string, const ast::func_decl *>
+      const_generic_instance_cache_;
+  /// The constants the const-generic instance currently being checked was
+  /// instantiated with (`n` -> the `const_value` type slot, and `n` -> the
+  /// plain integer). Empty while checking anything else, including the
+  /// template these instances come from. `push_type_params` reads the first
+  /// (so `index[n]` resolves to `index[3]` inside the instance, which is what
+  /// gives a `try_from` real parameters to compare against), and
+  /// `resolve_ident` reads the second (so a *value* use of `n` lowers to the
+  /// literal `3` — there is no runtime parameter to load it from).
+  std::unordered_map<std::string, type_id> const_param_slots_;
+  std::unordered_map<std::string, int64_t> const_param_values_;
+  /// Nesting depth of `instantiate_const_generic`, bounding a template that
+  /// instantiates itself at an ever-changing constant (`f[n]` calling
+  /// `f[n + 1]`) — which would otherwise never stop.
+  size_t instantiation_depth_ = 0;
+  /// Whether the function being checked is a const-generic *template* — its
+  /// value parameters are still symbolic, and it will only ever reach a
+  /// backend through the instances `instantiate_const_generic` makes of it.
+  /// Constructs that need a real constant (`try_from` on `index[n]`) neither
+  /// report nor lower here; the instances handle both.
+  bool in_const_generic_template_ = false;
   /// Owns every `named_type` synthesized by `reinterpret_as_named_type`
   /// (see its doc comment) for the whole session — stable-address (a
   /// `vector<unique_ptr<T>>` only moves the pointer, never the pointee),
@@ -1098,12 +1133,36 @@ private:
     }
   }
 
+  /// Emits `diag`, unless the same complaint about the same source has
+  /// already been made.
+  ///
+  /// One piece of source can be checked several times: a const-generic
+  /// template's body is checked once as itself and again inside every
+  /// instance made of it (`instantiate_const_generic`), and a trait-default
+  /// body once per implementing type (`monomorphize_trait_default`). A
+  /// mistake in that source is *one* mistake — reporting it once per copy
+  /// would tell the user, three times over, about a line they wrote once.
+  /// Anything an instance discovers that the template could not (a contract
+  /// refuted at `n == 3`, an index provably out of bounds) reads differently
+  /// and still comes through.
+  auto emit_diag(const diagnostic &diag) -> void {
+    auto key = std::format("{}|{}|{}", static_cast<int>(diag.level),
+                           diag.file_id, diag.message);
+    for (const auto &label : diag.labels) {
+      key += std::format("|{}:{}", label.span.start, label.span.end);
+    }
+    if (!emitted_diagnostics_.insert(std::move(key)).second) {
+      return;
+    }
+    diag_.emit(diag);
+  }
+
   /// Emits a single-label error at `span` in the current file.
   auto error(source_span span, const std::string &message,
              const std::string &label) -> void {
     auto diag = diagnostic(diagnostic_level::error, message, file_id_);
     diag.with_label(span, label);
-    diag_.emit(diag);
+    emit_diag(diag);
     mark_error();
   }
 
@@ -1114,7 +1173,7 @@ private:
     auto diag = diagnostic(diagnostic_level::error, message, file_id_);
     diag.with_label(span, label);
     diag.with_help(help);
-    diag_.emit(diag);
+    emit_diag(diag);
     mark_error();
   }
 
@@ -1214,7 +1273,7 @@ private:
           "this value explicitly.",
           types_.display(expected)));
     }
-    diag_.emit(diag);
+    emit_diag(diag);
     mark_error();
   }
 
@@ -1251,11 +1310,22 @@ private:
   }
 
   /// Opens a new generic-parameter scope, interning each named parameter as
-  /// a `type_param` type.
+  /// a `type_param` type — except a value parameter the const-generic
+  /// instance currently being checked has a constant for, which interns as
+  /// that constant instead (`const_param_slots_`). That one substitution is
+  /// the whole of monomorphization on the checker's side: with `n` bound to
+  /// `3` rather than to itself, every type the body mentions resolves the way
+  /// it would have if the programmer had written `3` there, and the code that
+  /// needs a real number (`index[n]`'s bound, `try_from`'s check) finds one.
   auto push_type_params(const std::vector<ast::type_param> &params) -> void {
     auto scope = std::unordered_map<std::string, type_id>{};
     for (const auto &param : params) {
       if (param.name.empty()) {
+        continue;
+      }
+      if (const auto bound = const_param_slots_.find(param.name);
+          param.is_value_param && bound != const_param_slots_.end()) {
+        scope.emplace(param.name, bound->second);
         continue;
       }
       scope.emplace(param.name, types_.type_param(param.name));
@@ -1902,7 +1972,7 @@ private:
             "The `{}` parameter of this type ranges over `{}`, whose states "
             "are {}.",
             param.name, declared_entry.name, join_strings(names, ", ")));
-        diag_.emit(diag);
+        emit_diag(diag);
         mark_error();
       }
       return k_error_type;
@@ -2716,7 +2786,7 @@ private:
           "runtime.",
           refined_name, refined_name, base_name, refined_name));
     }
-    diag_.emit(diag);
+    emit_diag(diag);
     mark_error();
   }
 
@@ -3040,7 +3110,7 @@ private:
           "Declare `type {}` in module `{}`, or import it with `use`.", name,
           module_name_));
     }
-    diag_.emit(diag);
+    emit_diag(diag);
     mark_error();
   }
 
@@ -3063,7 +3133,7 @@ private:
                       named.type_args.size()),
           file_id_);
       diag.with_label(named.span, "wrong number of type arguments");
-      diag_.emit(diag);
+      emit_diag(diag);
       mark_error();
       return k_error_type;
     }
@@ -3628,10 +3698,15 @@ private:
   /// records the resulting argument-to-parameter assignment into
   /// `call_argument_mappings_` (see `call_argument_mapping`'s doc comment
   /// in types.h), since this is the only place that assignment is known.
+  /// `solved_out`, when given, receives the callee's value parameters as the
+  /// arguments determined them (`solve_value_params`) — the same bindings the
+  /// refinement obligations below are discharged under, handed back so
+  /// `check_call_against_decl` can monomorphize the callee with them.
   auto check_call_args_against(const ast::call_expr &call,
                                const std::vector<fn_param_info> &params,
                                std::string_view callee_name,
-                               source_location decl_location) -> void {
+                               source_location decl_location,
+                               value_bindings *solved_out = nullptr) -> void {
     auto param_used = std::vector<bool>(params.size(), false);
     auto args_by_param = std::vector<const ast::expr *>(params.size(), nullptr);
     auto next_positional = size_t{0};
@@ -3673,7 +3748,7 @@ private:
           if (const auto suggestion = best_suggestion(arg_name, names)) {
             diag.with_help(std::format("did you mean `{}:`?", *suggestion));
           }
-          diag_.emit(diag);
+          emit_diag(diag);
           mark_error();
         }
       } else {
@@ -3750,12 +3825,16 @@ private:
                        decl_location.file_id)
                 .with_label(decl_location.span, "declaration"));
       }
-      diag_.emit(diag);
+      emit_diag(diag);
       mark_error();
     }
 
     call_argument_mappings_[&call] =
         call_argument_mapping{.args_by_param = std::move(args_by_param)};
+
+    if (solved_out != nullptr) {
+      *solved_out = std::move(solved_values);
+    }
   }
 
   /// Checks a call against a known `func_decl`: enforces the
@@ -3777,11 +3856,298 @@ private:
                       decl.name));
     }
     const auto params = signature_params(decl, owner, skip_self);
+    auto solved = value_bindings{};
     check_call_args_against(
         call, params, decl.name,
-        source_location{.file_id = decl_file, .span = decl.span});
+        source_location{.file_id = decl_file, .span = decl.span}, &solved);
     check_call_preconditions(call, decl, params);
+    // Not from inside a template: a call there is written in terms of value
+    // parameters that are still symbols (`get(v, i)` inside a function
+    // generic over `n` passes an `array[int32, n]`), so there is no constant
+    // to instantiate the callee with — and no need for one. The template is
+    // never lowered; its *instances* are, and this same call, re-checked in
+    // each of them, instantiates the callee for that instance's constant.
+    if (!in_const_generic_template_ && is_const_generic_template(decl) &&
+        is_free_function(decl, owner)) {
+      if (const auto result =
+              instantiate_const_generic(call, decl, owner, decl_file, solved)) {
+        return *result;
+      }
+    }
     return signature_return_type(decl, owner);
+  }
+
+  // ==========================================================================
+  //  Const-generic monomorphization
+  //  (`spec/dependent-types-design.md` §3.1, `spec/dependent-types-
+  //   implementation-plan.md` phase 1)
+  //
+  //  A value parameter is a compile-time argument with no runtime existence:
+  //  `def get[n: usize](v: array[int32, n], i: index[n])` is passed a `v` and
+  //  an `i`, never an `n`. Everything in the body that *mentions* `n` — the
+  //  array's length, the refinement's bound, the check an `index[n].try_from`
+  //  compiles into — therefore has nothing to compile against while `n` is
+  //  still a symbol.
+  //
+  //  So the template is never lowered. Instead, each call site whose arguments
+  //  pin `n` down to a constant (`solve_value_params`, already run to check
+  //  the arguments) gets an *instance*: the declaration cloned, re-checked
+  //  with `n` bound to that constant, and named `get$3`. Instances are shared
+  //  per constant tuple, so a call in a loop compiles one of them.
+  // ==========================================================================
+
+  /// Whether `decl` is generic over compile-time *values* only — the case
+  /// that monomorphizes here. A type parameter (`[T]`) is a different problem
+  /// (a distinct body per type, not per number) and is out of scope: such a
+  /// declaration still reaches lowering as a template and is refused there.
+  [[nodiscard]] static auto
+  is_const_generic_template(const ast::func_decl &decl) -> bool {
+    return !decl.type_params.empty() &&
+           std::ranges::all_of(decl.type_params, [](const auto &param) -> bool {
+             return param.is_value_param && !param.name.empty();
+           });
+  }
+
+  /// Whether `decl` is a module-level free function of `owner` — the shape
+  /// instances are lowered as (`hir::lower_module` names a free function by
+  /// its bare name). A const-generic *method* would additionally need its
+  /// impl target threaded through the instance's name; it is not supported
+  /// yet, and falls back to the template path, which lowering refuses.
+  [[nodiscard]] auto is_free_function(const ast::func_decl &decl,
+                                      const module_members *owner) const
+      -> bool {
+    if (owner == nullptr) {
+      return false;
+    }
+    const auto it = owner->functions.find(decl.name);
+    return it != owner->functions.end() && it->second.decl == &decl;
+  }
+
+  /// The name an instance is compiled under: the template's name, then each
+  /// value parameter's constant, in declaration order — `get$3`, `pad$8$4`.
+  /// A negative constant spells its minus as `m` (`shift$m1`), keeping the
+  /// name to characters every backend's symbol table accepts.
+  [[nodiscard]] static auto instance_name(const ast::func_decl &decl,
+                                          const std::vector<int64_t> &constants)
+      -> std::string {
+    auto name = decl.name;
+    for (const auto constant : constants) {
+      name += constant < 0 ? std::format("$m{}", -constant)
+                           : std::format("${}", constant);
+    }
+    return name;
+  }
+
+  /// Monomorphizes `decl` for this call, returning the call's result type
+  /// under the instantiation (`-> array[int32, n]` becomes `array[int32, 3]`)
+  /// — or `nullopt` when the call cannot be monomorphized, having said why.
+  ///
+  /// The instance is registered as this call's `resolved_callee`, so lowering
+  /// emits a call to `get$3` with no idea that a template was ever involved.
+  auto instantiate_const_generic(const ast::call_expr &call,
+                                 const ast::func_decl &decl,
+                                 const module_members *owner,
+                                 file_id_type decl_file,
+                                 const value_bindings &solved)
+      -> std::optional<type_id> {
+    auto slots = std::unordered_map<std::string, type_id>{};
+    auto values = std::unordered_map<std::string, int64_t>{};
+    auto constants = std::vector<int64_t>{};
+    for (const auto &param : decl.type_params) {
+      const auto underlying =
+          param.bound_or_type != nullptr
+              ? resolve_type(*param.bound_or_type,
+                             resolve_ctx{.module = owner,
+                                         .param_bindings = nullptr,
+                                         .use_type_param_stack = false,
+                                         .quiet = true})
+              : types_.usize_type();
+      if (!types_.is_integer(underlying)) {
+        // A value parameter of a sum type (`[S: conn_state]`, the state
+        // machines of `spec/dependent-types-design.md` §State Machines in
+        // Types) is a compile-time value too, but not a *number* — there is no
+        // constant to name an instance after and none to compile the body
+        // against. Such a type still works perfectly well where the state is
+        // written out (`connection[open]`); it is being generic *over* the
+        // state, and then calling that, which has no compiled form yet.
+        error_with_help(
+            call.span,
+            std::format("`{}` cannot be compiled: it is generic over the "
+                        "compile-time value `{}`, which is a `{}` rather than "
+                        "a number",
+                        decl.name, param.name, types_.display(underlying)),
+            "no compiled copy can be made for this call",
+            std::format("A function generic over a value is compiled once per "
+                        "*constant* it is called with, and only integer values "
+                        "have constants to compile for so far. Write the "
+                        "state out (`{}[<state>]`) in the signature instead of "
+                        "abstracting over `{}`.",
+                        types_.display(underlying), param.name));
+        return std::nullopt;
+      }
+
+      const auto binding = solved.find(param.name);
+      if (binding == solved.end() || !binding->second.is_constant()) {
+        report_unsolved_value_param(call, decl, param);
+        return std::nullopt;
+      }
+      const auto constant = binding->second.constant;
+      slots.emplace(
+          param.name,
+          types_.const_value(underlying, static_cast<uint64_t>(constant)));
+      values.emplace(param.name, constant);
+      constants.push_back(constant);
+    }
+
+    const auto *instance = find_or_check_instance(call, decl, owner, decl_file,
+                                                  slots, values, constants);
+    if (instance == nullptr) {
+      return std::nullopt;
+    }
+
+    // The instance's signature, resolved under the same substitution its body
+    // was checked with — this is what makes the *caller* see concrete types
+    // (`array[int32, 3]`, not `array[int32, n]`) for the callee it names and
+    // the value the call produces.
+    const auto ctx = resolve_ctx{.module = owner,
+                                 .param_bindings = &slots,
+                                 .use_type_param_stack = false,
+                                 .quiet = true,
+                                 .existential_allowed = true};
+    auto param_types = std::vector<type_id>{};
+    for (const auto &param : decl.params) {
+      param_types.push_back(param.type_annotation != nullptr
+                                ? resolve_type(*param.type_annotation, ctx)
+                                : k_unknown_type);
+    }
+    const auto result = decl.return_type != nullptr
+                            ? resolve_type(*decl.return_type, ctx)
+                            : types_.builtin("unit");
+    if (call.callee != nullptr) {
+      record_expr_type(*call.callee,
+                       types_.fn_of(std::move(param_types), result));
+    }
+    // Deliberately last: a module-qualified call (`app.lib.at(v, i)`) already
+    // recorded the *template* as its callee on the way in
+    // (`infer_qualified_call`), and lowering must emit a call to the instance,
+    // which is the only one of the two that exists as a function.
+    resolved_callees_[&call] =
+        resolved_callee{.decl = instance,
+                        .owner_module = owner->module_name,
+                        .impl_target_type = ""};
+    return record_expr_type(call, result);
+  }
+
+  /// The instance for one (template, constants) pair — reused if it already
+  /// exists, cloned and checked if it doesn't.
+  ///
+  /// The cache entry is published *before* the clone's body is checked, and
+  /// that ordering is what makes an ordinarily recursive const-generic
+  /// function work: the recursive call inside the body finds the instance it
+  /// is currently inside, instead of instantiating a second copy of it
+  /// forever. A body that recurses at a *different* constant each time
+  /// (`f[n]` calling `f[n + 1]`) has no such fixed point, and is caught by
+  /// the depth bound instead.
+  auto
+  find_or_check_instance(const ast::call_expr &call, const ast::func_decl &decl,
+                         const module_members *owner, file_id_type decl_file,
+                         const std::unordered_map<std::string, type_id> &slots,
+                         const std::unordered_map<std::string, int64_t> &values,
+                         const std::vector<int64_t> &constants)
+      -> const ast::func_decl * {
+    const auto name = instance_name(decl, constants);
+    const auto key =
+        std::format("{}#{}", static_cast<const void *>(&decl), name);
+    if (const auto found = const_generic_instance_cache_.find(key);
+        found != const_generic_instance_cache_.end()) {
+      return found->second;
+    }
+
+    static constexpr size_t k_max_instantiation_depth = 32;
+    if (instantiation_depth_ >= k_max_instantiation_depth) {
+      error_with_help(
+          call.span,
+          std::format("`{}` instantiates itself endlessly", decl.name),
+          "const-generic instantiation is too deep",
+          std::format("Each call with a new constant compiles a new copy of "
+                      "`{}`, so a body that calls itself at a *different* "
+                      "constant every time (`{}[n]` calling `{}[n + 1]`, say) "
+                      "never bottoms out. Recurse at a constant that "
+                      "eventually repeats, or make the recursion an ordinary "
+                      "runtime one over a value parameter you don't change.",
+                      decl.name, decl.name, decl.name));
+      return nullptr;
+    }
+
+    auto cloned = ast::clone_func_decl(decl);
+    if (!cloned.has_value()) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("cannot compile `{}` for this call: its body uses a "
+                      "construct const-generic instantiation doesn't support "
+                      "yet",
+                      decl.name),
+          file_id_);
+      diag.with_label(call.span, "this call needs a compiled copy of the "
+                                 "function, one per constant");
+      diag.children.push_back(
+          diagnostic(diagnostic_level::note, cloned.error().message, decl_file)
+              .with_label(cloned.error().span, "unsupported here"));
+      emit_diag(diag);
+      mark_error();
+      return nullptr;
+    }
+
+    (*cloned)->name = name;
+    const auto *instance = cloned->get();
+    synthesized_decls_.push_back(std::move(*cloned));
+    const_generic_instance_cache_.emplace(key, instance);
+
+    const auto saved_module = module_;
+    const auto saved_file_id = file_id_;
+    auto saved_slots = std::move(const_param_slots_);
+    auto saved_values = std::move(const_param_values_);
+    const auto saved_contract = in_contract_;
+    const auto saved_postcondition = in_postcondition_;
+    module_ = owner;
+    file_id_ = decl_file;
+    const_param_slots_ = slots;
+    const_param_values_ = values;
+    in_contract_ = false;
+    in_postcondition_ = false;
+    ++instantiation_depth_;
+    check_function(*instance, /*at_module_scope=*/false);
+    --instantiation_depth_;
+    in_postcondition_ = saved_postcondition;
+    in_contract_ = saved_contract;
+    const_param_values_ = std::move(saved_values);
+    const_param_slots_ = std::move(saved_slots);
+    file_id_ = saved_file_id;
+    module_ = saved_module;
+
+    const_generic_instances_.push_back(const_generic_instance{
+        .decl = instance, .owner_module = owner->module_name});
+    return instance;
+  }
+
+  /// Explains a call whose value parameter no argument determines — the one
+  /// way monomorphization fails that is the *caller's* to fix.
+  auto report_unsolved_value_param(const ast::call_expr &call,
+                                   const ast::func_decl &decl,
+                                   const ast::type_param &param) -> void {
+    error_with_help(
+        call.span,
+        std::format("cannot tell what `{}` is in this call to `{}`", param.name,
+                    decl.name),
+        std::format("`{}` is a compile-time value, and this call doesn't fix "
+                    "it",
+                    param.name),
+        std::format(
+            "`{}` is compiled once per constant `{}`, so `{}` has to be a "
+            "definite number here. It is read off the arguments — an "
+            "`array[T, {}]` argument fixes it, for instance. Give an argument "
+            "whose type mentions `{}` with a known length.",
+            decl.name, param.name, param.name, param.name, param.name));
   }
 
   /// Holds a callee's `pre` conditions to account at the call site.
@@ -3868,7 +4234,7 @@ private:
                               "a check it failed to prove, but one it "
                               "disproved.",
                               decl.name));
-        diag_.emit(diag);
+        emit_diag(diag);
         mark_error();
         break;
       }
@@ -4165,7 +4531,7 @@ private:
       diag.with_help(std::format(
           "Define `{}` before using it, or import it with `use`.", name));
     }
-    diag_.emit(diag);
+    emit_diag(diag);
     mark_error();
   }
 
@@ -4234,6 +4600,9 @@ private:
     }
 
     if (const auto *binding = lookup_value(name)) {
+      if (binding->origin == binding_origin::parameter) {
+        record_const_param_reference(ident, binding->type);
+      }
       return binding->type;
     }
     if (name == "self" && self_type_ != k_unknown_type) {
@@ -4311,7 +4680,7 @@ private:
       diag.with_note(std::format("`{}` declares the variants {}",
                                  expected_entry.name, names));
     }
-    diag_.emit(diag);
+    emit_diag(diag);
     mark_error();
   }
 
@@ -4391,6 +4760,31 @@ private:
     }
   }
 
+  /// Records a *value* use of a value parameter (`return n`, `for i in 0..n`)
+  /// inside a const-generic instance as the constant that instance was made
+  /// for, the same way `record_static_const_reference` records a scalar
+  /// `static let`: `hir::lower_ident` finds the literal in
+  /// `static_const_values_` and emits it instead of loading a local that
+  /// doesn't exist. It can't exist — a value parameter is passed at compile
+  /// time, so nothing at runtime holds `n`. In the template (where `n` is
+  /// still symbolic) `const_param_values_` is empty and this does nothing,
+  /// which is correct: the template is never lowered.
+  auto record_const_param_reference(const ast::ident_expr &ident, type_id type)
+      -> void {
+    const auto it = const_param_values_.find(ident.name);
+    if (it == const_param_values_.end()) {
+      return;
+    }
+    auto lit = ast::make<ast::literal_expr>();
+    lit->span = ident.span;
+    lit->lit_kind = token_kind::int_lit;
+    lit->value = std::to_string(it->second);
+    const auto *raw = lit.get();
+    synthesized_const_literals_.push_back(std::move(lit));
+    record_expr_type(*raw, type);
+    static_const_values_[&ident] = raw;
+  }
+
   /// Synthesizes an `ast::literal_expr` embedding `value`'s exact
   /// compile-time content — with `span` and `type` (recorded into
   /// `node_types_`, exactly like every other checked expression) taken
@@ -4463,7 +4857,7 @@ private:
     diag.with_note(
         std::format("the largest `{}` value is {}", entry.name, *max_value));
     diag.with_help("Use a wider integer type, or reduce the value.");
-    diag_.emit(diag);
+    emit_diag(diag);
     mark_error();
   }
 
@@ -4627,7 +5021,7 @@ private:
           "Kira never converts numbers implicitly; convert one side "
           "explicitly, e.g. `{}(...)`.",
           types_.display(lhs)));
-      diag_.emit(diag);
+      emit_diag(diag);
       mark_error();
       return k_error_type;
     }
@@ -5224,7 +5618,7 @@ private:
                       decl.name, target_type_name, trait_module->module_name),
           trait_file_id);
       diag.with_label(cloned.error().span, cloned.error().message);
-      diag_.emit(diag);
+      emit_diag(diag);
       return;
     }
 
@@ -5663,7 +6057,7 @@ private:
             "that provides it.",
             entry.name));
       }
-      diag_.emit(diag);
+      emit_diag(diag);
       mark_error();
       infer_call_args_loosely(call);
       return k_error_type;
@@ -6198,7 +6592,7 @@ private:
         diag.with_note(
             std::format("`{}` has the fields {}", entry.name, fields));
       }
-      diag_.emit(diag);
+      emit_diag(diag);
       mark_error();
       return k_error_type;
     }
@@ -6369,7 +6763,7 @@ private:
           "This access is out of range on every execution that reaches it — "
           "it is not a check the compiler failed to prove, but one it "
           "disproved.");
-      diag_.emit(diag);
+      emit_diag(diag);
       mark_error();
       return;
     }
@@ -6526,6 +6920,14 @@ private:
 
     const auto parameters = refinement_constants(entry);
     if (!parameters.has_value()) {
+      if (in_const_generic_template_) {
+        // `index[n].try_from(raw)` inside a function generic over `n`. There
+        // is no check to build *here* — `n` is a symbol — but there will be
+        // one in each instance the template is compiled into, where `n` is a
+        // number (`instantiate_const_generic`). The template itself is never
+        // lowered, so leaving this call without a fragment costs nothing.
+        return nullptr;
+      }
       error_with_help(
           call.span,
           std::format("`{}.try_from` needs its parameters to be known here",
@@ -6696,9 +7098,10 @@ private:
   /// The constant each of a refinement's value parameters was instantiated
   /// with at this use. `nullopt` when one of them is still open (an `index[n]`
   /// inside a function generic over `n`) — which means no runtime check can be
-  /// generated for it, because the value it would compare against does not
-  /// exist until monomorphization, and this compiler does not monomorphize
-  /// const generics.
+  /// generated *here*, because the value it would compare against does not
+  /// exist until the enclosing template is monomorphized. The instances
+  /// `instantiate_const_generic` makes of it are where the check does get
+  /// built, with `n` a real number.
   auto refinement_constants(const type_entry &entry)
       -> std::optional<std::unordered_map<std::string, int64_t>> {
     auto constants = std::unordered_map<std::string, int64_t>{};
@@ -6972,7 +7375,7 @@ private:
           diag.with_note(
               std::format("`{}` has the fields {}", entry.name, names));
         }
-        diag_.emit(diag);
+        emit_diag(diag);
         mark_error();
         if (field.value != nullptr) {
           infer_expr(*field.value, k_unknown_type);
@@ -8186,7 +8589,7 @@ private:
           diag.with_note(
               std::format("`{}` declares the variants {}", entry.name, names));
         }
-        diag_.emit(diag);
+        emit_diag(diag);
         mark_error();
         for (const auto &arg : ctor.args) {
           if (arg != nullptr) {
@@ -8378,7 +8781,7 @@ private:
     diag.with_label(span, "missing match arms");
     diag.with_help(std::format(
         "Handle {} explicitly, or add a final `_ => ...` arm.", missing));
-    diag_.emit(diag);
+    emit_diag(diag);
     mark_error();
   }
 
@@ -8535,7 +8938,7 @@ private:
                 "Declare it with `var {}` to allow reassignment, or shadow "
                 "it with a new `let`.",
                 ident.name));
-            diag_.emit(diag);
+            emit_diag(diag);
             mark_error();
           }
         } else {
@@ -8723,7 +9126,7 @@ private:
           diag.with_note(
               std::format("the enclosing function is declared to return `{}`",
                           types_.display(return_type_)));
-          diag_.emit(diag);
+          emit_diag(diag);
           mark_error();
         } else if (return_annotated_) {
           // Structurally fine — but returning into a refined return type is
@@ -8955,7 +9358,7 @@ private:
         diag.with_help(
             "see spec/stdlib.md for the list of recognized intrinsics");
       }
-      diag_.emit(diag);
+      emit_diag(diag);
       mark_error();
     }
 
@@ -9020,6 +9423,14 @@ private:
     }
 
     push_type_params(decl.type_params);
+    // A value parameter this function has no constant for is still a symbol
+    // here, which makes this the *template* — see the member's doc comment.
+    const auto saved_template = in_const_generic_template_;
+    in_const_generic_template_ = std::ranges::any_of(
+        decl.type_params, [this](const auto &param) -> bool {
+          return param.is_value_param && !param.name.empty() &&
+                 !const_param_slots_.contains(param.name);
+        });
     auto saved_scopes = std::move(scopes_);
     scopes_.clear();
     push_scope();
@@ -9258,6 +9669,7 @@ private:
     reported_undefined_ = std::move(saved_reported);
     facts_ = std::move(saved_facts);
     scopes_ = std::move(saved_scopes);
+    in_const_generic_template_ = saved_template;
     pop_type_params();
   }
 
@@ -9690,7 +10102,7 @@ private:
                         it->second->params.size()),
             file_id_);
         diag.with_label(fn->span, "signature differs from the trait");
-        diag_.emit(diag);
+        emit_diag(diag);
         mark_error();
       }
     }
@@ -9864,7 +10276,7 @@ private:
                                  file_id_)
                           .with_label(decl.assert_condition->span,
                                       "this condition evaluated to `false`");
-          diag_.emit(diag);
+          emit_diag(diag);
         }
       }
       return;
@@ -10111,7 +10523,7 @@ private:
         duplicate.with_help(
             "A program contains at most one implementation of a trait for a "
             "type; remove or merge one of these.");
-        diag_.emit(duplicate);
+        emit_diag(duplicate);
         if (static_cast<size_t>(impl.file_id) < file_has_errors_.size()) {
           file_has_errors_[impl.file_id] = true;
         }
@@ -10184,7 +10596,7 @@ private:
               .with_label(main_decl->span, "explicit `main`"));
       diag.with_help("Move these statements into `main`, or delete the "
                      "explicit `main` and keep the script form.");
-      diag_.emit(diag);
+      emit_diag(diag);
       mark_error();
     }
 

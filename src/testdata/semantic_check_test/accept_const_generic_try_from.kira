@@ -1,0 +1,20 @@
+module sample
+
+# `index[n].try_from(raw)` inside a function generic over `n`: the check it
+# compiles into compares `raw` against `n`, which is not a number here — it is
+# a number in each instance the call sites below make of `at`, and that is
+# where the check gets built. The template neither reports nor lowers it.
+type index[n: usize] = usize where self < n
+
+def get[n: usize](v: array[int32, n], i: index[n]) -> int32:
+    return v[i]
+
+def at[n: usize](v: array[int32, n], raw: usize) -> int32:
+    if let @some(i) = index[n].try_from(raw):
+        return get(v, i)
+    return -1
+
+def run() -> int32:
+    let a: array[int32, 3] = [1, 2, 3]
+    let b: array[int32, 5] = [1, 2, 3, 4, 5]
+    return at(a, 1) + at(b, 9)

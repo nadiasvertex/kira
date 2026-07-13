@@ -1,0 +1,9 @@
+module sample
+
+# `n` appears nowhere in `zeros`'s parameters, so no argument can say what it
+# is — and a function compiled once per constant has to know which constant.
+def zeros[n: usize]() -> int32:
+    n as int32
+
+def run() -> int32:
+    zeros()

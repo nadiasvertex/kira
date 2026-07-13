@@ -47,11 +47,12 @@ struct lowering_options {
 };
 
 /// Lowers one free function to HIR. Requires (Decision 1, Decision 2, and
-/// this milestone's Non-Goals): no generic parameters, every parameter
-/// explicitly annotated, an explicit declared return type, and a body built
-/// only from constructs in this milestone's scope (literals, identifiers,
-/// binary/unary ops, calls with positional arguments, field/index access,
-/// blocks, `let`, `if` as a statement or expression, `return`).
+/// this milestone's Non-Goals): every parameter explicitly annotated, an
+/// explicit declared return type, and no generic parameters — with one
+/// exception, a const-generic *instance* (`semantic::const_generic_instance`),
+/// which keeps its template's `[n: usize]` list but had every value parameter
+/// substituted for a constant before its body was checked, and so is as
+/// concrete as any other function by the time it arrives here.
 [[nodiscard]] auto lower_function(const ast::func_decl &decl,
                                   const semantic::checked_types &checked,
                                   const lowering_options &options = {})
@@ -59,10 +60,13 @@ struct lowering_options {
 
 /// Lowers every top-level free function declared directly in `file`'s item
 /// list — not one nested inside a `module`/`impl`/`extend`/`trait` block,
-/// which is out of this milestone's scope. Fails closed on the first
-/// function `lower_function` rejects: a module-level failure means the
-/// module isn't lowered yet, not that the offending function was silently
-/// dropped from the result.
+/// which is out of this milestone's scope — plus every function the checker
+/// synthesized for this module: trait defaults, item splices, and one
+/// const-generic instance per constant a call site instantiated a template
+/// with (the templates themselves are skipped; they have no runtime form).
+/// Fails closed on the first function `lower_function` rejects: a
+/// module-level failure means the module isn't lowered yet, not that the
+/// offending function was silently dropped from the result.
 [[nodiscard]] auto lower_module(const ast::file &file, std::string module_name,
                                 const semantic::checked_types &checked,
                                 const lowering_options &options = {})

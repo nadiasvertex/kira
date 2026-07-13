@@ -16,19 +16,26 @@ struct clone_error {
 };
 
 /// Deep-clones `decl`'s full signature and body (spans copied as-is from the
-/// original, since a clone is never itself a diagnostic source — see
-/// `semantic::check.cpp`'s `build_method_table`, the only caller: it clones
-/// an unwritten trait-default method per concrete impl so the clone can be
-/// type-checked with `self_type_` bound to that impl's concrete target,
-/// instead of the trait's own abstract placeholder).
+/// original, since a clone is never itself a diagnostic source — a diagnostic
+/// about a clone points at the source the user actually wrote, which is what
+/// makes `semantic::checker::emit_diag`'s deduplication both possible and
+/// necessary).
 ///
-/// Covers only the node kinds reachable from `std.io`'s `reader`/`writer`
-/// trait-default bodies — a deliberately bounded set, not general AST
-/// cloning. Anything outside that set (generics, contracts, `if`/`while
-/// let`, closures, most expression/statement/type kinds) fails with a
-/// `clone_error` naming the unsupported construct rather than silently
-/// dropping it; extend the relevant `clone_*` function in `ast_clone.cpp`
-/// if a future trait-default body needs more.
+/// Two callers in `semantic::check.cpp`, both re-checking one written body
+/// under a substitution the original couldn't be checked under:
+/// `build_method_table` clones an unwritten trait-default method per concrete
+/// impl, so the clone can be checked with `self` bound to that impl's target
+/// rather than the trait's abstract placeholder; `instantiate_const_generic`
+/// clones a const-generic template per constant it is called with, so the
+/// clone can be checked with `n` bound to a number rather than to itself.
+///
+/// Covers the ordinary function surface — declarations, control flow,
+/// patterns, and expressions — but not the whole AST: a `where` clause, an
+/// `async` function, closures, and the compile-time constructs (`quote`,
+/// splices, `static`) fail with a `clone_error` naming the construct rather
+/// than being silently dropped. A caller reports that error against the use
+/// that needed the copy; extend the relevant `clone_*` function here when a
+/// body legitimately needs more.
 [[nodiscard]] auto clone_func_decl(const func_decl &decl)
     -> std::expected<ptr<func_decl>, clone_error>;
 

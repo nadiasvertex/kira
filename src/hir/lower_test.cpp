@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -269,6 +271,63 @@ auto test_rejects_generic_function() -> void {
   expect(!result.has_value(), "expected a generic function to be rejected");
   expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
          "expected the specific unsupported_construct error kind");
+}
+
+// A function generic over a compile-time *value* is compiled once per
+// constant it is called with. The template itself is not a function anything
+// can call — nothing passes `n` — so the module holds `get$3`, not `get`.
+auto test_lowers_const_generic_instance_per_constant() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def get[n: usize](v: array[int32, n], "
+                    "i: usize) -> int32:\n"
+                    "    return v[i]\n"
+                    "def main() -> int32:\n"
+                    "    let a: array[int32, 3] = [1, 2, 3]\n"
+                    "    let b: array[int32, 5] = [1, 2, 3, 4, 5]\n"
+                    "    return get(a, 0) + get(b, 0) + get(a, 2)\n");
+
+  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(module.has_value(), "expected the module to lower");
+
+  auto names = std::vector<std::string>{};
+  for (const auto &function : (*module)->functions) {
+    names.push_back(function->name);
+  }
+  const auto has = [&names](std::string_view name) -> bool {
+    return std::ranges::find(names, name) != names.end();
+  };
+  expect(has("get$3"), "expected an instance compiled for `n == 3`");
+  expect(has("get$5"), "expected an instance compiled for `n == 5`");
+  expect(!has("get"), "expected the template itself never to be lowered");
+  expect(names.size() == 3,
+         "expected exactly one instance per distinct constant — the two calls "
+         "at `n == 3` share `get$3`");
+}
+
+// The one thing monomorphization is *for*: with `n` a real number, a
+// refinement over it has a bound to compare against, so `try_from` compiles
+// into an ordinary runtime check instead of being refused.
+auto test_lowers_try_from_on_a_const_generic_refinement() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "type index[n: usize] = usize where self < n\n"
+                    "def at[n: usize](v: array[int32, n], raw: usize) "
+                    "-> int32:\n"
+                    "    if let @some(i) = index[n].try_from(raw):\n"
+                    "        return v[i]\n"
+                    "    return -1\n"
+                    "def main() -> int32:\n"
+                    "    let a: array[int32, 4] = [1, 2, 3, 4]\n"
+                    "    return at(a, 2)\n");
+
+  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(module.has_value(), "expected the module to lower");
+  const auto lowered = std::ranges::any_of(
+      (*module)->functions,
+      [](const auto &function) -> bool { return function->name == "at$4"; });
+  expect(lowered, "expected `at` to be compiled for `n == 4`, with its "
+                  "`index[n].try_from` check against the constant `4`");
 }
 
 auto test_lowers_match_with_literal_and_wildcard_patterns() -> void {
@@ -2315,6 +2374,8 @@ auto main() -> int {
     test_lowers_compact_expression_body();
     test_lowers_if_expression_and_module();
     test_rejects_generic_function();
+    test_lowers_const_generic_instance_per_constant();
+    test_lowers_try_from_on_a_const_generic_refinement();
     test_lowers_match_with_literal_and_wildcard_patterns();
     test_lowers_plain_binding_arm_as_wildcard_plus_let();
     test_lowers_pattern_alias_to_synthetic_let();

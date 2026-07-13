@@ -1,0 +1,33 @@
+module codegen_stress.const_generic_monomorphization
+
+type index[n: usize] = usize where self < n
+
+# `n` has no runtime existence — nothing passes it — so each of these compiles
+# once per constant it is called with (`get$3`, `get$5`, ...). That is what
+# gives `index[n].try_from(raw)` below a real number to compare against, and
+# what lets `capacity` return `n` at all.
+def get[n: usize](v: array[int32, n], i: index[n]) -> int32:
+    return v[i]
+
+def checked_get[n: usize](v: array[int32, n], raw: usize) -> int32:
+    if let @some(i) = index[n].try_from(raw):
+        return get(v, i)
+    return -1
+
+def capacity[n: usize](v: array[int32, n]) -> int32:
+    return (n as int32)
+
+# Recursion at the *same* constant: the instance calls itself, and finds the
+# instance it is already inside rather than compiling a second copy forever.
+def total[n: usize](v: array[int32, n], i: usize) -> int32:
+    if i >= n:
+        return 0
+    return checked_get(v, i) + total(v, i + 1)
+
+def main() -> int32:
+    let a: array[int32, 3] = [10, 20, 30]
+    let b: array[int32, 5] = [1, 2, 3, 4, 5]
+    let in_bounds = checked_get(a, 1)     # 20 — the proof holds
+    let out_of_bounds = checked_get(b, 9) # -1 — it doesn't, and is checked
+    # 20 + (-1) + 5 + 60 + 15 = 99
+    return in_bounds + out_of_bounds + capacity(b) + total(a, 0) + total(b, 0)

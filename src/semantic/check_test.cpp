@@ -1109,6 +1109,24 @@ auto test_accepts_const_generic_value_match() -> void {
          "expected matching const-generic arguments to check cleanly");
 }
 
+auto test_accepts_const_generic_try_from() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_const_generic_try_from.kira");
+  expect(analyzed.error_count == 0,
+         "expected `index[n].try_from` inside a function generic over `n` to "
+         "check cleanly — each call site monomorphizes it against a constant");
+}
+
+auto test_reports_unsolved_const_generic_value_param() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_const_generic_unsolved_value_param.kira");
+  expect(analyzed.error_count > 0,
+         "expected a call that fixes no value for `n` to fail");
+  expect_diagnostic(analyzed, "cannot tell what `n` is in this call to `zeros`",
+                    "expected the diagnostic to name the value parameter no "
+                    "argument determines");
+}
+
 auto test_reports_refinement_predicate_not_bool() -> void {
   const auto analyzed =
       analyze_test_data_file("report_refinement_predicate_not_bool.kira");
@@ -1390,6 +1408,8 @@ auto main() -> int {
     test_reports_extend_method_arity_mismatch();
     test_reports_const_generic_value_mismatch();
     test_accepts_const_generic_value_match();
+    test_accepts_const_generic_try_from();
+    test_reports_unsolved_const_generic_value_param();
     test_reports_refinement_predicate_not_bool();
     test_accepts_refinement_predicate();
     test_accepts_concept_bound();

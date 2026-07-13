@@ -10,9 +10,8 @@ namespace {
     -> std::unexpected<clone_error> {
   return std::unexpected(clone_error{
       .span = n.span,
-      .message = std::format("cannot clone this construct for trait-default "
-                             "monomorphization: {}",
-                             what)});
+      .message = std::format(
+          "cannot clone this construct for monomorphization: {}", what)});
 }
 
 [[nodiscard]] auto clone_type_expr(const type_expr &t)
@@ -42,10 +41,10 @@ template <typename T>
 }
 
 /// Clones a generic-argument payload (`type_arg::value`) — weakly typed at
-/// parse time (`ast.h`: "disambiguate later in semantic analysis"), but
-/// every argument `std.io`'s trait-default bodies actually use is a type
-/// (`result[usize, io_error]`, `list[byte]`, ...), never a value argument —
-/// so this only needs to recognize "is this a `type_expr`" and delegate.
+/// parse time (`ast.h`: "disambiguate later in semantic analysis"), so it is
+/// either a type (`result[usize, io_error]`) or a compile-time *value*
+/// (the `n + 1` in `vec[T, n + 1]`); both occur, and both are just delegated
+/// to the cloner for whichever they are.
 [[nodiscard]] auto clone_type_arg_value(const node &n)
     -> std::expected<ptr<node>, clone_error> {
   if (const auto *as_type = dynamic_cast<const type_expr *>(&n)) {
@@ -55,7 +54,14 @@ template <typename T>
     }
     return ptr<node>(std::move(*cloned));
   }
-  return unsupported(n, "a non-type generic argument");
+  if (const auto *as_expr = dynamic_cast<const expr *>(&n)) {
+    auto cloned = clone_expr_impl(*as_expr);
+    if (!cloned.has_value()) {
+      return std::unexpected(cloned.error());
+    }
+    return ptr<node>(std::move(*cloned));
+  }
+  return unsupported(n, "this generic argument");
 }
 
 [[nodiscard]] auto clone_type_expr(const type_expr &t)
@@ -115,22 +121,220 @@ template <typename T>
     cloned->is_mut = ref.is_mut;
     return ptr<type_expr>(std::move(cloned));
   }
+  case node_kind::ptr_type: {
+    const auto &raw = dynamic_cast<const ptr_type &>(t);
+    auto inner = clone_optional(raw.inner);
+    if (!inner.has_value()) {
+      return std::unexpected(inner.error());
+    }
+    auto cloned = make<ptr_type>();
+    cloned->span = raw.span;
+    cloned->inner = std::move(*inner);
+    cloned->is_mut = raw.is_mut;
+    return ptr<type_expr>(std::move(cloned));
+  }
+  case node_kind::tuple_type: {
+    const auto &tuple = dynamic_cast<const tuple_type &>(t);
+    auto cloned = make<tuple_type>();
+    cloned->span = tuple.span;
+    for (const auto &element : tuple.elements) {
+      auto cloned_element = clone_optional(element);
+      if (!cloned_element.has_value()) {
+        return std::unexpected(cloned_element.error());
+      }
+      cloned->elements.push_back(std::move(*cloned_element));
+    }
+    return ptr<type_expr>(std::move(cloned));
+  }
+  case node_kind::fn_type: {
+    const auto &fn = dynamic_cast<const fn_type &>(t);
+    auto cloned = make<fn_type>();
+    cloned->span = fn.span;
+    for (const auto &param : fn.param_types) {
+      auto cloned_param = clone_optional(param);
+      if (!cloned_param.has_value()) {
+        return std::unexpected(cloned_param.error());
+      }
+      cloned->param_types.push_back(std::move(*cloned_param));
+    }
+    auto return_type = clone_optional(fn.return_type);
+    if (!return_type.has_value()) {
+      return std::unexpected(return_type.error());
+    }
+    cloned->return_type = std::move(*return_type);
+    return ptr<type_expr>(std::move(cloned));
+  }
   default:
     return unsupported(t, "this type-expression shape");
   }
 }
 
+[[nodiscard]] auto clone_pattern_list(const std::vector<ptr<pattern>> &patterns)
+    -> std::expected<std::vector<ptr<pattern>>, clone_error> {
+  auto cloned = std::vector<ptr<pattern>>{};
+  cloned.reserve(patterns.size());
+  for (const auto &p : patterns) {
+    auto cloned_pattern = clone_optional(p);
+    if (!cloned_pattern.has_value()) {
+      return std::unexpected(cloned_pattern.error());
+    }
+    cloned.push_back(std::move(*cloned_pattern));
+  }
+  return cloned;
+}
+
 [[nodiscard]] auto clone_pattern(const pattern &p)
     -> std::expected<ptr<pattern>, clone_error> {
-  if (p.kind != node_kind::binding_pattern) {
+  switch (p.kind) {
+  case node_kind::wildcard_pattern: {
+    auto cloned = make<wildcard_pattern>();
+    cloned->span = p.span;
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::literal_pattern: {
+    const auto &lit = dynamic_cast<const literal_pattern &>(p);
+    auto cloned = make<literal_pattern>();
+    cloned->span = lit.span;
+    cloned->lit_kind = lit.lit_kind;
+    cloned->value = lit.value;
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::binding_pattern: {
+    const auto &binding = dynamic_cast<const binding_pattern &>(p);
+    auto cloned = make<binding_pattern>();
+    cloned->span = binding.span;
+    cloned->name = binding.name;
+    cloned->is_mut = binding.is_mut;
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::constructor_pattern: {
+    const auto &ctor = dynamic_cast<const constructor_pattern &>(p);
+    auto args = clone_pattern_list(ctor.args);
+    if (!args.has_value()) {
+      return std::unexpected(args.error());
+    }
+    auto cloned = make<constructor_pattern>();
+    cloned->span = ctor.span;
+    cloned->name = ctor.name;
+    cloned->args = std::move(*args);
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::tuple_pattern: {
+    const auto &tuple = dynamic_cast<const tuple_pattern &>(p);
+    auto elements = clone_pattern_list(tuple.elements);
+    if (!elements.has_value()) {
+      return std::unexpected(elements.error());
+    }
+    auto cloned = make<tuple_pattern>();
+    cloned->span = tuple.span;
+    cloned->elements = std::move(*elements);
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::array_pattern: {
+    const auto &array = dynamic_cast<const array_pattern &>(p);
+    auto elements = clone_pattern_list(array.elements);
+    if (!elements.has_value()) {
+      return std::unexpected(elements.error());
+    }
+    auto cloned = make<array_pattern>();
+    cloned->span = array.span;
+    cloned->elements = std::move(*elements);
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::struct_pattern: {
+    const auto &object = dynamic_cast<const struct_pattern &>(p);
+    auto cloned = make<struct_pattern>();
+    cloned->span = object.span;
+    for (const auto &field : object.fields) {
+      auto sub = clone_optional(field.pattern);
+      if (!sub.has_value()) {
+        return std::unexpected(sub.error());
+      }
+      cloned->fields.push_back(field_pattern{.span = field.span,
+                                             .name = field.name,
+                                             .pattern = std::move(*sub),
+                                             .is_rest = field.is_rest});
+    }
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::range_pattern: {
+    const auto &range = dynamic_cast<const range_pattern &>(p);
+    auto start = clone_optional(range.start);
+    if (!start.has_value()) {
+      return std::unexpected(start.error());
+    }
+    auto end = clone_optional(range.end);
+    if (!end.has_value()) {
+      return std::unexpected(end.error());
+    }
+    auto cloned = make<range_pattern>();
+    cloned->span = range.span;
+    cloned->start = std::move(*start);
+    cloned->end = std::move(*end);
+    cloned->inclusive = range.inclusive;
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::option_pattern: {
+    const auto &option = dynamic_cast<const option_pattern &>(p);
+    auto inner = clone_optional(option.inner);
+    if (!inner.has_value()) {
+      return std::unexpected(inner.error());
+    }
+    auto cloned = make<option_pattern>();
+    cloned->span = option.span;
+    cloned->option_kind = option.option_kind;
+    cloned->inner = std::move(*inner);
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::result_pattern: {
+    const auto &result = dynamic_cast<const result_pattern &>(p);
+    auto inner = clone_optional(result.inner);
+    if (!inner.has_value()) {
+      return std::unexpected(inner.error());
+    }
+    auto cloned = make<result_pattern>();
+    cloned->span = result.span;
+    cloned->result_kind = result.result_kind;
+    cloned->inner = std::move(*inner);
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::ref_pattern: {
+    const auto &ref = dynamic_cast<const ref_pattern &>(p);
+    auto inner = clone_optional(ref.inner);
+    if (!inner.has_value()) {
+      return std::unexpected(inner.error());
+    }
+    auto cloned = make<ref_pattern>();
+    cloned->span = ref.span;
+    cloned->inner = std::move(*inner);
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::or_pattern: {
+    const auto &alt = dynamic_cast<const or_pattern &>(p);
+    auto alternatives = clone_pattern_list(alt.alternatives);
+    if (!alternatives.has_value()) {
+      return std::unexpected(alternatives.error());
+    }
+    auto cloned = make<or_pattern>();
+    cloned->span = alt.span;
+    cloned->alternatives = std::move(*alternatives);
+    return ptr<pattern>(std::move(cloned));
+  }
+  case node_kind::group_pattern: {
+    const auto &group = dynamic_cast<const group_pattern &>(p);
+    auto inner = clone_optional(group.inner);
+    if (!inner.has_value()) {
+      return std::unexpected(inner.error());
+    }
+    auto cloned = make<group_pattern>();
+    cloned->span = group.span;
+    cloned->inner = std::move(*inner);
+    cloned->alias = group.alias;
+    return ptr<pattern>(std::move(cloned));
+  }
+  default:
     return unsupported(p, "this pattern shape");
   }
-  const auto &binding = dynamic_cast<const binding_pattern &>(p);
-  auto cloned = make<binding_pattern>();
-  cloned->span = binding.span;
-  cloned->name = binding.name;
-  cloned->is_mut = binding.is_mut;
-  return ptr<pattern>(std::move(cloned));
 }
 
 [[nodiscard]] auto clone_call_args(const std::vector<call_arg> &args)
@@ -148,8 +352,131 @@ template <typename T>
   return cloned;
 }
 
+[[nodiscard]] auto clone_node_list(const std::vector<ptr<node>> &nodes)
+    -> std::expected<std::vector<ptr<node>>, clone_error>;
+
+/// Deep-clones one of a format spec's width/precision slots, which is unset,
+/// a literal count, or a *dynamic* `{expr}` — the last of which owns an
+/// expression, and is why a `format_spec` cannot simply be copied.
+[[nodiscard]] auto
+clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
+    -> std::expected<std::variant<std::monostate, size_t, ptr<expr>>,
+                     clone_error> {
+  if (const auto *count = std::get_if<size_t>(&slot)) {
+    return *count;
+  }
+  if (const auto *dynamic = std::get_if<ptr<expr>>(&slot);
+      dynamic != nullptr && *dynamic != nullptr) {
+    auto cloned = clone_expr_impl(**dynamic);
+    if (!cloned.has_value()) {
+      return std::unexpected(cloned.error());
+    }
+    return std::move(*cloned);
+  }
+  return std::monostate{};
+}
+
+/// Deep-clones an interpolation segment's format spec.
+[[nodiscard]] auto clone_format_spec(const format_spec &spec)
+    -> std::expected<format_spec, clone_error> {
+  auto width = clone_format_count(spec.width);
+  if (!width.has_value()) {
+    return std::unexpected(width.error());
+  }
+  auto precision = clone_format_count(spec.precision);
+  if (!precision.has_value()) {
+    return std::unexpected(precision.error());
+  }
+  auto cloned = format_spec{};
+  cloned.fill = spec.fill;
+  cloned.align = spec.align;
+  cloned.sign = spec.sign;
+  cloned.alternate = spec.alternate;
+  cloned.zero_pad = spec.zero_pad;
+  cloned.has_explicit_align = spec.has_explicit_align;
+  cloned.width = std::move(*width);
+  cloned.precision = std::move(*precision);
+  cloned.type_char = spec.type_char;
+  cloned.span = spec.span;
+  return cloned;
+}
+
+/// Clones the `if`/`elif` branch list shared by `if_stmt` and `if_expr`,
+/// including the `if let` form — a branch is a pattern *or* a condition, and
+/// the two shapes are otherwise identical.
+[[nodiscard]] auto clone_if_branches(const std::vector<if_branch> &branches)
+    -> std::expected<std::vector<if_branch>, clone_error> {
+  auto cloned = std::vector<if_branch>{};
+  cloned.reserve(branches.size());
+  for (const auto &branch : branches) {
+    auto condition = clone_optional(branch.condition);
+    if (!condition.has_value()) {
+      return std::unexpected(condition.error());
+    }
+    auto let_pattern = clone_optional(branch.let_pattern);
+    if (!let_pattern.has_value()) {
+      return std::unexpected(let_pattern.error());
+    }
+    auto let_expr = clone_optional(branch.let_expr);
+    if (!let_expr.has_value()) {
+      return std::unexpected(let_expr.error());
+    }
+    auto body = clone_node_list(branch.body);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    cloned.push_back(if_branch{.span = branch.span,
+                               .condition = std::move(*condition),
+                               .let_pattern = std::move(*let_pattern),
+                               .let_expr = std::move(*let_expr),
+                               .body = std::move(*body)});
+  }
+  return cloned;
+}
+
+/// Clones the arm list shared by `match_stmt` and `match_expr`.
+[[nodiscard]] auto clone_match_arms(const std::vector<match_arm> &arms)
+    -> std::expected<std::vector<match_arm>, clone_error> {
+  auto cloned = std::vector<match_arm>{};
+  cloned.reserve(arms.size());
+  for (const auto &arm : arms) {
+    auto pattern = clone_optional(arm.pattern);
+    if (!pattern.has_value()) {
+      return std::unexpected(pattern.error());
+    }
+    auto guard = clone_optional(arm.guard);
+    if (!guard.has_value()) {
+      return std::unexpected(guard.error());
+    }
+    auto body_expr = clone_optional(arm.body_expr);
+    if (!body_expr.has_value()) {
+      return std::unexpected(body_expr.error());
+    }
+    auto body_stmts = clone_node_list(arm.body_stmts);
+    if (!body_stmts.has_value()) {
+      return std::unexpected(body_stmts.error());
+    }
+    cloned.push_back(match_arm{.span = arm.span,
+                               .pattern = std::move(*pattern),
+                               .guard = std::move(*guard),
+                               .body_expr = std::move(*body_expr),
+                               .body_stmts = std::move(*body_stmts),
+                               .has_error = arm.has_error});
+  }
+  return cloned;
+}
+
 [[nodiscard]] auto clone_expr_impl(const expr &e)
     -> std::expected<ptr<expr>, clone_error> {
+  // An `error_expr` is *spelled* `node_kind::ident_expr` (see its constructor
+  // in ast.h), so it has to be recognized before the switch or it would be
+  // cast to an `ident_expr` it isn't. It is not always a parse failure: an
+  // `if let` branch parks one in `if_branch::condition`, the slot its pattern
+  // and scrutinee replace, so cloning any `if let` at all reaches this.
+  if (const auto *error = dynamic_cast<const error_expr *>(&e)) {
+    return ptr<expr>(make<error_expr>(error->span, error->description));
+  }
+
   switch (e.kind) {
   case node_kind::ident_expr: {
     const auto &ident = dynamic_cast<const ident_expr &>(e);
@@ -276,6 +603,144 @@ template <typename T>
     cloned->fill_count = std::move(*fill_count);
     return ptr<expr>(std::move(cloned));
   }
+  case node_kind::tuple_expr: {
+    const auto &tuple = dynamic_cast<const tuple_expr &>(e);
+    auto cloned = make<tuple_expr>();
+    cloned->span = tuple.span;
+    for (const auto &element : tuple.elements) {
+      auto cloned_element = clone_optional(element);
+      if (!cloned_element.has_value()) {
+        return std::unexpected(cloned_element.error());
+      }
+      cloned->elements.push_back(std::move(*cloned_element));
+    }
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::group_expr: {
+    const auto &group = dynamic_cast<const group_expr &>(e);
+    auto inner = clone_optional(group.inner);
+    if (!inner.has_value()) {
+      return std::unexpected(inner.error());
+    }
+    auto cloned = make<group_expr>();
+    cloned->span = group.span;
+    cloned->inner = std::move(*inner);
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::cast_expr: {
+    const auto &cast = dynamic_cast<const cast_expr &>(e);
+    auto operand = clone_optional(cast.operand);
+    if (!operand.has_value()) {
+      return std::unexpected(operand.error());
+    }
+    auto target = clone_optional(cast.target_type);
+    if (!target.has_value()) {
+      return std::unexpected(target.error());
+    }
+    auto cloned = make<cast_expr>();
+    cloned->span = cast.span;
+    cloned->operand = std::move(*operand);
+    cloned->target_type = std::move(*target);
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::struct_expr: {
+    const auto &object = dynamic_cast<const struct_expr &>(e);
+    auto type_name = clone_optional(object.type_name);
+    if (!type_name.has_value()) {
+      return std::unexpected(type_name.error());
+    }
+    auto cloned = make<struct_expr>();
+    cloned->span = object.span;
+    cloned->type_name = std::move(*type_name);
+    for (const auto &field : object.fields) {
+      auto value = clone_optional(field.value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      cloned->fields.push_back(struct_field_init{
+          .span = field.span, .name = field.name, .value = std::move(*value)});
+    }
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::block_expr: {
+    const auto &block = dynamic_cast<const block_expr &>(e);
+    auto stmts = clone_node_list(block.stmts);
+    if (!stmts.has_value()) {
+      return std::unexpected(stmts.error());
+    }
+    auto cloned = make<block_expr>();
+    cloned->span = block.span;
+    cloned->stmts = std::move(*stmts);
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::if_expr: {
+    const auto &conditional = dynamic_cast<const if_expr &>(e);
+    auto branches = clone_if_branches(conditional.branches);
+    if (!branches.has_value()) {
+      return std::unexpected(branches.error());
+    }
+    auto else_body = clone_node_list(conditional.else_body);
+    if (!else_body.has_value()) {
+      return std::unexpected(else_body.error());
+    }
+    auto cloned = make<if_expr>();
+    cloned->span = conditional.span;
+    cloned->branches = std::move(*branches);
+    cloned->else_body = std::move(*else_body);
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::match_expr: {
+    const auto &match = dynamic_cast<const match_expr &>(e);
+    auto subject = clone_optional(match.subject);
+    if (!subject.has_value()) {
+      return std::unexpected(subject.error());
+    }
+    auto arms = clone_match_arms(match.arms);
+    if (!arms.has_value()) {
+      return std::unexpected(arms.error());
+    }
+    auto cloned = make<match_expr>();
+    cloned->span = match.span;
+    cloned->subject = std::move(*subject);
+    cloned->arms = std::move(*arms);
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::interpolated_string_expr: {
+    const auto &interp = dynamic_cast<const interpolated_string_expr &>(e);
+    auto cloned = make<interpolated_string_expr>();
+    cloned->span = interp.span;
+    for (const auto &segment : interp.segments) {
+      auto value = clone_optional(segment.value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      auto spec = clone_format_spec(segment.spec);
+      if (!spec.has_value()) {
+        return std::unexpected(spec.error());
+      }
+      auto cloned_segment = interp_segment{};
+      cloned_segment.is_literal = segment.is_literal;
+      cloned_segment.literal_text = segment.literal_text;
+      cloned_segment.value = std::move(*value);
+      cloned_segment.self_doc = segment.self_doc;
+      cloned_segment.source_text = segment.source_text;
+      cloned_segment.has_spec = segment.has_spec;
+      cloned_segment.spec = std::move(*spec);
+      cloned->segments.push_back(std::move(cloned_segment));
+    }
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::yield_expr: {
+    const auto &yield = dynamic_cast<const yield_expr &>(e);
+    auto value = clone_optional(yield.value);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto cloned = make<yield_expr>();
+    cloned->span = yield.span;
+    cloned->value = std::move(*value);
+    return ptr<expr>(std::move(cloned));
+  }
   default:
     return unsupported(e, "this expression shape");
   }
@@ -385,41 +850,33 @@ template <typename T>
   }
   case node_kind::if_stmt: {
     const auto &if_s = dynamic_cast<const if_stmt &>(n);
-    auto cloned = make<if_stmt>();
-    cloned->span = if_s.span;
-    for (const auto &branch : if_s.branches) {
-      if (branch.let_pattern != nullptr || branch.let_expr != nullptr) {
-        return unsupported(n, "an `if let` branch");
-      }
-      auto condition = clone_optional(branch.condition);
-      if (!condition.has_value()) {
-        return std::unexpected(condition.error());
-      }
-      auto body = clone_node_list(branch.body);
-      if (!body.has_value()) {
-        return std::unexpected(body.error());
-      }
-      cloned->branches.push_back(if_branch{.span = branch.span,
-                                           .condition = std::move(*condition),
-                                           .let_pattern = nullptr,
-                                           .let_expr = nullptr,
-                                           .body = std::move(*body)});
+    auto branches = clone_if_branches(if_s.branches);
+    if (!branches.has_value()) {
+      return std::unexpected(branches.error());
     }
     auto else_body = clone_node_list(if_s.else_body);
     if (!else_body.has_value()) {
       return std::unexpected(else_body.error());
     }
+    auto cloned = make<if_stmt>();
+    cloned->span = if_s.span;
+    cloned->branches = std::move(*branches);
     cloned->else_body = std::move(*else_body);
     return ptr<node>(std::move(cloned));
   }
   case node_kind::while_stmt: {
     const auto &while_s = dynamic_cast<const while_stmt &>(n);
-    if (while_s.let_pattern != nullptr || while_s.let_expr != nullptr) {
-      return unsupported(n, "a `while let` loop");
-    }
     auto condition = clone_optional(while_s.condition);
     if (!condition.has_value()) {
       return std::unexpected(condition.error());
+    }
+    auto let_pattern = clone_optional(while_s.let_pattern);
+    if (!let_pattern.has_value()) {
+      return std::unexpected(let_pattern.error());
+    }
+    auto let_expr = clone_optional(while_s.let_expr);
+    if (!let_expr.has_value()) {
+      return std::unexpected(let_expr.error());
     }
     auto body = clone_node_list(while_s.body);
     if (!body.has_value()) {
@@ -428,14 +885,65 @@ template <typename T>
     auto cloned = make<while_stmt>();
     cloned->span = while_s.span;
     cloned->condition = std::move(*condition);
+    cloned->let_pattern = std::move(*let_pattern);
+    cloned->let_expr = std::move(*let_expr);
     cloned->body = std::move(*body);
     return ptr<node>(std::move(cloned));
   }
+  case node_kind::for_stmt: {
+    const auto &loop = dynamic_cast<const for_stmt &>(n);
+    auto patterns = clone_pattern_list(loop.patterns);
+    if (!patterns.has_value()) {
+      return std::unexpected(patterns.error());
+    }
+    auto iterable = clone_optional(loop.iterable);
+    if (!iterable.has_value()) {
+      return std::unexpected(iterable.error());
+    }
+    auto guard = clone_optional(loop.guard);
+    if (!guard.has_value()) {
+      return std::unexpected(guard.error());
+    }
+    auto body = clone_node_list(loop.body);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    auto cloned = make<for_stmt>();
+    cloned->span = loop.span;
+    cloned->patterns = std::move(*patterns);
+    cloned->iterable = std::move(*iterable);
+    cloned->guard = std::move(*guard);
+    cloned->body = std::move(*body);
+    return ptr<node>(std::move(cloned));
+  }
+  case node_kind::match_stmt: {
+    const auto &match = dynamic_cast<const match_stmt &>(n);
+    auto subject = clone_optional(match.subject);
+    if (!subject.has_value()) {
+      return std::unexpected(subject.error());
+    }
+    auto arms = clone_match_arms(match.arms);
+    if (!arms.has_value()) {
+      return std::unexpected(arms.error());
+    }
+    auto cloned = make<match_stmt>();
+    cloned->span = match.span;
+    cloned->subject = std::move(*subject);
+    cloned->arms = std::move(*arms);
+    return ptr<node>(std::move(cloned));
+  }
   default:
-    // Not a statement — most likely a plain expression reached through a
-    // generic `ptr<node>` slot rather than a block-body list (e.g.
-    // `array_type::size`, a fixed-array length expression, which is
-    // typically just a `literal_expr`).
+    // Not a statement — a pattern or an expression reached through a generic
+    // `ptr<node>` slot rather than a block-body list (`match_arm::pattern`
+    // and `if_branch::let_pattern` are patterns; `array_type::size`, a
+    // fixed-array length, is an expression).
+    if (const auto *as_pattern = dynamic_cast<const pattern *>(&n)) {
+      auto cloned = clone_pattern(*as_pattern);
+      if (!cloned.has_value()) {
+        return std::unexpected(cloned.error());
+      }
+      return ptr<node>(std::move(*cloned));
+    }
     if (const auto *as_expr = dynamic_cast<const expr *>(&n)) {
       auto cloned = clone_expr_impl(*as_expr);
       if (!cloned.has_value()) {
@@ -456,14 +964,8 @@ auto clone_expr(const expr &e) -> std::expected<ptr<expr>, clone_error> {
 
 auto clone_func_decl(const func_decl &decl)
     -> std::expected<ptr<func_decl>, clone_error> {
-  if (!decl.type_params.empty()) {
-    return unsupported(decl, "a generic function");
-  }
   if (!decl.where_constraints.empty()) {
     return unsupported(decl, "a `where` clause");
-  }
-  if (!decl.contracts.empty()) {
-    return unsupported(decl, "a contract clause");
   }
   if (decl.modifiers.async_context != nullptr || decl.modifiers.is_async) {
     return unsupported(decl, "an async function");
@@ -478,7 +980,36 @@ auto clone_func_decl(const func_decl &decl)
                                      .is_static = decl.modifiers.is_static,
                                      .is_intrinsic = false,
                                      .async_context = nullptr};
+  cloned->modifiers.is_generator = decl.modifiers.is_generator;
   cloned->name = decl.name;
+
+  // A const-generic instance keeps its template's parameter list — the
+  // checker substitutes each one's constant while checking the clone, rather
+  // than editing the clone's syntax (`semantic::checker::push_type_params`).
+  for (const auto &param : decl.type_params) {
+    auto bound_or_type = clone_optional(param.bound_or_type);
+    if (!bound_or_type.has_value()) {
+      return std::unexpected(bound_or_type.error());
+    }
+    cloned->type_params.push_back(
+        type_param{.span = param.span,
+                   .name = param.name,
+                   .bound_or_type = std::move(*bound_or_type),
+                   .is_value_param = param.is_value_param,
+                   .is_higher_kinded = param.is_higher_kinded});
+  }
+
+  for (const auto &contract : decl.contracts) {
+    auto condition = clone_optional(contract.condition);
+    if (!condition.has_value()) {
+      return std::unexpected(condition.error());
+    }
+    cloned->contracts.push_back(
+        contract_clause{.span = contract.span,
+                        .is_pre = contract.is_pre,
+                        .condition = std::move(*condition),
+                        .message = contract.message});
+  }
 
   for (const auto &param : decl.params) {
     if (param.default_value != nullptr) {
