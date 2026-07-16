@@ -496,7 +496,21 @@ private:
   // ========================================================================
 
   /// @brief Parses one top-level item or recovery placeholder.
-  [[nodiscard]] auto parse_top_level_item() -> ast::ptr<ast::node>;
+  ///
+  /// @param allow_script_stmts When true (only for the top level of a
+  /// `module main` script file), non-declaration tokens parse as ordinary
+  /// statements instead of erroring; `parse_file` later gathers them into a
+  /// synthesized `main` function.
+  [[nodiscard]] auto parse_top_level_item(bool allow_script_stmts = false)
+      -> ast::ptr<ast::node>;
+
+  /// @brief Gathers a `module main` script file's top-level statements into a
+  /// synthesized `def main` appended to `file.items`.
+  ///
+  /// Emits an error (and drops the statements) when the file also declares an
+  /// explicit `main`, since the spec says a file may use one form or the
+  /// other, but not both.
+  void synthesize_script_main(ast::file &file);
 
   // ---- Module / use / dep ----
 

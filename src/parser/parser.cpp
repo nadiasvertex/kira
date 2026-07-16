@@ -619,6 +619,15 @@ auto parser::parse_file() -> ast::ptr<ast::file> {
     skip_newlines();
   }
 
+  // A file whose module is exactly `main` is a script: its top level may mix
+  // declarations with executable statements, which become the body of a
+  // synthesized `main` function (see the "Scripts" section of the language
+  // reference).
+  const bool script_file = file->module_decl != nullptr &&
+                           !file->module_decl->has_error &&
+                           file->module_decl->path.size() == 1 &&
+                           file->module_decl->path.front() == "main";
+
   // Parse top-level items.
   while (!at_eof()) {
     skip_newlines();
@@ -632,7 +641,7 @@ auto parser::parse_file() -> ast::ptr<ast::file> {
       break;
     }
 
-    auto item = parse_top_level_item();
+    auto item = parse_top_level_item(script_file);
     if (item) {
       file->items.push_back(std::move(item));
     } else {
@@ -641,8 +650,97 @@ auto parser::parse_file() -> ast::ptr<ast::file> {
     }
   }
 
+  if (script_file) {
+    synthesize_script_main(*file);
+  }
+
   file->span = file_start.merge(previous_span());
   return file;
+}
+
+/// Returns whether a parsed top-level node is an executable statement (as
+/// opposed to a declaration) for script-mode `main` synthesis.
+[[nodiscard]] static auto is_script_stmt(const ast::node &node) noexcept
+    -> bool {
+  switch (node.kind) {
+  case ast::node_kind::let_stmt:
+  case ast::node_kind::var_stmt:
+  case ast::node_kind::assign_stmt:
+  case ast::node_kind::expr_stmt:
+  case ast::node_kind::return_stmt:
+  case ast::node_kind::if_stmt:
+  case ast::node_kind::while_stmt:
+  case ast::node_kind::for_stmt:
+  case ast::node_kind::match_stmt:
+  case ast::node_kind::crew_stmt:
+  case ast::node_kind::asm_stmt:
+    return true;
+  default:
+    return false;
+  }
+}
+
+void parser::synthesize_script_main(ast::file &file) {
+  std::vector<ast::ptr<ast::node>> decls;
+  std::vector<ast::ptr<ast::node>> stmts;
+  decls.reserve(file.items.size());
+
+  std::optional<source_span> explicit_main_span;
+  for (auto &item : file.items) {
+    if (item == nullptr) {
+      continue;
+    }
+    if (is_script_stmt(*item)) {
+      stmts.push_back(std::move(item));
+      continue;
+    }
+    if (item->kind == ast::node_kind::func_decl &&
+        dynamic_cast<const ast::func_decl &>(*item).name == "main") {
+      explicit_main_span = item->span;
+    }
+    decls.push_back(std::move(item));
+  }
+
+  if (stmts.empty()) {
+    // Declarations only — the file behaves like any other module (it may
+    // still declare `main` explicitly).
+    file.items = std::move(decls);
+    return;
+  }
+
+  if (explicit_main_span.has_value()) {
+    emit(diagnostic(diagnostic_level::error,
+                    "this file mixes top-level statements with an explicit "
+                    "`def main`",
+                    file_id_)
+             .with_label(stmts.front()->span,
+                         "this statement runs as part of the implicit `main`")
+             .with_secondary_label(*explicit_main_span,
+                                   "but `main` is already declared here")
+             .with_help("A `module main` script gets its `main` function in "
+                        "one of two ways — from top-level statements, or from "
+                        "an explicit `def main` — but never both. Either move "
+                        "these statements into `def main`, or delete the "
+                        "declaration and keep the statements."));
+    // Drop the statements: the file already failed, and keeping a second
+    // `main` around would only cascade into duplicate-symbol noise.
+    file.items = std::move(decls);
+    return;
+  }
+
+  auto fn = ast::make<ast::func_decl>();
+  fn->name = "main";
+  fn->span = stmts.front()->span.merge(stmts.back()->span);
+  // Give the implicit `main` the same signature as the spec's simplest
+  // explicit form, `def main() -> unit`. The annotation also matters
+  // practically: HIR lowering only accepts explicitly annotated signatures.
+  auto ret = ast::make<ast::named_type>();
+  ret->span = fn->span;
+  ret->path.emplace_back("unit");
+  fn->return_type = std::move(ret);
+  fn->body_stmts = std::move(stmts);
+  decls.push_back(std::move(fn));
+  file.items = std::move(decls);
 }
 
 // ==========================================================================
@@ -665,7 +763,8 @@ auto parser::parse_module_decl() -> ast::ptr<ast::module_decl> {
 //  Top-level items
 // ==========================================================================
 
-auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
+auto parser::parse_top_level_item(bool allow_script_stmts)
+    -> ast::ptr<ast::node> {
   skip_newlines();
   if (at_eof()) {
     return nullptr;
@@ -772,7 +871,7 @@ auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
 
   case token_kind::newline:
     advance();
-    return parse_top_level_item(); // Skip blank lines.
+    return parse_top_level_item(allow_script_stmts); // Skip blank lines.
 
   default:
     if (vis != ast::visibility::def) {
@@ -790,6 +889,13 @@ auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
       return make_error_node(peek().span);
     }
 
+    if (allow_script_stmts) {
+      // Script mode (`module main`): the top level accepts ordinary
+      // statements, which `synthesize_script_main` later folds into an
+      // implicit `main` function.
+      return parse_stmt();
+    }
+
     emit(diagnostic(diagnostic_level::error,
                     std::format("unexpected {} at the top level of the file",
                                 token_kind_name(current())),
@@ -797,7 +903,10 @@ auto parser::parse_top_level_item() -> ast::ptr<ast::node> {
              .with_label(peek().span, "this can't appear here")
              .with_help("At the top level, only declarations are allowed: "
                         "`use`, `type`, `trait`, `impl`, `extend`, "
-                        "`concept`, `def`, `static`, `module`, `dep`."));
+                        "`concept`, `def`, `static`, `module`, `dep`. "
+                        "Top-level statements are allowed only in a "
+                        "`module main` script file, where they become the "
+                        "body of `main`."));
     synchronize_to_newline();
     return make_error_node(peek().span);
   }

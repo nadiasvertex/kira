@@ -1357,6 +1357,74 @@ auto test_parser_parses_multiline_indented_paren_quote() -> void {
          "would be empty instead");
 }
 
+auto test_script_module_synthesizes_main() -> void {
+  auto parsed = parse_source("module main\n"
+                             "\n"
+                             "def greet(name: str) -> unit:\n"
+                             "    println(\"Hi, {name}\")\n"
+                             "\n"
+                             "let who = \"kira\"\n"
+                             "greet(who)\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 2,
+         "expected the greet declaration plus one synthesized `main`");
+  auto *greet = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected the greet declaration to stay a top-level item");
+  expect(greet->name == "greet", "expected greet to keep its name");
+  auto *synthesized = expect_node<kira::ast::func_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+      "expected a synthesized function appended after the declarations");
+  expect(synthesized->name == "main",
+         "expected the synthesized function to be named `main`");
+  expect(synthesized->body_stmts.size() == 2,
+         "expected both top-level statements to become `main`'s body");
+  expect_node<kira::ast::let_stmt>(synthesized->body_stmts[0].get(),
+                                   kira::ast::node_kind::let_stmt,
+                                   "expected the `let` to run first in `main`");
+  auto *ret = expect_node<kira::ast::named_type>(
+      synthesized->return_type.get(), kira::ast::node_kind::named_type,
+      "expected the synthesized `main` to be annotated `-> unit`");
+  expect(ret->path.size() == 1 && ret->path[0] == "unit",
+         "expected the synthesized return type to name `unit`");
+}
+
+auto test_script_module_rejects_statements_with_explicit_main() -> void {
+  auto parsed = parse_source("module main\n"
+                             "\n"
+                             "println(\"top level\")\n"
+                             "\n"
+                             "def main() -> unit:\n"
+                             "    println(\"explicit\")\n");
+  expect(parsed.error_count == 1,
+         "expected exactly one error for mixing top-level statements with an "
+         "explicit `def main`");
+  expect(parsed.diagnostics.find("mixes top-level statements") !=
+             std::string::npos,
+         parsed.diagnostics);
+}
+
+auto test_script_module_without_statements_keeps_explicit_main() -> void {
+  auto parsed = parse_source("module main\n"
+                             "\n"
+                             "def main() -> unit:\n"
+                             "    println(\"hello\")\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1,
+         "expected no synthesized second `main` for a declaration-only file");
+}
+
+auto test_non_main_module_rejects_top_level_statements() -> void {
+  auto parsed = parse_source("module other\n"
+                             "\n"
+                             "println(\"nope\")\n");
+  expect(parsed.error_count > 0,
+         "expected top-level statements outside `module main` to error");
+  expect(parsed.diagnostics.find("module main") != std::string::npos,
+         "expected the diagnostic to teach that `module main` scripts allow "
+         "top-level statements");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -1365,7 +1433,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 20> tests = {{
+  const std::array<named_test, 24> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -1402,6 +1470,14 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_classifies_quote_fragment_kind},
       {.name = "multiline_indented_paren_quote",
        .fn = test_parser_parses_multiline_indented_paren_quote},
+      {.name = "script_module_synthesizes_main",
+       .fn = test_script_module_synthesizes_main},
+      {.name = "script_module_rejects_statements_with_explicit_main",
+       .fn = test_script_module_rejects_statements_with_explicit_main},
+      {.name = "script_module_without_statements_keeps_explicit_main",
+       .fn = test_script_module_without_statements_keeps_explicit_main},
+      {.name = "non_main_module_rejects_top_level_statements",
+       .fn = test_non_main_module_rejects_top_level_statements},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));
