@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "src/parser/ast.h"
 #include "src/parser/source_location.h"
@@ -91,6 +92,16 @@ auto can_resolve_module_reference(semantic_symbol_kind kind) -> bool;
 /// Returns the stable human-readable label used to describe `name_space` in
 /// diagnostics.
 auto symbol_namespace_name(symbol_namespace name_space) -> std::string_view;
+
+/// Bounded Levenshtein distance used for "did you mean" suggestions.
+auto edit_distance(std::string_view a, std::string_view b) -> size_t;
+
+/// Picks the closest name in `candidates` to `name` for a "did you mean"
+/// hint, rejecting matches whose edit distance is not meaningfully smaller
+/// than the candidate's own length (avoids suggesting unrelated short names).
+auto best_suggestion(std::string_view name,
+                     const std::vector<std::string> &candidates)
+    -> std::optional<std::string>;
 
 /// Builds the symbol spec for a module-scope item (`type`, `trait`,
 /// `concept`, submodule, `def`, or a `static` binding), or `nullopt` if

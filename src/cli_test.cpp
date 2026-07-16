@@ -916,10 +916,10 @@ auto test_compile_sources_reports_unresolved_session_import() -> void {
          "expected only the in-session unresolved import to fail");
   expect(report->modules.size() == 2,
          "expected unaffected session modules to still emit metadata");
-  expect(report->diagnostics.find("import `package.tools.missing` does not "
-                                  "resolve in this compilation session") !=
+  expect(report->diagnostics.find(
+             "module `package.tools` has no member named `missing`") !=
              std::string::npos,
-         "expected unresolved in-session import diagnostic");
+         "expected missing-import-member diagnostic");
   expect(report->diagnostics.find("use std.io") == std::string::npos,
          "expected external import to remain deferred without diagnostics");
 }

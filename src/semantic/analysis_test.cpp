@@ -135,10 +135,23 @@ auto test_validate_semantics_reports_unresolved_session_import() -> void {
 
   expect(analyzed.error_count > 0,
          "expected unresolved session import to fail semantic validation");
-  expect(analyzed.diagnostics.find("import `package.tools.missing` does not "
-                                   "resolve in this compilation session") !=
+  expect(analyzed.diagnostics.find(
+             "module `package.tools` has no member named `missing`") !=
              std::string::npos,
-         "expected unresolved-import diagnostic");
+         "expected missing-import-member diagnostic");
+}
+
+auto test_validate_semantics_suggests_close_import_member() -> void {
+  const auto analyzed = analyze_sources(
+      load_fixtures("semantic_analysis_test/misspelled_import_member"));
+
+  expect(analyzed.error_count > 0,
+         "expected misspelled import member to fail semantic validation");
+  expect(analyzed.diagnostics.find(
+             "module `tools` has no member named `runn`") != std::string::npos,
+         "expected missing-import-member diagnostic");
+  expect(analyzed.diagnostics.find("Did you mean `run`?") != std::string::npos,
+         "expected a did-you-mean suggestion for the close member name");
 }
 
 auto test_validate_semantics_reports_duplicate_module_scope_symbol() -> void {
@@ -186,6 +199,7 @@ auto main() -> int {
     test_validate_semantics_reports_duplicate_module_paths();
     test_validate_semantics_reports_missing_parent_module_declaration();
     test_validate_semantics_reports_unresolved_session_import();
+    test_validate_semantics_suggests_close_import_member();
     test_validate_semantics_reports_duplicate_module_scope_symbol();
     test_validate_semantics_reports_unresolved_qualified_type_path();
     test_validate_semantics_reports_unresolved_module_qualified_reference();

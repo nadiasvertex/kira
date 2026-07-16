@@ -1,0 +1,8 @@
+module tools
+
+pub type pair = { first: int32, second: int32 }
+
+pub static base: int32 = 3
+
+pub def double(x: int32) -> int32:
+    return x * 2

@@ -1,0 +1,6 @@
+module app
+
+use tools.runn
+
+pub def start() -> int32:
+    return 1

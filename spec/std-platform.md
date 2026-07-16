@@ -25,7 +25,7 @@ Implementing this module surfaced several pre-existing compiler limitations, wor
 
 | Gap | Symptom | Workaround used here |
 |---|---|---|
-| `use module.{a, b}` / `use module` don't import names | `import X.Y does not resolve` even for a real `pub` declaration; a bare `use module` silently imports nothing | Reference other modules fully qualified (`std.io.io_error`), matching `std.console`'s existing `std.io.stdout_handle()` style |
+| ~~`use module.{a, b}` / `use module` don't import names~~ **Fixed 2026-07** — `use module.member`, `use module.{a, b as c}`, and `use module.*` now bind names into unqualified scope on both backends | `import X.Y does not resolve` even for a real `pub` declaration; a bare `use module` silently imports nothing | Reference other modules fully qualified (`std.io.io_error`), matching `std.console`'s existing `std.io.stdout_handle()` style — still works, no longer required |
 | Struct literal construction requires a single-identifier type name | `std.io.io_errno { code: 0 }` fails to parse | A local `type io_errno = std.io.io_errno` alias, then `io_errno { code: 0 }` |
 | `intrinsic def` cannot be nested inside a `static if` body | "intrinsic declarations cannot be a trait or impl member" | Declare intrinsics unconditionally instead of gating per `TARGET_OS_FAMILY` |
 | Item-level `static if`/`else` doesn't splice declarations into module scope for other code to call | `undefined name` for a `pub def` selected by a taken `static if` branch, referenced from a different function | One unconditional function, dispatching on the runtime value `target_os_family()` returns, instead of one function per `static if` branch |

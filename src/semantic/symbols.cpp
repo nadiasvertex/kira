@@ -1,6 +1,52 @@
 #include "symbols.h"
 
+#include <algorithm>
+#include <utility>
+
 namespace kira::semantic {
+
+/// Classic dynamic-programming Levenshtein with two rolling rows; both
+/// callers only care about small distances so no early-exit bound is needed.
+auto edit_distance(std::string_view a, std::string_view b) -> size_t {
+  const auto rows = a.size() + 1;
+  const auto cols = b.size() + 1;
+  auto previous = std::vector<size_t>(cols);
+  auto current = std::vector<size_t>(cols);
+  for (size_t j = 0; j < cols; ++j) {
+    previous[j] = j;
+  }
+  for (size_t i = 1; i < rows; ++i) {
+    current[0] = i;
+    for (size_t j = 1; j < cols; ++j) {
+      const auto substitution =
+          previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
+      current[j] =
+          std::min({previous[j] + 1, current[j - 1] + 1, substitution});
+    }
+    std::swap(previous, current);
+  }
+  return previous[cols - 1];
+}
+
+/// Keeps the candidate with the smallest edit distance below the bound,
+/// skipping exact matches (the caller already knows the name didn't resolve).
+auto best_suggestion(std::string_view name,
+                     const std::vector<std::string> &candidates)
+    -> std::optional<std::string> {
+  auto best = std::optional<std::string>{};
+  auto best_distance = size_t{3};
+  for (const auto &candidate : candidates) {
+    if (candidate == name || candidate.empty()) {
+      continue;
+    }
+    const auto distance = edit_distance(name, candidate);
+    if (distance < best_distance && distance < candidate.size()) {
+      best_distance = distance;
+      best = candidate;
+    }
+  }
+  return best;
+}
 
 /// Maps each `semantic_symbol_kind` to its stable display label.
 auto semantic_symbol_kind_name(semantic_symbol_kind kind) -> std::string_view {

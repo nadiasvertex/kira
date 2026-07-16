@@ -63,49 +63,6 @@ auto binary_op_spelling(ast::binary_op op) -> std::string_view {
   }
 }
 
-/// Bounded Levenshtein distance used for "did you mean" suggestions.
-auto edit_distance(std::string_view a, std::string_view b) -> size_t {
-  const auto rows = a.size() + 1;
-  const auto cols = b.size() + 1;
-  auto previous = std::vector<size_t>(cols);
-  auto current = std::vector<size_t>(cols);
-  for (size_t j = 0; j < cols; ++j) {
-    previous[j] = j;
-  }
-  for (size_t i = 1; i < rows; ++i) {
-    current[0] = i;
-    for (size_t j = 1; j < cols; ++j) {
-      const auto substitution =
-          previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
-      current[j] =
-          std::min({previous[j] + 1, current[j - 1] + 1, substitution});
-    }
-    std::swap(previous, current);
-  }
-  return previous[cols - 1];
-}
-
-/// Picks the closest name in `candidates` to `name` for a "did you mean"
-/// hint, rejecting matches whose edit distance is not meaningfully smaller
-/// than the candidate's own length (avoids suggesting unrelated short names).
-auto best_suggestion(std::string_view name,
-                     const std::vector<std::string> &candidates)
-    -> std::optional<std::string> {
-  auto best = std::optional<std::string>{};
-  auto best_distance = size_t{3};
-  for (const auto &candidate : candidates) {
-    if (candidate == name || candidate.empty()) {
-      continue;
-    }
-    const auto distance = edit_distance(name, candidate);
-    if (distance < best_distance && distance < candidate.size()) {
-      best_distance = distance;
-      best = candidate;
-    }
-  }
-  return best;
-}
-
 /// Parses an integer literal spelling (handles `_`, `0x`, `0o`, `0b`).
 /// Returns nullopt when the value does not fit in 64 bits.
 auto parse_integer_literal(std::string_view text) -> std::optional<uint64_t> {
@@ -1433,6 +1390,31 @@ private:
       }
     }
     return nullptr;
+  }
+
+  /// The session-owned modules whose members a wildcard import
+  /// (`use a.b.*`) in the current file makes available for unqualified
+  /// lookup. Recomputed per call because `file_id_` swaps temporarily while
+  /// checking a callee declared in another file. External-rooted wildcards
+  /// never resolve here — they only suppress undefined-name errors
+  /// (`file_has_external_wildcard_`).
+  [[nodiscard]] auto wildcard_import_sources() const
+      -> std::vector<const module_members *> {
+    auto sources = std::vector<const module_members *>{};
+    const auto *imports = imports_for_current_file();
+    if (imports == nullptr) {
+      return sources;
+    }
+    for (const auto &binding : *imports) {
+      if (!binding.is_wildcard) {
+        continue;
+      }
+      if (const auto *source =
+              index_.find_module(join_strings(binding.path, "."))) {
+        sources.push_back(source);
+      }
+    }
+    return sources;
   }
 
   /// The module that an import binding pulls its member from, when the
@@ -3375,6 +3357,19 @@ private:
       return k_unknown_type; // external or non-type import; trust it
     }
 
+    // Names re-exported by a session-owned wildcard import (`use a.b.*`).
+    for (const auto *source : wildcard_import_sources()) {
+      if (const auto it = source->types.find(std::string(name));
+          it != source->types.end()) {
+        return instantiate_user_type(*it->second.decl, source->module_name,
+                                     named, ctx);
+      }
+      if (source->traits.contains(std::string(name)) ||
+          source->concepts.contains(std::string(name))) {
+        return k_unknown_type; // trait/concept used in a bound position
+      }
+    }
+
     // Prelude traits used in bound positions (`T: show`, `T: drop`).
     if (find_prelude_trait(name).has_value() || name == "send" ||
         name == "share" || name == "pool") {
@@ -4405,6 +4400,14 @@ private:
         }
       }
     }
+    // Variants of sum types re-exported by a session-owned wildcard import
+    // (`use a.b.*` brings every type along, so every variant comes too).
+    for (const auto *source : wildcard_import_sources()) {
+      if (const auto it = source->variants.find(std::string(name));
+          it != source->variants.end()) {
+        return std::pair{it->second.sum_decl, it->second.variant};
+      }
+    }
     return std::nullopt;
   }
 
@@ -4638,6 +4641,20 @@ private:
         }
       }
       return k_unknown_type;
+    }
+
+    // Values re-exported by a session-owned wildcard import (`use a.b.*`).
+    for (const auto *source : wildcard_import_sources()) {
+      if (const auto it = source->functions.find(std::string(name));
+          it != source->functions.end()) {
+        return fn_type_of(*it->second.decl, source);
+      }
+      if (const auto it = source->statics.find(std::string(name));
+          it != source->statics.end()) {
+        const auto type = static_binding_type(*it->second.decl, source);
+        record_static_const_reference(ident, *it->second.decl, type);
+        return type;
+      }
     }
 
     if (is_prelude_value_name(name) || is_type_like_name(name)) {
@@ -5363,6 +5380,12 @@ private:
             it != source->traits.end()) {
           return it->second;
         }
+      }
+    }
+    for (const auto *source : wildcard_import_sources()) {
+      if (const auto it = source->traits.find(std::string(name));
+          it != source->traits.end()) {
+        return it->second;
       }
     }
     return find_prelude_trait(name);
@@ -6436,6 +6459,12 @@ private:
         if (const auto it = source->functions.find(member);
             it != source->functions.end()) {
           record_expr_type(ident, fn_type_of(*it->second.decl, source));
+          // Same persistence as the prelude branch below: lowering needs
+          // the owning module to rebuild this cross-module call.
+          resolved_callees_[&call] =
+              resolved_callee{.decl = it->second.decl,
+                              .owner_module = source->module_name,
+                              .impl_target_type = ""};
           return check_call_against_decl(call, *it->second.decl, source,
                                          it->second.file_id,
                                          /*skip_self=*/false);
@@ -6448,6 +6477,23 @@ private:
       }
       infer_call_args_loosely(call);
       return k_unknown_type;
+    }
+
+    // Functions re-exported by a session-owned wildcard import
+    // (`use a.b.*`) — same resolution and persistence as the explicit
+    // import branch above.
+    for (const auto *source : wildcard_import_sources()) {
+      if (const auto it = source->functions.find(name);
+          it != source->functions.end()) {
+        record_expr_type(ident, fn_type_of(*it->second.decl, source));
+        resolved_callees_[&call] =
+            resolved_callee{.decl = it->second.decl,
+                            .owner_module = source->module_name,
+                            .impl_target_type = ""};
+        return check_call_against_decl(call, *it->second.decl, source,
+                                       it->second.file_id,
+                                       /*skip_self=*/false);
+      }
     }
 
     // Prelude functions — `println`/`print`/`eprintln`/`eprint` resolve
@@ -7289,6 +7335,12 @@ private:
             it != source->types.end()) {
           return std::pair{it->second.decl, source->module_name};
         }
+      }
+    }
+    for (const auto *source : wildcard_import_sources()) {
+      if (const auto it = source->types.find(std::string(name));
+          it != source->types.end()) {
+        return std::pair{it->second.decl, source->module_name};
       }
     }
     return std::nullopt;

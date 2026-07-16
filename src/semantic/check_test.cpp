@@ -248,6 +248,21 @@ auto test_accepts_module_qualified_call() -> void {
          "expected a call through a whole-module `use` import to resolve");
 }
 
+auto test_accepts_member_import_call() -> void {
+  const auto analyzed =
+      analyze_test_data_directory("accept_member_import_call");
+  expect(analyzed.error_count == 0,
+         "expected `use module.member` / `use module.{a, b as c}` imports "
+         "to resolve unqualified");
+}
+
+auto test_accepts_wildcard_import() -> void {
+  const auto analyzed = analyze_test_data_directory("accept_wildcard_import");
+  expect(analyzed.error_count == 0,
+         "expected a session-owned `use module.*` wildcard import to bring "
+         "functions, types, traits, statics, and variants into scope");
+}
+
 auto test_accepts_fully_qualified_call() -> void {
   const auto analyzed =
       analyze_test_data_directory("accept_fully_qualified_call");
@@ -1364,6 +1379,8 @@ auto main() -> int {
     test_accepts_option_result_flow();
     test_accepts_cross_module_qualified_types();
     test_accepts_module_qualified_call();
+    test_accepts_member_import_call();
+    test_accepts_wildcard_import();
     test_accepts_fully_qualified_call();
     test_accepts_type_qualified_associated_call();
     test_accepts_indexing_local_bindings();

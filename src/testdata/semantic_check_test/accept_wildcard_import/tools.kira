@@ -1,0 +1,11 @@
+module tools
+
+pub type verdict = @pass | @fail(int32)
+
+pub trait scoreable:
+    def score(self) -> int32
+
+pub static base: int32 = 3
+
+pub def double(x: int32) -> int32:
+    return x * 2

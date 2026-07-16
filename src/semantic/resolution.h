@@ -21,10 +21,13 @@ auto validate_module_boundaries(const module_session_index &index,
                                 std::vector<bool> &file_has_errors) -> void;
 
 /// Validates every `use` declaration whose path root is owned by this
-/// compilation session: the target module/member must exist and must be
-/// visible to the importer given its declared visibility.
+/// compilation session: the target must exist — as a module, or as a
+/// declaration (type, trait, concept, function, static) of the module named
+/// by the rest of the path — and must be visible to the importer given its
+/// declared visibility.
 auto validate_session_imports(const std::vector<parsed_module> &inputs,
                               const module_session_index &index,
+                              const semantic_resolution_index &semantic_index,
                               diagnostic_bag &diag,
                               std::vector<bool> &file_has_errors) -> void;
 

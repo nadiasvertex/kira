@@ -1,0 +1,8 @@
+module app
+
+use tools.double
+use tools.{pair, base as start}
+
+pub def run() -> int32:
+    let p = pair { first: double(start), second: 4 }
+    return p.first + p.second

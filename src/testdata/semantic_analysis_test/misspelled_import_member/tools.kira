@@ -1,0 +1,4 @@
+module tools
+
+pub def run() -> int32:
+    return 1

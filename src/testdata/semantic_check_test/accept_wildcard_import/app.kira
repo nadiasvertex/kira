@@ -1,0 +1,18 @@
+module app
+
+use tools.*
+
+type coin = { value: int32 }
+
+impl scoreable for coin:
+    def score(self) -> int32:
+        return self.value
+
+def judge(v: verdict) -> int32:
+    match v:
+        @pass => 1
+        @fail(code) => code
+
+pub def run() -> int32:
+    let c = coin { value: double(base) }
+    return c.score() + judge(@fail(2))

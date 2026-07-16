@@ -145,6 +145,86 @@ auto validate_import_target(const module_session_index &index,
   return true;
 }
 
+/// Emits the "module has no member" diagnostic for a `use` whose leaf names
+/// neither a submodule nor a declaration of the resolved parent module,
+/// suggesting the closest declared name when one is similar.
+auto emit_missing_import_member(const module_session_index &index,
+                                const semantic_resolution_index &semantic_index,
+                                const use_decl_record &import_record,
+                                std::string_view parent_module_name,
+                                std::string_view member_name,
+                                source_span import_span, diagnostic_bag &diag,
+                                std::vector<bool> &file_has_errors) -> void {
+  auto missing = diagnostic(diagnostic_level::error,
+                            std::format("module `{}` has no member named `{}`",
+                                        parent_module_name, member_name),
+                            import_record.file_id);
+  missing.with_label(import_span,
+                     std::format("not declared in `{}`", parent_module_name));
+
+  if (const auto anchor =
+          find_nearest_module_anchor(index, parent_module_name)) {
+    missing.children.push_back(
+        diagnostic(
+            diagnostic_level::note,
+            std::format("module `{}` is declared here", anchor->module_name),
+            anchor->location.file_id)
+            .with_label(anchor->location.span, "imported module"));
+  }
+
+  auto candidates = std::vector<std::string>{};
+  if (const auto *scope =
+          find_module_scope(semantic_index, parent_module_name)) {
+    for (const auto symbol : scope->symbols) {
+      if (const auto *record =
+              find_semantic_symbol(semantic_index.session, symbol)) {
+        candidates.push_back(record->name);
+      }
+    }
+  }
+  if (const auto suggestion = best_suggestion(member_name, candidates)) {
+    missing.with_help(std::format(
+        "Did you mean `{}`? Only names declared in `{}` can be imported "
+        "from it.",
+        *suggestion, parent_module_name));
+  } else {
+    missing.with_help(std::format(
+        "Declare `{}` in module `{}` before importing it, or import a name "
+        "that module already declares.",
+        member_name, parent_module_name));
+  }
+  diag.emit(missing);
+  mark_file_has_error(file_has_errors, import_record.file_id);
+}
+
+/// Validates the leaf of a member-selecting import (`use a.b.c`,
+/// `use a.b.{c}`): the leaf may name a submodule of the already-validated
+/// parent module (checked like any module import, including visibility) or
+/// any declaration in the parent's module scope. Returns whether the leaf
+/// resolved.
+auto validate_import_leaf(const module_session_index &index,
+                          const semantic_resolution_index &semantic_index,
+                          const use_decl_record &import_record,
+                          std::string_view parent_module_name,
+                          std::string_view leaf_name, source_span leaf_span,
+                          diagnostic_bag &diag,
+                          std::vector<bool> &file_has_errors) -> bool {
+  const auto leaf_module_name =
+      append_module_name(parent_module_name, leaf_name);
+  if (session_contains_module(index, leaf_module_name)) {
+    return validate_import_target(index, import_record, leaf_module_name,
+                                  leaf_span, diag, file_has_errors);
+  }
+  if (find_module_scope_symbol(semantic_index, parent_module_name, leaf_name) !=
+      nullptr) {
+    return true;
+  }
+  emit_missing_import_member(index, semantic_index, import_record,
+                             parent_module_name, leaf_name, leaf_span, diag,
+                             file_has_errors);
+  return false;
+}
+
 /// Recursively checks `items` for duplicate type/trait/concept/submodule
 /// names within the same module scope, descending into inline submodules
 /// under their own qualified name.
@@ -1951,10 +2031,13 @@ auto validate_module_boundaries(const module_session_index &index,
 }
 
 /// Collects every `use` declaration rooted in a session-owned module and
-/// validates each imported target (whole path, or each selected/wildcard
-/// member) via `validate_import_target`.
+/// validates each imported target: a whole module path via
+/// `validate_import_target`, or a selected/trailing member via
+/// `validate_import_leaf` (which also accepts declarations of the parent
+/// module, not just submodules).
 auto validate_session_imports(const std::vector<parsed_module> &inputs,
                               const module_session_index &index,
+                              const semantic_resolution_index &semantic_index,
                               diagnostic_bag &diag,
                               std::vector<bool> &file_has_errors) -> void {
   const auto imports = collect_use_decl_records(inputs, file_has_errors);
@@ -1972,9 +2055,32 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
     }
 
     if (!decl.selector.has_value()) {
+      // `use a.b.c` — the whole path may name a module, or the trailing
+      // segment may name a member of module `a.b`.
       const auto imported_module_name = join_strings(decl.path, ".");
-      validate_import_target(index, import_record, imported_module_name,
-                             decl.span, diag, file_has_errors);
+      if (decl.path.size() == 1 ||
+          session_contains_module(index, imported_module_name)) {
+        validate_import_target(index, import_record, imported_module_name,
+                               decl.span, diag, file_has_errors);
+        continue;
+      }
+
+      auto parent_path = decl.path;
+      parent_path.pop_back();
+      const auto parent_module_name = join_strings(parent_path, ".");
+      if (!session_contains_module(index, parent_module_name)) {
+        // Neither the full path nor its parent names a module — report the
+        // full path so the diagnostic matches what the user wrote.
+        emit_unresolved_import(index, import_record, imported_module_name,
+                               decl.span, diag, file_has_errors);
+        continue;
+      }
+      if (validate_import_target(index, import_record, parent_module_name,
+                                 decl.span, diag, file_has_errors)) {
+        validate_import_leaf(index, semantic_index, import_record,
+                             parent_module_name, decl.path.back(), decl.span,
+                             diag, file_has_errors);
+      }
       continue;
     }
 
@@ -1989,10 +2095,9 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
     }
 
     for (const auto &item : decl.selector->items) {
-      const auto imported_module_name =
-          append_module_name(base_module_name, item.name);
-      if (!validate_import_target(index, import_record, imported_module_name,
-                                  item.span, diag, file_has_errors)) {
+      if (!validate_import_leaf(index, semantic_index, import_record,
+                                base_module_name, item.name, item.span, diag,
+                                file_has_errors)) {
         break;
       }
     }
