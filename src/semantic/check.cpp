@@ -9436,6 +9436,75 @@ private:
     }
   }
 
+  /// True when a block's final statement guarantees the enclosing
+  /// function's result is produced on every control-flow path through it —
+  /// by `return`ing, or by every branch of a tail `if`/`match` doing so.
+  ///
+  /// Deliberately permissive: any statement kind this doesn't recognize
+  /// counts as providing a value, because nested branch/arm tails are
+  /// already join-checked against the expected type (`join_branch_type`,
+  /// `check_match`) and diagnosed there. This predicate exists to close
+  /// the holes typing alone can't see: a tail `if` with no `else` (its
+  /// statement typing seeds the branch join with `expected_tail`, so the
+  /// missing fall-through path never surfaces as a mismatch), and the same
+  /// shape nested inside branch or arm tails.
+  static auto
+  block_provides_function_value(const std::vector<ast::ptr<ast::node>> &stmts)
+      -> bool {
+    for (const auto &item : stmts | std::views::reverse) {
+      if (item != nullptr) {
+        return node_provides_function_value(*item);
+      }
+    }
+    // An empty (or fully recovered-away) block: stay permissive — the
+    // parser has already complained about whatever went missing.
+    return true;
+  }
+
+  /// True for a tail `while true:` — the one unit-typed statement control
+  /// never falls past, since Kira has no `break`: the loop can only be
+  /// left by `return`ing out of the enclosing function.
+  static auto is_while_true(const ast::node &node) -> bool {
+    const auto *stmt = dynamic_cast<const ast::while_stmt *>(&node);
+    if (stmt == nullptr) {
+      return false;
+    }
+    const auto *condition =
+        dynamic_cast<const ast::literal_expr *>(stmt->condition.get());
+    return condition != nullptr && condition->lit_kind == token_kind::kw_true;
+  }
+
+  /// See `block_provides_function_value` — the per-statement half of the
+  /// recursion.
+  static auto node_provides_function_value(const ast::node &node) -> bool {
+    switch (node.kind) {
+    case ast::node_kind::return_stmt:
+      return true;
+    case ast::node_kind::if_stmt: {
+      const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
+      return !stmt.else_body.empty() &&
+             std::ranges::all_of(stmt.branches,
+                                 [](const ast::if_branch &branch) -> bool {
+                                   return block_provides_function_value(
+                                       branch.body);
+                                 }) &&
+             block_provides_function_value(stmt.else_body);
+    }
+    case ast::node_kind::match_stmt: {
+      const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
+      // Compact `=> expr` arms always produce a value; recovered arms have
+      // already been diagnosed.
+      return std::ranges::all_of(
+          stmt.arms, [](const ast::match_arm &arm) -> bool {
+            return arm.body_expr != nullptr || arm.has_error ||
+                   block_provides_function_value(arm.body_stmts);
+          });
+    }
+    default:
+      return true;
+    }
+  }
+
   /// Checks a function/method declaration end to end: enforces the
   /// `pub`-must-annotate rule (`at_module_scope`), binds type parameters
   /// and value parameters (including a leading `self` typed from
@@ -9665,15 +9734,49 @@ private:
         }
       } else if (return_annotated_ && !types_.is_unit(return_type_) &&
                  !types_.is_unknown(return_type_) && !types_.is_unknown(tail) &&
-                 !types_.is_unit(tail) &&
-                 !types_.compatible(return_type_, tail)) {
-        error(decl.body_stmts.back() != nullptr ? decl.body_stmts.back()->span
-                                                : decl.span,
-              std::format("function `{}` returns `{}`, but its final "
-                          "expression has type `{}`",
-                          decl.name, types_.display(return_type_),
-                          types_.display(tail)),
-              "mismatched final expression");
+                 tail != k_error_type) {
+        const auto tail_span = decl.body_stmts.back() != nullptr
+                                   ? decl.body_stmts.back()->span
+                                   : decl.span;
+        if (!types_.is_unit(tail) && !types_.compatible(return_type_, tail)) {
+          error(tail_span,
+                std::format("function `{}` returns `{}`, but its final "
+                            "expression has type `{}`",
+                            decl.name, types_.display(return_type_),
+                            types_.display(tail)),
+                "mismatched final expression");
+        } else if (types_.is_unit(tail)
+                       ? (decl.body_stmts.back() == nullptr ||
+                          !is_while_true(*decl.body_stmts.back()))
+                       : !block_provides_function_value(decl.body_stmts)) {
+          // The body type-checked, but control can still fall off the end
+          // without a value: either the tail statement produces `unit`
+          // outright (e.g. the body ends in a `let` or a non-`while true`
+          // loop), or a tail `if`/`match` leaves some path — typically a
+          // missing `else` — that returns nothing.
+          auto diag = diagnostic(
+              diagnostic_level::error,
+              std::format("function `{}` is declared to return `{}`, but "
+                          "not every path through its body returns a value",
+                          decl.name, types_.display(return_type_)),
+              file_id_);
+          diag.with_label(tail_span,
+                          "control can reach the end of the function from "
+                          "here without a value");
+          if (decl.return_type != nullptr) {
+            diag.with_label(decl.return_type->span,
+                            std::format("`{}` promised here",
+                                        types_.display(return_type_)));
+          }
+          diag.with_help(std::format(
+              "Make every path produce a `{}`: add a `return`, cover the "
+              "missing `else` or `match` arm, or make the final statement "
+              "an expression of that type. If the function has nothing to "
+              "return, change the return type to `unit`.",
+              types_.display(return_type_)));
+          emit_diag(diag);
+          mark_error();
+        }
       }
     }
 

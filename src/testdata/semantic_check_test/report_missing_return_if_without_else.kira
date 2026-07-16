@@ -1,0 +1,12 @@
+module report_missing_return_if_without_else
+
+def partial(flag: bool) -> int64:
+    if flag:
+        return 1
+
+def nested_hole(flag: bool, other: bool) -> int64:
+    if flag:
+        if other:
+            return 1
+    else:
+        return 3

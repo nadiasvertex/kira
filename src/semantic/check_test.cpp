@@ -314,6 +314,35 @@ auto test_reports_extend_method_arity_mismatch() -> void {
                     "expected real arity checking against the extend method");
 }
 
+auto test_reports_missing_return_value() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_missing_return_value.kira");
+  expect(analyzed.error_count > 0,
+         "expected a value-returning function whose body never returns to "
+         "be rejected");
+  expect_diagnostic(analyzed, "not every path through its body returns",
+                    "expected the missing-return diagnostic for a body "
+                    "ending in a `let`");
+}
+
+auto test_reports_missing_return_on_if_without_else() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_missing_return_if_without_else.kira");
+  expect(analyzed.error_count >= 2,
+         "expected both fall-through `if` shapes to be rejected");
+  expect_diagnostic(analyzed, "not every path through its body returns",
+                    "expected the missing-return diagnostic for a tail "
+                    "`if` with no `else`");
+}
+
+auto test_accepts_all_paths_returning() -> void {
+  const auto analyzed = analyze_test_data_file("accept_all_paths_return.kira");
+  expect(analyzed.error_count == 0,
+         "expected functions returning on every path (tail expressions, "
+         "if/else, match arms, `while true`) to check cleanly: " +
+             analyzed.diagnostics);
+}
+
 auto test_impl_method_takes_priority_over_extend() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_impl_method_priority_over_extend.kira");
@@ -1458,6 +1487,9 @@ auto main() -> int {
     test_reports_string_interpolation_bad_dynamic_width();
     test_reports_associated_type_output_mismatch();
     test_reports_extend_method_arity_mismatch();
+    test_reports_missing_return_value();
+    test_reports_missing_return_on_if_without_else();
+    test_accepts_all_paths_returning();
     test_reports_const_generic_value_mismatch();
     test_accepts_const_generic_value_match();
     test_accepts_const_generic_try_from();

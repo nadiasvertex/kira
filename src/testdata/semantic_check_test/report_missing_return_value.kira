@@ -1,0 +1,4 @@
+module report_missing_return_value
+
+def answer() -> int64:
+    let x = 5
