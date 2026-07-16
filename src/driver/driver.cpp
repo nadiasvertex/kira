@@ -1,7 +1,6 @@
 #include "driver.h"
 
 #include <algorithm>
-#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -87,53 +86,6 @@ struct target_os_info {
 #endif
 }
 
-/// Converts the C++ preprocessor's `__DATE__` ("Mon dd yyyy", e.g.
-/// `"Jul 13 2026"`) into `KIRA_BUILD_DATE`'s ISO-8601 form. Bazel's default
-/// toolchain redefines `__DATE__` to the literal `"redacted"` for
-/// reproducible builds (confirmed empirically: this compiler binary itself
-/// reports `__DATE__` as `"redacted"` under `bazelisk build`), so this
-/// returns `"unknown"` for any `__DATE__` that doesn't start with one of the
-/// twelve recognized month abbreviations rather than silently mis-slicing
-/// `"redacted"` into a garbled non-date like `"d-01-ct"`.
-[[nodiscard]] auto iso_build_date() -> std::string {
-  constexpr auto k_months =
-      std::array<std::pair<std::string_view, std::string_view>, 12>{{
-          {"Jan", "01"},
-          {"Feb", "02"},
-          {"Mar", "03"},
-          {"Apr", "04"},
-          {"May", "05"},
-          {"Jun", "06"},
-          {"Jul", "07"},
-          {"Aug", "08"},
-          {"Sep", "09"},
-          {"Oct", "10"},
-          {"Nov", "11"},
-          {"Dec", "12"},
-      }};
-  constexpr std::string_view k_build_date = __DATE__;
-  if (k_build_date.size() != 11) {
-    return "unknown";
-  }
-  const auto month_name = k_build_date.substr(0, 3);
-  auto month = std::string_view{};
-  for (const auto &[name, number] : k_months) {
-    if (name == month_name) {
-      month = number;
-      break;
-    }
-  }
-  if (month.empty()) {
-    return "unknown";
-  }
-  auto day = std::string(k_build_date.substr(4, 2));
-  if (day[0] == ' ') {
-    day[0] = '0';
-  }
-  const auto year = k_build_date.substr(7, 4);
-  return std::format("{}-{}-{}", year, month, day);
-}
-
 /// Generates `module std.platform`'s target/build-info accessor functions
 /// (spec/std-platform.md "Compile-Time Target Constants") as Kira source
 /// text, with no `module` line of its own. This is the one piece of
@@ -184,7 +136,7 @@ struct target_os_info {
                      "\n",
                      detect_target_arch(), os.os, os_family_variant, os.vendor,
                      os.env, detect_target_endian(), sizeof(void *),
-                     k_version_string, iso_build_date());
+                     k_version_string, k_release_date);
 }
 
 /// Reads the checked-in `platform_source_path` (`src/std/platform.kira`),

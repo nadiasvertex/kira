@@ -1,0 +1,9 @@
+module main
+
+use std.console
+
+def main() -> unit:
+    println("Kira version: {std.platform.kira_version()}")
+    println("Kira implementation: {std.platform.kira_implementation()}")
+    println("Kira compiler: {std.platform.kira_compiler()}")
+    println("Kira build date: {std.platform.kira_build_date()}")
