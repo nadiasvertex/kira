@@ -143,6 +143,58 @@ install prefix=(env('HOME') / '.kira'):
     printf 'Installed kira to %s\n' "$prefix"
     printf 'Add %s/bin to your PATH to use it.\n' "$prefix"
 
+# Bump the minor version (reset patch to 0) and refresh the release date
+bump-minor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    version_file="src/version.h"
+    module_file="MODULE.bazel"
+    major=$(grep -m1 -E 'k_version_major = [0-9]+;' "$version_file" | grep -oE '[0-9]+')
+    minor=$(grep -m1 -E 'k_version_minor = [0-9]+;' "$version_file" | grep -oE '[0-9]+')
+    minor=$((minor + 1))
+    patch=0
+    date=$(date +%Y-%m-%d)
+
+    sed -i '' -E \
+      -e "s/k_version_major = [0-9]+;/k_version_major = ${major};/" \
+      -e "s/k_version_minor = [0-9]+;/k_version_minor = ${minor};/" \
+      -e "s/k_version_patch = [0-9]+;/k_version_patch = ${patch};/" \
+      -e "s/k_version_string = \"[0-9]+\.[0-9]+\.[0-9]+\";/k_version_string = \"${major}.${minor}.${patch}\";/" \
+      -e "s/k_release_date = \"[0-9-]+\";/k_release_date = \"${date}\";/" \
+      "$version_file"
+    sed -i '' -E \
+      -e "s/version = \"[0-9]+\.[0-9]+\.[0-9]+\",/version = \"${major}.${minor}.${patch}\",/" \
+      "$module_file"
+
+    printf 'Bumped to %s.%s.%s (%s)\n' "$major" "$minor" "$patch" "$date"
+
+# Bump the major version (reset minor and patch to 0) and refresh the release date
+bump-major:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    version_file="src/version.h"
+    module_file="MODULE.bazel"
+    major=$(grep -m1 -E 'k_version_major = [0-9]+;' "$version_file" | grep -oE '[0-9]+')
+    major=$((major + 1))
+    minor=0
+    patch=0
+    date=$(date +%Y-%m-%d)
+
+    sed -i '' -E \
+      -e "s/k_version_major = [0-9]+;/k_version_major = ${major};/" \
+      -e "s/k_version_minor = [0-9]+;/k_version_minor = ${minor};/" \
+      -e "s/k_version_patch = [0-9]+;/k_version_patch = ${patch};/" \
+      -e "s/k_version_string = \"[0-9]+\.[0-9]+\.[0-9]+\";/k_version_string = \"${major}.${minor}.${patch}\";/" \
+      -e "s/k_release_date = \"[0-9-]+\";/k_release_date = \"${date}\";/" \
+      "$version_file"
+    sed -i '' -E \
+      -e "s/version = \"[0-9]+\.[0-9]+\.[0-9]+\",/version = \"${major}.${minor}.${patch}\",/" \
+      "$module_file"
+
+    printf 'Bumped to %s.%s.%s (%s)\n' "$major" "$minor" "$patch" "$date"
+
 # Run the kira binary
 run source_file: build
     bazel-bin/src/kira {{ source_file }}
