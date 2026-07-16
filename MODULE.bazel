@@ -1,3 +1,5 @@
+# Keep this version in sync with `k_version_string` in src/version.h — bzlmod
+# requires the module version live here and can't read the C++ header.
 module(
     name = "kira",
     version = "0.2.0",

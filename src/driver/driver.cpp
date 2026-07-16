@@ -15,6 +15,7 @@
 #include "src/semantic/analysis.h"
 #include "src/util/path.h"
 #include "src/util/str.h"
+#include "src/version.h"
 
 using kira::source_manager;
 using kira::util::append_text;
@@ -176,14 +177,14 @@ struct target_os_info {
                      "pub pure def target_endianness() -> endianness: {}\n"
                      "pub pure def target_pointer_width() -> usize: {}\n"
                      "\n"
-                     "pub pure def kira_version() -> str: \"0.2.0\"\n"
+                     "pub pure def kira_version() -> str: \"{}\"\n"
                      "pub pure def kira_implementation() -> str: \"kira\"\n"
                      "pub pure def kira_compiler() -> str: \"llvm\"\n"
                      "pub pure def kira_build_date() -> str: \"{}\"\n"
                      "\n",
                      detect_target_arch(), os.os, os_family_variant, os.vendor,
                      os.env, detect_target_endian(), sizeof(void *),
-                     iso_build_date());
+                     k_version_string, iso_build_date());
 }
 
 /// Reads the checked-in `platform_source_path` (`src/std/platform.kira`),

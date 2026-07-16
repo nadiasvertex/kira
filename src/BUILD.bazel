@@ -74,6 +74,12 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "version",
+    hdrs = ["version.h"],
+    visibility = ["//visibility:public"],
+)
+
 cc_binary(
     name = "kira",
     srcs = ["main.cpp"],
@@ -83,7 +89,10 @@ cc_binary(
         "//src/utf8",
     ],
     tags = ["no-sandbox"],
-    deps = ["//src/driver:driver"],
+    deps = [
+        "//src/driver:driver",
+        ":version",
+    ],
     visibility = ["//visibility:public"],
 )
 

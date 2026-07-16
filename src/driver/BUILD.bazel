@@ -35,6 +35,7 @@ cc_library(
       "//src/semantic:semantic",
       "//src/parser:parser",
       "//src/util:util",
+      "//src:version",
     ],
     visibility = ["//visibility:public"],
 )

@@ -44,6 +44,14 @@ static const std::unordered_map<std::string_view, cli_converter>
             cfg.show_help = true;
             return std::monostate{};
           }}},
+        {"--version",
+         {.name = "--version",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.show_version = true;
+            return std::monostate{};
+          }}},
         {"--metadata-dir",
          {.name = "--metadata-dir",
           .needs_value = true,
@@ -302,6 +310,7 @@ auto render_help(std::string_view program_name) -> std::string {
       "Kira - Parse source files and emit module metadata\n\n"
       "Options:\n"
       "  -h, --help               Show this help message and exit\n"
+      "  --version                Print the compiler version and exit\n"
       "  --metadata-dir PATH      Write module metadata under PATH\n"
       "                          (default: {})\n"
       "  (default)                Compile to bytecode and execute `{}` via\n"

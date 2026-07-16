@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "driver/cli.h"
+#include "version.h"
 
 /// Run the Kira CLI driver from process entry to exit status.
 ///
@@ -22,6 +23,11 @@ auto main(int argc, char *argv[]) -> int {
     }
 
     auto cfg = *result;
+
+    if (cfg.show_version) {
+      std::println("kira {}", kira::k_version_string);
+      return 0;
+    }
 
     if (cfg.show_help) {
       std::println("{}", kira::driver::render_help(cfg.program_name));

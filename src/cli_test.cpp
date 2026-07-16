@@ -75,6 +75,17 @@ auto test_parse_args_supports_help_and_double_dash() -> void {
          "expected source after -- to be preserved");
 }
 
+/// Verify `--version` sets `show_version` without requiring a source file.
+auto test_parse_args_supports_version() -> void {
+  std::vector<std::string> args = {"kira", "--version"};
+  auto argv = make_argv(args);
+
+  auto result = kira::driver::parse_args(argv);
+  expect(result.has_value(), "--version should parse successfully");
+  expect(result->show_version, "--version should set show_version");
+  expect(result->sources.empty(), "--version should not require sources");
+}
+
 /// Verify that the metadata output directory can be overridden.
 auto test_parse_args_accepts_metadata_dir() -> void {
   std::vector<std::string> args = {"kira", "--metadata-dir", "build/meta",
@@ -1639,6 +1650,7 @@ auto main() -> int {
   try {
     test_parse_args_accepts_sources();
     test_parse_args_supports_help_and_double_dash();
+    test_parse_args_supports_version();
     test_parse_args_accepts_metadata_dir();
     test_parse_args_rejects_unknown_options();
     test_parse_args_accepts_show_compile_details();

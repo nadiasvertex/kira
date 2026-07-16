@@ -19,6 +19,9 @@ struct cli_config {
   std::string metadata_dir =
       std::string(k_default_metadata_dir); ///< Output root for metadata files.
   bool show_help = false; ///< True when argument parsing requested help output.
+  bool show_version =
+      false; ///< True when `--version` was requested; the caller should
+             ///< print the compiler version and exit instead of compiling.
   bool show_compile_details =
       false; ///< Print the per-module "Compiled N module(s)"/"Lowered N/M
              ///< module(s) to HIR." listing (and, in `run` mode, the
