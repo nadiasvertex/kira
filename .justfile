@@ -150,6 +150,7 @@ bump-minor:
 
     version_file="src/version.h"
     module_file="MODULE.bazel"
+    version_test_file="src/testdata/std_test/kira_version.expected"
     major=$(grep -m1 -E 'k_version_major = [0-9]+;' "$version_file" | grep -oE '[0-9]+')
     minor=$(grep -m1 -E 'k_version_minor = [0-9]+;' "$version_file" | grep -oE '[0-9]+')
     minor=$((minor + 1))
@@ -166,6 +167,10 @@ bump-minor:
     sed -i '' -E \
       -e "s/version = \"[0-9]+\.[0-9]+\.[0-9]+\",/version = \"${major}.${minor}.${patch}\",/" \
       "$module_file"
+    sed -i '' -E \
+      -e "s/Kira version: [0-9]+\.[0-9]+\.[0-9]+/Kira version: ${major}.${minor}.${patch}/" \
+      -e "s/Kira build date: [0-9-]+/Kira build date: ${date}/" \
+      "$version_test_file"
 
     printf 'Bumped to %s.%s.%s (%s)\n' "$major" "$minor" "$patch" "$date"
 
@@ -176,6 +181,7 @@ bump-major:
 
     version_file="src/version.h"
     module_file="MODULE.bazel"
+    version_test_file="src/testdata/std_test/kira_version.expected"
     major=$(grep -m1 -E 'k_version_major = [0-9]+;' "$version_file" | grep -oE '[0-9]+')
     major=$((major + 1))
     minor=0
@@ -192,6 +198,10 @@ bump-major:
     sed -i '' -E \
       -e "s/version = \"[0-9]+\.[0-9]+\.[0-9]+\",/version = \"${major}.${minor}.${patch}\",/" \
       "$module_file"
+    sed -i '' -E \
+      -e "s/Kira version: [0-9]+\.[0-9]+\.[0-9]+/Kira version: ${major}.${minor}.${patch}/" \
+      -e "s/Kira build date: [0-9-]+/Kira build date: ${date}/" \
+      "$version_test_file"
 
     printf 'Bumped to %s.%s.%s (%s)\n' "$major" "$minor" "$patch" "$date"
 
