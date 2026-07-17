@@ -480,6 +480,15 @@ auto test_accepts_type_reflection_primitives() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_module_reflection() -> void {
+  const auto analyzed = analyze_test_data_file("accept_module_reflection.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `sample.name()`/`.type_count()`/"
+                     "`.function_count()`/`.types()`/`.functions()` to reflect "
+                     "over the module's surface at compile time:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_accepts_expr_keyword_usable_as_identifier() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_expr_keyword_usable_as_identifier.kira");
@@ -1667,15 +1676,15 @@ auto test_functor_body_impl_and_extend_members_check() -> void {
               "    def hello(self) -> int32\n"
               "\n"
               "module wrap[DB: backend]:\n"
-              "    pub type box = { value: int32 }\n"
-              "    impl greet for box:\n"
+              "    pub type widget = { value: int32 }\n"
+              "    impl greet for widget:\n"
               "        def hello(self) -> int32:\n"
               "            self.value\n"
-              "    extend box:\n"
+              "    extend widget:\n"
               "        def doubled(self) -> int32:\n"
               "            self.value + self.value\n"
               "    pub def run() -> int32:\n"
-              "        let b = box { value: 21 }\n"
+              "        let b = widget { value: 21 }\n"
               "        b.hello() + b.doubled()\n"
               "\n"
               "use main.wrap[main.postgres] as w\n"
@@ -1716,8 +1725,8 @@ auto test_functor_body_impl_coherence_across_instantiations() -> void {
               "    def hello(self) -> int32\n"
               "\n"
               "module wrap[DB: backend]:\n"
-              "    pub type box = { value: int32 }\n"
-              "    impl greet for box:\n"
+              "    pub type widget = { value: int32 }\n"
+              "    impl greet for widget:\n"
               "        def hello(self) -> int32:\n"
               "            self.value\n"
               "\n"
@@ -1853,6 +1862,7 @@ auto main() -> int {
     test_accepts_expr_builder_constructs_fragment();
     test_accepts_item_splice_injects_impl();
     test_accepts_type_reflection_primitives();
+    test_accepts_module_reflection();
     test_accepts_generator_yields_typed_values();
     test_accepts_for_loop_over_generator();
     test_accepts_existential_return_type();

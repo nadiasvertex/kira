@@ -1605,6 +1605,9 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
   if (auto reflected = try_eval_type_reflection_call(call)) {
     return *reflected;
   }
+  if (auto reflected = try_eval_module_reflection_call(call)) {
+    return *reflected;
+  }
   if (auto generic_call = try_eval_comptime_generic_call(call)) {
     return *generic_call;
   }

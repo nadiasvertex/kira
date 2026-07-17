@@ -94,6 +94,14 @@ The diagnostic lists **every** missing/mismatched member (concept-quality), not
 just the first: "module `postgres` does not satisfy signature `backend`:" then a
 labelled note per failure with expected-vs-found.
 
+**Deep type-equality (landed).** `module_satisfies_signature` checks not just
+member existence/visibility/arity but each `def` parameter/return type and each
+`static`'s type under the abstract-type binding: the signature's types are
+resolved *in the argument module's own resolve context* (quietly), so an
+abstract `type conn` binds to the module's concrete same-named `conn`
+automatically, and each pair is compared by interned `type_id` (a knowledge gap
+— `k_unknown`/`k_error` on either side — never manufactures a false mismatch).
+
 ## 4. Functors and instantiation
 
 - A parameterized `module m[P: bound]` registers as a **functor**: visible by
@@ -132,12 +140,32 @@ body's file, and projections resolve through the alias:
   everywhere), not functor-specific.
 
 The clone exists only to give each instantiation distinct node identity so
-`node_types_` and diagnostics stay per-instantiation. `def`, `type`, and
-`static` (binding) members are all cloned (`clone_func_decl`,
-`clone_type_decl`, `clone_static_decl`); a nested `impl`/`extend`/`trait`, or a
-non-binding `static` form, still falls back with a clear diagnostic. Types and
+`node_types_` and diagnostics stay per-instantiation. `def`, `type`, `static`
+(binding), `impl`, `extend`, and `trait` members are all cloned
+(`clone_func_decl`, `clone_type_decl`, `clone_static_decl`, `clone_impl_decl`,
+`clone_extend_decl`, `clone_trait_decl`); a non-binding `static` form or an
+inline submodule still falls back with a clear diagnostic. Types, traits, and
 statics are registered into the synthetic module *before* its functions, so a
-function's `-> row` return type or a `bump` reference resolves against them.
+function's `-> row` return type, a `bump` reference, or a trait bound resolves
+against them.
+
+**Ordering for `impl`/`extend`/coherence.** Because `build_method_table` and
+`validate_impl_coherence` run *once*, before per-file checking, a functor-body
+`impl`/`extend` must be registered before them or it would never enter the
+method table or coherence index. So materialization is split: a pre-pass
+(`discover_functor_instantiations`, a sibling of the item-splice pass) walks
+every file's `use m[args]` and *registers* each instantiation's cloned members
+into `program_index` (including `impls`/`extends`); the method-table and
+coherence build then see them; and the cloned bodies are *checked* afterward
+(`check_pending_functor_bodies`) so a method call inside a body resolves
+against the complete table. Coherence keys need no special-casing: the impl's
+target type is projected per instantiation (each `use audited[postgres]` vs
+`[sqlite]` resolves its local type to a distinct `type_id`/decl), and
+memoization means one instantiation = one registration, so two instantiations
+implementing a trait for their own local type never collide. The body is
+checked with a temporary `use owner.*` wildcard so a name declared alongside
+the functor (a sibling `trait`, `type`) still resolves in the synthetic
+module's own scope.
 The synthetic module is registered in `program_index` under the *sanitized*
 instantiation key (non-identifier characters → `_`, since `import_binding::path`
 is split/joined on `.`), and the importing file gets an alias binding
@@ -164,9 +192,13 @@ module set, so ordinary cross-module dispatch links the two. This mirrors the
 multi-file idiom where every module is its own top-level file: a materialized
 functor instantiation is simply an in-memory module with no source file, and
 both backends (bytecode VM and LLVM/AOT) run it unchanged. An instantiated
-functor now runs end-to-end, not just type-checks. Only `def`s lower to runtime
-code: `type` members are compile-time, and a scalar `static` is inlined at each
-reference (`static_const_values`), so neither needs a `functor_instance`.
+functor now runs end-to-end, not just type-checks. `def`s and `impl`/`extend`
+methods lower to runtime code — a method as `target::method` (via
+`functor_instance::impl_target`), the same key its `receiver.method()` call
+records, kept distinct across instantiations by the unique synthetic
+`owner_module`. `type` members are compile-time, and a scalar `static` is
+inlined at each reference (`static_const_values`), so neither needs a
+`functor_instance`.
 - **Cycle detection.** A functor whose instantiation (directly or transitively)
   requires instantiating itself gets a cycle diagnostic, reusing the
   in-progress-set pattern (`statics_in_progress_`-style, `check.cpp`).
@@ -175,34 +207,66 @@ reference (`static_const_values`), so neither needs a `functor_instance`.
   instantiation key, or duplicate-impl errors appear (or, worse, orphan
   violations slip through). Tested in Phase 3.
 
-## 5. Reflection (Phase 4)
+## 5. Reflection (Phase 4) — landed
 
 `src/comptime/reflect.cpp` extends from type reflection to module reflection:
-`M.name()`, `M.functions()`, `M.types()` return descriptor values built by a
-read-only traversal of the resolved module's symbols. Visibility-aware: `pub`
-members only from outside, all from inside. Works uniformly on ordinary modules,
-instantiated functors, and module parameters inside a functor body (reflection
-there evaluates per-instantiation, which the Strategy-3 checking model already
-provides).
+`M.name()`, `M.functions()`, `M.types()`, `M.function_count()`, and
+`M.type_count()` return descriptor values built by a read-only traversal of the
+resolved module's registered surface. Each function/type descriptor is a
+`{name, is_pub}` struct — visibility is *exposed as a field* rather than
+pre-filtered, since the evaluator has no caller-module context with which to
+apply the "pub from outside, all from inside" rule itself; a consumer filters on
+`is_pub`. `checker::register_comptime_modules` registers every module's surface
+after functor instantiations are materialized, so a synthetic functor module is
+reflected exactly like a hand-written one (by its synthetic name). The checker
+recognizes an `M.<call>()` reflection call in `infer_field_call`
+(`names_reflectable_module`) and types it (str/int/list) so it type-checks and
+reaches compile-time evaluation instead of being rejected as an undefined value.
 
-## 6. Pipeline-ordering rule (Phase 6) — the hard constraint
+**v1 limits.** Modules are registered under their fully-qualified name and their
+leaf segment (`sample.math` is reachable as `math`); reflecting an instantiated
+functor through its `use ... as db` *alias* (`db.functions()`) is not wired yet
+— use the module name. Two submodules sharing a leaf name collide (last wins).
+
+### Metadata (Phase 5) — landed
+
+Each `use m[args]` a file requests is exported to its `.kmeta` record as a
+`FunctorInstantiation` message (`src/module_metadata.proto`, schema bumped to
+v2): the functor path, each argument's source spelling, the `as` alias, and a
+canonical instantiation key `functor.path[arg, arg]`. Built syntactically in
+`build_module_metadata` (the parser-level metadata pass has no resolved types),
+so the key is stable across compilation units for the same functor/arguments.
+
+## 6. Pipeline-ordering rule (Phase 6) — the hard constraint (landed)
 
 Today the module graph and `use` resolution run *before* type checking and
 compile-time evaluation. `static if BUILD.test: use fake_io as io` makes the
 module graph depend on evaluation — a potential circularity.
 
 **Rule:** a `static if` that gates a `use` may reference only *early-evaluable*
-conditions — literals, build flags (`BUILD.*`), and statics whose initializers
-need no name resolution beyond the prelude. This fragment is evaluated in a
-dedicated pre-resolution pass (a sibling of the driver's lowering stage) that
-folds the taken branch's items into the file's item list and drops the untaken
-branch before the module graph is built. Richer conditions get a diagnostic that
-explains the restriction. This keeps confluence trivial and the graph's
-evaluation-dependence a bounded pre-pass — resist any "just evaluate a bit more"
-widening.
+conditions. This fragment is evaluated in a dedicated pre-resolution pass
+(`src/driver/static_if_stage.cpp`, `fold_static_if_imports`, a sibling of the
+driver's lowering stage) that folds the taken branch's items into the file's
+item list and drops the untaken branch before the module graph is built.
+Richer conditions get a diagnostic that explains the restriction. This keeps
+confluence trivial and the graph's evaluation-dependence a bounded pre-pass —
+resist any "just evaluate a bit more" widening.
+
+**As implemented (v1).** The pre-pass only touches a `static if` whose branch
+contains a `use` (every other `static if` keeps its ordinary check-time
+branch-selection). The condition is evaluated with a *standalone, resolution-
+free* `comptime::evaluator` — no globals registered — so only literal
+expressions fold (`static if true:`); the taken branch is folded recursively so
+a nested import-gating `static if` inside it is handled too. `BUILD.*` build
+flags and resolution-dependent statics are named in the rule above but have no
+evaluator support yet, so they currently hit the restriction diagnostic — the
+natural extension is to teach the standalone evaluator about `BUILD.*`.
 
 ## 7. Sequencing
 
-`0 → 1 → 2 → 3 → (4, 5, 6 in any order) → 7`. The feature is real after Phase 3.
-Highest risks: pipeline ordering (§6), type identity across instantiations (§4),
-and coherence inside functors (§4).
+`0 → 1 → 2 → 3 → (4, 5, 6 in any order) → 7`. **All phases landed as of
+2026-07-17** — the feature was real after Phase 3, and reflection (4), metadata
+(5), `static if` gating (6), and satisfies hardening (7, deep type-equality)
+are now complete too. The highest-risk items proved tractable: coherence inside
+functors falls out of per-instantiation target-type projection plus memoization
+(§4), and pipeline ordering (§6) is a bounded, literal-only pre-pass.

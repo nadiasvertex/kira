@@ -12,6 +12,7 @@ cc_library(
         "module_metadata.cpp",
         "parse_stage.cpp",
         "run_build_stage.cpp",
+        "static_if_stage.cpp",
     ],
     hdrs = [
       "aot.h",
@@ -24,12 +25,14 @@ cc_library(
       "module_metadata.h",
       "parse_stage.h",
       "run_build_stage.h",
+      "static_if_stage.h",
     ],
     deps = [
       "//src:module_metadata_cc_proto",
       "//src/bytecode:bytecode",
       "//src/bytecode:vm",
       "//src/bytecode_compiler:bytecode_compiler",
+      "//src/comptime:comptime",
       "//src/hir:hir",
       "//src/llvm_codegen:aot",
       "//src/semantic:semantic",

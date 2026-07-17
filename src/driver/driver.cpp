@@ -15,6 +15,7 @@
 #include "src/util/path.h"
 #include "src/util/str.h"
 #include "src/version.h"
+#include "static_if_stage.h"
 
 using kira::source_manager;
 using kira::util::append_text;
@@ -283,8 +284,13 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   auto session_diagnostics = diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
 
-  const auto parsed_inputs = parse_sources(cfg, sources, session_diagnostics,
-                                           file_has_errors, report.diagnostics);
+  auto parsed_inputs = parse_sources(cfg, sources, session_diagnostics,
+                                     file_has_errors, report.diagnostics);
+
+  // Fold import-gating `static if` blocks before the module graph is built, so
+  // the selected `use`s (and any other items in the taken branch) become real
+  // top-level items every later phase sees. See `fold_static_if_imports`.
+  fold_static_if_imports(parsed_inputs, session_diagnostics);
 
   auto semantic_inputs = std::vector<semantic::parsed_module>{};
   semantic_inputs.reserve(parsed_inputs.size());

@@ -1,6 +1,9 @@
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "module_metadata.h"
 #include "src/module_metadata.pb.h"
@@ -21,7 +24,7 @@ namespace fs = std::filesystem;
 constexpr std::string_view k_metadata_extension = ".kmeta";
 
 /// Schema version embedded in every emitted module metadata payload.
-constexpr uint32_t k_module_metadata_schema_version = 1;
+constexpr uint32_t k_module_metadata_schema_version = 2;
 
 } // namespace
 
@@ -417,6 +420,58 @@ auto add_symbol_metadata(const ast::node &node,
   symbol->set_has_parse_error(node.has_error);
 }
 
+/// Render one functor instantiation argument's source spelling from its AST,
+/// purely syntactically (no name resolution) — a module argument is a
+/// `named_type` path, and a nested instantiation (`cached[postgres]`) renders
+/// its own bracketed argument list recursively. Anything else renders as
+/// `<arg>`, matching the deliberately-narrow rendering `reflect.cpp` uses.
+[[nodiscard]] auto render_functor_argument(const ast::node *value)
+    -> std::string {
+  const auto *named = dynamic_cast<const ast::named_type *>(value);
+  if (named == nullptr) {
+    return "<arg>";
+  }
+  auto rendered = join_strings(named->path, ".");
+  if (!named->type_args.empty()) {
+    rendered += '[';
+    for (size_t i = 0; i < named->type_args.size(); ++i) {
+      if (i > 0) {
+        rendered += ", ";
+      }
+      rendered += render_functor_argument(named->type_args[i].value.get());
+    }
+    rendered += ']';
+  }
+  return rendered;
+}
+
+/// Append one functor instantiation (`use m[args] as alias`) to the metadata.
+auto add_functor_instantiation_metadata(const ast::use_decl &decl,
+                                        metadata::v1::ModuleMetadata &metadata)
+    -> void {
+  auto *inst = metadata.add_functor_instantiations();
+  for (const auto &part : decl.path) {
+    inst->add_functor_path(part);
+  }
+  auto arg_spellings = std::vector<std::string>{};
+  arg_spellings.reserve(decl.instantiation_args.size());
+  for (const auto &arg : decl.instantiation_args) {
+    arg_spellings.push_back(render_functor_argument(arg.value.get()));
+  }
+  for (const auto &spelling : arg_spellings) {
+    inst->add_argument(spelling);
+  }
+  if (decl.selector.has_value() &&
+      decl.selector->kind == ast::use_selector_kind::single &&
+      !decl.selector->items.empty() &&
+      decl.selector->items.front().alias.has_value()) {
+    inst->set_alias(*decl.selector->items.front().alias);
+  }
+  inst->set_instantiation_key(std::format("{}[{}]",
+                                          join_strings(decl.path, "."),
+                                          join_strings(arg_spellings, ", ")));
+}
+
 /// Build the serialized metadata payload for one parsed source file.
 ///
 /// @param file Parsed AST for the source file.
@@ -444,9 +499,14 @@ auto add_symbol_metadata(const ast::node &node,
     add_symbol_metadata(*item, metadata);
 
     switch (item->kind) {
-    case ast::node_kind::use_decl:
-      add_import_metadata(dynamic_cast<const ast::use_decl &>(*item), metadata);
+    case ast::node_kind::use_decl: {
+      const auto &use = dynamic_cast<const ast::use_decl &>(*item);
+      add_import_metadata(use, metadata);
+      if (!use.instantiation_args.empty()) {
+        add_functor_instantiation_metadata(use, metadata);
+      }
       break;
+    }
     case ast::node_kind::dep_decl:
       add_dependency_metadata(dynamic_cast<const ast::dep_decl &>(*item),
                               metadata);

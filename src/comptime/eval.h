@@ -100,6 +100,23 @@ public:
   /// see `checker::register_comptime_globals`, the only caller.
   void register_pending_type(std::string name, const ast::type_decl &decl);
 
+  /// One `def`/`type` member a module exposes, for module reflection.
+  struct module_member_info {
+    std::string name;
+    bool is_pub = false;
+  };
+  /// The reflectable surface of one module: its `def` and `type` members. An
+  /// instantiated functor is registered exactly like an ordinary module (its
+  /// synthetic name), so `M.functions()`/`M.types()` work uniformly on both.
+  struct module_reflection_info {
+    std::vector<module_member_info> functions;
+    std::vector<module_member_info> types;
+  };
+  /// Registers a module's reflectable surface so `M.name()`/`M.functions()`/
+  /// `M.types()`/`.function_count()`/`.type_count()` (`reflect.cpp`) resolve
+  /// `M` to it. Called once per module by `checker::register_comptime_modules`.
+  void register_pending_module(std::string name, module_reflection_info info);
+
   /// A node -> (sum type name, variant name) lookup, backed by `checker`'s
   /// own already-resolved `node_types_` (see `checker::resolve_variant_tag`,
   /// the only real implementation). The evaluator needs this because the
@@ -256,6 +273,15 @@ private:
   [[nodiscard]] auto try_eval_type_reflection_call(const ast::call_expr &call)
       -> std::optional<value>;
 
+  /// Recognizes `M.name()`/`M.functions()`/`M.types()`/`.function_count()`/
+  /// `.type_count()` — compile-time reflection over a registered module's
+  /// surface (`register_pending_module`). `M` must be an `ident_expr` naming
+  /// an entry in `pending_modules_`. Returns `nullopt` if `call` doesn't match
+  /// this shape at all, so `eval_call` can fall through to its ordinary
+  /// dispatch (and to type reflection, which is tried first).
+  [[nodiscard]] auto try_eval_module_reflection_call(const ast::call_expr &call)
+      -> std::optional<value>;
+
   /// Recognizes `name[T](...)` — a compile-time generic call to a `static
   /// def` function with one type parameter (e.g. `derive_show[point]()`).
   /// `name` must be in `pending_functions_` with a non-empty `type_params`;
@@ -328,6 +354,9 @@ private:
   /// Every registered `type` declaration, by name — see
   /// `register_pending_type` and `try_eval_type_reflection_call`.
   std::unordered_map<std::string, const ast::type_decl *> pending_types_;
+  /// Every registered module's reflectable surface, by name — see
+  /// `register_pending_module` and `try_eval_module_reflection_call`.
+  std::unordered_map<std::string, module_reflection_info> pending_modules_;
 
   /// See `set_variant_resolver`; unset (empty `std::function`) until
   /// `checker` installs it.

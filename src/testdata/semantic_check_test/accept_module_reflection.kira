@@ -1,0 +1,23 @@
+module sample
+
+pub type point = { x: int32, y: int32 }
+type secret = { s: int32 }
+
+pub def area() -> int32:
+    return 0
+
+def hidden() -> int32:
+    return 1
+
+static assert sample.name() == "sample", "module name should reflect to sample"
+
+static assert sample.type_count() == 2, "sample should have 2 types"
+
+static assert sample.function_count() == 3, "sample should have 3 functions"
+
+static assert sample.types()[0].name != "", "a reflected type has a name"
+
+static assert sample.functions()[0].name != "", "a reflected function has a name"
+
+def run() -> int32:
+    return 0

@@ -457,6 +457,48 @@ auto test_functor_body_with_type_and_static_members() -> void {
          "expected ping(connect(...)) + bump == 40 + 2 + 5 == 47");
 }
 
+auto test_functor_body_with_impl_and_extend_members() -> void {
+  // The VM counterpart of codegen_test.cpp's identically-named test: a functor
+  // body declares a local `type` plus an `impl`/`extend` on it, and a `def`
+  // that calls both through a value of the local type. The impl/extend methods
+  // are registered per instantiation and lower under `widget::method` within
+  // the synthetic module.
+  auto module = compile_fixture_multi(
+      {
+          {"postgres", "module postgres\n"
+                       "pub type conn = int32\n"
+                       "pub def connect(url: str) -> conn:\n"
+                       "    return 0\n"},
+          {"app", "module app\n"
+                  "use postgres\n"
+                  "signature backend:\n"
+                  "    type conn\n"
+                  "    def connect(url: str) -> conn\n"
+                  "trait greet:\n"
+                  "    def hello(self) -> int32\n"
+                  "module wrap[DB: backend]:\n"
+                  "    pub type widget = { pub value: int32 }\n"
+                  "    impl greet for widget:\n"
+                  "        def hello(self) -> int32:\n"
+                  "            return self.value\n"
+                  "    extend widget:\n"
+                  "        def doubled(self) -> int32:\n"
+                  "            return self.value + self.value\n"
+                  "    pub def run() -> int32:\n"
+                  "        let b = widget { value: 21 }\n"
+                  "        return b.hello() + b.doubled()\n"
+                  "use wrap[postgres] as w\n"
+                  "pub def main() -> int32:\n"
+                  "    return w.run()\n"},
+      },
+      "app");
+  auto main_result = run_main(module);
+  expect(main_result.has_value(),
+         "expected a functor with impl/extend members to run");
+  expect(main_result->value.i == 63,
+         "expected hello() + doubled() == 21 + 42 == 63");
+}
+
 auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
   auto module = compile_fixture_multi(
       {
@@ -1330,6 +1372,7 @@ auto main() -> int {
     test_calls_a_function_in_another_module();
     test_calls_into_a_materialized_functor_instantiation();
     test_functor_body_with_type_and_static_members();
+    test_functor_body_with_impl_and_extend_members();
     test_calls_an_associated_function_via_a_type_qualified_path();
     test_calls_a_self_receiver_trait_default_method_across_modules();
     test_and_or_short_circuit_to_correct_value();

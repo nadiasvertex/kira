@@ -273,7 +273,7 @@ auto test_compile_sources_writes_module_metadata() -> void {
 
   auto metadata = kira::metadata::v1::ModuleMetadata{};
   expect(metadata.ParseFromIstream(&in), "expected metadata protobuf to parse");
-  expect(metadata.schema_version() == 1, "expected metadata schema version");
+  expect(metadata.schema_version() == 2, "expected metadata schema version");
   expect(metadata.module_path_size() == 2, "expected module path components");
   expect(metadata.module_path(0) == "sample",
          "expected first module path part");
@@ -295,6 +295,132 @@ auto test_compile_sources_writes_module_metadata() -> void {
          "expected function visibility in metadata");
   expect(metadata.dependencies(0).fields().at("version") == "3.45",
          "expected dependency field value to be unquoted");
+}
+
+/// Verify that a functor instantiation (`use m[args] as alias`) is recorded in
+/// the emitting file's metadata with its functor path, arguments, alias, and a
+/// canonical-ish instantiation key.
+auto test_compile_sources_writes_functor_instantiation_metadata() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "app.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module app\n"
+                          "signature backend:\n"
+                          "    type conn\n"
+                          "    def connect(url: str) -> conn\n"
+                          "module postgres:\n"
+                          "    pub type conn = int32\n"
+                          "    pub def connect(url: str) -> conn:\n"
+                          "        return 0\n"
+                          "module audited[DB: backend]:\n"
+                          "    pub def go() -> int32:\n"
+                          "        return 0\n"
+                          "use app.audited[app.postgres] as db\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0, "expected valid functor source to compile");
+  expect(report->modules.size() == 1, "expected one metadata artifact");
+
+  auto in = std::ifstream(fs::path(report->modules[0].metadata_path),
+                          std::ios::binary);
+  auto metadata = kira::metadata::v1::ModuleMetadata{};
+  expect(metadata.ParseFromIstream(&in), "expected metadata protobuf to parse");
+  expect(metadata.functor_instantiations_size() == 1,
+         "expected one functor instantiation in metadata");
+  const auto &inst = metadata.functor_instantiations(0);
+  expect(inst.functor_path_size() == 2 && inst.functor_path(0) == "app" &&
+             inst.functor_path(1) == "audited",
+         "expected the functor path `app.audited`");
+  expect(inst.argument_size() == 1 && inst.argument(0) == "app.postgres",
+         "expected the argument spelling `app.postgres`");
+  expect(inst.alias() == "db", "expected the `as db` alias");
+  expect(inst.instantiation_key() == "app.audited[app.postgres]",
+         "expected the canonical instantiation key");
+}
+
+/// Verify that an import-gating `static if` with a literal condition folds to
+/// its taken branch before the module graph is built: the taken branch's `use`
+/// is active (its API resolves) and the untaken branch's is not.
+auto test_compile_sources_folds_static_if_import_selection() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "app.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  // `real_io` exposes `alpha`, `fake_io` exposes `beta`. The `static if true`
+  // branch imports `real_io as io`, so `io.alpha()` must resolve; had the fold
+  // wrongly selected the `else` branch, `io.alpha()` would be undefined.
+  write_file(source_path, "module app\n"
+                          "module real_io:\n"
+                          "    pub def alpha() -> int32:\n"
+                          "        return 1\n"
+                          "module fake_io:\n"
+                          "    pub def beta() -> int32:\n"
+                          "        return 2\n"
+                          "static if true:\n"
+                          "    use app.real_io as io\n"
+                          "else:\n"
+                          "    use app.fake_io as io\n"
+                          "def use_it() -> int32:\n"
+                          "    return io.alpha()\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         std::string("expected the `static if true` branch's `use real_io as "
+                     "io` to be selected so `io.alpha()` resolves:\n") +
+             report->diagnostics);
+}
+
+/// Verify that a `use`-gating `static if` whose condition is not early-
+/// evaluable (it references a `static let`, which needs name resolution) is
+/// rejected with the restriction diagnostic rather than silently dropping the
+/// import from the module graph.
+auto test_compile_sources_rejects_use_gated_by_nonliteral_static_if() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "app.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module app\n"
+                          "module real_io:\n"
+                          "    pub def alpha() -> int32:\n"
+                          "        return 1\n"
+                          "static let flag: bool = true\n"
+                          "static if flag:\n"
+                          "    use app.real_io as io\n"
+                          "def run() -> int32:\n"
+                          "    return 0\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(
+      report->error_count > 0,
+      "expected a non-early-evaluable `use`-gating condition to be rejected");
+  expect(report->diagnostics.find("early-evaluable") != std::string::npos,
+         std::string("expected the restriction diagnostic:\n") +
+             report->diagnostics);
 }
 
 /// Verify that a fully-annotated module also lowers to HIR alongside its
@@ -1657,6 +1783,9 @@ auto main() -> int {
     test_parse_args_accepts_optimization_level();
     test_rendering_helpers();
     test_compile_sources_writes_module_metadata();
+    test_compile_sources_writes_functor_instantiation_metadata();
+    test_compile_sources_folds_static_if_import_selection();
+    test_compile_sources_rejects_use_gated_by_nonliteral_static_if();
     test_compile_sources_lowers_module_to_hir();
     test_compile_sources_records_hir_lowering_failure_without_failing_compile();
     test_compile_sources_skips_lowering_when_parse_only();

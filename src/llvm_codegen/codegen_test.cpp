@@ -441,6 +441,49 @@ auto test_functor_body_with_type_and_static_members() -> void {
          "expected ping(connect(...)) + bump == 40 + 2 + 5 == 47");
 }
 
+auto test_functor_body_with_impl_and_extend_members() -> void {
+  // A functor body may declare a local `type` plus an `impl` of a trait and an
+  // `extend` block on it. Each instantiation clones and registers those into
+  // its synthetic module so they join the method table; the methods lower under
+  // `widget::method` within the synthetic module (whose unique name keeps two
+  // instantiations' methods distinct). A `def` calling both through a value of
+  // the local type runs end-to-end.
+  auto jf = jit_fixture_for_multi(
+      {
+          {"postgres", "module postgres\n"
+                       "pub type conn = int32\n"
+                       "pub def connect(url: str) -> conn:\n"
+                       "    return 0\n"},
+          {"app", "module app\n"
+                  "use postgres\n"
+                  "signature backend:\n"
+                  "    type conn\n"
+                  "    def connect(url: str) -> conn\n"
+                  "trait greet:\n"
+                  "    def hello(self) -> int32\n"
+                  "module wrap[DB: backend]:\n"
+                  "    pub type widget = { pub value: int32 }\n"
+                  "    impl greet for widget:\n"
+                  "        def hello(self) -> int32:\n"
+                  "            return self.value\n"
+                  "    extend widget:\n"
+                  "        def doubled(self) -> int32:\n"
+                  "            return self.value + self.value\n"
+                  "    pub def run() -> int32:\n"
+                  "        let b = widget { value: 21 }\n"
+                  "        return b.hello() + b.doubled()\n"
+                  "use wrap[postgres] as w\n"
+                  "pub def main() -> int32:\n"
+                  "    return w.run()\n"},
+      },
+      "app");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(),
+         "expected a functor with impl/extend members to run");
+  expect(result->value.i == 63,
+         "expected hello() + doubled() == 21 + 42 == 63");
+}
+
 auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
   auto jf = jit_fixture_for_multi(
       {
@@ -1001,6 +1044,7 @@ auto main() -> int {
     test_calls_a_function_in_another_module();
     test_calls_into_a_materialized_functor_instantiation();
     test_functor_body_with_type_and_static_members();
+    test_functor_body_with_impl_and_extend_members();
     test_calls_an_associated_function_via_a_type_qualified_path();
     test_calls_a_self_receiver_trait_default_method_across_modules();
     test_tuple_construction_and_projection();

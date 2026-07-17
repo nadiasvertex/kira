@@ -6019,12 +6019,6 @@ private:
       for (const auto &impl : members.impls) {
         const auto target = strip_refs(resolve_impl_target(impl));
         const auto &target_entry = types_.entry(target);
-        if (module_name.find("wrap") != std::string::npos) {
-          std::fprintf(stderr, "DBG impl in %s target=%u name=%s decl=%p\n",
-                       module_name.c_str(), target,
-                       std::string(target_entry.name).c_str(),
-                       static_cast<const void *>(target_entry.decl));
-        }
         // An impl of a higher-kinded trait for a *prelude* constructor
         // (`impl monad for option`) has no `type_decl` to key `methods_`
         // by; its methods go in the constructor-name-keyed table instead.
@@ -6867,6 +6861,33 @@ private:
         // (`comptime::value` `struct_instance`s with `name`/`type`
         // string fields) exist at evaluation time regardless — see
         // `comptime::try_eval_type_reflection_call` (`reflect.cpp`).
+        return k_unknown_type;
+      }
+    }
+
+    // `M.name()`/`M.functions()`/`M.types()`/`.function_count()`/
+    // `.type_count()` — compile-time reflection over a module's surface
+    // (design §5). Intercepted only when the object names a module in scope
+    // and is not a type (type reflection above already claimed the type case),
+    // so `comptime::try_eval_module_reflection_call` sees a well-typed call.
+    if (field.object->kind == ast::node_kind::ident_expr &&
+        (field.field_name == "name" || field.field_name == "functions" ||
+         field.field_name == "types" || field.field_name == "function_count" ||
+         field.field_name == "type_count")) {
+      const auto &mod_name =
+          dynamic_cast<const ast::ident_expr &>(*field.object).name;
+      if (names_reflectable_module(mod_name)) {
+        infer_call_args_loosely(call);
+        if (field.field_name == "name") {
+          return types_.builtin("str");
+        }
+        if (field.field_name == "function_count" ||
+            field.field_name == "type_count") {
+          return types_.builtin("int32");
+        }
+        // `functions()`/`types()` return a compile-time list of descriptors —
+        // no "list of X" type to check against, so `k_unknown` (same
+        // non-cascading role as type reflection's `fields()`).
         return k_unknown_type;
       }
     }
@@ -12608,6 +12629,52 @@ private:
     }
   }
 
+  /// Whether `name` reflects a module — matching a module's fully-qualified
+  /// name or its leaf segment, the two keys `register_comptime_modules`
+  /// registers. Lets `infer_field_call` type `M.functions()` and hand it to
+  /// compile-time evaluation instead of rejecting `M` as an undefined value.
+  [[nodiscard]] auto names_reflectable_module(std::string_view name) const
+      -> bool {
+    return std::ranges::any_of(index_.modules, [&](const auto &entry) {
+      return entry.first == name ||
+             split_module_name(entry.first).back() == name;
+    });
+  }
+
+  /// Registers every module's reflectable surface (its `def` and `type`
+  /// members, each with visibility) with the compile-time evaluator so
+  /// `M.functions()`/`M.types()`/`M.name()` reflection resolves. Iterates the
+  /// finished `program_index`, so an instantiated functor's synthetic module
+  /// is reflected exactly like a hand-written one (design §5).
+  auto register_comptime_modules() -> void {
+    for (const auto &[module_name, members] : index_.modules) {
+      auto info = comptime::evaluator::module_reflection_info{};
+      info.functions.reserve(members.functions.size());
+      for (const auto &[name, ref] : members.functions) {
+        info.functions.push_back(comptime::evaluator::module_member_info{
+            .name = name,
+            .is_pub = ref.decl != nullptr &&
+                      ref.decl->visibility == ast::visibility::pub});
+      }
+      info.types.reserve(members.types.size());
+      for (const auto &[name, ref] : members.types) {
+        info.types.push_back(comptime::evaluator::module_member_info{
+            .name = name,
+            .is_pub = ref.decl != nullptr &&
+                      ref.decl->visibility == ast::visibility::pub});
+      }
+      // Register under the fully-qualified name and, for ergonomic
+      // reflection, the leaf name (`sample.math` is reachable as `math` when
+      // a reflection reference names it unqualified). Full name registered
+      // last so it wins any leaf/full collision.
+      const auto leaf = split_module_name(module_name).back();
+      if (leaf != module_name) {
+        comptime_eval_.register_pending_module(leaf, info);
+      }
+      comptime_eval_.register_pending_module(module_name, std::move(info));
+    }
+  }
+
   /// Recursively resolves every item-level splice (`~expr` used directly
   /// among `items`, as opposed to inside a function body) into an injected
   /// `impl` block, descending into inline submodules the same way
@@ -12889,6 +12956,11 @@ public:
       discover_functor_instantiations(input.ast_file->items);
       pop_scope();
     }
+
+    // Register every module's reflectable surface (now including materialized
+    // functor instantiations) so compile-time `M.functions()`/`M.types()`/
+    // `M.name()` reflection resolves — see `register_comptime_modules`.
+    register_comptime_modules();
 
     build_method_table();
     validate_impl_coherence();

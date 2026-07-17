@@ -112,4 +112,71 @@ void evaluator::register_pending_type(std::string name,
   pending_types_.emplace(std::move(name), &decl);
 }
 
+void evaluator::register_pending_module(std::string name,
+                                        module_reflection_info info) {
+  pending_modules_.insert_or_assign(std::move(name), std::move(info));
+}
+
+namespace {
+
+/// Builds a member descriptor value `{name: "...", is_pub: <bool>}` — the
+/// shape `static for m in M.functions():` code destructures. `is_pub` is
+/// exposed rather than pre-filtered so a reflection consumer can decide which
+/// members it cares about (the evaluator has no caller-module context with
+/// which to apply the "pub from outside, all from inside" rule itself).
+[[nodiscard]] auto
+make_module_member_descriptor(const evaluator::module_member_info &member)
+    -> value {
+  auto fields = std::unordered_map<std::string, value>{};
+  fields.emplace("name", value::make_string(member.name));
+  fields.emplace("is_pub", value::make_bool(member.is_pub));
+  return value::make_struct("", std::move(fields));
+}
+
+} // namespace
+
+auto evaluator::try_eval_module_reflection_call(const ast::call_expr &call)
+    -> std::optional<value> {
+  if (call.callee == nullptr ||
+      call.callee->kind != ast::node_kind::field_expr) {
+    return std::nullopt;
+  }
+  const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+  if (field.object == nullptr ||
+      field.object->kind != ast::node_kind::ident_expr) {
+    return std::nullopt;
+  }
+  if (field.field_name != "name" && field.field_name != "functions" &&
+      field.field_name != "types" && field.field_name != "function_count" &&
+      field.field_name != "type_count") {
+    return std::nullopt;
+  }
+  const auto &object_ident =
+      dynamic_cast<const ast::ident_expr &>(*field.object);
+  const auto it = pending_modules_.find(object_ident.name);
+  if (it == pending_modules_.end()) {
+    return std::nullopt; // not a registered module — let other dispatch try
+  }
+  const auto &info = it->second;
+
+  if (field.field_name == "name") {
+    return value::make_string(object_ident.name);
+  }
+  if (field.field_name == "function_count") {
+    return value::make_int(static_cast<int64_t>(info.functions.size()));
+  }
+  if (field.field_name == "type_count") {
+    return value::make_int(static_cast<int64_t>(info.types.size()));
+  }
+
+  const auto &members =
+      field.field_name == "functions" ? info.functions : info.types;
+  auto elements = std::vector<value>{};
+  elements.reserve(members.size());
+  for (const auto &member : members) {
+    elements.push_back(make_module_member_descriptor(member));
+  }
+  return value::make_list(std::move(elements));
+}
+
 } // namespace kira::comptime

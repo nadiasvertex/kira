@@ -20,6 +20,23 @@ message ModuleMetadata {
   repeated TopLevelSymbol top_level_symbols = 7;
   // Parser error count observed when this metadata was written.
   uint32 parser_error_count = 8;
+  // Parameterized-module instantiations (`use m[args]`) requested by the file.
+  repeated FunctorInstantiation functor_instantiations = 9;
+}
+
+// One parameterized-module instantiation (`use audited[postgres] as db`).
+// Recorded so a downstream consumer can see which functor instantiations a
+// compilation unit requires; the `instantiation_key` is stable across units
+// for the same functor and arguments (see `spec/module-values-design.md` §4).
+message FunctorInstantiation {
+  // Path of the parameterized module being instantiated (`audited`).
+  repeated string functor_path = 1;
+  // Source spelling of each instantiation argument (`postgres`).
+  repeated string argument = 2;
+  // Local alias introduced with `as`, if any (`db`).
+  string alias = 3;
+  // Canonical-ish instantiation key: `functor_path[arg, arg, ...]`.
+  string instantiation_key = 4;
 }
 
 // Persisted shape of one `use` declaration.
