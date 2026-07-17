@@ -1053,4 +1053,144 @@ auto clone_func_decl(const func_decl &decl)
   return cloned;
 }
 
+namespace {
+
+/// Clones a `type` declaration's definition body. The definition is one of a
+/// struct body, a sum body, a bare type expression (an alias like
+/// `type row = DB.conn`), or a refinement type; each is dispatched here so a
+/// projection through a module parameter is cloned into the instantiation.
+[[nodiscard]] auto clone_type_definition(const node &def)
+    -> std::expected<ptr<node>, clone_error> {
+  switch (def.kind) {
+  case node_kind::struct_type_def: {
+    const auto &struct_def = dynamic_cast<const struct_type_def &>(def);
+    auto cloned = make<struct_type_def>();
+    cloned->span = struct_def.span;
+    cloned->body.span = struct_def.body.span;
+    for (const auto &field : struct_def.body.fields) {
+      auto type = clone_optional(field.type);
+      if (!type.has_value()) {
+        return std::unexpected(type.error());
+      }
+      cloned->body.fields.push_back(struct_field{.span = field.span,
+                                                 .visibility = field.visibility,
+                                                 .name = field.name,
+                                                 .type = std::move(*type)});
+    }
+    return ptr<node>(std::move(cloned));
+  }
+  case node_kind::sum_type_def: {
+    const auto &sum_def = dynamic_cast<const sum_type_def &>(def);
+    auto cloned = make<sum_type_def>();
+    cloned->span = sum_def.span;
+    cloned->body.span = sum_def.body.span;
+    for (const auto &variant : sum_def.body.variants) {
+      auto cloned_variant = sum_variant{
+          .span = variant.span, .name = variant.name, .payload_types = {}};
+      for (const auto &payload : variant.payload_types) {
+        auto type = clone_optional(payload);
+        if (!type.has_value()) {
+          return std::unexpected(type.error());
+        }
+        cloned_variant.payload_types.push_back(std::move(*type));
+      }
+      cloned->body.variants.push_back(std::move(cloned_variant));
+    }
+    return ptr<node>(std::move(cloned));
+  }
+  case node_kind::refinement_type: {
+    const auto &refine = dynamic_cast<const refinement_type &>(def);
+    auto base = clone_optional(refine.base);
+    if (!base.has_value()) {
+      return std::unexpected(base.error());
+    }
+    auto predicate = clone_optional(refine.predicate);
+    if (!predicate.has_value()) {
+      return std::unexpected(predicate.error());
+    }
+    auto cloned = make<refinement_type>();
+    cloned->span = refine.span;
+    cloned->base = std::move(*base);
+    cloned->predicate = std::move(*predicate);
+    return ptr<node>(std::move(cloned));
+  }
+  default:
+    // Anything else is a bare type expression used as an alias body.
+    if (const auto *as_type = dynamic_cast<const type_expr *>(&def)) {
+      auto cloned = clone_type_expr(*as_type);
+      if (!cloned.has_value()) {
+        return std::unexpected(cloned.error());
+      }
+      return ptr<node>(std::move(*cloned));
+    }
+    return unsupported(def, "this type definition shape");
+  }
+}
+
+} // namespace
+
+auto clone_type_decl(const type_decl &decl)
+    -> std::expected<ptr<type_decl>, clone_error> {
+  auto cloned = make<type_decl>();
+  cloned->span = decl.span;
+  cloned->visibility = decl.visibility;
+  cloned->modifiers = decl.modifiers;
+  cloned->name = decl.name;
+  cloned->deriving = decl.deriving;
+
+  for (const auto &param : decl.type_params) {
+    auto bound_or_type = clone_optional(param.bound_or_type);
+    if (!bound_or_type.has_value()) {
+      return std::unexpected(bound_or_type.error());
+    }
+    cloned->type_params.push_back(
+        type_param{.span = param.span,
+                   .name = param.name,
+                   .bound_or_type = std::move(*bound_or_type),
+                   .is_value_param = param.is_value_param,
+                   .higher_kinded_arity = param.higher_kinded_arity});
+  }
+
+  if (decl.definition != nullptr) {
+    auto definition = clone_type_definition(*decl.definition);
+    if (!definition.has_value()) {
+      return std::unexpected(definition.error());
+    }
+    cloned->definition = std::move(*definition);
+  }
+
+  auto invariant = clone_optional(decl.invariant);
+  if (!invariant.has_value()) {
+    return std::unexpected(invariant.error());
+  }
+  cloned->invariant = std::move(*invariant);
+
+  return cloned;
+}
+
+auto clone_static_decl(const static_decl &decl)
+    -> std::expected<ptr<static_decl>, clone_error> {
+  if (decl.decl_kind != static_decl_kind::binding) {
+    return unsupported(decl, "a non-binding `static` form");
+  }
+
+  auto type_annotation = clone_optional(decl.type_annotation);
+  if (!type_annotation.has_value()) {
+    return std::unexpected(type_annotation.error());
+  }
+  auto initializer = clone_optional(decl.initializer);
+  if (!initializer.has_value()) {
+    return std::unexpected(initializer.error());
+  }
+
+  auto cloned = make<static_decl>();
+  cloned->span = decl.span;
+  cloned->visibility = decl.visibility;
+  cloned->decl_kind = static_decl_kind::binding;
+  cloned->name = decl.name;
+  cloned->type_annotation = std::move(*type_annotation);
+  cloned->initializer = std::move(*initializer);
+  return cloned;
+}
+
 } // namespace kira::ast

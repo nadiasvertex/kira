@@ -418,6 +418,45 @@ auto test_calls_into_a_materialized_functor_instantiation() -> void {
          "expected db.open_and_ping to return ping(connect(...)) == 42");
 }
 
+auto test_functor_body_with_type_and_static_members() -> void {
+  // The VM counterpart of codegen_test.cpp's identically-named test: a
+  // functor body may declare `type` and `static` members alongside `def`s.
+  // `type row = DB.conn` projects through the module parameter; `static bump`
+  // is a compile-time constant inlined at its reference. Both are checked per
+  // instantiation and neither lowers to its own code — the `def` using them
+  // runs unchanged.
+  auto module = compile_fixture_multi(
+      {
+          {"postgres", "module postgres\n"
+                       "pub type conn = int32\n"
+                       "pub def connect(url: str) -> conn:\n"
+                       "    return 40\n"
+                       "pub def ping(c: conn) -> int32:\n"
+                       "    return c + 2\n"},
+          {"app", "module app\n"
+                  "use postgres\n"
+                  "signature backend:\n"
+                  "    type conn\n"
+                  "    def connect(url: str) -> conn\n"
+                  "    def ping(c: conn) -> int32\n"
+                  "module audited[DB: backend]:\n"
+                  "    type row = DB.conn\n"
+                  "    static bump: int32 = 5\n"
+                  "    pub def open_and_bump(url: str) -> int32:\n"
+                  "        let c: row = DB.connect(url)\n"
+                  "        return DB.ping(c) + bump\n"
+                  "use audited[postgres] as db\n"
+                  "pub def main() -> int32:\n"
+                  "    return db.open_and_bump(\"localhost\")\n"},
+      },
+      "app");
+  auto main_result = run_main(module);
+  expect(main_result.has_value(),
+         "expected a functor with type/static members to run");
+  expect(main_result->value.i == 47,
+         "expected ping(connect(...)) + bump == 40 + 2 + 5 == 47");
+}
+
 auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
   auto module = compile_fixture_multi(
       {
@@ -1290,6 +1329,7 @@ auto main() -> int {
     test_calls_another_function_in_the_same_module();
     test_calls_a_function_in_another_module();
     test_calls_into_a_materialized_functor_instantiation();
+    test_functor_body_with_type_and_static_members();
     test_calls_an_associated_function_via_a_type_qualified_path();
     test_calls_a_self_receiver_trait_default_method_across_modules();
     test_and_or_short_circuit_to_correct_value();

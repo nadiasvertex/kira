@@ -401,6 +401,46 @@ auto test_calls_into_a_materialized_functor_instantiation() -> void {
          "expected db.open_and_ping to return ping(connect(...)) == 42");
 }
 
+auto test_functor_body_with_type_and_static_members() -> void {
+  // Beyond `def`s, a functor body may declare `type` and `static` members.
+  // `type row = DB.conn` is a projection through the module parameter (it
+  // resolves to `postgres.conn` == int32 via the instantiation's import
+  // alias); `static bump` is a compile-time constant inlined at its use site.
+  // Both are cloned and checked per instantiation by `materialize_functor`;
+  // neither lowers to its own runtime code, so the instantiated `def` that
+  // uses them runs unchanged.
+  auto jf = jit_fixture_for_multi(
+      {
+          {"postgres", "module postgres\n"
+                       "pub type conn = int32\n"
+                       "pub def connect(url: str) -> conn:\n"
+                       "    return 40\n"
+                       "pub def ping(c: conn) -> int32:\n"
+                       "    return c + 2\n"},
+          {"app", "module app\n"
+                  "use postgres\n"
+                  "signature backend:\n"
+                  "    type conn\n"
+                  "    def connect(url: str) -> conn\n"
+                  "    def ping(c: conn) -> int32\n"
+                  "module audited[DB: backend]:\n"
+                  "    type row = DB.conn\n"
+                  "    static bump: int32 = 5\n"
+                  "    pub def open_and_bump(url: str) -> int32:\n"
+                  "        let c: row = DB.connect(url)\n"
+                  "        return DB.ping(c) + bump\n"
+                  "use audited[postgres] as db\n"
+                  "pub def main() -> int32:\n"
+                  "    return db.open_and_bump(\"localhost\")\n"},
+      },
+      "app");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(),
+         "expected a functor with type/static members to run");
+  expect(result->value.i == 47,
+         "expected ping(connect(...)) + bump == 40 + 2 + 5 == 47");
+}
+
 auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
   auto jf = jit_fixture_for_multi(
       {
@@ -960,6 +1000,7 @@ auto main() -> int {
     test_calls_another_function_in_the_same_module();
     test_calls_a_function_in_another_module();
     test_calls_into_a_materialized_functor_instantiation();
+    test_functor_body_with_type_and_static_members();
     test_calls_an_associated_function_via_a_type_qualified_path();
     test_calls_a_self_receiver_trait_default_method_across_modules();
     test_tuple_construction_and_projection();

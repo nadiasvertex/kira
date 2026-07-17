@@ -52,4 +52,21 @@ struct clone_error {
 [[nodiscard]] auto clone_expr(const expr &e)
     -> std::expected<ptr<expr>, clone_error>;
 
+/// Deep-clones a `type` declaration — visibility, modifiers, name, type
+/// parameters, definition body (struct/sum/alias/refinement), `deriving`
+/// list, and any invariant. Used to materialize a parameterized module's
+/// `type` members per instantiation so each instantiation gets distinct node
+/// identity while a projection resolves through the instantiation's
+/// import-alias binding. Fails with a `clone_error` on a definition shape it
+/// does not yet cover, mirroring the other cloners.
+[[nodiscard]] auto clone_type_decl(const type_decl &decl)
+    -> std::expected<ptr<type_decl>, clone_error>;
+
+/// Deep-clones a `static` binding declaration (`static Name [: T] = expr`).
+/// Only the `binding` form is supported — the assertion, conditional-
+/// compilation, and `static for` forms fail with a `clone_error`, since a
+/// parameterized module's required-constant members are always bindings.
+[[nodiscard]] auto clone_static_decl(const static_decl &decl)
+    -> std::expected<ptr<static_decl>, clone_error>;
+
 } // namespace kira::ast

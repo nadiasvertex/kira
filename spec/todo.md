@@ -14,9 +14,14 @@
    `hir::lower_functor_modules` lowers them into standalone `hir_module`s
    appended by the driver's lowering stage, and an instantiated functor now
    runs end-to-end on both the bytecode VM and the LLVM/AOT backend (`db.open_
-   and_ping(...)` executes). Remaining: functor bodies with non-`def` members;
-   reflection (4); metadata (5); `static if` around `use` (6); and hardening
-   (7, incl. deep type-equality in `satisfies`).
+   and_ping(...)` executes). Functor bodies may now also declare `type` and
+   `static` members (cloned via `clone_type_decl`/`clone_static_decl`, checked
+   and registered per instantiation before the body's functions); a `DB.conn`
+   type projection resolves to the argument module's concrete type through the
+   whole-module import alias (`resolve_named_type` fix). Remaining: functor
+   bodies with `impl`/`extend`/`trait` members; reflection (4); metadata (5);
+   `static if` around `use` (6); and hardening (7, incl. deep type-equality in
+   `satisfies`).
 2. Contracts on a `generator def` (its body runs in steps, so entry/exit don't mean what they mean for a call — lowering rejects them rather than checking at the wrong times).
 3. A value parameter no argument determines (`def zeros[n: usize]() -> array[int32, n]`, with no explicit `f[8]()` call syntax) is diagnosed, not solved; 
 4. Const-generic *methods* (on an `impl`/`extend` target) still fall back to the template path and are refused by lowering; 

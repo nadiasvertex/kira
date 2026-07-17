@@ -1584,6 +1584,69 @@ auto test_materializes_functor_and_resolves_alias() -> void {
          "its alias to check cleanly");
 }
 
+auto test_functor_type_projection_resolves_concretely() -> void {
+  // A `DB.conn` projection must resolve to the argument module's *concrete*
+  // type (`postgres.conn` == int32), not silently to `k_unknown` — otherwise
+  // a type error inside the functor body would go unreported (and lowering
+  // would later choke on the un-typed nodes). Returning a `str` where the
+  // projection demands an `int32` must be diagnosed.
+  const auto analyzed = analyze_sources({{
+      .path = "mat_proj.kira",
+      .text = "module main\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "    def connect(url: str) -> conn\n"
+              "\n"
+              "module postgres:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: str) -> conn:\n"
+              "        0\n"
+              "\n"
+              "module audited[DB: backend]:\n"
+              "    pub def bad() -> DB.conn:\n"
+              "        \"not an int\"\n"
+              "\n"
+              "use main.audited[main.postgres] as db\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a `str` body under a `DB.conn` (int32) return to be "
+         "rejected, proving the projection resolves concretely");
+}
+
+auto test_functor_body_type_and_static_members_check() -> void {
+  // A functor body may declare `type` and `static` members alongside `def`s;
+  // `type row = DB.conn` projects through the parameter and a `static` is a
+  // required constant. All are cloned and checked per instantiation.
+  const auto analyzed = analyze_sources({{
+      .path = "mat_members.kira",
+      .text = "module main\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "    def connect(url: str) -> conn\n"
+              "\n"
+              "module postgres:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: str) -> conn:\n"
+              "        0\n"
+              "\n"
+              "module audited[DB: backend]:\n"
+              "    type row = DB.conn\n"
+              "    static bump: int32 = 5\n"
+              "    pub def open(url: str) -> int32:\n"
+              "        let c: row = DB.connect(url)\n"
+              "        c + bump\n"
+              "\n"
+              "use main.audited[main.postgres] as db\n"
+              "\n"
+              "def go() -> int32:\n"
+              "    db.open(\"x\")\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected a functor with `type`/`static` members to check cleanly");
+}
+
 auto test_functor_instantiation_arity_mismatch() -> void {
   const auto analyzed = analyze_sources({{
       .path = "mat_arity.kira",
@@ -1747,6 +1810,8 @@ auto main() -> int {
     test_reports_signature_member_not_pub();
     test_reports_unknown_functor_instantiation();
     test_materializes_functor_and_resolves_alias();
+    test_functor_type_projection_resolves_concretely();
+    test_functor_body_type_and_static_members_check();
     test_functor_instantiation_arity_mismatch();
   } catch (const std::exception &ex) {
     std::cerr << "check_test failed: unhandled exception: " << ex.what()

@@ -3484,8 +3484,19 @@ private:
       // module parameter bound to the argument module as an import alias.
       if (const auto *binding = find_import(named.path.front());
           binding != nullptr && binding->leaf_name.empty()) {
-        if (const auto *source = import_source_module(*binding)) {
-          auto absolute = split_module_name(source->module_name);
+        // The module the alias' head names. A whole-module import — a functor
+        // parameter `DB` bound to `postgres`, or a plain `use pkg.sub` — names
+        // a module directly (its `path`); a renamed member import falls back
+        // to the member's owning module. `import_source_module` deliberately
+        // returns null for a whole-module import (its members are reached by
+        // path), so it cannot be the only source consulted here.
+        const module_members *aliased =
+            index_.find_module(join_strings(binding->path, "."));
+        if (aliased == nullptr) {
+          aliased = import_source_module(*binding);
+        }
+        if (aliased != nullptr) {
+          auto absolute = split_module_name(aliased->module_name);
           absolute.insert(absolute.end(), named.path.begin() + 1,
                           named.path.end());
           if (const auto *owner = find_session_module_of_path(absolute)) {
@@ -11708,61 +11719,123 @@ private:
                       source_span use_span) -> std::optional<std::string> {
     auto synth_name = sanitize_module_name(instantiation_key);
 
-    // Clone each `pub def` in the functor body. v1 materialization supports
-    // function members only; anything else (nested `type`/`impl`/`static`)
-    // falls back with a clear diagnostic rather than a partial module.
+    // Clone each supported member of the functor body. v1 materialization
+    // covers `def`, `type`, and `static` (binding) members; anything else
+    // (a nested `impl`/`extend`/`trait`, or a non-binding `static` form)
+    // falls back with a clear diagnostic rather than a partial module. A
+    // clone gives each instantiation distinct node identity so `node_types_`
+    // and diagnostics stay per-instantiation, while projections through a
+    // module parameter (`DB.conn`, `DB.query(...)`) resolve via the import
+    // aliases bound below.
+    const auto reject_member = [&](source_span span, std::string_view what) {
+      auto diag =
+          diagnostic(diagnostic_level::error,
+                     std::format("instantiating `{}` is not supported yet: {}",
+                                 fdecl.name, what),
+                     file_id_);
+      diag.with_label(use_span, "in this instantiation");
+      diag.with_label(span, "unsupported functor-body member");
+      diag.with_help(
+          "v1 materialization of a parameterized module supports `def`, "
+          "`type`, and `static` members. Nested `impl`/`extend`/`trait` "
+          "members are a later phase "
+          "(`spec/module-values-implementation-plan.md`).");
+      emit_diag(diag);
+    };
+
     std::vector<const ast::func_decl *> cloned_funcs;
+    std::vector<const ast::type_decl *> cloned_types;
+    std::vector<const ast::static_decl *> cloned_statics;
     for (const auto &item : fdecl.items) {
       if (item == nullptr || item->has_error) {
         continue;
       }
-      if (item->kind == ast::node_kind::use_decl ||
-          item->kind == ast::node_kind::module_decl) {
+      switch (item->kind) {
+      case ast::node_kind::use_decl:
+      case ast::node_kind::module_decl:
         continue;
+      case ast::node_kind::func_decl: {
+        const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+        auto cloned = ast::clone_func_decl(fn);
+        if (!cloned.has_value()) {
+          reject_member(fn.span, cloned.error().message);
+          return std::nullopt;
+        }
+        auto *raw = cloned->get();
+        synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+        cloned_funcs.push_back(raw);
+        break;
       }
-      if (item->kind != ast::node_kind::func_decl) {
-        auto diag = diagnostic(
-            diagnostic_level::error,
-            std::format("instantiating `{}` is not supported yet: its body "
-                        "contains a member that is not a `def`",
-                        fdecl.name),
-            file_id_);
-        diag.with_label(use_span, "in this instantiation");
-        diag.with_label(item->span, "unsupported functor-body member");
-        diag.with_help(
-            "v1 materialization of a parameterized module supports `def` "
-            "members only. Nested `type`/`impl`/`static` members are a later "
-            "phase (`spec/module-values-implementation-plan.md`).");
-        emit_diag(diag);
+      case ast::node_kind::type_decl: {
+        const auto &td = dynamic_cast<const ast::type_decl &>(*item);
+        auto cloned = ast::clone_type_decl(td);
+        if (!cloned.has_value()) {
+          reject_member(td.span, cloned.error().message);
+          return std::nullopt;
+        }
+        auto *raw = cloned->get();
+        synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+        cloned_types.push_back(raw);
+        break;
+      }
+      case ast::node_kind::static_decl: {
+        const auto &sd = dynamic_cast<const ast::static_decl &>(*item);
+        if (sd.decl_kind != ast::static_decl_kind::binding) {
+          reject_member(sd.span,
+                        "its body contains a non-binding `static` form");
+          return std::nullopt;
+        }
+        auto cloned = ast::clone_static_decl(sd);
+        if (!cloned.has_value()) {
+          reject_member(sd.span, cloned.error().message);
+          return std::nullopt;
+        }
+        auto *raw = cloned->get();
+        synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+        cloned_statics.push_back(raw);
+        break;
+      }
+      default:
+        reject_member(item->span,
+                      "its body contains a member that is not a `def`, "
+                      "`type`, or `static`");
         return std::nullopt;
       }
-      const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
-      auto cloned = ast::clone_func_decl(fn);
-      if (!cloned.has_value()) {
-        auto diag = diagnostic(
-            diagnostic_level::error,
-            std::format("instantiating `{}` is not supported yet: {}",
-                        fdecl.name, cloned.error().message),
-            file_id_);
-        diag.with_label(use_span, "in this instantiation");
-        diag.with_label(fn.span, "this member could not be specialized");
-        emit_diag(diag);
-        return std::nullopt;
-      }
-      auto *raw = cloned->get();
-      synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
-      cloned_funcs.push_back(raw);
     }
 
-    // Register the synthetic module and its functions in the program index.
+    // Register the synthetic module and its members in the program index.
+    // Types and statics are registered before functions so a function's
+    // return type (`-> row`) or a static reference resolves against them.
     auto &synth = index_.modules[synth_name];
     synth.module_name = synth_name;
+    for (const auto *td : cloned_types) {
+      synth.types.insert_or_assign(
+          td->name, type_decl_ref{.decl = td, .file_id = functor.ref->file_id});
+      if (td->definition != nullptr &&
+          td->definition->kind == ast::node_kind::sum_type_def) {
+        const auto &sum =
+            dynamic_cast<const ast::sum_type_def &>(*td->definition);
+        for (const auto &variant : sum.body.variants) {
+          if (!variant.name.empty()) {
+            synth.variants.insert_or_assign(
+                variant.name, variant_ref{.sum_decl = td, .variant = &variant});
+          }
+        }
+      }
+    }
+    for (const auto *sd : cloned_statics) {
+      synth.statics.insert_or_assign(
+          sd->name,
+          static_decl_ref{.decl = sd, .file_id = functor.ref->file_id});
+    }
     for (const auto *fn : cloned_funcs) {
       synth.functions.insert_or_assign(
           fn->name, func_decl_ref{.decl = fn, .file_id = functor.ref->file_id});
       // Record the clone for HIR lowering: `hir::lower_functor_modules` builds
       // a standalone `hir_module` named `synth_name` from every clone tagged
       // with it, so a `db.f(...)` call site's cross-module dispatch finds it.
+      // Only `def`s lower to runtime code; `type` members are compile-time and
+      // a scalar `static` is inlined at each reference (`static_const_values`).
       functor_instance_decls_.push_back(
           functor_instance{.decl = fn, .owner_module = synth_name});
     }
@@ -11789,6 +11862,12 @@ private:
     module_ = &synth;
     module_name_ = synth_name;
     file_id_ = functor.ref->file_id;
+    for (const auto *td : cloned_types) {
+      check_type_decl(*td);
+    }
+    for (const auto *sd : cloned_statics) {
+      check_static_decl(*sd);
+    }
     for (const auto *fn : cloned_funcs) {
       check_function(*fn, /*at_module_scope=*/true);
     }

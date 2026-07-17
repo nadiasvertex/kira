@@ -131,13 +131,28 @@ body's file, and projections resolve through the alias:
   resolves there. This is generally useful (it fixes alias-qualified type paths
   everywhere), not functor-specific.
 
-The clone (`clone_func_decl`) exists only to give each instantiation distinct
-node identity so `node_types_` and diagnostics stay per-instantiation. The
-synthetic module is registered in `program_index` under the *sanitized*
+The clone exists only to give each instantiation distinct node identity so
+`node_types_` and diagnostics stay per-instantiation. `def`, `type`, and
+`static` (binding) members are all cloned (`clone_func_decl`,
+`clone_type_decl`, `clone_static_decl`); a nested `impl`/`extend`/`trait`, or a
+non-binding `static` form, still falls back with a clear diagnostic. Types and
+statics are registered into the synthetic module *before* its functions, so a
+function's `-> row` return type or a `bump` reference resolves against them.
+The synthetic module is registered in `program_index` under the *sanitized*
 instantiation key (non-identifier characters → `_`, since `import_binding::path`
 is split/joined on `.`), and the importing file gets an alias binding
 (`db` → synthetic module). `record_use_bindings` and the module-graph/import
 passes skip instantiation `use`s so only the checker owns them.
+
+A projection through a module parameter that is a *type* (`DB.conn`, or a
+`type row = DB.conn` alias whose body is one) resolves in `resolve_named_type`:
+a multi-segment path whose head is a whole-module import alias is rewritten to
+the aliased module's absolute path and resolved there. The alias' target module
+is found directly from the binding's `path` (`import_source_module` returns null
+for a whole-module import, since its members are reached by path, so it cannot
+be the only source consulted) — without this the projection resolved silently
+to `k_unknown`, which a check-only test cannot distinguish from a concrete type
+but which starves lowering of a usable type.
 
 **Codegen (wired).** The checker records each cloned `def` as a
 `checked_types::functor_instance` (`{decl, owner_module = synthetic module
@@ -149,7 +164,9 @@ module set, so ordinary cross-module dispatch links the two. This mirrors the
 multi-file idiom where every module is its own top-level file: a materialized
 functor instantiation is simply an in-memory module with no source file, and
 both backends (bytecode VM and LLVM/AOT) run it unchanged. An instantiated
-functor now runs end-to-end, not just type-checks.
+functor now runs end-to-end, not just type-checks. Only `def`s lower to runtime
+code: `type` members are compile-time, and a scalar `static` is inlined at each
+reference (`static_const_values`), so neither needs a `functor_instance`.
 - **Cycle detection.** A functor whose instantiation (directly or transitively)
   requires instantiating itself gets a cycle diagnostic, reusing the
   in-progress-set pattern (`statics_in_progress_`-style, `check.cpp`).
