@@ -1,0 +1,21 @@
+module sample
+
+# A `unit`-returning call in the *tail* position of every arm of a `match`
+# used as an expression. The match's value slot is `unit` (an `i64`
+# placeholder), and each arm's tail `noop(...)` compiles to a `void` call —
+# storing that `void` value into the slot previously spun LLVM in
+# `getABITypeAlign`. `compile_block_as_value` now stores the `unit` zero
+# placeholder instead.
+
+def noop(x: int32) -> unit:
+    ()
+
+def pick(flag: bool) -> unit:
+    match flag:
+        true => noop(1)
+        false => noop(2)
+
+def main() -> int32:
+    pick(true)
+    pick(false)
+    return 7

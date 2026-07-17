@@ -227,6 +227,21 @@ auto test_implicit_tail_match_and_if_are_the_return_value() -> void {
          "+ grade_returns(72) == 111222402");
 }
 
+auto test_unit_match_tail_call_stores_a_placeholder() -> void {
+  // A `unit`-returning call in the tail position of a `match` arm compiles
+  // to a `void`-returning `CreateCall`. `compile_block_as_value` used to
+  // store that `void` value straight into the match's `unit` result slot,
+  // which sent LLVM spinning in `getABITypeAlign` (a `void` type has no ABI
+  // size) — the AOT/JIT "void-store hang". It now writes the `unit` zero
+  // placeholder instead. Reaching `main`'s `return 7` at all proves the
+  // module compiled without hanging.
+  auto jf = jit_fixture_for(load_fixture("unit_match_tail_call.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 7,
+         "expected main() to return 7 after two unit-typed match dispatches");
+}
+
 auto test_while_loop_sums_one_to_n() -> void {
   auto jf = jit_fixture_for(load_fixture("while_loop.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -884,6 +899,7 @@ auto main() -> int {
     test_intrinsic_call_resolves_to_native_symbol();
     test_intrinsic_result_constructs_and_matches_through_real_syntax();
     test_implicit_tail_match_and_if_are_the_return_value();
+    test_unit_match_tail_call_stores_a_placeholder();
     test_while_loop_sums_one_to_n();
     test_recursive_call_computes_factorial();
     test_and_or_short_circuit_to_correct_value();
