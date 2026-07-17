@@ -4053,6 +4053,15 @@ auto lower_functor_modules(const semantic::checked_types &checked,
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
+    // A functor-body `impl`/`extend` method lowers under its target-qualified
+    // name (`handle::show`) — the same key a `receiver.method()` call records —
+    // so cross-module dispatch within the synthetic module links up. The
+    // owner module (a unique per-instantiation synthetic name) keeps two
+    // instantiations' `handle::show` distinct.
+    if (!instance.impl_target.empty()) {
+      (*lowered)->name =
+          std::format("{}::{}", instance.impl_target, instance.decl->name);
+    }
     auto [it, inserted] = grouped.try_emplace(instance.owner_module);
     if (inserted) {
       module_order.push_back(instance.owner_module);

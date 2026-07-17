@@ -581,6 +581,12 @@ struct const_generic_instance {
 struct functor_instance {
   const ast::func_decl *decl = nullptr;
   std::string owner_module;
+  /// Non-empty when `decl` is a method of a functor-body `impl`/`extend`
+  /// block: the bare name of the target type, so `lower_functor_modules`
+  /// emits the method as `impl_target::decl->name` — the same key a
+  /// `receiver.method()` call site records for it — instead of a bare
+  /// free-function name. Empty for an ordinary functor-body `def`.
+  std::string impl_target;
 };
 
 /// Type ids for `std.fmt`'s runtime-support types (`src/std/fmt.kira`),

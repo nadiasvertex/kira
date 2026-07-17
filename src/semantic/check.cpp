@@ -1037,6 +1037,30 @@ private:
   /// each tagged with its synthetic module name — moved into
   /// `checked_types::functor_instances` for `hir::lower_functor_modules`.
   std::vector<functor_instance> functor_instance_decls_;
+  /// One module parameter of a functor bound to its argument module during
+  /// instantiation (`DB` → `main.postgres`).
+  struct functor_arg_binding {
+    std::string param_name;
+    std::string arg_module_name;
+  };
+  /// A materialized functor instantiation whose cloned body has been
+  /// *registered* (into `index_`, so its `impl`/`extend` members join the
+  /// method table and coherence check) but not yet *checked*. Body checking is
+  /// deferred until after `build_method_table`/`validate_impl_coherence` so a
+  /// method call inside the body resolves against a complete method table.
+  struct pending_functor_body {
+    std::string synth_name;
+    std::string owner_module; ///< Module the functor was declared in.
+    file_id_type functor_file = 0;
+    std::vector<functor_arg_binding> module_bindings;
+    std::vector<const ast::type_decl *> types;
+    std::vector<const ast::static_decl *> statics;
+    std::vector<const ast::func_decl *> funcs;
+    std::vector<const ast::impl_decl *> impls;
+    std::vector<const ast::extend_decl *> extends;
+    std::vector<const ast::trait_decl *> traits;
+  };
+  std::vector<pending_functor_body> pending_functor_bodies_;
 
   // --- current function context -------------------------------------------
   std::vector<std::unordered_map<std::string, value_binding>> scopes_;
@@ -5995,6 +6019,12 @@ private:
       for (const auto &impl : members.impls) {
         const auto target = strip_refs(resolve_impl_target(impl));
         const auto &target_entry = types_.entry(target);
+        if (module_name.find("wrap") != std::string::npos) {
+          std::fprintf(stderr, "DBG impl in %s target=%u name=%s decl=%p\n",
+                       module_name.c_str(), target,
+                       std::string(target_entry.name).c_str(),
+                       static_cast<const void *>(target_entry.decl));
+        }
         // An impl of a higher-kinded trait for a *prelude* constructor
         // (`impl monad for option`) has no `type_decl` to key `methods_`
         // by; its methods go in the constructor-name-keyed table instead.
@@ -11397,13 +11427,6 @@ private:
     std::string owner_module; ///< Qualified name of the owning module.
   };
 
-  /// One module parameter of a functor bound to its argument module during
-  /// instantiation (`DB` → `main.postgres`).
-  struct functor_arg_binding {
-    std::string param_name;
-    std::string arg_module_name;
-  };
-
   /// Resolves the functor a `use m[args]` path names, or `nullopt` if no
   /// parameterized module by that name is in scope.
   [[nodiscard]] auto resolve_functor(const std::vector<std::string> &path) const
@@ -11467,16 +11490,40 @@ private:
     return nullptr;
   }
 
+  /// Whether two resolved types are compatible for structural satisfaction:
+  /// equal by interned id, or one is `k_unknown`/`k_error` so we don't cascade
+  /// a knowledge gap into a spurious mismatch.
+  [[nodiscard]] auto types_satisfy(type_id want, type_id got) const -> bool {
+    if (want == k_unknown_type || got == k_unknown_type ||
+        want == k_error_type || got == k_error_type) {
+      return true;
+    }
+    return want == got;
+  }
+
   /// Structural signature satisfaction: whether `mod` provides every member
   /// `sig` requires, each `pub`. Collects *every* failure into `failures`
   /// (concept-quality diagnostics list them all) and returns whether the set
-  /// is empty. v1 checks member existence, visibility, and function arity;
-  /// deep parameter/return-type equality under the abstract-type binding is a
-  /// hardening item (`spec/module-values-design.md` §3, Phase 7).
+  /// is empty. Checks member existence, visibility, function arity, and — under
+  /// the abstract-type binding — deep parameter/return-type equality
+  /// (`spec/module-values-design.md` §3). Each abstract signature type
+  /// (`type conn`) binds to the module's concrete same-named type simply by
+  /// resolving the signature's types in the module's own resolve context, where
+  /// `conn` names the module's `pub type conn`.
   [[nodiscard]] auto
   module_satisfies_signature(const module_members &mod,
                              const ast::signature_decl &sig,
-                             std::vector<std::string> &failures) const -> bool {
+                             std::vector<std::string> &failures) -> bool {
+    // Resolve a signature type expression against the argument module, quietly
+    // (the module and signature were already checked at their own sites, so no
+    // fresh diagnostics belong here). Abstract types resolve to the module's
+    // concrete same-named types by virtue of the module context.
+    const auto resolve_in_module = [&](const ast::type_expr &t) -> type_id {
+      return resolve_type(t, resolve_ctx{.module = &mod,
+                                         .param_bindings = nullptr,
+                                         .use_type_param_stack = false,
+                                         .quiet = true});
+    };
     for (const auto &item : sig.items) {
       if (item == nullptr || item->has_error) {
         continue;
@@ -11508,6 +11555,33 @@ private:
               "function `{}` takes {} parameter(s), but the signature requires "
               "{}",
               fn.name, it->second.decl->params.size(), fn.params.size()));
+        } else {
+          // Same arity and `pub`: check each parameter and the return type
+          // match under the abstract-type binding.
+          const auto &have = *it->second.decl;
+          for (size_t p = 0; p < fn.params.size(); ++p) {
+            if (fn.params[p].type_annotation == nullptr ||
+                have.params[p].type_annotation == nullptr) {
+              continue;
+            }
+            const auto want = resolve_in_module(*fn.params[p].type_annotation);
+            const auto got = resolve_in_module(*have.params[p].type_annotation);
+            if (!types_satisfy(want, got)) {
+              failures.push_back(std::format(
+                  "function `{}` parameter {} has type `{}`, but the signature "
+                  "requires `{}`",
+                  fn.name, p + 1, types_.display(got), types_.display(want)));
+            }
+          }
+          if (fn.return_type != nullptr && have.return_type != nullptr) {
+            const auto want = resolve_in_module(*fn.return_type);
+            const auto got = resolve_in_module(*have.return_type);
+            if (!types_satisfy(want, got)) {
+              failures.push_back(std::format(
+                  "function `{}` returns `{}`, but the signature requires `{}`",
+                  fn.name, types_.display(got), types_.display(want)));
+            }
+          }
         }
         break;
       }
@@ -11520,6 +11594,15 @@ private:
         } else if (it->second.decl->visibility != ast::visibility::pub) {
           failures.push_back(std::format(
               "constant `{}` is provided but not `pub`", stat.name));
+        } else if (stat.type_annotation != nullptr &&
+                   it->second.decl->type_annotation != nullptr) {
+          const auto want = resolve_in_module(*stat.type_annotation);
+          const auto got = resolve_in_module(*it->second.decl->type_annotation);
+          if (!types_satisfy(want, got)) {
+            failures.push_back(std::format(
+                "constant `{}` has type `{}`, but the signature requires `{}`",
+                stat.name, types_.display(got), types_.display(want)));
+          }
         }
         break;
       }
@@ -11704,13 +11787,27 @@ private:
     return out;
   }
 
-  /// Materializes a functor instantiation: clones each `pub def` in the body
-  /// (giving the instance distinct node identity for per-instantiation type
-  /// checking), registers them under a fresh synthetic module, and checks them
-  /// with each module parameter bound as an import alias to its argument
-  /// module. Returns the synthetic module name, or `nullopt` if the body uses
-  /// a construct v1 materialization does not support yet (a diagnostic is
-  /// emitted in that case). See `spec/module-values-design.md` §4.
+  /// The bare target-type name of an `impl`/`extend` block's `for` type
+  /// (`impl show for handle` → `handle`), used both as the coherence/method-
+  /// table key and as the `functor_instance::impl_target` HIR lowering name.
+  [[nodiscard]] static auto impl_target_name(const ast::type_expr *for_type)
+      -> std::string {
+    if (const auto *named = dynamic_cast<const ast::named_type *>(for_type);
+        named != nullptr && !named->path.empty()) {
+      return named->path.back();
+    }
+    return {};
+  }
+
+  /// Materializes a functor instantiation: clones each supported member of the
+  /// body (giving the instance distinct node identity for per-instantiation
+  /// type checking) and registers them under a fresh synthetic module so its
+  /// `impl`/`extend` members join the method table and coherence check. Body
+  /// *checking* is deferred (a `pending_functor_body` is recorded) until after
+  /// `build_method_table`/`validate_impl_coherence`. Returns the synthetic
+  /// module name, or `nullopt` if the body uses a construct materialization
+  /// does not support (a diagnostic is emitted). See
+  /// `spec/module-values-design.md` §4.
   [[nodiscard]] auto
   materialize_functor(const ast::sub_module_decl &fdecl,
                       const resolved_functor &functor,
@@ -11719,14 +11816,14 @@ private:
                       source_span use_span) -> std::optional<std::string> {
     auto synth_name = sanitize_module_name(instantiation_key);
 
-    // Clone each supported member of the functor body. v1 materialization
-    // covers `def`, `type`, and `static` (binding) members; anything else
-    // (a nested `impl`/`extend`/`trait`, or a non-binding `static` form)
-    // falls back with a clear diagnostic rather than a partial module. A
-    // clone gives each instantiation distinct node identity so `node_types_`
-    // and diagnostics stay per-instantiation, while projections through a
-    // module parameter (`DB.conn`, `DB.query(...)`) resolve via the import
-    // aliases bound below.
+    // Clone each member of the functor body. Materialization covers `def`,
+    // `type`, `static` (binding), `impl`, `extend`, and `trait` members;
+    // anything else (a non-binding `static` form, an inline submodule) falls
+    // back with a clear diagnostic rather than a partial module. A clone gives
+    // each instantiation distinct node identity so `node_types_` and
+    // diagnostics stay per-instantiation, while projections through a module
+    // parameter (`DB.conn`, `DB.query(...)`) resolve via the import aliases
+    // bound at check time.
     const auto reject_member = [&](source_span span, std::string_view what) {
       auto diag =
           diagnostic(diagnostic_level::error,
@@ -11736,16 +11833,17 @@ private:
       diag.with_label(use_span, "in this instantiation");
       diag.with_label(span, "unsupported functor-body member");
       diag.with_help(
-          "v1 materialization of a parameterized module supports `def`, "
-          "`type`, and `static` members. Nested `impl`/`extend`/`trait` "
-          "members are a later phase "
-          "(`spec/module-values-implementation-plan.md`).");
+          "materialization of a parameterized module supports `def`, `type`, "
+          "`static` (binding), `impl`, `extend`, and `trait` members.");
       emit_diag(diag);
     };
 
     std::vector<const ast::func_decl *> cloned_funcs;
     std::vector<const ast::type_decl *> cloned_types;
     std::vector<const ast::static_decl *> cloned_statics;
+    std::vector<const ast::impl_decl *> cloned_impls;
+    std::vector<const ast::extend_decl *> cloned_extends;
+    std::vector<const ast::trait_decl *> cloned_traits;
     for (const auto &item : fdecl.items) {
       if (item == nullptr || item->has_error) {
         continue;
@@ -11795,19 +11893,61 @@ private:
         cloned_statics.push_back(raw);
         break;
       }
+      case ast::node_kind::impl_decl: {
+        const auto &id = dynamic_cast<const ast::impl_decl &>(*item);
+        auto cloned = ast::clone_impl_decl(id);
+        if (!cloned.has_value()) {
+          reject_member(id.span, cloned.error().message);
+          return std::nullopt;
+        }
+        auto *raw = cloned->get();
+        synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+        cloned_impls.push_back(raw);
+        break;
+      }
+      case ast::node_kind::extend_decl: {
+        const auto &ed = dynamic_cast<const ast::extend_decl &>(*item);
+        auto cloned = ast::clone_extend_decl(ed);
+        if (!cloned.has_value()) {
+          reject_member(ed.span, cloned.error().message);
+          return std::nullopt;
+        }
+        auto *raw = cloned->get();
+        synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+        cloned_extends.push_back(raw);
+        break;
+      }
+      case ast::node_kind::trait_decl: {
+        const auto &tr = dynamic_cast<const ast::trait_decl &>(*item);
+        auto cloned = ast::clone_trait_decl(tr);
+        if (!cloned.has_value()) {
+          reject_member(tr.span, cloned.error().message);
+          return std::nullopt;
+        }
+        auto *raw = cloned->get();
+        synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+        cloned_traits.push_back(raw);
+        break;
+      }
       default:
         reject_member(item->span,
                       "its body contains a member that is not a `def`, "
-                      "`type`, or `static`");
+                      "`type`, `static`, `impl`, `extend`, or `trait`");
         return std::nullopt;
       }
     }
 
     // Register the synthetic module and its members in the program index.
-    // Types and statics are registered before functions so a function's
-    // return type (`-> row`) or a static reference resolves against them.
+    // Types, traits, and statics are registered before functions so a
+    // function's return type (`-> row`), a static reference, or a trait bound
+    // resolves against them.
     auto &synth = index_.modules[synth_name];
     synth.module_name = synth_name;
+    for (const auto *tr : cloned_traits) {
+      synth.traits.insert_or_assign(
+          tr->name,
+          trait_decl_ref{.decl = tr, .file_id = functor.ref->file_id});
+    }
     for (const auto *td : cloned_types) {
       synth.types.insert_or_assign(
           td->name, type_decl_ref{.decl = td, .file_id = functor.ref->file_id});
@@ -11839,44 +11979,123 @@ private:
       functor_instance_decls_.push_back(
           functor_instance{.decl = fn, .owner_module = synth_name});
     }
-
-    // Temporarily bind each module parameter as an import alias to its
-    // argument module, in the functor's own file, so the cloned bodies'
-    // `DB.conn` / `DB.query(...)` projections resolve while checking. Restored
-    // afterward so the functor file's real imports are untouched.
-    auto &functor_imports = index_.imports[functor.ref->file_id];
-    const auto saved_import_count = functor_imports.size();
-    for (const auto &binding : module_bindings) {
-      functor_imports.push_back(import_binding{
-          .local_name = binding.param_name,
-          .path = split_module_name(binding.arg_module_name),
-          .leaf_name = {},
-          .is_wildcard = false,
-          .span = use_span,
-      });
+    // Register `impl`/`extend` blocks so `build_method_table` and
+    // `validate_impl_coherence` (which run right after this pass) see them, and
+    // record each method as an `impl_target::method` HIR instance so it lowers
+    // to runtime code within the synthetic module.
+    for (const auto *id : cloned_impls) {
+      synth.impls.push_back(impl_ref{.decl = id,
+                                     .module_name = synth_name,
+                                     .file_id = functor.ref->file_id});
+      const auto target = impl_target_name(id->for_type.get());
+      for (const auto &member : id->items) {
+        if (member != nullptr && member->kind == ast::node_kind::func_decl) {
+          functor_instance_decls_.push_back(functor_instance{
+              .decl = &dynamic_cast<const ast::func_decl &>(*member),
+              .owner_module = synth_name,
+              .impl_target = target});
+        }
+      }
+    }
+    for (const auto *ed : cloned_extends) {
+      synth.extends.push_back(extend_ref{.decl = ed,
+                                         .module_name = synth_name,
+                                         .file_id = functor.ref->file_id});
+      const auto target = impl_target_name(ed->for_type.get());
+      for (const auto &member : ed->items) {
+        if (member != nullptr && member->kind == ast::node_kind::func_decl) {
+          functor_instance_decls_.push_back(functor_instance{
+              .decl = &dynamic_cast<const ast::func_decl &>(*member),
+              .owner_module = synth_name,
+              .impl_target = target});
+        }
+      }
     }
 
+    // Defer body checking until after the method table and coherence build:
+    // a method call inside the body must resolve against a complete table.
+    pending_functor_bodies_.push_back(
+        pending_functor_body{.synth_name = synth_name,
+                             .owner_module = functor.owner_module,
+                             .functor_file = functor.ref->file_id,
+                             .module_bindings = module_bindings,
+                             .types = std::move(cloned_types),
+                             .statics = std::move(cloned_statics),
+                             .funcs = std::move(cloned_funcs),
+                             .impls = std::move(cloned_impls),
+                             .extends = std::move(cloned_extends),
+                             .traits = std::move(cloned_traits)});
+    return synth_name;
+  }
+
+  /// Checks every deferred functor-instantiation body (recorded by
+  /// `materialize_functor`), after the method table and coherence build. Each
+  /// module parameter is temporarily bound as an import alias to its argument
+  /// module in the functor's own file so the cloned bodies' `DB.conn` /
+  /// `DB.query(...)` projections resolve; the binding is restored afterward.
+  auto check_pending_functor_bodies() -> void {
     const auto *saved_module = module_;
     const auto saved_module_name = module_name_;
     const auto saved_file_id = file_id_;
-    module_ = &synth;
-    module_name_ = synth_name;
-    file_id_ = functor.ref->file_id;
-    for (const auto *td : cloned_types) {
-      check_type_decl(*td);
-    }
-    for (const auto *sd : cloned_statics) {
-      check_static_decl(*sd);
-    }
-    for (const auto *fn : cloned_funcs) {
-      check_function(*fn, /*at_module_scope=*/true);
+    for (const auto &pending : pending_functor_bodies_) {
+      const auto synth_it = index_.modules.find(pending.synth_name);
+      if (synth_it == index_.modules.end()) {
+        continue;
+      }
+      auto *synth = &synth_it->second;
+      auto &functor_imports = index_.imports[pending.functor_file];
+      const auto saved_import_count = functor_imports.size();
+      // Give the cloned body its original lexical scope: a `use owner.*`
+      // wildcard so a name declared alongside the functor (a sibling `trait`,
+      // `type`, ...) resolves while checking the instantiation in its own
+      // synthetic module. Then bind each module parameter as an import alias
+      // to its argument module so `DB.conn` / `DB.query(...)` projections
+      // resolve. Both are restored afterward.
+      if (!pending.owner_module.empty()) {
+        functor_imports.push_back(
+            import_binding{.local_name = {},
+                           .path = split_module_name(pending.owner_module),
+                           .leaf_name = {},
+                           .is_wildcard = true,
+                           .span = source_span::dummy()});
+      }
+      for (const auto &binding : pending.module_bindings) {
+        functor_imports.push_back(import_binding{
+            .local_name = binding.param_name,
+            .path = split_module_name(binding.arg_module_name),
+            .leaf_name = {},
+            .is_wildcard = false,
+            .span = source_span::dummy(),
+        });
+      }
+
+      module_ = synth;
+      module_name_ = pending.synth_name;
+      file_id_ = pending.functor_file;
+      for (const auto *tr : pending.traits) {
+        check_trait_decl(*tr);
+      }
+      for (const auto *td : pending.types) {
+        check_type_decl(*td);
+      }
+      for (const auto *sd : pending.statics) {
+        check_static_decl(*sd);
+      }
+      for (const auto *fn : pending.funcs) {
+        check_function(*fn, /*at_module_scope=*/true);
+      }
+      for (const auto *id : pending.impls) {
+        check_impl_decl(*id);
+      }
+      for (const auto *ed : pending.extends) {
+        check_extend_decl(*ed);
+      }
+
+      functor_imports.resize(saved_import_count);
     }
     module_ = saved_module;
     module_name_ = saved_module_name;
     file_id_ = saved_file_id;
-
-    functor_imports.resize(saved_import_count);
-    return synth_name;
   }
 
   /// Marks the file currently being checked as containing an error, guarding
@@ -12176,13 +12395,11 @@ private:
       module_ = saved_module;
       return;
     }
-    case ast::node_kind::use_decl: {
-      const auto &use = dynamic_cast<const ast::use_decl &>(item);
-      if (!use.instantiation_args.empty()) {
-        check_functor_instantiation(use);
-      }
-      return;
-    }
+    case ast::node_kind::use_decl:
+    // Functor instantiations (`use m[args]`) are materialized in a pre-pass
+    // (`discover_functor_instantiations`) before the method-table/coherence
+    // build, not here — see `run_impl`. An ordinary `use`, a `dep`, and a
+    // `module` header all need no per-item checking.
     case ast::node_kind::dep_decl:
     case ast::node_kind::module_decl:
       return;
@@ -12484,6 +12701,42 @@ private:
     }
   }
 
+  /// Walks a file's items (recursing into inline submodules with the module
+  /// context switched, exactly as `resolve_item_splices` does) and materializes
+  /// every functor instantiation `use m[args]`, so its members — including any
+  /// `impl`/`extend` — are registered before the method-table/coherence build.
+  auto
+  discover_functor_instantiations(const std::vector<ast::ptr<ast::node>> &items)
+      -> void {
+    for (const auto &item : items) {
+      if (item == nullptr || item->has_error) {
+        continue;
+      }
+      if (item->kind == ast::node_kind::use_decl) {
+        const auto &use = dynamic_cast<const ast::use_decl &>(*item);
+        if (!use.instantiation_args.empty()) {
+          check_functor_instantiation(use);
+        }
+        continue;
+      }
+      if (item->kind == ast::node_kind::sub_module_decl) {
+        const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
+        if (sub.items.empty() || sub.is_functor()) {
+          continue; // a functor declaration itself is materialized per `use`
+        }
+        const auto saved_module_name = module_name_;
+        const auto *saved_module = module_;
+        module_name_ = append_module_name(module_name_, sub.name);
+        module_ = index_.find_module(module_name_);
+        push_scope();
+        discover_functor_instantiations(sub.items);
+        pop_scope();
+        module_name_ = saved_module_name;
+        module_ = saved_module;
+      }
+    }
+  }
+
   auto resolve_item_splices(const std::vector<ast::ptr<ast::node>> &items,
                             file_id_type owner_file) -> void {
     for (const auto &item : items) {
@@ -12612,8 +12865,34 @@ public:
       pop_scope();
     }
 
+    // Materialize every functor instantiation (`use m[args]`) before the
+    // method table and coherence build below, so any `impl`/`extend` a functor
+    // body declares participates in both — exactly like an item-level splice.
+    // Bodies are only *registered* here; they are *checked* by
+    // `check_pending_functor_bodies` after the table is complete.
+    for (const auto &input : inputs) {
+      if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
+          input.ast_file->module_decl->has_error ||
+          input.ast_file->module_decl->path.empty()) {
+        continue;
+      }
+      if (static_cast<size_t>(input.file_id) < file_has_errors_.size() &&
+          file_has_errors_[input.file_id]) {
+        continue;
+      }
+      file_id_ = input.file_id;
+      module_name_ = join_strings(input.ast_file->module_decl->path, ".");
+      module_ = index_.find_module(module_name_);
+      file_no_prelude_ = input.ast_file->no_prelude;
+      compute_external_wildcard();
+      push_scope();
+      discover_functor_instantiations(input.ast_file->items);
+      pop_scope();
+    }
+
     build_method_table();
     validate_impl_coherence();
+    check_pending_functor_bodies();
 
     for (const auto &input : inputs) {
       if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||

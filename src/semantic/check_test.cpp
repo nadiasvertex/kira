@@ -1540,6 +1540,67 @@ auto test_reports_signature_member_not_pub() -> void {
                     "expected the visibility-failure note");
 }
 
+auto test_reports_signature_member_type_mismatch() -> void {
+  // The module provides `connect` with the right name/arity/visibility but the
+  // wrong parameter type (`int32` where the signature requires `str`). Deep
+  // type-equality under the abstract-type binding must reject it.
+  const auto analyzed = analyze_sources({{
+      .path = "sig_type_mismatch.kira",
+      .text = "module sample\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "    def connect(url: str) -> conn\n"
+              "\n"
+              "module sqlite:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: int32) -> conn:\n"
+              "        0\n"
+              "\n"
+              "use audited[sqlite] as db\n"
+              "\n"
+              "module audited[DB: backend]:\n"
+              "    pub def go() -> unit:\n"
+              "        unit\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a module whose member type mismatches the signature to be "
+         "rejected");
+  expect_diagnostic(analyzed, "does not satisfy signature `backend`",
+                    "expected the structural-satisfaction failure header");
+  expect_diagnostic(analyzed, "parameter 1 has type",
+                    "expected the parameter-type-mismatch note");
+}
+
+auto test_reports_signature_return_type_mismatch() -> void {
+  // Right name/arity/params but the wrong return type: signature requires
+  // `-> conn`, the module returns `-> str`.
+  const auto analyzed = analyze_sources({{
+      .path = "sig_ret_mismatch.kira",
+      .text = "module sample\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "    def connect(url: str) -> conn\n"
+              "\n"
+              "module sqlite:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: str) -> str:\n"
+              "        url\n"
+              "\n"
+              "use audited[sqlite] as db\n"
+              "\n"
+              "module audited[DB: backend]:\n"
+              "    pub def go() -> unit:\n"
+              "        unit\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a return-type mismatch against the signature to be "
+         "rejected");
+  expect_diagnostic(analyzed, "returns `str`, but the signature requires",
+                    "expected the return-type-mismatch note");
+}
+
 auto test_reports_unknown_functor_instantiation() -> void {
   const auto analyzed = analyze_sources({{
       .path = "sig_unknown.kira",
@@ -1582,6 +1643,90 @@ auto test_materializes_functor_and_resolves_alias() -> void {
   expect(analyzed.error_count == 0,
          "expected a materialized functor instantiation and a call through "
          "its alias to check cleanly");
+}
+
+auto test_functor_body_impl_and_extend_members_check() -> void {
+  // A functor body declares a local `type`, an `impl` of a trait for it, and
+  // an `extend` block adding an inherent method — plus a `def` that calls both
+  // through a value of the local type. All must materialize, register into the
+  // method table/coherence, and check cleanly per instantiation.
+  const auto analyzed = analyze_sources({{
+      .path = "mat_impl.kira",
+      .text = "module main\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "    def connect(url: str) -> conn\n"
+              "\n"
+              "module postgres:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: str) -> conn:\n"
+              "        0\n"
+              "\n"
+              "trait greet:\n"
+              "    def hello(self) -> int32\n"
+              "\n"
+              "module wrap[DB: backend]:\n"
+              "    pub type box = { value: int32 }\n"
+              "    impl greet for box:\n"
+              "        def hello(self) -> int32:\n"
+              "            self.value\n"
+              "    extend box:\n"
+              "        def doubled(self) -> int32:\n"
+              "            self.value + self.value\n"
+              "    pub def run() -> int32:\n"
+              "        let b = box { value: 21 }\n"
+              "        b.hello() + b.doubled()\n"
+              "\n"
+              "use main.wrap[main.postgres] as w\n"
+              "\n"
+              "def go() -> int32:\n"
+              "    w.run()\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected a functor body with `impl`/`extend` on a local type to "
+         "materialize and check cleanly");
+}
+
+auto test_functor_body_impl_coherence_across_instantiations() -> void {
+  // Two instantiations of a functor that implements a trait for its own local
+  // type must NOT collide in coherence: each instantiation clones the local
+  // type into a distinct synthetic module, so the (trait, type) coherence key
+  // differs. This would be a false "duplicate implementation" if the impls
+  // shared a coherence key.
+  const auto analyzed = analyze_sources({{
+      .path = "mat_coherence.kira",
+      .text = "module main\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "    def connect(url: str) -> conn\n"
+              "\n"
+              "module postgres:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: str) -> conn:\n"
+              "        0\n"
+              "\n"
+              "module sqlite:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: str) -> conn:\n"
+              "        1\n"
+              "\n"
+              "trait greet:\n"
+              "    def hello(self) -> int32\n"
+              "\n"
+              "module wrap[DB: backend]:\n"
+              "    pub type box = { value: int32 }\n"
+              "    impl greet for box:\n"
+              "        def hello(self) -> int32:\n"
+              "            self.value\n"
+              "\n"
+              "use main.wrap[main.postgres] as wp\n"
+              "use main.wrap[main.sqlite] as ws\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected two functor instantiations each implementing a trait for "
+         "their own local type to be coherent (no false duplicate)");
 }
 
 auto test_functor_type_projection_resolves_concretely() -> void {
@@ -1808,10 +1953,14 @@ auto main() -> int {
     test_accepts_wellformed_signature_and_functor();
     test_reports_module_missing_signature_member();
     test_reports_signature_member_not_pub();
+    test_reports_signature_member_type_mismatch();
+    test_reports_signature_return_type_mismatch();
     test_reports_unknown_functor_instantiation();
     test_materializes_functor_and_resolves_alias();
     test_functor_type_projection_resolves_concretely();
     test_functor_body_type_and_static_members_check();
+    test_functor_body_impl_and_extend_members_check();
+    test_functor_body_impl_coherence_across_instantiations();
     test_functor_instantiation_arity_mismatch();
   } catch (const std::exception &ex) {
     std::cerr << "check_test failed: unhandled exception: " << ex.what()

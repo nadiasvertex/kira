@@ -741,6 +741,16 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->value = std::move(*value);
     return ptr<expr>(std::move(cloned));
   }
+  case node_kind::module_path_expr: {
+    // A dotted path (`self.value`, `DB.query`) the parser leaves unresolved
+    // between field access and a qualified module reference — carried as bare
+    // segments, so a shallow copy suffices.
+    const auto &path = dynamic_cast<const module_path_expr &>(e);
+    auto cloned = make<module_path_expr>();
+    cloned->span = path.span;
+    cloned->segments = path.segments;
+    return ptr<expr>(std::move(cloned));
+  }
   default:
     return unsupported(e, "this expression shape");
   }
@@ -1190,6 +1200,219 @@ auto clone_static_decl(const static_decl &decl)
   cloned->name = decl.name;
   cloned->type_annotation = std::move(*type_annotation);
   cloned->initializer = std::move(*initializer);
+  return cloned;
+}
+
+namespace {
+
+/// Deep-clones a generic-parameter list, shared by the impl/trait cloners
+/// (`clone_func_decl`/`clone_type_decl` inline the same loop).
+[[nodiscard]] auto clone_type_params(const std::vector<type_param> &params)
+    -> std::expected<std::vector<type_param>, clone_error> {
+  auto cloned = std::vector<type_param>{};
+  cloned.reserve(params.size());
+  for (const auto &param : params) {
+    auto bound_or_type = clone_optional(param.bound_or_type);
+    if (!bound_or_type.has_value()) {
+      return std::unexpected(bound_or_type.error());
+    }
+    cloned.push_back(
+        type_param{.span = param.span,
+                   .name = param.name,
+                   .bound_or_type = std::move(*bound_or_type),
+                   .is_value_param = param.is_value_param,
+                   .higher_kinded_arity = param.higher_kinded_arity});
+  }
+  return cloned;
+}
+
+/// Deep-clones a `where` constraint list (impl blocks carry them).
+[[nodiscard]] auto
+clone_where_constraints(const std::vector<where_constraint> &constraints)
+    -> std::expected<std::vector<where_constraint>, clone_error> {
+  auto cloned = std::vector<where_constraint>{};
+  cloned.reserve(constraints.size());
+  for (const auto &constraint : constraints) {
+    auto subject = clone_optional(constraint.subject);
+    if (!subject.has_value()) {
+      return std::unexpected(subject.error());
+    }
+    auto bound_or_type = clone_optional(constraint.bound_or_type);
+    if (!bound_or_type.has_value()) {
+      return std::unexpected(bound_or_type.error());
+    }
+    cloned.push_back(
+        where_constraint{.span = constraint.span,
+                         .subject = std::move(*subject),
+                         .bound_or_type = std::move(*bound_or_type)});
+  }
+  return cloned;
+}
+
+/// Deep-clones a `+`-joined trait bound (a trait's `requires` clause).
+[[nodiscard]] auto clone_bound(const bound &b)
+    -> std::expected<bound, clone_error> {
+  auto cloned = bound{.span = b.span, .terms = {}};
+  cloned.terms.reserve(b.terms.size());
+  for (const auto &term : b.terms) {
+    auto type = clone_optional(term.type);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    cloned.terms.push_back(
+        bound_term{.span = term.span, .type = std::move(*type)});
+  }
+  return cloned;
+}
+
+/// Deep-clones one member item of an `impl`/`extend`/`trait` block — a method
+/// (`func_decl`), a required constant (`static_decl`), an associated-type
+/// declaration (trait side) or definition (impl side). Fails on anything else.
+[[nodiscard]] auto clone_member_item(const node &item)
+    -> std::expected<ptr<node>, clone_error> {
+  switch (item.kind) {
+  case node_kind::func_decl: {
+    auto cloned = clone_func_decl(dynamic_cast<const func_decl &>(item));
+    if (!cloned.has_value()) {
+      return std::unexpected(cloned.error());
+    }
+    return ptr<node>(std::move(*cloned));
+  }
+  case node_kind::static_decl: {
+    auto cloned = clone_static_decl(dynamic_cast<const static_decl &>(item));
+    if (!cloned.has_value()) {
+      return std::unexpected(cloned.error());
+    }
+    return ptr<node>(std::move(*cloned));
+  }
+  case node_kind::associated_type_decl_node: {
+    const auto &assoc = dynamic_cast<const associated_type_decl_node &>(item);
+    auto default_type = clone_optional(assoc.value.default_type);
+    if (!default_type.has_value()) {
+      return std::unexpected(default_type.error());
+    }
+    auto cloned = make<associated_type_decl_node>();
+    cloned->span = assoc.span;
+    cloned->value =
+        associated_type_decl{.span = assoc.value.span,
+                             .visibility = assoc.value.visibility,
+                             .name = assoc.value.name,
+                             .default_type = std::move(*default_type)};
+    return ptr<node>(std::move(cloned));
+  }
+  case node_kind::associated_type_def_node: {
+    const auto &assoc = dynamic_cast<const associated_type_def_node &>(item);
+    auto type = clone_optional(assoc.value.type);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    auto cloned = make<associated_type_def_node>();
+    cloned->span = assoc.span;
+    cloned->value = associated_type_def{.span = assoc.value.span,
+                                        .name = assoc.value.name,
+                                        .type = std::move(*type)};
+    return ptr<node>(std::move(cloned));
+  }
+  default:
+    return unsupported(item, "this impl/trait member shape");
+  }
+}
+
+/// Deep-clones a member-item list, skipping null entries.
+[[nodiscard]] auto clone_member_items(const std::vector<ptr<node>> &items)
+    -> std::expected<std::vector<ptr<node>>, clone_error> {
+  auto cloned = std::vector<ptr<node>>{};
+  cloned.reserve(items.size());
+  for (const auto &item : items) {
+    if (item == nullptr) {
+      continue;
+    }
+    auto cloned_item = clone_member_item(*item);
+    if (!cloned_item.has_value()) {
+      return std::unexpected(cloned_item.error());
+    }
+    cloned.push_back(std::move(*cloned_item));
+  }
+  return cloned;
+}
+
+} // namespace
+
+auto clone_impl_decl(const impl_decl &decl)
+    -> std::expected<ptr<impl_decl>, clone_error> {
+  auto type_params = clone_type_params(decl.type_params);
+  if (!type_params.has_value()) {
+    return std::unexpected(type_params.error());
+  }
+  auto trait_type = clone_optional(decl.trait_type);
+  if (!trait_type.has_value()) {
+    return std::unexpected(trait_type.error());
+  }
+  auto for_type = clone_optional(decl.for_type);
+  if (!for_type.has_value()) {
+    return std::unexpected(for_type.error());
+  }
+  auto where_constraints = clone_where_constraints(decl.where_constraints);
+  if (!where_constraints.has_value()) {
+    return std::unexpected(where_constraints.error());
+  }
+  auto items = clone_member_items(decl.items);
+  if (!items.has_value()) {
+    return std::unexpected(items.error());
+  }
+
+  auto cloned = make<impl_decl>();
+  cloned->span = decl.span;
+  cloned->type_params = std::move(*type_params);
+  cloned->trait_type = std::move(*trait_type);
+  cloned->for_type = std::move(*for_type);
+  cloned->where_constraints = std::move(*where_constraints);
+  cloned->items = std::move(*items);
+  return cloned;
+}
+
+auto clone_extend_decl(const extend_decl &decl)
+    -> std::expected<ptr<extend_decl>, clone_error> {
+  auto for_type = clone_optional(decl.for_type);
+  if (!for_type.has_value()) {
+    return std::unexpected(for_type.error());
+  }
+  auto items = clone_member_items(decl.items);
+  if (!items.has_value()) {
+    return std::unexpected(items.error());
+  }
+
+  auto cloned = make<extend_decl>();
+  cloned->span = decl.span;
+  cloned->for_type = std::move(*for_type);
+  cloned->items = std::move(*items);
+  return cloned;
+}
+
+auto clone_trait_decl(const trait_decl &decl)
+    -> std::expected<ptr<trait_decl>, clone_error> {
+  auto type_params = clone_type_params(decl.type_params);
+  if (!type_params.has_value()) {
+    return std::unexpected(type_params.error());
+  }
+  auto items = clone_member_items(decl.items);
+  if (!items.has_value()) {
+    return std::unexpected(items.error());
+  }
+
+  auto cloned = make<trait_decl>();
+  cloned->span = decl.span;
+  cloned->visibility = decl.visibility;
+  cloned->name = decl.name;
+  cloned->type_params = std::move(*type_params);
+  if (decl.requires_bound.has_value()) {
+    auto requires_bound = clone_bound(*decl.requires_bound);
+    if (!requires_bound.has_value()) {
+      return std::unexpected(requires_bound.error());
+    }
+    cloned->requires_bound = std::move(*requires_bound);
+  }
+  cloned->items = std::move(*items);
   return cloned;
 }
 

@@ -69,4 +69,27 @@ struct clone_error {
 [[nodiscard]] auto clone_static_decl(const static_decl &decl)
     -> std::expected<ptr<static_decl>, clone_error>;
 
+/// Deep-clones an `impl` block — its type parameters, trait/`for` target type
+/// expressions, `where` constraints, and member items (methods and
+/// associated-type definitions). Used to materialize a parameterized module's
+/// `impl` members per instantiation, so each instantiation's impl participates
+/// in coherence and the method table with distinct node identity while its
+/// target type resolves through the instantiation's bindings. Fails with a
+/// `clone_error` on a member shape it does not yet cover.
+[[nodiscard]] auto clone_impl_decl(const impl_decl &decl)
+    -> std::expected<ptr<impl_decl>, clone_error>;
+
+/// Deep-clones an `extend Type:` block — its `for` target type expression and
+/// method items — for the same per-instantiation materialization reason as
+/// `clone_impl_decl`.
+[[nodiscard]] auto clone_extend_decl(const extend_decl &decl)
+    -> std::expected<ptr<extend_decl>, clone_error>;
+
+/// Deep-clones a `trait` declaration — visibility, name, type parameters,
+/// `requires` bound, and member items (method signatures, statics, and
+/// associated-type declarations) — for per-instantiation materialization of a
+/// parameterized module's `trait` members.
+[[nodiscard]] auto clone_trait_decl(const trait_decl &decl)
+    -> std::expected<ptr<trait_decl>, clone_error>;
+
 } // namespace kira::ast
