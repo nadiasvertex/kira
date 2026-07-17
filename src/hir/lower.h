@@ -81,9 +81,8 @@ struct lowering_options {
 /// `db.f(...)` call site records the synthetic module name as its callee's
 /// owner, so ordinary cross-module dispatch links the two. Fails closed on
 /// the first clone `lower_function` rejects, exactly like `lower_module`.
-[[nodiscard]] auto
-lower_functor_modules(const semantic::checked_types &checked,
-                      const lowering_options &options = {})
+[[nodiscard]] auto lower_functor_modules(const semantic::checked_types &checked,
+                                         const lowering_options &options = {})
     -> std::expected<ptr_vec<hir_module>, lowering_error>;
 
 } // namespace kira::hir

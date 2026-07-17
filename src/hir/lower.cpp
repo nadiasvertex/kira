@@ -4044,8 +4044,7 @@ auto lower_functor_modules(const semantic::checked_types &checked,
   // one standalone `hir_module`, named exactly as the `db.f(...)` call sites
   // record their callee's owner module.
   auto module_order = std::vector<std::string>{};
-  auto grouped =
-      std::unordered_map<std::string, ptr_vec<hir_function>>{};
+  auto grouped = std::unordered_map<std::string, ptr_vec<hir_function>>{};
   for (const auto &instance : checked.functor_instances) {
     if (instance.decl == nullptr) {
       continue;
