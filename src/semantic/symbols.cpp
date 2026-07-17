@@ -57,6 +57,8 @@ auto semantic_symbol_kind_name(semantic_symbol_kind kind) -> std::string_view {
     return "trait";
   case semantic_symbol_kind::concept_symbol:
     return "concept";
+  case semantic_symbol_kind::signature_symbol:
+    return "signature";
   case semantic_symbol_kind::submodule_symbol:
     return "submodule";
   case semantic_symbol_kind::function_symbol:
@@ -89,6 +91,7 @@ auto participates_in_duplicate_module_scope_check(semantic_symbol_kind kind)
   case semantic_symbol_kind::type_symbol:
   case semantic_symbol_kind::trait_symbol:
   case semantic_symbol_kind::concept_symbol:
+  case semantic_symbol_kind::signature_symbol:
   case semantic_symbol_kind::submodule_symbol:
     return true;
   case semantic_symbol_kind::function_symbol:
@@ -112,6 +115,7 @@ auto can_resolve_named_type(semantic_symbol_kind kind) -> bool {
   case semantic_symbol_kind::type_symbol:
   case semantic_symbol_kind::trait_symbol:
   case semantic_symbol_kind::concept_symbol:
+  case semantic_symbol_kind::signature_symbol:
   case semantic_symbol_kind::submodule_symbol:
     return true;
   case semantic_symbol_kind::function_symbol:
@@ -139,6 +143,7 @@ auto can_resolve_module_reference(semantic_symbol_kind kind) -> bool {
   case semantic_symbol_kind::function_symbol:
   case semantic_symbol_kind::static_binding_symbol:
     return true;
+  case semantic_symbol_kind::signature_symbol:
   case semantic_symbol_kind::parameter_symbol:
   case semantic_symbol_kind::local_binding_symbol:
   case semantic_symbol_kind::mutable_local_symbol:
@@ -192,6 +197,20 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
     return semantic_symbol_spec{
         .name = decl.name,
         .kind = semantic_symbol_kind::trait_symbol,
+        .name_space = symbol_namespace::module_type_namespace,
+        .visibility = decl.visibility,
+        .location =
+            source_location{
+                .file_id = file_id,
+                .span = decl.span,
+            },
+    };
+  }
+  case ast::node_kind::signature_decl: {
+    const auto &decl = dynamic_cast<const ast::signature_decl &>(node);
+    return semantic_symbol_spec{
+        .name = decl.name,
+        .kind = semantic_symbol_kind::signature_symbol,
         .name_space = symbol_namespace::module_type_namespace,
         .visibility = decl.visibility,
         .location =

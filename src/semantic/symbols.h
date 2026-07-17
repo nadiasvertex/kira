@@ -28,6 +28,7 @@ enum class semantic_symbol_kind : uint8_t {
   type_symbol,            ///< `type` declaration.
   trait_symbol,           ///< `trait` declaration.
   concept_symbol,         ///< `concept` declaration.
+  signature_symbol,       ///< `signature` declaration (module-level concept).
   submodule_symbol,       ///< Nested `module` declaration.
   function_symbol,        ///< `def` declaration.
   static_binding_symbol,  ///< `static Name = expr` binding.

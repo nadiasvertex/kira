@@ -560,6 +560,10 @@ private:
   /// already-path-populated `named_type` — see its doc comment in
   /// parser.cpp.
   auto parse_generic_args_suffix(ast::named_type &named) -> void;
+  /// Parses a bracketed `[T, U, ...]` type/value argument list (the current
+  /// token must be `[`). Shared by generic-type application and functor
+  /// instantiation in `use`.
+  [[nodiscard]] auto parse_type_arg_list() -> std::vector<ast::type_arg>;
   /// Wraps a parsed bound list in a `bound_type` node for AST uniformity.
   [[nodiscard]] auto make_bound_type(ast::bound bound)
       -> ast::ptr<ast::bound_type>;
@@ -597,6 +601,9 @@ private:
   /// Parses a trait declaration body and signature.
   [[nodiscard]] auto parse_trait_decl(ast::visibility vis)
       -> ast::ptr<ast::trait_decl>;
+  /// Parses a module `signature` declaration and its member requirements.
+  [[nodiscard]] auto parse_signature_decl(ast::visibility vis)
+      -> ast::ptr<ast::signature_decl>;
   /// Parses a concept declaration and its constraints.
   [[nodiscard]] auto parse_concept_decl(ast::visibility vis)
       -> ast::ptr<ast::concept_decl>;

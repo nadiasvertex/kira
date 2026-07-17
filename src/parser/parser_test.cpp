@@ -1444,6 +1444,112 @@ auto test_non_main_module_rejects_top_level_statements() -> void {
          "top-level statements");
 }
 
+auto test_parser_accepts_signature_decl() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "signature backend:\n"
+                             "    type conn\n"
+                             "    def connect(url: str) -> conn\n"
+                             "    def query(c: &conn, sql: str) -> conn\n"
+                             "    static default_port: int32\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1, "expected one signature item");
+
+  auto *sig = expect_node<kira::ast::signature_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::signature_decl,
+      "expected a signature_decl");
+  expect(sig->name == "backend", "expected signature name `backend`");
+  expect(sig->items.size() == 4, "expected four signature members");
+  expect(sig->items[0]->kind == kira::ast::node_kind::associated_type_decl_node,
+         "expected abstract `type conn` member");
+  expect(sig->items[1]->kind == kira::ast::node_kind::func_decl,
+         "expected `def connect` member");
+  expect(sig->items[3]->kind == kira::ast::node_kind::static_decl,
+         "expected `static default_port` member");
+}
+
+auto test_parser_rejects_signature_abstract_type_bound() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "signature backend:\n"
+                             "    type conn: comparable\n");
+  expect(parsed.error_count > 0,
+         "expected a bound on a signature abstract type to error");
+  expect(parsed.diagnostics.find("not supported yet") != std::string::npos,
+         parsed.diagnostics);
+}
+
+auto test_parser_accepts_parameterized_module() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "module audited[DB: backend]:\n"
+                             "    pub def query(c: &DB.conn, sql: str) -> "
+                             "DB.conn:\n"
+                             "        DB.query(c, sql)\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1, "expected one module item");
+
+  auto *mod = expect_node<kira::ast::sub_module_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::sub_module_decl,
+      "expected a sub_module_decl");
+  expect(mod->name == "audited", "expected module name `audited`");
+  expect(mod->is_functor(), "expected a parameterized module (functor)");
+  expect(mod->type_params.size() == 1, "expected one module parameter");
+  expect(mod->type_params[0].name == "DB", "expected parameter named `DB`");
+  expect(mod->type_params[0].bound_or_type != nullptr,
+         "expected the `DB` parameter to carry a signature bound");
+  expect(mod->items.size() == 1, "expected one item in the functor body");
+}
+
+auto test_parser_plain_submodule_is_not_functor() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "module inner:\n"
+                             "    def f() -> unit:\n"
+                             "        unit\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *mod = expect_node<kira::ast::sub_module_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::sub_module_decl,
+      "expected a sub_module_decl");
+  expect(!mod->is_functor(), "a plain submodule must not be a functor");
+  expect(mod->type_params.empty(), "expected no module parameters");
+}
+
+auto test_parser_accepts_functor_instantiation_use() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "use audited[postgres] as db\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1, "expected one use item");
+
+  auto *use = expect_node<kira::ast::use_decl>(parsed.file->items[0].get(),
+                                               kira::ast::node_kind::use_decl,
+                                               "expected a use_decl");
+  expect(use->path.size() == 1 && use->path[0] == "audited",
+         "expected functor path `audited` to be preserved intact");
+  expect(use->instantiation_args.size() == 1,
+         "expected one instantiation argument");
+  expect(use->selector.has_value(), "expected an `as` alias selector");
+  expect(use->selector->kind == kira::ast::use_selector_kind::single,
+         "expected a single-item selector for the alias");
+  expect(use->selector->items[0].alias == "db",
+         "expected the instantiation to be aliased `db`");
+}
+
+auto test_parser_accepts_nested_functor_instantiation() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "use audited[cached[postgres]]\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *use = expect_node<kira::ast::use_decl>(parsed.file->items[0].get(),
+                                               kira::ast::node_kind::use_decl,
+                                               "expected a use_decl");
+  expect(use->instantiation_args.size() == 1,
+         "expected one (nested) instantiation argument");
+  expect(!use->selector.has_value(),
+         "expected no alias for an un-aliased instantiation");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -1452,7 +1558,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 25> tests = {{
+  const std::array<named_test, 31> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -1499,6 +1605,17 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_script_module_without_statements_keeps_explicit_main},
       {.name = "non_main_module_rejects_top_level_statements",
        .fn = test_non_main_module_rejects_top_level_statements},
+      {.name = "signature_decl", .fn = test_parser_accepts_signature_decl},
+      {.name = "signature_abstract_type_bound",
+       .fn = test_parser_rejects_signature_abstract_type_bound},
+      {.name = "parameterized_module",
+       .fn = test_parser_accepts_parameterized_module},
+      {.name = "plain_submodule_not_functor",
+       .fn = test_parser_plain_submodule_is_not_functor},
+      {.name = "functor_instantiation_use",
+       .fn = test_parser_accepts_functor_instantiation_use},
+      {.name = "nested_functor_instantiation",
+       .fn = test_parser_accepts_nested_functor_instantiation},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

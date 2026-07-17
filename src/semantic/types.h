@@ -736,6 +736,21 @@ struct concept_decl_ref {
   file_id_type file_id = 0;
 };
 
+/// A `signature` declaration plus the file it was declared in.
+struct signature_decl_ref {
+  const ast::signature_decl *decl = nullptr;
+  file_id_type file_id = 0;
+};
+
+/// A parameterized module (functor) declaration plus the file it was declared
+/// in. Kept distinct from ordinary submodules because a functor's body is not
+/// elaborated as a module in its own right — it is instantiated per argument
+/// tuple by a `use m[args]` import.
+struct functor_decl_ref {
+  const ast::sub_module_decl *decl = nullptr;
+  file_id_type file_id = 0;
+};
+
 /// A `def` declaration plus the file it was declared in.
 struct func_decl_ref {
   const ast::func_decl *decl = nullptr;
@@ -788,6 +803,8 @@ struct module_members {
   std::unordered_map<std::string, type_decl_ref> types;
   std::unordered_map<std::string, trait_decl_ref> traits;
   std::unordered_map<std::string, concept_decl_ref> concepts;
+  std::unordered_map<std::string, signature_decl_ref> signatures;
+  std::unordered_map<std::string, functor_decl_ref> functors;
   std::unordered_map<std::string, func_decl_ref> functions;
   std::unordered_map<std::string, static_decl_ref> statics;
   std::unordered_map<std::string, variant_ref> variants;

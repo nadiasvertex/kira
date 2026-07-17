@@ -1,4 +1,15 @@
-1. Modules as compile-time values (signatures, parameterized modules) — literally doesn't exist yet: no signature keyword, no grammar, no symbol-table concept. Greenfield work, but self-contained (doesn't block other features).
+1. Modules as compile-time values (signatures, parameterized modules) —
+   Phases 0–2 landed (see `spec/module-values-design.md` and
+   `spec/module-values-implementation-plan.md`): `signature` keyword/grammar/
+   AST/parser, parameterized `module m[P: sig]` declarations, `use m[args] as
+   name` instantiation syntax, a `signature_symbol` symbol kind, signature-body
+   well-formedness checking, and a *structural* `satisfies(module, signature)`
+   check that runs at every `use m[args]` site with concept-quality
+   diagnostics. Remaining: Phase 3's core — *materializing* an instantiated
+   functor (cloning + substituting its body so the aliased module's members
+   become usable), plus reflection (4), metadata (5), `static if` around `use`
+   (6), and hardening (7). A satisfied `use m[args]` currently reports that its
+   elaboration is pending rather than producing a usable module.
 2. Contracts on a `generator def` (its body runs in steps, so entry/exit don't mean what they mean for a call — lowering rejects them rather than checking at the wrong times).
 3. A value parameter no argument determines (`def zeros[n: usize]() -> array[int32, n]`, with no explicit `f[8]()` call syntax) is diagnosed, not solved; 
 4. Const-generic *methods* (on an `impl`/`extend` target) still fall back to the template path and are refused by lowering; 

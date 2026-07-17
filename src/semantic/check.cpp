@@ -11265,6 +11265,329 @@ private:
     pop_type_params();
   }
 
+  /// Checks a `signature` declaration for well-formedness: each abstract
+  /// `type` member is bound as an opaque type parameter (so later members may
+  /// reference it, e.g. `def connect(url: str) -> conn`), then every `def`
+  /// member's signature and every required `static`'s type is resolved. A
+  /// signature is never a type and never enters `type_table`; it only
+  /// describes the shape a module must have to satisfy it
+  /// (`spec/module-values-design.md` §3).
+  auto check_signature_decl(const ast::signature_decl &decl) -> void {
+    auto param_scope = std::unordered_map<std::string, type_id>{};
+    for (const auto &item : decl.items) {
+      if (item == nullptr || item->has_error ||
+          item->kind != ast::node_kind::associated_type_decl_node) {
+        continue;
+      }
+      const auto &assoc =
+          dynamic_cast<const ast::associated_type_decl_node &>(*item);
+      if (!assoc.value.name.empty()) {
+        param_scope.emplace(assoc.value.name,
+                            types_.type_param(assoc.value.name));
+      }
+    }
+    type_params_.push_back(std::move(param_scope));
+
+    for (const auto &item : decl.items) {
+      if (item == nullptr || item->has_error) {
+        continue;
+      }
+      if (item->kind == ast::node_kind::func_decl) {
+        check_function(dynamic_cast<const ast::func_decl &>(*item),
+                       /*at_module_scope=*/false);
+      } else if (item->kind == ast::node_kind::static_decl) {
+        const auto &stat = dynamic_cast<const ast::static_decl &>(*item);
+        if (stat.type_annotation != nullptr) {
+          resolve_type(*stat.type_annotation, current_resolve_ctx());
+        }
+      }
+    }
+
+    pop_type_params();
+  }
+
+  /// Resolves the `signature` a module-parameter bound names, or `nullptr` if
+  /// the bound is not a single-signature bound. `DB: backend` stores its bound
+  /// as a `bound_type` wrapping one term whose `named_type` path names the
+  /// signature.
+  [[nodiscard]] auto
+  resolve_bound_signature(const ast::type_expr &bound_expr) const
+      -> const ast::signature_decl * {
+    const ast::named_type *named = nullptr;
+    if (const auto *bt = dynamic_cast<const ast::bound_type *>(&bound_expr)) {
+      if (bt->value.terms.size() == 1 && bt->value.terms.front().type) {
+        named = dynamic_cast<const ast::named_type *>(
+            bt->value.terms.front().type.get());
+      }
+    } else if (const auto *nt =
+                   dynamic_cast<const ast::named_type *>(&bound_expr)) {
+      named = nt;
+    }
+    if (named == nullptr || named->path.empty()) {
+      return nullptr;
+    }
+    const auto &name = named->path.back();
+    // A signature named in a bound is looked up in the current module first,
+    // then anywhere in the session (imports make it visible unqualified).
+    if (module_ != nullptr) {
+      if (const auto it = module_->signatures.find(name);
+          it != module_->signatures.end()) {
+        return it->second.decl;
+      }
+    }
+    for (const auto &[mod_name, members] : index_.modules) {
+      if (const auto it = members.signatures.find(name);
+          it != members.signatures.end()) {
+        return it->second.decl;
+      }
+    }
+    return nullptr;
+  }
+
+  /// Resolves the functor a `use m[args]` path names, or `nullptr` if no
+  /// parameterized module by that name is in scope.
+  [[nodiscard]] auto resolve_functor(const std::vector<std::string> &path) const
+      -> const functor_decl_ref * {
+    if (path.empty()) {
+      return nullptr;
+    }
+    const auto &name = path.back();
+    if (path.size() >= 2) {
+      const auto owner_path =
+          std::vector<std::string>(path.begin(), path.end() - 1);
+      if (const auto *owner = find_session_module_of_path(owner_path)) {
+        if (const auto it = owner->functors.find(name);
+            it != owner->functors.end()) {
+          return &it->second;
+        }
+      }
+    }
+    if (module_ != nullptr) {
+      if (const auto it = module_->functors.find(name);
+          it != module_->functors.end()) {
+        return &it->second;
+      }
+    }
+    for (const auto &[mod_name, members] : index_.modules) {
+      if (const auto it = members.functors.find(name);
+          it != members.functors.end()) {
+        return &it->second;
+      }
+    }
+    return nullptr;
+  }
+
+  /// Resolves a module named by a functor argument (a `named_type` path),
+  /// trying the path as written, then relative to the current module.
+  [[nodiscard]] auto resolve_arg_module(const ast::named_type &nt) const
+      -> const module_members * {
+    if (nt.path.empty()) {
+      return nullptr;
+    }
+    const auto joined = join_strings(nt.path, ".");
+    if (const auto *m = index_.find_module(joined)) {
+      return m;
+    }
+    if (!module_name_.empty()) {
+      if (const auto *m =
+              index_.find_module(append_module_name(module_name_, joined))) {
+        return m;
+      }
+    }
+    // An imported module: `use pkg.postgres` binds `postgres` to that module.
+    if (const auto *binding = find_import(joined)) {
+      if (const auto *m =
+              index_.find_module(join_strings(binding->path, "."))) {
+        return m;
+      }
+    }
+    return nullptr;
+  }
+
+  /// Structural signature satisfaction: whether `mod` provides every member
+  /// `sig` requires, each `pub`. Collects *every* failure into `failures`
+  /// (concept-quality diagnostics list them all) and returns whether the set
+  /// is empty. v1 checks member existence, visibility, and function arity;
+  /// deep parameter/return-type equality under the abstract-type binding is a
+  /// hardening item (`spec/module-values-design.md` §3, Phase 7).
+  [[nodiscard]] auto
+  module_satisfies_signature(const module_members &mod,
+                             const ast::signature_decl &sig,
+                             std::vector<std::string> &failures) const -> bool {
+    for (const auto &item : sig.items) {
+      if (item == nullptr || item->has_error) {
+        continue;
+      }
+      switch (item->kind) {
+      case ast::node_kind::associated_type_decl_node: {
+        const auto &assoc =
+            dynamic_cast<const ast::associated_type_decl_node &>(*item);
+        const auto it = mod.types.find(assoc.value.name);
+        if (it == mod.types.end()) {
+          failures.push_back(
+              std::format("missing type `{}`", assoc.value.name));
+        } else if (it->second.decl->visibility != ast::visibility::pub) {
+          failures.push_back(std::format("type `{}` is provided but not `pub`",
+                                         assoc.value.name));
+        }
+        break;
+      }
+      case ast::node_kind::func_decl: {
+        const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+        const auto it = mod.functions.find(fn.name);
+        if (it == mod.functions.end()) {
+          failures.push_back(std::format("missing function `{}`", fn.name));
+        } else if (it->second.decl->visibility != ast::visibility::pub) {
+          failures.push_back(
+              std::format("function `{}` is provided but not `pub`", fn.name));
+        } else if (it->second.decl->params.size() != fn.params.size()) {
+          failures.push_back(std::format(
+              "function `{}` takes {} parameter(s), but the signature requires "
+              "{}",
+              fn.name, it->second.decl->params.size(), fn.params.size()));
+        }
+        break;
+      }
+      case ast::node_kind::static_decl: {
+        const auto &stat = dynamic_cast<const ast::static_decl &>(*item);
+        const auto it = mod.statics.find(stat.name);
+        if (it == mod.statics.end()) {
+          failures.push_back(
+              std::format("missing constant `static {}`", stat.name));
+        } else if (it->second.decl->visibility != ast::visibility::pub) {
+          failures.push_back(std::format(
+              "constant `{}` is provided but not `pub`", stat.name));
+        }
+        break;
+      }
+      default:
+        break;
+      }
+    }
+    return failures.empty();
+  }
+
+  /// Validates a functor instantiation `use m[args]`: resolves the functor,
+  /// checks argument arity, and — for each module parameter bounded by a
+  /// signature — checks its argument module `satisfies` the bound with
+  /// concept-quality diagnostics. Materializing the instantiated module (so
+  /// its members become usable through the alias) is the next phase; until
+  /// then a satisfied instantiation reports that its elaboration is pending.
+  auto check_functor_instantiation(const ast::use_decl &decl) -> void {
+    const auto *functor = resolve_functor(decl.path);
+    if (functor == nullptr) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("no parameterized module named `{}` is in scope",
+                      join_strings(decl.path, ".")),
+          file_id_);
+      diag.with_label(decl.span, "instantiated here");
+      diag.with_help(
+          "`use path[args]` instantiates a parameterized module (a `module "
+          "name[...]:` declaration). Check the name and that the module is "
+          "imported.");
+      emit_diag(diag);
+      mark_file_error();
+      return;
+    }
+
+    const auto &fdecl = *functor->decl;
+    if (decl.instantiation_args.size() != fdecl.type_params.size()) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("parameterized module `{}` takes {} argument(s), but {} "
+                      "were supplied",
+                      fdecl.name, fdecl.type_params.size(),
+                      decl.instantiation_args.size()),
+          file_id_);
+      diag.with_label(decl.span, "in this instantiation");
+      emit_diag(diag);
+      mark_file_error();
+      return;
+    }
+
+    bool all_ok = true;
+    for (size_t i = 0; i < fdecl.type_params.size(); ++i) {
+      const auto &param = fdecl.type_params[i];
+      const auto &arg = decl.instantiation_args[i];
+      if (param.bound_or_type == nullptr) {
+        continue; // an unbounded type parameter: no signature obligation
+      }
+      // `DB: backend` is syntactically indistinguishable from a value
+      // parameter (`n: usize`) — the parser cannot tell a signature bound from
+      // a value type. It is a module parameter exactly when its bound names a
+      // signature, so resolution (not `is_value_param`) is what decides.
+      const auto *sig = resolve_bound_signature(*param.bound_or_type);
+      if (sig == nullptr) {
+        continue; // an ordinary value/type/trait/concept parameter
+      }
+      const auto *arg_named =
+          arg.value != nullptr
+              ? dynamic_cast<const ast::named_type *>(arg.value.get())
+              : nullptr;
+      const module_members *arg_mod =
+          arg_named != nullptr ? resolve_arg_module(*arg_named) : nullptr;
+      if (arg_mod == nullptr) {
+        auto diag = diagnostic(
+            diagnostic_level::error,
+            std::format("argument for module parameter `{}` must be a module "
+                        "satisfying signature `{}`",
+                        param.name, sig->name),
+            file_id_);
+        diag.with_label(arg.span, "not a module");
+        emit_diag(diag);
+        all_ok = false;
+        continue;
+      }
+      std::vector<std::string> failures;
+      if (!module_satisfies_signature(*arg_mod, *sig, failures)) {
+        auto diag = diagnostic(
+            diagnostic_level::error,
+            std::format("module `{}` does not satisfy signature `{}`",
+                        arg_mod->module_name, sig->name),
+            file_id_);
+        diag.with_label(arg.span, "used here");
+        for (const auto &failure : failures) {
+          diag.children.push_back(
+              diagnostic(diagnostic_level::note, failure, file_id_));
+        }
+        diag.with_help(std::format(
+            "A module satisfies `{}` structurally: it must provide each "
+            "required `type`, `def`, and `static` as a `pub` member. Add or "
+            "expose the members listed above.",
+            sig->name));
+        emit_diag(diag);
+        all_ok = false;
+      }
+    }
+
+    if (all_ok) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("instantiating parameterized module `{}` is recognized "
+                      "and its arguments type-check, but elaborating the "
+                      "instantiated module is not implemented yet",
+                      fdecl.name),
+          file_id_);
+      diag.with_label(decl.span, "instantiation");
+      diag.with_help(
+          "Signatures and functor argument checking are in place; the "
+          "instantiated module's members are not yet materialized, so the "
+          "alias cannot be used yet. See "
+          "`spec/module-values-implementation-plan.md` Phase 3.");
+      emit_diag(diag);
+    }
+    mark_file_error();
+  }
+
+  /// Marks the file currently being checked as containing an error, guarding
+  /// the index bound.
+  auto mark_file_error() -> void {
+    if (static_cast<size_t>(file_id_) < file_has_errors_.size()) {
+      file_has_errors_[file_id_] = true;
+    }
+  }
+
   /// Checks a `static` declaration in whichever of its five forms it takes
   /// (binding, assertion, conditional compilation, or either `static for`
   /// variant), dispatching on `decl_kind`.
@@ -11503,11 +11826,21 @@ private:
     case ast::node_kind::concept_decl:
       check_concept_decl(dynamic_cast<const ast::concept_decl &>(item));
       return;
+    case ast::node_kind::signature_decl:
+      check_signature_decl(dynamic_cast<const ast::signature_decl &>(item));
+      return;
     case ast::node_kind::static_decl:
       check_static_decl(dynamic_cast<const ast::static_decl &>(item));
       return;
     case ast::node_kind::sub_module_decl: {
       const auto &decl = dynamic_cast<const ast::sub_module_decl &>(item);
+      if (decl.is_functor()) {
+        // A functor's body is not elaborated as written — it is type-checked
+        // per instantiation, after substituting the module arguments (see
+        // `spec/module-values-design.md` §4). Checking it here, with the
+        // parameters unbound, would report spurious `DB.conn`-style errors.
+        return;
+      }
       if (decl.items.empty()) {
         return;
       }
@@ -11544,7 +11877,13 @@ private:
       module_ = saved_module;
       return;
     }
-    case ast::node_kind::use_decl:
+    case ast::node_kind::use_decl: {
+      const auto &use = dynamic_cast<const ast::use_decl &>(item);
+      if (!use.instantiation_args.empty()) {
+        check_functor_instantiation(use);
+      }
+      return;
+    }
     case ast::node_kind::dep_decl:
     case ast::node_kind::module_decl:
       return;

@@ -784,6 +784,9 @@ auto parser::parse_top_level_item(bool allow_script_stmts)
   case token_kind::kw_trait:
     return parse_trait_decl(vis);
 
+  case token_kind::kw_signature:
+    return parse_signature_decl(vis);
+
   case token_kind::kw_impl:
     if (vis != ast::visibility::def) {
       emit(
@@ -923,11 +926,33 @@ auto parser::parse_use_decl(ast::visibility vis) -> ast::ptr<ast::use_decl> {
 
   expect(token_kind::kw_use);
 
-  // Parse the use path: `module_path [. use_selector]`
+  // Parse the use path: `module_path [ "[" args "]" ] [. use_selector]`
   decl->path = parse_module_path();
 
+  // A bracketed argument list instantiates a parameterized module (functor):
+  // `use audited[postgres] as db`. Arguments reuse the type-arg grammar.
+  if (at(token_kind::lbracket)) {
+    decl->instantiation_args = parse_type_arg_list();
+  }
+
   auto imported_name_span = previous_span();
-  if (match(token_kind::kw_as)) {
+  if (!decl->instantiation_args.empty() && at(token_kind::kw_as)) {
+    // `use audited[postgres] as db`: the alias names the whole instantiation,
+    // so the functor path stays intact (nothing is popped). The alias is
+    // recorded as a single-item selector whose `name` is the functor's own
+    // last path segment.
+    advance(); // consume `as`
+    ast::use_selector sel;
+    sel.kind = ast::use_selector_kind::single;
+    ast::use_item item;
+    item.name = decl->path.back();
+    auto alias_tok = expect(token_kind::ident);
+    item.span = imported_name_span.merge(alias_tok.span);
+    item.alias = std::string(alias_tok.text);
+    sel.span = item.span;
+    sel.items.push_back(std::move(item));
+    decl->selector = std::move(sel);
+  } else if (match(token_kind::kw_as)) {
     if (decl->path.size() < 2) {
       emit(diagnostic(
                diagnostic_level::error,
@@ -1045,6 +1070,12 @@ auto parser::parse_sub_module_decl(ast::visibility vis)
     name_tok = expect(token_kind::ident);
   }
   decl->name = std::string(name_tok.text);
+
+  // Optional compile-time parameters make this a parameterized module
+  // (functor): `module audited[DB: backend]:`.
+  if (at(token_kind::lbracket)) {
+    decl->type_params = parse_type_params();
+  }
 
   if (at(token_kind::colon)) {
     advance(); // consume `:`
@@ -1568,10 +1599,8 @@ auto parser::parse_optional_type_annotation() -> ast::ptr<ast::type_expr> {
 /// `named_type` from a keyword rather than an ordinary path (e.g.
 /// `generator[T]` — `generator` is a keyword, so it can't route through
 /// `parse_module_path`, but still wants the same `[...]` argument grammar).
-auto parser::parse_generic_args_suffix(ast::named_type &named) -> void {
-  if (!at(token_kind::lbracket)) {
-    return;
-  }
+auto parser::parse_type_arg_list() -> std::vector<ast::type_arg> {
+  std::vector<ast::type_arg> args;
   advance(); // consume `[`
   while (!at(token_kind::rbracket) && !at_eof()) {
     skip_newlines();
@@ -1600,7 +1629,7 @@ auto parser::parse_generic_args_suffix(ast::named_type &named) -> void {
 
     if (type_arg.value) {
       type_arg.span.extend_to(type_arg.value->span);
-      named.type_args.push_back(std::move(type_arg));
+      args.push_back(std::move(type_arg));
     }
 
     if (!match(token_kind::comma)) {
@@ -1609,6 +1638,14 @@ auto parser::parse_generic_args_suffix(ast::named_type &named) -> void {
     skip_newlines();
   }
   expect(token_kind::rbracket);
+  return args;
+}
+
+auto parser::parse_generic_args_suffix(ast::named_type &named) -> void {
+  if (!at(token_kind::lbracket)) {
+    return;
+  }
+  named.type_args = parse_type_arg_list();
 }
 
 auto parser::parse_named_type() -> ast::ptr<ast::named_type> {
@@ -1911,6 +1948,100 @@ auto parser::parse_trait_decl(ast::visibility vis)
       }
     }
     expect_block_end("trait");
+  }
+
+  decl->span = start.merge(previous_span());
+  return decl;
+}
+
+// ==========================================================================
+//  Signature declarations
+// ==========================================================================
+
+auto parser::parse_signature_decl(ast::visibility vis)
+    -> ast::ptr<ast::signature_decl> {
+  auto decl = ast::make<ast::signature_decl>();
+  auto start = peek().span;
+  decl->visibility = vis;
+
+  expect(token_kind::kw_signature);
+  auto name_tok = expect(token_kind::ident);
+  decl->name = std::string(name_tok.text);
+
+  expect(token_kind::colon);
+  skip_newlines();
+
+  if (match(token_kind::indent)) {
+    while (!at_any(token_kind::dedent, token_kind::eof)) {
+      skip_newlines();
+      if (at_any(token_kind::dedent, token_kind::eof)) {
+        break;
+      }
+
+      auto item_vis = parse_optional_visibility();
+
+      if (at(token_kind::kw_static)) {
+        // Required constant: `static NAME: Type` (no initializer). A signature
+        // states the required type only; the providing module supplies the
+        // value, so `parse_static_decl` (which demands `= expr`) is not used.
+        auto stat = ast::make<ast::static_decl>();
+        stat->visibility = item_vis;
+        stat->decl_kind = ast::static_decl_kind::binding;
+        stat->span = peek().span;
+        advance(); // consume `static`
+        auto sname_tok = expect(token_kind::ident);
+        stat->name = std::string(sname_tok.text);
+        expect(token_kind::colon);
+        stat->type_annotation = parse_type_expr();
+        expect_newline();
+        stat->span = stat->span.merge(previous_span());
+        decl->items.push_back(std::move(stat));
+      } else if (at(token_kind::kw_def) ||
+                 at_any(token_kind::kw_pure, token_kind::kw_async,
+                        token_kind::kw_machine, token_kind::kw_generator)) {
+        // Required function: a body-less `def` signature.
+        auto mods = parse_func_modifiers();
+        if (at(token_kind::kw_def)) {
+          decl->items.push_back(
+              parse_func_decl(item_vis, std::move(mods), true));
+        } else {
+          emit_unexpected("`def` in signature body");
+          synchronize_to_newline();
+        }
+      } else if (at(token_kind::kw_type)) {
+        // Abstract type member: `type NAME` (no definition).
+        auto assoc = ast::make<ast::associated_type_decl_node>();
+        assoc->value.visibility = item_vis;
+        assoc->span = peek().span;
+        advance(); // consume `type`
+        auto aname_tok = expect(token_kind::ident);
+        assoc->value.name = std::string(aname_tok.text);
+        if (at(token_kind::colon)) {
+          emit(
+              diagnostic(
+                  diagnostic_level::error,
+                  "bounds on a signature's abstract type are not supported yet",
+                  file_id_)
+                  .with_label(peek().span, "remove this bound")
+                  .with_help("An abstract type in a `signature` is written "
+                             "`type name` with no bound. Constrain the "
+                             "concrete type at the point that provides it "
+                             "instead."));
+          synchronize_to_newline();
+        } else {
+          expect_newline();
+        }
+        assoc->value.span = assoc->span.merge(previous_span());
+        assoc->span = assoc->value.span;
+        decl->items.push_back(std::move(assoc));
+      } else if (at(token_kind::newline)) {
+        advance();
+      } else {
+        emit_unexpected("a signature member (`type`, `def`, or `static`)");
+        synchronize_to_newline();
+      }
+    }
+    expect_block_end("signature");
   }
 
   decl->span = start.merge(previous_span());

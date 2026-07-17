@@ -823,6 +823,14 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     }
     return;
   }
+  case ast::node_kind::signature_decl: {
+    const auto &decl = dynamic_cast<const ast::signature_decl &>(item);
+    if (!decl.name.empty()) {
+      members.signatures.emplace(
+          decl.name, signature_decl_ref{.decl = &decl, .file_id = file_id});
+    }
+    return;
+  }
   case ast::node_kind::func_decl: {
     const auto &decl = dynamic_cast<const ast::func_decl &>(item);
     if (!decl.name.empty()) {
@@ -877,6 +885,16 @@ auto index_items(const std::vector<ast::ptr<ast::node>> &items,
     }
     if (item->kind == ast::node_kind::sub_module_decl) {
       const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+      if (decl.is_functor()) {
+        // A parameterized module is a functor: recorded on its parent so
+        // instantiation can find it, but *not* indexed as a module of its own
+        // (its body is elaborated per instantiation, not once as written).
+        if (!decl.name.empty()) {
+          members.functors.emplace(
+              decl.name, functor_decl_ref{.decl = &decl, .file_id = file_id});
+        }
+        continue;
+      }
       if (!decl.items.empty()) {
         index_items(decl.items, append_module_name(module_name, decl.name),
                     file_id, index);

@@ -47,10 +47,11 @@ enum class token_kind : uint8_t {
   // ------------------------------------------------------------------
   //  Declaration keywords
   // ------------------------------------------------------------------
-  kw_module, ///< Starts module declarations and nested module items.
-  kw_type,   ///< Introduces type declarations and associated type items.
-  kw_trait,  ///< Introduces trait interfaces for later conformance checking.
-  kw_impl,   ///< Introduces implementation blocks tying behavior to types.
+  kw_module,    ///< Starts module declarations and nested module items.
+  kw_type,      ///< Introduces type declarations and associated type items.
+  kw_trait,     ///< Introduces trait interfaces for later conformance checking.
+  kw_signature, ///< Introduces a module signature (module-level concept).
+  kw_impl,      ///< Introduces implementation blocks tying behavior to types.
   kw_extend, ///< Introduces extension-method blocks adding methods to any type.
   kw_concept, ///< Introduces compile-time concept constraints.
   kw_def,     ///< Reserved declaration introducer kept visible to the grammar.
@@ -498,6 +499,7 @@ struct token {
     case token_kind::kw_use:
     case token_kind::kw_type:
     case token_kind::kw_trait:
+    case token_kind::kw_signature:
     case token_kind::kw_impl:
     case token_kind::kw_extend:
     case token_kind::kw_concept:
@@ -718,6 +720,9 @@ struct token {
     if (text == "static") {
       return token_kind::kw_static;
     }
+    if (text == "signature") {
+      return token_kind::kw_signature;
+    }
     if (text == "some") {
       return token_kind::kw_some;
     }
@@ -819,6 +824,8 @@ struct token {
     return "`type`";
   case token_kind::kw_trait:
     return "`trait`";
+  case token_kind::kw_signature:
+    return "`signature`";
   case token_kind::kw_impl:
     return "`impl`";
   case token_kind::kw_extend:

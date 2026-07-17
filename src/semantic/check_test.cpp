@@ -1457,6 +1457,102 @@ auto test_reports_hk_param_used_as_type() -> void {
                     "expected the bare-constructor-parameter diagnostic");
 }
 
+// ==========================================================================
+//  Modules as compile-time values: signatures and functors
+// ==========================================================================
+
+auto test_accepts_wellformed_signature_and_functor() -> void {
+  // A signature, a module that satisfies it, and a functor bounded by it all
+  // check without well-formedness errors. (The `use` instantiation itself
+  // reports "elaboration pending", so it is checked separately below.)
+  const auto analyzed = analyze_sources({{
+      .path = "sig_ok.kira",
+      .text = "module sample\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "    def connect(url: str) -> conn\n"
+              "\n"
+              "module postgres:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: str) -> conn:\n"
+              "        0\n"
+              "\n"
+              "module audited[DB: backend]:\n"
+              "    pub def connect(url: str) -> DB.conn:\n"
+              "        DB.connect(url)\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected a well-formed signature + satisfying module + functor "
+         "declaration to check cleanly");
+}
+
+auto test_reports_module_missing_signature_member() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "sig_missing.kira",
+      .text = "module sample\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "    def connect(url: str) -> conn\n"
+              "    def close(c: conn) -> unit\n"
+              "\n"
+              "module sqlite:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: str) -> conn:\n"
+              "        0\n"
+              "\n"
+              "use audited[sqlite] as db\n"
+              "\n"
+              "module audited[DB: backend]:\n"
+              "    pub def go() -> unit:\n"
+              "        unit\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a module missing a required signature member to be "
+         "rejected at instantiation");
+  expect_diagnostic(analyzed, "does not satisfy signature `backend`",
+                    "expected the structural-satisfaction failure header");
+  expect_diagnostic(analyzed, "missing function `close`",
+                    "expected the specific missing-member note");
+}
+
+auto test_reports_signature_member_not_pub() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "sig_priv.kira",
+      .text = "module sample\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "\n"
+              "module mysql:\n"
+              "    type conn = int32\n"
+              "\n"
+              "use audited[mysql] as db\n"
+              "\n"
+              "module audited[DB: backend]:\n"
+              "    pub def go() -> unit:\n"
+              "        unit\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a non-`pub` signature member to be rejected");
+  expect_diagnostic(analyzed, "not `pub`",
+                    "expected the visibility-failure note");
+}
+
+auto test_reports_unknown_functor_instantiation() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "sig_unknown.kira",
+      .text = "module sample\n"
+              "\n"
+              "use nonexistent[postgres] as db\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected instantiating an unknown functor to be rejected");
+  expect_diagnostic(analyzed, "no parameterized module named `nonexistent`",
+                    "expected the unknown-functor diagnostic");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1591,6 +1687,11 @@ auto main() -> int {
     test_method_call_receiver_subexpr_still_inferred();
     test_pass_through_param_stays_unannotated();
     test_recursive_function_param_inference_terminates();
+
+    test_accepts_wellformed_signature_and_functor();
+    test_reports_module_missing_signature_member();
+    test_reports_signature_member_not_pub();
+    test_reports_unknown_functor_instantiation();
   } catch (const std::exception &ex) {
     std::cerr << "check_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -43,6 +43,7 @@ top_level_item
     | static_decl
     | type_decl
     | trait_decl
+    | signature_decl
     | impl_decl
     | concept_decl
     | func_decl
@@ -60,16 +61,34 @@ top_level_item
 module_path = IDENT { "." IDENT } ;
 
 sub_module_decl
-    = [ visibility ] "module" IDENT NEWLINE
-    | [ visibility ] "module" IDENT ":" NEWLINE INDENT { top_level_item } DEDENT
+    = [ visibility ] "module" IDENT [ type_params ] NEWLINE
+    | [ visibility ] "module" IDENT [ type_params ] ":" NEWLINE
+          INDENT { top_level_item } DEDENT
     ;
+    (* With type_params the module is a parameterized module (functor); a
+       parameter bounded by a signature — "module audited[DB: backend]" —
+       makes it a module-to-module function instantiated by "use". *)
+
+(* A signature is the module-level analogue of a concept: the shape a module
+   must have, structurally, to be a valid argument to a functor. *)
+signature_decl
+    = [ visibility ] "signature" IDENT ":" NEWLINE
+          INDENT { signature_item } DEDENT ;
+
+signature_item
+    = "type" IDENT [ ":" bound ] NEWLINE      (* abstract, optionally bounded *)
+    | func_decl                                (* def signature, body-less *)
+    | [ visibility ] "static" IDENT ":" type_expr NEWLINE ;  (* required const *)
 
 use_decl = [ visibility ] "use" use_path NEWLINE ;
 
 use_path
-    = module_path "." use_selector
-    | module_path
+    = module_path [ "[" type_arg_list "]" ] "." use_selector
+    | module_path [ "[" type_arg_list "]" ]
     ;
+    (* An argument list instantiates a parameterized module (functor):
+       "use audited[postgres] as db". Arguments reuse type_arg_list, so nested
+       instantiations "audited[cached[postgres]]" parse. *)
 
 use_selector
     = IDENT [ "as" IDENT ]
@@ -787,7 +806,7 @@ COMMENT = "#" { (* any character except newline *) } NEWLINE ;
 (* ----------------------------------------------------------------- *)
 
 (* Declaration keywords *)
-(* module  type  trait  impl  concept  def  let  var  static  use  dep *)
+(* module  type  trait  signature  impl  concept  def  let  var  static  use  dep *)
 
 (* Function modifiers *)
 (* pure  async  machine *)

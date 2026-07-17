@@ -9,6 +9,29 @@ against the state of the tree at that date.
 
 Should be implemented by Opus.
 
+## Status (updated 2026-07-17)
+
+- **Phase 0 — done.** `spec/module-values-design.md` written; grammar EBNF
+  updated (`signature_decl`, parameterized `sub_module_decl`, argumented
+  `use_path`).
+- **Phase 1 — done.** `signature` keyword/token, `signature_decl` AST node,
+  `type_params` on `sub_module_decl` (`is_functor()`), `instantiation_args` on
+  `use_decl`, parser support for all three forms, and parser tests
+  (`src/parser/parser_test.cpp`).
+- **Phase 2 — done.** `signature_symbol` symbol kind; signatures/functors
+  indexed in `program_index` (`signatures`/`functors` maps) and skipped by the
+  module graph (`resolution.cpp`, `module_index.cpp`) and by ordinary body
+  checking (`check.cpp`); `check_signature_decl` well-formedness; a structural
+  `module_satisfies_signature` check driven at every `use m[args]` site
+  (`check_functor_instantiation`) with concept-quality diagnostics. Tests in
+  `src/semantic/check_test.cpp`. **Deep parameter/return-type equality under
+  the abstract-type binding is deferred to Phase 7** — v1 checks member
+  existence, visibility, and function arity.
+- **Phase 3 — not started (the remaining core).** No functor *materialization*
+  yet: a satisfied `use m[args]` reports "elaboration pending" rather than
+  cloning + substituting the functor body into a usable synthetic module.
+  Everything below from here is future work.
+
 ## Where the compiler stands today
 
 Per `spec/todo.md` item 1, this is greenfield — but less greenfield than it

@@ -28,6 +28,7 @@ struct type_decl;
 struct struct_type_def;
 struct sum_type_def;
 struct trait_decl;
+struct signature_decl;
 struct impl_decl;
 struct extend_decl;
 struct concept_decl;
@@ -194,6 +195,7 @@ enum class node_kind : uint8_t {
   struct_type_def,           ///< Struct-style type body wrapper.
   sum_type_def,              ///< Sum-type body wrapper.
   trait_decl,                ///< Trait declaration item.
+  signature_decl,            ///< Module signature declaration item.
   impl_decl,                 ///< Implementation block item.
   extend_decl,               ///< Extension-method block item.
   concept_decl,              ///< Concept declaration item.
@@ -1537,6 +1539,12 @@ struct use_decl : node {
   visibility visibility =
       visibility::def;           ///< Visibility of the imported binding(s).
   std::vector<std::string> path; ///< Module path prefix being imported from.
+  /// Instantiation arguments for a parameterized module (functor):
+  /// `use audited[postgres] as db`. Empty for an ordinary import. Reuses the
+  /// type-arg grammar so nested instantiations `audited[cached[postgres]]`
+  /// parse; each argument's classification (module/type/value) is resolved in
+  /// semantic analysis.
+  std::vector<type_arg> instantiation_args;
   std::optional<use_selector> selector; ///< Optional leaf selection strategy.
 
   use_decl() : node(node_kind::use_decl) {}
@@ -1629,6 +1637,24 @@ struct trait_decl : node {
       items; ///< Member items such as functions, statics, and associated types.
 
   trait_decl() : node(node_kind::trait_decl) {}
+};
+
+/// Module signature declaration — the module-level analogue of a concept.
+///
+/// Lists the members a module must provide to satisfy the signature, without
+/// implementing them: abstract `type` members (wrapped as
+/// `associated_type_decl_node`, no default), body-less `def` signatures
+/// (`func_decl` with no body), and required `static` constants (`static_decl`
+/// binding form carrying only a type). A module satisfies a signature
+/// structurally — there is no `impl` to write.
+struct signature_decl : node {
+  visibility visibility =
+      visibility::def; ///< Declared visibility of the signature.
+  std::string name;    ///< Signature name.
+  std::vector<ptr<node>>
+      items; ///< Member requirements: abstract types, defs, and statics.
+
+  signature_decl() : node(node_kind::signature_decl) {}
 };
 
 /// Concept declaration.
@@ -1743,10 +1769,21 @@ struct sub_module_decl : node {
   visibility visibility =
       visibility::def; ///< Declared visibility of the nested module.
   std::string name;    ///< Nested module name.
+  /// Compile-time parameters. Non-empty makes this a parameterized module
+  /// (functor): a module-to-module function instantiated by `use m[args]`. A
+  /// parameter bounded by a signature (`module audited[DB: backend]`) reuses
+  /// `type_param`'s `: bound` form, where the bound resolves to a signature.
+  std::vector<type_param> type_params;
   std::vector<ptr<node>>
       items; ///< Nested items; empty for declaration-only form.
 
   sub_module_decl() : node(node_kind::sub_module_decl) {}
+
+  /// True when this is a parameterized module (functor) rather than a plain
+  /// nested module.
+  [[nodiscard]] auto is_functor() const noexcept -> bool {
+    return !type_params.empty();
+  }
 };
 
 /// Dependency declaration: `dep Name: ...`

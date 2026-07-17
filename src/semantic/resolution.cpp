@@ -262,6 +262,10 @@ auto validate_module_scope(const std::vector<ast::ptr<ast::node>> &items,
     }
 
     const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+    if (decl.is_functor()) {
+      // Functor bodies are validated per instantiation, not as a module scope.
+      continue;
+    }
     if (!decl.items.empty()) {
       validate_module_scope(decl.items,
                             append_module_name(module_name, decl.name), file_id,
@@ -1578,6 +1582,13 @@ auto validate_ast_node(const ast::node &node,
 
   case ast::node_kind::sub_module_decl: {
     const auto &decl = dynamic_cast<const ast::sub_module_decl &>(node);
+    if (decl.is_functor()) {
+      // A functor's body references its module parameters (`DB.conn`), which
+      // only resolve once instantiated. It is name-resolved and type-checked
+      // per instantiation, so it is skipped here (see
+      // `spec/module-values-design.md` §4).
+      return;
+    }
     auto child_context = semantic_walk_context{
         .module_name = append_module_name(context.module_name, decl.name),
         .file_id = context.file_id,

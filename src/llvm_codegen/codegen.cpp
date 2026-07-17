@@ -2852,9 +2852,10 @@ private:
         // spinning in `getABITypeAlign` on a type with no ABI size.
         // `want_result` is the `unit` storage slot (an `i64` placeholder, see
         // `storage_llvm_type`), so write the same zero placeholder the `unit`
-        // literal uses; nothing ever reads it back out. `compile_body_and_finish`
-        // dodges this by emitting `CreateRetVoid` instead of ever touching the
-        // value, but a block-as-value tail has a real slot to populate.
+        // literal uses; nothing ever reads it back out.
+        // `compile_body_and_finish` dodges this by emitting `CreateRetVoid`
+        // instead of ever touching the value, but a block-as-value tail has a
+        // real slot to populate.
         if ((*value)->getType()->isVoidTy()) {
           builder_.CreateStore(
               llvm::ConstantInt::get(want_result->getAllocatedType(), 0),

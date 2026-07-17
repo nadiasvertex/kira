@@ -54,6 +54,11 @@ auto collect_submodule_declarations(
     }
 
     const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+    if (decl.is_functor()) {
+      // A parameterized module is not a module of its own in the graph; it is
+      // instantiated per argument tuple. Skip it (and its body) here.
+      continue;
+    }
     auto module_path = parent_path;
     module_path.push_back(decl.name);
     out.push_back(submodule_declaration_record{
@@ -110,6 +115,9 @@ auto collect_use_declarations(const std::vector<ast::ptr<ast::node>> &items,
     }
 
     const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+    if (decl.is_functor()) {
+      continue; // functor bodies are elaborated per instantiation
+    }
     auto child_path = module_path;
     child_path.push_back(decl.name);
     collect_use_declarations(decl.items, child_path, file_id, out);
