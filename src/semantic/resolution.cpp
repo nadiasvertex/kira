@@ -2061,6 +2061,13 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
     }
 
     const auto &decl = *import_record.decl;
+    if (!decl.instantiation_args.empty()) {
+      // A functor instantiation (`use audited[postgres] as db`) targets a
+      // parameterized module, not a plain one — the checker resolves and
+      // materializes it (`check_functor_instantiation`). It is not a
+      // module-graph import, so the in-session import validation skips it.
+      continue;
+    }
     if (!session_owns_root_module(index, decl.path.front())) {
       continue;
     }

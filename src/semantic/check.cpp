@@ -1022,6 +1022,16 @@ private:
   bool file_has_external_wildcard_ = false;
   bool file_no_prelude_ = false;
 
+  // --- functor instantiation (modules as compile-time values) -------------
+  /// AST nodes the checker synthesizes for functor instantiations (cloned
+  /// functor-body items), owned here so they outlive the check.
+  std::vector<ast::ptr<ast::node>> synthetic_nodes_;
+  /// Memoized instantiations: canonical instantiation key → the sanitized
+  /// module name its members were registered under. Guarantees one module
+  /// identity per (functor, arguments) tuple, session-wide (applicative
+  /// functor semantics, `spec/module-values-design.md` §4).
+  std::unordered_map<std::string, std::string> functor_instances_;
+
   // --- current function context -------------------------------------------
   std::vector<std::unordered_map<std::string, value_binding>> scopes_;
   std::vector<std::unordered_map<std::string, type_id>> type_params_;
@@ -3462,6 +3472,26 @@ private:
     }
 
     if (named.path.size() > 1) {
+      // A leading import alias (`use pkg.db as db` → `db.conn`): rewrite the
+      // alias to the aliased module's absolute path and resolve there. This is
+      // what makes a functor's `DB.conn` projection resolve, where `DB` is the
+      // module parameter bound to the argument module as an import alias.
+      if (const auto *binding = find_import(named.path.front());
+          binding != nullptr && binding->leaf_name.empty()) {
+        if (const auto *source = import_source_module(*binding)) {
+          auto absolute = split_module_name(source->module_name);
+          absolute.insert(absolute.end(), named.path.begin() + 1,
+                          named.path.end());
+          if (const auto *owner = find_session_module_of_path(absolute)) {
+            const auto &member = absolute.back();
+            if (const auto it = owner->types.find(member);
+                it != owner->types.end()) {
+              return instantiate_user_type(*it->second.decl, owner->module_name,
+                                           named, ctx);
+            }
+          }
+        }
+      }
       // Multi-segment paths are validated by the qualified-path pass; here we
       // only recover the declaration when the path stays in this session.
       const auto *owner = find_session_module_of_path(named.path);
@@ -11344,12 +11374,25 @@ private:
     return nullptr;
   }
 
-  /// Resolves the functor a `use m[args]` path names, or `nullptr` if no
+  /// A resolved functor: its declaration/file and the module that owns it.
+  struct resolved_functor {
+    const functor_decl_ref *ref = nullptr;
+    std::string owner_module; ///< Qualified name of the owning module.
+  };
+
+  /// One module parameter of a functor bound to its argument module during
+  /// instantiation (`DB` → `main.postgres`).
+  struct functor_arg_binding {
+    std::string param_name;
+    std::string arg_module_name;
+  };
+
+  /// Resolves the functor a `use m[args]` path names, or `nullopt` if no
   /// parameterized module by that name is in scope.
   [[nodiscard]] auto resolve_functor(const std::vector<std::string> &path) const
-      -> const functor_decl_ref * {
+      -> std::optional<resolved_functor> {
     if (path.empty()) {
-      return nullptr;
+      return std::nullopt;
     }
     const auto &name = path.back();
     if (path.size() >= 2) {
@@ -11358,23 +11401,26 @@ private:
       if (const auto *owner = find_session_module_of_path(owner_path)) {
         if (const auto it = owner->functors.find(name);
             it != owner->functors.end()) {
-          return &it->second;
+          return resolved_functor{.ref = &it->second,
+                                  .owner_module = owner->module_name};
         }
       }
     }
     if (module_ != nullptr) {
       if (const auto it = module_->functors.find(name);
           it != module_->functors.end()) {
-        return &it->second;
+        return resolved_functor{.ref = &it->second,
+                                .owner_module = module_->module_name};
       }
     }
     for (const auto &[mod_name, members] : index_.modules) {
       if (const auto it = members.functors.find(name);
           it != members.functors.end()) {
-        return &it->second;
+        return resolved_functor{.ref = &it->second,
+                                .owner_module = members.module_name};
       }
     }
-    return nullptr;
+    return std::nullopt;
   }
 
   /// Resolves a module named by a functor argument (a `named_type` path),
@@ -11474,8 +11520,8 @@ private:
   /// its members become usable through the alias) is the next phase; until
   /// then a satisfied instantiation reports that its elaboration is pending.
   auto check_functor_instantiation(const ast::use_decl &decl) -> void {
-    const auto *functor = resolve_functor(decl.path);
-    if (functor == nullptr) {
+    const auto functor = resolve_functor(decl.path);
+    if (!functor.has_value()) {
       auto diag = diagnostic(
           diagnostic_level::error,
           std::format("no parameterized module named `{}` is in scope",
@@ -11491,7 +11537,7 @@ private:
       return;
     }
 
-    const auto &fdecl = *functor->decl;
+    const auto &fdecl = *functor->ref->decl;
     if (decl.instantiation_args.size() != fdecl.type_params.size()) {
       auto diag = diagnostic(
           diagnostic_level::error,
@@ -11506,11 +11552,17 @@ private:
       return;
     }
 
+    // Resolve each module parameter's argument and check satisfaction. Each
+    // binding maps the parameter name to the argument module, which becomes an
+    // import alias inside the instantiated body.
+    std::vector<functor_arg_binding> module_bindings;
+    std::vector<std::string> arg_key_parts;
     bool all_ok = true;
     for (size_t i = 0; i < fdecl.type_params.size(); ++i) {
       const auto &param = fdecl.type_params[i];
       const auto &arg = decl.instantiation_args[i];
       if (param.bound_or_type == nullptr) {
+        arg_key_parts.emplace_back("?");
         continue; // an unbounded type parameter: no signature obligation
       }
       // `DB: backend` is syntactically indistinguishable from a value
@@ -11519,6 +11571,7 @@ private:
       // signature, so resolution (not `is_value_param`) is what decides.
       const auto *sig = resolve_bound_signature(*param.bound_or_type);
       if (sig == nullptr) {
+        arg_key_parts.emplace_back("?");
         continue; // an ordinary value/type/trait/concept parameter
       }
       const auto *arg_named =
@@ -11537,6 +11590,7 @@ private:
         diag.with_label(arg.span, "not a module");
         emit_diag(diag);
         all_ok = false;
+        arg_key_parts.emplace_back("?");
         continue;
       }
       std::vector<std::string> failures;
@@ -11558,26 +11612,181 @@ private:
             sig->name));
         emit_diag(diag);
         all_ok = false;
+        arg_key_parts.emplace_back("?");
+        continue;
       }
+      module_bindings.push_back(
+          {.param_name = param.name, .arg_module_name = arg_mod->module_name});
+      arg_key_parts.push_back(arg_mod->module_name);
     }
 
-    if (all_ok) {
-      auto diag = diagnostic(
-          diagnostic_level::error,
-          std::format("instantiating parameterized module `{}` is recognized "
-                      "and its arguments type-check, but elaborating the "
-                      "instantiated module is not implemented yet",
-                      fdecl.name),
-          file_id_);
-      diag.with_label(decl.span, "instantiation");
-      diag.with_help(
-          "Signatures and functor argument checking are in place; the "
-          "instantiated module's members are not yet materialized, so the "
-          "alias cannot be used yet. See "
-          "`spec/module-values-implementation-plan.md` Phase 3.");
-      emit_diag(diag);
+    if (!all_ok) {
+      mark_file_error();
+      return;
     }
-    mark_file_error();
+
+    // Canonical instantiation key: functor's fully-qualified name plus each
+    // argument's canonical module name. Memoized session-wide so two imports
+    // of `audited[postgres]` share one module identity (applicative functor).
+    const auto instantiation_key = std::format(
+        "{}[{}]", append_module_name(functor->owner_module, fdecl.name),
+        join_strings(arg_key_parts, ","));
+
+    const auto alias_name = functor_alias_name(decl, fdecl.name);
+
+    auto synth_it = functor_instances_.find(instantiation_key);
+    if (synth_it == functor_instances_.end()) {
+      const auto synth_name = materialize_functor(
+          fdecl, *functor, module_bindings, instantiation_key, decl.span);
+      if (!synth_name.has_value()) {
+        // A body construct beyond v1 materialization; a diagnostic was already
+        // emitted by `materialize_functor`.
+        mark_file_error();
+        return;
+      }
+      synth_it =
+          functor_instances_.emplace(instantiation_key, *synth_name).first;
+    }
+
+    // Bind the alias in the importing file to the instantiated module so
+    // `db.query(...)` resolves to its members.
+    index_.imports[file_id_].push_back(import_binding{
+        .local_name = alias_name,
+        .path = split_module_name(synth_it->second),
+        .leaf_name = {},
+        .is_wildcard = false,
+        .span = decl.span,
+    });
+  }
+
+  /// The local name a functor instantiation is bound to: the `as` alias if
+  /// present, else the functor's own name.
+  [[nodiscard]] static auto functor_alias_name(const ast::use_decl &decl,
+                                               const std::string &functor_name)
+      -> std::string {
+    if (decl.selector.has_value() &&
+        decl.selector->kind == ast::use_selector_kind::single &&
+        !decl.selector->items.empty() &&
+        decl.selector->items.front().alias.has_value()) {
+      return *decl.selector->items.front().alias;
+    }
+    return functor_name;
+  }
+
+  /// Turns an instantiation key into a dotted-path-free module name usable as
+  /// a `program_index` key and in `import_binding::path` (which is split/
+  /// joined on `.`). Non-identifier characters become `_`.
+  [[nodiscard]] static auto sanitize_module_name(std::string_view key)
+      -> std::string {
+    std::string out;
+    out.reserve(key.size());
+    for (const char c : key) {
+      out.push_back((std::isalnum(static_cast<unsigned char>(c)) != 0) ? c
+                                                                       : '_');
+    }
+    return out;
+  }
+
+  /// Materializes a functor instantiation: clones each `pub def` in the body
+  /// (giving the instance distinct node identity for per-instantiation type
+  /// checking), registers them under a fresh synthetic module, and checks them
+  /// with each module parameter bound as an import alias to its argument
+  /// module. Returns the synthetic module name, or `nullopt` if the body uses
+  /// a construct v1 materialization does not support yet (a diagnostic is
+  /// emitted in that case). See `spec/module-values-design.md` §4.
+  [[nodiscard]] auto
+  materialize_functor(const ast::sub_module_decl &fdecl,
+                      const resolved_functor &functor,
+                      const std::vector<functor_arg_binding> &module_bindings,
+                      const std::string &instantiation_key,
+                      source_span use_span) -> std::optional<std::string> {
+    auto synth_name = sanitize_module_name(instantiation_key);
+
+    // Clone each `pub def` in the functor body. v1 materialization supports
+    // function members only; anything else (nested `type`/`impl`/`static`)
+    // falls back with a clear diagnostic rather than a partial module.
+    std::vector<const ast::func_decl *> cloned_funcs;
+    for (const auto &item : fdecl.items) {
+      if (item == nullptr || item->has_error) {
+        continue;
+      }
+      if (item->kind == ast::node_kind::use_decl ||
+          item->kind == ast::node_kind::module_decl) {
+        continue;
+      }
+      if (item->kind != ast::node_kind::func_decl) {
+        auto diag = diagnostic(
+            diagnostic_level::error,
+            std::format("instantiating `{}` is not supported yet: its body "
+                        "contains a member that is not a `def`",
+                        fdecl.name),
+            file_id_);
+        diag.with_label(use_span, "in this instantiation");
+        diag.with_label(item->span, "unsupported functor-body member");
+        diag.with_help(
+            "v1 materialization of a parameterized module supports `def` "
+            "members only. Nested `type`/`impl`/`static` members are a later "
+            "phase (`spec/module-values-implementation-plan.md`).");
+        emit_diag(diag);
+        return std::nullopt;
+      }
+      const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+      auto cloned = ast::clone_func_decl(fn);
+      if (!cloned.has_value()) {
+        auto diag = diagnostic(
+            diagnostic_level::error,
+            std::format("instantiating `{}` is not supported yet: {}",
+                        fdecl.name, cloned.error().message),
+            file_id_);
+        diag.with_label(use_span, "in this instantiation");
+        diag.with_label(fn.span, "this member could not be specialized");
+        emit_diag(diag);
+        return std::nullopt;
+      }
+      auto *raw = cloned->get();
+      synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+      cloned_funcs.push_back(raw);
+    }
+
+    // Register the synthetic module and its functions in the program index.
+    auto &synth = index_.modules[synth_name];
+    synth.module_name = synth_name;
+    for (const auto *fn : cloned_funcs) {
+      synth.functions.insert_or_assign(
+          fn->name, func_decl_ref{.decl = fn, .file_id = functor.ref->file_id});
+    }
+
+    // Temporarily bind each module parameter as an import alias to its
+    // argument module, in the functor's own file, so the cloned bodies'
+    // `DB.conn` / `DB.query(...)` projections resolve while checking. Restored
+    // afterward so the functor file's real imports are untouched.
+    auto &functor_imports = index_.imports[functor.ref->file_id];
+    const auto saved_import_count = functor_imports.size();
+    for (const auto &binding : module_bindings) {
+      functor_imports.push_back(import_binding{
+          .local_name = binding.param_name,
+          .path = split_module_name(binding.arg_module_name),
+          .leaf_name = {},
+          .is_wildcard = false,
+          .span = use_span,
+      });
+    }
+
+    const auto *saved_module = module_;
+    const auto saved_module_name = module_name_;
+    const auto saved_file_id = file_id_;
+    module_ = &synth;
+    module_name_ = synth_name;
+    file_id_ = functor.ref->file_id;
+    for (const auto *fn : cloned_funcs) {
+      check_function(*fn, /*at_module_scope=*/true);
+    }
+    module_ = saved_module;
+    module_name_ = saved_module_name;
+    file_id_ = saved_file_id;
+
+    functor_imports.resize(saved_import_count);
+    return synth_name;
   }
 
   /// Marks the file currently being checked as containing an error, guarding

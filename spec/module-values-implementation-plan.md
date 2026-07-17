@@ -27,10 +27,26 @@ Should be implemented by Opus.
   `src/semantic/check_test.cpp`. **Deep parameter/return-type equality under
   the abstract-type binding is deferred to Phase 7** — v1 checks member
   existence, visibility, and function arity.
-- **Phase 3 — not started (the remaining core).** No functor *materialization*
-  yet: a satisfied `use m[args]` reports "elaboration pending" rather than
-  cloning + substituting the functor body into a usable synthetic module.
-  Everything below from here is future work.
+- **Phase 3 — semantic materialization done; codegen deferred.**
+  `check_functor_instantiation` now *materializes* a satisfied `use m[args] as
+  db`: it clones each `pub def` in the functor body (distinct node identity per
+  instantiation), registers them under a memoized synthetic module keyed by the
+  canonical instantiation string, and checks them with each module parameter
+  bound as an **import alias** to its argument module. This required no AST
+  substitution — instead, module-parameter projections resolve through the
+  alias: value calls (`DB.query(...)`) already resolved through a `use ... as`
+  alias, and `resolve_named_type` was extended so multi-segment **type** paths
+  (`DB.conn`) follow import aliases too. `record_use_bindings` and the
+  resolution/module-graph passes skip instantiation `use`s (the checker owns
+  them). A call through the alias (`db.connect(...)`) resolves and type-checks;
+  `DB.conn` resolves to the argument module's concrete `conn`. Memoized
+  session-wide (applicative functors). **Limits:** v1 materializes functor
+  bodies of `def` members only (nested `type`/`impl`/`static` fall back with a
+  clear diagnostic); deep parameter/return-type equality in `satisfies` is
+  still Phase 7; and **codegen/execution of an instantiated functor is not
+  wired** — a functor-using program type-checks but does not yet lower (the
+  lowering stage does not see the synthetic module). Tests in
+  `src/semantic/check_test.cpp`.
 
 ## Where the compiler stands today
 

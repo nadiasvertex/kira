@@ -1553,6 +1553,60 @@ auto test_reports_unknown_functor_instantiation() -> void {
                     "expected the unknown-functor diagnostic");
 }
 
+auto test_materializes_functor_and_resolves_alias() -> void {
+  // `use audited[postgres] as db` materializes the instantiated module; a
+  // call through the alias resolves and type-checks, and the functor body's
+  // `DB.conn` projection resolves to postgres's concrete `conn`.
+  const auto analyzed = analyze_sources({{
+      .path = "mat_ok.kira",
+      .text = "module main\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "    def connect(url: str) -> conn\n"
+              "\n"
+              "module postgres:\n"
+              "    pub type conn = int32\n"
+              "    pub def connect(url: str) -> conn:\n"
+              "        0\n"
+              "\n"
+              "module audited[DB: backend]:\n"
+              "    pub def connect(url: str) -> DB.conn:\n"
+              "        DB.connect(url)\n"
+              "\n"
+              "use main.audited[main.postgres] as db\n"
+              "\n"
+              "def go() -> int32:\n"
+              "    db.connect(\"x\")\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected a materialized functor instantiation and a call through "
+         "its alias to check cleanly");
+}
+
+auto test_functor_instantiation_arity_mismatch() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "mat_arity.kira",
+      .text = "module main\n"
+              "\n"
+              "signature backend:\n"
+              "    type conn\n"
+              "\n"
+              "module postgres:\n"
+              "    pub type conn = int32\n"
+              "\n"
+              "module audited[DB: backend]:\n"
+              "    pub def go() -> unit:\n"
+              "        unit\n"
+              "\n"
+              "use main.audited[main.postgres, main.postgres] as db\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a wrong-arity functor instantiation to be rejected");
+  expect_diagnostic(analyzed, "takes 1 argument(s), but 2 were supplied",
+                    "expected the arity-mismatch diagnostic");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1692,6 +1746,8 @@ auto main() -> int {
     test_reports_module_missing_signature_member();
     test_reports_signature_member_not_pub();
     test_reports_unknown_functor_instantiation();
+    test_materializes_functor_and_resolves_alias();
+    test_functor_instantiation_arity_mismatch();
   } catch (const std::exception &ex) {
     std::cerr << "check_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -743,6 +743,14 @@ auto record_use_bindings(const ast::use_decl &decl, file_id_type file_id,
                          program_index &index) -> void {
   auto &bindings = index.imports[file_id];
 
+  if (!decl.instantiation_args.empty()) {
+    // A functor instantiation (`use audited[postgres] as db`) is not an
+    // ordinary import: the alias binds to the *instantiated* module, which the
+    // checker materializes and registers. Skip it here so no binding pointing
+    // at the bare functor is created (`check_functor_instantiation`).
+    return;
+  }
+
   if (!decl.selector.has_value()) {
     if (decl.path.empty()) {
       return;

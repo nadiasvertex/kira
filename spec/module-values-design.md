@@ -116,6 +116,33 @@ labelled note per failure with expected-vs-found.
   `type_id`* as postgres's `conn`; memoization guarantees one module identity
   per key, so two `use audited[postgres]` imports share one `conn`. Respect the
   `type_table` `std::deque` invariant (memory: type-table-deque-fix).
+
+### Materialization mechanism as implemented (v1)
+
+The clone step deliberately does **no AST substitution**. Instead each module
+parameter is bound as an **import alias** to its argument module in the cloned
+body's file, and projections resolve through the alias:
+
+- Value projections (`DB.query(...)`) already resolved through a `use ... as`
+  alias, so they need nothing new.
+- Type projections (`DB.conn`) did *not* resolve through an alias, so
+  `resolve_named_type` was extended: a multi-segment path whose head is an
+  import alias to a session module rewrites to that module's absolute path and
+  resolves there. This is generally useful (it fixes alias-qualified type paths
+  everywhere), not functor-specific.
+
+The clone (`clone_func_decl`) exists only to give each instantiation distinct
+node identity so `node_types_` and diagnostics stay per-instantiation. The
+synthetic module is registered in `program_index` under the *sanitized*
+instantiation key (non-identifier characters → `_`, since `import_binding::path`
+is split/joined on `.`), and the importing file gets an alias binding
+(`db` → synthetic module). `record_use_bindings` and the module-graph/import
+passes skip instantiation `use`s so only the checker owns them.
+
+**Not yet wired: codegen.** The synthetic module lives only in `program_index`,
+not in any AST file the lowering stage walks, so an instantiated functor
+type-checks but does not lower. Wiring lowering/bytecode/LLVM for instantiated
+functors is future work (adjacent to Phase 5).
 - **Cycle detection.** A functor whose instantiation (directly or transitively)
   requires instantiating itself gets a cycle diagnostic, reusing the
   in-progress-set pattern (`statics_in_progress_`-style, `check.cpp`).
