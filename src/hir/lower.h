@@ -72,4 +72,18 @@ struct lowering_options {
                                 const lowering_options &options = {})
     -> std::expected<ptr<hir_module>, lowering_error>;
 
+/// Lowers every materialized functor instantiation (`checked.functor_
+/// instances`) into standalone HIR modules — one `hir_module` per distinct
+/// synthetic module name, holding that instantiation's cloned `def`s. A
+/// parameterized `module m[P: sig]` has no source file the per-file walk in
+/// `driver::lower_and_emit_modules` visits, so its instantiations are lowered
+/// here instead, after the real files, and appended to the module set. A
+/// `db.f(...)` call site records the synthetic module name as its callee's
+/// owner, so ordinary cross-module dispatch links the two. Fails closed on
+/// the first clone `lower_function` rejects, exactly like `lower_module`.
+[[nodiscard]] auto
+lower_functor_modules(const semantic::checked_types &checked,
+                      const lowering_options &options = {})
+    -> std::expected<ptr_vec<hir_module>, lowering_error>;
+
 } // namespace kira::hir

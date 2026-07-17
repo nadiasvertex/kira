@@ -136,6 +136,16 @@ auto jit_fixture_for_multi(
     expect(lowered.has_value(), "expected every fixture module to lower");
     modules.push_back(std::move(*lowered));
   }
+  // Materialized functor instantiations have no source file of their own;
+  // lower them into standalone modules just as `driver::lower_and_emit_
+  // modules` does, so a `use m[args] as db` fixture's `db.f(...)` calls
+  // resolve.
+  auto functor_modules = hir::lower_functor_modules(fixture.checked);
+  expect(functor_modules.has_value(),
+         "expected functor instantiations to lower");
+  for (auto &functor_module : *functor_modules) {
+    modules.push_back(std::move(functor_module));
+  }
   fixture.ast_file = std::move(ast_files.front());
 
   const hir::hir_module *entry = nullptr;
@@ -351,6 +361,44 @@ auto test_calls_a_function_in_another_module() -> void {
   expect(result.has_value(), "expected a call across module boundaries to run");
   expect(result->value.i == 42,
          "expected main() to return tools.double(21) == 42");
+}
+
+auto test_calls_into_a_materialized_functor_instantiation() -> void {
+  // A parameterized `module audited[DB: backend]` has no runtime form of its
+  // own; `use audited[postgres] as db` materializes it (clones its `def`s,
+  // checks them with `DB` bound to `postgres`). `semantic::checker::
+  // materialize_functor` records those clones as `functor_instance`s, and
+  // `hir::lower_functor_modules` (exercised by `jit_fixture_for_multi`) turns
+  // them into a standalone `hir_module` the cross-module dispatch here can
+  // find — proving an instantiated functor doesn't just type-check but runs.
+  auto jf = jit_fixture_for_multi(
+      {
+          {"postgres", "module postgres\n"
+                       "pub type conn = int32\n"
+                       "pub def connect(url: str) -> conn:\n"
+                       "    return 40\n"
+                       "pub def ping(c: conn) -> int32:\n"
+                       "    return c + 2\n"},
+          {"app", "module app\n"
+                  "use postgres\n"
+                  "signature backend:\n"
+                  "    type conn\n"
+                  "    def connect(url: str) -> conn\n"
+                  "    def ping(c: conn) -> int32\n"
+                  "module audited[DB: backend]:\n"
+                  "    pub def open_and_ping(url: str) -> int32:\n"
+                  "        let c = DB.connect(url)\n"
+                  "        return DB.ping(c)\n"
+                  "use audited[postgres] as db\n"
+                  "pub def main() -> int32:\n"
+                  "    return db.open_and_ping(\"localhost\")\n"},
+      },
+      "app");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(),
+         "expected a call into an instantiated functor to run");
+  expect(result->value.i == 42,
+         "expected db.open_and_ping to return ping(connect(...)) == 42");
 }
 
 auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
@@ -911,6 +959,7 @@ auto main() -> int {
     test_sum_type_unit_variant_encodes_its_tag();
     test_calls_another_function_in_the_same_module();
     test_calls_a_function_in_another_module();
+    test_calls_into_a_materialized_functor_instantiation();
     test_calls_an_associated_function_via_a_type_qualified_path();
     test_calls_a_self_receiver_trait_default_method_across_modules();
     test_tuple_construction_and_projection();

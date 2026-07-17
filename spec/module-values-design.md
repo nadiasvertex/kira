@@ -139,10 +139,17 @@ is split/joined on `.`), and the importing file gets an alias binding
 (`db` → synthetic module). `record_use_bindings` and the module-graph/import
 passes skip instantiation `use`s so only the checker owns them.
 
-**Not yet wired: codegen.** The synthetic module lives only in `program_index`,
-not in any AST file the lowering stage walks, so an instantiated functor
-type-checks but does not lower. Wiring lowering/bytecode/LLVM for instantiated
-functors is future work (adjacent to Phase 5).
+**Codegen (wired).** The checker records each cloned `def` as a
+`checked_types::functor_instance` (`{decl, owner_module = synthetic module
+name}`, owning the clones in `synthesized_functor_nodes`). After the driver
+lowers the real source files, `hir::lower_functor_modules` groups those clones
+by `owner_module` into one standalone `hir_module` each — named exactly as a
+`db.f(...)` call site records its callee's owner — and appends them to the
+module set, so ordinary cross-module dispatch links the two. This mirrors the
+multi-file idiom where every module is its own top-level file: a materialized
+functor instantiation is simply an in-memory module with no source file, and
+both backends (bytecode VM and LLVM/AOT) run it unchanged. An instantiated
+functor now runs end-to-end, not just type-checks.
 - **Cycle detection.** A functor whose instantiation (directly or transitively)
   requires instantiating itself gets a cycle diagnostic, reusing the
   in-progress-set pattern (`statics_in_progress_`-style, `check.cpp`).

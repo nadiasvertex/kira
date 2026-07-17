@@ -83,6 +83,30 @@ auto lower_and_emit_modules(const cli_config &cfg,
     }
   }
 
+  // Materialized functor instantiations have no source file the loop above
+  // visits — they live only in `checked`. Lower them into standalone modules
+  // here and append them, so a `use m[args] as db` program's `db.f(...)`
+  // calls resolve to a real compiled module. Skipped under `--parse-only`,
+  // which produces no HIR at all.
+  if (!cfg.parse_only) {
+    auto functor_modules = hir::lower_functor_modules(
+        checked, hir::lowering_options{.contract_checks = cfg.contract_checks});
+    if (functor_modules.has_value()) {
+      for (auto &functor_module : *functor_modules) {
+        report.hir_modules.push_back(hir_lowering_result{
+            .module_path = functor_module->module_name, .lowered = true});
+        lowered_modules.push_back(std::move(functor_module));
+      }
+    } else {
+      report.hir_modules.push_back(hir_lowering_result{
+          .module_path = "<functor-instantiation>",
+          .lowered = false,
+          .error = std::format("{} (byte offset {})",
+                               functor_modules.error().message,
+                               functor_modules.error().span.start)});
+    }
+  }
+
   return lowered_modules;
 }
 

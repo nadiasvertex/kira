@@ -566,6 +566,23 @@ struct const_generic_instance {
   std::string owner_module;
 };
 
+/// One `def` cloned into a materialized functor instantiation — see
+/// `checker::materialize_functor` (`check.cpp`), the only place these are
+/// created. A parameterized `module m[P: sig]` has no runtime form of its
+/// own; each `use m[args]` instantiation clones the body's `def`s, checks
+/// them concretely with the module parameter bound as an import alias, and
+/// records one of these per clone. `owner_module` is the *synthetic* module
+/// name (the sanitized instantiation key) — the same name a `db.f(...)` call
+/// site records as its callee's `owner_module`, so `lower_functor_modules`
+/// groups the clones under it into a standalone `hir_module` that
+/// cross-module dispatch then finds by name, exactly as it would a
+/// hand-written top-level module in its own file. `decl` is owned by
+/// `checked_types::synthesized_functor_nodes`.
+struct functor_instance {
+  const ast::func_decl *decl = nullptr;
+  std::string owner_module;
+};
+
 /// Type ids for `std.fmt`'s runtime-support types (`src/std/fmt.kira`),
 /// resolved once after checking finishes and handed to `hir::lower` so it
 /// can build `format_spec`/box-type struct literals for interpolation
@@ -640,6 +657,17 @@ struct checked_types {
   /// does a trait default, and skips the templates they came from (a template
   /// has no runtime form of its own).
   std::vector<const_generic_instance> const_generic_instances;
+  /// Owns every `def` cloned into a materialized functor instantiation — see
+  /// `functor_instance`'s doc comment. Kept alive here (moved out of the
+  /// checker) so the clones outlive type-checking, exactly like
+  /// `synthesized_decls`.
+  ast::ptr_vec<ast::node> synthesized_functor_nodes;
+  /// Every functor-instantiation clone plus the synthetic module it belongs
+  /// to — see `functor_instance`'s doc comment. `driver::lower_and_emit_
+  /// modules` calls `hir::lower_functor_modules` on these after lowering the
+  /// real source files, appending one synthetic `hir_module` per distinct
+  /// `owner_module`.
+  std::vector<functor_instance> functor_instances;
   /// Every `named_type` synthesized by `checker::reinterpret_as_named_type`
   /// when a quoted `expr` fragment (a bare name/dotted path, ambiguous at
   /// parse time between an expression and a type) is used somewhere a type

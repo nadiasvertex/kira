@@ -4036,4 +4036,41 @@ auto lower_module(const ast::file &file, std::string module_name,
                           std::move(functions));
 }
 
+auto lower_functor_modules(const semantic::checked_types &checked,
+                           const lowering_options &options)
+    -> std::expected<ptr_vec<hir_module>, lowering_error> {
+  // Group the cloned `def`s by their synthetic module name, preserving first-
+  // seen order so the emitted modules are deterministic. Each group becomes
+  // one standalone `hir_module`, named exactly as the `db.f(...)` call sites
+  // record their callee's owner module.
+  auto module_order = std::vector<std::string>{};
+  auto grouped =
+      std::unordered_map<std::string, ptr_vec<hir_function>>{};
+  for (const auto &instance : checked.functor_instances) {
+    if (instance.decl == nullptr) {
+      continue;
+    }
+    auto lowered = lower_function(*instance.decl, checked, options);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    auto [it, inserted] = grouped.try_emplace(instance.owner_module);
+    if (inserted) {
+      module_order.push_back(instance.owner_module);
+    }
+    it->second.push_back(std::move(*lowered));
+  }
+
+  auto modules = ptr_vec<hir_module>{};
+  for (const auto &name : module_order) {
+    auto &functions = grouped.at(name);
+    // A synthetic module has no source span of its own; use its first
+    // function's span so diagnostics have somewhere to point.
+    const auto span =
+        functions.empty() ? source_span{} : functions.front()->span;
+    modules.push_back(make<hir_module>(span, name, std::move(functions)));
+  }
+  return modules;
+}
+
 } // namespace kira::hir

@@ -804,6 +804,8 @@ public:
         .synthesized_decls = std::move(synthesized_decls_),
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
         .const_generic_instances = std::move(const_generic_instances_),
+        .synthesized_functor_nodes = std::move(synthetic_nodes_),
+        .functor_instances = std::move(functor_instance_decls_),
         .synthesized_types = std::move(synthesized_types_),
         .spliced_fragments = std::move(spliced_fragments_),
         .synthesized_fragments = take_synthesized_fragments(),
@@ -1031,6 +1033,10 @@ private:
   /// identity per (functor, arguments) tuple, session-wide (applicative
   /// functor semantics, `spec/module-values-design.md` §4).
   std::unordered_map<std::string, std::string> functor_instances_;
+  /// One entry per `def` cloned into a materialized functor instantiation,
+  /// each tagged with its synthetic module name — moved into
+  /// `checked_types::functor_instances` for `hir::lower_functor_modules`.
+  std::vector<functor_instance> functor_instance_decls_;
 
   // --- current function context -------------------------------------------
   std::vector<std::unordered_map<std::string, value_binding>> scopes_;
@@ -11754,6 +11760,11 @@ private:
     for (const auto *fn : cloned_funcs) {
       synth.functions.insert_or_assign(
           fn->name, func_decl_ref{.decl = fn, .file_id = functor.ref->file_id});
+      // Record the clone for HIR lowering: `hir::lower_functor_modules` builds
+      // a standalone `hir_module` named `synth_name` from every clone tagged
+      // with it, so a `db.f(...)` call site's cross-module dispatch finds it.
+      functor_instance_decls_.push_back(
+          functor_instance{.decl = fn, .owner_module = synth_name});
     }
 
     // Temporarily bind each module parameter as an import alias to its

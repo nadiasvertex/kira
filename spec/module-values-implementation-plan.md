@@ -27,7 +27,7 @@ Should be implemented by Opus.
   `src/semantic/check_test.cpp`. **Deep parameter/return-type equality under
   the abstract-type binding is deferred to Phase 7** — v1 checks member
   existence, visibility, and function arity.
-- **Phase 3 — semantic materialization done; codegen deferred.**
+- **Phase 3 — semantic materialization *and codegen* done.**
   `check_functor_instantiation` now *materializes* a satisfied `use m[args] as
   db`: it clones each `pub def` in the functor body (distinct node identity per
   instantiation), registers them under a memoized synthetic module keyed by the
@@ -43,10 +43,17 @@ Should be implemented by Opus.
   session-wide (applicative functors). **Limits:** v1 materializes functor
   bodies of `def` members only (nested `type`/`impl`/`static` fall back with a
   clear diagnostic); deep parameter/return-type equality in `satisfies` is
-  still Phase 7; and **codegen/execution of an instantiated functor is not
-  wired** — a functor-using program type-checks but does not yet lower (the
-  lowering stage does not see the synthetic module). Tests in
-  `src/semantic/check_test.cpp`.
+  still Phase 7. **Codegen is wired:** the checker records each clone as a
+  `checked_types::functor_instance` (owning it in `synthesized_functor_nodes`),
+  `hir::lower_functor_modules` (`src/hir/lower.cpp`) groups them by synthetic
+  module name into standalone `hir_module`s, and `driver::lower_and_emit_
+  modules` appends those after the real source files — so a `db.f(...)` call
+  site's ordinary cross-module dispatch finds the instantiated module and an
+  instantiated functor runs end-to-end on both the bytecode VM and LLVM/AOT.
+  Tests in `src/semantic/check_test.cpp` (semantic) and
+  `test_calls_into_a_materialized_functor_instantiation` in both
+  `src/bytecode_compiler/compile_test.cpp` and
+  `src/llvm_codegen/codegen_test.cpp` (execution, both backends).
 
 ## Where the compiler stands today
 

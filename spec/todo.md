@@ -9,11 +9,14 @@
    `use audited[postgres] as db` clones the functor's `def`s into a memoized
    synthetic module and binds the module parameter as an import alias, so
    `db.query(...)` resolves and type-checks and `DB.conn` resolves to the
-   argument's concrete `conn`. Remaining: **codegen/execution of instantiated
-   functors** (a functor-using program type-checks but does not yet lower);
-   functor bodies with non-`def` members; reflection (4); metadata (5); `static
-   if` around `use` (6); and hardening (7, incl. deep type-equality in
-   `satisfies`).
+   argument's concrete `conn`. **Codegen also landed:** the checker records
+   each instantiation's cloned `def`s as `checked_types::functor_instance`s,
+   `hir::lower_functor_modules` lowers them into standalone `hir_module`s
+   appended by the driver's lowering stage, and an instantiated functor now
+   runs end-to-end on both the bytecode VM and the LLVM/AOT backend (`db.open_
+   and_ping(...)` executes). Remaining: functor bodies with non-`def` members;
+   reflection (4); metadata (5); `static if` around `use` (6); and hardening
+   (7, incl. deep type-equality in `satisfies`).
 2. Contracts on a `generator def` (its body runs in steps, so entry/exit don't mean what they mean for a call — lowering rejects them rather than checking at the wrong times).
 3. A value parameter no argument determines (`def zeros[n: usize]() -> array[int32, n]`, with no explicit `f[8]()` call syntax) is diagnosed, not solved; 
 4. Const-generic *methods* (on an `impl`/`extend` target) still fall back to the template path and are refused by lowering; 

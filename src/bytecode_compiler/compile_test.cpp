@@ -136,6 +136,16 @@ auto compile_fixture_multi(
     expect(lowered.has_value(), "expected every fixture module to lower");
     modules.push_back(std::move(*lowered));
   }
+  // Materialized functor instantiations have no source file of their own;
+  // lower them into standalone modules just as `driver::lower_and_emit_
+  // modules` does, so a `use m[args] as db` fixture's `db.f(...)` calls
+  // resolve.
+  auto functor_modules = hir::lower_functor_modules(checked);
+  expect(functor_modules.has_value(),
+         "expected functor instantiations to lower");
+  for (auto &functor_module : *functor_modules) {
+    modules.push_back(std::move(functor_module));
+  }
 
   const hir::hir_module *entry = nullptr;
   for (const auto &module : modules) {
@@ -370,6 +380,42 @@ auto test_calls_a_function_in_another_module() -> void {
          "expected a call across module boundaries to run");
   expect(main_result->value.i == 42,
          "expected main() to return tools.double(21) == 42");
+}
+
+auto test_calls_into_a_materialized_functor_instantiation() -> void {
+  // The bytecode/VM counterpart of codegen_test.cpp's identically-named
+  // test: `use audited[postgres] as db` materializes the functor, and
+  // `hir::lower_functor_modules` (via `compile_fixture_multi`) turns its
+  // cloned `def`s into a standalone module the VM's cross-module dispatch
+  // finds — so an instantiated functor runs, not just type-checks.
+  auto module = compile_fixture_multi(
+      {
+          {"postgres", "module postgres\n"
+                       "pub type conn = int32\n"
+                       "pub def connect(url: str) -> conn:\n"
+                       "    return 40\n"
+                       "pub def ping(c: conn) -> int32:\n"
+                       "    return c + 2\n"},
+          {"app", "module app\n"
+                  "use postgres\n"
+                  "signature backend:\n"
+                  "    type conn\n"
+                  "    def connect(url: str) -> conn\n"
+                  "    def ping(c: conn) -> int32\n"
+                  "module audited[DB: backend]:\n"
+                  "    pub def open_and_ping(url: str) -> int32:\n"
+                  "        let c = DB.connect(url)\n"
+                  "        return DB.ping(c)\n"
+                  "use audited[postgres] as db\n"
+                  "pub def main() -> int32:\n"
+                  "    return db.open_and_ping(\"localhost\")\n"},
+      },
+      "app");
+  auto main_result = run_main(module);
+  expect(main_result.has_value(),
+         "expected a call into an instantiated functor to run");
+  expect(main_result->value.i == 42,
+         "expected db.open_and_ping to return ping(connect(...)) == 42");
 }
 
 auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
@@ -1243,6 +1289,7 @@ auto main() -> int {
     test_recursive_call_computes_factorial();
     test_calls_another_function_in_the_same_module();
     test_calls_a_function_in_another_module();
+    test_calls_into_a_materialized_functor_instantiation();
     test_calls_an_associated_function_via_a_type_qualified_path();
     test_calls_a_self_receiver_trait_default_method_across_modules();
     test_and_or_short_circuit_to_correct_value();
