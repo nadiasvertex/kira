@@ -524,8 +524,10 @@ struct type_param {
       bound_or_type; ///< Bound or value type depending on parameter form.
   bool is_value_param =
       false; ///< True when the parameter binds a compile-time value slot.
-  bool is_higher_kinded =
-      false; ///< True for higher-kinded parameters like `Name[_]`.
+  /// Number of `_` placeholders for a higher-kinded parameter: 1 for
+  /// `Name[_]`, 2 for `Name[_, _]`, 0 for an ordinary (kind-`*`) parameter.
+  /// A parameter's kind is exactly its declared arity — nothing is inferred.
+  size_t higher_kinded_arity = 0;
 };
 
 /// @brief One supplied generic argument in a named-type application.
@@ -1633,8 +1635,9 @@ struct trait_decl : node {
 struct concept_param {
   source_span span; ///< Source range of the concept parameter.
   std::string name; ///< Parameter name used within concept constraints.
-  bool is_higher_kinded =
-      false; ///< Whether the parameter accepts a type constructor.
+  /// Number of `_` placeholders when the parameter accepts a type
+  /// constructor (`F[_]` is 1, `F[_, _]` is 2); 0 for an ordinary parameter.
+  size_t higher_kinded_arity = 0;
 };
 
 struct concept_constraint {

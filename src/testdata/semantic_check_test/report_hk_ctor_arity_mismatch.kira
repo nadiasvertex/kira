@@ -1,0 +1,10 @@
+module sample
+
+trait functor[F[_]]:
+    def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]
+
+impl functor for result:
+    def map[A, B](fa: result[A, str], f: fn(A) -> B) -> result[B, str]:
+        match fa:
+            @ok(a)  => @ok(f(a))
+            @err(e) => @err(e)

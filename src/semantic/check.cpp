@@ -1,6 +1,7 @@
 #include "check.h"
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <format>
 #include <optional>
@@ -151,6 +152,11 @@ struct method_entry {
       nullptr; ///< Owning trait, if this is a default method.
   bool is_extension =
       false; ///< Whether this method came from an `extend` block.
+  /// Bindings that are fixed for this method independent of any call — a
+  /// higher-kinded trait default monomorphized for one impl carries its
+  /// trait's constructor parameter here (`F := option`), so re-checking a
+  /// per-call instance of it resolves `F[A]` the same way its own check did.
+  std::unordered_map<std::string, type_id> fixed_type_params;
 };
 
 // ==========================================================================
@@ -937,6 +943,14 @@ private:
   /// `resolve_ident` reads the second (so a *value* use of `n` lowers to the
   /// literal `3` — there is no runtime parameter to load it from).
   std::unordered_map<std::string, type_id> const_param_slots_;
+  /// While checking a monomorphized copy of a generic *method* (higher-
+  /// kinded trait impls — `instantiate_hk_method`): each type parameter
+  /// name bound to the concrete type the call solved for it. The type
+  /// analog of `const_param_slots_`, consulted by `push_type_params`.
+  std::unordered_map<std::string, type_id> type_param_slots_;
+  /// One monomorphized instance per (method declaration, solved-type tuple)
+  /// — see `instantiate_hk_method`. Values point into `synthesized_decls_`.
+  std::unordered_map<std::string, const ast::func_decl *> hk_instance_cache_;
   std::unordered_map<std::string, int64_t> const_param_values_;
   /// Nesting depth of `instantiate_const_generic`, bounding a template that
   /// instantiates itself at an ever-changing constant (`f[n]` calling
@@ -1073,6 +1087,14 @@ private:
   /// `methods_` by.
   std::unordered_map<std::string, std::vector<method_entry>>
       extend_methods_by_builtin_;
+  /// Impl-block methods whose target is a *prelude constructor* (`impl
+  /// monad for option`), keyed by the constructor's name — the prelude
+  /// generics have no `type_decl` to key `methods_` by, exactly like
+  /// `extend_methods_by_builtin_` above. Consulted for method calls on any
+  /// instantiation of the constructor (`option[int32].bind(...)`) and for
+  /// type-qualified associated calls (`option.pure(...)`).
+  std::unordered_map<std::string, std::vector<method_entry>>
+      impl_methods_by_builtin_;
   /// Memoizes `resolve_existential_type`'s minted `existential_kind` id per
   /// AST node, so the many independent `resolve_type` calls that can all
   /// reach the same `some Trait[Args]` node (a function's own return-type
@@ -1288,7 +1310,17 @@ private:
         scope.emplace(param.name, bound->second);
         continue;
       }
-      scope.emplace(param.name, types_.type_param(param.name));
+      // The type-parameter analog of `const_param_slots_`: while checking a
+      // monomorphized copy of a generic method (`instantiate_hk_method`),
+      // each of its *type* parameters is bound to the concrete type the call
+      // solved for it instead of an abstract `type_param`.
+      if (const auto bound = type_param_slots_.find(param.name);
+          !param.is_value_param && bound != type_param_slots_.end()) {
+        scope.emplace(param.name, bound->second);
+        continue;
+      }
+      scope.emplace(param.name,
+                    types_.type_param(param.name, param.higher_kinded_arity));
     }
     type_params_.push_back(std::move(scope));
   }
@@ -1473,6 +1505,14 @@ private:
     /// there is no monomorphization to give it meaning anywhere else (see
     /// the existential-type-system plan's scope notes).
     bool existential_allowed = false;
+    /// When set, a *bare* generic name (`option`, a user generic struct/sum)
+    /// may resolve to an unapplied constructor (`ctor_ref_kind`) of this
+    /// arity — kind-directed resolution, only enabled where a higher-kinded
+    /// slot is being filled: a trait argument for an `F[_]` parameter, or an
+    /// `impl <hk-trait> for <ctor>` target. Everywhere else a bare generic
+    /// name keeps its historical meaning (an instantiation with unknown
+    /// arguments), so ordinary code is untouched.
+    std::optional<size_t> expected_ctor_arity;
     /// Set alongside `existential_allowed` when resolving a `generator
     /// def`'s own return type. `some iterator[T]` there is pure syntactic
     /// sugar `check_function` substitutes for the concrete `generator[T]`
@@ -3105,6 +3145,15 @@ private:
                              std::string_view owner_module,
                              const ast::named_type &named,
                              const resolve_ctx &ctx) -> type_id {
+    // Kind-directed: a bare generic user type filling a higher-kinded slot
+    // names the constructor itself, exactly as a bare prelude generic does.
+    if (named.type_args.empty() && ctx.expected_ctor_arity.has_value() &&
+        !decl.type_params.empty()) {
+      return check_ctor_against_expected(
+          types_.ctor_ref(decl.name, owner_module, &decl,
+                          decl.type_params.size()),
+          decl.name, decl.type_params.size(), named.span, ctx);
+    }
     const auto args = resolve_type_args(named, ctx, &decl.type_params);
 
     if (!ctx.quiet && !named.type_args.empty() &&
@@ -3235,6 +3284,161 @@ private:
     return resolved;
   }
 
+  /// `ctx` with any constructor expectation cleared, for resolving the
+  /// *arguments* of an application — an argument position is an ordinary
+  /// type position even when the application itself fills a higher-kinded
+  /// slot.
+  auto argument_ctx(const resolve_ctx &ctx) -> resolve_ctx {
+    auto inner = ctx;
+    inner.expected_ctor_arity = std::nullopt;
+    return inner;
+  }
+
+  /// Checks a resolved constructor (or constructor-kinded parameter) against
+  /// the arity the surrounding higher-kinded slot expects. Returns the
+  /// constructor's own id on a match; otherwise explains the kind mismatch —
+  /// what was required, what was found, and how to bridge the gap — and
+  /// returns `k_error_type`.
+  auto check_ctor_against_expected(type_id head, std::string_view name,
+                                   size_t arity, source_span span,
+                                   const resolve_ctx &ctx) -> type_id {
+    const auto expected = *ctx.expected_ctor_arity;
+    if (arity == expected) {
+      return head;
+    }
+    if (!ctx.quiet) {
+      const auto placeholders = [](size_t n) -> std::string {
+        auto out = std::string{"[_"};
+        for (size_t i = 1; i < n; ++i) {
+          out += ", _";
+        }
+        return out + "]";
+      };
+      error_with_help(
+          span,
+          std::format("`{}` takes {} type argument{}, but this position "
+                      "requires a {}-argument type constructor (`{}`)",
+                      name, arity, arity == 1 ? "" : "s", expected,
+                      placeholders(expected)),
+          "type constructor of the wrong kind",
+          std::format("A higher-kinded parameter is satisfied only by a "
+                      "constructor of exactly matching arity. Wrap `{}` in a "
+                      "dedicated {}-parameter struct or sum type and use "
+                      "that wrapper here instead.",
+                      name, expected));
+    }
+    return ctx.quiet ? k_unknown_type : k_error_type;
+  }
+
+  /// Finishes resolving a name that resolved to an in-scope generic
+  /// parameter (possibly higher-kinded) or to a constructor substituted for
+  /// one (trait-default monomorphization binding `F := option`). This is
+  /// where every kind rule is enforced: a kind-`*` parameter takes no
+  /// arguments, a constructor parameter used bare is not a type, and an
+  /// application must supply exactly the declared arity. Applying a
+  /// *concrete* constructor re-enters the ordinary interning path, so
+  /// `F[A]` under `F := option` yields the same `type_id` ordinary
+  /// `option[A]` code gets — the id-equality invariant substitution must
+  /// preserve.
+  auto apply_resolved_head(type_id head, const ast::named_type &named,
+                           const resolve_ctx &ctx) -> type_id {
+    // Copied, not referenced: interning below can push new entries.
+    const auto entry = types_.entry(head);
+
+    if (entry.kind == type_kind::ctor_ref_kind) {
+      if (named.type_args.empty()) {
+        if (ctx.expected_ctor_arity.has_value()) {
+          return check_ctor_against_expected(head, entry.name, entry.ctor_arity,
+                                             named.span, ctx);
+        }
+        if (!ctx.quiet) {
+          error_with_help(
+              named.span,
+              std::format("`{}` is a type constructor, not a type", entry.name),
+              "unapplied type constructor in type position",
+              std::format("Apply it to {} type argument{} — e.g. "
+                          "`{}[...]` — to name a concrete type.",
+                          entry.ctor_arity, entry.ctor_arity == 1 ? "" : "s",
+                          entry.name));
+        }
+        return ctx.quiet ? k_unknown_type : k_error_type;
+      }
+      if (named.type_args.size() != entry.ctor_arity) {
+        if (!ctx.quiet) {
+          error(named.span,
+                std::format("type `{}` expects {} type argument{}, found {}",
+                            entry.name, entry.ctor_arity,
+                            entry.ctor_arity == 1 ? "" : "s",
+                            named.type_args.size()),
+                "wrong number of type arguments");
+        }
+        return ctx.quiet ? k_unknown_type : k_error_type;
+      }
+      if (entry.decl != nullptr) {
+        return instantiate_user_type(*entry.decl, entry.module_name, named,
+                                     argument_ctx(ctx));
+      }
+      return types_.builtin_generic(
+          entry.name, resolve_type_args(named, argument_ctx(ctx)));
+    }
+
+    if (entry.kind != type_kind::type_param_kind) {
+      // A value-parameter slot or an already-substituted concrete type —
+      // nothing kind-shaped to check here.
+      return head;
+    }
+
+    const auto arity = entry.ctor_arity;
+    if (named.type_args.empty()) {
+      if (arity == 0) {
+        return head;
+      }
+      if (ctx.expected_ctor_arity.has_value()) {
+        return check_ctor_against_expected(head, entry.name, arity, named.span,
+                                           ctx);
+      }
+      if (!ctx.quiet) {
+        error_with_help(
+            named.span,
+            std::format("`{}` is a {}-argument type constructor, not a type",
+                        entry.name, arity),
+            "higher-kinded parameter used as a type",
+            std::format("`{}` was declared as `{}[{}]`, so it names a type "
+                        "only once applied — write `{}[...]` with {} type "
+                        "argument{}.",
+                        entry.name, entry.name, arity == 1 ? "_" : "_, _",
+                        entry.name, arity, arity == 1 ? "" : "s"));
+      }
+      return ctx.quiet ? k_unknown_type : k_error_type;
+    }
+
+    if (arity == 0) {
+      if (!ctx.quiet) {
+        error_with_help(
+            named.span,
+            std::format("type parameter `{}` does not take type arguments",
+                        entry.name),
+            "kind mismatch: applying an ordinary type parameter",
+            std::format("`{}` stands for a complete type. If it should stand "
+                        "for a type *constructor* like `option`, declare it "
+                        "higher-kinded: `{}[_]`.",
+                        entry.name, entry.name));
+      }
+      return ctx.quiet ? k_unknown_type : k_error_type;
+    }
+    if (named.type_args.size() != arity) {
+      if (!ctx.quiet) {
+        error(named.span,
+              std::format("`{}` expects {} type argument{}, found {}",
+                          entry.name, arity, arity == 1 ? "" : "s",
+                          named.type_args.size()),
+              "wrong number of type arguments");
+      }
+      return ctx.quiet ? k_unknown_type : k_error_type;
+    }
+    return types_.param_app(head, resolve_type_args(named, argument_ctx(ctx)));
+  }
+
   /// Resolves a named-type reference through, in order: a session-owned
   /// multi-segment path; an in-scope generic parameter or substitution;
   /// `self`; a builtin scalar or prelude container; the current module's
@@ -3274,16 +3478,19 @@ private:
 
     const auto &name = named.path.front();
 
-    // Generic parameters in scope.
+    // Generic parameters in scope. `apply_resolved_head` owns every kind
+    // rule: bare kind-`*` params pass through, `F[A]` becomes a parameter
+    // application (or, under a concrete substitution, the real applied
+    // type), and misuse gets a kind diagnostic.
     if (ctx.param_bindings != nullptr) {
       if (const auto it = ctx.param_bindings->find(name);
           it != ctx.param_bindings->end()) {
-        return it->second;
+        return apply_resolved_head(it->second, named, ctx);
       }
     }
     if (ctx.use_type_param_stack) {
       if (const auto param = lookup_type_param(name)) {
-        return *param;
+        return apply_resolved_head(*param, named, ctx);
       }
     }
 
@@ -3313,6 +3520,14 @@ private:
       return array_with_length(element, length);
     }
     if (const auto arity = builtin_generic_arity(name)) {
+      // Kind-directed: where a higher-kinded slot is being filled, a bare
+      // prelude generic names the *constructor* itself (`monad[option]`,
+      // `impl monad for option`), not an instantiation.
+      if (named.type_args.empty() && ctx.expected_ctor_arity.has_value()) {
+        return check_ctor_against_expected(
+            types_.ctor_ref(name, "", nullptr, arity->first), name,
+            arity->first, named.span, ctx);
+      }
       auto args = resolve_type_args(named, ctx);
       if (!ctx.quiet && !named.type_args.empty() &&
           (named.type_args.size() < arity->first ||
@@ -3607,8 +3822,9 @@ private:
     auto param_bindings = std::unordered_map<std::string, type_id>{};
     for (const auto &type_param : decl.type_params) {
       if (!type_param.name.empty()) {
-        param_bindings.emplace(type_param.name,
-                               types_.type_param(type_param.name));
+        param_bindings.emplace(
+            type_param.name,
+            types_.type_param(type_param.name, type_param.higher_kinded_arity));
       }
     }
     const auto ctx = resolve_ctx{.module = owner,
@@ -3652,8 +3868,9 @@ private:
     auto param_bindings = std::unordered_map<std::string, type_id>{};
     for (const auto &type_param : decl.type_params) {
       if (!type_param.name.empty()) {
-        param_bindings.emplace(type_param.name,
-                               types_.type_param(type_param.name));
+        param_bindings.emplace(
+            type_param.name,
+            types_.type_param(type_param.name, type_param.higher_kinded_arity));
       }
     }
     const auto ctx =
@@ -4147,6 +4364,148 @@ private:
             decl.name, param.name, param.name, param.name, param.name));
   }
 
+  // ==========================================================================
+  //  Higher-kinded-trait method monomorphization
+  //  (`spec/higher-kinded-traits-implementation-plan.md` phase 5)
+  //
+  //  A method an `impl monad for option` provides is generic over its own
+  //  type parameters (`def pure[A](a: A) -> option[A]`), and — like every
+  //  function generic over *types* — has no compiled form of its own
+  //  (`hir::lower_function` refuses type-generic declarations). So each call
+  //  whose receiver/arguments pin every parameter down to a concrete type
+  //  gets an instance: the declaration cloned, re-checked under that
+  //  substitution (`type_param_slots_`), named `option::pure$int32`, and
+  //  registered exactly like a const-generic instance so lowering and both
+  //  backends see only fully-applied types (Strategy #4: HKTs erase at
+  //  monomorphization).
+  // ==========================================================================
+
+  /// Renders `id` in symbol-safe characters for an instance name —
+  /// `option[int32]` becomes `option_int32_`. Purely a naming aid; identity
+  /// is the cache key built from the solved `type_id`s themselves.
+  auto mangle_type_for_instance(type_id id) -> std::string {
+    auto out = std::string{};
+    for (const auto c : types_.display(id)) {
+      out += std::isalnum(static_cast<unsigned char>(c)) != 0 ? c : '_';
+    }
+    return out;
+  }
+
+  /// Monomorphizes an impl-provided generic method for one call's solved
+  /// type bindings, returning the checked instance — reused per (method,
+  /// solved types) — or `nullptr` when a parameter is unsolved or the body
+  /// can't be cloned (both diagnosed here). Mirrors
+  /// `instantiate_const_generic`/`find_or_check_instance`, with types in
+  /// place of constants.
+  auto instantiate_hk_method(
+      const ast::call_expr &call, const method_entry &method,
+      std::string_view target_type_name,
+      const std::unordered_map<std::string, type_id> &bindings)
+      -> const ast::func_decl * {
+    const auto &decl = *method.decl;
+    auto slots = std::unordered_map<std::string, type_id>{};
+    auto name = std::format("{}::{}", target_type_name, decl.name);
+    for (const auto &param : decl.type_params) {
+      if (param.is_value_param) {
+        return nullptr; // value/type-mixed generics take the const path
+      }
+      const auto it = bindings.find(param.name);
+      if (it == bindings.end() || types_.is_unknown(it->second)) {
+        error_with_help(
+            call.span,
+            std::format("cannot tell what `{}` is in this call to `{}`",
+                        param.name, decl.name),
+            std::format("`{}` is a type parameter this call leaves unsolved",
+                        param.name),
+            std::format(
+                "`{}` is compiled once per concrete type, so every type "
+                "parameter has to be pinned down by the receiver or the "
+                "arguments. Annotate the value that should determine `{}`.",
+                decl.name, param.name));
+        return nullptr;
+      }
+      slots.emplace(param.name, it->second);
+      name += std::format("${}", mangle_type_for_instance(it->second));
+    }
+
+    const auto key =
+        std::format("{}#{}", static_cast<const void *>(&decl), name);
+    if (const auto found = hk_instance_cache_.find(key);
+        found != hk_instance_cache_.end()) {
+      return found->second;
+    }
+
+    static constexpr size_t k_max_hk_instantiation_depth = 32;
+    if (instantiation_depth_ >= k_max_hk_instantiation_depth) {
+      error(call.span,
+            std::format("`{}` instantiates itself endlessly", decl.name),
+            "generic-method instantiation is too deep");
+      return nullptr;
+    }
+
+    auto cloned = ast::clone_func_decl(decl);
+    if (!cloned.has_value()) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("cannot compile `{}` for this call: its body uses a "
+                      "construct generic-method instantiation doesn't "
+                      "support yet",
+                      decl.name),
+          file_id_);
+      diag.with_label(call.span, "this call needs a compiled copy of the "
+                                 "method, one per concrete type");
+      diag.children.push_back(
+          diagnostic(diagnostic_level::note, cloned.error().message, file_id_)
+              .with_label(cloned.error().span, "unsupported here"));
+      emit_diag(diag);
+      mark_error();
+      return nullptr;
+    }
+
+    (*cloned)->name = name;
+    const auto *instance = cloned->get();
+    synthesized_decls_.push_back(std::move(*cloned));
+    // Published before the body is checked, so a recursive method finds the
+    // instance it is inside instead of instantiating forever — same
+    // discipline as `find_or_check_instance`.
+    hk_instance_cache_.emplace(key, instance);
+
+    const auto saved_module = module_;
+    auto saved_slots = std::move(type_param_slots_);
+    const auto saved_contract = in_contract_;
+    const auto saved_postcondition = in_postcondition_;
+    // `file_id_` deliberately stays the caller's: a `method_entry` records
+    // no declaring file, and an instance-check diagnostic pointing at the
+    // instantiating call is at least actionable.
+    module_ = method.owner;
+    type_param_slots_ = slots;
+    in_contract_ = false;
+    in_postcondition_ = false;
+    // A trait default carries fixed bindings of its own (`F := option`);
+    // they scope the whole instance check.
+    if (!method.fixed_type_params.empty()) {
+      type_params_.push_back(method.fixed_type_params);
+    }
+    ++instantiation_depth_;
+    check_function(*instance, /*at_module_scope=*/false);
+    --instantiation_depth_;
+    if (!method.fixed_type_params.empty()) {
+      pop_type_params();
+    }
+    in_postcondition_ = saved_postcondition;
+    in_contract_ = saved_contract;
+    type_param_slots_ = std::move(saved_slots);
+    module_ = saved_module;
+
+    // Registered as a const-generic instance on purpose: the two are the
+    // same thing to lowering — a checked clone, named for its
+    // instantiation, lowered once in its owning module while the template
+    // is skipped.
+    const_generic_instances_.push_back(const_generic_instance{
+        .decl = instance, .owner_module = method.owner->module_name});
+    return instance;
+  }
+
   /// Holds a callee's `pre` conditions to account at the call site.
   ///
   /// A precondition has two faces, and they are the whole of contract
@@ -4353,10 +4712,30 @@ private:
       }
     }
 
+    // When the expected slot is itself still abstract (a callee's unsolved
+    // type parameter — `option[B]` from a generic signature) but the payload
+    // is concrete, answer with the concrete instantiation: echoing the
+    // abstract expectation back would tell rigid inference (`unify_rigid`)
+    // nothing, leaving `B` unsolvable at a call that plainly determines it.
     if (expected_is("option") && (name == "some" || name == "none")) {
+      if (name == "some" && !expected_entry.args.empty() &&
+          types_.is_unknown(expected_entry.args[0]) &&
+          !types_.is_unknown(payload_found)) {
+        return types_.builtin_generic("option", {payload_found});
+      }
       return expected;
     }
     if (expected_is("result") && (name == "ok" || name == "err")) {
+      if (!types_.is_unknown(payload_found) &&
+          expected_entry.args.size() == 2) {
+        const auto slot = name == "ok" ? size_t{0} : size_t{1};
+        if (types_.is_unknown(expected_entry.args[slot])) {
+          auto args = std::vector<type_id>{expected_entry.args[0],
+                                           expected_entry.args[1]};
+          args[slot] = payload_found;
+          return types_.builtin_generic("result", std::move(args));
+        }
+      }
       return expected;
     }
     if (name == "some" || name == "none") {
@@ -5445,8 +5824,47 @@ private:
     return std::nullopt;
   }
 
+  /// The arity of the trait's constructor parameter when `impl`'s trait
+  /// abstracts over a type constructor (`trait monad[M[_]]`) — the fact
+  /// that makes a *bare* generic name legal as the impl's `for` target
+  /// (`impl monad for option` names the constructor, not an instantiation).
+  /// `nullopt` for ordinary traits and trait-less inherent impls. `home` is
+  /// the impl's own module, searched first; the trait may live anywhere in
+  /// the session.
+  auto impl_expected_ctor_arity(const ast::impl_decl &impl,
+                                const module_members *home)
+      -> std::optional<size_t> {
+    const auto trait_name = trait_name_of_impl(impl);
+    if (trait_name.empty()) {
+      return std::nullopt;
+    }
+    const ast::trait_decl *trait_decl = nullptr;
+    if (home != nullptr) {
+      if (const auto it = home->traits.find(trait_name);
+          it != home->traits.end()) {
+        trait_decl = it->second.decl;
+      }
+    }
+    if (trait_decl == nullptr) {
+      for (const auto &[module_name, other] : index_.modules) {
+        if (const auto it = other.traits.find(trait_name);
+            it != other.traits.end()) {
+          trait_decl = it->second.decl;
+          break;
+        }
+      }
+    }
+    if (trait_decl == nullptr || trait_decl->type_params.empty()) {
+      return std::nullopt;
+    }
+    const auto arity = trait_decl->type_params.front().higher_kinded_arity;
+    return arity > 0 ? std::optional<size_t>{arity} : std::nullopt;
+  }
+
   /// Resolves the concrete type an impl block targets (its `for` clause),
-  /// against the impl's own generic parameters.
+  /// against the impl's own generic parameters. For an impl of a
+  /// higher-kinded trait the target resolves to the unapplied constructor
+  /// (`ctor_ref_kind`) rather than an instantiation.
   auto resolve_impl_target(const impl_ref &impl) -> type_id {
     if (impl.decl->for_type == nullptr) {
       return k_unknown_type;
@@ -5454,13 +5872,18 @@ private:
     auto param_bindings = std::unordered_map<std::string, type_id>{};
     for (const auto &param : impl.decl->type_params) {
       if (!param.name.empty()) {
-        param_bindings.emplace(param.name, types_.type_param(param.name));
+        param_bindings.emplace(
+            param.name,
+            types_.type_param(param.name, param.higher_kinded_arity));
       }
     }
-    const auto ctx = resolve_ctx{.module = index_.find_module(impl.module_name),
-                                 .param_bindings = &param_bindings,
-                                 .use_type_param_stack = false,
-                                 .quiet = true};
+    const auto *home = index_.find_module(impl.module_name);
+    const auto ctx = resolve_ctx{
+        .module = home,
+        .param_bindings = &param_bindings,
+        .use_type_param_stack = false,
+        .quiet = true,
+        .expected_ctor_arity = impl_expected_ctor_arity(*impl.decl, home)};
     return resolve_type(*impl.decl->for_type, ctx);
   }
 
@@ -5525,10 +5948,18 @@ private:
       for (const auto &impl : members.impls) {
         const auto target = strip_refs(resolve_impl_target(impl));
         const auto &target_entry = types_.entry(target);
-        if (target_entry.decl == nullptr) {
+        // An impl of a higher-kinded trait for a *prelude* constructor
+        // (`impl monad for option`) has no `type_decl` to key `methods_`
+        // by; its methods go in the constructor-name-keyed table instead.
+        const auto is_builtin_ctor_target =
+            target_entry.kind == type_kind::ctor_ref_kind &&
+            target_entry.decl == nullptr;
+        if (target_entry.decl == nullptr && !is_builtin_ctor_target) {
           continue;
         }
-        auto &methods = methods_[target_entry.decl];
+        auto &methods = is_builtin_ctor_target
+                            ? impl_methods_by_builtin_[target_entry.name]
+                            : methods_[target_entry.decl];
         auto overridden_names = std::unordered_set<std::string>{};
         // Owned copy of `target_entry.name`, taken up front: `target_entry`
         // is a reference into `type_table`'s backing store
@@ -5608,7 +6039,8 @@ private:
             continue;
           }
           monomorphize_trait_default(*decl, target, target_type_name,
-                                     trait_module, trait_file_id, methods);
+                                     trait_decl, trait_module, trait_file_id,
+                                     methods);
         }
       }
     }
@@ -5629,6 +6061,7 @@ private:
   /// than silently leaving the method uncallable through this impl.
   auto monomorphize_trait_default(const ast::func_decl &decl, type_id target,
                                   std::string_view target_type_name,
+                                  const ast::trait_decl *trait_decl,
                                   const module_members *trait_module,
                                   file_id_type trait_file_id,
                                   std::vector<method_entry> &methods) -> void {
@@ -5655,7 +6088,26 @@ private:
     module_ = trait_module;
     file_id_ = trait_file_id;
     self_type_ = target;
+    // A higher-kinded trait's default body is written against the trait's
+    // constructor parameter (`F[A]`, `M[B]`); checking it for a concrete
+    // impl binds that parameter to the impl's target constructor, so every
+    // `F[A]` in the clone re-resolves to the real applied type
+    // (`apply_resolved_head` — `option[A]`, the same interned id ordinary
+    // code gets).
+    auto bound_trait_params = std::unordered_map<std::string, type_id>{};
+    if (trait_decl != nullptr && !trait_decl->type_params.empty() &&
+        trait_decl->type_params.front().higher_kinded_arity > 0 &&
+        types_.entry(target).kind == type_kind::ctor_ref_kind) {
+      bound_trait_params.emplace(trait_decl->type_params.front().name, target);
+    }
+    const auto pushed_trait_params = !bound_trait_params.empty();
+    if (pushed_trait_params) {
+      type_params_.push_back(bound_trait_params);
+    }
     check_function(*raw, /*at_module_scope=*/false);
+    if (pushed_trait_params) {
+      pop_type_params();
+    }
     module_ = saved_module;
     file_id_ = saved_file_id;
     self_type_ = saved_self;
@@ -5664,6 +6116,7 @@ private:
         .decl = raw,
         .owner = trait_module,
         .from_trait = nullptr,
+        .fixed_type_params = std::move(bound_trait_params),
     });
     synthesized_trait_defaults_.push_back(
         synthesized_method{.decl = raw,
@@ -5725,6 +6178,218 @@ private:
       }
     }
     return nullptr;
+  }
+
+  /// Looks up an impl-provided method by name on a *prelude constructor*
+  /// (`option`, `list`, ...) — the methods `impl monad for option` adds,
+  /// keyed by constructor name via `impl_methods_by_builtin_`. An
+  /// impl-written method wins over a monomorphized trait default, same
+  /// priority rule as `find_method`.
+  auto find_builtin_impl_method(std::string_view type_name,
+                                std::string_view name) -> const method_entry * {
+    build_method_table();
+    const auto it = impl_methods_by_builtin_.find(std::string(type_name));
+    if (it == impl_methods_by_builtin_.end()) {
+      return nullptr;
+    }
+    const method_entry *trait_fallback = nullptr;
+    for (const auto &method : it->second) {
+      if (method.decl->name != name) {
+        continue;
+      }
+      if (method.from_trait == nullptr) {
+        return &method;
+      }
+      if (trait_fallback == nullptr) {
+        trait_fallback = &method;
+      }
+    }
+    return trait_fallback;
+  }
+
+  /// Rigid pattern unification (higher-kinded traits, Strategy #3): matches
+  /// `pattern` — a declared type mentioning the callee's own type parameters
+  /// — against the `concrete` type an argument actually has, binding each
+  /// parameter it meets to the corresponding concrete piece. Rigid means the
+  /// *shape* must already match: only the outermost nominal constructor is
+  /// consulted, two different constructors never unify, and nothing is
+  /// invented — a failed match simply binds nothing (argument checking has
+  /// its own diagnostics). First binding wins; later occurrences are left to
+  /// ordinary compatibility checking.
+  auto unify_rigid(type_id pattern, type_id concrete,
+                   std::unordered_map<std::string, type_id> &bindings) -> void {
+    if (pattern == concrete || types_.is_unknown(concrete)) {
+      return;
+    }
+    // Copies, not references: recursion can intern (nothing here does today,
+    // but the entries are cheap and the deque discipline is easy to lose).
+    const auto pattern_entry = types_.entry(pattern);
+    if (pattern_entry.kind == type_kind::type_param_kind &&
+        pattern_entry.ctor_arity == 0) {
+      bindings.try_emplace(pattern_entry.name, concrete);
+      return;
+    }
+    const auto concrete_entry = types_.entry(concrete);
+    if (pattern_entry.kind == type_kind::param_app_kind) {
+      // `F[A]` against `option[int32]`: the head solves from the outermost
+      // nominal constructor, the arguments recurse positionally.
+      const auto &head = types_.entry(pattern_entry.result);
+      const auto arg_count_matches =
+          concrete_entry.args.size() == pattern_entry.args.size();
+      if (arg_count_matches &&
+          (concrete_entry.kind == type_kind::builtin_generic_kind ||
+           concrete_entry.kind == type_kind::struct_kind ||
+           concrete_entry.kind == type_kind::sum_kind ||
+           concrete_entry.kind == type_kind::opaque_kind)) {
+        bindings.try_emplace(
+            head.name,
+            types_.ctor_ref(concrete_entry.name, concrete_entry.module_name,
+                            concrete_entry.decl, concrete_entry.args.size()));
+        for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
+          unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings);
+        }
+      }
+      return;
+    }
+    if (pattern_entry.kind != concrete_entry.kind) {
+      // One structural allowance mirrors `compatible`: a reference pattern
+      // meets its target, and vice versa.
+      if (pattern_entry.kind == type_kind::ref_kind) {
+        unify_rigid(pattern_entry.result, concrete, bindings);
+      } else if (concrete_entry.kind == type_kind::ref_kind) {
+        unify_rigid(pattern, concrete_entry.result, bindings);
+      }
+      return;
+    }
+    switch (pattern_entry.kind) {
+    case type_kind::builtin_generic_kind:
+    case type_kind::struct_kind:
+    case type_kind::sum_kind:
+    case type_kind::opaque_kind:
+    case type_kind::tuple_kind:
+    case type_kind::fn_kind: {
+      if (pattern_entry.args.size() == concrete_entry.args.size()) {
+        for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
+          unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings);
+        }
+      }
+      unify_rigid(pattern_entry.result, concrete_entry.result, bindings);
+      return;
+    }
+    case type_kind::ref_kind:
+    case type_kind::ptr_kind:
+    case type_kind::array_kind:
+      unify_rigid(pattern_entry.result, concrete_entry.result, bindings);
+      return;
+    default:
+      return;
+    }
+  }
+
+  /// Whether `id` mentions something still abstract — an unknown, a type
+  /// parameter, a parameter application — anywhere in its structure.
+  /// `is_unknown` answers the same question shallowly; this recurses, so
+  /// `option[B]` and `fn(int32) -> option[B]` count as abstract too.
+  auto mentions_abstract_type(type_id id) -> bool {
+    if (types_.is_unknown(id)) {
+      return true;
+    }
+    const auto entry = types_.entry(id); // copy: callers may intern after
+    for (const auto arg : entry.args) {
+      if (mentions_abstract_type(arg)) {
+        return true;
+      }
+    }
+    // `result` only means "component type" for these kinds; elsewhere it is
+    // an unused default (`k_unknown_type`), which must not read as abstract.
+    if (entry.kind == type_kind::fn_kind || entry.kind == type_kind::ref_kind ||
+        entry.kind == type_kind::ptr_kind ||
+        entry.kind == type_kind::array_kind) {
+      return mentions_abstract_type(entry.result);
+    }
+    return false;
+  }
+
+  /// Rewrites `id` with every solved type parameter replaced by its
+  /// binding, re-interning bottom-up — so `M[B]` under `{M := option,
+  /// B := str}` comes back as *the* `option[str]` id, indistinguishable
+  /// from one written in source (the id-equality invariant substitution
+  /// must preserve). Unsolved parameters and unrepresentable corners pass
+  /// through unchanged, degrading to today's loosely-typed behavior rather
+  /// than erring.
+  auto
+  substitute_solved(type_id id,
+                    const std::unordered_map<std::string, type_id> &bindings)
+      -> type_id {
+    if (bindings.empty()) {
+      return id;
+    }
+    const auto item = types_.entry(id); // copy: interning below can push
+    if (item.kind == type_kind::type_param_kind && item.ctor_arity == 0) {
+      const auto it = bindings.find(item.name);
+      return it != bindings.end() ? it->second : id;
+    }
+    if (item.kind == type_kind::param_app_kind) {
+      const auto head = types_.entry(item.result);
+      const auto it = bindings.find(head.name);
+      if (it == bindings.end()) {
+        return id;
+      }
+      const auto ctor = types_.entry(it->second);
+      if (ctor.kind != type_kind::ctor_ref_kind ||
+          ctor.ctor_arity != item.args.size()) {
+        return id;
+      }
+      auto args = std::vector<type_id>{};
+      args.reserve(item.args.size());
+      for (const auto arg : item.args) {
+        args.push_back(substitute_solved(arg, bindings));
+      }
+      return ctor.decl != nullptr
+                 ? types_.user_type(*ctor.decl, ctor.module_name,
+                                    std::move(args))
+                 : types_.builtin_generic(ctor.name, std::move(args));
+    }
+
+    auto args = std::vector<type_id>{};
+    args.reserve(item.args.size());
+    auto changed = false;
+    for (const auto arg : item.args) {
+      const auto rewritten = substitute_solved(arg, bindings);
+      changed = changed || rewritten != arg;
+      args.push_back(rewritten);
+    }
+    const auto result = item.result != k_unknown_type
+                            ? substitute_solved(item.result, bindings)
+                            : item.result;
+    changed = changed || result != item.result;
+    if (!changed) {
+      return id;
+    }
+    switch (item.kind) {
+    case type_kind::builtin_generic_kind:
+      return types_.builtin_generic(item.name, std::move(args));
+    case type_kind::tuple_kind:
+      return types_.tuple_of(std::move(args));
+    case type_kind::fn_kind:
+      return types_.fn_of(std::move(args), result);
+    case type_kind::ref_kind:
+      return types_.ref_to(result, item.is_mut);
+    case type_kind::ptr_kind:
+      return types_.ptr_to(result, item.is_mut);
+    case type_kind::array_kind:
+      return types_.array_of(result, item.array_size,
+                             args.empty() ? k_unknown_type : args.front());
+    case type_kind::struct_kind:
+    case type_kind::sum_kind:
+    case type_kind::opaque_kind:
+      return item.decl != nullptr
+                 ? types_.user_type(*item.decl, item.module_name,
+                                    std::move(args))
+                 : id;
+    default:
+      return id;
+    }
   }
 
   /// Whether `instance` implements `trait_name`, via either a `deriving`
@@ -5940,6 +6605,109 @@ private:
                         .receiver = &receiver};
   }
 
+  /// Whether `method` is *receiver-style* for an `instance` of some
+  /// constructor: declared without `self`, but with a first parameter that
+  /// is an application of the very constructor the receiver instantiates —
+  /// the shape a higher-kinded trait's methods take (`def bind[A, B](ma:
+  /// M[A], ...)` under `impl monad for option` has first parameter
+  /// `option[A]`). Method-call syntax passes the receiver as that first
+  /// argument. A non-`self` method whose first parameter is anything else
+  /// (an associated function like `from(errno)`) keeps its historical
+  /// call-shape, where the written arguments fill every parameter.
+  auto receiver_fills_first_param(const method_entry &method,
+                                  const type_entry &instance) -> bool {
+    if (method.decl->params.empty() ||
+        param_name_of(method.decl->params.front()) == "self") {
+      return false;
+    }
+    const auto params = signature_params(*method.decl, method.owner, false);
+    if (params.empty()) {
+      return false;
+    }
+    const auto &first = types_.entry(strip_refs(params.front().type));
+    if (first.decl != nullptr || instance.decl != nullptr) {
+      return first.decl != nullptr && first.decl == instance.decl;
+    }
+    return first.kind == type_kind::builtin_generic_kind &&
+           instance.kind == type_kind::builtin_generic_kind &&
+           first.name == instance.name;
+  }
+
+  /// Checks a method-syntax call resolved to a receiver-style method (see
+  /// `receiver_fills_first_param`): the receiver fills the first declared
+  /// parameter, the written arguments fill the rest. The callee's type
+  /// parameters are solved by rigid pattern unification — the receiver
+  /// first (`option[int32]` against `M[A]` gives `M = option, A = int32`),
+  /// then each checked argument — and the declared return type is restated
+  /// under that solution, so `ma.bind(f)` has a concrete type instead of an
+  /// opaque generic one.
+  auto check_receiver_call(const ast::call_expr &call,
+                           const method_entry &method,
+                           std::string_view target_type_name,
+                           const ast::expr &receiver, type_id receiver_type)
+      -> type_id {
+    const auto params = signature_params(*method.decl, method.owner, false);
+    if (params.empty()) {
+      infer_call_args_loosely(call);
+      return signature_return_type(*method.decl, method.owner);
+    }
+
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    unify_rigid(params.front().type, receiver_type, bindings);
+    type_mismatch(receiver.span,
+                  substitute_solved(params.front().type, bindings),
+                  receiver_type, "for this method's receiver");
+
+    auto rest = std::vector<fn_param_info>(params.begin() + 1, params.end());
+    for (auto &param : rest) {
+      param.type = substitute_solved(param.type, bindings);
+    }
+    check_call_args_against(
+        call, rest, method.decl->name,
+        source_location{.file_id = file_id_, .span = method.decl->span});
+
+    // Later arguments pin parameters the receiver didn't (`bind`'s `B`
+    // arrives with the function argument): read each argument's recorded
+    // type back and unify it too, then state the return type under the
+    // full solution.
+    if (const auto mapping = call_argument_mappings_.find(&call);
+        mapping != call_argument_mappings_.end()) {
+      const auto &args_by_param = mapping->second.args_by_param;
+      for (size_t i = 0; i < rest.size() && i < args_by_param.size(); ++i) {
+        if (args_by_param[i] == nullptr) {
+          continue;
+        }
+        if (const auto found = node_types_.find(args_by_param[i]);
+            found != node_types_.end()) {
+          unify_rigid(rest[i].type, found->second, bindings);
+        }
+      }
+    }
+
+    // A generic method has no compiled form of its own — resolve the call
+    // against a monomorphized instance (`option::bind$int32$str`) so both
+    // backends see only concrete types. A non-generic method resolves
+    // directly, exactly like a `self`-taking method does.
+    if (!method.decl->type_params.empty()) {
+      if (const auto *instance =
+              instantiate_hk_method(call, method, target_type_name, bindings)) {
+        resolved_callees_[&call] =
+            resolved_callee{.decl = instance,
+                            .owner_module = method.owner->module_name,
+                            .impl_target_type = "",
+                            .receiver = &receiver};
+      }
+    } else {
+      resolved_callees_[&call] =
+          resolved_callee{.decl = method.decl,
+                          .owner_module = method.owner->module_name,
+                          .impl_target_type = std::string(target_type_name),
+                          .receiver = &receiver};
+    }
+    return substitute_solved(signature_return_type(*method.decl, method.owner),
+                             bindings);
+  }
+
   /// Types a method-call expression `object.method(args...)`: resolves
   /// `object`'s type, then tries (in order) a user-declared method, a
   /// `deriving`/prelude-trait-derived method, a callable struct field, or a
@@ -6049,6 +6817,10 @@ private:
     case type_kind::opaque_kind: {
       if (const auto *method = find_method(entry, field.field_name)) {
         record_expr_type(field, fn_type_of(*method->decl, method->owner));
+        if (receiver_fills_first_param(*method, entry)) {
+          return check_receiver_call(call, *method, entry.name, *field.object,
+                                     object);
+        }
         record_instance_method_callee(call, *method, entry.name, *field.object);
         return check_call_against_decl(call, *method->decl, method->owner,
                                        file_id_, /*skip_self=*/true);
@@ -6134,11 +6906,24 @@ private:
       return k_error_type;
     }
     default: {
-      // Builtin inherent methods take priority; an `extend` block fills in
+      // Builtin inherent methods take priority; an impl on the builtin's
+      // constructor (`impl monad for option`) or an `extend` block fills in
       // only when the name isn't one of the hardcoded builtin methods.
       const auto builtin_result =
           builtin_method_result(entry, field.field_name);
       if (types_.is_unknown(builtin_result)) {
+        if (const auto *method =
+                find_builtin_impl_method(entry.name, field.field_name)) {
+          record_expr_type(field, fn_type_of(*method->decl, method->owner));
+          if (receiver_fills_first_param(*method, entry)) {
+            return check_receiver_call(call, *method, entry.name, *field.object,
+                                       object);
+          }
+          record_instance_method_callee(call, *method, entry.name,
+                                        *field.object);
+          return check_call_against_decl(call, *method->decl, method->owner,
+                                         file_id_, /*skip_self=*/true);
+        }
         if (const auto *method =
                 find_extend_method_for_builtin(entry, field.field_name)) {
           record_expr_type(field, fn_type_of(*method->decl, method->owner));
@@ -6270,6 +7055,63 @@ private:
               it != owner->functions.end()) {
             return resolve_against(*it->second.decl, owner, it->second.file_id,
                                    "");
+          }
+        }
+      }
+
+      // A single-segment root naming a prelude constructor
+      // (`option.pure(...)`) — an associated function provided by an impl
+      // of a higher-kinded trait for that constructor. The callee's type
+      // parameters solve from the checked arguments by rigid pattern
+      // unification, so the call's type is the concrete instantiation
+      // (`option.pure(1)` is an `option[int32]`).
+      if (builtin_generic_arity(root.front()).has_value()) {
+        if (const auto *method =
+                find_builtin_impl_method(root.front(), fn_name)) {
+          const auto has_self =
+              !method->decl->params.empty() &&
+              param_name_of(method->decl->params.front()) == "self";
+          if (!has_self) {
+            record_expr_type(field, fn_type_of(*method->decl, method->owner));
+            const auto params =
+                signature_params(*method->decl, method->owner, false);
+            check_call_args_against(
+                call, params, method->decl->name,
+                source_location{.file_id = file_id_,
+                                .span = method->decl->span});
+            auto bindings = std::unordered_map<std::string, type_id>{};
+            if (const auto mapping = call_argument_mappings_.find(&call);
+                mapping != call_argument_mappings_.end()) {
+              const auto &args_by_param = mapping->second.args_by_param;
+              for (size_t i = 0; i < params.size() && i < args_by_param.size();
+                   ++i) {
+                if (args_by_param[i] == nullptr) {
+                  continue;
+                }
+                if (const auto found = node_types_.find(args_by_param[i]);
+                    found != node_types_.end()) {
+                  unify_rigid(params[i].type, found->second, bindings);
+                }
+              }
+            }
+            // Same instance discipline as `check_receiver_call`: a generic
+            // associated function resolves to its monomorphized copy.
+            if (!method->decl->type_params.empty()) {
+              if (const auto *instance = instantiate_hk_method(
+                      call, *method, root.front(), bindings)) {
+                resolved_callees_[&call] =
+                    resolved_callee{.decl = instance,
+                                    .owner_module = method->owner->module_name,
+                                    .impl_target_type = ""};
+              }
+            } else {
+              resolved_callees_[&call] =
+                  resolved_callee{.decl = method->decl,
+                                  .owner_module = method->owner->module_name,
+                                  .impl_target_type = root.front()};
+            }
+            return substitute_solved(
+                signature_return_type(*method->decl, method->owner), bindings);
           }
         }
       }
@@ -7581,8 +8423,17 @@ private:
     }
     pop_scope();
 
-    const auto result =
+    auto result =
         declared_result != k_unknown_type ? declared_result : body_result;
+    // An expected result that still mentions an unsolved type parameter
+    // (the `M[B]` in `bind`'s function argument) yields to a concrete body
+    // type: reporting `option[B]` back would tell rigid inference nothing
+    // at a call site that plainly determines `B`.
+    if (result != body_result && body_result != k_unknown_type &&
+        mentions_abstract_type(result) &&
+        !mentions_abstract_type(body_result)) {
+      result = body_result;
+    }
     return types_.fn_of(std::move(param_types), result);
   }
 
@@ -10023,12 +10874,9 @@ private:
   auto check_impl_decl(const ast::impl_decl &decl) -> void {
     push_type_params(decl.type_params);
 
-    const auto target =
-        decl.for_type != nullptr
-            ? strip_refs(resolve_type(*decl.for_type, current_resolve_ctx()))
-            : k_unknown_type;
-    const auto &target_entry = types_.entry(target);
-
+    // The trait resolves first: its parameter's *kind* directs how the
+    // `for` target is read — `impl monad for option` names the constructor
+    // `option`, while `impl show for option` would name an instantiation.
     const ast::trait_decl *trait_decl = nullptr;
     auto trait_name = std::string{};
     if (decl.trait_type != nullptr) {
@@ -10053,6 +10901,41 @@ private:
                           trait_name));
         }
       }
+    }
+
+    auto target_ctx = current_resolve_ctx();
+    const auto *hk_param =
+        trait_decl != nullptr && !trait_decl->type_params.empty() &&
+                trait_decl->type_params.front().higher_kinded_arity > 0
+            ? &trait_decl->type_params.front()
+            : nullptr;
+    if (hk_param != nullptr) {
+      target_ctx.expected_ctor_arity = hk_param->higher_kinded_arity;
+    }
+    const auto target =
+        decl.for_type != nullptr
+            ? strip_refs(resolve_type(*decl.for_type, target_ctx))
+            : k_unknown_type;
+    const auto &target_entry = types_.entry(target);
+
+    // A higher-kinded trait is only implementable *for a constructor*: a
+    // plain type has the wrong kind. (A wrong-arity constructor was already
+    // diagnosed during resolution — `check_ctor_against_expected`.)
+    if (hk_param != nullptr && decl.for_type != nullptr &&
+        !types_.is_unknown(target) &&
+        target_entry.kind != type_kind::ctor_ref_kind) {
+      error_with_help(
+          decl.for_type->span,
+          std::format("trait `{}` abstracts over a type constructor, but "
+                      "`{}` is a plain type",
+                      trait_name, types_.display(target)),
+          "impl target has the wrong kind",
+          std::format("`{}` declares its parameter as `{}[{}]`, so it is "
+                      "implemented for a name that still *takes* type "
+                      "arguments — `option` or `list`, say — not for an "
+                      "already-complete type.",
+                      trait_name, hk_param->name,
+                      hk_param->higher_kinded_arity == 1 ? "_" : "_, _"));
     }
 
     if (trait_decl != nullptr) {
@@ -10207,8 +11090,9 @@ private:
       }
     }
 
-    const auto target_name = target.decl != nullptr
-                                 ? target.decl->name
+    const auto target_name = target.decl != nullptr ? target.decl->name
+                             : !target.name.empty()
+                                 ? target.name
                                  : types_.display(k_unknown_type);
 
     if (!missing_methods.empty()) {
@@ -10263,7 +11147,11 @@ private:
     }
 
     // `requires` obligations: implementing this trait demands the others.
-    if (trait.requires_bound.has_value() && target.decl != nullptr) {
+    // Constructor targets (`impl monad for option`) participate too — their
+    // coherence records are keyed by constructor name, which is exactly what
+    // `type_has_trait` consults.
+    if (trait.requires_bound.has_value() &&
+        (target.decl != nullptr || target.kind == type_kind::ctor_ref_kind)) {
       for (const auto &term : trait.requires_bound->terms) {
         if (term.type == nullptr ||
             term.type->kind != ast::node_kind::named_type) {
@@ -10349,7 +11237,9 @@ private:
     auto param_scope = std::unordered_map<std::string, type_id>{};
     for (const auto &param : decl.params) {
       if (!param.name.empty()) {
-        param_scope.emplace(param.name, types_.type_param(param.name));
+        param_scope.emplace(
+            param.name,
+            types_.type_param(param.name, param.higher_kinded_arity));
       }
     }
     type_params_.push_back(std::move(param_scope));

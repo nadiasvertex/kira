@@ -1,0 +1,46 @@
+module main
+
+# ==========================================================================
+#  Higher-kinded traits.
+#
+#  `functor` and `monad` abstract over a type *constructor* — `F[_]` is a
+#  one-argument constructor like `option` or `list`, not a complete type.
+#  An impl names the bare constructor (`impl monad for option`), and every
+#  generic method monomorphizes per call site, so the backends only ever
+#  see ordinary functions. See spec/kira-reference.md §Higher-Kinded Traits.
+#
+#  Run it:      bazelisk run //src:kira -- demo/higher-kinded-traits.kira
+#  Compile it:  bazelisk run //src:kira -- --compile -o hkt demo/higher-kinded-traits.kira
+# ==========================================================================
+
+trait functor[F[_]]:
+    def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]
+
+trait monad[M[_]] requires functor[M]:
+    def pure[A](a: A) -> M[A]
+    def bind[A, B](ma: M[A], f: fn(A) -> M[B]) -> M[B]
+
+impl functor for option:
+    def map[A, B](fa: option[A], f: fn(A) -> B) -> option[B]:
+        match fa:
+            @some(a) => @some(f(a))
+            @none    => @none
+
+impl monad for option:
+    def pure[A](a: A) -> option[A]: @some(a)
+    def bind[A, B](ma: option[A], f: fn(A) -> option[B]) -> option[B]:
+        match ma:
+            @some(a) => f(a)
+            @none    => @none
+
+def main() -> unit:
+    # `option.pure` dispatches through `impl monad for option`; `.map` and
+    # `.bind` are receiver-style calls on the same impls, with `A`/`B`
+    # solved from the receiver and the lambda at each call site.
+    let start = option.pure(20)
+    let doubled = start.map(n => n * 2)
+    let described = doubled.bind(n => @some(n + 2))
+    let msg = match described:
+        @some(v) => "value is {v}"
+        @none    => "nothing"
+    println(msg)

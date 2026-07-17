@@ -677,8 +677,8 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
       "expected higher-kinded trait declaration");
   expect(trait_decl->type_params.size() == 1,
          "expected higher-kinded trait parameter");
-  expect(trait_decl->type_params[0].is_higher_kinded,
-         "expected higher-kinded trait parameter marker");
+  expect(trait_decl->type_params[0].higher_kinded_arity == 1,
+         "expected higher-kinded trait parameter arity of 1");
 
   auto *static_pure_func = expect_node<kira::ast::func_decl>(
       parsed.file->items[3].get(), kira::ast::node_kind::func_decl,
@@ -755,6 +755,25 @@ auto test_parser_accepts_if_let_expression() -> void {
          "expected `elif let` pattern to be preserved");
   expect(elif_branch.let_expr != nullptr,
          "expected `elif let` scrutinee to be preserved");
+}
+
+auto test_parser_accepts_multi_arity_higher_kinded_params() -> void {
+  auto parsed =
+      parse_source("module sample\n"
+                   "\n"
+                   "trait bifunctor[F[_, _]]:\n"
+                   "    def bimap[A, B, C, D](fab: F[A, B], f: fn(A) -> C,"
+                   " g: fn(B) -> D) -> F[C, D]\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *trait_decl = expect_node<kira::ast::trait_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
+      "expected bifunctor trait declaration");
+  expect(trait_decl->type_params.size() == 1,
+         "expected one trait type parameter");
+  expect(trait_decl->type_params[0].higher_kinded_arity == 2,
+         "expected `F[_, _]` to record a higher-kinded arity of 2");
+  expect(trait_decl->items.size() == 1, "expected the bimap signature");
 }
 
 auto test_parser_accepts_phase1_audit_regressions() -> void {
@@ -1433,7 +1452,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 24> tests = {{
+  const std::array<named_test, 25> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "associated_types_where_aliases",
@@ -1452,6 +1471,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_remaining_phase1_constructs},
       {.name = "if_let_expression",
        .fn = test_parser_accepts_if_let_expression},
+      {.name = "multi_arity_higher_kinded_params",
+       .fn = test_parser_accepts_multi_arity_higher_kinded_params},
       {.name = "phase1_audit_regressions",
        .fn = test_parser_accepts_phase1_audit_regressions},
       {.name = "index_vs_generic_instantiation",

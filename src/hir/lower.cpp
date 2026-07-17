@@ -3870,11 +3870,21 @@ auto lower_function(const ast::func_decl &decl,
       continue;
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
-    if (decl.modifiers.is_intrinsic || !decl.type_params.empty()) {
+    if (decl.modifiers.is_intrinsic) {
       continue;
     }
     auto lowered = lower_function(decl, checked, options);
     if (!lowered.has_value()) {
+      // A method generic over its own type parameters (`def pure[A](a: A)`,
+      // the shape every higher-kinded trait method takes) lowers erased,
+      // exactly like a generic free function — but a body relying on a
+      // construct erasure can't express is skipped rather than failing the
+      // whole module, matching the historical behavior (generic impl
+      // methods used to be skipped unconditionally). Non-generic methods
+      // keep the hard failure: for them an error is always a real bug.
+      if (!decl.type_params.empty()) {
+        continue;
+      }
       return std::unexpected(lowered.error());
     }
     (*lowered)->name = std::format("{}::{}", *target_name, decl.name);

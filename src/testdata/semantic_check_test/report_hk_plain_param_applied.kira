@@ -1,0 +1,4 @@
+module sample
+
+def first[T](value: T[int32]) -> int32:
+    return 0

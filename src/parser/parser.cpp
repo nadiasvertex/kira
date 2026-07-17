@@ -1758,8 +1758,12 @@ auto parser::parse_type_param() -> ast::type_param {
 
   if (match(token_kind::lbracket)) {
     expect(token_kind::kw_underscore);
+    param.higher_kinded_arity = 1;
+    while (match(token_kind::comma)) {
+      expect(token_kind::kw_underscore);
+      ++param.higher_kinded_arity;
+    }
     expect(token_kind::rbracket);
-    param.is_higher_kinded = true;
   }
 
   if (match(token_kind::colon)) {
@@ -1937,8 +1941,12 @@ auto parser::parse_concept_decl(ast::visibility vis)
 
     if (match(token_kind::lbracket)) {
       expect(token_kind::kw_underscore);
+      param.higher_kinded_arity = 1;
+      while (match(token_kind::comma)) {
+        expect(token_kind::kw_underscore);
+        ++param.higher_kinded_arity;
+      }
       expect(token_kind::rbracket);
-      param.is_higher_kinded = true;
     }
 
     decl->params.push_back(std::move(param));
@@ -3326,7 +3334,11 @@ auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base)
   switch (current()) {
   case token_kind::dot: {
     advance(); // consume `.`
-    if (at(token_kind::ident)) {
+    // `kw_pure` is accepted as a field/method name because `pure` doubles
+    // as a declarable method name (`def pure` — see parse_func_decl's name
+    // handling and the spec's `monad` trait, whose lifting method is
+    // canonically called `pure`).
+    if (at(token_kind::ident) || at(token_kind::kw_pure)) {
       auto field_tok = advance();
       auto field = ast::make<ast::field_expr>();
       field->span = base->span.merge(field_tok.span);

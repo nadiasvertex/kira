@@ -1,0 +1,4 @@
+module sample
+
+trait functor[F[_]]:
+    def map[A, B](fa: F[A, B], f: fn(A) -> B) -> F[A, B]

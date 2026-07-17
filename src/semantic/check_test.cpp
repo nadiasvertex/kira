@@ -1397,6 +1397,66 @@ auto test_reports_existential_method_not_in_bound() -> void {
                     "expected an existential-field-access diagnostic");
 }
 
+// ==========================================================================
+//  Higher-kinded traits
+// ==========================================================================
+
+auto test_accepts_higher_kinded_functor_monad() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_higher_kinded_functor_monad.kira");
+  expect(analyzed.error_count == 0,
+         "expected the spec functor/monad program (HK traits, impls for "
+         "`option`, and calls through them) to check cleanly");
+}
+
+auto test_reports_hk_impl_target_wrong_kind() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_hk_impl_target_wrong_kind.kira");
+  expect(analyzed.error_count > 0,
+         "expected `impl functor for point` (a plain type) to be rejected");
+  expect_diagnostic(analyzed, "impl target has the wrong kind",
+                    "expected the wrong-kind impl-target diagnostic");
+}
+
+auto test_reports_hk_ctor_arity_mismatch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_hk_ctor_arity_mismatch.kira");
+  expect(analyzed.error_count > 0,
+         "expected `impl functor for result` (arity 2 vs required 1) to be "
+         "rejected");
+  expect_diagnostic(analyzed, "type constructor of the wrong kind",
+                    "expected the constructor-arity kind diagnostic");
+}
+
+auto test_reports_hk_param_wrong_arity() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_hk_param_wrong_arity.kira");
+  expect(analyzed.error_count > 0,
+         "expected `F[A, B]` where `F` was declared `F[_]` to be rejected");
+  expect_diagnostic(analyzed, "expects 1 type argument, found 2",
+                    "expected the parameter-application arity diagnostic");
+}
+
+auto test_reports_hk_plain_param_applied() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_hk_plain_param_applied.kira");
+  expect(analyzed.error_count > 0,
+         "expected `T[int32]` where `T` is an ordinary parameter to be "
+         "rejected");
+  expect_diagnostic(analyzed,
+                    "kind mismatch: applying an ordinary type parameter",
+                    "expected the kind-* application diagnostic");
+}
+
+auto test_reports_hk_param_used_as_type() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_hk_param_used_as_type.kira");
+  expect(analyzed.error_count > 0,
+         "expected bare `F` where `F` was declared `F[_]` to be rejected");
+  expect_diagnostic(analyzed, "higher-kinded parameter used as a type",
+                    "expected the bare-constructor-parameter diagnostic");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1473,6 +1533,12 @@ auto main() -> int {
     test_reports_existential_bound_not_satisfied();
     test_reports_existential_return_type_mismatch();
     test_reports_existential_method_not_in_bound();
+    test_accepts_higher_kinded_functor_monad();
+    test_reports_hk_impl_target_wrong_kind();
+    test_reports_hk_ctor_arity_mismatch();
+    test_reports_hk_param_wrong_arity();
+    test_reports_hk_plain_param_applied();
+    test_reports_hk_param_used_as_type();
     test_reports_unannotated_pub_function();
     test_reports_duplicate_trait_impl();
     test_reports_incomplete_trait_impl();

@@ -186,12 +186,44 @@ auto type_table::user_type(const ast::type_decl &decl,
                            .args = std::move(args)});
 }
 
-/// Interns using name alone as the key, so same-named type parameters in
-/// the same scope collapse to one id.
-auto type_table::type_param(std::string_view name) -> type_id {
-  return intern(std::format("v:{}", name),
-                type_entry{.kind = type_kind::type_param_kind,
-                           .name = std::string(name)});
+/// Interns using name plus kind (arity) as the key, so same-named type
+/// parameters of the same kind collapse to one id while `T` and a
+/// (pathological) constructor parameter `T[_]` stay distinct. Arity 0 keeps
+/// the historical bare key so ordinary parameters intern exactly as before.
+auto type_table::type_param(std::string_view name, size_t arity) -> type_id {
+  auto key = arity == 0 ? std::format("v:{}", name)
+                        : std::format("v:{}/{}", name, arity);
+  return intern(std::move(key), type_entry{.kind = type_kind::type_param_kind,
+                                           .name = std::string(name),
+                                           .ctor_arity = arity});
+}
+
+/// Interns on the declaration's address (user constructors) or the builtin
+/// name (prelude constructors), so every unapplied reference to one
+/// constructor is one id — and distinct from every *applied* instantiation
+/// of it, which interns under the applied keys above.
+auto type_table::ctor_ref(std::string_view name, std::string_view module_name,
+                          const ast::type_decl *decl, size_t arity) -> type_id {
+  auto key = decl != nullptr
+                 ? std::format("k:{}", static_cast<const void *>(decl))
+                 : std::format("k:{}", name);
+  return intern(std::move(key),
+                type_entry{.kind = type_kind::ctor_ref_kind,
+                           .name = std::string(name),
+                           .module_name = std::string(module_name),
+                           .decl = decl,
+                           .ctor_arity = arity});
+}
+
+/// Interns on the head parameter's id plus the argument ids, so `F[A]`
+/// written twice is one type while `F[A]` and `F[B]` are two.
+auto type_table::param_app(type_id head, std::vector<type_id> args) -> type_id {
+  auto key = std::format("app:{}", head);
+  append_args_key(key, args);
+  return intern(std::move(key), type_entry{.kind = type_kind::param_app_kind,
+                                           .name = entry(head).name,
+                                           .args = std::move(args),
+                                           .result = head});
 }
 
 /// Interns using the underlying type id and the value as the key, so two
@@ -324,8 +356,10 @@ auto type_table::display(type_id id) const -> std::string {
     return "<error>";
   case type_kind::builtin_kind:
   case type_kind::type_param_kind:
+  case type_kind::ctor_ref_kind:
   case type_kind::existential_kind:
     return item.name;
+  case type_kind::param_app_kind:
   case type_kind::builtin_generic_kind:
   case type_kind::struct_kind:
   case type_kind::sum_kind:
@@ -474,8 +508,12 @@ auto type_table::refinement_base_named(std::string_view name) const
 /// See the header for semantics.
 auto type_table::is_unknown(type_id id) const -> bool {
   const auto kind = entry(id).kind;
+  // `param_app_kind` counts as unknown for the same reason a bare type
+  // parameter does: `F[A]` under an abstract `F` can become anything at
+  // instantiation time, so complaining about it would be a false positive.
   return kind == type_kind::unknown_kind || kind == type_kind::error_kind ||
-         kind == type_kind::type_param_kind || kind == type_kind::type_var_kind;
+         kind == type_kind::type_param_kind ||
+         kind == type_kind::param_app_kind || kind == type_kind::type_var_kind;
 }
 
 // Every scalar-family predicate below strips refinements first: a `positive`

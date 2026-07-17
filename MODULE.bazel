@@ -2,7 +2,7 @@
 # requires the module version live here and can't read the C++ header.
 module(
     name = "kira",
-    version = "0.4.0",
+    version = "0.5.0",
 )
 
 bazel_dep(name = "platforms", version = "1.0.0")

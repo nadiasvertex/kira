@@ -53,6 +53,19 @@ enum class type_kind : uint8_t {
   existential_kind,     ///< `some Trait[Args] + Other` on a function's
                         ///< return type; see the doc comment below.
   type_param_kind,      ///< In-scope generic parameter such as `T`.
+  ctor_ref_kind,        ///< An *unapplied* nominal type constructor — what
+                        ///< `option` denotes as an argument to `monad[option]`
+                        ///< or in `impl monad for option`, before any type
+                        ///< arguments are applied. Only nominal constructors
+                        ///< (prelude generics and user generic declarations)
+                        ///< inhabit higher kinds; see `ctor_ref`.
+  param_app_kind,       ///< An application whose head is itself an in-scope
+                        ///< higher-kinded type parameter: the `F[A]` in
+                        ///< `trait functor[F[_]]`'s method signatures. Kept
+                        ///< abstract — the checker treats it like a type
+                        ///< parameter (compatible with everything) until
+                        ///< substitution re-resolves it to a concrete
+                        ///< application; see `param_app`.
   type_var_kind,        ///< Fresh inference variable; see `fresh_type_var`.
   const_value_kind,     ///< A literal compile-time value used as a const
                         ///< generic argument, e.g. the `3` in `vec[T, 3]`.
@@ -113,6 +126,12 @@ struct type_entry {
   type_id result = k_unknown_type;      ///< fn result or ref/ptr/array inner.
   bool is_mut = false;                  ///< Mutability for ref/ptr types.
   std::optional<uint64_t> array_size;   ///< Array length when statically known.
+  /// The *kind* of a type parameter or constructor, measured as an arity —
+  /// kinds are arities and nothing more (no currying, no kind polymorphism).
+  /// For `type_param_kind`: 0 for an ordinary `T`, n for a declared
+  /// `F[_, ...]` constructor parameter. For `ctor_ref_kind`: the number of
+  /// type arguments the referenced constructor takes. 0 everywhere else.
+  size_t ctor_arity = 0;
   std::vector<bound_trait_ref> existential_bound; ///< `existential_kind` only.
   /// The value of a `const_value_kind` / `symbolic_value_kind` slot, always
   /// in canonical form — constant for the former, open for the latter. One
@@ -166,8 +185,33 @@ public:
   [[nodiscard]] auto user_type(const ast::type_decl &decl,
                                std::string_view module_name,
                                std::vector<type_id> args) -> type_id;
-  /// Interns an in-scope generic type/value parameter, identified by name.
-  [[nodiscard]] auto type_param(std::string_view name) -> type_id;
+  /// Interns an in-scope generic type/value parameter, identified by name
+  /// and kind. `arity` is 0 for an ordinary parameter and n for a declared
+  /// n-argument constructor parameter (`F[_]` is 1) — the same name declared
+  /// at two different kinds interns to two distinct ids, since the kind is
+  /// part of what the parameter *is*.
+  [[nodiscard]] auto type_param(std::string_view name, size_t arity = 0)
+      -> type_id;
+  /// Interns an *unapplied* nominal type constructor of the given arity —
+  /// `option` as a value of kind `[_]`, passable where a higher-kinded
+  /// parameter is expected. `decl` is the user declaration behind it, or
+  /// `nullptr` for a prelude generic (`option`, `list`, `result`, ...).
+  /// Keyed on the declaration (or builtin name) alone, so every reference to
+  /// the same constructor is one id.
+  [[nodiscard]] auto ctor_ref(std::string_view name,
+                              std::string_view module_name,
+                              const ast::type_decl *decl, size_t arity)
+      -> type_id;
+  /// Interns an application of an in-scope higher-kinded *parameter* to
+  /// argument types — the `F[A]` in a `trait functor[F[_]]` method
+  /// signature. `head` must be a `type_param_kind` id with matching arity;
+  /// the head is stored in `result` and the applied arguments in `args`.
+  /// Deliberately abstract: substituting a concrete constructor for the head
+  /// never rewrites one of these — the checker re-resolves the written type
+  /// under the substitution instead, so `F[A]` with `F := option` interns as
+  /// the ordinary `option[A]` id and id-equality holds.
+  [[nodiscard]] auto param_app(type_id head, std::vector<type_id> args)
+      -> type_id;
   /// Interns a literal compile-time value used as a const generic argument
   /// (e.g. the `3` in `vec[T, 3]`), keyed on `underlying` (the value's
   /// scalar type, e.g. `usize`) and `value` so `vec[T, 3]` and `vec[T, 5]`

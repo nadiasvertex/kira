@@ -1,0 +1,10 @@
+module sample
+
+type point = { x: float64, y: float64 }
+
+trait functor[F[_]]:
+    def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]
+
+impl functor for point:
+    def map[A, B](fa: point, f: fn(A) -> B) -> point:
+        return fa

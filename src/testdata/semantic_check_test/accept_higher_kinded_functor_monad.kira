@@ -1,0 +1,29 @@
+module sample
+
+trait functor[F[_]]:
+    def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]
+
+trait monad[M[_]] requires functor[M]:
+    def pure[A](a: A) -> M[A]
+    def bind[A, B](ma: M[A], f: fn(A) -> M[B]) -> M[B]
+
+impl functor for option:
+    def map[A, B](fa: option[A], f: fn(A) -> B) -> option[B]:
+        match fa:
+            @some(a) => @some(f(a))
+            @none    => @none
+
+impl monad for option:
+    def pure[A](a: A) -> option[A]: @some(a)
+    def bind[A, B](ma: option[A], f: fn(A) -> option[B]) -> option[B]:
+        match ma:
+            @some(a) => f(a)
+            @none    => @none
+
+def run() -> int32:
+    let start = option.pure(20)
+    let doubled = start.map(n => n * 2)
+    let described = doubled.bind(n => @some(n + 2))
+    match described:
+        @some(v) => v
+        @none    => 0

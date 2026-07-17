@@ -996,7 +996,7 @@ auto clone_func_decl(const func_decl &decl)
                    .name = param.name,
                    .bound_or_type = std::move(*bound_or_type),
                    .is_value_param = param.is_value_param,
-                   .is_higher_kinded = param.is_higher_kinded});
+                   .higher_kinded_arity = param.higher_kinded_arity});
   }
 
   for (const auto &contract : decl.contracts) {

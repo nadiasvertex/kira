@@ -1,0 +1,41 @@
+module codegen_stress.higher_kinded_trait_dispatch
+
+# Higher-kinded traits erase completely at monomorphization: each generic
+# method of `impl monad for option` is re-checked and lowered once per
+# solved element-type tuple (`option::pure$int32`, `option::bind$int32$int32`,
+# ...), so the two backends below compile exactly the same ordinary
+# functions — neither needs to know constructors were ever abstract.
+
+trait functor[F[_]]:
+    def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]
+
+trait monad[M[_]] requires functor[M]:
+    def pure[A](a: A) -> M[A]
+    def bind[A, B](ma: M[A], f: fn(A) -> M[B]) -> M[B]
+
+impl functor for option:
+    def map[A, B](fa: option[A], f: fn(A) -> B) -> option[B]:
+        match fa:
+            @some(a) => @some(f(a))
+            @none    => @none
+
+impl monad for option:
+    def pure[A](a: A) -> option[A]: @some(a)
+    def bind[A, B](ma: option[A], f: fn(A) -> option[B]) -> option[B]:
+        match ma:
+            @some(a) => f(a)
+            @none    => @none
+
+def unwrap_or(o: option[int32], fallback: int32) -> int32:
+    match o:
+        @some(v) => v
+        @none    => fallback
+
+def main() -> int32:
+    let start = option.pure(20)
+    let doubled = start.map(n => n * 2)
+    let described = doubled.bind(n => @some(n + 2))
+    let empty: option[int32] = @none
+    let still_empty = empty.map(n => n + 100)
+    # 42 + (-1) = 41
+    return unwrap_or(described, 0) + unwrap_or(still_empty, -1)

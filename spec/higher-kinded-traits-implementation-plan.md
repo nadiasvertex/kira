@@ -1,5 +1,14 @@
 # Higher-Kinded Traits Implementation Plan
 
+> **Status: implemented (2026-07-17).** All six phases landed: kinds-as-
+> arities through parser and type table, `ctor_ref`/`param_app` type kinds,
+> HK trait/impl checking with kind-directed target resolution, rigid
+> inference, and per-call monomorphization of HK trait methods
+> (`option::pure$int32`), so both backends run the spec example unchanged.
+> Regression coverage: `check_test` (accept + five kind-error cases),
+> `semantic_stress/028`, `codegen_stress/034` (VM/JIT parity), parser test
+> for `F[_, _]`, and `demo/higher-kinded-traits.kira`.
+
 Implements the design from `kira-reference.md` (§Higher-Kinded Traits): traits
 over type constructors — `trait functor[F[_]]`, `trait monad[M[_]] requires
 functor[M]`, `impl monad for option` — with methods whose signatures apply the
