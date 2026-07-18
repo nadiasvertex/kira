@@ -48,8 +48,8 @@ inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
     "rt_fmt_f64_sci",
     "rt_fmt_f64_general",
     "rt_fmt_char_from_codepoint",
-    // `std.string` UTF-8 intrinsics (spec/std-reference.md). Substring search is
-    // Two-Way (linear worst case) over bytes, scalar-correct by UTF-8 self-
+    // `std.string` UTF-8 intrinsics (spec/std-reference.md). Substring search
+    // is Two-Way (linear worst case) over bytes, scalar-correct by UTF-8 self-
     // synchronization; `to_upper`/`to_lower` apply Unicode simple (1:1) case
     // mapping. The algorithms live in `src/runtime/string_ops.h` and are
     // shared verbatim with the bytecode VM's dispatch table.
