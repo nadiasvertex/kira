@@ -16,10 +16,20 @@ type box_bool = { v: bool }
 # meaningful only when `found` is true — this avoids a magic not-found sentinel.
 type find_result = { found: bool, pos: usize }
 
-# --- Layer 1: native intrinsics ---
-# Search is Two-Way (linear worst case) over UTF-8 bytes, scalar-correct by
-# self-synchronization. Case mapping is Unicode simple (1:1). trim `mode`:
-# 0 = both, 1 = start, 2 = end.
+#: Single-field wrapper for usize to pass across intrinsic boundaries.
+type box_usize = { v: usize }
+#: Single-field wrapper for uint8 to pass across intrinsic boundaries.
+type box_u8 = { v: uint8 }
+#: Single-field wrapper for bool to pass across intrinsic boundaries.
+type box_bool = { v: bool }
+
+#: Result of a substring search. pos is meaningful only when found is true.
+type find_result = { found: bool, pos: usize }
+
+#: Layer 1: native intrinsics
+#: Search is Two-Way (linear worst case) over UTF-8 bytes, scalar-correct by
+#: self-synchronization. Case mapping is Unicode simple (1:1). trim mode:
+#: 0 = both, 1 = start, 2 = end.
 intrinsic def rt_str_eq(a: str, b: str) -> box_bool
 intrinsic def rt_str_find(haystack: str, needle: str, from: box_usize) -> find_result
 intrinsic def rt_str_rfind(haystack: str, needle: str) -> find_result
@@ -29,25 +39,42 @@ intrinsic def rt_str_reverse(s: str) -> str
 intrinsic def rt_str_trim(s: str, mode: box_u8) -> str
 intrinsic def rt_str_replace(s: str, from: str, to: str) -> str
 
-# --- Layer 2: public API (thin composition over the intrinsics) ---
+#: Layer 2: public API (thin composition over the intrinsics)
 extend str:
-    #: Returns true if the string has no bytes.
+    #: Checks if the string has no bytes.
+    #: Returns:
+    #:   true if the string is empty, false otherwise.
     pub def is_empty(self) -> bool:
         return self.len() == 0
 
-    #: Byte-for-byte equality. Use this instead of `==`, which has no `str`
-    #: codegen yet.
+    #: Performs byte-for-byte equality comparison. Use this instead of ==, which
+    #: has no str codegen yet.
+    #: Args:
+    #:   self: the string to compare.
+    #:   other: the other string to compare against.
+    #: Returns:
+    #:   true if the strings are equal byte-for-byte, false otherwise.
     pub def eq(self, other: str) -> bool:
         return rt_str_eq(self, other).v
 
-    #: Returns true if the string begins with `prefix`.
+    #: Checks if the string begins with the given prefix.
+    #: Args:
+    #:   self: the string to check.
+    #:   prefix: the prefix to look for.
+    #: Returns:
+    #:   true if the string starts with the prefix, false otherwise.
     pub def starts_with(self, prefix: str) -> bool:
         let plen = prefix.len()
         if self.len() < plen:
             return false
         return rt_str_eq(self[0 .. plen], prefix).v
 
-    #: Returns true if the string ends with `suffix`.
+    #: Checks if the string ends with the given suffix.
+    #: Args:
+    #:   self: the string to check.
+    #:   suffix: the suffix to look for.
+    #: Returns:
+    #:   true if the string ends with the suffix, false otherwise.
     pub def ends_with(self, suffix: str) -> bool:
         let slen = suffix.len()
         let n = self.len()
@@ -55,18 +82,35 @@ extend str:
             return false
         return rt_str_eq(self[n - slen .. n], suffix).v
 
-    #: Returns true if `needle` occurs anywhere in the string.
+    #: Checks if the needle string occurs anywhere in this string.
+    #: Args:
+    #:   self: the string to search in.
+    #:   needle: the substring to search for.
+    #: Returns:
+    #:   true if needle is found, false otherwise.
     pub def contains(self, needle: str) -> bool:
         return rt_str_find(self, needle, box_usize { v: 0 }).found
 
-    #: Byte offset of the first occurrence of `needle`, or `@none`.
+    #: Finds the byte offset of the first occurrence of needle.
+    #: Args:
+    #:   self: the string to search in.
+    #:   needle: the substring to search for.
+    #: Returns:
+    #:   some(offset) where offset is the byte position of the first occurrence,
+    #:   or none if needle is not found.
     pub def find(self, needle: str) -> option[usize]:
         let r = rt_str_find(self, needle, box_usize { v: 0 })
         if r.found:
             return @some(r.pos)
         return @none
 
-    #: Byte offset of the last occurrence of `needle`, or `@none`.
+    #: Finds the byte offset of the last occurrence of needle.
+    #: Args:
+    #:   self: the string to search in.
+    #:   needle: the substring to search for.
+    #: Returns:
+    #:   some(offset) where offset is the byte position of the last occurrence,
+    #:   or none if needle is not found.
     pub def rfind(self, needle: str) -> option[usize]:
         let r = rt_str_rfind(self, needle)
         if r.found:
@@ -74,36 +118,59 @@ extend str:
         return @none
 
     #: Removes leading and trailing Unicode whitespace.
+    #: Returns:
+    #:   a new string with leading and trailing whitespace removed.
     pub def trim(self) -> str:
         return rt_str_trim(self, box_u8 { v: 0 })
 
     #: Removes leading Unicode whitespace.
+    #: Returns:
+    #:   a new string with leading whitespace removed.
     pub def trim_start(self) -> str:
         return rt_str_trim(self, box_u8 { v: 1 })
 
     #: Removes trailing Unicode whitespace.
+    #: Returns:
+    #:   a new string with trailing whitespace removed.
     pub def trim_end(self) -> str:
         return rt_str_trim(self, box_u8 { v: 2 })
 
-    #: Returns a new string with the scalars in reverse order.
+    #: Creates a new string with the Unicode scalars in reverse order.
+    #: Returns:
+    #:   a new string with characters in reverse order.
     pub def reversed(self) -> str:
         return rt_str_reverse(self)
 
-    #: Unicode simple (1:1) uppercase mapping.
+    #: Converts the string to uppercase using Unicode simple (1:1) mapping.
+    #: Returns:
+    #:   a new string in uppercase.
     pub def to_uppercase(self) -> str:
         return rt_str_to_upper(self)
 
-    #: Unicode simple (1:1) lowercase mapping.
+    #: Converts the string to lowercase using Unicode simple (1:1) mapping.
+    #: Returns:
+    #:   a new string in lowercase.
     pub def to_lowercase(self) -> str:
         return rt_str_to_lower(self)
 
-    #: Replaces every non-overlapping occurrence of `from` with `to`.
+    #: Replaces every non-overlapping occurrence of from with to.
+    #: Args:
+    #:   self: the string to search and replace in.
+    #:   from: the substring to search for.
+    #:   to: the replacement substring.
+    #: Returns:
+    #:   a new string with replacements applied.
     pub def replace(self, from: str, to: str) -> str:
         return rt_str_replace(self, from, to)
 
-    #: Splits on occurrences of `sep`. Each piece is a zero-copy sub-slice;
-    #: consecutive separators yield empty pieces. An empty `sep` yields the
-    #: whole string as the single piece.
+    #: Splits the string on occurrences of sep. Each piece is a zero-copy sub-slice.
+    #: Consecutive separators yield empty pieces. An empty sep yields the whole
+    #: string as the single piece.
+    #: Args:
+    #:   self: the string to split.
+    #:   sep: the separator substring to split on.
+    #: Returns:
+    #:   a list of string slices.
     pub def split(self, sep: str) -> list[str]:
         var pieces: list[str] = []
         if sep.len() == 0:

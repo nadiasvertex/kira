@@ -1,26 +1,51 @@
 module std.console
 
+#: Returns a handle to the standard output stream.
+#: Returns:
+#:   a file handle for stdout.
 pub def stdout() -> std.io.file:
     return std.io.stdout_handle()
 
+#: Returns a handle to the standard error stream.
+#: Returns:
+#:   a file handle for stderr.
 pub def stderr() -> std.io.file:
     return std.io.stderr_handle()
 
+#: Returns a handle to the standard input stream.
+#: Returns:
+#:   a file handle for stdin.
 pub def stdin() -> std.io.file:
     return std.io.stdin_handle()
 
+#: Writes a string to standard output without a newline.
+#: Args:
+#:   s: the string to write.
+#: Returns:
+#:   unit (nothing).
 pub def print(s: str) -> unit:
     stdout().write_all(&s.as_bytes())
     return unit
 
+#: Writes a string to standard output followed by a newline.
+#: Args:
+#:   s: the string to write.
 pub def println(s: str) -> unit:
     print(s)
     print("\n")
 
+#: Writes a string to standard error without a newline.
+#: Args:
+#:   s: the string to write.
+#: Returns:
+#:   unit (nothing).
 pub def eprint(s: str) -> unit:
     stderr().write_all(&s.as_bytes())
     return unit
 
+#: Writes a string to standard error followed by a newline.
+#: Args:
+#:   s: the string to write.
 pub def eprintln(s: str) -> unit:
     eprint(s)
     eprint("\n")

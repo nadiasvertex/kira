@@ -1,24 +1,30 @@
 module std.derive
 
-# Real, working `deriving show`/`eq`/`debug` for a concrete, struct-shaped
-# type — the compile-time evaluation subsystem's own worked example (spec/
-# kira-reference.md, "Generating definitions") made runnable end to end, and
-# extended to the other traits that have enough runtime support to back a
-# real generated method body (`ord`/`hash` do not yet — see
-# `semantic::checker::resolve_deriving_traits`'s doc comment). Each is
-# called implicitly by `resolve_deriving_traits` for every
-# `type ... deriving <trait>` on a concrete struct; each is also callable
-# directly, e.g. `~derive_show[SomeType]()`, at module top level.
-#
-# All three build up a value incrementally over `static for f in T.fields():`
-# and splice the result into a freshly quoted `impl <trait> for <T>: ...`.
-# The type-position splice — `~(expr.ident(T.name()))` — and the returned
-# body both reference these functions' own local bindings from *inside* a
-# nested quote, which only resolves correctly because quote construction
-# eagerly materializes any splice found within it (see
-# `comptime::evaluator::materialize_quote`) instead of leaving it as literal
-# syntax to be re-evaluated later, after each call's own locals are gone.
+#: Real, working deriving show/eq/debug for a concrete, struct-shaped
+#: type — the compile-time evaluation subsystem's own worked example (spec/
+#: kira-reference.md, "Generating definitions") made runnable end to end, and
+#: extended to the other traits that have enough runtime support to back a
+#: real generated method body (ord/hash do not yet — see
+#: semantic::checker::resolve_deriving_traits's doc comment). Each is
+#: called implicitly by resolve_deriving_traits for every
+#: type ... deriving <trait> on a concrete struct; each is also callable
+#: directly, e.g. ~derive_show[SomeType](), at module top level.
+#:
+#: All three build up a value incrementally over static for f in T.fields():
+#: and splice the result into a freshly quoted impl <trait> for <T>: ....
+#: The type-position splice — ~(expr.ident(T.name())) — and the returned
+#: body both reference these functions' own local bindings from *inside* a
+#: nested quote, which only resolves correctly because quote construction
+#: eagerly materializes any splice found within it (see
+#: comptime::evaluator::materialize_quote) instead of leaving it as literal
+#: syntax to be re-evaluated later, after each call's own locals are gone.
 
+#: Generates an impl of show for a struct type, displaying all fields in
+#: the format: TypeName { field1: value1, field2: value2, ... }
+#: Args:
+#:   T: the concrete struct type to generate show for.
+#: Returns:
+#:   a def_expr representing the full impl block for the show trait.
 static def derive_show[T]() -> def_expr:
     var body: expr = expr.lit(T.name())
     body = expr.interp_concat(body, expr.lit(" \{ "))
@@ -36,12 +42,14 @@ static def derive_show[T]() -> def_expr:
         def show(self) -> str:
             return ~body)`
 
-# Same shape as `derive_show`, but each field's value is embedded via
-# `expr.debug` (a `:?`-formatted interpolation segment, matching what
-# `"{x:?}"` would produce) instead of the default `.show()`-style
-# formatting — so a nested field that only implements `debug` (not `show`)
-# still renders, and a field's `str`-typed value renders quoted/escaped
-# instead of as raw text.
+#: Generates an impl of debug for a struct type. Similar to derive_show but
+#: each field value is formatted using debug formatting (with {:?} semantics),
+#: making it suitable for values that only implement debug, not show. String
+#: fields render quoted and escaped.
+#: Args:
+#:   T: the concrete struct type to generate debug for.
+#: Returns:
+#:   a def_expr representing the full impl block for the debug trait.
 static def derive_debug[T]() -> def_expr:
     var body: expr = expr.lit(T.name())
     body = expr.interp_concat(body, expr.lit(" \{ "))
@@ -60,14 +68,16 @@ static def derive_debug[T]() -> def_expr:
         def debug(self) -> str:
             return ~body)`
 
-# Builds `self.f1 == other.f1 and self.f2 == other.f2 and ...` across every
-# field via `expr.binary`. An empty struct (no fields at all) trivially
-# derives to `true` (`body` starts there and the loop never runs) — two
-# empty-struct instances of the same type are equal, matching the usual
-# convention. `other`'s `&self` parameter type is literal, unspliced quoted
-# syntax (an ordinary trait-required reference to the implementing type,
-# same as any hand-written `impl eq` would write) — only the target type and
-# the returned comparison chain are generated content.
+#: Generates an impl of eq for a struct type, building a chain of field
+#: equality comparisons connected by and. An empty struct trivially derives
+#: to true (two empty-struct instances of the same type are equal).
+#: The other parameter type is literal, unspliced quoted syntax (an ordinary
+#: trait-required reference), while only the target type and the comparison
+#: chain are generated content.
+#: Args:
+#:   T: the concrete struct type to generate eq for.
+#: Returns:
+#:   a def_expr representing the full impl block for the eq trait.
 static def derive_eq[T]() -> def_expr:
     var body: expr = expr.lit(true)
     var first: bool = true

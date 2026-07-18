@@ -1,8 +1,12 @@
 module std.io
 
+#: Opaque file descriptor wrapper for internal use.
 pub type raw_fd = { value: int64 }
+
+#: System error code from a failed I/O operation.
 pub type io_errno = { code: int32 }
 
+#: Error types that can occur during I/O operations.
 pub type io_error = @not_found(str) | @permission_denied(str) | @already_exists(str) | @interrupted | @would_block | @broken_pipe | @unexpected_eof | @other(io_errno)
 
 impl from[io_errno] for io_error:
@@ -16,6 +20,7 @@ impl from[io_errno] for io_error:
             32 => @broken_pipe
             _ => @other(e)
 
+  #: Options for opening a file.
 pub type open_options = {
     read: bool,
     write: bool,
@@ -24,9 +29,22 @@ pub type open_options = {
     truncate: bool
 }
 
+#: A type that can read bytes from a source.
 pub trait reader:
+    #: Reads up to buf.len() bytes into the provided buffer.
+    #: Args:
+    #:   self: the reader (moved).
+    #:   buf: a mutable slice to read bytes into.
+    #: Returns:
+    #:   the number of bytes read, or an io_error.
     def read(mut self, buf: &mut slice_mut[byte]) -> result[usize, io_error]
 
+    #: Reads all remaining bytes from the reader into a list.
+    #: Args:
+    #:   self: the reader (moved).
+    #:   out: a mutable list to append bytes to.
+    #: Returns:
+    #:   the total number of bytes read, or an io_error.
     def read_to_end(mut self, out: &mut list[byte]) -> result[usize, io_error]:
         var total: usize = 0
         var buf: array[byte, 4096] = [0; 4096]
@@ -40,6 +58,13 @@ pub trait reader:
                 i = i + 1
             total = total + got
 
+    #: Reads exactly buf.len() bytes into the provided buffer. Returns an error
+    #: if end of file is reached before the buffer is filled.
+    #: Args:
+    #:   self: the reader (moved).
+    #:   buf: a mutable slice to read bytes into.
+    #: Returns:
+    #:   unit on success, or an io_error (including unexpected_eof if EOF is reached too early).
     def read_exact(mut self, buf: &mut slice_mut[byte]) -> result[unit, io_error]:
         var filled: usize = 0
         let want = buf.len()
@@ -50,10 +75,29 @@ pub trait reader:
             filled = filled + got
         return @ok(unit)
 
+#: A type that can write bytes to a destination.
 pub trait writer:
+    #: Writes up to buf.len() bytes from the provided buffer.
+    #: Args:
+    #:   self: the writer (moved).
+    #:   buf: a slice of bytes to write.
+    #: Returns:
+    #:   the number of bytes written, or an io_error.
     def write(mut self, buf: &slice[byte]) -> result[usize, io_error]
+    #: Flushes any buffered data to the destination.
+    #: Args:
+    #:   self: the writer (moved).
+    #: Returns:
+    #:   unit on success, or an io_error.
     def flush(mut self) -> result[unit, io_error]
 
+    #: Writes all bytes from the buffer to the destination. Returns an error if the
+    #: write operation fails or if end of file is reached before all bytes are written.
+    #: Args:
+    #:   self: the writer (moved).
+    #:   buf: a slice of bytes to write.
+    #: Returns:
+    #:   unit on success, or an io_error (including broken_pipe if not all bytes are written).
     def write_all(mut self, buf: &slice[byte]) -> result[unit, io_error]:
         var written: usize = 0
         let want = buf.len()
@@ -74,19 +118,35 @@ intrinsic def rt_read(fd: raw_fd, buf: &mut slice_mut[byte]) -> result[usize, io
 intrinsic def rt_write(fd: raw_fd, buf: &slice[byte]) -> result[usize, io_errno]
 intrinsic def rt_flush(fd: raw_fd) -> result[unit, io_errno]
 
+#: A file handle that can be used for reading and writing operations.
 pub type file = { fd: raw_fd }
 
+#: Opens a file with the specified path and options.
+#: Args:
+#:   path: the path to the file to open.
+#:   opts: open options controlling read/write/create/truncate behavior.
+#: Returns:
+#:   a file handle on success, or an io_error on failure.
 pub def open(path: str, opts: open_options) -> result[file, io_error]:
     match rt_open(path, opts):
         @ok(fd) => @ok(file { fd: fd })
         @err(e) => @err(io_error.from(e))
 
+#: Returns a file handle for standard input.
+#: Returns:
+#:   a file handle for stdin.
 pub def stdin_handle() -> file:
     return file { fd: rt_stdin() }
 
+#: Returns a file handle for standard output.
+#: Returns:
+#:   a file handle for stdout.
 pub def stdout_handle() -> file:
     return file { fd: rt_stdout() }
 
+#: Returns a file handle for standard error.
+#: Returns:
+#:   a file handle for stderr.
 pub def stderr_handle() -> file:
     return file { fd: rt_stderr() }
 
@@ -112,6 +172,11 @@ impl drop for file:
         return unit
 
 extend file:
+    #: Closes the file handle. The handle becomes invalid after this call.
+    #: Args:
+    #:   self: the file handle to close (moved).
+    #: Returns:
+    #:   unit on success, or an io_error on failure.
     pub def close(mut self) -> result[unit, io_error]:
         let r = rt_close(self.fd)
         self.fd = raw_fd { value: -1 }

@@ -22,16 +22,22 @@ module std.platform
 type io_error = std.io.io_error
 type io_errno = std.io.io_errno
 
-# ---------------------------------------------------------------------------
-# Types
-# ---------------------------------------------------------------------------
-
+#: CPU architectures supported by the compiler.
+#:
+#: Variants: x86_64, aarch64, arm, riscv32, riscv64, wasm32, wasm64, or other(str).
 pub type architecture = @x86_64 | @aarch64 | @arm | @riscv32 | @riscv64 | @wasm32 | @wasm64 | @other(str)
 
+#: Operating system families.
+#:
+#: Variants: unix (Linux, macOS, BSD), windows, macos, or other(str).
 pub type os_family = @unix | @windows | @macos | @other(str)
 
+#: Byte order of the target platform.
+#:
+#: Variants: little (little-endian), big (big-endian).
 pub type endianness = @little | @big
 
+#: Comprehensive platform information as returned by uname() on Unix systems.
 pub type platform_info = {
     system: str,
     node: option[str],
@@ -44,6 +50,7 @@ pub type platform_info = {
     os_family: os_family,
 }
 
+#: Build information about the Kira compiler.
 pub type kira_build = {
     version: str,
     implementation: str,
@@ -51,11 +58,13 @@ pub type kira_build = {
     build_date: str,
 }
 
+#: Information about the C standard library implementation.
 pub type libc_version = {
     name: str,
     version: str,
 }
 
+#: Windows version information.
 pub type windows_version = {
     release: str,
     version: str,
@@ -63,6 +72,7 @@ pub type windows_version = {
     platform_type: str,
 }
 
+#: macOS version information.
 pub type macos_version = {
     release: str,
     version: str,
@@ -88,6 +98,7 @@ pub type macos_version = {
 # reason).
 # ---------------------------------------------------------------------------
 
+#: Raw Unix uname() structure.
 type uname_raw = {
     sysname: str,
     nodename: str,
@@ -96,6 +107,7 @@ type uname_raw = {
     machine_arch: str,
 }
 
+#: Raw Windows version information structure.
 type winver_raw = {
     major: uint32,
     minor: uint32,
@@ -104,6 +116,7 @@ type winver_raw = {
     csd_version: str,
 }
 
+#: Raw macOS version information structure.
 type macver_raw = {
     release: str,
     version: str,
@@ -112,11 +125,29 @@ type macver_raw = {
     machine_arch: str,
 }
 
+#: Gets the Unix uname information.
+#: Returns:
+#:   a uname_raw structure on success, or an io_errno on failure.
 intrinsic def rt_uname() -> result[uname_raw, io_errno]
+#: Gets the C library version (Unix only).
+#: Returns:
+#:   a libc_version structure on success, or an io_errno on failure.
 intrinsic def rt_libc_version() -> result[libc_version, io_errno]
+#: Gets the Windows version information (Windows only).
+#: Returns:
+#:   a winver_raw structure on success, or an io_errno on failure.
 intrinsic def rt_windows_version() -> result[winver_raw, io_errno]
+#: Gets the macOS version information (macOS only).
+#: Returns:
+#:   a macver_raw structure on success, or an io_errno on failure.
 intrinsic def rt_macos_version() -> result[macver_raw, io_errno]
+#: Gets the hostname of the machine.
+#: Returns:
+#:   the hostname string on success, or an io_errno on failure.
 intrinsic def rt_gethostname() -> result[str, io_errno]
+#: Gets the processor name.
+#: Returns:
+#:   the processor name string on success, or an io_errno on failure.
 intrinsic def rt_processor_name() -> result[str, io_errno]
 
 # ---------------------------------------------------------------------------
@@ -134,48 +165,64 @@ intrinsic def rt_processor_name() -> result[str, io_errno]
 # straight into `target_os_family()`'s body instead.
 # ---------------------------------------------------------------------------
 
-# `os_family` equality has no runtime `==` codegen (only the compile-time
-# evaluator understands sum-type equality — see spec/std-platform.md), so
-# these are spelled with `match` rather than `target_os_family() == @unix`.
+#: os_family equality has no runtime == codegen (only the compile-time
+#: evaluator understands sum-type equality — see spec/std-platform.md), so
+#: these are spelled with match rather than target_os_family() == @unix.
 
+#: Checks if the target operating system is Unix-like (Linux, macOS, BSD).
+#: Returns:
+#:   true if the target OS is Unix-like, false otherwise.
 pub pure def is_unix() -> bool:
     match target_os_family():
         @unix => true
         _ => false
 
+#: Checks if the target operating system is Windows.
+#: Returns:
+#:   true if the target OS is Windows, false otherwise.
 pub pure def is_windows() -> bool:
     match target_os_family():
         @windows => true
         _ => false
 
+#: Checks if the target operating system is macOS.
+#: Returns:
+#:   true if the target OS is macOS, false otherwise.
 pub pure def is_macos() -> bool:
     match target_os_family():
         @macos => true
         _ => false
 
-# ---------------------------------------------------------------------------
-# Runtime queries — `?` propagates a failing intrinsic call, converting its
-# `io_errno` to `io_error` via `impl from[io_errno] for io_error` (std.io).
-# ---------------------------------------------------------------------------
+#: Runtime queries — ? propagates a failing intrinsic call, converting its
+#: io_errno to io_error via impl from[io_errno] for io_error (std.io).
 
+#: Gets the hostname of the machine.
+#: Returns:
+#:   the hostname string on success, or an io_error on failure.
 pub def node() -> result[str, io_error]:
     let name = rt_gethostname()?
     return @ok(name)
 
+#: Gets the processor name.
+#: Returns:
+#:   the processor name string on success, or an io_error on failure.
 pub def processor() -> result[str, io_error]:
     let name = rt_processor_name()?
     return @ok(name)
 
-# `release()`/`version()` genuinely differ per platform. A `static if`-gated
-# family of definitions (compiling only the branch matching `TARGET_OS_FAMILY`)
-# would be a natural fit, but item-level `static if` only splices its taken
-# branch's declarations in for that same file's own compile-time checking —
-# it doesn't register them in the module's ordinary scope for other
-# functions to call (`target_os_family`/`is_unix` etc. above are declared
-# unconditionally for the same reason `intrinsic def` is, just above). So
-# instead there is one unconditional definition of each, branching on the
-# *runtime* value `target_os_family()` returns.
+#: release()/version() genuinely differ per platform. A static if-gated
+#: family of definitions (compiling only the branch matching TARGET_OS_FAMILY)
+#: would be a natural fit, but item-level static if only splices its taken
+#: branch's declarations in for that same file's own compile-time checking —
+#: it doesn't register them in the module's ordinary scope for other
+#: functions to call (target_os_family/is_unix etc. above are declared
+#: unconditionally for the same reason intrinsic def is, just above). So
+#: instead there is one unconditional definition of each, branching on the
+#: runtime value target_os_family() returns.
 
+#: Gets the OS release string (e.g., kernel version on Unix, Windows version).
+#: Returns:
+#:   the release string on success, or an io_error on failure.
 pub def release() -> result[str, io_error]:
     match target_os_family():
         @unix =>:
@@ -189,6 +236,9 @@ pub def release() -> result[str, io_error]:
             return @ok(raw.release)
         @other(_) => @err(io_error.from(io_errno { code: 0 }))  # ENOSYS equivalent
 
+#: Gets the OS version string (e.g., more detailed version information).
+#: Returns:
+#:   the version string on success, or an io_error on failure.
 pub def version() -> result[str, io_error]:
     match target_os_family():
         @unix =>:
@@ -202,18 +252,23 @@ pub def version() -> result[str, io_error]:
             return @ok(raw.version)
         @other(_) => @err(io_error.from(io_errno { code: 0 }))
 
-# ---------------------------------------------------------------------------
-# Cross-platform convenience
-# ---------------------------------------------------------------------------
+#: Cross-platform convenience
 
-# `?` cannot express "swallow the error and continue" — it only
-# propagates — so converting each `result` to `option` is spelled with an
-# explicit `match`, factored into this one private helper.
+#: ? cannot express "swallow the error and continue" — it only
+#: propagates — so converting each result to option is spelled with an
+#: explicit match, factored into this one private helper.
+#: Args:
+#:   r: a result value to convert.
+#: Returns:
+#:   some(value) if r is @ok, none if r is @err.
 priv def result_to_option(r: result[str, io_error]) -> option[str]:
     match r:
         @ok(v) => @some(v)
         @err(_) => @none
 
+#: Gathers comprehensive platform information similar to Unix uname().
+#: Returns:
+#:   a platform_info structure with system information.
 pub def uname() -> platform_info:
     platform_info {
         system: target_os(),
@@ -227,6 +282,10 @@ pub def uname() -> platform_info:
         os_family: target_os_family(),
     }
 
+#: Returns a single-line platform identifier string in the format:
+#: os-release-architecture-processor.
+#: Returns:
+#:   a platform identifier string.
 pub def platform() -> str:
     let rel = match release():
         @ok(s) => s
@@ -236,12 +295,13 @@ pub def platform() -> str:
         @err(_) => "unknown"
     return "{target_os()}-{rel}-{target_arch().show()}-{proc}"
 
-# ---------------------------------------------------------------------------
-# Kira runtime information — all compile-time constants. `kira_version`/
-# `kira_implementation`/`kira_compiler`/`kira_build_date` are generated
-# above by the driver (see the top-of-file comment).
-# ---------------------------------------------------------------------------
+#: Kira runtime information — all compile-time constants. kira_version/
+#: kira_implementation/kira_compiler/kira_build_date are generated
+#: above by the driver (see the top-of-file comment).
 
+#: Gets build information about the Kira compiler.
+#: Returns:
+#:   a kira_build structure with version and compiler information.
 pub pure def kira_build_info() -> kira_build:
     kira_build {
         version: kira_version(),
@@ -250,11 +310,12 @@ pub pure def kira_build_info() -> kira_build:
         build_date: kira_build_date(),
     }
 
-# ---------------------------------------------------------------------------
-# Platform-specific queries — `@none` on a platform other than the one they
-# describe, or when the underlying intrinsic fails; the caller uses `if let`.
-# ---------------------------------------------------------------------------
+#: Platform-specific queries — @none on a platform other than the one they
+#: describe, or when the underlying intrinsic fails; the caller uses if let.
 
+#: Gets C library version information (Unix-only).
+#: Returns:
+#:   some(libc_version) on Unix systems, none otherwise or on error.
 pub def libc_ver() -> option[libc_version]:
     if not is_unix():
         return @none
@@ -262,6 +323,9 @@ pub def libc_ver() -> option[libc_version]:
         @ok(v) => @some(v)
         @err(_) => @none
 
+#: Gets Windows version information (Windows-only).
+#: Returns:
+#:   some(windows_version) on Windows systems, none otherwise or on error.
 pub def win32_ver() -> option[windows_version]:
     if not is_windows():
         return @none
@@ -269,6 +333,9 @@ pub def win32_ver() -> option[windows_version]:
         @ok(v) => @some(parse_windows_version(v))
         @err(_) => @none
 
+#: Gets macOS version information (macOS-only).
+#: Returns:
+#:   some(macos_version) on macOS systems, none otherwise or on error.
 pub def mac_ver() -> option[macos_version]:
     if not is_macos():
         return @none

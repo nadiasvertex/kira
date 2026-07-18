@@ -1,58 +1,158 @@
 module std.traits
 
+#: Conversion from a value of type T to self.
 pub trait from[T]:
+    #: Converts a value of type T into the implementing type.
+    #: Args:
+    #:   value: the value to convert from.
+    #: Returns:
+    #:   the converted value.
     def from(value: T) -> self
 
+#: Conversion from self into a value of type T.
 pub trait into[T]:
+    #: Converts self into a value of type T.
+    #: Returns:
+    #:   the converted value.
     def into(self) -> T
 
+#: Cleanup and resource deallocation for a value.
 pub trait drop:
+    #: Deallocates resources associated with this value when it goes out of scope.
+    #: Args:
+    #:   self: the value to clean up (moved).
+    #: Returns:
+    #:   unit (nothing).
     def drop(mut self) -> unit
 
+#: Equality comparison.
 pub trait eq:
+    #: Checks if two values are equal.
+    #: Args:
+    #:   self: the first value.
+    #:   other: the second value to compare.
+    #: Returns:
+    #:   true if the values are equal, false otherwise.
     def eq(self, other: &self) -> bool
 
+#: Ordering comparison. Requires eq to be implemented.
 pub trait ord requires eq:
+    #: Compares two values and returns their ordering.
+    #: Args:
+    #:   self: the first value.
+    #:   other: the second value to compare.
+    #: Returns:
+    #:   an ordering indicating whether self is less than, equal to, or greater than other.
     def cmp(self, other: &self) -> ordering
 
+#: Hashing a value to produce a hash code.
 pub trait hash:
+    #: Computes a 64-bit hash value for this value.
+    #: Returns:
+    #:   a hash value of type uint64.
     def hash(self) -> uint64
 
+#: Converting a value to its string representation (user-friendly formatting).
 pub trait show:
+    #: Converts the value to a user-friendly string representation.
+    #: Returns:
+    #:   a string representation of the value.
     def show(self) -> str
 
+#: Converting a value to its debug representation (detailed formatting).
 pub trait debug:
+    #: Converts the value to a detailed debug string representation, typically with
+    #: additional information useful for debugging.
+    #: Returns:
+    #:   a debug string representation of the value.
     def debug(self) -> str
 
+#: Converting a value to its hexadecimal string representation.
 pub trait hex:
+    #: Converts the value to a hexadecimal (base-16) string representation.
+    #: Returns:
+    #:   a hexadecimal string representation of the value.
     def hex(self) -> str
 
+#: Converting a value to its octal string representation.
 pub trait octal:
+    #: Converts the value to an octal (base-8) string representation.
+    #: Returns:
+    #:   an octal string representation of the value.
     def octal(self) -> str
 
+#: Converting a value to its binary string representation.
 pub trait binary:
+    #: Converts the value to a binary (base-2) string representation.
+    #: Returns:
+    #:   a binary string representation of the value.
     def binary(self) -> str
 
+#: Addition operator. The associated type output specifies the return type.
 pub trait add:
+    #: The type returned by the addition operation.
     type output
+    #: Adds another value to this value.
+    #: Args:
+    #:   self: the first operand.
+    #:   other: the second operand to add.
+    #: Returns:
+    #:   the result of the addition.
     def add(self, other: self) -> self.output
 
+#: Subtraction operator. The associated type output specifies the return type.
 pub trait sub:
+    #: The type returned by the subtraction operation.
     type output
+    #: Subtracts another value from this value.
+    #: Args:
+    #:   self: the first operand.
+    #:   other: the second operand to subtract.
+    #: Returns:
+    #:   the result of the subtraction.
     def sub(self, other: self) -> self.output
 
+#: Multiplication operator. The associated type output specifies the return type.
 pub trait mul:
+    #: The type returned by the multiplication operation.
     type output
+    #: Multiplies this value by another value.
+    #: Args:
+    #:   self: the first operand.
+    #:   other: the second operand to multiply.
+    #: Returns:
+    #:   the result of the multiplication.
     def mul(self, other: self) -> self.output
 
+#: Division operator. The associated type output specifies the return type.
 pub trait div:
+    #: The type returned by the division operation.
     type output
+    #: Divides this value by another value.
+    #: Args:
+    #:   self: the first operand (dividend).
+    #:   other: the second operand to divide by (divisor).
+    #: Returns:
+    #:   the result of the division.
     def div(self, other: self) -> self.output
 
+#: Remainder operator. The associated type output specifies the return type.
 pub trait rem:
+    #: The type returned by the remainder operation.
     type output
+    #: Computes the remainder of dividing this value by another value.
+    #: Args:
+    #:   self: the first operand (dividend).
+    #:   other: the second operand to divide by (divisor).
+    #: Returns:
+    #:   the remainder of the division.
     def rem(self, other: self) -> self.output
 
+#: Unary negation operator. The associated type output specifies the return type.
 pub trait neg:
+    #: The type returned by the negation operation.
     type output
+    #: Negates this value (typically returns its additive inverse).
+    #: Returns:
+    #:   the negated value.
     def neg(self) -> self.output

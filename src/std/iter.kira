@@ -1,4 +1,10 @@
 module std.iter
 
+#: An iterator that yields values of type T.
 pub trait iterator[T]:
+    #: Advances the iterator and returns the next value.
+    #: Args:
+    #:   self: the iterator (moved).
+    #: Returns:
+    #:   some(value) if a value is available, none otherwise.
     def next(mut self) -> option[T]

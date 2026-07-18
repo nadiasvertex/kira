@@ -1,9 +1,12 @@
 module std.fmt
 
+#: Text alignment modes for formatting.
 pub type align_mode = @left | @right | @center
 
+#: Sign display modes for numeric formatting.
 pub type sign_mode = @always | @negative_only | @space
 
+#: Specification for how to format a value. Controls alignment, sign, padding, width, and precision.
 pub type format_spec = {
     fill: char,
     align: option[align_mode],
@@ -14,15 +17,17 @@ pub type format_spec = {
     precision: option[usize]
 }
 
-# Single-field wrapper structs so a scalar value stays heap-representable
-# when passed to an `intrinsic def` — every intrinsic argument/return is an
-# opaque heap pointer (`src/runtime/fmt.h`'s doc comment), the same
-# convention `std.io`'s `raw_fd = { value: int64 }` already uses.
+#: Single-field wrapper for uint64 to pass across intrinsic boundaries.
 type box_u64 = { v: uint64 }
+#: Single-field wrapper for uint32 to pass across intrinsic boundaries.
 type box_u32 = { v: uint32 }
+#: Single-field wrapper for uint8 to pass across intrinsic boundaries.
 type box_u8 = { v: uint8 }
+#: Single-field wrapper for usize to pass across intrinsic boundaries.
 type box_usize = { v: usize }
+#: Single-field wrapper for bool to pass across intrinsic boundaries.
 type box_bool = { v: bool }
+#: Single-field wrapper for float64 to pass across intrinsic boundaries.
 type box_f64 = { v: float64 }
 
 intrinsic def rt_str_concat(a: str, b: str) -> str
@@ -87,6 +92,12 @@ def bool_text(b: bool) -> str:
         return "true"
     return "false"
 
+#: Pads a string value according to the format specification.
+#: Args:
+#:   s: the string to pad.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string with padding applied.
 pub def pad_str(s: str, spec: format_spec) -> str:
     let truncated = match spec.precision:
         @some(prec) => rt_str_truncate_scalars(s, box_usize { v: prec })
@@ -108,6 +119,14 @@ pub def pad_str(s: str, spec: format_spec) -> str:
             let right_pad = pad_total - left_pad
             rt_str_concat(rt_str_concat(repeat_char(spec.fill, left_pad), truncated), repeat_char(spec.fill, right_pad))
 
+#: Pads an integer value (with optional sign and prefix) according to the format specification.
+#: Args:
+#:   negative: whether the integer is negative.
+#:   prefix: an optional prefix (e.g., "0x" for hex).
+#:   digits: the digit string representation.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted integer string with padding applied.
 pub def pad_integral(negative: bool, prefix: str, digits: str, spec: format_spec) -> str:
     let sign_char = sign_prefix_char(negative, spec.sign)
     let full_prefix = alternate_prefix(spec.alternate, prefix)
@@ -142,49 +161,131 @@ pub def pad_integral(negative: bool, prefix: str, digits: str, spec: format_spec
 #  the embedded value, build a `format_spec` literal, and call one of these.
 # ==========================================================================
 
+#: Formats a string value with the given specification.
+#: Args:
+#:   s: the string to format.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_show_str(s: str, spec: format_spec) -> str:
     return pad_str(s, spec)
 
+#: Formats a string value in debug mode (quoted and escaped) with the given specification.
+#: Args:
+#:   s: the string to format.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_debug_str(s: str, spec: format_spec) -> str:
     return pad_str(rt_str_concat(rt_str_concat("\"", s), "\""), spec)
 
+#: Formats a boolean value as "true" or "false" with the given specification.
+#: Args:
+#:   b: the boolean value to format.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_show_bool(b: bool, spec: format_spec) -> str:
     return pad_str(bool_text(b), spec)
 
+#: Formats a character value with the given specification.
+#: Args:
+#:   c: the character to format.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_show_char(c: char, spec: format_spec) -> str:
     return pad_str(rt_fmt_char_from_codepoint(box_u32 { v: c as uint32 }), spec)
 
+#: Formats a Unicode codepoint as a character with the given specification.
+#: Args:
+#:   cp: the Unicode codepoint to format.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_char_codepoint(cp: uint32, spec: format_spec) -> str:
     return pad_str(rt_fmt_char_from_codepoint(box_u32 { v: cp }), spec)
 
+#: Formats a 64-bit signed integer in decimal with the given specification.
+#: Args:
+#:   v: the integer value to format.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_show_i64(v: int64, spec: format_spec) -> str:
     return fmt_radix_i64(v, 10, false, "", spec)
 
+#: Formats a 64-bit unsigned integer in decimal with the given specification.
+#: Args:
+#:   v: the integer value to format.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_show_u64(v: uint64, spec: format_spec) -> str:
     return fmt_radix_u64(v, 10, false, "", spec)
 
+#: Formats a 64-bit signed integer in the specified radix with optional prefix and uppercase.
+#: Args:
+#:   v: the integer value to format.
+#:   radix: the base for formatting (2-36).
+#:   uppercase: whether to use uppercase letters (A-Z) for digits > 9.
+#:   prefix: an optional prefix string (e.g., "0x" for hex).
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_radix_i64(v: int64, radix: uint8, uppercase: bool, prefix: str, spec: format_spec) -> str:
     let negative = v < 0
     let magnitude = if negative: (-v) as uint64 else: v as uint64
     let digits = rt_fmt_radix_digits(box_u64 { v: magnitude }, box_u8 { v: radix }, box_bool { v: uppercase })
     return pad_integral(negative, prefix, digits, spec)
 
+#: Formats a 64-bit unsigned integer in the specified radix with optional prefix and uppercase.
+#: Args:
+#:   v: the integer value to format.
+#:   radix: the base for formatting (2-36).
+#:   uppercase: whether to use uppercase letters (A-Z) for digits > 9.
+#:   prefix: an optional prefix string (e.g., "0x" for hex).
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_radix_u64(v: uint64, radix: uint8, uppercase: bool, prefix: str, spec: format_spec) -> str:
     let digits = rt_fmt_radix_digits(box_u64 { v: v }, box_u8 { v: radix }, box_bool { v: uppercase })
     return pad_integral(false, prefix, digits, spec)
 
+#: Formats a 64-bit floating-point number in fixed-point notation.
+#: Args:
+#:   v: the floating-point value to format.
+#:   precision: the number of digits after the decimal point.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_float_fixed(v: float64, precision: usize, spec: format_spec) -> str:
     let negative = v < 0.0
     let magnitude = if negative: -v else: v
     let digits = rt_fmt_f64_fixed(box_f64 { v: magnitude }, box_usize { v: precision })
     return pad_integral(negative, "", digits, spec)
 
+#: Formats a 64-bit floating-point number in scientific notation.
+#: Args:
+#:   v: the floating-point value to format.
+#:   precision: the number of digits after the decimal point.
+#:   uppercase: whether to use uppercase E for the exponent.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_float_sci(v: float64, precision: usize, uppercase: bool, spec: format_spec) -> str:
     let negative = v < 0.0
     let magnitude = if negative: -v else: v
     let digits = rt_fmt_f64_sci(box_f64 { v: magnitude }, box_usize { v: precision }, box_bool { v: uppercase })
     return pad_integral(negative, "", digits, spec)
 
+#: Formats a 64-bit floating-point number in general notation (automatic choice between fixed and scientific).
+#: Args:
+#:   v: the floating-point value to format.
+#:   precision: the precision for formatting (number of significant digits).
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
 pub def fmt_float_general(v: float64, precision: usize, spec: format_spec) -> str:
     let negative = v < 0.0
     let magnitude = if negative: -v else: v
