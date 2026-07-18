@@ -661,6 +661,15 @@ struct checked_types {
   /// (a plain same-module/imported bare-name call, a method call) or never
   /// resolved at all.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees;
+  /// Every arithmetic operator (`+`/`-`/`*`/`/`/`%`) resolved against a
+  /// user struct/sum operand's `add`/`sub`/`mul`/`div`/`rem` impl — see
+  /// `checker::require_operand_trait` (`check.cpp`). `receiver` is always
+  /// `binary_expr::lhs` (the operator's overload trait method takes the
+  /// other operand as its sole explicit argument). Absent for a numeric
+  /// operator or one whose operand trait requirement failed to resolve to a
+  /// real method (e.g. a missing impl, already diagnosed separately).
+  std::unordered_map<const ast::binary_expr *, resolved_callee>
+      operator_dispatches;
   /// Every interpolation segment's resolved rendering dispatch — see
   /// `interp_dispatch`'s doc comment. Keyed by the segment's `value`
   /// expression pointer (`ast::interp_segment::value.get()`).

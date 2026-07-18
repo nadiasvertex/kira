@@ -1,0 +1,15 @@
+module main
+
+def main() -> int32:
+    let a = "hello"
+    let b = "hello"
+    let c = "world"
+    if a == b:
+        println("eq-ok")
+    else:
+        println("eq-fail")
+    if a != c:
+        println("ne-ok")
+    else:
+        println("ne-fail")
+    return 0

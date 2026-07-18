@@ -46,7 +46,7 @@ filegroup(
 
 filegroup(
     name = "std_sources",
-    srcs = glob(["std/*.kira"]),
+    srcs = glob(["std/*.kira", "std/**/*.kira"]),
     visibility = ["//visibility:public"],
 )
 

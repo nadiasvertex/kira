@@ -2919,6 +2919,29 @@ private:
       return compile_assign(dynamic_cast<const hir::hir_assign &>(node));
     case hir_node_kind::hir_expr_stmt: {
       const auto &expr_stmt = dynamic_cast<const hir::hir_expr_stmt &>(node);
+      // `hir::lowerer::lower_block` wraps a block's trailing `if`/`match`
+      // in `hir_expr_stmt` even when nothing reads the value — e.g. a
+      // `while`/`for` loop body (nothing ever consumes it) or a generator
+      // body (deliberately `k_unknown_type` so the tail isn't force-typed
+      // against `generator[T]`; see that call site's own comment). Route
+      // those through the same no-result path an ordinary statement-
+      // position `hir_if`/`hir_match` already uses below instead of
+      // `compile_expr`, which would otherwise call `storage_type_for` on
+      // `k_unknown_type` and fail — nobody needs the value materialized.
+      if (types_.is_unknown(expr_stmt.expr->type)) {
+        if (expr_stmt.expr->kind == hir_node_kind::hir_if) {
+          auto terminated = compile_if(
+              dynamic_cast<const hir::hir_if &>(*expr_stmt.expr), nullptr);
+          if (!terminated.has_value()) {
+            return std::unexpected(terminated.error());
+          }
+          return *terminated;
+        }
+        if (expr_stmt.expr->kind == hir_node_kind::hir_match) {
+          return compile_match(
+              dynamic_cast<const hir::hir_match &>(*expr_stmt.expr), nullptr);
+        }
+      }
       auto result = compile_expr(*expr_stmt.expr);
       if (!result.has_value()) {
         return std::unexpected(result.error());

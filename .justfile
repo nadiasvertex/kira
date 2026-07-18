@@ -27,7 +27,7 @@ package:
     tarball="$dist_root/kira-$version-$platform-$machine.tar.bz2"
 
     rm -rf "$dist_root"
-    mkdir -p "$tar_root/bin" "$tar_root/share/kira/std" "$tar_root/lib/kira"
+    mkdir -p "$tar_root/bin" "$tar_root/share/kira/std/fs" "$tar_root/lib/kira"
 
     # `kira build` (AOT native compile) shells out to `c++` and links the
     # produced object file against these four archives (`find_bazel_archive`,
@@ -52,6 +52,7 @@ package:
           "bazel-bin/src/parser/libparser.a" \
           "$tar_root/lib/kira/"
     cp src/std/*.kira "$tar_root/share/kira/std/"
+    cp src/std/fs/*.kira "$tar_root/share/kira/std/fs/"
 
     cp "README.md" "$tar_root/README.md"
     cp -R "spec" "$tar_root/spec"
@@ -77,7 +78,7 @@ package:
       deb="$dist_root/kira_${version}_${deb_arch}.deb"
 
       mkdir -p "$deb_root/usr/bin" "$deb_root/usr/share/doc/kira" \
-        "$deb_root/usr/share/kira/std" "$deb_root/usr/lib/kira"
+        "$deb_root/usr/share/kira/std/fs" "$deb_root/usr/lib/kira"
       cp -L "bazel-bin/src/kira" "$deb_root/usr/bin/kira"
       chmod 0755 "$deb_root/usr/bin/kira"
       cp "README.md" "$deb_root/usr/share/doc/kira/README.md"
@@ -92,6 +93,7 @@ package:
             "bazel-bin/src/parser/libparser.a" \
             "$deb_root/usr/lib/kira/"
       cp src/std/*.kira "$deb_root/usr/share/kira/std/"
+      cp src/std/fs/*.kira "$deb_root/usr/share/kira/std/fs/"
 
       printf '%s\n' \
         "Package: kira" \
@@ -130,7 +132,7 @@ install prefix=(env('HOME') / '.kira'):
       //src/semantic:semantic \
       //src/parser:parser
 
-    mkdir -p "$prefix/bin" "$prefix/share/kira/std" "$prefix/lib/kira"
+    mkdir -p "$prefix/bin" "$prefix/share/kira/std/fs" "$prefix/lib/kira"
     cp -L "bazel-bin/src/kira" "$prefix/bin/kira"
     chmod 0755 "$prefix/bin/kira"
     cp -L "bazel-bin/src/llvm_codegen/libaot_runtime.lo" \
@@ -139,6 +141,7 @@ install prefix=(env('HOME') / '.kira'):
           "bazel-bin/src/parser/libparser.a" \
           "$prefix/lib/kira/"
     cp src/std/*.kira "$prefix/share/kira/std/"
+    cp src/std/fs/*.kira "$prefix/share/kira/std/fs/"
 
     printf 'Installed kira to %s\n' "$prefix"
     printf 'Add %s/bin to your PATH to use it.\n' "$prefix"

@@ -1,0 +1,22 @@
+module main
+
+pub type vec2 = { x: int32, y: int32 }
+
+impl add for vec2:
+    type output = vec2
+    def add(self, other: self) -> self.output:
+        return vec2 { x: self.x + other.x, y: self.y + other.y }
+
+impl div for vec2:
+    type output = vec2
+    def div(self, other: self) -> self.output:
+        return vec2 { x: self.x / other.x, y: self.y / other.y }
+
+def main() -> int32:
+    let a = vec2 { x: 1, y: 6 }
+    let b = vec2 { x: 3, y: 2 }
+    let sum = a + b
+    let quot = b / a
+    println("{sum.x} {sum.y}")
+    println("{quot.x} {quot.y}")
+    return 0

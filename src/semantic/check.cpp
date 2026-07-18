@@ -799,6 +799,7 @@ public:
         .struct_literal_field_types = std::move(struct_literal_field_types_),
         .call_argument_mappings = std::move(call_argument_mappings_),
         .resolved_callees = std::move(resolved_callees_),
+        .operator_dispatches = std::move(operator_dispatches_),
         .interp_dispatches = std::move(interp_dispatches_),
         .for_iterator_dispatches = std::move(for_iterator_dispatches_),
         .fmt_types = fmt_types,
@@ -915,6 +916,25 @@ private:
   /// Every module-qualified or type-qualified call resolved by
   /// `infer_qualified_call`. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees_;
+  /// Every arithmetic operator resolved against a user operand's overload
+  /// trait method, recorded by `require_operand_trait`. Handed to the
+  /// caller via `take_checked_types`.
+  std::unordered_map<const ast::binary_expr *, resolved_callee>
+      operator_dispatches_;
+  /// Per-(target type, trait name) associated-type bindings captured while
+  /// checking that trait's impl (`check_impl_decl`) — the only place
+  /// `self_assoc_types_` is ever populated. A method resolved by
+  /// `find_method` from *outside* its own impl (an operator overload's
+  /// dispatch, say) has no `self_assoc_types_` context of its own by the
+  /// time it's looked up, since that map is scoped to the impl body's own
+  /// checking and restored afterward — so a return type mentioning
+  /// `self.output` would otherwise resolve to `unknown`. Consulted by
+  /// `resolve_operator_return_type`, which temporarily reinstates the
+  /// right impl's bindings before resolving such a method's return type.
+  std::unordered_map<type_id,
+                     std::unordered_map<std::string,
+                                        std::unordered_map<std::string, type_id>>>
+      impl_assoc_types_;
   /// Every interpolation segment's resolved rendering dispatch — see
   /// `interp_dispatch`'s doc comment in types.h. Populated by
   /// `check_interpolated_string`. Handed to the caller via
@@ -5623,22 +5643,67 @@ private:
     }
   }
 
+  /// Resolves `method`'s return type the way it would have resolved *inside
+  /// its own impl* — reinstating that impl's `self.output`-style associated
+  /// type bindings (`impl_assoc_types_`, keyed by `(target, trait_name)`)
+  /// around an ordinary `signature_return_type` call. Without this, a method
+  /// looked up from outside its impl (an operator overload's dispatch) would
+  /// see `self_assoc_types_` as whatever it happened to be left at — empty,
+  /// most of the time — and `self.output` would resolve to `unknown`.
+  auto resolve_operator_return_type(type_id target, std::string_view trait_name,
+                                    const method_entry &method) -> type_id {
+    const auto target_it = impl_assoc_types_.find(target);
+    if (target_it == impl_assoc_types_.end()) {
+      return signature_return_type(*method.decl, method.owner);
+    }
+    const auto trait_it = target_it->second.find(std::string(trait_name));
+    if (trait_it == target_it->second.end()) {
+      return signature_return_type(*method.decl, method.owner);
+    }
+    const auto saved_assoc = self_assoc_types_;
+    self_assoc_types_ = trait_it->second;
+    const auto result = signature_return_type(*method.decl, method.owner);
+    self_assoc_types_ = saved_assoc;
+    return result;
+  }
+
   /// For a user struct/sum/opaque operand, requires it to implement
   /// `trait_name` (reporting a missing-impl error with an `impl`/`deriving`
-  /// hint otherwise); returns `unknown` for anything else, since the result
-  /// type of an overloaded operator is decided by its impl, not guessed here.
-  auto require_operand_trait(source_span span, type_id operand,
+  /// hint otherwise); returns `unknown` for anything else. When `binary` is
+  /// an arithmetic operator being dispatched to a real overload method (see
+  /// `operator_trait_for`), also records an `operator_dispatches_` entry so
+  /// `hir::lower_binary` emits a call to that method instead of a raw
+  /// numeric opcode, and returns the method's real (impl-specific) return
+  /// type rather than `unknown`. `wire_dispatch` is true for `==`/`!=` too
+  /// (dispatches to `eq`), but false for ordering comparisons (`<`/`<=`/
+  /// `>`/`>=`), which always yield `bool` regardless of this function's
+  /// return value and have no overload-method dispatch of their own yet.
+  auto require_operand_trait(const ast::binary_expr &binary, type_id operand,
                              std::string_view trait_name,
-                             std::string_view op_name) -> type_id {
-    const auto entry = types_.entry(strip_refs(operand));
+                             std::string_view op_name, bool wire_dispatch)
+      -> type_id {
+    const auto target = strip_refs(operand);
+    const auto entry = types_.entry(target);
     if (entry.kind == type_kind::struct_kind ||
         entry.kind == type_kind::sum_kind ||
         entry.kind == type_kind::opaque_kind) {
       if (type_has_trait(entry, trait_name)) {
+        if (wire_dispatch && binary.lhs != nullptr) {
+          if (const auto *method = find_method(entry, trait_name);
+              method != nullptr && !method->decl->params.empty() &&
+              param_name_of(method->decl->params.front()) == "self") {
+            operator_dispatches_[&binary] =
+                resolved_callee{.decl = method->decl,
+                                .owner_module = method->owner->module_name,
+                                .impl_target_type = entry.name,
+                                .receiver = binary.lhs.get()};
+            return resolve_operator_return_type(target, trait_name, *method);
+          }
+        }
         return k_unknown_type; // operator impl decides the result type
       }
       error_with_help(
-          span,
+          binary.span,
           std::format("operator `{}` is not defined for type `{}`", op_name,
                       entry.name),
           std::format("`{}` does not implement the `{}` trait", entry.name,
@@ -5684,8 +5749,8 @@ private:
     const auto trait_name = operator_trait_for(binary.op);
     if (!types_.is_numeric(lhs)) {
       if (!trait_name.empty()) {
-        return require_operand_trait(binary.lhs->span, lhs, trait_name,
-                                     op_name);
+        return require_operand_trait(binary, lhs, trait_name, op_name,
+                                     /*wire_dispatch=*/true);
       }
       error(binary.span,
             std::format("operator `{}` requires numeric operands, found `{}`",
@@ -5721,7 +5786,11 @@ private:
 
   /// Types `==`/`!=` (`is_equality`) or `<`/`<=`/`>`/`>=`: operands must be
   /// mutually compatible types, and (for a user struct/sum operand) must
-  /// implement `eq`/`ord`. Always yields `bool`.
+  /// implement `eq`/`ord`. Always yields `bool`. For `==`/`!=` against a
+  /// struct/sum/opaque operand, also wires a real `eq` method dispatch
+  /// (mirrors arithmetic operators); `ord` has no dispatch of its own yet
+  /// (`<`/`<=`/`>`/`>=` would need to translate `cmp()`'s `ordering` result,
+  /// not just call through).
   auto infer_comparison(const ast::binary_expr &binary, bool is_equality)
       -> type_id {
     // Comparison, like arithmetic, sees a refined value as its base — an
@@ -5746,9 +5815,41 @@ private:
       return bool_type;
     }
     const auto trait_name = is_equality ? "eq" : "ord";
-    require_operand_trait(binary.span, lhs, trait_name,
-                          ast::binary_op_name(binary.op));
+    require_operand_trait(binary, lhs, trait_name,
+                          ast::binary_op_name(binary.op),
+                          /*wire_dispatch=*/is_equality);
+    if (is_equality) {
+      wire_str_equality_dispatch(binary, lhs);
+    }
     return bool_type;
+  }
+
+  /// Wires `==`/`!=` between two `str` operands to a real call of
+  /// `std.string`'s `str::eq` extend method (`rt_str_eq`-backed) — `str`
+  /// has no scalar bytecode/LLVM representation for `==` to compare
+  /// directly (see `std/string.kira`'s own `eq` doc comment: "Use this
+  /// instead of `==`, which has no `str` codegen yet"). Recorded through
+  /// the same `operator_dispatches_` map arithmetic operators use;
+  /// `hir::lower_binary` negates the call's result for `!=` itself (it
+  /// already has `bin.op`, so no extra bookkeeping is needed here). A
+  /// no-op for anything but two `str` operands — every other builtin
+  /// scalar already has real `==`/`!=` codegen.
+  auto wire_str_equality_dispatch(const ast::binary_expr &binary, type_id lhs)
+      -> void {
+    const auto entry = types_.entry(strip_refs(lhs));
+    if (entry.kind != type_kind::builtin_kind || entry.name != "str" ||
+        binary.lhs == nullptr) {
+      return;
+    }
+    const auto *method = find_extend_method_for_builtin(entry, "eq");
+    if (method == nullptr) {
+      return;
+    }
+    operator_dispatches_[&binary] =
+        resolved_callee{.decl = method->decl,
+                        .owner_module = method->owner->module_name,
+                        .impl_target_type = entry.name,
+                        .receiver = binary.lhs.get()};
   }
 
   /// Infers `expr` expecting `bool` and reports an error if it isn't —
@@ -10460,6 +10561,19 @@ private:
                                       ? stmt.else_body.back()->span
                                       : stmt.span,
                                   "`if`");
+      } else if (types_.entry(result).name == "never") {
+        // No `else`: the untaken path always exists and is implicitly
+        // `unit` — an `if` whose only branch(es) purely diverge (`return`/
+        // `panic`/...) must not make the whole construct register as
+        // `never` itself, or a later statement in the same block becomes
+        // unreachable in the type system's eyes even though control
+        // genuinely falls through when the condition is false. Concretely:
+        // `if cond: return x` followed by more statements — `join_branch_type`
+        // adopts the branch's `never` because `result` started as
+        // `k_unknown_type` (see its "found is `never`" special case), which
+        // is correct when there *is* an `else` (every path is spoken for)
+        // but wrong here.
+        result = unit;
       }
       return result != k_unknown_type ? result : unit;
     }
@@ -11360,6 +11474,14 @@ private:
               ? resolve_type(*assoc.value.type, current_resolve_ctx())
               : k_unknown_type;
       self_assoc_types_.insert_or_assign(assoc.value.name, resolved);
+    }
+
+    // Persist this impl's associated-type bindings under (target, trait) so
+    // a method call resolved from outside the impl (an operator overload's
+    // dispatch — see `resolve_operator_return_type`) can still resolve a
+    // `self.output`-shaped return type correctly.
+    if (!trait_name.empty() && !types_.is_unknown(target)) {
+      impl_assoc_types_[target][trait_name] = self_assoc_types_;
     }
 
     for (const auto &item : decl.items) {

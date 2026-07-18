@@ -927,6 +927,46 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
     return fail(lowering_error_kind::unsupported_construct, bin.span,
                 "binary expression is missing an operand");
   }
+  // An arithmetic operator on a user struct/sum operand resolved to a real
+  // `add`/`sub`/`mul`/`div`/`rem` overload method — see `check.cpp`'s
+  // `require_operand_trait` — lowers to an ordinary call to that method
+  // (lhs as the hidden `self` receiver, rhs as its sole explicit argument)
+  // instead of a raw `hir_binary`, exactly mirroring how `lower_call`
+  // rebuilds a resolved instance-method call.
+  if (const auto found = checked_.operator_dispatches.find(&bin);
+      found != checked_.operator_dispatches.end()) {
+    const auto &resolved = found->second;
+    const auto local_name =
+        std::format("{}::{}", resolved.impl_target_type, resolved.decl->name);
+    auto lhs = lower_expr(*bin.lhs);
+    if (!lhs.has_value()) {
+      return std::unexpected(lhs.error());
+    }
+    auto rhs = lower_expr(*bin.rhs);
+    if (!rhs.has_value()) {
+      return std::unexpected(rhs.error());
+    }
+    const auto symbol = resolve_reference(local_name);
+    auto callee = ptr<hir_expr>(make<hir_local_ref>(
+        bin.span, k_unknown_type, symbol, local_name, resolved.owner_module));
+    auto args = ptr_vec<hir_expr>{};
+    args.reserve(2);
+    args.push_back(std::move(*lhs));
+    args.push_back(std::move(*rhs));
+    auto call = ptr<hir_expr>(hir::make<hir_call>(
+        bin.span, *type, std::move(callee), std::move(args)));
+    // `!=` between two `str` operands dispatches to the same `str::eq`
+    // method as `==` (`check.cpp`'s `wire_str_equality_dispatch` records
+    // one entry for both) — negate its `bool` result here rather than
+    // duplicating the dispatch for a separate `ne` method that doesn't
+    // exist.
+    if (bin.op == ast::binary_op::bang_eq) {
+      return ok_expr(hir::make<hir_unary>(bin.span, *type,
+                                          ast::unary_op::logical_not,
+                                          std::move(call)));
+    }
+    return ok_expr(std::move(call));
+  }
   auto lhs = lower_expr(*bin.lhs);
   if (!lhs.has_value()) {
     return std::unexpected(lhs.error());
@@ -2058,6 +2098,18 @@ auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
   // real `type` and wrapped in `hir_expr_stmt`; everything else (including
   // a mid-body `if`/`match`, which the checker itself types as `unit`)
   // goes through the ordinary `lower_stmt` path unchanged.
+  //
+  // `type` may be `k_unknown_type` here even though the trailing if/match
+  // still gets this treatment — e.g. a generator body, deliberately passed
+  // `k_unknown_type` so the tail isn't force-typed against `generator[T]`
+  // (see `lower_function`'s generator-body call site), or a `while`/`for`
+  // loop body, whose value nothing ever reads. Either way the resulting
+  // `hir_expr_stmt(hir_if/hir_match)` carries a `k_unknown_type` value that
+  // is never actually materialized — `codegen::compile_stmt`'s
+  // `hir_expr_stmt` case special-cases exactly this (an unknown-typed
+  // wrapped if/match) to compile via the statement-position, no-result path
+  // instead of routing through `compile_expr`'s value-producing one, so it
+  // never tries to allocate storage for `k_unknown_type`.
   auto last_index = std::optional<size_t>{};
   for (size_t i = stmts.size(); i-- > 0;) {
     if (stmts[i] != nullptr) {

@@ -1,0 +1,229 @@
+module std.fs.path
+
+# Filesystem path string manipulation (spec/std-fs-path.md). Purely a
+# string-manipulation library — no syscalls, no filesystem access. `raw` is
+# stored as written and every operation performs a linear byte scan as
+# needed; nothing is eagerly split into components.
+#
+# Separator handling is gated on `std.platform.is_windows()` at runtime (not
+# `static if`), matching the pattern `std.platform.kira` already uses for
+# its own platform-dependent bodies.
+
+pub type path = { raw: str }
+
+# ---------------------------------------------------------------------------
+# Internal scanning helpers
+# ---------------------------------------------------------------------------
+
+priv def is_sep(c: str) -> bool:
+    if c.eq("/"):
+        return true
+    if std.platform.is_windows() and c.eq("\\"):
+        return true
+    return false
+
+priv def native_sep() -> str:
+    if std.platform.is_windows():
+        return "\\"
+    return "/"
+
+# Reverse byte-index scan for the last separator in `raw`.
+priv def last_sep_index(raw: str) -> option[usize]:
+    var i: usize = raw.len()
+    while i > 0:
+        i = i - 1
+        if is_sep(raw[i .. i + 1]):
+            return @some(i)
+    return @none
+
+priv def strip_trailing_seps(raw: str) -> str:
+    var end: usize = raw.len()
+    while end > 0 and is_sep(raw[end - 1 .. end]):
+        end = end - 1
+    return raw[0 .. end]
+
+# Reverse byte-index scan for the last `.` in `name`.
+priv def last_dot_index(name: str) -> option[usize]:
+    var i: usize = name.len()
+    while i > 0:
+        i = i - 1
+        if name[i .. i + 1].eq("."):
+            return @some(i)
+    return @none
+
+priv def is_alpha(c: str) -> bool:
+    return "abcdefghijklmnopqrstuvwxyz".contains(c.to_lowercase())
+
+priv def strip_leading_dot(ext: str) -> str:
+    if ext.len() > 0 and ext[0 .. 1].eq("."):
+        return ext[1 .. ext.len()]
+    return ext
+
+# ---------------------------------------------------------------------------
+# Construction / core traits
+# ---------------------------------------------------------------------------
+
+impl from[str] for path:
+    def from(value: str) -> path:
+        return path { raw: value }
+
+pub def path_of(s: str) -> path:
+    return path.from(s)
+
+impl show for path:
+    def show(self) -> str:
+        return self.raw
+
+impl div for path:
+    type output = path
+    def div(self, other: path) -> path:
+        return self.join(other.as_str())
+
+impl eq for path:
+    def eq(self, other: &self) -> bool:
+        return self.raw.eq(other.raw)
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+extend path:
+    pub def as_str(self) -> str:
+        return self.raw
+
+    pub def is_absolute(self) -> bool:
+        let raw = self.raw
+        if raw.len() == 0:
+            return false
+        if is_sep(raw[0 .. 1]):
+            return true
+        if std.platform.is_windows() and raw.len() >= 3:
+            let drive = raw[0 .. 1]
+            let colon = raw[1 .. 2]
+            if is_alpha(drive) and colon.eq(":") and is_sep(raw[2 .. 3]):
+                return true
+        return false
+
+    pub def is_relative(self) -> bool:
+        return not self.is_absolute()
+
+    pub def join(self, component: str) -> path:
+        let comp_path = path_of(component)
+        if comp_path.is_absolute():
+            return comp_path
+        let base = strip_trailing_seps(self.raw)
+        let clen = component.len()
+        var start: usize = 0
+        while start < clen and is_sep(component[start .. start + 1]):
+            start = start + 1
+        let comp = component[start .. clen]
+        if base.len() == 0:
+            return path_of(comp)
+        return path_of("{base}{native_sep()}{comp}")
+
+    pub def parent(self) -> option[path]:
+        let stripped = strip_trailing_seps(self.raw)
+        if stripped.len() == 0:
+            return @none
+        match last_sep_index(stripped):
+            @none =>:
+                return @none
+            @some(idx) =>:
+                if idx == 0:
+                    return @some(path_of(stripped[0 .. 1]))
+                return @some(path_of(stripped[0 .. idx]))
+
+    pub def filename(self) -> option[str]:
+        let raw = self.raw
+        let n = raw.len()
+        if n == 0:
+            return @none
+        if is_sep(raw[n - 1 .. n]):
+            return @none
+        match last_sep_index(raw):
+            @none =>:
+                return @some(raw)
+            @some(idx) =>:
+                return @some(raw[idx + 1 .. n])
+
+    pub def stem(self) -> option[str]:
+        match self.filename():
+            @none =>:
+                return @none
+            @some(name) =>:
+                match last_dot_index(name):
+                    @none =>:
+                        return @some(name)
+                    @some(idx) =>:
+                        if idx == 0:
+                            return @some(name)
+                        return @some(name[0 .. idx])
+
+    pub def extension(self) -> option[str]:
+        match self.filename():
+            @none =>:
+                return @none
+            @some(name) =>:
+                match last_dot_index(name):
+                    @none =>:
+                        return @none
+                    @some(idx) =>:
+                        if idx == 0:
+                            return @none
+                        return @some(name[idx + 1 .. name.len()])
+
+    pub def with_extension(self, ext: str) -> path:
+        let cleaned = strip_leading_dot(ext)
+        match self.stem():
+            @some(s) =>:
+                return self.with_filename("{s}.{cleaned}")
+            @none =>:
+                return path_of(cleaned)
+
+    pub def with_filename(self, name: str) -> path:
+        match self.parent():
+            @some(p) =>:
+                return p.join(name)
+            @none =>:
+                return path_of(name)
+
+    pub def components(self) -> list[str]:
+        let stripped = strip_trailing_seps(self.raw)
+        var pieces: list[str] = []
+        let n = stripped.len()
+        var i: usize = 0
+        while i < n:
+            if is_sep(stripped[i .. i + 1]):
+                i = i + 1
+            else:
+                var j = i
+                while j < n and not is_sep(stripped[j .. j + 1]):
+                    j = j + 1
+                pieces.push(stripped[i .. j])
+                i = j
+        return pieces
+
+    pub def starts_with(self, prefix: path) -> bool:
+        let a = self.components()
+        let b = prefix.components()
+        if b.len() > a.len():
+            return false
+        var i: usize = 0
+        while i < b.len():
+            if not a[i].eq(b[i]):
+                return false
+            i = i + 1
+        return true
+
+    pub def ends_with(self, suffix: path) -> bool:
+        let a = self.components()
+        let b = suffix.components()
+        if b.len() > a.len():
+            return false
+        let offset = a.len() - b.len()
+        var i: usize = 0
+        while i < b.len():
+            if not a[offset + i].eq(b[i]):
+                return false
+            i = i + 1
+        return true
