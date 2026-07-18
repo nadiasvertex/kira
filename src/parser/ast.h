@@ -318,6 +318,12 @@ struct node {
   bool has_error =
       false; ///< Set when recovery synthesized or repaired this node.
 
+  /// Documentation attached from preceding `#:` doc comment lines. Empty when
+  /// the declaration carries no docstring. Only declaration nodes are given a
+  /// value by the parser; other nodes leave it empty. Multiple `#:` lines are
+  /// joined with `\n`.
+  std::string documentation;
+
   /// @brief Creates a node shell with kind and source coverage.
   ///
   /// @param k Concrete runtime kind tag.
@@ -613,6 +619,7 @@ struct struct_field {
   visibility visibility = visibility::def; ///< Field-level visibility modifier.
   std::string name;                        ///< Field name.
   ptr<type_expr> type;                     ///< Declared field type.
+  std::string documentation; ///< Attached `#:` doc comment; empty if none.
 };
 
 /// @brief Struct-style type body stored as a reusable helper record.
@@ -626,7 +633,8 @@ struct sum_variant {
   source_span span; ///< Source range of the variant declaration.
   std::string name; ///< Variant constructor name.
   std::vector<ptr<type_expr>>
-      payload_types; ///< Payload member types; empty for unit variants.
+      payload_types;         ///< Payload member types; empty for unit variants.
+  std::string documentation; ///< Attached `#:` doc comment; empty if none.
 };
 
 /// @brief Sum-type body stored as a reusable helper record.

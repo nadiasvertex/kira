@@ -983,6 +983,7 @@ auto clone_func_decl(const func_decl &decl)
 
   auto cloned = make<func_decl>();
   cloned->span = decl.span;
+  cloned->documentation = decl.documentation;
   cloned->visibility = decl.visibility;
   cloned->modifiers = func_modifiers{.is_pure = decl.modifiers.is_pure,
                                      .is_async = false,
@@ -1082,10 +1083,12 @@ namespace {
       if (!type.has_value()) {
         return std::unexpected(type.error());
       }
-      cloned->body.fields.push_back(struct_field{.span = field.span,
-                                                 .visibility = field.visibility,
-                                                 .name = field.name,
-                                                 .type = std::move(*type)});
+      cloned->body.fields.push_back(
+          struct_field{.span = field.span,
+                       .visibility = field.visibility,
+                       .name = field.name,
+                       .type = std::move(*type),
+                       .documentation = field.documentation});
     }
     return ptr<node>(std::move(cloned));
   }
@@ -1095,8 +1098,10 @@ namespace {
     cloned->span = sum_def.span;
     cloned->body.span = sum_def.body.span;
     for (const auto &variant : sum_def.body.variants) {
-      auto cloned_variant = sum_variant{
-          .span = variant.span, .name = variant.name, .payload_types = {}};
+      auto cloned_variant = sum_variant{.span = variant.span,
+                                        .name = variant.name,
+                                        .payload_types = {},
+                                        .documentation = variant.documentation};
       for (const auto &payload : variant.payload_types) {
         auto type = clone_optional(payload);
         if (!type.has_value()) {
@@ -1143,6 +1148,7 @@ auto clone_type_decl(const type_decl &decl)
     -> std::expected<ptr<type_decl>, clone_error> {
   auto cloned = make<type_decl>();
   cloned->span = decl.span;
+  cloned->documentation = decl.documentation;
   cloned->visibility = decl.visibility;
   cloned->modifiers = decl.modifiers;
   cloned->name = decl.name;
@@ -1195,6 +1201,7 @@ auto clone_static_decl(const static_decl &decl)
 
   auto cloned = make<static_decl>();
   cloned->span = decl.span;
+  cloned->documentation = decl.documentation;
   cloned->visibility = decl.visibility;
   cloned->decl_kind = static_decl_kind::binding;
   cloned->name = decl.name;
@@ -1363,6 +1370,7 @@ auto clone_impl_decl(const impl_decl &decl)
 
   auto cloned = make<impl_decl>();
   cloned->span = decl.span;
+  cloned->documentation = decl.documentation;
   cloned->type_params = std::move(*type_params);
   cloned->trait_type = std::move(*trait_type);
   cloned->for_type = std::move(*for_type);
@@ -1384,6 +1392,7 @@ auto clone_extend_decl(const extend_decl &decl)
 
   auto cloned = make<extend_decl>();
   cloned->span = decl.span;
+  cloned->documentation = decl.documentation;
   cloned->for_type = std::move(*for_type);
   cloned->items = std::move(*items);
   return cloned;
@@ -1402,6 +1411,7 @@ auto clone_trait_decl(const trait_decl &decl)
 
   auto cloned = make<trait_decl>();
   cloned->span = decl.span;
+  cloned->documentation = decl.documentation;
   cloned->visibility = decl.visibility;
   cloned->name = decl.name;
   cloned->type_params = std::move(*type_params);

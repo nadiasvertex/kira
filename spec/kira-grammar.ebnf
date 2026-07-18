@@ -797,7 +797,11 @@ INDENT  = (* increase in indentation level                         *) ;
 DEDENT  = (* decrease in indentation level                         *) ;
 
 COMMENT = "#" { (* any character except newline *) } NEWLINE ;
-(* Comments are stripped by the lexer and do not appear in the grammar *)
+(* Ordinary comments are stripped by the lexer and do not appear in the
+   grammar. A comment beginning with "#:" at the head of a line is instead a
+   documentation comment: its body is retained and attached to the declaration
+   that immediately follows it (consecutive DOC_COMMENT lines are joined). *)
+DOC_COMMENT = "#:" { (* any character except newline *) } NEWLINE ;
 
 
 (* ----------------------------------------------------------------- *)

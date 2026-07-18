@@ -29,6 +29,8 @@ enum class token_kind : uint8_t {
   dedent,  ///< Synthetic token marking exit from an indentation-defined block.
   placeholder, ///< Synthetic stand-in inserted by recovery, never by the source
                ///< text.
+  doc_comment, ///< Documentation comment (`#:` line) whose `text` is the
+               ///< trimmed body; attaches to the following declaration.
 
   // ------------------------------------------------------------------
   //  Identifiers and literals
@@ -804,6 +806,8 @@ struct token {
     return "dedent";
   case token_kind::placeholder:
     return "<placeholder>";
+  case token_kind::doc_comment:
+    return "doc comment";
 
   case token_kind::ident:
     return "identifier";

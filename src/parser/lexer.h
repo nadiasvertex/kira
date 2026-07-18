@@ -77,10 +77,16 @@ public:
     at_line_start_ = true;
     at_quote_open_ = false;
     quote_wrapper_indent_marks_.clear();
+    pending_docs_.clear();
+    at_line_head_ = true;
 
     while (pos_ < source_.size()) {
       scan_token();
     }
+
+    // Drain any doc comment left dangling at end of file (it documents nothing
+    // that follows, but must not stay stuck in the buffer).
+    flush_pending_docs();
 
     // At end of file, emit DEDENT for every remaining indent level.
     emit_pending_dedents();
@@ -264,6 +270,18 @@ private:
                 "this is where the problem is");
   }
 
+  /// @brief Emits any buffered `#:` doc comments as `doc_comment` tokens.
+  ///
+  /// Called once the following content line's INDENT / DEDENT tokens have been
+  /// emitted, so each doc comment sits immediately before the declaration it
+  /// documents — inside the correct block. See `pending_docs_`.
+  void flush_pending_docs() {
+    for (const auto &doc : pending_docs_) {
+      emit_synthetic(token_kind::doc_comment, doc.span, doc.text);
+    }
+    pending_docs_.clear();
+  }
+
   /// @brief Flushes all open indentation levels as `dedent` tokens.
   ///
   /// The parser depends on this to observe balanced block structure even when a
@@ -296,6 +314,33 @@ private:
     skip_horizontal_whitespace();
     if (at_end()) {
       return;
+    }
+
+    // A `#:` doc comment at the head of a line reached here (rather than via
+    // `handle_line_start`) means we're inside brackets — e.g. a documented
+    // field inside a struct body's `{ ... }`, where NEWLINE is suppressed and
+    // the line-start handler never runs. Buffer it just the same.
+    if (peek() == '#' && peek_at(1) == ':' && at_line_head_) {
+      advance(); // `#`
+      advance(); // `:`
+      if (peek() == ' ') {
+        advance(); // trim one leading space
+      }
+      auto body_start = static_cast<byte_offset>(pos_);
+      while (!at_end() && peek() != '\n') {
+        advance();
+      }
+      pending_docs_.push_back(pending_doc{.span = span_from(body_start),
+                                          .text = text_from(body_start)});
+      return;
+    }
+
+    // About to scan a real content token: release any buffered doc comments so
+    // they precede it in the stream, and mark this line as having content (so a
+    // later `#:` on the same line is treated as an ordinary trailing comment).
+    if (peek() != '\n' && peek() != '#') {
+      flush_pending_docs();
+      at_line_head_ = false;
     }
 
     auto start = static_cast<byte_offset>(pos_);
@@ -670,6 +715,26 @@ private:
       // Stay at_line_start_ = true for the next line.
       return;
     }
+    // Documentation comment: `#:` at the start of a line. Buffer its body and
+    // return without emitting a token or affecting indentation — exactly like
+    // an ordinary comment line — so the doc comment does not open a block. The
+    // buffered docs are flushed once the following content line's INDENT /
+    // DEDENT tokens are in place (see `flush_pending_docs`).
+    if (peek() == '#' && peek_at(1) == ':') {
+      advance(); // `#`
+      advance(); // `:`
+      if (peek() == ' ') {
+        advance(); // trim one leading space so `#: text` yields "text"
+      }
+      auto body_start = static_cast<byte_offset>(pos_);
+      while (!at_end() && peek() != '\n') {
+        advance();
+      }
+      pending_docs_.push_back(pending_doc{.span = span_from(body_start),
+                                          .text = text_from(body_start)});
+      // Leave the newline (or EOF) for the next scan_token iteration.
+      return;
+    }
     if (peek() == '#') {
       skip_comment();
       // After the comment the newline (or EOF) will be handled by
@@ -681,6 +746,7 @@ private:
 
     // Inside brackets, indentation is not significant.
     if (bracket_depth_ > 0) {
+      flush_pending_docs();
       return;
     }
 
@@ -720,6 +786,11 @@ private:
       }
     }
     // If indent == current_indent, no token needed — same level.
+
+    // Now that this line's INDENT / DEDENT tokens are in place, release any
+    // doc comments buffered from the preceding `#:` lines so they attach to
+    // this line's declaration from inside the correct block.
+    flush_pending_docs();
   }
 
   /// @brief Handles a physical newline according to current bracket depth.
@@ -729,6 +800,9 @@ private:
   ///
   /// @param start Byte offset of the consumed newline.
   void handle_newline(byte_offset start) {
+    // A new physical line begins: the next content token is at its head.
+    at_line_head_ = true;
+
     // Inside brackets, newlines are suppressed.
     if (bracket_depth_ > 0) {
       // Don't emit anything — just continue.
@@ -1329,6 +1403,26 @@ private:
   /// True if we're at the beginning of a new logical line and need to
   /// measure indentation before scanning tokens.
   bool at_line_start_ = true;
+
+  /// True until the first real (non-trivia) token is emitted on the current
+  /// physical line. Distinct from `at_line_start_`, which is suppressed inside
+  /// brackets: this stays accurate even there, so a `#:` doc comment written
+  /// on its own line inside `{ ... }` (a struct body) is still recognized as
+  /// documentation rather than a trailing comment.
+  bool at_line_head_ = true;
+
+  /// One buffered `#:` documentation comment awaiting attachment to the
+  /// declaration that follows it.
+  struct pending_doc {
+    source_span span;      ///< Source range of the doc comment body.
+    std::string_view text; ///< Trimmed body text (view into `source_`).
+  };
+
+  /// Doc comments seen on the current run of `#:` lines, not yet flushed into
+  /// the token stream. Buffered so they can be emitted *after* the INDENT /
+  /// DEDENT of the following content line — otherwise a doc comment preceding
+  /// the first item of a block would land outside that block in the stream.
+  std::vector<pending_doc> pending_docs_;
 };
 
 } // namespace kira

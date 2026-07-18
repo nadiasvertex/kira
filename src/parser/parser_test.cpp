@@ -131,6 +131,79 @@ auto test_parser_builds_type_body_nodes() -> void {
          "expected second sum variant name");
 }
 
+auto test_parser_captures_doc_comments() -> void {
+  auto parsed = parse_source("#: The sample module.\n"
+                             "module sample\n"
+                             "\n"
+                             "#: Adds two numbers.\n"
+                             "#: Wraps on overflow.\n"
+                             "def add(a: int, b: int) -> int:\n"
+                             "    a + b\n"
+                             "\n"
+                             "# an ordinary comment\n"
+                             "def plain() -> int:\n"
+                             "    0\n"
+                             "\n"
+                             "#: A person.\n"
+                             "type person = {\n"
+                             "    #: The person's name.\n"
+                             "    name: str,\n"
+                             "    age: int,\n"
+                             "}\n"
+                             "\n"
+                             "#: A shape.\n"
+                             "trait shape:\n"
+                             "    #: Returns the area.\n"
+                             "    def area(self) -> int\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 4, "expected four top-level items");
+
+  // Module docstring lives on the module declaration.
+  expect(parsed.file->module_decl != nullptr, "expected a module declaration");
+  expect(parsed.file->module_decl->documentation == "The sample module.",
+         "expected module docstring on module_decl");
+
+  // Multi-line doc comment concatenates with `\n`.
+  auto *add_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected first item to be a function");
+  expect(add_decl->documentation == "Adds two numbers.\nWraps on overflow.",
+         "expected joined multi-line docstring on `add`");
+
+  // A plain `#` comment leaves no documentation.
+  auto *plain_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+      "expected second item to be a function");
+  expect(plain_decl->documentation.empty(),
+         "expected no docstring from an ordinary `#` comment");
+
+  // Type docstring, plus a field docstring inside the `{ ... }` body.
+  auto *person_decl = expect_node<kira::ast::type_decl>(
+      parsed.file->items[2].get(), kira::ast::node_kind::type_decl,
+      "expected third item to be a type declaration");
+  expect(person_decl->documentation == "A person.",
+         "expected docstring on `person` type");
+  auto *person_def = expect_node<kira::ast::struct_type_def>(
+      person_decl->definition.get(), kira::ast::node_kind::struct_type_def,
+      "expected struct type definition node");
+  expect(person_def->body.fields.size() == 2, "expected two struct fields");
+  expect(person_def->body.fields[0].documentation == "The person's name.",
+         "expected docstring on the `name` field");
+  expect(person_def->body.fields[1].documentation.empty(),
+         "expected no docstring on the undocumented `age` field");
+
+  // Trait docstring, plus a docstring on a nested method.
+  auto *shape_decl = expect_node<kira::ast::trait_decl>(
+      parsed.file->items[3].get(), kira::ast::node_kind::trait_decl,
+      "expected fourth item to be a trait declaration");
+  expect(shape_decl->documentation == "A shape.",
+         "expected docstring on `shape` trait");
+  expect(shape_decl->items.size() == 1, "expected one trait member");
+  expect(shape_decl->items[0]->documentation == "Returns the area.",
+         "expected docstring on the nested `area` method");
+}
+
 auto test_parser_preserves_associated_types_where_and_aliases() -> void {
   auto parsed = parse_source("module sample\n"
                              "\n"
@@ -1558,9 +1631,10 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 31> tests = {{
+  const std::array<named_test, 32> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
+      {.name = "doc_comments", .fn = test_parser_captures_doc_comments},
       {.name = "associated_types_where_aliases",
        .fn = test_parser_preserves_associated_types_where_and_aliases},
       {.name = "function_signature_and_control_flow",

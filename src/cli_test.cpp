@@ -247,6 +247,8 @@ auto test_compile_sources_writes_module_metadata() -> void {
                           "use std.io\n"
                           "dep sqlite:\n"
                           "  version = \"3.45\"\n"
+                          "#: Runs the tool.\n"
+                          "#: Returns an exit code.\n"
                           "pub def run() -> int32:\n"
                           "  return 1\n"
                           "type person = { name: str }\n");
@@ -273,7 +275,7 @@ auto test_compile_sources_writes_module_metadata() -> void {
 
   auto metadata = kira::metadata::v1::ModuleMetadata{};
   expect(metadata.ParseFromIstream(&in), "expected metadata protobuf to parse");
-  expect(metadata.schema_version() == 2, "expected metadata schema version");
+  expect(metadata.schema_version() == 3, "expected metadata schema version");
   expect(metadata.module_path_size() == 2, "expected module path components");
   expect(metadata.module_path(0) == "sample",
          "expected first module path part");
@@ -293,6 +295,11 @@ auto test_compile_sources_writes_module_metadata() -> void {
   expect(metadata.top_level_symbols(2).visibility() ==
              kira::metadata::v1::MODULE_VISIBILITY_PUBLIC,
          "expected function visibility in metadata");
+  expect(metadata.top_level_symbols(2).documentation() ==
+             "Runs the tool.\nReturns an exit code.",
+         "expected joined docstring to be recorded in metadata");
+  expect(metadata.top_level_symbols(3).documentation().empty(),
+         "expected undocumented `person` type to have empty documentation");
   expect(metadata.dependencies(0).fields().at("version") == "3.45",
          "expected dependency field value to be unquoted");
 }

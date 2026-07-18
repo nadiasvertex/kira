@@ -24,7 +24,7 @@ namespace fs = std::filesystem;
 constexpr std::string_view k_metadata_extension = ".kmeta";
 
 /// Schema version embedded in every emitted module metadata payload.
-constexpr uint32_t k_module_metadata_schema_version = 2;
+constexpr uint32_t k_module_metadata_schema_version = 3;
 
 } // namespace
 
@@ -418,6 +418,7 @@ auto add_symbol_metadata(const ast::node &node,
   symbol->set_kind(symbol_kind_to_proto(node.kind));
   symbol->set_visibility(visibility_to_proto(top_level_visibility(node)));
   symbol->set_has_parse_error(node.has_error);
+  symbol->set_documentation(node.documentation);
 }
 
 /// Render one functor instantiation argument's source spelling from its AST,

@@ -593,9 +593,15 @@ auto parser::parse_file() -> ast::ptr<ast::file> {
 
   skip_newlines();
 
+  // A `#:` doc comment above the `module` line documents the module itself.
+  auto module_doc = collect_doc_comments();
+
   // Parse module declaration.
   if (at(token_kind::kw_module)) {
     file->module_decl = parse_module_decl();
+    if (file->module_decl && !module_doc.empty()) {
+      file->module_decl->documentation = std::move(module_doc);
+    }
   } else {
     emit(diagnostic(
              diagnostic_level::error,
@@ -764,6 +770,23 @@ auto parser::parse_module_decl() -> ast::ptr<ast::module_decl> {
 // ==========================================================================
 
 auto parser::parse_top_level_item(bool allow_script_stmts)
+    -> ast::ptr<ast::node> {
+  skip_newlines();
+  if (at_eof()) {
+    return nullptr;
+  }
+
+  // Capture any `#:` doc comment lines that precede this declaration and hang
+  // them on whatever node the dispatch produces.
+  auto doc = collect_doc_comments();
+  auto item = parse_top_level_item_dispatch(allow_script_stmts);
+  if (item && !doc.empty()) {
+    item->documentation = std::move(doc);
+  }
+  return item;
+}
+
+auto parser::parse_top_level_item_dispatch(bool allow_script_stmts)
     -> ast::ptr<ast::node> {
   skip_newlines();
   if (at_eof()) {
@@ -1329,6 +1352,9 @@ auto parser::parse_struct_body() -> ast::struct_body {
 
 auto parser::parse_struct_field() -> ast::struct_field {
   ast::struct_field field;
+  // A `#:` doc comment on its own line inside the `{ ... }` body documents the
+  // field that follows it.
+  field.documentation = collect_doc_comments();
   field.span = peek().span;
   field.visibility = parse_optional_visibility();
 
@@ -1359,6 +1385,10 @@ auto parser::parse_sum_body() -> ast::sum_body {
 
 auto parser::parse_sum_variant() -> ast::sum_variant {
   ast::sum_variant variant;
+  // Attach any preceding `#:` doc comment. Sum variants are written on one
+  // line today, so this rarely fires, but keeps variant docs in the AST if a
+  // documented multi-line form is ever supported.
+  variant.documentation = collect_doc_comments();
   variant.span = peek().span;
 
   expect(token_kind::at);
@@ -1910,7 +1940,9 @@ auto parser::parse_trait_decl(ast::visibility vis)
       }
 
       // Parse trait items: func_decl, static_decl, associated_type_decl.
+      auto item_doc = collect_doc_comments();
       auto item_vis = parse_optional_visibility();
+      auto items_before = decl->items.size();
 
       if (at(token_kind::kw_static)) {
         decl->items.push_back(parse_static_decl(item_vis));
@@ -1946,6 +1978,8 @@ auto parser::parse_trait_decl(ast::visibility vis)
         emit_unexpected("a trait member (function, type, or static)");
         synchronize_to_newline();
       }
+
+      attach_member_doc(decl->items, items_before, std::move(item_doc));
     }
     expect_block_end("trait");
   }
@@ -1978,7 +2012,9 @@ auto parser::parse_signature_decl(ast::visibility vis)
         break;
       }
 
+      auto item_doc = collect_doc_comments();
       auto item_vis = parse_optional_visibility();
+      auto items_before = decl->items.size();
 
       if (at(token_kind::kw_static)) {
         // Required constant: `static NAME: Type` (no initializer). A signature
@@ -2040,6 +2076,8 @@ auto parser::parse_signature_decl(ast::visibility vis)
         emit_unexpected("a signature member (`type`, `def`, or `static`)");
         synchronize_to_newline();
       }
+
+      attach_member_doc(decl->items, items_before, std::move(item_doc));
     }
     expect_block_end("signature");
   }
@@ -2163,7 +2201,9 @@ auto parser::parse_impl_decl() -> ast::ptr<ast::impl_decl> {
         break;
       }
 
+      auto item_doc = collect_doc_comments();
       auto item_vis = parse_optional_visibility();
+      auto items_before = decl->items.size();
 
       if (at(token_kind::kw_static)) {
         decl->items.push_back(parse_static_decl(item_vis));
@@ -2197,6 +2237,8 @@ auto parser::parse_impl_decl() -> ast::ptr<ast::impl_decl> {
         emit_unexpected("an impl member (function, type, or static)");
         synchronize_to_newline();
       }
+
+      attach_member_doc(decl->items, items_before, std::move(item_doc));
     }
     expect_block_end("impl");
   }
@@ -2225,7 +2267,9 @@ auto parser::parse_extend_decl() -> ast::ptr<ast::extend_decl> {
         break;
       }
 
+      auto item_doc = collect_doc_comments();
       auto item_vis = parse_optional_visibility();
+      auto items_before = decl->items.size();
 
       if (at(token_kind::kw_def) ||
           at_any(token_kind::kw_pure, token_kind::kw_async,
@@ -2243,6 +2287,8 @@ auto parser::parse_extend_decl() -> ast::ptr<ast::extend_decl> {
         emit_unexpected("an extend member (function)");
         synchronize_to_newline();
       }
+
+      attach_member_doc(decl->items, items_before, std::move(item_doc));
     }
     expect_block_end("extend");
   }

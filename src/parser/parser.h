@@ -307,6 +307,45 @@ private:
     }
   }
 
+  /// @brief Consumes consecutive `#:` doc-comment tokens and joins their
+  /// bodies.
+  ///
+  /// Doc comments never emit NEWLINE tokens (see the lexer), so a run of `#:`
+  /// lines produces adjacent `doc_comment` tokens here. Returns the joined text
+  /// (one `\n` between lines), or an empty string when the cursor isn't on a
+  /// doc comment.
+  [[nodiscard]] auto collect_doc_comments() -> std::string {
+    std::string doc;
+    while (at(token_kind::doc_comment)) {
+      if (!doc.empty()) {
+        doc.push_back('\n');
+      }
+      doc.append(peek().text);
+      advance();
+    }
+    return doc;
+  }
+
+  /// @brief Attaches a collected doc comment to the item just pushed onto a
+  /// member list, if the list grew and the new item is non-null.
+  ///
+  /// Member loops (`trait`/`impl`/`extend`/`signature`) push through several
+  /// branches; this centralizes "hang the doc on whatever we just parsed"
+  /// without threading the string into each branch.
+  ///
+  /// @param items The member list a branch may have appended to.
+  /// @param before Its size captured before the branch ran.
+  /// @param doc The collected doc comment (moved from).
+  static void attach_member_doc(std::vector<ast::ptr<ast::node>> &items,
+                                size_t before, std::string doc) {
+    if (doc.empty()) {
+      return;
+    }
+    if (items.size() > before && items.back() != nullptr) {
+      items.back()->documentation = std::move(doc);
+    }
+  }
+
   /// @brief Requires a logical newline, recovering if one was omitted.
   ///
   /// Statement-oriented grammar uses this to preserve line sensitivity without
@@ -502,6 +541,14 @@ private:
   /// statements instead of erroring; `parse_file` later gathers them into a
   /// synthesized `main` function.
   [[nodiscard]] auto parse_top_level_item(bool allow_script_stmts = false)
+      -> ast::ptr<ast::node>;
+
+  /// @brief Dispatches on the leading token to parse one top-level declaration.
+  ///
+  /// `parse_top_level_item` wraps this to first capture any preceding `#:` doc
+  /// comment and attach it to the returned node; keeping the dispatch separate
+  /// leaves the many `return parse_X(...)` branches untouched.
+  [[nodiscard]] auto parse_top_level_item_dispatch(bool allow_script_stmts)
       -> ast::ptr<ast::node>;
 
   /// @brief Gathers a `module main` script file's top-level statements into a

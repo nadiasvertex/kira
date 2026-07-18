@@ -87,6 +87,8 @@ message TopLevelSymbol {
   ModuleVisibility visibility = 3;
   // Whether the parser recovered while producing this node.
   bool has_parse_error = 4;
+  // Documentation from preceding `#:` doc comment lines; empty when none.
+  string documentation = 5;
 }
 
 // Broad categories of top-level parsed declarations.

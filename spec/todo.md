@@ -4,3 +4,4 @@
 4. Type-generic monomorphization (`def identity[T](x: T)`) remains unimplemented.
 5. Lambdas containing string interpolation failing to lower ("captured variable could not be found")
 6. Tail call optimization
+7. A hand-rolled type implementing std.iter.iterator[T] is not usable in a for loop.

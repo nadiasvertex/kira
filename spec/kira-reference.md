@@ -58,6 +58,17 @@ All keywords are lowercase. Comments begin with `#`.
 let x = 42    # so is this
 ```
 
+A comment that begins with `#:` is a **documentation comment**. Written on its own line directly above a declaration, it documents that declaration; the compiler records it (and tooling can surface it). Several `#:` lines in a row are joined into one docstring. A `#:` after code on the same line is treated as an ordinary comment.
+
+```kira
+#: Adds two integers and returns the sum.
+#: Overflow wraps in machine mode.
+def add(a: int32, b: int32) -> int32:
+    a + b
+```
+
+Doc comments attach to any declaration — functions, types, traits, `impl`/`extend` methods, struct fields, and the `module` line itself. A plain `#` comment is discarded and carries no documentation.
+
 A module is one or more files. Every file begins with a `module` declaration naming the module it belongs to; several files may share a name and together form one module.
 
 ```kira
