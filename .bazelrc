@@ -37,8 +37,6 @@ build:release --compilation_mode=opt
 build:release --cxxopt=-O3
 build:release --cxxopt=-DNDEBUG
 
-# Default to debug
-build --config=debug
 
 # Show test output on failure
 test --test_output=errors

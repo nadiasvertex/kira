@@ -6,11 +6,11 @@ DIST_DIR := "dist"
 
 # Build the kira binary
 build:
-    bazelisk build //src:kira
+    bazelisk build --config=debug //src:kira
 
 # Run the project test suite
 test:
-    bazelisk test //...
+    bazelisk test --config=debug //...
 
 # Build release archives for the kira CLI
 package:
