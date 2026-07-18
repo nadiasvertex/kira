@@ -46,6 +46,7 @@ package:
     cp -L "bazel-bin/src/kira" "$tar_root/bin/kira"
     chmod 0755 "$tar_root/bin/kira"
 
+    rm -f "$tar_root/lib/kira"/*.lo "$tar_root/lib/kira"/*.a
     cp -L "bazel-bin/src/llvm_codegen/libaot_runtime.lo" \
           "bazel-bin/src/runtime/libruntime.lo" \
           "bazel-bin/src/semantic/libsemantic.a" \
@@ -135,6 +136,7 @@ install prefix=(env('HOME') / '.kira'):
     mkdir -p "$prefix/bin" "$prefix/share/kira/std/fs" "$prefix/lib/kira"
     cp -L "bazel-bin/src/kira" "$prefix/bin/kira"
     chmod 0755 "$prefix/bin/kira"
+    rm -f "$prefix/lib/kira"/*.lo "$prefix/lib/kira"/*.a
     cp -L "bazel-bin/src/llvm_codegen/libaot_runtime.lo" \
           "bazel-bin/src/runtime/libruntime.lo" \
           "bazel-bin/src/semantic/libsemantic.a" \
