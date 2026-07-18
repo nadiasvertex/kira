@@ -1,0 +1,16 @@
+module sample
+use std.iter.iterator
+type counter = { current: int32, limit: int32 }
+impl iterator[int32] for counter:
+    def next(mut self) -> option[int32]:
+        if self.current >= self.limit:
+            return @none
+        let value = self.current
+        self.current = self.current + 1
+        return @some(value)
+def sum_to(n: int32) -> int32:
+    var it = counter { current: 0, limit: n }
+    var total = 0
+    for x in it:
+        total = total + x
+    return total

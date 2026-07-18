@@ -297,6 +297,15 @@ auto test_reports_str_index_non_integer() -> void {
                     "expected a non-integer `str` index to be rejected");
 }
 
+auto test_accepts_for_over_user_iterator() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_for_over_user_iterator.kira");
+  expect(analyzed.error_count == 0,
+         "expected a `for` loop over a user type implementing "
+         "`std.iter.iterator[T]` to check cleanly (the loop variable typed "
+         "as the iterator's element type)");
+}
+
 auto test_accepts_associated_type_self_output() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_associated_type_self_output.kira");
@@ -1854,6 +1863,7 @@ auto main() -> int {
     test_accepts_type_qualified_associated_call();
     test_accepts_indexing_local_bindings();
     test_accepts_str_byte_index();
+    test_accepts_for_over_user_iterator();
     test_reports_str_index_non_integer();
     test_accepts_associated_type_self_output();
     test_accepts_extend_on_builtin_type();

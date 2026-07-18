@@ -1504,14 +1504,13 @@ auto test_run_lambda_body_string_interpolation_captures() -> void {
   auto source_path = temp.path / "sample_lambda_interp.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample\n"
-             "def apply(f: fn(int32) -> str, x: int32) -> int32:\n"
-             "    return f(x).len() as int32\n"
-             "def main() -> int32:\n"
-             "    let prefix = \"n=\"\n"
-             "    let g: fn(int32) -> str = k => \"{prefix}{k}\"\n"
-             "    return apply(g, 42)\n");
+  write_file(source_path, "module sample\n"
+                          "def apply(f: fn(int32) -> str, x: int32) -> int32:\n"
+                          "    return f(x).len() as int32\n"
+                          "def main() -> int32:\n"
+                          "    let prefix = \"n=\"\n"
+                          "    let g: fn(int32) -> str = k => \"{prefix}{k}\"\n"
+                          "    return apply(g, 42)\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
@@ -1538,6 +1537,59 @@ auto test_run_lambda_body_string_interpolation_captures() -> void {
   expect(report->run->exit_code == 4,
          "expected the interpolating lambda to render \"n=42\" (length 4), "
          "capturing `prefix` while resolving the `std.fmt` helpers directly");
+}
+
+/// End-to-end check that a hand-rolled type implementing the *real*
+/// `std.iter.iterator[T]` trait drives a `for` loop. `check_body_node`'s
+/// `for_stmt` case records the resolved `next` dispatch and `hir::lower_
+/// iterator_loop` desugars `for x in it: ...` into `while let @some(x) =
+/// it.next(): ...`; `next(mut self)` mutates the handle each pass. Needs the
+/// full `std` session for `std.iter`, so it runs here (unlike the std-free
+/// corpus sibling `037_user_iterator_for_loop.kira`, which defines its own
+/// `iterator` trait). Sum of 0..5 == 10.
+auto test_run_for_loop_over_user_std_iterator() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_user_iterator.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample\n"
+                          "use std.iter.iterator\n"
+                          "type counter = { current: int32, limit: int32 }\n"
+                          "impl iterator[int32] for counter:\n"
+                          "    def next(mut self) -> option[int32]:\n"
+                          "        if self.current >= self.limit:\n"
+                          "            return @none\n"
+                          "        let value = self.current\n"
+                          "        self.current = self.current + 1\n"
+                          "        return @some(value)\n"
+                          "def main() -> int32:\n"
+                          "    var it = counter { current: 0, limit: 5 }\n"
+                          "    var total = 0\n"
+                          "    for x in it:\n"
+                          "        total = total + x\n"
+                          "    return total\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected a for-loop over a user `std.iter.iterator` to compile "
+         "cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 10,
+         "expected `for x in it` over a 0..5 counter iterator to sum to 10");
 }
 
 /// M5 end-to-end check: hygiene must prevent a spliced `let` from
@@ -1872,6 +1924,7 @@ auto main() -> int {
     test_run_executes_spliced_builder_constructed_expression();
     test_run_executes_item_level_splice_injected_impl();
     test_run_lambda_body_string_interpolation_captures();
+    test_run_for_loop_over_user_std_iterator();
     test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site();
     test_run_reflects_struct_field_count_into_runtime_constant();
     test_run_scalar_static_let_referenced_by_name();

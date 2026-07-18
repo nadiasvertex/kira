@@ -473,6 +473,19 @@ private:
       const ast::binding_pattern &loop_var,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
           &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error>;
+  /// The user-`iterator[T]` shape: `for x in it: ...` where `it`'s type
+  /// implements `std.iter.iterator[T]`. Structurally identical to
+  /// `lower_generator_loop` — evaluate the handle once, then loop `while let
+  /// @some(x) = <handle>.next(): ...` — except the `while_let` subject is a
+  /// real `hir_call` to the resolved `Type::next` method (rebuilt from the
+  /// `iterator_loop_dispatch` the checker recorded) rather than a
+  /// `hir_generator_next` node. No new node kind or backend support needed.
+  [[nodiscard]] auto lower_iterator_loop(
+      source_span span, const ast::expr &iterable, type_id iterable_type,
+      const ast::binding_pattern &loop_var,
+      const semantic::iterator_loop_dispatch &dispatch,
+      const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
+          &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error>;
   /// Shared tail `lower_range_loop`/`lower_indexed_loop` need: binds the
   /// loop variable to `loop_var_value()` at the top of the loop body,
   /// splices in `inner_stmts()`, then increments the index by one.
@@ -2584,6 +2597,12 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
     return lower_generator_loop(for_stmt.span, *for_stmt.iterable,
                                 *iterable_type, loop_var, inner_stmts);
   }
+  if (const auto it = checked_.for_iterator_dispatches.find(&for_stmt);
+      it != checked_.for_iterator_dispatches.end()) {
+    return lower_iterator_loop(for_stmt.span, *for_stmt.iterable,
+                               *iterable_type, loop_var, it->second,
+                               inner_stmts);
+  }
   return lower_indexed_loop(for_stmt.span, *for_stmt.iterable, *iterable_type,
                             loop_var, inner_stmts);
 }
@@ -2932,6 +2951,92 @@ auto lowerer::lower_generator_loop(
       ptr<hir_expr>(make<hir_local_ref>(iterable.span, iterable_type,
                                         generator_symbol,
                                         std::string("<for generator>")))));
+
+  push_scope();
+  const auto loop_var_symbol = declare_local(loop_var.name, element_type);
+  auto body_stmts = ptr_vec<hir_node>{};
+  body_stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, loop_var_symbol, loop_var.name,
+      ptr<hir_expr>(make<hir_variant_payload>(
+          span, element_type,
+          ptr<hir_expr>(make<hir_local_ref>(span, option_type, subject_symbol,
+                                            std::string("<for subject>"))),
+          std::string("some"), size_t{0})))));
+
+  auto inner = inner_stmts();
+  if (!inner.has_value()) {
+    pop_scope();
+    return std::unexpected(inner.error());
+  }
+  for (auto &stmt_ptr : *inner) {
+    body_stmts.push_back(std::move(stmt_ptr));
+  }
+  auto body_block =
+      make<hir_block>(span, k_unknown_type, std::move(body_stmts));
+  pop_scope();
+
+  auto some_args = ptr_vec<hir_pattern>{};
+  some_args.push_back(ptr<hir_pattern>(make<hir_wildcard_pattern>(span)));
+  auto pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
+      span, std::string("some"), std::move(some_args)));
+
+  result.push_back(ptr<hir_node>(
+      make<hir_while_let>(span, std::move(subject), subject_symbol,
+                          std::move(pattern), std::move(body_block))));
+  return result;
+}
+
+auto lowerer::lower_iterator_loop(
+    source_span span, const ast::expr &iterable, type_id iterable_type,
+    const ast::binding_pattern &loop_var,
+    const semantic::iterator_loop_dispatch &dispatch,
+    const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
+        &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error> {
+  const auto element_type = dispatch.element_type;
+  if (element_type == k_unknown_type || element_type == k_error_type) {
+    return fail(lowering_error_kind::unresolved_type, span,
+                "the iterator's item type did not resolve to a concrete "
+                "type");
+  }
+
+  // Evaluate the iterator handle exactly once — `for x in make_iter(): ...`
+  // must not re-run `make_iter()` per iteration, only `.next()` on the handle
+  // it produced. `next(mut self)` mutates that handle's fields through the
+  // pointer the local holds, so the binding itself never needs reassigning.
+  auto handle_value = lower_expr(iterable);
+  if (!handle_value.has_value()) {
+    return std::unexpected(handle_value.error());
+  }
+  auto result = ptr_vec<hir_node>{};
+  const auto handle_symbol = mint_symbol();
+  result.push_back(ptr<hir_node>(make<hir_let>(iterable.span, handle_symbol,
+                                               std::string("<for iterator>"),
+                                               std::move(*handle_value))));
+
+  // See `lower_generator_loop` for why interning `option[T]` here is safe.
+  const auto option_type = const_cast<semantic::type_table &>(checked_.types)
+                               .builtin_generic("option", {element_type});
+
+  // Rebuild the `handle.next()` method call directly from the resolved
+  // dispatch — the same `Type::method`-mangled `hir_local_ref` callee shape
+  // `lower_call` produces for a hand-written method call (both backends
+  // dispatch it by name + `owner_module`, see their `resolve_callee_key`).
+  const auto method_name =
+      dispatch.impl_target_type.empty()
+          ? dispatch.decl->name
+          : std::format("{}::{}", dispatch.impl_target_type,
+                        dispatch.decl->name);
+  const auto callee_symbol = resolve_reference(method_name);
+  auto callee = ptr<hir_expr>(make<hir_local_ref>(
+      span, k_unknown_type, callee_symbol, method_name, dispatch.owner_module));
+  auto call_args = ptr_vec<hir_expr>{};
+  call_args.push_back(ptr<hir_expr>(
+      make<hir_local_ref>(iterable.span, iterable_type, handle_symbol,
+                          std::string("<for iterator>"))));
+
+  const auto subject_symbol = mint_symbol();
+  auto subject = ptr<hir_expr>(make<hir_call>(
+      span, option_type, std::move(callee), std::move(call_args)));
 
   push_scope();
   const auto loop_var_symbol = declare_local(loop_var.name, element_type);

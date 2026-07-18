@@ -462,6 +462,22 @@ struct resolved_callee {
   const ast::expr *receiver = nullptr;
 };
 
+/// The resolved `next`-method dispatch for a `for x in it: ...` loop whose
+/// iterable is a user type implementing `std.iter.iterator[T]` — recorded by
+/// `check_body_node`'s `for_stmt` case (lowering has no way to redo the method
+/// lookup itself) and read by `hir::lower_iterator_loop`, which synthesizes
+/// the `it.next()` method call from it.
+/// `decl`/`owner_module`/`impl_target_type` carry the same meaning as the
+/// matching `resolved_callee` fields (the mangled call `hir::lower_call` would
+/// emit for a hand-written `it.next()` is `impl_target_type::next`);
+/// `element_type` is the `T` the loop variable binds.
+struct iterator_loop_dispatch {
+  const ast::func_decl *decl = nullptr;
+  std::string owner_module;
+  std::string impl_target_type;
+  type_id element_type = 0;
+};
+
 /// How one interpolation segment's embedded expression
 /// (`ast::interp_segment::value`, `spec/string-formatting-design.md`) should
 /// render at runtime — resolved once by `check.cpp`'s interpolation
@@ -649,6 +665,12 @@ struct checked_types {
   /// `interp_dispatch`'s doc comment. Keyed by the segment's `value`
   /// expression pointer (`ast::interp_segment::value.get()`).
   std::unordered_map<const ast::expr *, interp_dispatch> interp_dispatches;
+  /// Every `for` loop whose iterable is a user type implementing
+  /// `std.iter.iterator[T]` — see `iterator_loop_dispatch`'s doc comment.
+  /// Keyed by the `ast::for_stmt` node. Absent for range/option/generator/
+  /// indexable iterables, which lower through their own dedicated shapes.
+  std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
+      for_iterator_dispatches;
   /// Resolved once from `std.fmt`'s own type declarations — see
   /// `fmt_runtime_types`'s doc comment.
   fmt_runtime_types fmt_types;

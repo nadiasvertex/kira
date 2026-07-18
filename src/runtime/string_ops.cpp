@@ -141,7 +141,8 @@ namespace {
       }
       if (i >= needle_len) {
         i = suffix - 1;
-        while (i != SIZE_MAX && byte_at(needle, i) == byte_at(haystack, i + j)) {
+        while (i != SIZE_MAX &&
+               byte_at(needle, i) == byte_at(haystack, i + j)) {
           --i;
         }
         if (i == SIZE_MAX) {

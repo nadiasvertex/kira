@@ -1038,13 +1038,15 @@ auto intrinsic_rt_str_truncate_scalars(std::span<const slot_value> args)
 }
 
 auto intrinsic_rt_str_eq(std::span<const slot_value> args) -> slot_value {
-  const auto equal = kira::runtime::str_equal(view_of(args[0]), view_of(args[1]));
+  const auto equal =
+      kira::runtime::str_equal(view_of(args[0]), view_of(args[1]));
   return make_box(slot_value{static_cast<uint64_t>(equal ? 1 : 0)});
 }
 
 auto intrinsic_rt_str_find(std::span<const slot_value> args) -> slot_value {
-  return make_find_result(kira::runtime::str_find(
-      view_of(args[0]), view_of(args[1]), static_cast<size_t>(unbox(args[2]).u)));
+  return make_find_result(
+      kira::runtime::str_find(view_of(args[0]), view_of(args[1]),
+                              static_cast<size_t>(unbox(args[2]).u)));
 }
 
 auto intrinsic_rt_str_rfind(std::span<const slot_value> args) -> slot_value {

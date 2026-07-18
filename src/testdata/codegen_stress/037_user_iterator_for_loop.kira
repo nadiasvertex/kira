@@ -1,0 +1,28 @@
+module codegen_stress.user_iterator_for_loop
+
+# A hand-rolled type implementing `iterator[T]` is usable directly in a `for`
+# loop. `for x in it: ...` desugars to `while let @some(x) = it.next(): ...`
+# (see `hir::lower_iterator_loop`) — the handle is bound once, and `next(mut
+# self)` mutates it through the pointer each pass, so the loop terminates when
+# `next` returns `@none`. Both backends compile the synthesized `.next()` call
+# exactly like a hand-written one. Sum of 0..5 = 10.
+
+trait iterator[T]:
+    def next(mut self) -> option[T]
+
+type counter = { current: int32, limit: int32 }
+
+impl iterator[int32] for counter:
+    def next(mut self) -> option[int32]:
+        if self.current >= self.limit:
+            return @none
+        let value = self.current
+        self.current = self.current + 1
+        return @some(value)
+
+def main() -> int32:
+    var it = counter { current: 0, limit: 5 }
+    var total = 0
+    for x in it:
+        total = total + x
+    return total

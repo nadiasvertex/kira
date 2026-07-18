@@ -800,6 +800,7 @@ public:
         .call_argument_mappings = std::move(call_argument_mappings_),
         .resolved_callees = std::move(resolved_callees_),
         .interp_dispatches = std::move(interp_dispatches_),
+        .for_iterator_dispatches = std::move(for_iterator_dispatches_),
         .fmt_types = fmt_types,
         .synthesized_decls = std::move(synthesized_decls_),
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
@@ -919,6 +920,11 @@ private:
   /// `check_interpolated_string`. Handed to the caller via
   /// `take_checked_types`.
   std::unordered_map<const ast::expr *, interp_dispatch> interp_dispatches_;
+  /// Every `for` loop over a user `std.iter.iterator[T]` — see
+  /// `iterator_loop_dispatch` in types.h. Populated by `check_body_node`'s
+  /// `for_stmt` case, handed to the caller via `take_checked_types`.
+  std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
+      for_iterator_dispatches_;
   /// Owns every trait-default method clone `build_method_table` synthesizes
   /// (see `synthesized_method` in types.h) — lifetime must outlive
   /// `checked_types`, so both are moved out together in
@@ -8759,6 +8765,38 @@ private:
   /// slice/range/option element, or `char` for `str`), used by `for`
   /// loops/comprehensions. Reports a not-iterable error for a known
   /// non-iterable scalar type.
+  /// Resolves a user type's `std.iter.iterator[T]` conformance for a `for`
+  /// loop: finds a `next(mut self) -> option[T]` method on `iterable` and,
+  /// when present, returns the dispatch a `for x in it: ...` loop needs to
+  /// desugar into `while let @some(x) = it.next(): ...` (`element_type` is the
+  /// `T`, the rest is what `hir::lower_iterator_loop` rebuilds the `it.next()`
+  /// call from). `nullopt` for any type that isn't shaped like an iterator —
+  /// including the builtin iterables (`list`/`slice`/`range`/...), which have
+  /// their own dedicated loop shapes and never reach this path.
+  auto try_resolve_iterator(type_id iterable)
+      -> std::optional<iterator_loop_dispatch> {
+    const auto stripped = strip_refs(iterable);
+    const auto &entry = types_.entry(stripped);
+    if (entry.decl == nullptr) {
+      return std::nullopt;
+    }
+    const auto *method = find_method(entry, "next");
+    if (method == nullptr || method->decl->params.empty() ||
+        param_name_of(method->decl->params.front()) != "self") {
+      return std::nullopt;
+    }
+    const auto ret = signature_return_type(*method->decl, method->owner);
+    const auto &ret_entry = types_.entry(strip_refs(ret));
+    if (ret_entry.kind != type_kind::builtin_generic_kind ||
+        ret_entry.name != "option" || ret_entry.args.empty()) {
+      return std::nullopt;
+    }
+    return iterator_loop_dispatch{.decl = method->decl,
+                                  .owner_module = method->owner->module_name,
+                                  .impl_target_type = entry.name,
+                                  .element_type = ret_entry.args.front()};
+  }
+
   auto element_type_of(type_id iterable, source_span span) -> type_id {
     const auto stripped = strip_refs(iterable);
     const auto &entry = types_.entry(stripped);
@@ -8787,6 +8825,11 @@ private:
       }
       return k_unknown_type;
     default:
+      // A user type that implements `std.iter.iterator[T]` iterates to `T`
+      // (via `it.next() -> option[T]`); anything else has no element type.
+      if (const auto iter = try_resolve_iterator(stripped)) {
+        return iter->element_type;
+      }
       return k_unknown_type;
     }
   }
@@ -10225,6 +10268,11 @@ private:
       if (stmt.iterable != nullptr) {
         const auto iterable = infer_expr(*stmt.iterable, k_unknown_type);
         element = element_type_of(iterable, stmt.iterable->span);
+        // Record the `next`-method dispatch so lowering can desugar a
+        // user-iterator loop into `while let @some(x) = it.next(): ...`.
+        if (auto iter = try_resolve_iterator(iterable)) {
+          for_iterator_dispatches_[&stmt] = std::move(*iter);
+        }
       }
       push_scope();
       if (stmt.patterns.size() == 1) {
