@@ -48,7 +48,7 @@ inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
     "rt_fmt_f64_sci",
     "rt_fmt_f64_general",
     "rt_fmt_char_from_codepoint",
-    // `std.string` UTF-8 intrinsics (spec/std-string.md). Substring search is
+    // `std.string` UTF-8 intrinsics (spec/std-reference.md). Substring search is
     // Two-Way (linear worst case) over bytes, scalar-correct by UTF-8 self-
     // synchronization; `to_upper`/`to_lower` apply Unicode simple (1:1) case
     // mapping. The algorithms live in `src/runtime/string_ops.h` and are
@@ -61,7 +61,7 @@ inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
     "rt_str_reverse",
     "rt_str_trim",
     "rt_str_replace",
-    // `std.platform` runtime introspection intrinsics (spec/std-platform.md).
+    // `std.platform` runtime introspection intrinsics (spec/std-reference.md).
     // Every one is niladic and returns `result[T, io_errno]`.
     "rt_uname",
     "rt_gethostname",

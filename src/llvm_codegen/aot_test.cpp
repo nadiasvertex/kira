@@ -234,7 +234,7 @@ auto test_for_loop_over_generator_drives_a_loop_to_the_right_exit_code()
 }
 
 // Regression for a bug found while implementing `std.fs.path`
-// (`spec/std-fs-path.md`'s `last_sep_index`-style reverse scan): a `while`
+// (`spec/std-reference.md`'s `last_sep_index`-style reverse scan): a `while`
 // loop whose body's *last* statement is an `if` with no `else` that returns
 // early used to crash `--compile` with "type `_` has no scalar or
 // heap-value llvm_codegen representation yet". Root cause was in

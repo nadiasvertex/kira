@@ -3,7 +3,7 @@
 #include <cstdint>
 
 /// C-ABI entry points `llvm_codegen`-compiled IR (JIT and AOT alike) calls for
-/// the eight `std.string` intrinsics (`spec/std-string.md`) — the LLVM-tier
+/// the eight `std.string` intrinsics (`spec/std-reference.md`) — the LLVM-tier
 /// counterpart of `src/bytecode/vm.cpp`'s `intrinsic_rt_str_*` dispatch, the
 /// same "one algorithm, two thin backends" split `src/runtime/fmt.h` uses for
 /// the formatting intrinsics. The actual UTF-8 algorithms live once in

@@ -1,6 +1,6 @@
 module std.string
 
-# UTF-8 string extension methods (spec/std-string.md). `str` is a sequence of
+# UTF-8 string extension methods (spec/std-reference.md). `str` is a sequence of
 # UTF-8 bytes; byte offsets are the currency (O(1) copy-free slicing), and every
 # offset these methods report lands on a scalar boundary. The performance-
 # critical primitives are native `rt_str_*` intrinsics (src/runtime/string_ops.h);

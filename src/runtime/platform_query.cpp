@@ -52,7 +52,7 @@ auto query_hostname() -> std::optional<std::string> {
 
 auto query_uname() -> std::optional<uname_info> {
   // `uname(2)` has no Windows equivalent; `std.platform`'s Windows branch
-  // never declares `rt_uname` at all (spec/std-platform.md gates it behind
+  // never declares `rt_uname` at all (spec/std-reference.md gates it behind
   // `static if TARGET_OS_FAMILY == "unix"`), so this native symbol only
   // needs to exist for the table below to link, never to succeed.
   errno = ENOSYS;

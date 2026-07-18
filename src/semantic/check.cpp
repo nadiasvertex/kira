@@ -6967,7 +6967,7 @@ private:
       // Only the two methods with real lowering are answered here (`len` and
       // `as_bytes`, `src/hir/lower.cpp`). Everything else — `contains`,
       // `starts_with`, `find`, `to_uppercase`, `split`, ... — is now provided
-      // as real `extend str` methods in `std.string` (spec/std-string.md);
+      // as real `extend str` methods in `std.string` (spec/std-reference.md);
       // returning `k_unknown_type` for those names is exactly what lets the
       // caller fall through to `find_extend_method_for_builtin` and discover
       // them. Re-adding a hardcoded rule here would shadow that module.

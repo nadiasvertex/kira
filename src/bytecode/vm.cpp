@@ -1023,7 +1023,7 @@ auto intrinsic_rt_str_truncate_scalars(std::span<const slot_value> args)
   return make_runtime_str(view.substr(0, pos));
 }
 
-// `std.string` UTF-8 intrinsics (spec/std-string.md). The actual algorithms
+// `std.string` UTF-8 intrinsics (spec/std-reference.md). The actual algorithms
 // live in `src/runtime/string_ops.h` and are shared verbatim with the LLVM
 // tier's C-ABI wrappers (`src/runtime/string.cpp`); these handlers only
 // marshal the VM's slot representation in and out.
@@ -1182,7 +1182,7 @@ auto intrinsic_rt_fmt_char_from_codepoint(std::span<const slot_value> args)
 }
 
 // ---------------------------------------------------------------------------
-// `std.platform` runtime intrinsics (spec/std-platform.md). Each queries the
+// `std.platform` runtime intrinsics (spec/std-reference.md). Each queries the
 // host through `src/runtime/platform_query.h` (shared with this tier's
 // AOT/JIT counterpart, `src/runtime/platform.cpp`, so the OS-specific query
 // logic itself isn't duplicated a third time) and encodes the result per

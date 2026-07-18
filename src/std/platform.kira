@@ -166,7 +166,7 @@ intrinsic def rt_processor_name() -> result[str, io_errno]
 # ---------------------------------------------------------------------------
 
 #: os_family equality has no runtime == codegen (only the compile-time
-#: evaluator understands sum-type equality — see spec/std-platform.md), so
+#: evaluator understands sum-type equality — see spec/std-reference.md), so
 #: these are spelled with match rather than target_os_family() == @unix.
 
 #: Checks if the target operating system is Unix-like (Linux, macOS, BSD).

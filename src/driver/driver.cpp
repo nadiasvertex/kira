@@ -28,7 +28,7 @@ namespace {
 /// The `@architecture` variant constant matching this compiler binary's own
 /// build host CPU. Kira has no `--target` flag yet (no cross-compilation),
 /// so "target" and "build host" are the same thing for now — `TARGET_ARCH`
-/// et al. (spec/std-platform.md) describe whatever this binary was itself
+/// et al. (spec/std-reference.md) describe whatever this binary was itself
 /// compiled for.
 [[nodiscard]] constexpr auto detect_target_arch() -> std::string_view {
 #if defined(__x86_64__) || defined(_M_X64)
@@ -88,7 +88,7 @@ struct target_os_info {
 }
 
 /// Generates `module std.platform`'s target/build-info accessor functions
-/// (spec/std-platform.md "Compile-Time Target Constants") as Kira source
+/// (spec/std-reference.md "Compile-Time Target Constants") as Kira source
 /// text, with no `module` line of its own. This is the one piece of
 /// `std.platform` that cannot be a checked-in `.kira` file: the values
 /// describe the compiler binary's own build host, so they are computed here

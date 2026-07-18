@@ -11,7 +11,7 @@
 /// tier's C-ABI intrinsics (`src/runtime/string.cpp`) wrap them for
 /// generated IR. Keeping the algorithms here (rather than duplicated in each
 /// tier) is why the two backends can't drift apart. Backs `std.string`
-/// (`spec/std-string.md`).
+/// (`spec/std-reference.md`).
 ///
 /// Every function operates on UTF-8 bytes. Substring search is scalar-correct
 /// without decoding because UTF-8 is self-synchronizing: a valid UTF-8 needle

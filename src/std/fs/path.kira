@@ -1,6 +1,6 @@
 module std.fs.path
 
-#: Filesystem path string manipulation (spec/std-fs-path.md). Purely a
+#: Filesystem path string manipulation (spec/std-reference.md). Purely a
 #: string-manipulation library — no syscalls, no filesystem access. raw is
 #: stored as written and every operation performs a linear byte scan as
 #: needed; nothing is eagerly split into components.

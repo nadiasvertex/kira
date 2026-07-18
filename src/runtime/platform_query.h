@@ -5,7 +5,7 @@
 #include <string>
 
 /// Host OS queries backing `std.platform`'s runtime intrinsics
-/// (spec/std-platform.md). Both native implementations of each `rt_*`
+/// (spec/std-reference.md). Both native implementations of each `rt_*`
 /// intrinsic — `src/runtime/platform.h`/`.cpp` (the LLVM/AOT tier's
 /// `extern "C"` ABI layer) and `src/bytecode/vm.cpp`'s `intrinsic_rt_*`
 /// dispatch table (the bytecode tier) — call through this single set of

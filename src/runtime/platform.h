@@ -3,7 +3,7 @@
 #include <cstdint>
 
 /// C-ABI entry points `llvm_codegen`-compiled IR (JIT and AOT alike) calls
-/// for `std.platform`'s six runtime intrinsics (spec/std-platform.md) — the
+/// for `std.platform`'s six runtime intrinsics (spec/std-reference.md) — the
 /// LLVM-tier counterpart of `src/bytecode/vm.cpp`'s `intrinsic_rt_*`
 /// dispatch table, mirroring `src/runtime/io.h`'s existing split between the
 /// two backends. Each queries the host via `src/runtime/platform_query.h`
