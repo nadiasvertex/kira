@@ -564,7 +564,7 @@ struct synthesized_item_splice {
 
 /// One monomorphized instance of a function generic over compile-time *value*
 /// parameters only (`def get[n: usize](v: array[int32, n], i: index[n])`) —
-/// see `checker::instantiate_const_generic` (`check.cpp`), the only place
+/// see `checker::instantiate_generic_function` (`check.cpp`), the only place
 /// these are created.
 ///
 /// A value parameter has no runtime existence: `n` is not passed, and code

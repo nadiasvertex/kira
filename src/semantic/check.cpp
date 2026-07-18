@@ -951,17 +951,10 @@ private:
   /// `take_checked_types`.
   ast::ptr_vec<ast::func_decl> synthesized_decls_;
   std::vector<synthesized_method> synthesized_trait_defaults_;
-  /// Every const-generic instance `instantiate_const_generic` produced (see
+  /// Every const-generic instance `instantiate_generic_function` produced (see
   /// `const_generic_instance` in types.h). The clones themselves are owned by
   /// `synthesized_decls_`, the same way trait-default clones are.
   std::vector<const_generic_instance> const_generic_instances_;
-  /// One instance per (template, constant tuple), so a call made a thousand
-  /// times with `n == 3` compiles one `get$3` and not a thousand. Keyed by
-  /// `instance_key`; the entry is inserted *before* the clone's body is
-  /// checked, which is what makes a recursive const-generic function
-  /// terminate — the recursive call finds the instance it is already inside.
-  std::unordered_map<std::string, const ast::func_decl *>
-      const_generic_instance_cache_;
   /// The constants the const-generic instance currently being checked was
   /// instantiated with (`n` -> the `const_value` type slot, and `n` -> the
   /// plain integer). Empty while checking anything else, including the
@@ -976,17 +969,21 @@ private:
   /// name bound to the concrete type the call solved for it. The type
   /// analog of `const_param_slots_`, consulted by `push_type_params`.
   std::unordered_map<std::string, type_id> type_param_slots_;
-  /// One monomorphized instance per (method declaration, solved-type tuple)
-  /// — see `instantiate_hk_method`. Values point into `synthesized_decls_`.
+  /// One monomorphized instance per (declaration, solution) — so a call made
+  /// a thousand times with `n == 3` compiles one `get$3` and not a thousand.
+  /// Shared by every instantiation path (free function, method, higher-kinded
+  /// method); see `find_or_check_generic_instance`, which also explains why
+  /// the entry is inserted *before* the clone's body is checked. Values point
+  /// into `synthesized_decls_`.
   std::unordered_map<std::string, const ast::func_decl *> hk_instance_cache_;
   std::unordered_map<std::string, int64_t> const_param_values_;
-  /// Nesting depth of `instantiate_const_generic`, bounding a template that
+  /// Nesting depth of `instantiate_generic_function`, bounding a template that
   /// instantiates itself at an ever-changing constant (`f[n]` calling
   /// `f[n + 1]`) — which would otherwise never stop.
   size_t instantiation_depth_ = 0;
   /// Whether the function being checked is a const-generic *template* — its
   /// value parameters are still symbolic, and it will only ever reach a
-  /// backend through the instances `instantiate_const_generic` makes of it.
+  /// backend through the instances `instantiate_generic_function` makes of it.
   /// Constructs that need a real constant (`try_from` on `index[n]`) neither
   /// report nor lower here; the instances handle both.
   bool in_const_generic_template_ = false;
@@ -994,7 +991,7 @@ private:
   /// type parameters are still abstract `T`s (nothing bound them in
   /// `type_param_slots_`), so a call it makes to another type-generic function
   /// can't be monomorphized yet. The template reaches a backend only through
-  /// the instances `instantiate_type_generic` makes of it; those clear this
+  /// the instances `instantiate_generic_function` makes of it; those clear this
   /// flag (their parameters are bound) and monomorphize such calls for real.
   bool in_type_generic_template_ = false;
   /// Owns every `named_type` synthesized by `reinterpret_as_named_type`
@@ -1193,7 +1190,7 @@ private:
   ///
   /// One piece of source can be checked several times: a const-generic
   /// template's body is checked once as itself and again inside every
-  /// instance made of it (`instantiate_const_generic`), and a trait-default
+  /// instance made of it (`instantiate_generic_function`), and a trait-default
   /// body once per implementing type (`monomorphize_trait_default`). A
   /// mistake in that source is *one* mistake — reporting it once per copy
   /// would tell the user, three times over, about a line they wrote once.
@@ -4167,10 +4164,12 @@ private:
   ///
   /// `explicit_args` are the compile-time arguments the call gave in brackets
   /// (`zeros[8]()`), empty for the ordinary bare-callee call.
-  auto check_call_against_decl(
-      const ast::call_expr &call, const ast::func_decl &decl,
-      const module_members *owner, file_id_type decl_file, bool skip_self,
-      const explicit_generic_args &explicit_args = {}) -> type_id {
+  auto check_call_against_decl(const ast::call_expr &call,
+                               const ast::func_decl &decl,
+                               const module_members *owner,
+                               file_id_type decl_file, bool skip_self,
+                               const explicit_generic_args &explicit_args = {})
+      -> type_id {
     if (in_contract_ && !decl.modifiers.is_pure) {
       error_with_help(
           call.span,
@@ -4439,6 +4438,7 @@ private:
     if (fixed_type_params != nullptr && !fixed_type_params->empty()) {
       pop_type_params();
     }
+    self_type_ = saved_self_type;
     in_postcondition_ = saved_postcondition;
     in_contract_ = saved_contract;
     type_param_slots_ = std::move(saved_type_slots);
@@ -4579,8 +4579,7 @@ private:
           call.span,
           std::format("`{}` takes {} compile-time argument(s), and this call "
                       "gives {}",
-                      decl.name, decl.type_params.size(),
-                      explicit_args.size()),
+                      decl.name, decl.type_params.size(), explicit_args.size()),
           "too many arguments in brackets",
           std::format("The brackets after `{}` name its compile-time "
                       "parameters, in declaration order. Drop the extra "
@@ -4676,10 +4675,9 @@ private:
   /// int32`, and a `v: array[int32, n]` parameter given an `array[int32, 3]`
   /// solves `n := 3`. Shared by the free-function and receiver-call paths,
   /// which differ only in which parameters they hand it.
-  auto solve_from_argument_types(const ast::call_expr &call,
-                                 const std::vector<fn_param_info> &params,
-                                 std::unordered_map<std::string, type_id>
-                                     &bindings) -> void {
+  auto solve_from_argument_types(
+      const ast::call_expr &call, const std::vector<fn_param_info> &params,
+      std::unordered_map<std::string, type_id> &bindings) -> void {
     const auto mapping = call_argument_mappings_.find(&call);
     if (mapping == call_argument_mappings_.end()) {
       return;
@@ -4711,9 +4709,8 @@ private:
     auto type_bindings = std::unordered_map<std::string, type_id>{};
     solve_from_argument_types(call, params, type_bindings);
 
-    const auto solution =
-        solve_generic_params(call, decl, owner, solved, type_bindings,
-                             explicit_args);
+    const auto solution = solve_generic_params(call, decl, owner, solved,
+                                               type_bindings, explicit_args);
     if (!solution.has_value()) {
       return std::nullopt;
     }
@@ -4873,7 +4870,8 @@ private:
       const ast::call_expr &call, const method_entry &method,
       std::string_view target_type_name,
       const std::unordered_map<std::string, type_id> &bindings,
-      const value_bindings &solved = {}) -> const ast::func_decl * {
+      const value_bindings &solved = {}, type_id self_type = k_unknown_type)
+      -> const ast::func_decl * {
     const auto &decl = *method.decl;
     const auto solution = solve_generic_params(
         call, decl, method.owner, solved, bindings, explicit_generic_args{});
@@ -4882,10 +4880,9 @@ private:
     }
     const auto name =
         std::format("{}::{}{}", target_type_name, decl.name, solution->suffix);
-    return find_or_check_generic_instance(call, decl, method.owner,
-                                          /*decl_file=*/std::nullopt,
-                                          *solution, name,
-                                          &method.fixed_type_params);
+    return find_or_check_generic_instance(
+        call, decl, method.owner, /*decl_file=*/std::nullopt, *solution, name,
+        &method.fixed_type_params, self_type);
   }
 
   /// Holds a callee's `pre` conditions to account at the call site.
@@ -7082,7 +7079,8 @@ private:
   auto check_generic_instance_method_call(const ast::call_expr &call,
                                           const method_entry &method,
                                           std::string_view target_type_name,
-                                          const ast::expr &receiver)
+                                          const ast::expr &receiver,
+                                          type_id receiver_type)
       -> std::optional<type_id> {
     if (!is_generic_template(*method.decl) || in_const_generic_template_ ||
         in_type_generic_template_) {
@@ -7105,8 +7103,8 @@ private:
     auto bindings = std::unordered_map<std::string, type_id>{};
     solve_from_argument_types(call, params, bindings);
 
-    const auto *instance = instantiate_hk_method(call, method, target_type_name,
-                                                 bindings, solved);
+    const auto *instance = instantiate_hk_method(
+        call, method, target_type_name, bindings, solved, receiver_type);
     if (instance == nullptr) {
       return std::nullopt;
     }
@@ -7115,8 +7113,8 @@ private:
                         .owner_module = method.owner->module_name,
                         .impl_target_type = "",
                         .receiver = &receiver};
-    return substitute_solved(
-        signature_return_type(*method.decl, method.owner), bindings);
+    return substitute_solved(signature_return_type(*method.decl, method.owner),
+                             bindings);
   }
 
   /// Whether `method` is *receiver-style* for an `instance` of some
@@ -7363,7 +7361,7 @@ private:
                                      object);
         }
         if (const auto instantiated = check_generic_instance_method_call(
-                call, *method, entry.name, *field.object)) {
+                call, *method, entry.name, *field.object, object)) {
           return *instantiated;
         }
         record_instance_method_callee(call, *method, entry.name, *field.object);
@@ -8418,7 +8416,7 @@ private:
         // `index[n].try_from(raw)` inside a function generic over `n`. There
         // is no check to build *here* — `n` is a symbol — but there will be
         // one in each instance the template is compiled into, where `n` is a
-        // number (`instantiate_const_generic`). The template itself is never
+        // number (`instantiate_generic_function`). The template itself is never
         // lowered, so leaving this call without a fragment costs nothing.
         return nullptr;
       }
@@ -8594,7 +8592,7 @@ private:
   /// inside a function generic over `n`) — which means no runtime check can be
   /// generated *here*, because the value it would compare against does not
   /// exist until the enclosing template is monomorphized. The instances
-  /// `instantiate_const_generic` makes of it are where the check does get
+  /// `instantiate_generic_function` makes of it are where the check does get
   /// built, with `n` a real number.
   auto refinement_constants(const type_entry &entry)
       -> std::optional<std::unordered_map<std::string, int64_t>> {

@@ -1596,7 +1596,7 @@ auto test_run_for_loop_over_user_std_iterator() -> void {
 /// A free function generic over *types* is monomorphized once per concrete
 /// type its call sites solve for (`identity$int32`, `choose$int32`) and then
 /// runs — the template that used to fail lowering wholesale now reaches a
-/// backend through its instances (`instantiate_type_generic`).
+/// backend through its instances (`instantiate_generic_function`).
 auto test_run_type_generic_free_function() -> void {
   auto temp = make_temp_dir();
   auto source_path = temp.path / "sample_type_generic.kira";

@@ -1,0 +1,23 @@
+module sample
+
+def zeros[n: usize]() -> array[int32, n]:
+    [0; n]
+
+def identity[T](x: T) -> T:
+    x
+
+def opaque(x: usize) -> usize:
+    x
+
+# A compile-time argument has to *be* a compile-time argument: a runtime call
+# doesn't fold to a constant, and a name that isn't a type isn't a type.
+def from_runtime(k: usize) -> int32:
+    let a = zeros[opaque(k)]()
+    return a[0]
+
+def not_a_type() -> int32:
+    identity[nonexistent_type](1)
+
+def too_many() -> int32:
+    let a = zeros[2, 3]()
+    return a[0]

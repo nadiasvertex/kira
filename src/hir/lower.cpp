@@ -3724,7 +3724,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   }
   // A const-generic *instance* keeps the template's `[n: usize]` parameter
   // list, but every type in it was already resolved against the constant that
-  // instance stands for (`semantic::checker::instantiate_const_generic`), so
+  // instance stands for (`semantic::checker::instantiate_generic_function`), so
   // there is nothing generic left to lower — `checked_type_of` reads back
   // `array[int32, 3]`, not `array[int32, n]`. Every other generic function is
   // still a template, with no runtime form until it is instantiated.

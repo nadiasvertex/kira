@@ -1,0 +1,24 @@
+module sample
+
+type index[n: usize] = usize where self < n
+
+# `n` appears only in the return type, so nothing about the *call's arguments*
+# could say what it is — the brackets do.
+def zeros[n: usize]() -> array[int32, n]:
+    [0; n]
+
+# A template mixing a value parameter and a type parameter, given both.
+def filled[n: usize, T](v: T) -> array[T, n]:
+    [v; n]
+
+# Forwarding a value parameter the enclosing instance already fixed: inside
+# `outer[3]` this instantiates `zeros[4]`.
+def outer[n: usize](v: array[int32, n], i: index[n]) -> int32:
+    let bigger = zeros[n + 1]()
+    return v[i] + bigger[0]
+
+def run() -> int32:
+    let a = zeros[2]()
+    let b = filled[3, int32](7)
+    let c: array[int32, 3] = [1, 2, 3]
+    return a[0] + b[1] + outer(c, 0)

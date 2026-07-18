@@ -1,0 +1,25 @@
+module sample
+
+type index[n: usize] = usize where self < n
+
+type holder = { base: int32 }
+
+extend holder:
+    # Const-generic method — `n` is pinned by the argument's type, and the
+    # instance is named for the impl target as well as the constant
+    # (`holder::at$2`).
+    def at[n: usize](self, v: array[int32, n], i: index[n]) -> int32:
+        v[i] + self.base
+
+    # Type-generic, not higher-kinded.
+    def echo[T](self, x: T) -> T:
+        x
+
+    # Both kinds of parameter on one method.
+    def pick[n: usize, T](self, v: array[T, n], i: index[n]) -> T:
+        v[i]
+
+def run() -> int32:
+    let h = holder { base: 1 }
+    let v: array[int32, 2] = [4, 5]
+    return h.at(v, 1) + h.echo(2) + h.pick(v, 0)

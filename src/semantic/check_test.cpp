@@ -1250,6 +1250,38 @@ auto test_reports_unsolved_const_generic_value_param() -> void {
                     "argument determines");
 }
 
+auto test_accepts_explicit_generic_args() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_explicit_generic_args.kira");
+  expect(analyzed.error_count == 0,
+         "expected a call to give its callee's compile-time arguments in "
+         "brackets, including for a parameter no argument could determine");
+}
+
+auto test_accepts_generic_methods() -> void {
+  const auto analyzed = analyze_test_data_file("accept_generic_methods.kira");
+  expect(analyzed.error_count == 0,
+         "expected const-generic, type-generic, and mixed generic methods on "
+         "an `extend` target to monomorphize like generic free functions");
+}
+
+auto test_reports_bad_explicit_generic_args() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_bad_explicit_generic_args.kira");
+  expect(analyzed.error_count > 0,
+         "expected unusable compile-time arguments to fail");
+  expect_diagnostic(
+      analyzed, "`zeros`'s compile-time argument `n` is not a constant",
+      "expected a value argument that doesn't fold to be reported");
+  expect_diagnostic(analyzed,
+                    "`identity`'s compile-time argument `T` is not a type this "
+                    "call can name",
+                    "expected a type argument naming no type to be reported");
+  expect_diagnostic(
+      analyzed, "`zeros` takes 1 compile-time argument(s), and this call gives",
+      "expected too many bracket arguments to be reported");
+}
+
 auto test_reports_refinement_predicate_not_bool() -> void {
   const auto analyzed =
       analyze_test_data_file("report_refinement_predicate_not_bool.kira");
@@ -1990,6 +2022,9 @@ auto main() -> int {
     test_accepts_const_generic_value_match();
     test_accepts_const_generic_try_from();
     test_reports_unsolved_const_generic_value_param();
+    test_accepts_explicit_generic_args();
+    test_accepts_generic_methods();
+    test_reports_bad_explicit_generic_args();
     test_reports_refinement_predicate_not_bool();
     test_accepts_refinement_predicate();
     test_accepts_concept_bound();

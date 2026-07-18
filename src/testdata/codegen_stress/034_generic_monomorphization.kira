@@ -1,0 +1,64 @@
+module codegen_stress.generic_monomorphization
+
+# Every shape of generic template that has no runtime form of its own, and so
+# reaches the backends only as monomorphized instances. Value parameters and
+# type parameters take one road here, so a template mixing them is not a
+# special case — see `semantic::checker::instantiate_generic_function`.
+
+type index[n: usize] = usize where self < n
+
+# --------------------------------------------------------------------------
+#  Explicit compile-time arguments
+# --------------------------------------------------------------------------
+
+# `n` appears only in the return type, so no argument could ever say what it
+# is — only the call site can, in brackets.
+def zeros[n: usize]() -> array[int32, n]:
+    [0; n]
+
+# --------------------------------------------------------------------------
+#  Mixed value + type generics
+# --------------------------------------------------------------------------
+
+def filled[n: usize, T](v: T) -> array[T, n]:
+    [v; n]
+
+def first[n: usize, T](v: array[T, n], i: index[n]) -> T:
+    v[i]
+
+# --------------------------------------------------------------------------
+#  Generic methods on an `extend` target
+# --------------------------------------------------------------------------
+
+type holder = { base: int32 }
+
+extend holder:
+    # Const-generic method: `n` is pinned by the argument's type.
+    def at[n: usize](self, v: array[int32, n], i: index[n]) -> int32:
+        v[i] + self.base
+
+    # Type-generic method that is not higher-kinded.
+    def echo[T](self, x: T) -> T:
+        x
+
+    # Both kinds at once, on a method.
+    def pick[n: usize, T](self, v: array[T, n], i: index[n]) -> T:
+        v[i]
+
+def main() -> int32:
+    let h = holder { base: 1 }
+
+    # Two instances of `zeros`, named for the constants they were asked for.
+    let a = zeros[3]()          # [0, 0, 0]
+    let b: array[int32, 2] = [4, 5]
+
+    # `filled$4$int32` — one constant and one type in the same instance name.
+    let c = filled[4, int32](7) # [7, 7, 7, 7]
+
+    let via_free = first(c, 2)  # 7
+    let via_method = h.at(b, 1) # 5 + 1 = 6
+    let via_echo = h.echo(2)    # 2
+    let via_mixed = h.pick(c, 0) # 7
+
+    # 0 + 7 + 6 + 2 + 7 = 22
+    return a[0] + via_free + via_method + via_echo + via_mixed
