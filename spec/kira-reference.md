@@ -996,6 +996,59 @@ def inspect[T: show + eq](a: T, b: T) -> unit:
         println("{a.show()} != {b.show()}")
 ```
 
+### Where Type Arguments Come From
+
+You rarely write a generic function's type arguments. The compiler works
+each one out from the call, trying these sources in order and stopping at
+the first that answers:
+
+1. **What you wrote in brackets.** `zeros[8]()` says `n` is 8, and that
+   settles it.
+2. **The argument types.** `print_item(3)` solves `T := int32` because
+   `item: T` was given an `int32`.
+3. **The expected type at the call site.** A parameter that appears only in
+   the return type has nothing in the arguments to solve it, so the context
+   the call sits in supplies the answer:
+
+```kira
+let names: list[str] = words.iter().collect()   # C is list[str], from the annotation
+return counts.iter().collect()                  # C is the declared result type
+```
+
+The order matters: **the expected type is a fallback, never an override.**
+Arguments always win, so an annotation that disagrees with the arguments is
+reported as a mismatch rather than quietly changing what the call means:
+
+```kira
+let x: int64 = take(5i32)   # error: expected int64, found int32
+                            # T was solved to int32 from the argument
+```
+
+The expected type is used everywhere the compiler knows one — annotated
+`let` and `var`, `return`, assignment, call arguments, struct literal
+fields, collection elements, and match arm results. Where no expected type
+exists, there is nothing to infer from, and the compiler asks you to say:
+
+```kira
+let xs = words.iter().collect()   # error: cannot tell which collection to build
+                                  # help: annotate the binding, or write
+                                  #       .collect[list[str]]()
+```
+
+Writing them explicitly uses the same brackets as the declaration, and works
+on methods as well as free functions:
+
+```kira
+let xs = words.iter().collect[list[str]]()
+let ys = zeros[8]()
+```
+
+A type argument may be any type, including a generic one — `list[str]`
+above is a single argument, not two. Type arguments are written in square
+brackets, not angle brackets; the compiler tells them from indexing by what
+the name before the bracket refers to, so a local variable named the same as
+a generic function is still indexed, not instantiated.
+
 ### Opaque Return Types: `some trait`
 
 A function that returns a concrete type implementing a trait, but whose exact type is unnameable or unimportant, can use `some trait` as its return type. This is zero-cost static polymorphism: the compiler monomorphizes at each call site, just as it does for `fn(A) -> B`.

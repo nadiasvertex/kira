@@ -367,14 +367,37 @@ Notes on each choice:
   and `rfind` non-quadratic.
 - `exact_len`, not `len` — under UFCS a trait method named `len` would collide
   with the free `len` function on every container.
-- **`from_iter` is deliberately not a trait.** A generic
-  `collect[C: from_iter]` needs both call-site bound enforcement and
-  return-type-driven inference, and Kira has neither (§8, R1). Ship named
-  collectors — `collect_list`, `collect_str`, `collect_ordered_map`,
-  `collect_unordered_map` — and revisit a unified `collect` once bounds are
-  enforced. This is a real collision between the design's ambitions and the
-  language's current state, and the standard library documentation should say
-  so plainly rather than ship a `collect` that infers wrongly.
+- **`from_iter` is a trait, and `collect` is unified.** An earlier revision
+  of this document deferred it, on the grounds that `collect[C: from_iter]`
+  needs both call-site bound enforcement and return-type-driven inference and
+  Kira has neither. The first half was wrong: unenforced bounds affect the
+  *quality of the error* when `C` is unsuitable, not whether `collect`
+  computes the right answer (§8, R1, and see below). The real blockers were
+  return-position inference and two smaller gaps, all three of which are
+  designed in `spec/generic-inference-design.md` and sequenced ahead of this
+  work. `collect` therefore ships as one function:
+
+  ```kira
+  pub trait from_iter[T]:
+      static def from_iter[I: iterator[T]](it: I) -> self
+
+  pub def collect[I, C](self: I) -> C:
+      return C.from_iter(self)
+  ```
+
+  It infers from the expected type — `let names: list[str] = it.collect()` —
+  and takes an explicit argument where no expected type exists:
+  `it.collect[list[str]]()`. Named collectors are not shipped; they would be
+  a second way to spell the same thing.
+
+  The one honest caveat, which the standard library documentation should
+  state plainly: **`collect` is inferred, not bounds-checked.** A `C` that is
+  not a collection is a compile-time error at the point of use, but phrased
+  indirectly — it surfaces as a missing `from_iter` inside `std.iter`, with
+  the instantiation-site note of R1 pointing back at the user's line. That
+  note is a hard requirement for this feature rather than the nice-to-have
+  R1 treats it as, because for `collect` an unsuitable `C` is the *common*
+  failure and the user never wrote a call naming `from_iter` at all.
 - `into_iterator` exists but `for` does not require it. `for` already resolves
   structurally through `try_resolve_iterator`; `element_type_of` is extended
   so that a receiver which is not itself an iterator desugars through
@@ -456,7 +479,7 @@ for documentation and for future enforcement; today they are **advisory only**
 **Terminals.** `count`, `fold`, `reduce`, `for_each`, `sum` (`T: add`),
 `product` (`T: mul`), `any`, `all`, `find`, `find_map`, `position`, `last`,
 `nth`, `min`/`max` (`T: ord`), `min_by`/`max_by`, `min_by_key`/`max_by_key`,
-`collect_list`, `collect_str`, `collect_ordered_map`, `collect_unordered_map`,
+`collect` (§5.1; one function, inferred from the expected type),
 `partition`, `group_by`, `eq_by`, `cmp_by`.
 
 **Slice algorithms**, in-place and not iterator-based: `sort` (`T: ord`),
@@ -564,7 +587,8 @@ Representation and the existing `rt_str_*` intrinsics are unchanged here;
 their migration is deferred (§7). Added now:
 
 - `str_builder` — `{ buf: list[uint8] }` with `push_str`, `push_char`,
-  `build`. This is what `collect_str` and `join` target.
+  `build`. This is what `join` targets, and what `str`'s `from_iter` impl
+  builds through so `collect[str]` costs one allocation pass.
 - `chars()`, `bytes()`, `char_indices()` as iterators, written in Kira over
   `as_bytes()` with UTF-8 decoding. New, and Kira-side from day one — no new
   intrinsics.

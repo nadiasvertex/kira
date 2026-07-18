@@ -543,7 +543,11 @@ postfix_suffix
     = "." IDENT                                    (* field access         *)
     | "." IDENT "[" type_arg_list "]"             (* generic method       *)
     | "." "(" ")"                                  (* field via parens     *)
-    | "[" expr "]"                                 (* index                *)
+    | "[" expr "]"                                 (* index, OR explicit   *)
+                                                   (* compile-time args on *)
+                                                   (* a free function —    *)
+                                                   (* "f[int32]()". See    *)
+                                                   (* disambiguation 2.    *)
     | "(" [ call_arg_list ] ")"                    (* call                 *)
     | "?" postfix_suffix                           (* try-propagate then   *)
     | "?"                                          (* try-propagate        *)
@@ -886,7 +890,40 @@ DOC_COMMENT = "#:" { (* any character except newline *) } NEWLINE ;
 
   2.  "[" is overloaded: it begins a type argument list (named_type),
       an array literal (array_expr), a slice type (slice_type), and
-      an index expression (postfix_suffix). Disambiguated by position.
+      an index expression (postfix_suffix).
+
+      In type position the reading is unambiguous: only type_arg_list
+      and slice_type are available, and they differ in whether a
+      module_path precedes the bracket.
+
+      In expression position "base [ ... ]" is either indexing or a
+      compile-time argument list. The reading is decided by what "base"
+      names, in this order:
+
+        a.  If "base" resolves in the value namespace — a local binding,
+            a parameter, or a static — the brackets are INDEXING. A value
+            shadowing a generic name means the value was meant.
+        b.  Otherwise, if "base" names a type or a generic callable, the
+            brackets are a COMPILE-TIME ARGUMENT LIST.
+        c.  Within a compile-time argument list, each argument's meaning
+            is fixed by the DECLARATION's parameter in that position, not
+            by the argument's own syntax: a "[n: usize]" parameter takes
+            a value argument, a bare "[T]" parameter takes a type
+            argument. So "f[list[int32]]" and "f[3]" need no syntactic
+            distinction — the declaration of "f" already says which is
+            expected, and a mismatch is a diagnosable error.
+        d.  Anything else is an error. There is no fallback to indexing.
+
+      Rule (c) is what lets a type argument be an arbitrary type_expr,
+      including a nested generic application, without the bracket
+      contents having to be classifiable on their own.
+
+      Type arguments are NOT written with angle brackets. "<>" would put
+      the ambiguity in the comparison operators ("a < b, c > (d)" is both
+      a valid expression and a valid instantiation), which no namespace
+      lookup can resolve; the "[" ambiguity above is settled by a single
+      lookup because types and values occupy separate namespaces. See
+      spec/generic-inference-design.md §4.1.
 
   3.  "static" begins static declarations, static-if, static-assert,
       static-for, and the static_expr form inside expressions. The

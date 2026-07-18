@@ -913,6 +913,20 @@ private:
   /// an entry here). Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::call_expr *, call_argument_mapping>
       call_argument_mappings_;
+  /// The expected type each call site was inferred under, recorded on the way
+  /// into `infer_call` — the *fourth* and last source of a generic solution
+  /// (`spec/generic-inference-design.md` §2). Keyed by call rather than held
+  /// in a single member because argument checking runs first and infers
+  /// nested calls of its own, which would clobber one.
+  ///
+  /// Only ever a fallback: `solve_generic_params` consults it after explicit
+  /// arguments and after unification against the arguments, and `unify_rigid`
+  /// declines to overwrite a name already bound. So a hint can turn an
+  /// unsolvable call into a solved one and can never re-solve a call the
+  /// arguments already answered — which is what keeps `k_unknown_type`'s
+  /// unify-with-everything rule from letting an unknown context quietly
+  /// retype a well-understood call.
+  std::unordered_map<const ast::call_expr *, type_id> call_expected_types_;
   /// Every module-qualified or type-qualified call resolved by
   /// `infer_qualified_call`. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees_;
@@ -4694,6 +4708,51 @@ private:
     }
   }
 
+  /// Solves whatever the arguments left open from the type the call site
+  /// *expects* — the last of the four sources, and the only one that can
+  /// reach a parameter mentioned nowhere but the return type (`def
+  /// collect[I, C](self: I) -> C`).
+  ///
+  /// Deliberately last, and deliberately non-overriding: `unify_rigid`
+  /// declines to rebind a name, so "arguments win over context" falls out of
+  /// call order rather than needing a rule of its own. That is what makes
+  /// this safe to add without auditing existing call sites — it can turn an
+  /// unsolved call into a solved one, never a solved call into a differently
+  /// solved one, so `let x: int64 = take(5i32)` still reports the mismatch it
+  /// reports today instead of silently re-solving `T := int64`.
+  ///
+  /// See `spec/generic-inference-design.md` §2.
+  auto solve_from_expected_type(
+      const ast::call_expr &call, const ast::func_decl &decl,
+      const module_members *owner,
+      std::unordered_map<std::string, type_id> &bindings) -> void {
+    if (decl.return_type == nullptr) {
+      return;
+    }
+    const auto hint = call_argument_mappings_.empty() ? k_unknown_type
+                                                      : k_unknown_type;
+    (void)hint;
+    const auto found = call_expected_types_.find(&call);
+    if (found == call_expected_types_.end()) {
+      return;
+    }
+    const auto expected = types_.strip_refinement(found->second);
+    if (types_.is_unknown(expected) || expected == k_error_type) {
+      return;
+    }
+    // Resolved in the *template's* terms, so `-> C` comes back as the
+    // abstract `C` that `unify_rigid` can bind rather than as `unknown`.
+    const auto declared =
+        resolve_type(*decl.return_type, resolve_ctx{.module = owner,
+                                                    .param_bindings = nullptr,
+                                                    .use_type_param_stack =
+                                                        true,
+                                                    .quiet = true,
+                                                    .existential_allowed =
+                                                        true});
+    unify_rigid(declared, expected, bindings);
+  }
+
   /// Monomorphizes `decl` for this call, returning the call's result type
   /// under the instantiation (`-> array[int32, n]` becomes `array[int32, 3]`,
   /// `-> T` becomes `int32`) — or `nullopt` when the call cannot be
@@ -7813,6 +7872,11 @@ private:
   }
 
   auto infer_call(const ast::call_expr &call, type_id expected) -> type_id {
+    // Before anything else, including argument checking: every
+    // instantiation path below reaches back for this by call node.
+    if (!types_.is_unknown(expected) && expected != k_error_type) {
+      call_expected_types_[&call] = types_.strip_refinement(expected);
+    }
     if (call.callee == nullptr) {
       infer_call_args_loosely(call);
       return k_unknown_type;
