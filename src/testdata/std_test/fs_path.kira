@@ -1,0 +1,97 @@
+module main
+
+def test_join() -> unit:
+    let a = std.fs.path.path_of("/usr")
+    let b = std.fs.path.path_of("local")
+    let joined = a / b
+    println(joined.show())
+
+def test_absolute() -> unit:
+    let p = std.fs.path.path_of("/usr/local/bin")
+    println("{p.is_absolute()} {p.is_relative()}")
+
+def test_parent() -> unit:
+    let p = std.fs.path.path_of("/usr/local/bin")
+    match p.parent():
+        @some(pp) =>:
+            println(pp.as_str())
+        @none =>:
+            println("no parent")
+
+    let top = std.fs.path.path_of("/etc")
+    match top.parent():
+        @some(pp) =>:
+            println(pp.as_str())
+        @none =>:
+            println("no parent")
+
+    let root = std.fs.path.path_of("/")
+    match root.parent():
+        @some(_) =>:
+            println("has parent")
+        @none =>:
+            println("root has no parent")
+
+def test_filename() -> unit:
+    let p = std.fs.path.path_of("/usr/local/bin")
+    match p.filename():
+        @some(f) =>:
+            println(f)
+        @none =>:
+            println("no filename")
+
+def test_stem_ext() -> unit:
+    let arch = std.fs.path.path_of("archive.tar.gz")
+    match arch.stem():
+        @some(s) => println(s)
+        @none => println("no stem")
+    match arch.extension():
+        @some(e) => println(e)
+        @none => println("no ext")
+
+    let dotfile = std.fs.path.path_of(".gitignore")
+    match dotfile.stem():
+        @some(s) => println(s)
+        @none => println("no stem")
+    match dotfile.extension():
+        @some(e) => println(e)
+        @none => println("no ext")
+
+    let we = arch.with_extension("zip")
+    println(we.as_str())
+
+def test_with_filename() -> unit:
+    let p = std.fs.path.path_of("/usr/local/bin")
+    let wf = p.with_filename("sbin")
+    println(wf.as_str())
+
+def test_components() -> unit:
+    let p = std.fs.path.path_of("/usr/local/bin")
+    let comps = p.components()
+    var i: usize = 0
+    while i < comps.len():
+        println(comps[i])
+        i = i + 1
+
+def test_starts_ends() -> unit:
+    let p = std.fs.path.path_of("/usr/local/bin")
+    let sw = p.starts_with(std.fs.path.path_of("/usr"))
+    let ew = p.ends_with(std.fs.path.path_of("local/bin"))
+    println("{sw} {ew}")
+
+def test_eq() -> unit:
+    let e1 = std.fs.path.path_of("a/b") == std.fs.path.path_of("a/b")
+    let e2 = std.fs.path.path_of("a/b") == std.fs.path.path_of("a/b/")
+    println("{e1} {e2}")
+
+def main() -> int32:
+    test_join()
+    test_absolute()
+    test_parent()
+    test_filename()
+    test_stem_ext()
+    test_with_filename()
+    test_components()
+    test_starts_ends()
+    test_eq()
+    return 0

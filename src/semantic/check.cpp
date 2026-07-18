@@ -931,9 +931,9 @@ private:
   /// `self.output` would otherwise resolve to `unknown`. Consulted by
   /// `resolve_operator_return_type`, which temporarily reinstates the
   /// right impl's bindings before resolving such a method's return type.
-  std::unordered_map<type_id,
-                     std::unordered_map<std::string,
-                                        std::unordered_map<std::string, type_id>>>
+  std::unordered_map<
+      type_id,
+      std::unordered_map<std::string, std::unordered_map<std::string, type_id>>>
       impl_assoc_types_;
   /// Every interpolation segment's resolved rendering dispatch — see
   /// `interp_dispatch`'s doc comment in types.h. Populated by

@@ -233,6 +233,41 @@ auto test_for_loop_over_generator_drives_a_loop_to_the_right_exit_code()
          std::format("expected 0+1+2+3+4 == 10, got {}", WEXITSTATUS(status)));
 }
 
+// Regression for a bug found while implementing `std.fs.path`
+// (`spec/std-fs-path.md`'s `last_sep_index`-style reverse scan): a `while`
+// loop whose body's *last* statement is an `if` with no `else` that returns
+// early used to crash `--compile` with "type `_` has no scalar or
+// heap-value llvm_codegen representation yet". Root cause was in
+// `hir::lowerer::lower_block`: a trailing `if`/`match` statement is always
+// wrapped in `hir_expr_stmt` so it's treated as the block's tail value, but
+// a loop body's value is never actually read, so that wrapper's type stays
+// `k_unknown_type` — and `codegen::compile_stmt`'s `hir_expr_stmt` case
+// used to route unconditionally through `compile_expr`, which allocates
+// result storage for the wrapped expression's type unconditionally. Fixed
+// by having `hir_expr_stmt` recognize an unknown-typed wrapped `if`/`match`
+// and compile it through the same no-result path an ordinary
+// statement-position `if`/`match` already uses. The bytecode VM never had
+// this bug (it doesn't pre-allocate typed storage), so only an AOT test
+// catches it.
+auto test_trailing_if_without_else_in_loop_body_compiles_and_runs() -> void {
+  auto dir = make_temp_dir();
+  const auto status =
+      build_and_run(dir, "module sample\n"
+                         "def find_first_even(n: int32) -> int32:\n"
+                         "    var i: int32 = 0\n"
+                         "    while i < n:\n"
+                         "        i = i + 1\n"
+                         "        if i % 2 == 0:\n"
+                         "            return i\n"
+                         "    return -1\n"
+                         "def main() -> int32:\n"
+                         "    return find_first_even(7)\n");
+  expect(WIFEXITED(status) != 0, "expected the program to exit normally");
+  expect(WEXITSTATUS(status) == 2,
+         std::format("expected the first even number after 0 to be 2, got {}",
+                     WEXITSTATUS(status)));
+}
+
 } // namespace
 
 auto main() -> int {
@@ -243,6 +278,7 @@ auto main() -> int {
     test_packed_struct_and_narrow_array_exit_codes();
     test_generator_drives_a_loop_to_the_right_exit_code();
     test_for_loop_over_generator_drives_a_loop_to_the_right_exit_code();
+    test_trailing_if_without_else_in_loop_body_compiles_and_runs();
   } catch (const std::exception &ex) {
     std::cerr << "aot_test failed: unhandled exception: " << ex.what() << '\n';
     std::exit(1);

@@ -961,9 +961,8 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
     // duplicating the dispatch for a separate `ne` method that doesn't
     // exist.
     if (bin.op == ast::binary_op::bang_eq) {
-      return ok_expr(hir::make<hir_unary>(bin.span, *type,
-                                          ast::unary_op::logical_not,
-                                          std::move(call)));
+      return ok_expr(hir::make<hir_unary>(
+          bin.span, *type, ast::unary_op::logical_not, std::move(call)));
     }
     return ok_expr(std::move(call));
   }
