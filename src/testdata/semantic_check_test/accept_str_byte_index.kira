@@ -1,0 +1,5 @@
+module sample
+def run() -> byte:
+    let s = "hi"
+    let first: byte = s[0]
+    return first + s[1]

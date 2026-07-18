@@ -1,0 +1,19 @@
+module codegen_stress.lambda_captures_local_not_global
+
+# A lambda that both captures an outer local (`base`) and calls a module-level
+# function (`bump`). An ordinary call's callee is a `hir_local_ref`, so
+# `free_variables` reports `bump` alongside `base`; only `base` is a genuine
+# capture. The backends must filter the global out of the closure environment
+# (otherwise it "could not be found among this function's locals"). This is the
+# std-free core of the string-interpolation capture bug — interpolation just
+# desugars into exactly this shape against `std.fmt`. bump(1) + base == 42.
+def bump(n: int32) -> int32:
+    return n + 1
+
+def call_it(f: fn(int32) -> int32, x: int32) -> int32:
+    return f(x)
+
+def main() -> int64:
+    let base = 40
+    let g: fn(int32) -> int32 = k => bump(k) + base
+    return call_it(g, 1) as int64

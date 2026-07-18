@@ -1319,7 +1319,21 @@ private:
   [[nodiscard]] auto compile_lambda_value(const hir::hir_lambda &lambda,
                                           uint8_t dst)
       -> std::expected<void, compile_error> {
-    const auto free_vars = hir::free_variables(lambda);
+    // `free_variables` reports every symbol the body references that it does
+    // not itself bind — which includes module-level functions (an ordinary
+    // call's callee is a `hir_local_ref`, e.g. the `std.fmt` helpers a
+    // string-interpolation body desugars into). Those are resolved directly
+    // against the function table by both call sites (`resolve_callee_key`
+    // above, and the lambda body's own compiler), never read from the
+    // closure environment — only *locals* of the enclosing function are
+    // genuine captures. Filtering to real locals keeps the env layout here
+    // and the env reads in `compile_lambda_body` in lock-step; without it, a
+    // captured global would both fail to be found among this function's
+    // locals and, if it were, shadow the direct-call path in the body.
+    auto free_vars = hir::free_variables(lambda);
+    std::erase_if(free_vars, [&](hir::symbol_id sym) -> bool {
+      return !lookup_local(sym).has_value();
+    });
 
     uint8_t env_reg = 0;
     if (free_vars.empty()) {
@@ -1944,16 +1958,27 @@ private:
     }
     const auto &object_entry = types_.entry(strip_refs(node.object->type));
     const bool indexing_list = is_list_type(node.object->type);
-    if (!indexing_list &&
+    // `str`/`slice`/`slice_mut` share a 2-slot `{ len; data }` header
+    // (`compile_range_index`); single-element access reads `len` from slot 0,
+    // the byte data pointer from slot 1, then loads one element at
+    // `data + index * stride`. An `array[byte, N]` is not a header view (it
+    // is the object itself) and stays on the fixed-array path below.
+    const bool indexing_view =
+        (object_entry.kind == semantic::type_kind::builtin_kind &&
+         object_entry.name == "str") ||
+        (object_entry.kind == semantic::type_kind::builtin_generic_kind &&
+         (object_entry.name == "slice" || object_entry.name == "slice_mut"));
+    if (!indexing_list && !indexing_view &&
         (object_entry.kind != semantic::type_kind::array_kind ||
          !object_entry.array_size.has_value())) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = node.span,
           .message = "indexing is only supported for a fixed-size array "
-                     "with a statically known length, or a list, yet — "
-                     "slice/str indexing needs a byte/view model this "
-                     "bytecode compiler doesn't have yet"});
+                     "with a statically known length, a list, a `str`, or a "
+                     "`slice`/`slice_mut` yet — any other source needs an "
+                     "element-size-aware view model this bytecode compiler "
+                     "doesn't have yet"});
     }
     auto object_reg = compile_expr(*node.object);
     if (!object_reg.has_value()) {
@@ -1964,15 +1989,19 @@ private:
       return std::unexpected(index_reg.error());
     }
 
+    // For a header view, `node.type` is the element type the checker resolved
+    // (`byte` for `str`/`slice[byte]`, `T` for `slice[T]`).
     const auto elem_size =
-        indexing_list ? (object_entry.args.empty()
-                             ? uint8_t{8}
-                             : element_stride(object_entry.args.front()))
-                      : element_stride(object_entry.result);
+        indexing_view
+            ? element_stride(node.type)
+            : (indexing_list ? (object_entry.args.empty()
+                                    ? uint8_t{8}
+                                    : element_stride(object_entry.args.front()))
+                             : element_stride(object_entry.result));
 
     uint8_t len_reg;
     uint8_t data_reg;
-    if (indexing_list) {
+    if (indexing_list || indexing_view) {
       auto len_reg_exp = alloc_register(node.span);
       if (!len_reg_exp.has_value()) {
         return std::unexpected(len_reg_exp.error());
@@ -1984,7 +2013,9 @@ private:
       if (!data_reg_exp.has_value()) {
         return std::unexpected(data_reg_exp.error());
       }
-      emit_load_slot(*data_reg_exp, *object_reg, 2);
+      // The list header keeps its data pointer at slot 2; the 2-slot view
+      // header keeps it at slot 1.
+      emit_load_slot(*data_reg_exp, *object_reg, indexing_view ? 1 : 2);
       data_reg = *data_reg_exp;
     } else {
       const auto len_const = writer_.add_constant(

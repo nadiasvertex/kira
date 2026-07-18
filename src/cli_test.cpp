@@ -1490,6 +1490,56 @@ auto test_run_executes_item_level_splice_injected_impl() -> void {
          "actually execute it, returning 42");
 }
 
+/// A lambda whose body is a string interpolation capturing an outer local.
+/// Interpolation desugars into calls to `std.fmt` helpers whose callees are
+/// `hir_local_ref`s to module-level functions; `free_variables` reports those
+/// globals alongside the genuinely-captured `prefix`, and both backends must
+/// filter the globals out of the closure environment (otherwise lowering fails
+/// with "a captured variable could not be found"). Needs the full `std`
+/// session (unlike the std-free corpus sibling `036_lambda_captures_local_not_
+/// global.kira`), so it runs here through `compile_sources`. `g(42)` yields
+/// "n=42", whose length is 4.
+auto test_run_lambda_body_string_interpolation_captures() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_lambda_interp.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+             "module sample\n"
+             "def apply(f: fn(int32) -> str, x: int32) -> int32:\n"
+             "    return f(x).len() as int32\n"
+             "def main() -> int32:\n"
+             "    let prefix = \"n=\"\n"
+             "    let g: fn(int32) -> str = k => \"{prefix}{k}\"\n"
+             "    return apply(g, 42)\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  // String interpolation desugars against `std.fmt`, so this program needs the
+  // auto-imported prelude/stdlib that `main.cpp` injects for real invocations
+  // (`compile_sources` compiles exactly the sources it is handed).
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected a lambda whose body interpolates a captured local to "
+         "compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 4,
+         "expected the interpolating lambda to render \"n=42\" (length 4), "
+         "capturing `prefix` while resolving the `std.fmt` helpers directly");
+}
+
 /// M5 end-to-end check: hygiene must prevent a spliced `let` from
 /// *clobbering* a splice-site binding of the same name, not just avoid a
 /// compile error. `main` binds its own `temp` to `1`, then splices a quoted
@@ -1821,6 +1871,7 @@ auto main() -> int {
     test_run_executes_spliced_quoted_expression();
     test_run_executes_spliced_builder_constructed_expression();
     test_run_executes_item_level_splice_injected_impl();
+    test_run_lambda_body_string_interpolation_captures();
     test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site();
     test_run_reflects_struct_field_count_into_runtime_constant();
     test_run_scalar_static_let_referenced_by_name();

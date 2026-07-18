@@ -8234,7 +8234,12 @@ private:
     }
     case type_kind::builtin_kind: {
       if (entry.name == "str") {
-        return key_is_range ? object : k_unknown_type;
+        require_integer_key();
+        // A range slice of a `str` is a `str`; a single scalar index yields
+        // the `byte` at that position in the UTF-8 backing bytes (mirroring
+        // `slice[byte]`, which the `builtin_generic_kind` arm below already
+        // element-indexes to `byte`).
+        return key_is_range ? object : types_.builtin("byte");
       }
       if (types_.is_numeric(object) || types_.is_boolean(object)) {
         error(index.span,

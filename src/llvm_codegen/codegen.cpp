@@ -1690,7 +1690,19 @@ private:
   /// before it's constructed), then ties the two together.
   [[nodiscard]] auto compile_lambda_value(const hir::hir_lambda &lambda)
       -> std::expected<llvm::Value *, codegen_error> {
-    const auto free_vars = hir::free_variables(lambda);
+    // `free_variables` reports every symbol the body references that it does
+    // not itself bind — which includes module-level functions (an ordinary
+    // call's callee is a `hir_local_ref`, e.g. the `std.fmt` helpers a
+    // string-interpolation body desugars into). Those resolve directly to
+    // an `llvm::Function` at both call sites, never through the closure
+    // environment; only *locals* of the enclosing function are genuine
+    // captures. Filtering to real locals keeps this env layout and the env
+    // reads in `compile_lambda_body` in lock-step. (Mirrors the identical
+    // filter in the bytecode backend's `compile_lambda_value`.)
+    auto free_vars = hir::free_variables(lambda);
+    std::erase_if(free_vars, [&](hir::symbol_id sym) -> bool {
+      return lookup_local(sym) == nullptr;
+    });
 
     auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
     llvm::Value *env_ptr = nullptr;
@@ -2225,16 +2237,28 @@ private:
     const auto &object_entry =
         types_.entry(strip_refs(types_, node.object->type));
     const bool indexing_list = is_list_type(node.object->type);
-    if (!indexing_list &&
+    // `str`/`slice`/`slice_mut` share a 2-slot `{ len; data }` header
+    // (`compile_range_index`); single-element access reads `len` from slot 0,
+    // the byte data pointer from slot 1, then loads one element at
+    // `data + index * stride` — the same tail the array/list paths use. An
+    // `array[byte, N]` is *not* a header view (it is the object itself) and
+    // stays on the fixed-array path below.
+    const bool indexing_view =
+        (object_entry.kind == semantic::type_kind::builtin_kind &&
+         object_entry.name == "str") ||
+        (object_entry.kind == semantic::type_kind::builtin_generic_kind &&
+         (object_entry.name == "slice" || object_entry.name == "slice_mut"));
+    if (!indexing_list && !indexing_view &&
         (object_entry.kind != semantic::type_kind::array_kind ||
          !object_entry.array_size.has_value())) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = node.span,
           .message = "indexing is only supported for a fixed-size array "
-                     "with a statically known length, or a list, yet — "
-                     "slice/str indexing needs a byte/view model this "
-                     "backend doesn't have yet"});
+                     "with a statically known length, a list, a `str`, or a "
+                     "`slice`/`slice_mut` yet — any other source needs an "
+                     "element-size-aware view model this backend doesn't "
+                     "have yet"});
     }
     auto object = compile_expr(*node.object);
     if (!object.has_value()) {
@@ -2263,6 +2287,15 @@ private:
       elem_size = object_entry.args.empty()
                       ? uint8_t{8}
                       : element_stride(object_entry.args.front());
+    } else if (indexing_view) {
+      len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                                slot_address(*object, size_t{0}), "view.len");
+      data = builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
+                                 slot_address(*object, size_t{1}), "view.data");
+      // `node.type` is the element type the checker resolved (`byte` for
+      // `str`/`slice[byte]`, `T` for `slice[T]`), so its stride is the right
+      // byte scale for the address computation below.
+      elem_size = element_stride(node.type);
     } else {
       len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
                                    *object_entry.array_size);

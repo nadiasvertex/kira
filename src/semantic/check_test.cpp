@@ -284,6 +284,19 @@ auto test_accepts_indexing_local_bindings() -> void {
          "expected indexing a local list binding to check cleanly");
 }
 
+auto test_accepts_str_byte_index() -> void {
+  const auto analyzed = analyze_test_data_file("accept_str_byte_index.kira");
+  expect(analyzed.error_count == 0,
+         "expected a scalar `str` index to check cleanly as a `byte`");
+}
+
+auto test_reports_str_index_non_integer() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_str_index_non_integer.kira");
+  expect_diagnostic(analyzed, "index must be an integer type",
+                    "expected a non-integer `str` index to be rejected");
+}
+
 auto test_accepts_associated_type_self_output() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_associated_type_self_output.kira");
@@ -1840,6 +1853,8 @@ auto main() -> int {
     test_accepts_fully_qualified_call();
     test_accepts_type_qualified_associated_call();
     test_accepts_indexing_local_bindings();
+    test_accepts_str_byte_index();
+    test_reports_str_index_non_integer();
     test_accepts_associated_type_self_output();
     test_accepts_extend_on_builtin_type();
     test_accepts_extend_on_user_type();

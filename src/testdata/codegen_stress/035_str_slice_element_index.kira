@@ -1,0 +1,15 @@
+module codegen_stress.str_slice_element_index
+
+# Single-element indexing of `str` and `slice[byte]`: `s[i]` reads the byte
+# at position `i` out of the `{ len; data }` view, bounds-checked, yielding
+# `byte`. Exercised on both tiers (the corpus harness cross-checks the
+# bytecode VM against the LLVM JIT). 'A'+'B'+'C' + 'A'+'B'+'C' == 396.
+def main() -> int64:
+    let s = "ABC"
+    let bytes = s.as_bytes()
+    let mut total: int64 = 0
+    let mut i: usize = 0
+    while i < s.len():
+        total = total + (s[i] as int64) + (bytes[i] as int64)
+        i = i + 1
+    return total

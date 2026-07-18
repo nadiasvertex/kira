@@ -1,0 +1,4 @@
+module sample
+def run() -> byte:
+    let s = "hi"
+    return s["oops"]
