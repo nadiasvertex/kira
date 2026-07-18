@@ -1376,6 +1376,8 @@ private:
       return builder_.CreateBinaryIntrinsic(
           signed_kind ? llvm::Intrinsic::ssub_sat : llvm::Intrinsic::usub_sat,
           lhs, rhs);
+    case binary_op::mul_sat:
+      return checked_mul_sat(signed_kind, bits, lhs, rhs);
     case binary_op::shl:
     case binary_op::shr:
       return checked_shift(bin.op == binary_op::shl, signed_kind, bits, lhs,
@@ -1430,6 +1432,43 @@ private:
     }
     return is_mod ? builder_.CreateURem(lhs, rhs)
                   : builder_.CreateUDiv(lhs, rhs);
+  }
+
+  /// LLVM has no `smul.sat`/`umul.sat` intrinsic (unlike add/sub, which get
+  /// `sadd.sat`/`ssub.sat` directly) — computes it manually from the
+  /// overflow-checking multiply, mirroring `sat_mul_signed`/
+  /// `sat_mul_unsigned` in `src/bytecode/vm.cpp`. On signed overflow the
+  /// result saturates to the type's max when the operands share a sign
+  /// (the true product overflowed positively) or to its min otherwise (it
+  /// overflowed negatively); unsigned overflow always saturates to max.
+  [[nodiscard]] auto checked_mul_sat(bool is_signed, int bits,
+                                     llvm::Value *lhs, llvm::Value *rhs)
+      -> llvm::Value * {
+    auto *ty = lhs->getType();
+    const auto width = static_cast<unsigned>(bits);
+    if (!is_signed) {
+      auto *pair = builder_.CreateBinaryIntrinsic(
+          llvm::Intrinsic::umul_with_overflow, lhs, rhs);
+      auto *value = builder_.CreateExtractValue(pair, 0);
+      auto *overflowed = builder_.CreateExtractValue(pair, 1);
+      auto *max_value =
+          llvm::ConstantInt::get(ty, llvm::APInt::getMaxValue(width));
+      return builder_.CreateSelect(overflowed, max_value, value);
+    }
+    auto *pair = builder_.CreateBinaryIntrinsic(
+        llvm::Intrinsic::smul_with_overflow, lhs, rhs);
+    auto *value = builder_.CreateExtractValue(pair, 0);
+    auto *overflowed = builder_.CreateExtractValue(pair, 1);
+    auto *zero = llvm::ConstantInt::get(ty, 0);
+    auto *min_value =
+        llvm::ConstantInt::get(ty, llvm::APInt::getSignedMinValue(width));
+    auto *max_value =
+        llvm::ConstantInt::get(ty, llvm::APInt::getSignedMaxValue(width));
+    auto *lhs_neg = builder_.CreateICmpSLT(lhs, zero);
+    auto *rhs_neg = builder_.CreateICmpSLT(rhs, zero);
+    auto *same_sign = builder_.CreateICmpEQ(lhs_neg, rhs_neg);
+    auto *saturated = builder_.CreateSelect(same_sign, max_value, min_value);
+    return builder_.CreateSelect(overflowed, saturated, value);
   }
 
   [[nodiscard]] auto checked_shift(bool is_shl, bool is_signed, int bits,

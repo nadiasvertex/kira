@@ -3,4 +3,9 @@ module codegen_stress.saturating_arithmetic
 def main() -> int8:
     var x: int8 = 100
     var y: int8 = 100
-    return x +| y
+    var z: int8 = -100
+    var w: int8 = 3
+    var a = x +| y
+    var b = a -| z
+    var c = b *| w
+    return c
