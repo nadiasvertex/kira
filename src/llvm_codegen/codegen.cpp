@@ -1441,9 +1441,8 @@ private:
   /// result saturates to the type's max when the operands share a sign
   /// (the true product overflowed positively) or to its min otherwise (it
   /// overflowed negatively); unsigned overflow always saturates to max.
-  [[nodiscard]] auto checked_mul_sat(bool is_signed, int bits,
-                                     llvm::Value *lhs, llvm::Value *rhs)
-      -> llvm::Value * {
+  [[nodiscard]] auto checked_mul_sat(bool is_signed, int bits, llvm::Value *lhs,
+                                     llvm::Value *rhs) -> llvm::Value * {
     auto *ty = lhs->getType();
     const auto width = static_cast<unsigned>(bits);
     if (!is_signed) {
