@@ -1859,8 +1859,7 @@ private:
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = span,
-          .message =
-              std::format("could not decode string literal `{}`", raw)});
+          .message = std::format("could not decode string literal `{}`", raw)});
     }
     auto *data_ptr = builder_.CreateGlobalString(*text, "str.lit");
     auto *header = compile_heap_alloc(2);
@@ -2577,9 +2576,9 @@ private:
                                       {value, *literal}, "pat.str.eq");
     // `rt_str_eq` yields a *boxed* bool (`box_bool` in `std/string.kira`);
     // unwrap its single slot the same way `.v` does.
-    auto *flag = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                                     slot_address(boxed, size_t{0}),
-                                     "pat.str.eq.v");
+    auto *flag =
+        builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                            slot_address(boxed, size_t{0}), "pat.str.eq.v");
     return builder_.CreateICmpNE(
         flag, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
         "pat.str.eq.bool");
