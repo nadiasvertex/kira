@@ -1,0 +1,10 @@
+module main
+
+def main() -> int32:
+    println("hello".to_uppercase())
+    println("HELLO".to_lowercase())
+    println("Héllo".to_uppercase())
+    println("ПРИВЕТ".to_lowercase())
+    println("γεια".to_uppercase())
+    println("MixEd123".to_lowercase())
+    return 0

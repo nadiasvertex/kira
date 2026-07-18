@@ -1,0 +1,9 @@
+module main
+
+def main() -> int32:
+    println("[{"  hi  ".trim()}]")
+    println("[{"  hi  ".trim_start()}]")
+    println("[{"  hi  ".trim_end()}]")
+    println("[{"nowsp".trim()}]")
+    println("[{"	 x 	".trim()}]")
+    return 0

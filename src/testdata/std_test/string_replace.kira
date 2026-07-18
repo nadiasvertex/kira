@@ -1,0 +1,10 @@
+module main
+
+def main() -> int32:
+    println("a.b.c".replace(".", "-"))
+    println("aaa".replace("a", "bb"))
+    println("hello".replace("l", ""))
+    println("abc".replace("x", "y"))
+    println("aaa".replace("", "x"))
+    println("héllo".replace("é", "e"))
+    return 0

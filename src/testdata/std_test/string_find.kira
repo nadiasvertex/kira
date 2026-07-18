@@ -1,0 +1,16 @@
+module main
+
+def opt(o: option[usize]) -> str:
+    let s = match o:
+        @some(i) => "{i}"
+        @none => "none"
+    return s
+
+def main() -> int32:
+    println(opt("abcabc".find("bc")))
+    println(opt("abcabc".rfind("bc")))
+    println(opt("abc".find("z")))
+    println(opt("abc".find("")))
+    println(opt("abc".rfind("")))
+    println(opt("héllo".find("llo")))
+    return 0

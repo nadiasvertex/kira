@@ -843,9 +843,10 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 8,
+  expect(report->modules.size() == 9,
          "expected std.io, std.console, std.traits, std.iter, std.fmt, "
-         "std.derive, std.platform, and prelude to all emit metadata");
+         "std.string, std.derive, std.platform, and prelude to all emit "
+         "metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.

@@ -1,0 +1,18 @@
+module main
+
+def main() -> int32:
+    let a = "a::b::c".split("::")
+    println("{a.len()}")
+    println(a[0])
+    println(a[1])
+    println(a[2])
+    let b = "a,,b".split(",")
+    println("{b.len()}")
+    println("[{b[1]}]")
+    let c = "no-sep".split("::")
+    println("{c.len()}")
+    println(c[0])
+    let d = "x".split("")
+    println("{d.len()}")
+    println(d[0])
+    return 0

@@ -1,0 +1,8 @@
+module main
+
+def main() -> int32:
+    println("abc".reversed())
+    println("héllo".reversed())
+    println("".reversed())
+    println("a".reversed())
+    return 0

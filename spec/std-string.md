@@ -1,5 +1,25 @@
 # std.string: UTF-8 string extension methods
 
+## Status: implemented
+
+Shipped end-to-end on both backends (bytecode VM and LLVM JIT/AOT). Key files:
+- `src/runtime/string_ops.{h,cpp}` — the shared, backend-agnostic UTF-8
+  algorithms (Two-Way search, simple case mapping, trim, reverse, replace).
+- `src/runtime/string.{h,cpp}` — the C-ABI `kira_rt_str_*` wrappers for the
+  LLVM tier; `src/bytecode/vm.cpp` wraps the same `string_ops` functions for
+  the VM tier, so the two backends cannot diverge.
+- `src/std/string.kira` — the `extend str` composition layer, auto-injected by
+  `inject_stdlib_prelude` (`src/driver/driver.cpp`).
+- Tests: `src/testdata/std_test/string_*.{kira,expected}` (VM, stdout compare).
+
+**Gotcha for adding future intrinsics:** bumping `known_intrinsic_names` in
+`src/intrinsics.h` requires updating three `std::array` sizes in
+`src/llvm_codegen/codegen.cpp` that were hardcoded to the old count
+(`intrinsic_fns`, `intrinsic_fns_`, and the `function_compiler` ctor param) —
+these now read `kira::known_intrinsic_names.size()`. The bytecode VM's
+`k_intrinsics` has a `static_assert` guarding its size; the LLVM arrays did
+not, and an out-of-bounds write there is a silent stack-corruption segfault.
+
 ## Overview
 
 `std.string` provides real implementations of the string-manipulation methods

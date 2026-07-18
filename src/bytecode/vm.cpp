@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
+#include <optional>
 #include <span>
 #include <string>
 #include <unistd.h>
@@ -18,6 +19,7 @@
 #include "src/runtime/arena.h"
 #include "src/runtime/layout.h"
 #include "src/runtime/platform_query.h"
+#include "src/runtime/string_ops.h"
 #include "src/utf8/utf8.h"
 
 namespace kira::bytecode {
@@ -1021,6 +1023,58 @@ auto intrinsic_rt_str_truncate_scalars(std::span<const slot_value> args)
   return make_runtime_str(view.substr(0, pos));
 }
 
+// `std.string` UTF-8 intrinsics (spec/std-string.md). The actual algorithms
+// live in `src/runtime/string_ops.h` and are shared verbatim with the LLVM
+// tier's C-ABI wrappers (`src/runtime/string.cpp`); these handlers only
+// marshal the VM's slot representation in and out.
+
+/// A 2-slot `find_result { found: bool; pos: usize }` (see
+/// `src/std/string.kira`).
+[[nodiscard]] auto make_find_result(std::optional<size_t> hit) -> slot_value {
+  const std::array<slot_value, 2> fields = {
+      slot_value{static_cast<uint64_t>(hit.has_value() ? 1 : 0)},
+      slot_value{static_cast<uint64_t>(hit.value_or(0))}};
+  return alloc_struct(fields);
+}
+
+auto intrinsic_rt_str_eq(std::span<const slot_value> args) -> slot_value {
+  const auto equal = kira::runtime::str_equal(view_of(args[0]), view_of(args[1]));
+  return make_box(slot_value{static_cast<uint64_t>(equal ? 1 : 0)});
+}
+
+auto intrinsic_rt_str_find(std::span<const slot_value> args) -> slot_value {
+  return make_find_result(kira::runtime::str_find(
+      view_of(args[0]), view_of(args[1]), static_cast<size_t>(unbox(args[2]).u)));
+}
+
+auto intrinsic_rt_str_rfind(std::span<const slot_value> args) -> slot_value {
+  return make_find_result(
+      kira::runtime::str_rfind(view_of(args[0]), view_of(args[1])));
+}
+
+auto intrinsic_rt_str_to_upper(std::span<const slot_value> args) -> slot_value {
+  return make_runtime_str(kira::runtime::str_to_upper(view_of(args[0])));
+}
+
+auto intrinsic_rt_str_to_lower(std::span<const slot_value> args) -> slot_value {
+  return make_runtime_str(kira::runtime::str_to_lower(view_of(args[0])));
+}
+
+auto intrinsic_rt_str_reverse(std::span<const slot_value> args) -> slot_value {
+  return make_runtime_str(kira::runtime::str_reverse(view_of(args[0])));
+}
+
+auto intrinsic_rt_str_trim(std::span<const slot_value> args) -> slot_value {
+  const auto mode = static_cast<kira::runtime::trim_mode>(
+      static_cast<uint8_t>(unbox(args[1]).u));
+  return make_runtime_str(kira::runtime::str_trim(view_of(args[0]), mode));
+}
+
+auto intrinsic_rt_str_replace(std::span<const slot_value> args) -> slot_value {
+  return make_runtime_str(kira::runtime::str_replace(
+      view_of(args[0]), view_of(args[1]), view_of(args[2])));
+}
+
 auto intrinsic_rt_fmt_radix_digits(std::span<const slot_value> args)
     -> slot_value {
   const auto value = unbox(args[0]).u;
@@ -1212,7 +1266,7 @@ using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 /// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 23> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, 31> k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
@@ -1230,6 +1284,14 @@ constexpr std::array<intrinsic_fn, 23> k_intrinsics = {{
     intrinsic_rt_fmt_f64_sci,
     intrinsic_rt_fmt_f64_general,
     intrinsic_rt_fmt_char_from_codepoint,
+    intrinsic_rt_str_eq,
+    intrinsic_rt_str_find,
+    intrinsic_rt_str_rfind,
+    intrinsic_rt_str_to_upper,
+    intrinsic_rt_str_to_lower,
+    intrinsic_rt_str_reverse,
+    intrinsic_rt_str_trim,
+    intrinsic_rt_str_replace,
     intrinsic_rt_uname,
     intrinsic_rt_gethostname,
     intrinsic_rt_processor_name,

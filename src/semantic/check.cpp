@@ -6575,19 +6575,15 @@ private:
       return k_unknown_type;
     }
     if (object.kind == type_kind::builtin_kind && object.name == "str") {
+      // Only the two methods with real lowering are answered here (`len` and
+      // `as_bytes`, `src/hir/lower.cpp`). Everything else — `contains`,
+      // `starts_with`, `find`, `to_uppercase`, `split`, ... — is now provided
+      // as real `extend str` methods in `std.string` (spec/std-string.md);
+      // returning `k_unknown_type` for those names is exactly what lets the
+      // caller fall through to `find_extend_method_for_builtin` and discover
+      // them. Re-adding a hardcoded rule here would shadow that module.
       if (name == "len") {
         return types_.builtin("usize");
-      }
-      if (name == "contains" || name == "starts_with" || name == "ends_with" ||
-          name == "is_empty") {
-        return types_.builtin("bool");
-      }
-      if (name == "to_uppercase" || name == "to_lowercase" ||
-          name == "replace" || name == "trim" || name == "reversed") {
-        return types_.builtin("str");
-      }
-      if (name == "split") {
-        return types_.builtin_generic("list", {types_.builtin("str")});
       }
       if (name == "as_bytes") {
         return types_.builtin_generic("slice", {types_.builtin("byte")});

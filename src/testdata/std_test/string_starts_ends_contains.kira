@@ -1,0 +1,18 @@
+module main
+
+def yn(b: bool) -> str:
+    if b:
+        return "y"
+    return "n"
+
+def main() -> int32:
+    println(yn("hello world".starts_with("hello")))
+    println(yn("hello world".starts_with("world")))
+    println(yn("hello".starts_with("")))
+    println(yn("hi".starts_with("hello")))
+    println(yn("hello world".ends_with("world")))
+    println(yn("hello world".ends_with("hello")))
+    println(yn("hello world".contains("o w")))
+    println(yn("hello".contains("z")))
+    println(yn("héllo".starts_with("hé")))
+    return 0

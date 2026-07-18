@@ -1,0 +1,15 @@
+module main
+
+def yn(b: bool) -> str:
+    if b:
+        return "y"
+    return "n"
+
+def main() -> int32:
+    println(yn("abc".eq("abc")))
+    println(yn("abc".eq("abd")))
+    println(yn("abc".eq("ab")))
+    println(yn("".eq("")))
+    println(yn("héllo".eq("héllo")))
+    println(yn("héllo".eq("hello")))
+    return 0

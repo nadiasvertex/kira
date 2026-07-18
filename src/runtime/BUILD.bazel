@@ -15,6 +15,8 @@ cc_library(
         "layout.cpp",
         "platform.cpp",
         "platform_query.cpp",
+        "string.cpp",
+        "string_ops.cpp",
     ],
     hdrs = [
         "arena.h",
@@ -23,6 +25,8 @@ cc_library(
         "layout.h",
         "platform.h",
         "platform_query.h",
+        "string.h",
+        "string_ops.h",
     ],
     alwayslink = True,
     deps = [
