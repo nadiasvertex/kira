@@ -1,4 +1,2 @@
 1. Tail call optimization
 2. Full Unicode support for `std.string` (spec/std-string.md ships Unicode *simple* 1:1 case mapping only). Deferred: full/special case mapping (`ß`→`SS`, final-sigma, locale-tailored Turkish/Azeri/Lithuanian), case folding for caseless comparison, NFC/NFD normalization, and grapheme-cluster segmentation (UAX #29) so `reversed`/`split` can operate on graphemes rather than scalars. Each needs additional generated Unicode tables.
-3. String-literal *patterns* (`match c: "/" => ...`) have no codegen on either backend ("string literal patterns need increment 5's growable-string comparison"). `src/std/fs/path.kira` uses them, which is why `//src:std_test`'s `fs_path` case fails.
-4. `src/std/string.kira` declares `box_usize`, `box_u8`, `box_bool`, and `find_result` twice each, which semantic analysis reports as duplicate declarations.

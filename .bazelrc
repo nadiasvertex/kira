@@ -25,7 +25,8 @@ build --cxxopt=-Wpedantic
 build --cxxopt=-Wshadow
 build --cxxopt=-Wconversion
 build --host_cxxopt=-Wall
-build --host_cxxopt=-Wextra
+# Suppress nullability-extension warnings in external dependencies (abseil-cpp, etc.)
+build --per_file_copt=external@-Wno-nullability-extension,-Wno-gcc-compat
 
 # Optimize for local development (faster builds)
 build:debug --compilation_mode=dbg
