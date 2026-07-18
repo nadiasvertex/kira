@@ -1,0 +1,8 @@
+module sample
+def kind(s: str) -> int32:
+    return match s:
+        "yes" => 1
+        "" => 0
+        _ => 2
+def main() -> int32:
+    return kind("yes") * 100 + kind("") * 10 + kind("no")

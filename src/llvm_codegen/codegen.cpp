@@ -1845,13 +1845,22 @@ private:
 
   [[nodiscard]] auto compile_string_literal(const hir::hir_literal &lit)
       -> std::expected<llvm::Value *, codegen_error> {
-    auto text = decode_string_literal(lit.value);
+    return compile_string_constant(lit.value, lit.span);
+  }
+
+  /// Materializes a `{ len; data }` header for the *raw* (still escaped)
+  /// source text of a string literal — shared by string-literal expressions
+  /// and string-literal patterns (`compile_string_pattern_test`).
+  [[nodiscard]] auto compile_string_constant(std::string_view raw,
+                                             source_span span)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto text = decode_string_literal(raw);
     if (!text.has_value()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
-          .span = lit.span,
+          .span = span,
           .message =
-              std::format("could not decode string literal `{}`", lit.value)});
+              std::format("could not decode string literal `{}`", raw)});
     }
     auto *data_ptr = builder_.CreateGlobalString(*text, "str.lit");
     auto *header = compile_heap_alloc(2);
@@ -2524,6 +2533,58 @@ private:
   //  there would need one to keep testing.
   // ------------------------------------------------------------------
 
+  /// Whether `id` is the builtin `str` — a `{ len; data }` header pointer,
+  /// never a scalar, so equality on it needs `rt_str_eq` rather than an
+  /// `icmp` (see `compile_string_pattern_test`).
+  [[nodiscard]] auto is_str_type(type_id id) const -> bool {
+    const auto &entry = types_.entry(strip_refs(types_, id));
+    return entry.kind == semantic::type_kind::builtin_kind &&
+           entry.name == "str";
+  }
+
+  /// A `"..."` literal pattern tests the subject with the very same UTF-8
+  /// text comparison `str`'s own `==` operator uses — the `rt_str_eq`
+  /// intrinsic behind `std.string`'s `str::eq` (`check.cpp`'s
+  /// `wire_str_equality_dispatch`) — rather than the `icmp` every other
+  /// literal pattern compiles to, which on two `{ len; data }` header
+  /// pointers would compare identity rather than text. Mirrors
+  /// `bytecode_compiler`'s own `compile_string_pattern_test`.
+  [[nodiscard]] auto
+  compile_string_pattern_test(const hir::hir_literal_pattern &lit,
+                              llvm::Value *value, type_id value_type)
+      -> std::expected<llvm::Value *, codegen_error> {
+    if (!is_str_type(value_type)) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = lit.span,
+          .message = "a string literal pattern can only match a `str` "
+                     "subject — this should have been rejected by the "
+                     "type checker"});
+    }
+    const auto intrinsic_id = kira::intrinsic_index_of("rt_str_eq");
+    if (!intrinsic_id.has_value()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = lit.span,
+          .message = "the `rt_str_eq` intrinsic string literal patterns "
+                     "compare with is missing from this build"});
+    }
+    auto literal = compile_string_constant(lit.value, lit.span);
+    if (!literal.has_value()) {
+      return std::unexpected(literal.error());
+    }
+    auto *boxed = builder_.CreateCall(intrinsic_fns_.at(*intrinsic_id),
+                                      {value, *literal}, "pat.str.eq");
+    // `rt_str_eq` yields a *boxed* bool (`box_bool` in `std/string.kira`);
+    // unwrap its single slot the same way `.v` does.
+    auto *flag = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                                     slot_address(boxed, size_t{0}),
+                                     "pat.str.eq.v");
+    return builder_.CreateICmpNE(
+        flag, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
+        "pat.str.eq.bool");
+  }
+
   [[nodiscard]] auto compile_pattern_test(const hir::hir_pattern &pattern,
                                           llvm::Value *value,
                                           std::optional<type_id> value_type)
@@ -2542,11 +2603,7 @@ private:
                        "yet (see compile_pattern_test's doc comment)"});
       }
       if (lit.lit_kind == token_kind::string_lit) {
-        return std::unexpected(codegen_error{
-            .kind = codegen_error_kind::unsupported_construct,
-            .span = pattern.span,
-            .message = "string literal patterns need increment 5's "
-                       "growable-string comparison, not supported yet"});
+        return compile_string_pattern_test(lit, value, *value_type);
       }
       auto kind = numeric_kind_for(*value_type, pattern.span);
       if (!kind.has_value()) {

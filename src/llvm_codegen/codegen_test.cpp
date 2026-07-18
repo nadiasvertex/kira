@@ -735,6 +735,17 @@ auto test_match_or_pattern_matches_any_alternative() -> void {
   expect(result->value.i == 1, "expected is_small(2) && !is_small(5)");
 }
 
+// A string literal pattern compares text via `rt_str_eq`, not the header
+// pointer — `kind("yes")` must hit the `"yes"` arm even though its argument
+// is a different `{ len; data }` block than the pattern's own literal.
+auto test_match_string_literal_pattern() -> void {
+  auto jf = jit_fixture_for(load_fixture("match_string_pattern.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 102,
+         "expected kind(\"yes\")*100 + kind(\"\")*10 + kind(\"no\") == 102");
+}
+
 auto test_match_range_pattern() -> void {
   auto jf = jit_fixture_for(load_fixture("match_range_pattern.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -1087,6 +1098,7 @@ auto main() -> int {
     test_array_fill_form_repeats_the_same_value();
     test_match_dispatches_on_literal_and_wildcard_patterns();
     test_match_or_pattern_matches_any_alternative();
+    test_match_string_literal_pattern();
     test_match_range_pattern();
     test_match_guard_refines_a_pattern();
     test_match_tuple_pattern_with_literal_and_binding();

@@ -743,6 +743,15 @@ private:
            entry.name == "list";
   }
 
+  /// Whether `id` is the builtin `str` — a `{ len; data }` header pointer,
+  /// never a scalar, so equality on it needs `rt_str_eq` rather than
+  /// `op_eq` (see `compile_string_pattern_test`).
+  [[nodiscard]] auto is_str_type(type_id id) const -> bool {
+    const auto &entry = types_.entry(strip_refs(id));
+    return entry.kind == semantic::type_kind::builtin_kind &&
+           entry.name == "str";
+  }
+
   /// Unwraps `&T`/`&mut T` down to `T` — mirrors `semantic::check.cpp`'s own
   /// `strip_refs`. A reference's compiled *value* is already representation-
   /// identical to the referent for every heap-pointer-backed type
@@ -2148,6 +2157,80 @@ private:
   //  "not supported yet" error rather than silently mistyped.
   // ------------------------------------------------------------------
 
+  /// A `"..."` literal pattern tests the subject with the very same UTF-8
+  /// text comparison `str`'s own `==` operator uses — the `rt_str_eq`
+  /// intrinsic behind `std.string`'s `str::eq` (`check.cpp`'s
+  /// `wire_str_equality_dispatch`) — rather than the scalar `op_eq` every
+  /// other literal pattern compiles to. A `str` value is a pointer to a
+  /// `{ len; data }` header (`src/runtime/layout.h`), so `op_eq` on it
+  /// would compare *header identity*, silently failing for two equal
+  /// strings stored in different blocks.
+  [[nodiscard]] auto
+  compile_string_pattern_test(const hir::hir_literal_pattern &lit,
+                              uint8_t value_reg, type_id value_type)
+      -> std::expected<uint8_t, compile_error> {
+    if (!is_str_type(value_type)) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = lit.span,
+          .message = "a string literal pattern can only match a `str` "
+                     "subject — this should have been rejected by the "
+                     "type checker"});
+    }
+    auto text = decode_string_literal(lit.value);
+    if (!text.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = lit.span,
+          .message =
+              std::format("could not decode string literal `{}`", lit.value)});
+    }
+    const auto intrinsic_id = kira::intrinsic_index_of("rt_str_eq");
+    if (!intrinsic_id.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = lit.span,
+          .message = "the `rt_str_eq` intrinsic string literal patterns "
+                     "compare with is missing from this build"});
+    }
+    // `op_call_intrinsic` reads its arguments from a *contiguous* register
+    // run, so both operands are materialized into freshly allocated
+    // adjacent registers (`alloc_register` hands out consecutive ids)
+    // rather than passing `value_reg` in place.
+    auto subject_reg = alloc_register(lit.span);
+    if (!subject_reg.has_value()) {
+      return std::unexpected(subject_reg.error());
+    }
+    auto literal_reg = alloc_register(lit.span);
+    if (!literal_reg.has_value()) {
+      return std::unexpected(literal_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_move);
+    writer_.emit_u8(*subject_reg);
+    writer_.emit_u8(value_reg);
+    const auto index = writer_.add_string_constant(std::move(*text));
+    writer_.emit_opcode(opcode::op_load_str_const);
+    writer_.emit_u8(*literal_reg);
+    writer_.emit_u16(index);
+    auto boxed_reg = alloc_register(lit.span);
+    if (!boxed_reg.has_value()) {
+      return std::unexpected(boxed_reg.error());
+    }
+    writer_.emit_opcode(opcode::op_call_intrinsic);
+    writer_.emit_u8(*boxed_reg);
+    writer_.emit_u8(*intrinsic_id);
+    writer_.emit_u8(*subject_reg);
+    writer_.emit_u8(uint8_t{2});
+    // `rt_str_eq` yields a *boxed* bool (`box_bool` in `std/string.kira`);
+    // unwrap its single slot the same way `.v` does.
+    auto result_reg = alloc_register(lit.span);
+    if (!result_reg.has_value()) {
+      return std::unexpected(result_reg.error());
+    }
+    emit_load_slot(*result_reg, *boxed_reg, uint16_t{0});
+    return *result_reg;
+  }
+
   [[nodiscard]] auto compile_pattern_test(const hir::hir_pattern &pattern,
                                           uint8_t value_reg,
                                           std::optional<type_id> value_type)
@@ -2175,11 +2258,7 @@ private:
                        "yet (see compile_pattern_test's doc comment)"});
       }
       if (lit.lit_kind == token_kind::string_lit) {
-        return std::unexpected(compile_error{
-            .kind = compile_error_kind::unsupported_construct,
-            .span = pattern.span,
-            .message = "string literal patterns need increment 5's "
-                       "growable-string comparison, not supported yet"});
+        return compile_string_pattern_test(lit, value_reg, *value_type);
       }
       auto kind = numeric_kind_for(*value_type, pattern.span);
       if (!kind.has_value()) {

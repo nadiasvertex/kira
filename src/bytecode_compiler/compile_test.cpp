@@ -975,6 +975,18 @@ auto test_match_or_pattern_matches_any_alternative() -> void {
          "expected main()'s is_small(2) and not is_small(5) == true");
 }
 
+// A string literal pattern compares text via the `rt_str_eq` intrinsic, not
+// the `{ len; data }` header pointer — `kind("yes")` must hit the `"yes"`
+// arm even though its argument is a different block than the pattern's own
+// literal.
+auto test_match_string_literal_pattern() -> void {
+  auto module = compile_fixture(load_fixture("match_string_pattern.kira"));
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() to succeed");
+  expect(main_result->value.i == 102,
+         "expected kind(\"yes\")*100 + kind(\"\")*10 + kind(\"no\") == 102");
+}
+
 auto test_match_range_pattern() -> void {
   auto module = compile_fixture(load_fixture("match_range_pattern.kira"));
   const auto vm = bc::vm{module};
@@ -1425,6 +1437,7 @@ auto main() -> int {
     test_sum_type_unit_variant_encodes_its_tag();
     test_match_dispatches_on_literal_and_wildcard_patterns();
     test_match_or_pattern_matches_any_alternative();
+    test_match_string_literal_pattern();
     test_match_range_pattern();
     test_match_guard_refines_a_pattern();
     test_match_tuple_pattern_with_literal_and_binding();
