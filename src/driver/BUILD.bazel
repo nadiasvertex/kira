@@ -27,6 +27,13 @@ cc_library(
       "run_build_stage.h",
       "static_if_stage.h",
     ],
+    copts = [
+      "-Wno-deprecated",
+      "-Wno-nullability-extension",
+      "-Wno-gnu-anonymous-struct",
+      "-Wno-nested-anon-types",
+      "-Wno-gcc-compat",
+    ],
     deps = [
       "//src:module_metadata_cc_proto",
       "//src/bytecode:bytecode",
