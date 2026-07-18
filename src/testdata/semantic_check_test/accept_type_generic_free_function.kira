@@ -1,0 +1,21 @@
+module sample
+
+# A free function generic over a type parameter type-checks and, at each call
+# site, is monomorphized for the concrete type the arguments solve for
+# (`semantic::checker::instantiate_type_generic`). The call's result type is the
+# instantiated return type, so `identity(7)` is an `int32` and `identity(true)`
+# a `bool`.
+
+def identity[T](x: T) -> T:
+    return x
+
+def choose[T](flag: bool, a: T, b: T) -> T:
+    if flag:
+        return a
+    return b
+
+def main() -> int32:
+    let a: int32 = identity(7)
+    let flag: bool = identity(true)
+    let b: int32 = choose(flag, 30, 3)
+    return a + b

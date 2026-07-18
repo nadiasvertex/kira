@@ -1592,6 +1592,49 @@ auto test_run_for_loop_over_user_std_iterator() -> void {
          "expected `for x in it` over a 0..5 counter iterator to sum to 10");
 }
 
+/// A free function generic over *types* is monomorphized once per concrete
+/// type its call sites solve for (`identity$int32`, `choose$int32`) and then
+/// runs — the template that used to fail lowering wholesale now reaches a
+/// backend through its instances (`instantiate_type_generic`).
+auto test_run_type_generic_free_function() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_type_generic.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample\n"
+                          "def identity[T](x: T) -> T:\n"
+                          "    return x\n"
+                          "def choose[T](flag: bool, a: T, b: T) -> T:\n"
+                          "    if flag:\n"
+                          "        return a\n"
+                          "    return b\n"
+                          "def main() -> int32:\n"
+                          "    let a = identity(7)\n"
+                          "    let b = choose(true, 30, 99)\n"
+                          "    let c = choose(false, 1, 3)\n"
+                          "    return a + b + c\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected a type-generic free function to compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 40,
+         "expected identity(7) + choose(true,30,99) + choose(false,1,3) = 40");
+}
+
 /// M5 end-to-end check: hygiene must prevent a spliced `let` from
 /// *clobbering* a splice-site binding of the same name, not just avoid a
 /// compile error. `main` binds its own `temp` to `1`, then splices a quoted
@@ -1925,6 +1968,7 @@ auto main() -> int {
     test_run_executes_item_level_splice_injected_impl();
     test_run_lambda_body_string_interpolation_captures();
     test_run_for_loop_over_user_std_iterator();
+    test_run_type_generic_free_function();
     test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site();
     test_run_reflects_struct_field_count_into_runtime_constant();
     test_run_scalar_static_let_referenced_by_name();

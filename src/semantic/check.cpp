@@ -970,6 +970,13 @@ private:
   /// Constructs that need a real constant (`try_from` on `index[n]`) neither
   /// report nor lower here; the instances handle both.
   bool in_const_generic_template_ = false;
+  /// Whether the function being checked is a type-generic *template* — its
+  /// type parameters are still abstract `T`s (nothing bound them in
+  /// `type_param_slots_`), so a call it makes to another type-generic function
+  /// can't be monomorphized yet. The template reaches a backend only through
+  /// the instances `instantiate_type_generic` makes of it; those clear this
+  /// flag (their parameters are bound) and monomorphize such calls for real.
+  bool in_type_generic_template_ = false;
   /// Owns every `named_type` synthesized by `reinterpret_as_named_type`
   /// (see its doc comment) for the whole session — stable-address (a
   /// `vector<unique_ptr<T>>` only moves the pointer, never the pointee),
@@ -4165,6 +4172,20 @@ private:
         return *result;
       }
     }
+    // A type-generic free function is monomorphized the same way, one instance
+    // per concrete type its arguments solve for. `in_type_generic_template_`
+    // keeps this from firing while the enclosing template is itself being
+    // checked, where the argument's type is still an abstract `T` and there is
+    // nothing concrete to instantiate against — the template is never lowered;
+    // its instances are, and this call, re-checked in each one, monomorphizes
+    // the callee for that instance's types.
+    if (!in_type_generic_template_ && is_type_generic_template(decl) &&
+        is_free_function(decl, owner)) {
+      if (const auto result =
+              instantiate_type_generic(call, decl, owner, decl_file, params)) {
+        return *result;
+      }
+    }
     return signature_return_type(decl, owner);
   }
 
@@ -4439,6 +4460,202 @@ private:
             "`array[T, {}]` argument fixes it, for instance. Give an argument "
             "whose type mentions `{}` with a known length.",
             decl.name, param.name, param.name, param.name, param.name));
+  }
+
+  // ==========================================================================
+  //  Type-generic free-function monomorphization
+  //  (`spec/typed-ir-design.md` Decision 2, phase 5)
+  //
+  //  A function generic over *types* (`def identity[T](x: T) -> T`) has, like
+  //  an impl's generic method, no compiled form of its own — `T` is not a
+  //  runtime value, and everything the body does with an `x: T` depends on the
+  //  concrete type. So the template is never lowered; each call whose arguments
+  //  pin every type parameter down to a concrete type gets an *instance*: the
+  //  declaration cloned, re-checked with `T` bound to that type, and named
+  //  `identity$int32`. This is `instantiate_hk_method` without a receiver or a
+  //  `method_entry` — a free function rather than an impl member — and shares
+  //  its instance registry, so lowering and both backends see only concrete
+  //  types (the same erase-at-monomorphization discipline HKTs use).
+  // ==========================================================================
+
+  /// Whether `decl` is a free function generic over *types* only (`def
+  /// identity[T](x: T)`) — the case `instantiate_type_generic` monomorphizes.
+  /// A value parameter mixed in (`[n: usize, T]`) is deliberately excluded:
+  /// an instance would need both a constant and a type in its name, and
+  /// neither the const-generic nor this path owns that, so a mixed template
+  /// falls through to lowering, which refuses it.
+  [[nodiscard]] static auto is_type_generic_template(const ast::func_decl &decl)
+      -> bool {
+    return !decl.type_params.empty() &&
+           std::ranges::all_of(decl.type_params, [](const auto &param) -> bool {
+             return !param.is_value_param && !param.name.empty();
+           });
+  }
+
+  /// Solves a type-generic free function's parameters from the argument types
+  /// already inferred for this call, then monomorphizes it — returning the
+  /// call's concrete result type (`identity[T] -> T` called on an `int32`
+  /// yields `int32`), or `nullopt` when a parameter is left unsolved or the
+  /// body can't be cloned (both diagnosed here). Registers the instance as
+  /// this call's `resolved_callee`, so lowering emits a call to
+  /// `identity$int32` with no idea a template was ever involved — mirrors
+  /// `instantiate_const_generic`'s tail, with types in place of constants.
+  auto instantiate_type_generic(const ast::call_expr &call,
+                                const ast::func_decl &decl,
+                                const module_members *owner,
+                                file_id_type decl_file,
+                                const std::vector<fn_param_info> &params)
+      -> std::optional<type_id> {
+    // Read each argument's inferred type back and unify it against the
+    // parameter's declared type, exactly as the higher-kinded-method path does
+    // (`check_receiver_call`): an `x: T` parameter given an `int32` argument
+    // solves `T := int32`.
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    if (const auto mapping = call_argument_mappings_.find(&call);
+        mapping != call_argument_mappings_.end()) {
+      const auto &args_by_param = mapping->second.args_by_param;
+      for (size_t i = 0; i < params.size() && i < args_by_param.size(); ++i) {
+        if (args_by_param[i] == nullptr) {
+          continue;
+        }
+        if (const auto found = node_types_.find(args_by_param[i]);
+            found != node_types_.end()) {
+          unify_rigid(params[i].type, found->second, bindings);
+        }
+      }
+    }
+
+    auto slots = std::unordered_map<std::string, type_id>{};
+    auto name = decl.name;
+    for (const auto &param : decl.type_params) {
+      const auto it = bindings.find(param.name);
+      if (it == bindings.end() || mentions_abstract_type(it->second)) {
+        error_with_help(
+            call.span,
+            std::format("cannot tell what `{}` is in this call to `{}`",
+                        param.name, decl.name),
+            std::format("`{}` is a type parameter this call leaves unsolved",
+                        param.name),
+            std::format(
+                "`{}` is compiled once per concrete type, so every type "
+                "parameter has to be pinned down by the arguments. Annotate "
+                "the value that should determine `{}`.",
+                decl.name, param.name));
+        return std::nullopt;
+      }
+      slots.emplace(param.name, it->second);
+      name += std::format("${}", mangle_type_for_instance(it->second));
+    }
+
+    const auto *instance =
+        find_or_check_type_instance(call, decl, owner, decl_file, slots, name);
+    if (instance == nullptr) {
+      return std::nullopt;
+    }
+
+    // The instance's signature under the same substitution its body was checked
+    // with — this is what makes the *caller* see concrete types for the callee
+    // it names and the value the call produces (`array[T, 3]`'s `T`, an `int32`
+    // return, and so on all become concrete).
+    const auto ctx = resolve_ctx{.module = owner,
+                                 .param_bindings = &slots,
+                                 .use_type_param_stack = false,
+                                 .quiet = true,
+                                 .existential_allowed = true};
+    auto param_types = std::vector<type_id>{};
+    for (const auto &param : decl.params) {
+      param_types.push_back(param.type_annotation != nullptr
+                                ? resolve_type(*param.type_annotation, ctx)
+                                : k_unknown_type);
+    }
+    const auto result = decl.return_type != nullptr
+                            ? resolve_type(*decl.return_type, ctx)
+                            : types_.builtin("unit");
+    if (call.callee != nullptr) {
+      record_expr_type(*call.callee,
+                       types_.fn_of(std::move(param_types), result));
+    }
+    resolved_callees_[&call] =
+        resolved_callee{.decl = instance,
+                        .owner_module = owner->module_name,
+                        .impl_target_type = ""};
+    return record_expr_type(call, result);
+  }
+
+  /// The instance for one (template, solved types) pair — reused if it already
+  /// exists, cloned and checked if it doesn't. Shares `hk_instance_cache_` and
+  /// the const-generic instance registry with the higher-kinded-method path:
+  /// to lowering the three are the same thing, a checked clone named for its
+  /// instantiation, lowered once in its owning module while the template is
+  /// skipped. The cache entry is published before the clone's body is checked
+  /// so a recursive function finds the instance it is inside instead of
+  /// instantiating forever (`find_or_check_instance` explains the discipline).
+  auto find_or_check_type_instance(
+      const ast::call_expr &call, const ast::func_decl &decl,
+      const module_members *owner, file_id_type decl_file,
+      const std::unordered_map<std::string, type_id> &slots,
+      const std::string &name) -> const ast::func_decl * {
+    const auto key =
+        std::format("{}#{}", static_cast<const void *>(&decl), name);
+    if (const auto found = hk_instance_cache_.find(key);
+        found != hk_instance_cache_.end()) {
+      return found->second;
+    }
+
+    static constexpr size_t k_max_instantiation_depth = 32;
+    if (instantiation_depth_ >= k_max_instantiation_depth) {
+      error(call.span,
+            std::format("`{}` instantiates itself endlessly", decl.name),
+            "type-generic instantiation is too deep");
+      return nullptr;
+    }
+
+    auto cloned = ast::clone_func_decl(decl);
+    if (!cloned.has_value()) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("cannot compile `{}` for this call: its body uses a "
+                      "construct type-generic instantiation doesn't support "
+                      "yet",
+                      decl.name),
+          file_id_);
+      diag.with_label(call.span, "this call needs a compiled copy of the "
+                                 "function, one per concrete type");
+      diag.children.push_back(
+          diagnostic(diagnostic_level::note, cloned.error().message, decl_file)
+              .with_label(cloned.error().span, "unsupported here"));
+      emit_diag(diag);
+      mark_error();
+      return nullptr;
+    }
+
+    (*cloned)->name = name;
+    const auto *instance = cloned->get();
+    synthesized_decls_.push_back(std::move(*cloned));
+    hk_instance_cache_.emplace(key, instance);
+
+    const auto saved_module = module_;
+    const auto saved_file_id = file_id_;
+    auto saved_slots = std::move(type_param_slots_);
+    const auto saved_contract = in_contract_;
+    const auto saved_postcondition = in_postcondition_;
+    module_ = owner;
+    file_id_ = decl_file;
+    type_param_slots_ = slots;
+    in_contract_ = false;
+    in_postcondition_ = false;
+    ++instantiation_depth_;
+    check_function(*instance, /*at_module_scope=*/false);
+    --instantiation_depth_;
+    in_postcondition_ = saved_postcondition;
+    in_contract_ = saved_contract;
+    type_param_slots_ = std::move(saved_slots);
+    file_id_ = saved_file_id;
+    module_ = saved_module;
+
+    const_generic_instances_.push_back(const_generic_instance{
+        .decl = instance, .owner_module = owner->module_name});
+    return instance;
   }
 
   // ==========================================================================
@@ -10550,6 +10767,14 @@ private:
           return param.is_value_param && !param.name.empty() &&
                  !const_param_slots_.contains(param.name);
         });
+    // The type-parameter analog: a type parameter with no binding in
+    // `type_param_slots_` is still abstract, which makes this the template.
+    const auto saved_type_template = in_type_generic_template_;
+    in_type_generic_template_ = std::ranges::any_of(
+        decl.type_params, [this](const auto &param) -> bool {
+          return !param.is_value_param && !param.name.empty() &&
+                 !type_param_slots_.contains(param.name);
+        });
     auto saved_scopes = std::move(scopes_);
     scopes_.clear();
     push_scope();
@@ -10823,6 +11048,7 @@ private:
     facts_ = std::move(saved_facts);
     scopes_ = std::move(saved_scopes);
     in_const_generic_template_ = saved_template;
+    in_type_generic_template_ = saved_type_template;
     pop_type_params();
   }
 

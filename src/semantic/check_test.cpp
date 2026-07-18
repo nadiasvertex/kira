@@ -306,6 +306,22 @@ auto test_accepts_for_over_user_iterator() -> void {
          "as the iterator's element type)");
 }
 
+auto test_accepts_type_generic_free_function() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_type_generic_free_function.kira");
+  expect(analyzed.error_count == 0,
+         "expected a type-generic free function to check cleanly, each call "
+         "typed at the concrete type its arguments solve for");
+}
+
+auto test_reports_type_generic_unsolved() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_type_generic_unsolved.kira");
+  expect_diagnostic(analyzed, "cannot tell what `T` is",
+                    "expected a call that leaves a type parameter unsolved to "
+                    "be rejected");
+}
+
 auto test_accepts_associated_type_self_output() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_associated_type_self_output.kira");
@@ -1864,6 +1880,8 @@ auto main() -> int {
     test_accepts_indexing_local_bindings();
     test_accepts_str_byte_index();
     test_accepts_for_over_user_iterator();
+    test_accepts_type_generic_free_function();
+    test_reports_type_generic_unsolved();
     test_reports_str_index_non_integer();
     test_accepts_associated_type_self_output();
     test_accepts_extend_on_builtin_type();

@@ -72,6 +72,22 @@ using semantic::type_kind;
          });
 }
 
+/// Whether `decl` is a template generic over *types* only (`def identity[T]`).
+/// Like a const-generic template it has no runtime form of its own — there is
+/// no single body that serves every type — so `lower_module` skips it and
+/// lowers the instances the checker monomorphized instead
+/// (`semantic::checker::instantiate_type_generic`, registered as
+/// `const_generic_instance`s). A template mixing value and type parameters is
+/// deliberately not matched here: neither monomorphization path handles it, so
+/// it must reach `lower_function` and fail closed rather than be dropped.
+[[nodiscard]] auto is_type_generic_template(const ast::func_decl &decl)
+    -> bool {
+  return !decl.type_params.empty() &&
+         std::ranges::all_of(decl.type_params, [](const auto &param) -> bool {
+           return !param.is_value_param && !param.name.empty();
+         });
+}
+
 /// Wraps a freshly-built derived node into the `ptr<hir_expr>` result type
 /// every expression-lowering helper returns.
 template <typename T>
@@ -4061,9 +4077,11 @@ auto lower_module(const ast::file &file, std::string module_name,
       continue;
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
-    if (is_const_generic_template(decl)) {
-      // Compiled once per constant it is called with, from the instances
-      // loop below — never as itself. See `is_const_generic_template`.
+    if (is_const_generic_template(decl) || is_type_generic_template(decl)) {
+      // Compiled once per constant (or concrete type) it is called with, from
+      // the instances loop below — never as itself. The instances the checker
+      // monomorphized are registered as `const_generic_instance`s regardless
+      // of whether the template was generic over values or types.
       continue;
     }
     if (decl.modifiers.is_intrinsic) {

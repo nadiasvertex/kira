@@ -1,0 +1,12 @@
+module sample
+
+# A type-generic free function whose type parameter no argument determines
+# cannot be monomorphized — there is no concrete type to compile a copy for —
+# so the call is diagnosed rather than silently dropped. Here `T` never appears
+# in a parameter position, so nothing at the call site pins it down.
+
+def ignore[T](x: int32) -> int32:
+    return x
+
+def main() -> int32:
+    return ignore(5)
