@@ -1,0 +1,13 @@
+module sample
+
+# A generator hands its values out through `yield` and uses `return` to say
+# "exhausted", so there is no single result a `post` could describe. The `pre`
+# means what it always meant and is accepted; only the `post` is refused.
+generator def counter(limit: int32) -> some iterator[int32]
+pre limit > 0, "counter needs a positive limit"
+post return > 0
+:
+    var n = 0
+    while n < limit:
+        yield n
+        n = n + 1

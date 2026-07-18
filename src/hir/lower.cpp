@@ -58,33 +58,18 @@ using semantic::type_kind;
       [&decl](const auto &instance) -> bool { return instance.decl == &decl; });
 }
 
-/// Whether `decl` is a template generic over compile-time *values* only. It
-/// has no runtime form of its own — `n` is not a parameter anything passes —
-/// so `lower_module` skips it and lowers the instances the checker made of it
-/// instead. This deliberately does not skip a *type*-generic function: that
-/// one is still an unhandled construct, and lowering fails closed on it
-/// rather than quietly dropping a function a call site expects to exist.
-[[nodiscard]] auto is_const_generic_template(const ast::func_decl &decl)
-    -> bool {
+/// Whether `decl` is a generic template — over compile-time *values*
+/// (`def get[n: usize]`), over *types* (`def identity[T]`), or over both
+/// (`def filled[n: usize, T]`). None of the three has a runtime form of its
+/// own: `n` is not a parameter anything passes, and there is no single body
+/// that serves every `T`. So `lower_module` skips the template and lowers the
+/// instances the checker monomorphized instead
+/// (`semantic::checker::instantiate_generic_function` and its receiver-call
+/// sibling, both registered as `const_generic_instance`s).
+[[nodiscard]] auto is_generic_template(const ast::func_decl &decl) -> bool {
   return !decl.type_params.empty() &&
          std::ranges::all_of(decl.type_params, [](const auto &param) -> bool {
-           return param.is_value_param && !param.name.empty();
-         });
-}
-
-/// Whether `decl` is a template generic over *types* only (`def identity[T]`).
-/// Like a const-generic template it has no runtime form of its own — there is
-/// no single body that serves every type — so `lower_module` skips it and
-/// lowers the instances the checker monomorphized instead
-/// (`semantic::checker::instantiate_type_generic`, registered as
-/// `const_generic_instance`s). A template mixing value and type parameters is
-/// deliberately not matched here: neither monomorphization path handles it, so
-/// it must reach `lower_function` and fail closed rather than be dropped.
-[[nodiscard]] auto is_type_generic_template(const ast::func_decl &decl)
-    -> bool {
-  return !decl.type_params.empty() &&
-         std::ranges::all_of(decl.type_params, [](const auto &param) -> bool {
-           return !param.is_value_param && !param.name.empty();
+           return !param.name.empty();
          });
 }
 
@@ -3744,11 +3729,13 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   // `array[int32, 3]`, not `array[int32, n]`. Every other generic function is
   // still a template, with no runtime form until it is instantiated.
   if (!decl.type_params.empty() && !is_const_generic_instance(decl, checked_)) {
-    return fail(lowering_error_kind::unsupported_construct, decl.span,
-                "generic functions over *types* are not lowered until type "
-                "monomorphization exists (spec/typed-ir-design.md Decision 2, "
-                "phase 5); a function generic only over compile-time values "
-                "is compiled once per constant it is called with");
+    return fail(
+        lowering_error_kind::unsupported_construct, decl.span,
+        std::format("`{}` is a generic template with no runtime form of its "
+                    "own, and no call site pinned its parameters down to an "
+                    "instance to compile; a generic function is compiled once "
+                    "per constant and concrete type it is called with",
+                    decl.name));
   }
   if (decl.return_type == nullptr) {
     return fail(lowering_error_kind::missing_return_type, decl.span,
@@ -3758,17 +3745,22 @@ auto lowerer::lower_function(const ast::func_decl &decl)
                             decl.name));
   }
   // A generator's body isn't a function body: it compiles into a step
-  // function resumed once per `next()`, so a `pre` prepended to it would run
-  // on every resumption rather than once on entry, and its `return` statements
-  // mean "exhausted", not "here is the result". Both faces of a contract lose
-  // their meaning under that translation, so refuse rather than emit checks
-  // that fire at the wrong times (Decision 1: lowering fails closed).
-  if (decl.modifiers.is_generator && !decl.contracts.empty()) {
+  // function resumed once per `next()`, and its `return` statements mean
+  // "exhausted", not "here is the result". A `post` therefore has no exit to
+  // attach to and is rejected outright by the checker (`check_function`,
+  // `src/semantic/check.cpp`); this refusal is the fail-closed backstop for a
+  // `post` that somehow reaches here anyway (Decision 1). A `pre` survives the
+  // translation intact: it talks about the arguments, and the step function
+  // runs the body's prelude exactly once, on the first resumption, before any
+  // of the body proper — so it lowers below like any other precondition.
+  const auto has_post = std::ranges::any_of(
+      decl.contracts,
+      [](const ast::contract_clause &contract) { return !contract.is_pre; });
+  if (decl.modifiers.is_generator && has_post) {
     return fail(lowering_error_kind::unsupported_construct, decl.span,
-                std::format("`pre`/`post` conditions on the `generator def` "
-                            "`{}` are checked statically but are not lowered "
-                            "to runtime checks yet, because a generator's body "
-                            "runs in steps rather than as one call",
+                std::format("a `post` condition on the `generator def` `{}` "
+                            "has no exit to check at: a generator's body runs "
+                            "in steps rather than as one call",
                             decl.name));
   }
 
@@ -4128,11 +4120,11 @@ auto lower_module(const ast::file &file, std::string module_name,
       continue;
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
-    if (is_const_generic_template(decl) || is_type_generic_template(decl)) {
-      // Compiled once per constant (or concrete type) it is called with, from
+    if (is_generic_template(decl)) {
+      // Compiled once per constant and concrete type it is called with, from
       // the instances loop below — never as itself. The instances the checker
       // monomorphized are registered as `const_generic_instance`s regardless
-      // of whether the template was generic over values or types.
+      // of whether the template was generic over values, types, or both.
       continue;
     }
     if (decl.modifiers.is_intrinsic) {

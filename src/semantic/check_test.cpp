@@ -1369,6 +1369,24 @@ auto test_reports_generator_return_with_value() -> void {
                     "expected a return-with-value-in-generator diagnostic");
 }
 
+auto test_reports_generator_postcondition() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_generator_postcondition.kira");
+  expect(analyzed.error_count > 0,
+         "expected a `post` condition on a `generator def` to fail");
+  expect_diagnostic(
+      analyzed,
+      "a `post` condition cannot be written on the `generator def` `counter`",
+      "expected the diagnostic to name the generator the `post` is on");
+  expect_diagnostic(analyzed, "a generator has no single result to describe",
+                    "expected the diagnostic to explain why");
+  // The `pre` on the same declaration keeps its ordinary meaning — only the
+  // `post` face is refused, so the refusal is the *only* error reported.
+  expect(analyzed.error_count == 1,
+         "expected the generator's `pre` to be accepted, leaving the rejected "
+         "`post` as the sole error");
+}
+
 auto test_reports_existential_type_outside_generator() -> void {
   // `some iterator[T]` is a perfectly legal *general* existential return
   // type now (not only generator sugar) — but `yield` still requires a
@@ -1939,6 +1957,7 @@ auto main() -> int {
     test_reports_generator_missing_return_type();
     test_reports_generator_yield_type_mismatch();
     test_reports_generator_return_with_value();
+    test_reports_generator_postcondition();
     test_reports_existential_type_outside_generator();
     test_reports_existential_return_type_in_parameter();
     test_reports_existential_bound_not_satisfied();

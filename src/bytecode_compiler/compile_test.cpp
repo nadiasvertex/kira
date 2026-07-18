@@ -856,6 +856,32 @@ auto test_violated_precondition_panics() -> void {
   expect(ok->value.i == 4, "expected half(8) to return 4");
 }
 
+// A `generator def`'s body compiles into a step function resumed once per
+// `next()`, but its *prelude* — where preconditions go — runs exactly once,
+// on the first resumption, before any of the body proper. So a `pre` survives
+// the translation with its meaning intact, and these two fixtures pin down
+// both faces of it: the check fires when the argument breaks the contract,
+// and is invisible when it doesn't.
+auto test_violated_generator_precondition_panics() -> void {
+  auto module = compile_fixture(load_fixture("generator_precondition.kira"));
+  auto main_result = run_main(module);
+  expect(!main_result.has_value(),
+         "expected counter(-1) to violate counter's precondition");
+  expect(main_result.error() == bc::panic_reason::precondition_violated,
+         "expected the panic reason to name the broken precondition");
+}
+
+auto test_satisfied_generator_precondition_yields_normally() -> void {
+  auto module =
+      compile_fixture(load_fixture("generator_precondition_holds.kira"));
+  auto main_result = run_main(module);
+  expect(main_result.has_value(),
+         "expected counter(3) to satisfy its own precondition");
+  expect(main_result->value.i == 3,
+         "expected the generator to yield 0, 1, 2 — summing to 3 — with the "
+         "precondition checked once and passed");
+}
+
 // Every exit is an explicit `return`, so each one carries the postcondition
 // check itself — and the one that breaks the promise panics.
 auto test_violated_postcondition_in_diverging_tail_panics() -> void {
@@ -1391,6 +1417,8 @@ auto main() -> int {
     test_narrow_element_array_has_no_padding_in_memory();
     test_array_index_out_of_bounds_panics();
     test_violated_precondition_panics();
+    test_violated_generator_precondition_panics();
+    test_satisfied_generator_precondition_yields_normally();
     test_violated_postcondition_in_diverging_tail_panics();
     test_array_fill_form_repeats_the_same_value();
     test_sum_type_variant_with_payload_encodes_tag_and_slot();

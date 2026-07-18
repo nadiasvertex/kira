@@ -1,0 +1,20 @@
+module sample
+
+def opaque(x: int32) -> int32:
+    x
+
+# The same generator with a precondition that holds: the check runs once and
+# passes, and the generator then produces 0, 1, 2 as if it weren't there.
+generator def counter(limit: int32) -> some iterator[int32]
+pre limit > 0, "counter needs a positive limit"
+:
+    var n = 0
+    while n < limit:
+        yield n
+        n = n + 1
+
+def main() -> int32:
+    var total = 0
+    for x in counter(opaque(3)):
+        total = total + x
+    return total

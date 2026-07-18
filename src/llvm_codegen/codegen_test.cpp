@@ -678,6 +678,29 @@ auto test_violated_precondition_panics() -> void {
          "expected the compiled check to panic exactly as the VM's does");
 }
 
+// The same two programs the VM runs, on this tier for the reason all of these
+// exist twice: a generator's `pre` lands in the body prelude, which this
+// backend compiles into the *step* function rather than the constructor, so
+// "checked once, before the first step" has to be proved here separately.
+auto test_violated_generator_precondition_panics() -> void {
+  auto jf = jit_fixture_for(load_fixture("generator_precondition.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(!result.has_value(),
+         "expected counter(-1) to violate counter's precondition");
+  expect(result.error() == bc::panic_reason::precondition_violated,
+         "expected the compiled check to panic exactly as the VM's does");
+}
+
+auto test_satisfied_generator_precondition_yields_normally() -> void {
+  auto jf = jit_fixture_for(load_fixture("generator_precondition_holds.kira"));
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(),
+         "expected counter(3) to satisfy its own precondition");
+  expect(result->value.i == 3,
+         "expected the generator to yield 0, 1, 2 — summing to 3 — with the "
+         "precondition checked once and passed");
+}
+
 // The same program the VM runs — and the reason this test exists on this tier
 // too: a check appended after the diverging `if` would be an instruction after
 // a terminator, so `compile_module` itself would fail verification here long
@@ -1058,6 +1081,8 @@ auto main() -> int {
     test_narrow_element_array_has_no_padding_in_memory();
     test_array_index_out_of_bounds_panics();
     test_violated_precondition_panics();
+    test_violated_generator_precondition_panics();
+    test_satisfied_generator_precondition_yields_normally();
     test_violated_postcondition_in_diverging_tail_panics();
     test_array_fill_form_repeats_the_same_value();
     test_match_dispatches_on_literal_and_wildcard_patterns();

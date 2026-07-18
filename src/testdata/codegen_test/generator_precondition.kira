@@ -1,0 +1,21 @@
+module sample
+
+# Launders the argument past the reasoning solver so `counter`'s precondition
+# can't be proved away and has to be enforced where it always could be — at
+# run time, once, before the generator's body takes its first step.
+def opaque(x: int32) -> int32:
+    x
+
+generator def counter(limit: int32) -> some iterator[int32]
+pre limit > 0, "counter needs a positive limit"
+:
+    var n = 0
+    while n < limit:
+        yield n
+        n = n + 1
+
+def main() -> int32:
+    var total = 0
+    for x in counter(opaque(0 - 1)):
+        total = total + x
+    return total

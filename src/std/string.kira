@@ -6,16 +6,6 @@ module std.string
 # critical primitives are native `rt_str_*` intrinsics (src/runtime/string_ops.h);
 # this module is the thin `extend str` layer that composes them.
 
-# Single-field wrappers so scalars stay heap-representable across the intrinsic
-# ABI boundary (same convention as std.fmt's box_* types and std.io's raw_fd).
-type box_usize = { v: usize }
-type box_u8 = { v: uint8 }
-type box_bool = { v: bool }
-
-# Substring-search result. `pos` is a byte offset (on a scalar boundary) and is
-# meaningful only when `found` is true — this avoids a magic not-found sentinel.
-type find_result = { found: bool, pos: usize }
-
 #: Single-field wrapper for usize to pass across intrinsic boundaries.
 type box_usize = { v: usize }
 #: Single-field wrapper for uint8 to pass across intrinsic boundaries.

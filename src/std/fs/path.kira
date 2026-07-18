@@ -17,16 +17,13 @@ pub type path = { raw: str }
 # ---------------------------------------------------------------------------
 
 priv def is_sep(c: str) -> bool:
-    if c.eq("/"):
-        return true
-    if std.platform.is_windows() and c.eq("\\"):
-        return true
-    return false
+    match c:
+        "/"  => true
+        "\\" => std.platform.is_windows()
+        _    => false
 
 priv def native_sep() -> str:
-    if std.platform.is_windows():
-        return "\\"
-    return "/"
+    "\\" if std.platform.is_windows() else "/"
 
 # Reverse byte-index scan for the last separator in `raw`.
 priv def last_sep_index(raw: str) -> option[usize]:
