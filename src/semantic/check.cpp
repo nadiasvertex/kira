@@ -7038,10 +7038,22 @@ private:
         const auto is_builtin_ctor_target =
             target_entry.kind == type_kind::ctor_ref_kind &&
             target_entry.decl == nullptr;
-        if (target_entry.decl == nullptr && !is_builtin_ctor_target) {
+        // An impl for an *applied* prelude generic (`impl from_iter[int32]
+        // for list[int32]`). Like the bare-constructor case it has no
+        // `type_decl` to key `methods_` by, and it used to fall into the
+        // `continue` below: the impl was parsed and coherence-checked, then
+        // silently never registered, so its members did not exist as far as
+        // every lookup was concerned. `collect`'s collector impls are all
+        // this shape, which is why `list[int32].from_iter(...)` reported no
+        // such static member however it was written.
+        const auto is_builtin_applied_target =
+            target_entry.kind == type_kind::builtin_generic_kind &&
+            target_entry.decl == nullptr && !target_entry.name.empty();
+        if (target_entry.decl == nullptr && !is_builtin_ctor_target &&
+            !is_builtin_applied_target) {
           continue;
         }
-        auto &methods = is_builtin_ctor_target
+        auto &methods = (is_builtin_ctor_target || is_builtin_applied_target)
                             ? impl_methods_by_builtin_[target_entry.name]
                             : methods_[target_entry.decl];
         auto overridden_names = std::unordered_set<std::string>{};
@@ -8125,6 +8137,58 @@ private:
         bindings);
   }
 
+  /// The static-dispatch sibling of `check_impl_generic_method_call`: a
+  /// `static def` reached through a *generic* impl block
+  /// (`impl[T] maker[T] for crate[T]`), where the parameter to be solved
+  /// belongs to the impl and not to the method.
+  ///
+  /// Such a method has no `type_params` of its own, so it used to take
+  /// `resolve_type_param_static`'s non-generic path, which names the callee
+  /// `crate[int32]::make` and stops. Nothing had instantiated the impl for
+  /// `int32`, so no function ever bore that name: the call type-checked and
+  /// then failed in lowering with "could not be resolved to a function in
+  /// this compiled module". Type-checking a call and compiling nothing for
+  /// it is exactly the split the receiver-taking sibling exists to prevent.
+  ///
+  /// The instance discipline is that sibling's, unchanged. The only
+  /// difference is where the type solving the impl comes from: a qualified
+  /// path (`crate[int32].make(...)`) or a solved type parameter
+  /// (`C.make(...)`), rather than a receiver expression.
+  ///
+  /// `bindings` receives the impl's solution so the caller can restate the
+  /// return type under it — `-> crate[T]` has to report `crate[int32]`.
+  /// Returns `nullptr` when no instance could be built, leaving the caller
+  /// on its existing path.
+  auto check_impl_generic_static_call(
+      const ast::call_expr &call, const method_entry &method, type_id target,
+      std::unordered_map<std::string, type_id> &bindings)
+      -> const ast::func_decl * {
+    unify_rigid(method.impl_target_pattern, target, bindings);
+    for (const auto &type_param : method.from_impl->type_params) {
+      if (type_param.name.empty() || bindings.contains(type_param.name)) {
+        continue;
+      }
+      // An impl parameter its own target type never mentions. No call site
+      // can pin it, so there is nothing concrete to compile.
+      return nullptr;
+    }
+
+    auto scoped_params = method.fixed_type_params;
+    scoped_params.insert(bindings.begin(), bindings.end());
+
+    auto solution = generic_solution{};
+    solution.suffix = std::format("${}", mangle_type_for_instance(target));
+    // Owned before `find_or_check_generic_instance` runs: checking the
+    // instance body interns types, and this name is read after that.
+    const auto target_name = std::string(types_.entry(target).name);
+    const auto name =
+        std::format("{}::{}{}", target_name, method.decl->name,
+                    solution.suffix);
+    return find_or_check_generic_instance(call, *method.decl, method.owner,
+                                          /*decl_file=*/std::nullopt, solution,
+                                          name, &scoped_params, target);
+  }
+
   /// Whether `method` is *receiver-style* for an `instance` of some
   /// constructor: declared without `self`, but with a first parameter that
   /// is an application of the very constructor the receiver instantiates —
@@ -8995,12 +9059,58 @@ private:
   /// `nullopt` when `target` has no such static member, leaving the caller to
   /// fall through to its remaining cases (and, ultimately, to an ordinary
   /// unknown-member diagnostic carrying the §5.4 instantiation note).
+  /// The concrete type a static call's receiver names, when that receiver is
+  /// written as a generic application (`list[int32].from_iter(...)`).
+  ///
+  /// The receiver reaches the checker as an *expression*: `gen[int32]`
+  /// parses as an index into something named `gen`, and `map[str, int32]` as
+  /// a call of `map`, because in expression position that is all the parser
+  /// could know. `expr_as_named_type` already rebuilds exactly these shapes,
+  /// so the receiver is reinterpreted by the same route an explicit type
+  /// argument takes and reaches the same builtins, user types, and imports.
+  ///
+  /// Resolution is deliberately `quiet`, and a head naming a value declines
+  /// outright: this runs speculatively on every `<expr>.method(...)` whose
+  /// object is an index or a call, and the overwhelming majority of those
+  /// are real indexing and real calls. Reporting an undefined *type* for
+  /// `values[0].method()` would be nonsense, so anything unresolved simply
+  /// leaves the caller on its existing path, diagnostics included.
+  auto resolve_applied_type_receiver(const ast::expr &object)
+      -> std::optional<type_id> {
+    auto named = expr_as_named_type(object);
+    if (named == nullptr || named->type_args.empty()) {
+      return std::nullopt;
+    }
+    // A head that names a value is indexing or invocation, whatever it might
+    // also spell as a type. Same test the `ident_expr` case at the top of
+    // `infer_qualified_call` applies.
+    if (named->path.size() == 1 &&
+        (lookup_value(named->path.front()) != nullptr ||
+         named->path.front() == "self")) {
+      return std::nullopt;
+    }
+
+    const auto &type = *named;
+    synthesized_types_.push_back(std::move(named));
+    auto ctx = current_resolve_ctx();
+    ctx.quiet = true;
+    const auto resolved = resolve_type(type, ctx);
+    return types_.is_unknown(resolved) || resolved == k_error_type
+               ? std::nullopt
+               : std::optional{resolved};
+  }
+
   auto resolve_type_param_static(const ast::call_expr &call,
                                  const ast::field_expr &field, type_id target,
                                  const std::string &fn_name)
       -> std::optional<type_id> {
     const auto &entry = types_.entry(target);
     const auto *method = find_method(entry, fn_name);
+    if (method == nullptr && entry.decl == nullptr && !entry.name.empty()) {
+      // A builtin target (`list[int32]`) has no `type_decl` for `find_method`
+      // to key on; its impl members live in the constructor-name-keyed table.
+      method = find_builtin_impl_method(entry.name, fn_name);
+    }
     if (method == nullptr) {
       return std::nullopt;
     }
@@ -9024,6 +9134,33 @@ private:
 
     auto bindings = std::unordered_map<std::string, type_id>{};
     solve_from_argument_types(call, params, bindings);
+
+    // A `static def` carried by a generic impl block. Checked before the
+    // method's own `type_params` are consulted, because the parameter that
+    // makes this call generic is the *impl*'s and the method usually
+    // declares none of its own — which is precisely why the branch below
+    // used to claim it and name a function nobody compiled.
+    // Restricted to methods declaring no parameters of their own: when a
+    // method has its own (`static def from_iter[I]`), those still have to be
+    // solved from the arguments, which is `instantiate_hk_method`'s job
+    // below. Claiming such a call here would build an instance with the
+    // impl's parameters bound and the method's left open, and the body would
+    // then fail to lower on the first use of one.
+    if (method->decl->type_params.empty() &&
+        impl_needs_instance(*method, entry) && !in_const_generic_template_ &&
+        !in_type_generic_template_) {
+      if (const auto *instance =
+              check_impl_generic_static_call(call, *method, target, bindings)) {
+        resolved_callees_[&call] =
+            resolved_callee{.decl = instance,
+                            .owner_module = method->owner->module_name,
+                            .impl_target_type = ""};
+        return substitute_solved(
+            signature_return_type(*method->decl, method->owner,
+                                  method->from_impl),
+            bindings);
+      }
+    }
 
     if (method->decl->type_params.empty()) {
       resolved_callees_[&call] =
@@ -9094,6 +9231,18 @@ private:
         return std::nullopt; // a value-rooted field chain, not a module path
       }
       root = path.segments;
+    } else if (object.kind == ast::node_kind::index_expr ||
+               object.kind == ast::node_kind::call_expr) {
+      // A static call on a generic *application*: `list[int32].from_iter(it)`,
+      // `crate[int32].make(9)`. Resolved to the concrete target and then
+      // dispatched by exactly the machinery a solved type parameter uses, so
+      // `list[int32].from_iter` and a `C.from_iter` that solved `C` to
+      // `list[int32]` name the same instance.
+      const auto target = resolve_applied_type_receiver(object);
+      if (!target.has_value()) {
+        return std::nullopt;
+      }
+      return resolve_type_param_static(call, field, *target, fn_name);
     } else {
       return std::nullopt;
     }
