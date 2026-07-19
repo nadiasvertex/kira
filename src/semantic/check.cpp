@@ -1266,8 +1266,8 @@ private:
                      frame.call_file)
               .with_label(frame.call_span, "this call needs that copy"));
       for (const auto &solution : frame.context_solutions) {
-        annotated.children.push_back(diagnostic(
-            diagnostic_level::note, solution, frame.call_file));
+        annotated.children.push_back(
+            diagnostic(diagnostic_level::note, solution, frame.call_file));
       }
     }
     return annotated;
@@ -2300,9 +2300,9 @@ private:
   /// of the two is set; a value parameter can only be answered by the first,
   /// since a type never folds to a constant.
   struct explicit_generic_arg {
-    const ast::expr *value = nullptr;    ///< Written in expression position.
+    const ast::expr *value = nullptr;     ///< Written in expression position.
     const ast::type_expr *type = nullptr; ///< Written in type position.
-    source_span span;                    ///< Span of the argument itself.
+    source_span span;                     ///< Span of the argument itself.
   };
 
   /// A call's explicit compile-time arguments, in written order. Empty when
@@ -4749,11 +4749,12 @@ private:
   /// `nullopt` when some parameter is left unanswered by all three — the one
   /// way monomorphization fails that is the *caller's* to fix, so it is
   /// diagnosed here, naming the parameter and how to pin it down.
-  auto solve_generic_params(
-      const ast::call_expr &call, const ast::func_decl &decl,
-      const module_members *owner, const value_bindings &solved,
-      std::unordered_map<std::string, type_id> &type_bindings,
-      const explicit_generic_args &explicit_args)
+  auto
+  solve_generic_params(const ast::call_expr &call, const ast::func_decl &decl,
+                       const module_members *owner,
+                       const value_bindings &solved,
+                       std::unordered_map<std::string, type_id> &type_bindings,
+                       const explicit_generic_args &explicit_args)
       -> std::optional<generic_solution> {
     if (explicit_args.size() > decl.type_params.size()) {
       error_with_help(
@@ -4920,11 +4921,12 @@ private:
   /// reports today instead of silently re-solving `T := int64`.
   ///
   /// See `spec/generic-inference-design.md` §2.
-  auto solve_from_expected_type(
-      const ast::call_expr &call, const ast::func_decl &decl,
-      const module_members *owner,
-      std::unordered_map<std::string, type_id> &bindings,
-      const explicit_generic_args &explicit_args) -> void {
+  auto
+  solve_from_expected_type(const ast::call_expr &call,
+                           const ast::func_decl &decl,
+                           const module_members *owner,
+                           std::unordered_map<std::string, type_id> &bindings,
+                           const explicit_generic_args &explicit_args) -> void {
     if (decl.return_type == nullptr) {
       return;
     }
@@ -4957,9 +4959,9 @@ private:
       if (const auto solved = from_expected.find(name);
           solved != from_expected.end()) {
         bindings.emplace(name, solved->second);
-        expected_solved_params_[&call].push_back(std::format(
-            "`{}` was solved to `{}` from the type expected here",
-            name, types_.display(solved->second)));
+        expected_solved_params_[&call].push_back(
+            std::format("`{}` was solved to `{}` from the type expected here",
+                        name, types_.display(solved->second)));
       }
     }
   }
@@ -5146,16 +5148,16 @@ private:
   /// map into the declared return type afterward, and a `C` solved only from
   /// context has to reach that substitution too or the call would come back
   /// typed as the abstract parameter.
-  auto instantiate_hk_method(
-      const ast::call_expr &call, const method_entry &method,
-      std::string_view target_type_name,
-      std::unordered_map<std::string, type_id> &bindings,
-      const explicit_generic_args &explicit_args = {},
-      const value_bindings &solved = {}, type_id self_type = k_unknown_type)
+  auto instantiate_hk_method(const ast::call_expr &call,
+                             const method_entry &method,
+                             std::string_view target_type_name,
+                             std::unordered_map<std::string, type_id> &bindings,
+                             const explicit_generic_args &explicit_args = {},
+                             const value_bindings &solved = {},
+                             type_id self_type = k_unknown_type)
       -> const ast::func_decl * {
     const auto &decl = *method.decl;
-    solve_from_expected_type(call, decl, method.owner, bindings,
-                             explicit_args);
+    solve_from_expected_type(call, decl, method.owner, bindings, explicit_args);
     const auto solution = solve_generic_params(call, decl, method.owner, solved,
                                                bindings, explicit_args);
     if (!solution.has_value()) {

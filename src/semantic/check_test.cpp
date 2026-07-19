@@ -1324,8 +1324,7 @@ auto test_reports_bad_method_explicit_generic_args() -> void {
                     "arguments make it `int32`",
                     "expected brackets disagreeing with the arguments to be "
                     "reported rather than silently discarded");
-  expect_diagnostic(analyzed,
-                    "`plain` takes no compile-time parameters",
+  expect_diagnostic(analyzed, "`plain` takes no compile-time parameters",
                     "expected brackets on a non-generic method to be reported");
 }
 
