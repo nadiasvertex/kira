@@ -4926,23 +4926,49 @@ private:
   /// int32`, and a `v: array[int32, n]` parameter given an `array[int32, 3]`
   /// solves `n := 3`. Shared by the free-function and receiver-call paths,
   /// which differ only in which parameters they hand it.
-  auto solve_from_argument_types(
-      const ast::call_expr &call, const std::vector<fn_param_info> &params,
-      std::unordered_map<std::string, type_id> &bindings) -> void {
+  auto
+  solve_from_argument_types(const ast::call_expr &call,
+                            const std::vector<fn_param_info> &params,
+                            std::unordered_map<std::string, type_id> &bindings,
+                            const ast::expr *ufcs_receiver = nullptr) -> void {
     const auto mapping = call_argument_mappings_.find(&call);
     if (mapping == call_argument_mappings_.end()) {
       return;
     }
     const auto &args_by_param = mapping->second.args_by_param;
-    for (size_t i = 0; i < params.size() && i < args_by_param.size(); ++i) {
-      if (args_by_param[i] == nullptr) {
+    for (size_t i = 0; i < params.size(); ++i) {
+      const auto *argument = ufcs_argument_for(i, args_by_param, ufcs_receiver);
+      if (argument == nullptr) {
         continue;
       }
-      if (const auto found = node_types_.find(args_by_param[i]);
+      if (const auto found = node_types_.find(argument);
           found != node_types_.end()) {
         unify_rigid(params[i].type, found->second, bindings);
       }
     }
+  }
+
+  /// The argument expression supplied for declared parameter `i`.
+  ///
+  /// A UFCS call (`recv.f(a)` reaching `f(recv, a)`) writes one fewer
+  /// argument than `f` declares parameters: the receiver fills parameter 0
+  /// and lives outside `args_by_param`, which is built against the *written*
+  /// arguments only. Everything that walks parameters against arguments —
+  /// generic solving, precondition substitution — has to shift by one here,
+  /// or it reads each argument against the wrong parameter. `nullptr` when
+  /// no argument reaches this parameter (a default, or past the end).
+  [[nodiscard]] static auto
+  ufcs_argument_for(size_t index,
+                    const std::vector<const ast::expr *> &args_by_param,
+                    const ast::expr *ufcs_receiver) -> const ast::expr * {
+    if (ufcs_receiver == nullptr) {
+      return index < args_by_param.size() ? args_by_param[index] : nullptr;
+    }
+    if (index == 0) {
+      return ufcs_receiver;
+    }
+    return index - 1 < args_by_param.size() ? args_by_param[index - 1]
+                                            : nullptr;
   }
 
   /// Solves whatever the arguments left open from the type the call site
@@ -5015,9 +5041,10 @@ private:
       const ast::call_expr &call, const ast::func_decl &decl,
       const module_members *owner, file_id_type decl_file,
       const value_bindings &solved, const std::vector<fn_param_info> &params,
-      const explicit_generic_args &explicit_args) -> std::optional<type_id> {
+      const explicit_generic_args &explicit_args,
+      const ast::expr *ufcs_receiver = nullptr) -> std::optional<type_id> {
     auto type_bindings = std::unordered_map<std::string, type_id>{};
-    solve_from_argument_types(call, params, type_bindings);
+    solve_from_argument_types(call, params, type_bindings, ufcs_receiver);
     solve_from_expected_type(call, decl, owner, type_bindings, explicit_args);
 
     const auto solution = solve_generic_params(call, decl, owner, solved,
@@ -5064,7 +5091,8 @@ private:
     resolved_callees_[&call] =
         resolved_callee{.decl = instance,
                         .owner_module = owner->module_name,
-                        .impl_target_type = ""};
+                        .impl_target_type = "",
+                        .receiver = ufcs_receiver};
     return record_expr_type(call, result);
   }
 
@@ -5226,7 +5254,8 @@ private:
   /// parameters' own types, and so cannot fail on any call at all.
   auto check_call_preconditions(const ast::call_expr &call,
                                 const ast::func_decl &decl,
-                                const std::vector<fn_param_info> &params)
+                                const std::vector<fn_param_info> &params,
+                                const ast::expr *ufcs_receiver = nullptr)
       -> void {
     if (decl.contracts.empty()) {
       return;
@@ -5242,9 +5271,9 @@ private:
     // the substitution — the condition then mentions a name nothing is known
     // about, and comes back `unknown`, which is exactly right.
     auto subst = predicate_subst{};
-    for (size_t i = 0;
-         i < params.size() && i < mapping->second.args_by_param.size(); ++i) {
-      const auto *argument = mapping->second.args_by_param[i];
+    for (size_t i = 0; i < params.size(); ++i) {
+      const auto *argument =
+          ufcs_argument_for(i, mapping->second.args_by_param, ufcs_receiver);
       if (argument == nullptr || params[i].name.empty()) {
         continue;
       }
@@ -7830,6 +7859,355 @@ private:
     return false;
   }
 
+  // ==========================================================================
+  //  UFCS — free functions called with method syntax
+  //  (`spec/collections-algorithms-design.md` §3)
+  //
+  //  `recv.f(a...)` falls back to `f(recv, a...)` when no method `f` exists.
+  //  This is the *last* arm of `infer_method_call`'s lookup ladder, always,
+  //  which is the property that makes it safe to ship: a free function can
+  //  never shadow a method, so adding one to the standard library can never
+  //  silently change the meaning of code that already compiles.
+  //
+  //  Nothing new is needed downstream. Lowering already emits a receiver as
+  //  a prepended first argument for any `resolved_callee` carrying one (see
+  //  `resolved_callee::receiver`), and an empty `impl_target_type` already
+  //  means "call this by its bare name" — which is exactly a free function.
+  //  So a UFCS call lowers as the plain call it desugars to, and both
+  //  backends never learn the feature exists.
+  // ==========================================================================
+
+  /// One free function that `recv.f(...)` might mean.
+  struct ufcs_candidate {
+    const ast::func_decl *decl = nullptr;
+    const module_members *owner = nullptr;
+    file_id_type file_id = 0;
+  };
+
+  /// Whether `decl` may be reached by method syntax at all (§3.3): it takes
+  /// at least one parameter — there must be something for the receiver to
+  /// fill — and that parameter is not `self`, which would make it a method
+  /// already reached by the arms above.
+  ///
+  /// The design also requires `pub`. That is enforced only for functions
+  /// from *other* modules, which is where the concern it answers lives
+  /// (§R6, candidate-pool pollution from imports). Inside the declaring
+  /// module a private `def helper(x: int32)` is already callable as
+  /// `helper(x)`, and refusing `x.helper()` there would be an asymmetry with
+  /// no safety story behind it.
+  [[nodiscard]] auto is_ufcs_eligible(const ast::func_decl &decl,
+                                      bool same_module) -> bool {
+    if (decl.params.empty() || param_name_of(decl.params.front()) == "self") {
+      return false;
+    }
+    return same_module || decl.visibility == ast::visibility::pub;
+  }
+
+  /// Every UFCS-eligible free function named `name` visible here, in the
+  /// same order `infer_call` resolves a bare `name(...)`: this module, then
+  /// explicit imports, then wildcard imports, then the prelude. Duplicates
+  /// are collapsed by declaration identity, so a function reachable through
+  /// two different imports is one candidate, not an ambiguity.
+  [[nodiscard]] auto collect_ufcs_candidates(const std::string &name)
+      -> std::vector<ufcs_candidate> {
+    auto found = std::vector<ufcs_candidate>{};
+    const auto add = [&](const func_decl_ref &fn, const module_members *owner,
+                         bool same_module) -> void {
+      if (fn.decl == nullptr || owner == nullptr ||
+          !is_ufcs_eligible(*fn.decl, same_module)) {
+        return;
+      }
+      if (std::ranges::any_of(found, [&](const ufcs_candidate &seen) -> bool {
+            return seen.decl == fn.decl;
+          })) {
+        return;
+      }
+      found.push_back(ufcs_candidate{
+          .decl = fn.decl, .owner = owner, .file_id = fn.file_id});
+    };
+
+    if (module_ != nullptr) {
+      if (const auto it = module_->functions.find(name);
+          it != module_->functions.end()) {
+        add(it->second, module_, /*same_module=*/true);
+      }
+    }
+    if (const auto *import = find_import(name)) {
+      if (const auto *source = import_source_module(*import)) {
+        if (const auto it =
+                source->functions.find(imported_member_name(*import));
+            it != source->functions.end()) {
+          add(it->second, source, /*same_module=*/false);
+        }
+      }
+    }
+    for (const auto *source : wildcard_import_sources()) {
+      if (const auto it = source->functions.find(name);
+          it != source->functions.end()) {
+        add(it->second, source, /*same_module=*/false);
+      }
+    }
+    if (const auto prelude = find_prelude_function(name)) {
+      add(prelude->first, prelude->second, /*same_module=*/false);
+    }
+    return found;
+  }
+
+  /// How a receiver of type `receiver` sits against a first parameter
+  /// declared `param` (§3.2).
+  enum class receiver_fit : uint8_t {
+    fits,         ///< Callable as written.
+    needs_mut,    ///< Shape matches, but `&mut T` wants a mutable receiver.
+    does_not_fit, ///< Different type entirely; not a candidate.
+  };
+
+  /// Whether the receiver expression names something that may be mutated —
+  /// a `var`/`mut` binding, or a value already held behind a `&mut`. Used
+  /// only to decide between `fits` and `needs_mut`, never to *permit* a
+  /// mutation: the ordinary mutability checks still run on the call.
+  [[nodiscard]] auto receiver_is_mutable_lvalue(const ast::expr &receiver,
+                                                type_id receiver_type) -> bool {
+    const auto &entry = types_.entry(receiver_type);
+    if (entry.kind == type_kind::ref_kind) {
+      return entry.is_mut;
+    }
+    const auto *root = assignment_root_ident(receiver);
+    if (root == nullptr) {
+      return false;
+    }
+    const auto *binding = lookup_value(root->name);
+    if (binding == nullptr) {
+      return false;
+    }
+    return binding->origin == binding_origin::var_binding ||
+           binding->origin == binding_origin::mut_binding;
+  }
+
+  /// The §3.2 adaptation table, first match wins. `param` is the callee's
+  /// declared first parameter type; `receiver` is the receiver's own type,
+  /// references and all.
+  [[nodiscard]] auto classify_receiver_fit(type_id param, type_id receiver,
+                                           bool receiver_is_mutable)
+      -> receiver_fit {
+    const auto &param_entry = types_.entry(param);
+    const auto bare_param = strip_refs(param);
+    const auto bare_receiver = strip_refs(receiver);
+
+    // An unconstrained generic first parameter (`def sum[I, T](it: I)`)
+    // accepts anything — unification binds it to whatever arrived.
+    if (types_.entry(bare_param).kind == type_kind::type_param_kind) {
+      return receiver_fit::fits;
+    }
+    if (!types_.compatible(bare_param, bare_receiver)) {
+      return receiver_fit::does_not_fit;
+    }
+    if (param_entry.kind == type_kind::ref_kind && param_entry.is_mut) {
+      // `&mut T` against a non-`mut` binding is a hard error, never a
+      // silently skipped candidate — otherwise `v.iter_mut()` on a `let`
+      // collapses into a baffling "no method `iter_mut`".
+      return receiver_is_mutable ? receiver_fit::fits : receiver_fit::needs_mut;
+    }
+    return receiver_fit::fits;
+  }
+
+  /// Renders a candidate the way the ambiguity and no-fit diagnostics name
+  /// it: fully qualified, with the signature the user has to satisfy.
+  [[nodiscard]] auto describe_ufcs_candidate(const ufcs_candidate &candidate)
+      -> std::string {
+    auto rendered = std::string{};
+    for (const auto &param : signature_params(*candidate.decl, candidate.owner,
+                                              /*skip_self=*/false)) {
+      if (!rendered.empty()) {
+        rendered += ", ";
+      }
+      rendered += std::format("{}: {}", param.name, types_.display(param.type));
+    }
+    return std::format("{}.{}({})", candidate.owner->module_name,
+                       candidate.decl->name, rendered);
+  }
+
+  /// The candidate's qualified name alone, for the "call it this way
+  /// instead" half of the ambiguity help.
+  [[nodiscard]] static auto ufcs_candidate_path(const ufcs_candidate &candidate)
+      -> std::string {
+    return std::format("{}.{}", candidate.owner->module_name,
+                       candidate.decl->name);
+  }
+
+  /// Checks `recv.f(a...)` resolved to the free function `candidate`, as the
+  /// call `f(recv, a...)` it desugars to: the receiver fills the first
+  /// declared parameter, the written arguments fill the rest, and the
+  /// callee's type parameters are solved from the receiver first and the
+  /// arguments after — the same discipline `check_receiver_call` applies to
+  /// a method, on a declaration that simply lives outside any `impl`.
+  auto check_ufcs_call(const ast::call_expr &call, const ast::field_expr &field,
+                       const ufcs_candidate &candidate, type_id receiver_type)
+      -> type_id {
+    const auto &decl = *candidate.decl;
+    const auto params = signature_params(decl, candidate.owner,
+                                         /*skip_self=*/false);
+    record_expr_type(field, fn_type_of(decl, candidate.owner));
+
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    // Solved through the references on both sides: a `&T` parameter taking
+    // an auto-ref'd `T` receiver still has to bind `T`, and comparing the
+    // decorated types would bind nothing.
+    unify_rigid(strip_refs(params.front().type), strip_refs(receiver_type),
+                bindings);
+
+    auto rest = std::vector<fn_param_info>(params.begin() + 1, params.end());
+    for (auto &param : rest) {
+      param.type = substitute_solved(param.type, bindings);
+    }
+    auto solved = value_bindings{};
+    check_call_args_against(
+        call, rest, decl.name,
+        source_location{.file_id = candidate.file_id, .span = decl.span},
+        &solved);
+    check_call_preconditions(call, decl, params, field.object.get());
+
+    if (!in_const_generic_template_ && !in_type_generic_template_ &&
+        is_generic_template(decl) && is_free_function(decl, candidate.owner)) {
+      if (const auto result = instantiate_generic_function(
+              call, decl, candidate.owner, candidate.file_id, solved, params,
+              /*explicit_args=*/{}, field.object.get())) {
+        return *result;
+      }
+    }
+
+    resolved_callees_[&call] =
+        resolved_callee{.decl = &decl,
+                        .owner_module = candidate.owner->module_name,
+                        .impl_target_type = "",
+                        .receiver = field.object.get()};
+    return substitute_solved(signature_return_type(decl, candidate.owner),
+                             bindings);
+  }
+
+  /// The fourth and last arm of the method-call ladder. Returns `nullopt`
+  /// when no free function of this name is visible at all, leaving the
+  /// caller to report its own not-found error; otherwise this call is UFCS's
+  /// to answer, successfully or with a diagnostic.
+  auto try_ufcs_call(const ast::call_expr &call, const ast::field_expr &field,
+                     type_id receiver_type) -> std::optional<type_id> {
+    if (field.object == nullptr) {
+      return std::nullopt;
+    }
+    const auto candidates = collect_ufcs_candidates(field.field_name);
+    if (candidates.empty()) {
+      return std::nullopt;
+    }
+
+    const auto mutable_receiver =
+        receiver_is_mutable_lvalue(*field.object, receiver_type);
+    auto viable = std::vector<ufcs_candidate>{};
+    auto wants_mut = std::vector<ufcs_candidate>{};
+    for (const auto &candidate : candidates) {
+      const auto params = signature_params(*candidate.decl, candidate.owner,
+                                           /*skip_self=*/false);
+      if (params.empty()) {
+        continue;
+      }
+      switch (classify_receiver_fit(params.front().type, receiver_type,
+                                    mutable_receiver)) {
+      case receiver_fit::fits:
+        viable.push_back(candidate);
+        break;
+      case receiver_fit::needs_mut:
+        wants_mut.push_back(candidate);
+        break;
+      case receiver_fit::does_not_fit:
+        break;
+      }
+    }
+
+    if (viable.size() == 1) {
+      return check_ufcs_call(call, field, viable.front(), receiver_type);
+    }
+
+    if (viable.size() > 1) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("`{}` is ambiguous here — {} visible functions accept "
+                      "`{}` as their first argument",
+                      field.field_name, viable.size(),
+                      types_.display(receiver_type)),
+          file_id_);
+      diag.with_label(field.span, "ambiguous call");
+      for (const auto &candidate : viable) {
+        diag.with_note(describe_ufcs_candidate(candidate));
+      }
+      diag.with_help(std::format(
+          "There is no most-specific winner to pick between these; say which "
+          "one you mean by calling it qualified, with the receiver as its "
+          "first argument: `{}({}{})`.",
+          ufcs_candidate_path(viable.front()),
+          describe(*field.object, predicate_subst{}),
+          call.args.empty() ? "" : ", ..."));
+      emit_diag(diag);
+      mark_error();
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+
+    if (!wants_mut.empty()) {
+      const auto &candidate = wants_mut.front();
+      error_with_help(
+          field.span,
+          std::format("`{}` needs to mutate its receiver, and `{}` is not a "
+                      "mutable binding",
+                      field.field_name,
+                      describe(*field.object, predicate_subst{})),
+          "receiver is immutable",
+          std::format("`{}` takes its first argument by `&mut`. Bind the "
+                      "receiver with `var` (or `let mut`) so it can be "
+                      "mutated in place.",
+                      describe_ufcs_candidate(candidate)));
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+
+    // The name exists but nothing accepts this receiver — the highest-value
+    // message of the three, because this is what a forgotten `.iter()`
+    // looks like.
+    auto diag =
+        diagnostic(diagnostic_level::error,
+                   std::format("`{}` cannot be called on `{}`",
+                               field.field_name, types_.display(receiver_type)),
+                   file_id_);
+    diag.with_label(field.span,
+                    std::format("no `{}` accepts `{}` as its first argument",
+                                field.field_name,
+                                types_.display(receiver_type)));
+    // Naming each candidate's *first parameter type* is the whole value of
+    // this message: the mismatch is always between that and the receiver,
+    // and spelling both out is what turns "no method" into "you forgot an
+    // `.iter()`" without having to guess which fix applies.
+    auto wanted = std::string{};
+    for (const auto &candidate : candidates) {
+      const auto params = signature_params(*candidate.decl, candidate.owner,
+                                           /*skip_self=*/false);
+      diag.with_note(std::format(
+          "`{}` is visible here, and wants `{}` first",
+          describe_ufcs_candidate(candidate),
+          params.empty() ? "nothing" : types_.display(params.front().type)));
+      if (wanted.empty() && !params.empty()) {
+        wanted = types_.display(params.front().type);
+      }
+    }
+    diag.with_help(std::format(
+        "A free function is callable as a method only when its first "
+        "parameter accepts the receiver. Here that parameter is `{}` and the "
+        "receiver is `{}` — either produce a `{}` to call this on (a "
+        "`list[T]` becomes an iterator with `.iter()`), or call `{}` "
+        "qualified with an argument that fits.",
+        wanted, types_.display(receiver_type), wanted, field.field_name));
+    emit_diag(diag);
+    mark_error();
+    infer_call_args_loosely(call);
+    return k_error_type;
+  }
+
   auto infer_method_call(const ast::call_expr &call,
                          const ast::field_expr &field) -> type_id {
     if (field.object == nullptr) {
@@ -8003,6 +8381,12 @@ private:
         infer_call_args_loosely(call);
         return k_unknown_type;
       }
+      // Last arm of the ladder: a free function called with method syntax
+      // (§3). Reached only after every method lookup above has failed, so a
+      // free function can never shadow a method.
+      if (const auto ufcs = try_ufcs_call(call, field, object)) {
+        return *ufcs;
+      }
       auto diag = diagnostic(diagnostic_level::error,
                              std::format("no method `{}` on type `{}`",
                                          field.field_name, entry.name),
@@ -8101,6 +8485,13 @@ private:
                                         *field.object);
           return check_call_against_decl(call, *method->decl, method->owner,
                                          file_id_, /*skip_self=*/true);
+        }
+        // Same last arm as the struct/sum/opaque case above, and the one
+        // that matters most for `std.algo`: the whole catalog is free
+        // functions over a builtin `list`/`slice` receiver. Inside the
+        // `is_unknown` guard, so a real builtin method still wins.
+        if (const auto ufcs = try_ufcs_call(call, field, object)) {
+          return *ufcs;
         }
       }
       infer_call_args_loosely(call);

@@ -243,16 +243,64 @@ not reuse registers and one body exceeded the 256 its u8 operands address.
 Three `check_test` cases cover the silent-typing bug and the two new
 diagnostics; each was confirmed to fail with its mechanism reverted.
 
-### Phase 4 — UFCS
+### Phase 4 — UFCS. DONE.
 
-The fourth, strictly-last arm in `infer_method_call`, reusing
-`receiver_fills_first_param`/`check_receiver_call`. Receiver adaptation per
-design §3.2, with `&mut T` against a non-`mut` binding a hard error.
-Eligibility per §3.3, no opt-in marker. All three diagnostics of §3.4.
+`try_ufcs_call` is the fourth and strictly-last arm of the method-lookup
+ladder, wired into both of `infer_method_call`'s not-found exits: the
+struct/sum/opaque case (ahead of its "no method" diagnostic) and the
+builtin case (inside the `is_unknown(builtin_result)` guard, so a real
+builtin method still wins). Candidates come from the same four sources
+`infer_call` uses for a bare `name(...)` — this module, explicit imports,
+wildcard imports, prelude — deduplicated by declaration identity, so a
+function reachable through two imports is one candidate rather than an
+ambiguity.
 
-**Exit:** a free `pub def` is callable as a method; a method always wins
-over a UFCS candidate; ambiguity is a hard error naming every candidate;
-the full existing test suite is green (strict-last means it must be).
+**Lowering and both backends were untouched.** A UFCS call records an
+ordinary `resolved_callee` with an empty `impl_target_type` (lowering emits
+the callee by its bare name — what a free function is called) and the
+receiver in `receiver` (lowering evaluates it and prepends it as the first
+argument). That machinery already existed for instance-method calls; UFCS
+is the same shape with a declaration that happens to live outside any
+`impl`.
+
+Three small threading changes were needed, all in `check.cpp`. A UFCS call
+writes one fewer argument than the callee declares parameters, so
+`solve_from_argument_types`, `check_call_preconditions`, and
+`instantiate_generic_function` each take an optional `ufcs_receiver` and
+index through one shared `ufcs_argument_for` helper. Without it, generic
+solving and precondition substitution read every argument against the wrong
+parameter — silently, since the shapes usually still unify.
+
+**Deviation from design §3.3, deliberate.** The design requires `pub` for
+eligibility. That is enforced only for functions from *other* modules,
+which is where the concern it answers lives (§R6, candidate-pool pollution
+from imports). Inside the declaring module a private `def helper(x: int32)`
+is already callable as `helper(x)`, and refusing `x.helper()` there would
+be an asymmetry with no safety story behind it.
+
+**Exit criteria, all met.** A free `pub def` is callable as a method
+(`test_free_function_callable_as_method`); a method always wins
+(`test_method_wins_over_ufcs`, plus the corpus, which returns 1186 instead
+of 194 when the arm is moved ahead of `find_method`); ambiguity is a hard
+error naming every candidate with its module path and signature
+(`test_ufcs_ambiguity_is_an_error`); the full suite is green at 24/24,
+which strict-last requires.
+
+`045_ufcs.kira` (`# expect: 194`) covers scalar receivers with and without
+extra arguments, method-wins, argument *order* (`sub` is non-commutative,
+so a misplaced receiver is a wrong number rather than a compile error), a
+`&mut` receiver whose mutation is read back out, a generic free function
+monomorphized through UFCS, and a builtin `list` receiver — the shape the
+whole `std.algo` catalog will take. Six `check_test` cases cover the three
+diagnostics and the eligibility rule; each was confirmed to fail with its
+own mechanism reverted.
+
+**Found, not fixed:** on a *builtin* receiver an unrecognized method name
+resolves to `unknown` with no diagnostic at all (builtin method lookup is
+best-effort). This predates UFCS, but it blunts design §3.4's "no
+candidate" message exactly where §5 needs it most — `nums.fliter(...)` on a
+`list` stays silent rather than suggesting `filter`. Worth fixing in Phase
+5, where the enriched suggestion pool is specified.
 
 ### Phase 5 — `std.iter` protocol and `std.algo` catalog
 

@@ -1,0 +1,113 @@
+module codegen_stress.ufcs
+
+# UFCS: a free function called with method syntax (design §3). `recv.f(a)`
+# falls back to `f(recv, a)` when no method `f` exists — the *last* arm of
+# the method-lookup ladder, always.
+#
+# Nothing was added to lowering or to either backend for this. A UFCS call
+# records an ordinary `resolved_callee` with an empty `impl_target_type` (so
+# lowering emits the callee by its bare name, which is what a free function
+# is called) and the receiver in `receiver` (so lowering evaluates it and
+# prepends it as the first argument). Both backends therefore see a plain
+# call and never learn the feature exists — which is exactly why this file
+# checks a *value*: if the desugaring dropped or misordered the receiver,
+# both tiers would agree on the same wrong answer, and the differential
+# check alone would not notice.
+#
+# `wins` is the safety property the whole design rests on: `get` exists both
+# as a method on `counter` and as a free function, and the method must win.
+# A wrong answer there (999 instead of 7) means UFCS has started shadowing
+# methods, which would let a new stdlib function silently change the meaning
+# of code that already compiles.
+#
+# `argument_order` guards the other half of the same desugaring: `sub` is
+# not commutative, so passing the receiver as anything but the *first*
+# argument produces a different number rather than a compile error.
+#
+# Split across several `def`s for the same reason 044 is: the bytecode
+# compiler does not reuse registers within a function, and its u8 register
+# operands cap one function at 256.
+#
+# 30 + 7 + 24 + 59 + 12 + 62 = 194.
+
+# expect: 194
+
+pub def double(x: int32) -> int32:
+    return x * 2
+
+pub def add(x: int32, y: int32) -> int32:
+    return x + y
+
+pub def sub(x: int32, y: int32) -> int32:
+    return x - y
+
+pub def identity[T](value: T) -> T:
+    return value
+
+# A free function reached as a method, with and without extra arguments:
+# 10 + 20.
+def scalar_form() -> int32:
+    let a = 5.double()
+    let b = 8.add(12)
+    return a + b
+
+type counter = { value: int32 }
+
+extend counter:
+    def get(self) -> int32:
+        return self.value
+
+# Same name as `counter`'s method. Never reached through `c.get()`.
+pub def get(c: counter) -> int32:
+    return 999
+
+# The method wins: 7, not 999.
+def method_wins() -> int32:
+    let c = counter{value: 7}
+    return c.get()
+
+# The receiver is the *first* argument, not the last: 30 - 6, not 6 - 30.
+def argument_order() -> int32:
+    return 30.sub(6)
+
+type acc = { total: int32 }
+
+# A `&mut` first parameter against a `var` receiver — the mutation has to be
+# visible to the caller afterwards, so this reads `box.total` back out.
+pub def add_to(a: &mut acc, by: int32) -> int32:
+    a.total = a.total + by
+    return a.total
+
+# 15 + 22 + 22.
+def mutating_form() -> int32:
+    var box = acc{total: 5}
+    let first = box.add_to(10)
+    let second = box.add_to(7)
+    return first + second + box.total
+
+# A generic free function monomorphized through UFCS: the receiver is what
+# solves `T`, so this is also a check that the receiver reaches generic
+# solving in the right parameter slot.
+def generic_form() -> int32:
+    let a = 12.identity()
+    return a
+
+pub def total_of(items: list[int32]) -> int32:
+    var sum = 0
+    for item in items:
+        sum = sum + item
+    return sum
+
+# A builtin receiver, which is the shape the whole `std.algo` catalog takes:
+# free functions over a `list`. 6 + 56.
+def builtin_receiver_form() -> int32:
+    let nums = [1, 2, 3]
+    let small = nums.total_of()
+    let bigger = [10, 20, 26].total_of()
+    return small + bigger
+
+def main() -> int32:
+    let a = scalar_form() + method_wins()
+    let b = argument_order() + mutating_form()
+    let c = generic_form() + builtin_receiver_form()
+    return a + b + c

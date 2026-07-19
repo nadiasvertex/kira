@@ -2137,6 +2137,180 @@ auto test_for_head_cannot_split_a_non_tuple() -> void {
                     "expected the non-tuple loop-head diagnostic");
 }
 
+/// UFCS: a free function is callable with method syntax, and the receiver
+/// really does fill the *first* parameter — `label` takes a second argument
+/// of a different type, so routing the receiver into the wrong slot would
+/// be a type error rather than a silent success.
+///
+/// The receiver is a struct, not an `int32`, for the reason spelled out on
+/// `test_ufcs_skips_private_functions_in_other_modules`: on a builtin
+/// receiver an unresolved method is silently `unknown`, so this assertion
+/// would hold there even with UFCS removed outright.
+auto test_free_function_callable_as_method() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "ufcs_basic.kira",
+      .text = "module main\n"
+              "\n"
+              "type tag = { id: int32 }\n"
+              "\n"
+              "pub def label(t: tag, prefix: str) -> str:\n"
+              "    return prefix\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let t = tag{id: 1}\n"
+              "    let s: str = t.label(\"n=\")\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected a free function to be callable as a method");
+}
+
+/// The safety property the whole feature rests on: UFCS is the last arm, so
+/// a free function of the same name can never take a call away from a real
+/// method. Asserting the *return type* is what makes this able to fail — if
+/// the free `tag` won, `s` would be `str` and the `int32` annotation would
+/// be the error this expects not to see.
+auto test_method_wins_over_ufcs() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "ufcs_shadow.kira",
+      .text = "module main\n"
+              "\n"
+              "type counter = { value: int32 }\n"
+              "\n"
+              "extend counter:\n"
+              "    def tag(self) -> int32:\n"
+              "        return self.value\n"
+              "\n"
+              "pub def tag(c: counter) -> str:\n"
+              "    return \"free\"\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let c = counter{value: 1}\n"
+              "    let n: int32 = c.tag()\n"
+              "    return n\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected the inherent method to win over the UFCS candidate");
+}
+
+/// Two visible free functions both accepting the receiver is the user's to
+/// resolve — there is deliberately no most-specific tie-break.
+auto test_ufcs_ambiguity_is_an_error() -> void {
+  const auto analyzed = analyze_sources({
+      {
+          .path = "amb_a.kira",
+          .text = "module amb.a\n"
+                  "\n"
+                  "pub def scale(x: int32) -> int32:\n"
+                  "    return x * 2\n",
+      },
+      {
+          .path = "amb_b.kira",
+          .text = "module amb.b\n"
+                  "\n"
+                  "pub def scale(x: int32) -> int32:\n"
+                  "    return x * 3\n",
+      },
+      {
+          .path = "amb_main.kira",
+          .text = "module main\n"
+                  "\n"
+                  "use amb.a.*\n"
+                  "use amb.b.*\n"
+                  "\n"
+                  "def main() -> int32:\n"
+                  "    return 5.scale()\n",
+      },
+  });
+  expect(analyzed.error_count > 0,
+         "expected an ambiguous UFCS call to be rejected");
+  expect_diagnostic(analyzed, "is ambiguous here",
+                    "expected the UFCS ambiguity diagnostic");
+}
+
+/// A `&mut` first parameter against a non-`mut` binding is a hard error,
+/// never a silently skipped candidate — otherwise `v.iter_mut()` on a `let`
+/// collapses into a baffling "no method `iter_mut`", which is the opposite
+/// of what the user needs to be told.
+auto test_ufcs_mut_receiver_must_be_mutable() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "ufcs_mut.kira",
+      .text = "module main\n"
+              "\n"
+              "type acc = { total: int32 }\n"
+              "\n"
+              "pub def bump(a: &mut acc) -> int32:\n"
+              "    return a.total\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let box = acc{total: 1}\n"
+              "    return box.bump()\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a `&mut` UFCS receiver on a `let` binding to be rejected");
+  expect_diagnostic(analyzed, "needs to mutate its receiver",
+                    "expected the immutable-receiver diagnostic");
+}
+
+/// The name exists but nothing accepts this receiver — the message a
+/// forgotten `.iter()` produces, and the one worth getting right.
+auto test_ufcs_reports_receiver_mismatch() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "ufcs_mismatch.kira",
+      .text = "module main\n"
+              "\n"
+              "pub def total_of(items: list[int32]) -> int32:\n"
+              "    return 0\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    return 5.total_of()\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a UFCS call whose receiver does not fit to be rejected");
+  expect_diagnostic(analyzed, "cannot be called on",
+                    "expected the receiver-mismatch diagnostic");
+  expect_diagnostic(analyzed, "wants `list[int32]` first",
+                    "expected the mismatch note to name the parameter type");
+}
+
+/// A non-`pub` function in another module is not UFCS-eligible, so it never
+/// enters the candidate pool — the call falls through to the ordinary
+/// not-found error rather than reaching across the module boundary.
+///
+/// The receiver is a struct deliberately. On a *builtin* receiver an
+/// unrecognized method name resolves to `unknown` with no diagnostic at all
+/// (builtin method lookup is best-effort), so the same assertion made there
+/// would pass whether or not eligibility were enforced — it has to be made
+/// somewhere a missing method is actually reported.
+auto test_ufcs_skips_private_functions_in_other_modules() -> void {
+  const auto analyzed = analyze_sources({
+      {
+          .path = "priv_lib.kira",
+          .text = "module hidden.lib\n"
+                  "\n"
+                  "pub type token = { id: int32 }\n"
+                  "\n"
+                  "def unwrap(t: token) -> int32:\n"
+                  "    return t.id\n",
+      },
+      {
+          .path = "priv_main.kira",
+          .text = "module main\n"
+                  "\n"
+                  "use hidden.lib.*\n"
+                  "\n"
+                  "def main() -> int32:\n"
+                  "    let t = token{id: 1}\n"
+                  "    return t.unwrap()\n",
+      },
+  });
+  expect(analyzed.error_count > 0,
+         "expected a private function in another module to stay out of the "
+         "UFCS candidate pool");
+  expect_diagnostic(analyzed, "no method `unwrap`",
+                    "expected the ordinary not-found diagnostic");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -2303,6 +2477,12 @@ auto main() -> int {
     test_bare_for_names_bind_tuple_components();
     test_for_head_arity_must_match_element();
     test_for_head_cannot_split_a_non_tuple();
+    test_free_function_callable_as_method();
+    test_method_wins_over_ufcs();
+    test_ufcs_ambiguity_is_an_error();
+    test_ufcs_mut_receiver_must_be_mutable();
+    test_ufcs_reports_receiver_mismatch();
+    test_ufcs_skips_private_functions_in_other_modules();
     test_impl_type_param_substituted_at_call_site();
     test_impls_on_distinct_instantiations_are_coherent();
     test_overlapping_generic_impl_still_conflicts();
