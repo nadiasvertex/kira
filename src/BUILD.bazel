@@ -89,6 +89,13 @@ cc_binary(
         "//src/utf8",
     ],
     tags = ["no-sandbox"],
+    copts = [
+      "-Wno-deprecated",
+      "-Wno-nullability-extension",
+      "-Wno-gnu-anonymous-struct",
+      "-Wno-nested-anon-types",
+      "-Wno-gcc-compat",
+    ],
     deps = [
         "//src/driver:driver",
         ":version",
