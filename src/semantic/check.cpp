@@ -4347,10 +4347,9 @@ private:
     const auto check_argument =
         [&](const pending_argument &item,
             const std::unordered_map<std::string, type_id> &bindings) -> void {
-      const auto expected =
-          item.target != nullptr
-              ? substitute_solved(item.target->type, bindings)
-              : k_unknown_type;
+      const auto expected = item.target != nullptr
+                                ? substitute_solved(item.target->type, bindings)
+                                : k_unknown_type;
       const auto found = infer_expr(*item.value, expected);
       if (item.target == nullptr) {
         return;
@@ -5464,9 +5463,9 @@ private:
     if (extra_fixed != nullptr) {
       scoped_params.insert(extra_fixed->begin(), extra_fixed->end());
     }
-    return find_or_check_generic_instance(
-        call, decl, method.owner, /*decl_file=*/std::nullopt, *solution, name,
-        &scoped_params, self_type);
+    return find_or_check_generic_instance(call, decl, method.owner,
+                                          /*decl_file=*/std::nullopt, *solution,
+                                          name, &scoped_params, self_type);
   }
 
   /// Holds a callee's `pre` conditions to account at the call site.
@@ -7673,7 +7672,8 @@ private:
                          const module_members *owner,
                          std::unordered_map<std::string, type_id> &bindings)
       -> void {
-    auto pattern_params = generic_param_bindings(decl, /*enclosing_impl=*/nullptr);
+    auto pattern_params =
+        generic_param_bindings(decl, /*enclosing_impl=*/nullptr);
     const auto pattern_ctx = resolve_ctx{.module = owner,
                                          .param_bindings = &pattern_params,
                                          .use_type_param_stack = false,
@@ -7708,13 +7708,13 @@ private:
         if (named.path.empty() || named.type_args.empty()) {
           continue;
         }
-        const auto concrete_args =
-            trait_args_of_impl_for(strip_refs(solved->second), named.path.back());
+        const auto concrete_args = trait_args_of_impl_for(
+            strip_refs(solved->second), named.path.back());
         if (!concrete_args.has_value()) {
           continue;
         }
-        for (size_t i = 0; i < named.type_args.size() && i < concrete_args->size();
-             ++i) {
+        for (size_t i = 0;
+             i < named.type_args.size() && i < concrete_args->size(); ++i) {
           const auto *arg_type = dynamic_cast<const ast::type_expr *>(
               named.type_args[i].value.get());
           if (arg_type == nullptr) {
@@ -7732,7 +7732,8 @@ private:
       }
     }
     for (const auto &constraint : decl.where_constraints) {
-      if (constraint.subject == nullptr || constraint.bound_or_type == nullptr ||
+      if (constraint.subject == nullptr ||
+          constraint.bound_or_type == nullptr ||
           constraint.subject->kind != ast::node_kind::named_type) {
         continue;
       }
@@ -8204,9 +8205,8 @@ private:
     // Owned before `find_or_check_generic_instance` runs: checking the
     // instance body interns types, and this name is read after that.
     const auto target_name = std::string(types_.entry(target).name);
-    const auto name =
-        std::format("{}::{}{}", target_name, method.decl->name,
-                    solution.suffix);
+    const auto name = std::format("{}::{}{}", target_name, method.decl->name,
+                                  solution.suffix);
     return find_or_check_generic_instance(call, *method.decl, method.owner,
                                           /*decl_file=*/std::nullopt, solution,
                                           name, &scoped_params, target);
@@ -9178,10 +9178,10 @@ private:
             resolved_callee{.decl = instance,
                             .owner_module = method->owner->module_name,
                             .impl_target_type = ""};
-        return substitute_solved(
-            signature_return_type(*method->decl, method->owner,
-                                  method->from_impl),
-            bindings);
+        return substitute_solved(signature_return_type(*method->decl,
+                                                       method->owner,
+                                                       method->from_impl),
+                                 bindings);
       }
     }
 
@@ -11041,8 +11041,7 @@ private:
   /// here or lowering finds no such function. Passing `nullptr` answers the
   /// element type without compiling anything, which is what `element_type_of`
   /// wants — it is asked about types in places that are not loops at all.
-  auto try_resolve_iterator(type_id iterable,
-                            const ast::node *site = nullptr)
+  auto try_resolve_iterator(type_id iterable, const ast::node *site = nullptr)
       -> std::optional<iterator_loop_dispatch> {
     const auto stripped = strip_refs(iterable);
     const auto &entry = types_.entry(stripped);
@@ -11092,8 +11091,8 @@ private:
     scoped_params.insert(bindings.begin(), bindings.end());
     auto solution = generic_solution{};
     solution.suffix = std::format("${}", mangle_type_for_instance(stripped));
-    const auto name =
-        std::format("{}::{}{}", entry.name, method->decl->name, solution.suffix);
+    const auto name = std::format("{}::{}{}", entry.name, method->decl->name,
+                                  solution.suffix);
     const auto *instance = find_or_check_generic_instance(
         *site, *method->decl, method->owner, /*decl_file=*/std::nullopt,
         solution, name, &scoped_params, stripped);
