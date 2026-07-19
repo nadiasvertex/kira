@@ -1,0 +1,58 @@
+module main
+
+# `map` and `filter` from the real `std.algo`, over the real `std.iter`.
+#
+# The point of interest is not that a chain compiles but that the adapters
+# compose in the order written and yield the right elements in the right order.
+# Both are made observable:
+#
+# - The chain's `filter` and `map` deliberately do *not* commute: filtering
+#   `> 2` and then scaling by 10 keeps four elements, while scaling first and
+#   then filtering `> 2` keeps all six. An earlier version of this test used
+#   `% 2 == 0` with `* 10`, which commutes — the two orders produce the same
+#   elements, and the assertion proved nothing about ordering at all.
+# - The weights are positional and distinct, so a chain that yielded the right
+#   multiset in the wrong order, or dropped an element, cannot reach the same
+#   total by coincidence.
+#
+# `size_hint` is checked too, since `map` refines it and `filter` deliberately
+# does not — a `filter` that forwarded its inner hint would report 6.
+
+def main() -> int32:
+    let xs = [1, 2, 3, 4, 5, 6]
+
+    # Written unqualified. `std.algo` is prelude-reachable exactly as
+    # `std.console` and `std.iter` are, because under UFCS the whole catalog is
+    # free functions and `xs.iter().filter(p).map(f)` only reads that way if
+    # the names resolve without an import.
+    var evens = xs.iter().filter(p => *p % 2 == 0)
+    var count = 0
+    while let @some(p) = evens.next():
+        count = count + 1
+    println("kept={count}")
+
+    var chain = xs.iter().filter(p => *p > 2).map(q => *q * 10)
+
+    # Positional weights: 30*1 + 40*10 + 50*100 + 60*1000 = 65430.
+    var total = 0
+    var weight = 1
+    while let @some(v) = chain.next():
+        total = total + v * weight
+        weight = weight * 10
+    println("total={total}")
+
+    # `map` forwards its source's hint; `filter` cannot promise one, so the
+    # chain's hint is the default 0 rather than 6.
+    var hinted = xs.iter().map(q => *q * 2)
+    println("map_hint={hinted.size_hint()}")
+    var unhinted = xs.iter().filter(p => *p > 0).map(q => *q * 2)
+    println("filter_hint={unhinted.size_hint()}")
+
+    # `collect`, to confirm an adapter chain is an ordinary iterator as far as
+    # the rest of the protocol is concerned.
+    let ys: list[int32] = collect(xs.iter().map(q => *q + 100))
+    var col = 0
+    for y in ys:
+        col = col + y
+    println("collected={col}")
+    return 0

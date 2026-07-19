@@ -1,0 +1,80 @@
+module std.algo
+
+# `iterator` is imported by name rather than as `use std.iter`. A module import
+# binds only the module: `use std.iter` makes `iter` name the module, and its
+# members are then reached by path, not unqualified.
+use std.iter.iterator
+
+# ---------------------------------------------------------------------------
+# Lazy adapters (design §5.3).
+#
+# Each adapter is a plain generic struct holding its inner iterator and
+# whatever the adapter needs, so a chain is a nest of structs and `next` is a
+# chain of calls — no allocation, and nothing evaluated until the chain is
+# drained.
+#
+# The types live here, beside their constructors, rather than in `std.iter`
+# where design §5.3 sketched them. That split does not currently survive
+# lowering: a generic function whose return type is a generic struct declared
+# in a *third* module type-checks and then fails with "no concrete checked type
+# is available for this node" (`spec/todo.md` item 9). Co-locating each type
+# with the constructor and impl that go with it is the better arrangement
+# regardless, so this is not merely a workaround.
+# ---------------------------------------------------------------------------
+
+#: An iterator that applies a function to each element of another iterator.
+pub type map_iter[I, T, U] = { inner: I, f: fn(T) -> U }
+
+impl[I, T, U] iterator[U] for map_iter[I, T, U]:
+    def next(mut self) -> option[U]:
+        match self.inner.next():
+            @some(x) => return @some((self.f)(x))
+            @none => return @none
+
+    # `map` is one-to-one, so whatever the source could promise still holds.
+    def size_hint(self) -> usize:
+        return self.inner.size_hint()
+
+#: An iterator that yields only the elements of another iterator satisfying a
+#: predicate.
+pub type filter_iter[I, T] = { inner: I, pred: fn(T) -> bool }
+
+impl[I, T] iterator[T] for filter_iter[I, T]:
+    # Written as a `while let` rather than a `match` because a match arm's
+    # result is a single expression or statement: there is no arm body that can
+    # both test the predicate and continue looping.
+    def next(mut self) -> option[T]:
+        while let @some(x) = self.inner.next():
+            if (self.pred)(x):
+                return @some(x)
+        return @none
+
+    # Deliberately *not* refined from the inner iterator: `filter` may drop
+    # every element, so the only lower bound it can honestly promise is 0,
+    # which is what the default already returns.
+
+#: Applies a function to every element of an iterator, lazily.
+#:
+#: Nothing is evaluated until the result is drained, so a `map` over a chain
+#: that is never consumed costs nothing.
+#:
+#: The `where` clause is load-bearing rather than documentation. Nothing about
+#: the arguments can solve `T`: `it` answers `I`, and the lambda is what `T` is
+#: needed *for*. The bound is the only link between the two — given `I` and an
+#: `impl iterator[int32] for I`, it answers `T := int32`.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   f: the function to apply to each element.
+#: Returns:
+#:   an iterator yielding `f(x)` for each `x` of the source.
+pub def map[I, T, U](it: I, f: fn(T) -> U) -> map_iter[I, T, U] where I: iterator[T]:
+    return map_iter { inner: it, f: f }
+
+#: Yields only the elements of an iterator satisfying a predicate, lazily.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   pred: the predicate an element must satisfy to be yielded.
+#: Returns:
+#:   an iterator yielding the elements of the source for which `pred` holds.
+pub def filter[I, T](it: I, pred: fn(T) -> bool) -> filter_iter[I, T] where I: iterator[T]:
+    return filter_iter { inner: it, pred: pred }

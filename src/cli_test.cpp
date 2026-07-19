@@ -831,7 +831,7 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // `prelude.kira` itself now `use`s `std.console`/`std.iter` — mirror what
   // `main.cpp` does for every real invocation (this alone now pulls in
   // `traits.kira`, `iter.kira`, `prelude.kira`, `io.kira`, `console.kira`,
-  // `fmt.kira`, `derive.kira`, `fs/path.kira`, and the assembled
+  // `fmt.kira`, `algo.kira`, `derive.kira`, `fs/path.kira`, and the assembled
   // `std.platform`) rather than
   // hand-listing sources, which would double-add `io.kira`/`console.kira`
   // under a different path string and trip a duplicate-module-path
@@ -844,10 +844,10 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 10,
-         "expected std.io, std.console, std.traits, std.iter, std.fmt, "
-         "std.string, std.derive, std.fs.path, std.platform, and prelude to "
-         "all emit metadata");
+  expect(report->modules.size() == 11,
+         "expected std.io, std.console, std.traits, std.iter, std.algo, "
+         "std.fmt, std.string, std.derive, std.fs.path, std.platform, and "
+         "prelude to all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.

@@ -6915,8 +6915,11 @@ private:
     // design assumes throughout. Traits from `std.iter` were already reachable
     // via `find_prelude_trait`; its free functions were not, so `collect` was
     // an undefined name in every module that did not import it by hand.
-    static constexpr std::array<std::string_view, 2>
-        k_prelude_function_modules = {"std.console", "std.iter"};
+    // `std.algo` joins them for the same reason: the whole catalog is free
+    // functions reached by UFCS, so `xs.iter().map(f).filter(p)` only reads
+    // that way if `map` and `filter` resolve unqualified.
+    static constexpr std::array<std::string_view, 3>
+        k_prelude_function_modules = {"std.console", "std.iter", "std.algo"};
     for (const auto module_name : k_prelude_function_modules) {
       if (const auto *source = index_.find_module(module_name)) {
         if (const auto it = source->functions.find(std::string(name));
