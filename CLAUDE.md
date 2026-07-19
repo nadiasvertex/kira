@@ -37,6 +37,18 @@ bazelisk run //src:kira -- --metadata-dir build/meta path/to/module.kira
 
 Tests are hand-rolled binaries (no gtest) using `kira::testing::expect`/`fail` from `src/testing/test_assert.h`; a failing `expect()` calls `std::exit(1)` with a message, so add new checks as additional `expect(...)` calls rather than introducing a framework.
 
+### A test must be able to fail
+
+A test that cannot fail is worse than no test: it costs the same to run and maintain, and it actively buys false confidence. Before trusting a new test, make it fail on purpose — break the code, or feed the assertion a wrong expected value — and confirm you see the failure message you expected. Then undo it. A test whose failure you have never observed has not been tested.
+
+The way this goes wrong here is rarely a forgotten assertion. It is an assertion that is real but weaker than it looks:
+
+- **Differential tests are blind to shared bugs.** `codegen_stress_test` cross-checks the bytecode VM against the LLVM tier, which is a strong check for one tier drifting from the other — and no check at all for both being wrong the same way. Two backends reading the same layout rules from `src/runtime/layout.h` share their assumptions, so they fail *together*: a real instance had `&mut xs[2]` on a `list` addressing bytes inside the `{len, cap, data}` header in both tiers, returning the same wrong answer, with agreement perfectly satisfied. Corpus files may declare `# expect: <integer>`, checked in addition to agreement — **use it for anything touching layout, addressing, or representation**, where agreement is exactly the check that will not save you.
+- **"Compiles cleanly" is not "behaves correctly."** Much of this pipeline can accept a program and lower it to something subtly wrong. Prefer asserting a computed value over asserting the absence of diagnostics.
+- **A test that passes the first time deserves suspicion.** Confirm it exercises the path you think it does — a spike that silently hits a different code path (an unintended prelude name, a skipped lowering) will pass without ever reaching the new code.
+
+Relatedly, when a diagnostic-quality bug and a correctness bug are both plausible explanations for a surprising result, establish which one you are looking at before fixing anything. ``expected `box`, found `box` `` looked like a type-interning bug and was actually the prelude `box` silently shadowing a user type — the kind of message this compiler's stated philosophy forbids, and a reminder that a confusing diagnostic can masquerade as a deeper defect.
+
 ## Architecture
 
 The compiler above all is meant to teach the user how to use the language. Friendliness and clarity of diagnostics are prioritized over performance or cleverness.
