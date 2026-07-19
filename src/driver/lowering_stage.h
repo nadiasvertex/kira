@@ -19,19 +19,28 @@ namespace kira::driver {
 /// regardless of whether it succeeded, but only successfully lowered
 /// modules are returned for `--run`/`--compile` to target.
 ///
+/// A lowering failure is also reported as a real error diagnostic and counted
+/// in `report.error_count`. It used to be recorded *only* in
+/// `report.hir_modules`, which `render_compile_summary` prints just under
+/// `--show-compile-details` — so the ordinary user saw a module silently
+/// vanish and then the unrelated-looking `no compiled module defines a
+/// function named `main``. A phase that cannot emit code has to say so.
+///
 /// @param cfg Command-line configuration (checked for `parse_only`).
 /// @param parsed_inputs Parsed files from `parse_sources`, in source order.
 /// @param file_has_errors Per-file-id flags from parsing/semantic analysis.
 /// @param checked Type-checking result HIR lowering resolves types against.
 /// @param metadata_root Root directory configured for metadata output.
-/// @param report Aggregate compile report; `modules` and `hir_modules` are
-/// appended to.
+/// @param renderer Renders lowering-failure diagnostics against the sources.
+/// @param report Aggregate compile report; `modules`, `hir_modules`,
+/// `diagnostics`, and `error_count` are appended to.
 [[nodiscard]] auto
 lower_and_emit_modules(const cli_config &cfg,
                        const std::vector<parsed_input> &parsed_inputs,
                        const std::vector<bool> &file_has_errors,
                        const semantic::checked_types &checked,
                        const std::filesystem::path &metadata_root,
+                       const diagnostic_renderer &renderer,
                        compile_report &report) -> hir::ptr_vec<hir::hir_module>;
 
 } // namespace kira::driver

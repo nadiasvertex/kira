@@ -310,8 +310,10 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       report.diagnostics,
       diagnostic_renderer(sources, use_color).render_all(session_diagnostics));
 
-  const auto lowered_modules = lower_and_emit_modules(
-      cfg, parsed_inputs, file_has_errors, checked, metadata_root, report);
+  const auto lowering_renderer = diagnostic_renderer(sources, use_color);
+  const auto lowered_modules =
+      lower_and_emit_modules(cfg, parsed_inputs, file_has_errors, checked,
+                             metadata_root, lowering_renderer, report);
 
   run_requested_function(cfg, lowered_modules, checked, report);
   build_requested_function(cfg, lowered_modules, checked, report);

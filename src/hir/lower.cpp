@@ -508,10 +508,23 @@ private:
                          const std::vector<ast::ptr<ast::node>> &body_ast,
                          source_span span)
       -> std::expected<ptr_vec<hir_node>, lowering_error>;
+  /// Emits, into `pending`, the `hir_let`s that a destructuring loop head
+  /// binds out of the synthetic element local named `subject_name` — which
+  /// the loop lowerer has already declared by the time this runs, so the
+  /// names are in scope for the body *and* for a `for ... if guard`.
+  ///
+  /// `patterns` holds the head verbatim: one entry is a pattern applied to
+  /// the whole element (`for (k, v) in ...`), while several are positional
+  /// components of a tuple element (`for k, v in ...`).
+  [[nodiscard]] auto
+  destructure_loop_element(const std::vector<const ast::pattern *> &patterns,
+                           std::string_view subject_name,
+                           std::vector<ptr<hir_node>> &pending)
+      -> std::expected<void, lowering_error>;
   /// `while let pattern = expr: body` (see `hir_while_let`'s doc comment).
-  /// Reuses the general `lower_pattern` (unlike a `for` loop, which only
-  /// ever binds a single plain loop variable), since `pattern` here can be
-  /// any pattern shape.
+  /// Reuses the general `lower_pattern`, since `pattern` here can be any
+  /// pattern shape — as can a `for` head, which reaches the same machinery
+  /// through `destructure_loop_element`.
   [[nodiscard]] auto lower_while_let_stmt(const ast::while_stmt &while_stmt)
       -> std::expected<ptr_vec<hir_node>, lowering_error>;
   /// `for` comprehensions (`for x in a..b => expr`, `for x in a, y in b if
@@ -2607,22 +2620,69 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
     return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
                 "for loop has no iterable");
   }
-  if (for_stmt.patterns.size() != 1 || for_stmt.patterns.front() == nullptr ||
-      for_stmt.patterns.front()->has_error ||
-      for_stmt.patterns.front()->kind != ast::node_kind::binding_pattern) {
+  if (for_stmt.patterns.empty()) {
     return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
-                "only a single plain loop variable is lowered yet (no "
-                "destructuring patterns)");
+                "for loop has no loop variable");
   }
-  const auto &loop_var =
-      dynamic_cast<const ast::binding_pattern &>(*for_stmt.patterns.front());
+  for (const auto &pattern : for_stmt.patterns) {
+    if (pattern == nullptr || pattern->has_error) {
+      return fail(lowering_error_kind::unsupported_construct, for_stmt.span,
+                  "loop variable pattern carries a parse/recovery error and "
+                  "cannot be lowered");
+    }
+  }
+
+  // Every loop lowerer below binds exactly one name per iteration. A
+  // destructuring head (`for (k, v) in ...`, or its parenthesis-free
+  // `for k, v in ...` spelling) is therefore reduced to that shape here:
+  // the element binds to one synthetic local, and the real pattern's
+  // bindings are emitted at the top of the body, reading out of it. This is
+  // the same desugaring `lower_let_stmt` already performs for a
+  // destructuring `let`, reusing the same `lower_pattern` machinery, so the
+  // loop lowerers stay unaware that patterns exist at all.
+  auto subject = ast::binding_pattern{};
+  subject.span = for_stmt.patterns.front()->span;
+  const auto *plain_var =
+      for_stmt.patterns.size() == 1 &&
+              for_stmt.patterns.front()->kind == ast::node_kind::binding_pattern
+          ? &dynamic_cast<const ast::binding_pattern &>(
+                *for_stmt.patterns.front())
+          : nullptr;
+  if (plain_var == nullptr) {
+    // Unique per loop so nested destructuring loops don't collide: the
+    // backends' `locals_` maps keep the *first* registration for a name.
+    subject.name = std::format("<for subject {}>", next_symbol_);
+  }
+  const auto &loop_var = plain_var != nullptr ? *plain_var : subject;
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
       inner_stmts =
-          [this,
-           &for_stmt]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
-    return lower_guarded_for_body(for_stmt.guard.get(), for_stmt.body,
-                                  for_stmt.span);
+          [this, &for_stmt, plain_var,
+           &subject]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
+    auto bindings = std::vector<ptr<hir_node>>{};
+    if (plain_var == nullptr) {
+      auto patterns = std::vector<const ast::pattern *>{};
+      patterns.reserve(for_stmt.patterns.size());
+      for (const auto &pattern : for_stmt.patterns) {
+        patterns.push_back(pattern.get());
+      }
+      auto destructured =
+          destructure_loop_element(patterns, subject.name, bindings);
+      if (!destructured.has_value()) {
+        return std::unexpected(destructured.error());
+      }
+    }
+    auto body = lower_guarded_for_body(for_stmt.guard.get(), for_stmt.body,
+                                       for_stmt.span);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    // The bindings go *ahead* of the guard-wrapped body, not inside it: a
+    // `for (k, v) in ... if k > 0` guard names them too.
+    for (auto &stmt_ptr : *body) {
+      bindings.push_back(std::move(stmt_ptr));
+    }
+    return bindings;
   };
 
   if (for_stmt.iterable->kind == ast::node_kind::binary_expr) {
@@ -2657,6 +2717,56 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   }
   return lower_indexed_loop(for_stmt.span, *for_stmt.iterable, *iterable_type,
                             loop_var, inner_stmts);
+}
+
+auto lowerer::destructure_loop_element(
+    const std::vector<const ast::pattern *> &patterns,
+    std::string_view subject_name, std::vector<ptr<hir_node>> &pending)
+    -> std::expected<void, lowering_error> {
+  const auto span = patterns.front()->span;
+  const auto subject_symbol = lookup_local(subject_name);
+  if (!subject_symbol.has_value()) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                "loop element binding was not declared before its pattern was "
+                "destructured");
+  }
+  const auto symbol = *subject_symbol;
+  const auto subject_type = local_type_of(symbol).value_or(k_unknown_type);
+  auto name = std::string(subject_name);
+  const std::function<ptr<hir_expr>()> make_place = [span, subject_type, symbol,
+                                                     name]() -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_local_ref>(span, subject_type, symbol, name));
+  };
+
+  if (patterns.size() == 1) {
+    // The structural shape `lower_pattern` returns is discarded, exactly as
+    // in a destructuring `let`: a loop head is irrefutable, so there is
+    // nothing to test — only the bindings it accumulated matter.
+    auto lowered = lower_pattern(*patterns.front(), make_place, pending);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    return {};
+  }
+
+  for (std::size_t i = 0; i < patterns.size(); ++i) {
+    auto component_type = checked_type_of(*patterns[i]);
+    if (!component_type.has_value()) {
+      return std::unexpected(component_type.error());
+    }
+    const auto elem_type = *component_type;
+    const auto elem_span = patterns[i]->span;
+    const std::function<ptr<hir_expr>()> element_place =
+        [make_place, elem_type, i, elem_span]() -> ptr<hir_expr> {
+      return ptr<hir_expr>(
+          make<hir_tuple_index>(elem_span, elem_type, make_place(), i));
+    };
+    auto lowered = lower_pattern(*patterns[i], element_place, pending);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+  }
+  return {};
 }
 
 auto lowerer::lower_guarded_for_body(
@@ -3222,24 +3332,63 @@ auto lowerer::lower_comprehension_clause(
     return fail(lowering_error_kind::unsupported_construct, fallback_span,
                 "comprehension clause has no iterable");
   }
-  if (clause.patterns.size() != 1 || clause.patterns.front() == nullptr ||
-      clause.patterns.front()->has_error ||
-      clause.patterns.front()->kind != ast::node_kind::binding_pattern) {
+  if (clause.patterns.empty()) {
     return fail(lowering_error_kind::unsupported_construct,
                 clause.iterable->span,
-                "only a single plain loop variable is lowered yet for "
-                "comprehension clauses (no destructuring patterns)");
+                "comprehension clause has no loop variable");
   }
-  const auto &loop_var =
-      dynamic_cast<const ast::binding_pattern &>(*clause.patterns.front());
+  for (const auto &pattern : clause.patterns) {
+    if (pattern == nullptr || pattern->has_error) {
+      return fail(lowering_error_kind::unsupported_construct,
+                  clause.iterable->span,
+                  "loop variable pattern carries a parse/recovery error and "
+                  "cannot be lowered");
+    }
+  }
+
+  // Same synthetic-element desugaring as `lower_for_stmt`; see the comment
+  // there. A comprehension clause reaches the identical loop lowerers, so
+  // it gets destructuring for free by preparing the head the same way.
+  auto subject = ast::binding_pattern{};
+  subject.span = clause.patterns.front()->span;
+  const auto *plain_var =
+      clause.patterns.size() == 1 &&
+              clause.patterns.front()->kind == ast::node_kind::binding_pattern
+          ? &dynamic_cast<const ast::binding_pattern &>(
+                *clause.patterns.front())
+          : nullptr;
+  if (plain_var == nullptr) {
+    subject.name = std::format("<for subject {}>", next_symbol_);
+  }
+  const auto &loop_var = plain_var != nullptr ? *plain_var : subject;
   const auto span = clause.iterable->span;
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
       nested =
-          [this, &clauses, index, fallback_span,
+          [this, &clauses, index, fallback_span, plain_var, &subject,
            &innermost]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
-    return lower_comprehension_clause(clauses, index + 1, fallback_span,
-                                      innermost);
+    auto bindings = std::vector<ptr<hir_node>>{};
+    if (plain_var == nullptr) {
+      auto patterns = std::vector<const ast::pattern *>{};
+      patterns.reserve(clauses[index].patterns.size());
+      for (const auto &pattern : clauses[index].patterns) {
+        patterns.push_back(dynamic_cast<const ast::pattern *>(pattern.get()));
+      }
+      auto destructured =
+          destructure_loop_element(patterns, subject.name, bindings);
+      if (!destructured.has_value()) {
+        return std::unexpected(destructured.error());
+      }
+    }
+    auto rest = lower_comprehension_clause(clauses, index + 1, fallback_span,
+                                           innermost);
+    if (!rest.has_value()) {
+      return std::unexpected(rest.error());
+    }
+    for (auto &stmt_ptr : *rest) {
+      bindings.push_back(std::move(stmt_ptr));
+    }
+    return bindings;
   };
 
   if (clause.iterable->kind == ast::node_kind::binary_expr) {

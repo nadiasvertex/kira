@@ -53,9 +53,8 @@ phase's exit criteria.
 **X1 — Lowering must never fail silently.** Three of the five spikes above
 report nothing and leave the user with `no compiled module defines a function
 named main`. Per design §2.1.2 and `CLAUDE.md`, every lowering bail-out must
-name the declaration it could not emit and why. This is fixed **first**,
-inside Phase 0, because it is the instrument every later phase is debugged
-with.
+name the declaration it could not emit and why. **Landed in Phase 1** — see
+that phase for what turning it on revealed.
 
 **X2 — The instantiation-site note (design R1).** When an error is reported
 inside a generic instance body, append a note naming the instantiation site
@@ -139,39 +138,110 @@ in addition to agreement; opt-in, so existing files are unaffected.
 **Any phase below that changes layout or addressing should declare
 `# expect:`** — agreement alone will not catch it.
 
-- X1 lands here.
+- X1 was scheduled here but landed in Phase 1, where it was first needed.
 
 **Exit:** `m1`/`m2` (`return *x`, `*x = *x + 1`) run correctly on both
 backends (**done**); a `codegen_stress` case mutates a caller's local
 through a `&mut` parameter (**done** — 041, 042); `--run` and `--compile`
 agree (**done**). Full suite green (24/24).
 
-### Phase 1 — G0: lower impl methods on generic target types
+### Phase 1 — G0 and Phase 2 — G1. DONE.
 
-Instantiate an impl's methods per concrete target type, keyed on the
-target's type arguments, mirroring `instantiate_generic_function`. Covers
-both the `s4` shape (non-generic impl, generic target) and the `s3` shape
-(generic impl).
+Landed together, because they are one mechanism: an impl on a generic target
+has no single compiled form (G0) *because* its signature means something
+different per receiver (G1), and both are fixed by instantiating the method
+per concrete receiver type. `check_impl_generic_method_call` (`check.cpp`)
+rigid-unifies the impl's target pattern against the receiver, then routes
+through the existing `find_or_check_generic_instance` — the same engine the
+higher-kinded and const-generic paths already use, so instances register as
+`const_generic_instance`s and `lower_module` emits them with no lowering
+change at all.
 
-**Exit:** `s3` and `s4` both return 7 on both backends.
+Three things this needed that the plan didn't anticipate:
 
-### Phase 2 — G1: impl-level type parameter substitution
+- **The impl's parameters are not the method's.** `T` in `impl[T] get_it[T]
+  for holder[T]` is in scope over `def get(self) -> T` while appearing on
+  neither `decl.type_params` nor the method's scope. `signature_params`/
+  `signature_return_type` now take the enclosing impl (`generic_param_
+  bindings`), and the solved bindings are passed as `fixed_type_params` —
+  *not* as the solution's `type_slots`, which `push_type_params` only ever
+  consults for the declaration's own parameters.
+- **Coherence rejected legal programs.** `type_key_of` is declaration-level
+  by necessity (`type_has_trait` must find a blanket impl through any
+  instantiation), but it was also used as the *conflict* test — so
+  `impl get_it for boxed[int32]` and `impl get_it for boxed[int64]` were
+  reported as duplicates, which the reference explicitly permits ("no two can
+  apply to the same concrete type"). Split into a declaration-level key plus
+  `impl_targets_overlap`, which treats two distinct fully-concrete targets as
+  disjoint and everything else as overlapping — conservative on purpose, so a
+  blanket impl still conflicts with a concrete one.
+- **Method lookup ignored which impl matched.** `find_method` keyed on the
+  target *declaration* only, so a `boxed[int64]` receiver could resolve to
+  the `boxed[int32]` impl's body and be compiled under the wrong types. It
+  now takes the receiver's `type_id` and filters by
+  `target_pattern_matches`, preferring a concrete impl over a blanket one.
+  This was latent, and only reachable once the coherence fix above allowed
+  two such impls to coexist.
 
-Rigid-unify the impl's `for_type` pattern against the concrete receiver,
-apply the resulting substitution to the method's parameter and return types.
-Give `method_entry` a back-pointer to its `impl_decl`; generalize the
-`check_generic_instance_method_call` trigger; route `try_resolve_iterator`
-through the same helper.
+**Exit:** `s3` and `s4` both return 7 (**done**); `g1_type` reports
+`expected str, found int32` (**done**). Covered by
+`codegen_stress/043_impl_on_generic_target.kira` (`# expect: 4477`, both
+backends, two instantiations each of a generic and a non-generic impl so a
+name collision would show as a wrong sum) and three `check_test` cases. Full
+suite green (24/24).
 
-**Exit:** `g1_type` reports `expected str, found int32` — the silent
-acceptance is gone; `for x in nums.iter().map(f):` binds a concrete `x`.
+Not done, deferred to where it is actually needed: routing
+`try_resolve_iterator` through the same helper (Phase 5 exercises it) and
+`for x in nums.iter().map(f)` binding a concrete `x` (Phase 5 builds the
+pipeline it names).
 
-### Phase 3 — R3a: tuple patterns in `for`
+**X1 landed here rather than in Phase 0**, and immediately paid for itself:
+it is what turned `s3`'s "no compiled module defines `main`" into a labelled
+error naming the expression. A lowering failure is now a real diagnostic
+whenever code was requested (`--run`/`--compile`) — see
+`driver/lowering_stage.cpp` for why it stays quiet otherwise. Turning it on
+surfaced roughly a dozen pre-existing silent lowering gaps in the semantic
+corpora (string interpolation without `std.fmt`, default parameter values,
+`filter` on a list, ...); all were already known limitations, none are new.
 
-Narrow pattern-lowering gap with a proven desugaring (`t3`). Independent of
-Phases 0–2; scheduled here because every map iterator yields tuples.
+### Phase 3 — R3a: tuple patterns in `for`. DONE.
 
-**Exit:** `for (k, v) in it:` runs on both backends.
+Planned as a narrow pattern-lowering gap. It was two gaps, in two phases,
+and the second was the more serious one.
+
+**Lowering** (as planned). Every loop lowerer binds exactly one name per
+iteration, so `lower_for_stmt` now reduces a pattern head to that shape: the
+element binds to one synthetic local, and `destructure_loop_element` emits
+the pattern's bindings at the top of the body via the same `lower_pattern`
+machinery a destructuring `let` already used. The five loop lowerers were
+not touched. Bindings are emitted *ahead* of the guard-wrapped body, so
+`for (k, v) in xs if k > 0` can name them. The synthetic local's name
+carries `next_symbol_` because the backends' `locals_` maps keep the first
+registration for a name — nested destructuring loops would otherwise have
+the inner loop read the outer element.
+
+**Checking** (not planned). `for k, v in pairs` — the parenthesis-free
+spelling, which the grammar allows — bound every name to `k_unknown_type`.
+That unifies with everything, so `let s: str = v` inside the body was
+accepted *silently*; only lowering objected, and only because it refused
+the head outright. This is the "compiles cleanly is not behaves correctly"
+failure mode from CLAUDE.md, and it was live in both `for` statements and
+comprehension clauses — where a comment already claimed positional
+destructuring the code did not do. Both now route through one
+`check_loop_head_patterns`, which binds each name to its tuple component
+and reports a wrong count or a non-tuple element, pointing at the loop
+variables rather than the statement span.
+
+Comprehension clauses (`for (k, v) in pairs => k * v`) were carried along
+in both spellings; they reach the same loop lowerers.
+
+**Exit met:** `044_for_destructuring.kira` (`# expect: 4955`) covers both
+spellings, a guard over destructured names, a nested pattern, nested
+destructuring loops, and both comprehension forms — passing on both
+backends. Split across several `def`s because the bytecode compiler does
+not reuse registers and one body exceeded the 256 its u8 operands address.
+Three `check_test` cases cover the silent-typing bug and the two new
+diagnostics; each was confirmed to fail with its mechanism reverted.
 
 ### Phase 4 — UFCS
 

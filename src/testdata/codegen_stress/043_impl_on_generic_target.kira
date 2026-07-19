@@ -1,0 +1,79 @@
+module codegen_stress.impl_on_generic_target
+
+# Methods declared in an `impl` block whose *target type* is generic. Neither
+# shape below has a single compiled form, and until this landed both were
+# silently dropped by `lower_impl_associated_functions` — the user got
+# `call to holder::get could not be resolved to a function in this compiled
+# module`, or, worse, nothing at all (design G0).
+#
+#   - `impl[T] ... for holder[T]`: the impl is generic, so `get`'s signature
+#     and body mean something different per receiver. Its `T` is solved by
+#     rigid-unifying the impl's target pattern against the concrete receiver.
+#     `T` is *not* on the method's own `type_params`, which is why the method
+#     reads as non-generic and why resolving its signature has to be told
+#     about the enclosing impl.
+#   - `impl ... for boxed[int32]`: the impl is not generic at all, but its
+#     target is an instantiation — so `boxed[int32]` and `boxed[int64]` may
+#     each carry an impl, and both would otherwise claim the name
+#     `boxed::get`. Instances are therefore keyed on the *receiver's* type
+#     arguments, not on the impl's solved parameters (a non-generic impl
+#     solves none).
+#
+# Both are exercised at two different instantiations precisely so a collision
+# would show: if the two instances shared a name, one body would win and the
+# sum would come out wrong rather than failing to compile.
+#
+# The G1 half — `-> T` restated as the concrete type at the call site — is
+# what makes `scale` type-check as `int64` arithmetic. It used to be accepted
+# silently as anything at all, so a wrong answer here is the regression to
+# watch for, not a diagnostic.
+#
+# 7 + 300 + 110 + 4000 + 60 = 4477.
+
+# expect: 4477
+
+trait get_it[T]:
+    def get(self) -> T
+
+type holder[T] = { value: T }
+type boxed[T] = { item: T }
+
+# Generic impl: one `T`, solved per receiver.
+impl[T] get_it[T] for holder[T]:
+    def get(self) -> T:
+        return self.value
+
+# Non-generic impls on two instantiations of one generic target. Same method
+# name, same target constructor, different concrete argument.
+impl get_it[int32] for boxed[int32]:
+    def get(self) -> int32:
+        return self.item * 10
+
+impl get_it[int64] for boxed[int64]:
+    def get(self) -> int64:
+        return self.item * 1000
+
+# The impl's `T` reaching a method *parameter* and the arithmetic in the body,
+# not just the return type — so the substitution is proven to cover the whole
+# signature rather than only its tail.
+trait scalable[T]:
+    def scale(self, factor: T) -> T
+
+impl[T] scalable[T] for holder[T]:
+    def scale(self, factor: T) -> T:
+        return self.value * factor
+
+def main() -> int32:
+    let small = holder { value: 7 }
+    let wide = holder { value: 30 as int64 }
+    let b32 = boxed { item: 11 }
+    let b64 = boxed { item: 4 as int64 }
+
+    let from_generic_impl = small.get()
+    let from_generic_impl_wide = wide.scale(10 as int64)
+    let from_int32_impl = b32.get()
+    let from_int64_impl = b64.get()
+    let from_small_scale = small.scale(3) - 21 + 60
+
+    let wide_part = (from_generic_impl_wide as int32) + (from_int64_impl as int32)
+    return from_generic_impl + wide_part + from_int32_impl + from_small_scale

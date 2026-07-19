@@ -157,6 +157,17 @@ struct method_entry {
   /// trait's constructor parameter here (`F := option`), so re-checking a
   /// per-call instance of it resolves `F[A]` the same way its own check did.
   std::unordered_map<std::string, type_id> fixed_type_params;
+  /// The `impl` block this method was declared in, or null for an `extend`
+  /// method or a trait default. Needed because an impl's *own* generic
+  /// parameters (`impl[T] get_it[T] for holder[T]`) scope the method's
+  /// signature and body without appearing on the method's `type_params` —
+  /// so the method looks non-generic while being anything but.
+  const ast::impl_decl *from_impl = nullptr;
+  /// The impl target as a *pattern*, with the impl's own type parameters left
+  /// as `type_param` types (`holder[T]`). Rigid-unifying this against the
+  /// concrete receiver is what solves those parameters at a call site; see
+  /// `impl_generic_bindings`.
+  type_id impl_target_pattern = k_unknown_type;
 };
 
 // ==========================================================================
@@ -4000,20 +4011,52 @@ private:
     return stored;
   }
 
+  /// The rigid `type_param` stand-ins a declaration's signature resolves
+  /// against: its own parameters, plus — when it is a method — those of the
+  /// `impl` block enclosing it, which are equally in scope over the signature
+  /// and are the only thing distinguishing `impl[T] ... for holder[T]` from an
+  /// impl for one concrete instantiation.
+  auto generic_param_bindings(const ast::func_decl &decl,
+                              const ast::impl_decl *enclosing_impl)
+      -> std::unordered_map<std::string, type_id> {
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    const auto seed = [&](const ast::type_param &type_param) -> void {
+      if (!type_param.name.empty()) {
+        bindings.emplace(
+            type_param.name,
+            types_.type_param(type_param.name, type_param.higher_kinded_arity));
+      }
+    };
+    if (enclosing_impl != nullptr) {
+      for (const auto &type_param : enclosing_impl->type_params) {
+        seed(type_param);
+      }
+    }
+    // Order between the two is immaterial: a method parameter shadowing an
+    // impl one of the same name resolves to a `type_param` stand-in that is
+    // interned identically either way. What matters is only that both sets
+    // are present.
+    for (const auto &type_param : decl.type_params) {
+      seed(type_param);
+    }
+    return bindings;
+  }
+
   /// Normalizes a function declaration's parameter list into
   /// `fn_param_info`s with their types resolved against the function's own
   /// generic parameters. `skip_self` drops a leading `self` parameter,
   /// since call-argument checking never expects the caller to pass it.
+  ///
+  /// `enclosing_impl` seeds the *impl block's* parameters as well. A method of
+  /// `impl[T] get_it[T] for holder[T]` mentions `T` in its signature without
+  /// declaring it — the parameter belongs to the impl — so resolving the
+  /// signature against `decl.type_params` alone leaves `T` unresolvable, and
+  /// the method reads as if it had no generic content at all.
   auto signature_params(const ast::func_decl &decl, const module_members *owner,
-                        bool skip_self) -> std::vector<fn_param_info> {
-    auto param_bindings = std::unordered_map<std::string, type_id>{};
-    for (const auto &type_param : decl.type_params) {
-      if (!type_param.name.empty()) {
-        param_bindings.emplace(
-            type_param.name,
-            types_.type_param(type_param.name, type_param.higher_kinded_arity));
-      }
-    }
+                        bool skip_self,
+                        const ast::impl_decl *enclosing_impl = nullptr)
+      -> std::vector<fn_param_info> {
+    auto param_bindings = generic_param_bindings(decl, enclosing_impl);
     const auto ctx = resolve_ctx{.module = owner,
                                  .param_bindings = &param_bindings,
                                  .use_type_param_stack = false,
@@ -4048,18 +4091,13 @@ private:
   /// parameters; `unknown` for an unannotated return type (inferred from the
   /// body, never guessed from this signature alone).
   auto signature_return_type(const ast::func_decl &decl,
-                             const module_members *owner) -> type_id {
+                             const module_members *owner,
+                             const ast::impl_decl *enclosing_impl = nullptr)
+      -> type_id {
     if (decl.return_type == nullptr) {
       return k_unknown_type;
     }
-    auto param_bindings = std::unordered_map<std::string, type_id>{};
-    for (const auto &type_param : decl.type_params) {
-      if (!type_param.name.empty()) {
-        param_bindings.emplace(
-            type_param.name,
-            types_.type_param(type_param.name, type_param.higher_kinded_arity));
-      }
-    }
+    auto param_bindings = generic_param_bindings(decl, enclosing_impl);
     const auto ctx =
         resolve_ctx{.module = owner,
                     .param_bindings = &param_bindings,
@@ -6462,7 +6500,15 @@ private:
   /// Maps `"{trait_name}:{type_key}"` to the location of the first impl
   /// seen for that (trait, type) pair, session-wide — built by
   /// `validate_impl_coherence` and consulted by `type_has_trait`.
-  std::unordered_map<std::string, source_location> impl_trait_index_;
+  /// One recorded trait impl, keyed by `type_key_of` (declaration-level, so
+  /// `type_has_trait` finds an impl through any instantiation). `target` is
+  /// the impl's actual target type, which is what conflict detection needs
+  /// and the key deliberately drops.
+  struct recorded_impl {
+    source_location location;
+    type_id target = k_unknown_type;
+  };
+  std::unordered_map<std::string, recorded_impl> impl_trait_index_;
 
   /// Extracts the trailing name of an impl's trait-type path (e.g. `show`
   /// from `impl show for point:`), or empty for an inherent impl with no
@@ -6478,14 +6524,58 @@ private:
 
   /// A stable string key identifying a type for impl-coherence bookkeeping:
   /// the declaration's address for user types, or the type's display name
-  /// otherwise (so two distinct instantiations of the same generic
-  /// declaration share one coherence key, matching Kira's "one impl per
-  /// (trait, type)" rule at the declaration level).
+  /// otherwise.
+  ///
+  /// Deliberately *declaration*-level: every instantiation of a generic type
+  /// shares one key. That is what `type_has_trait` needs — asking whether
+  /// `holder[int32]` implements `show` has to find an `impl[T] show for
+  /// holder[T]` — so the key cannot carry type arguments. Whether two impls
+  /// sharing a key actually *conflict* is a separate, finer question, and
+  /// `impl_targets_overlap` answers it.
   auto type_key_of(const type_entry &entry) -> std::string {
     if (entry.decl != nullptr) {
       return std::format("u:{}", static_cast<const void *>(entry.decl));
     }
     return std::format("n:{}", entry.name);
+  }
+
+  /// Whether `id` mentions a type parameter anywhere inside it — i.e. whether
+  /// it is a *pattern* standing for many concrete types (`holder[T]`) rather
+  /// than one (`holder[int32]`).
+  auto type_mentions_param(type_id id) -> bool {
+    const auto entry = types_.entry(id);
+    if (entry.kind == type_kind::type_param_kind ||
+        entry.kind == type_kind::param_app_kind) {
+      return true;
+    }
+    return std::ranges::any_of(entry.args, [&](type_id arg) -> bool {
+      return type_mentions_param(arg);
+    });
+  }
+
+  /// Whether two impls of the same trait, on targets sharing a coherence key
+  /// (so: on the same type declaration), actually apply to a common concrete
+  /// type — the thing the reference forbids ("no two can apply to the same
+  /// concrete type").
+  ///
+  /// Two *distinct fully-concrete* instantiations never do: `impl get_it for
+  /// boxed[int32]` and `impl get_it for boxed[int64]` are implementations for
+  /// two different types that happen to come from one declaration, and the
+  /// reference blesses exactly this ("a specific `impl show for point` and a
+  /// blanket `impl[T: show] show for list[T]` coexist"). Keying coherence at
+  /// the declaration level alone used to reject them.
+  ///
+  /// Anything else is treated as overlapping. That is deliberately
+  /// conservative: a generic target could in principle be proven disjoint
+  /// from another by unification, but a blanket impl and a concrete one for
+  /// the same declaration usually *do* overlap, and over-reporting a real
+  /// ambiguity is the safe direction for a guarantee the standard library
+  /// leans on.
+  auto impl_targets_overlap(type_id first, type_id second) -> bool {
+    if (first == second) {
+      return true;
+    }
+    return type_mentions_param(first) || type_mentions_param(second);
   }
 
   /// Finds a trait declaration named `name` in the current module or
@@ -6730,6 +6820,8 @@ private:
               .decl = decl,
               .owner = &members,
               .from_trait = nullptr,
+              .from_impl = impl.decl,
+              .impl_target_pattern = target,
           });
         }
 
@@ -6872,7 +6964,52 @@ private:
   /// Looks up a method by name on a user-type instance. An inherent or
   /// impl-provided method always wins over a trait default with the same
   /// name; the default is only used as a fallback.
-  auto find_method(const type_entry &instance, std::string_view name)
+  /// Whether an impl's target *pattern* (`holder[T]`, `boxed[int64]`) applies
+  /// to a concrete receiver type. A type parameter in the pattern matches
+  /// anything in that position; everything else must match nominally and
+  /// argument-for-argument.
+  ///
+  /// This is what tells `impl get_it for boxed[int32]` from `impl get_it for
+  /// boxed[int64]`. Both are recorded against the one `boxed` declaration,
+  /// which is all method lookup used to consult — so a `boxed[int64]`
+  /// receiver could resolve to the `int32` impl's body and be compiled under
+  /// the wrong types.
+  auto target_pattern_matches(type_id pattern, type_id concrete) -> bool {
+    if (pattern == concrete || types_.is_unknown(pattern)) {
+      return true;
+    }
+    const auto pattern_entry = types_.entry(pattern);
+    if (pattern_entry.kind == type_kind::type_param_kind ||
+        pattern_entry.kind == type_kind::param_app_kind ||
+        pattern_entry.kind == type_kind::ctor_ref_kind) {
+      return true;
+    }
+    const auto concrete_entry = types_.entry(concrete);
+    if (pattern_entry.decl != concrete_entry.decl) {
+      return false;
+    }
+    if (pattern_entry.decl == nullptr &&
+        pattern_entry.name != concrete_entry.name) {
+      return false;
+    }
+    if (pattern_entry.args.size() != concrete_entry.args.size()) {
+      return false;
+    }
+    for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
+      if (!target_pattern_matches(pattern_entry.args[i],
+                                  concrete_entry.args[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// `instance_id` is the receiver's own `type_id`, used to pick between
+  /// impls on different instantiations of one generic declaration; passing
+  /// `k_unknown_type` (the default) keeps the historical declaration-level
+  /// behavior for callers that have only a `type_entry` in hand.
+  auto find_method(const type_entry &instance, std::string_view name,
+                   type_id instance_id = k_unknown_type)
       -> const method_entry * {
     build_method_table();
     if (instance.decl == nullptr) {
@@ -6884,6 +7021,9 @@ private:
     }
     // Inherent/impl-provided methods take priority over trait defaults,
     // which take priority over `extend`-block methods (the least specific).
+    // Within the first group, an impl whose target names this exact
+    // instantiation beats one that merely covers it generically.
+    const method_entry *generic_match = nullptr;
     const method_entry *trait_fallback = nullptr;
     const method_entry *extension_fallback = nullptr;
     for (const auto &method : it->second) {
@@ -6896,12 +7036,27 @@ private:
         }
         continue;
       }
+      const auto applies =
+          types_.is_unknown(instance_id) ||
+          target_pattern_matches(method.impl_target_pattern, instance_id);
+      if (!applies) {
+        continue;
+      }
       if (method.from_trait == nullptr) {
-        return &method;
+        if (!type_mentions_param(method.impl_target_pattern)) {
+          return &method;
+        }
+        if (generic_match == nullptr) {
+          generic_match = &method;
+        }
+        continue;
       }
       if (trait_fallback == nullptr) {
         trait_fallback = &method;
       }
+    }
+    if (generic_match != nullptr) {
+      return generic_match;
     }
     return trait_fallback != nullptr ? trait_fallback : extension_fallback;
   }
@@ -7402,6 +7557,128 @@ private:
                              bindings);
   }
 
+  /// Whether calling `method` on a receiver of type `receiver` needs a
+  /// monomorphized instance of its own, rather than resolving to the single
+  /// compiled `Target::method` an ordinary impl member gets.
+  ///
+  /// Two shapes need one, and both are invisible on the method's own
+  /// declaration:
+  ///
+  ///   - `impl[T] get_it[T] for holder[T]` — the impl is generic, so the
+  ///     method's signature and body are written in terms of `T` and mean
+  ///     something different for every receiver.
+  ///   - `impl get_it[int32] for holder[int32]` — the impl is *not* generic,
+  ///     but its target is an instantiation, so `holder[int32]` and
+  ///     `holder[str]` may each have an impl and both would claim the name
+  ///     `holder::get`.
+  ///
+  /// In both cases there is no one function to compile, which is why
+  /// `hir::lower_impl_associated_functions` historically emitted nothing at
+  /// all for either (design §2.1's G0).
+  auto impl_needs_instance(const method_entry &method,
+                           const type_entry &receiver) -> bool {
+    return method.from_impl != nullptr &&
+           (!method.from_impl->type_params.empty() || !receiver.args.empty());
+  }
+
+  /// Types a call to a method whose *impl block* — not the method itself — is
+  /// what carries generic content (`impl_needs_instance`), resolving it to an
+  /// instance compiled for this one receiver type.
+  ///
+  /// The impl's parameters are solved by rigid-unifying its target pattern
+  /// (`holder[T]`) against the concrete receiver (`holder[int32]`), giving
+  /// `T := int32`; the signature is then restated under that solution, so
+  /// `def get(self) -> T` correctly reports `int32` instead of accepting
+  /// anything at all (design §2's G1 — the silent-acceptance bug).
+  ///
+  /// The instance is keyed on the *receiver's* type arguments rather than the
+  /// solved impl parameters, because those are what distinguish two impls for
+  /// two instantiations of the same target: a non-generic
+  /// `impl get_it[int32] for holder[int32]` solves nothing and would otherwise
+  /// collide with its `holder[str]` sibling under one shared name.
+  ///
+  /// Returns `nullopt` when no instance is needed, or when the enclosing
+  /// declaration is itself a template — inside one the receiver is still
+  /// written in type parameters and there is nothing concrete to compile for.
+  auto check_impl_generic_method_call(const ast::call_expr &call,
+                                      const method_entry &method,
+                                      const type_entry &receiver_entry,
+                                      const ast::expr &receiver,
+                                      type_id receiver_type)
+      -> std::optional<type_id> {
+    if (!impl_needs_instance(method, receiver_entry) ||
+        in_const_generic_template_ || in_type_generic_template_) {
+      return std::nullopt;
+    }
+
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    unify_rigid(method.impl_target_pattern, receiver_type, bindings);
+    for (const auto &type_param : method.from_impl->type_params) {
+      if (type_param.name.empty() || bindings.contains(type_param.name)) {
+        continue;
+      }
+      // The receiver didn't pin one of the impl's parameters — an impl whose
+      // parameter appears nowhere in its own target type. Nothing about the
+      // call site can determine it, so there is no instance to compile.
+      error_with_help(
+          call.span,
+          std::format("cannot tell which `{}` this call to `{}` means",
+                      type_param.name, method.decl->name),
+          std::format("`{}` is not determined by the receiver's type",
+                      type_param.name),
+          std::format(
+              "`{}` is declared on the `impl` block, and the compiler solves "
+              "it by matching the impl's target type against the receiver. "
+              "Since `{}` doesn't appear in that target type, no receiver can "
+              "pin it down. Move `{}` onto `{}` itself, so it can be solved "
+              "from the arguments or given explicitly.",
+              type_param.name, type_param.name, type_param.name,
+              method.decl->name));
+      return k_error_type;
+    }
+
+    // The impl's parameters go in as *fixed* bindings rather than as the
+    // solution's `type_slots`, because `push_type_params` — which is what
+    // consults `type_slots` — only ever walks the declaration's own
+    // `type_params`, and `T` is not one of them. `fixed_type_params` is
+    // pushed as a scope outright, which is how a monomorphized trait default
+    // already carries its `F := option`, and is the mechanism that makes the
+    // *body* of `def get(self) -> T` resolve `T` while it is being checked.
+    auto scoped_params = method.fixed_type_params;
+    scoped_params.insert(bindings.begin(), bindings.end());
+
+    auto solution = generic_solution{};
+    solution.suffix =
+        std::format("${}", mangle_type_for_instance(receiver_type));
+
+    auto params = signature_params(*method.decl, method.owner,
+                                   /*skip_self=*/true, method.from_impl);
+    for (auto &param : params) {
+      param.type = substitute_solved(param.type, bindings);
+    }
+    check_call_args_against(
+        call, params, method.decl->name,
+        source_location{.file_id = file_id_, .span = method.decl->span});
+    check_call_preconditions(call, *method.decl, params);
+
+    const auto name = std::format("{}::{}{}", receiver_entry.name,
+                                  method.decl->name, solution.suffix);
+    const auto *instance = find_or_check_generic_instance(
+        call, *method.decl, method.owner, /*decl_file=*/std::nullopt, solution,
+        name, &scoped_params, receiver_type);
+    if (instance == nullptr) {
+      return std::nullopt;
+    }
+    resolved_callees_[&call] =
+        resolved_callee{.decl = instance,
+                        .owner_module = method.owner->module_name,
+                        .impl_target_type = "",
+                        .receiver = &receiver};
+    return substitute_solved(
+        signature_return_type(*method.decl, method.owner, method.from_impl),
+        bindings);
+  }
+
   /// Whether `method` is *receiver-style* for an `instance` of some
   /// constructor: declared without `self`, but with a first parameter that
   /// is an application of the very constructor the receiver instantiates —
@@ -7686,7 +7963,7 @@ private:
     case type_kind::struct_kind:
     case type_kind::sum_kind:
     case type_kind::opaque_kind: {
-      if (const auto *method = find_method(entry, field.field_name)) {
+      if (const auto *method = find_method(entry, field.field_name, object)) {
         record_expr_type(field, fn_type_of(*method->decl, method->owner));
         if (!check_method_accepts_generic_args(field, *method->decl,
                                                explicit_args)) {
@@ -7700,6 +7977,13 @@ private:
         if (const auto instantiated = check_generic_instance_method_call(
                 call, *method, entry.name, *field.object, object,
                 explicit_args)) {
+          return *instantiated;
+        }
+        // Tried after the method's own generics: a method that is a template
+        // itself is handled above even when its impl is generic too, since
+        // that path already solves from the arguments and the receiver.
+        if (const auto instantiated = check_impl_generic_method_call(
+                call, *method, entry, *field.object, object)) {
           return *instantiated;
         }
         record_instance_method_callee(call, *method, entry.name, *field.object);
@@ -9615,21 +9899,12 @@ private:
         const auto iterable = infer_expr(*clause.iterable, k_unknown_type);
         element = element_type_of(iterable, clause.iterable->span);
       }
-      // Multiple patterns per clause destructure tuple elements positionally.
-      if (clause.patterns.size() == 1) {
-        if (clause.patterns.front() != nullptr) {
-          check_pattern(
-              dynamic_cast<const ast::pattern &>(*clause.patterns.front()),
-              element);
-        }
-      } else {
-        for (const auto &pattern : clause.patterns) {
-          if (pattern != nullptr) {
-            check_pattern(dynamic_cast<const ast::pattern &>(*pattern),
-                          k_unknown_type);
-          }
-        }
+      auto patterns = std::vector<const ast::pattern *>{};
+      patterns.reserve(clause.patterns.size());
+      for (const auto &pattern : clause.patterns) {
+        patterns.push_back(dynamic_cast<const ast::pattern *>(pattern.get()));
       }
+      check_loop_head_patterns(patterns, element);
     }
     if (expr.guard != nullptr) {
       require_bool(*expr.guard, "a `for` guard");
@@ -10377,6 +10652,75 @@ private:
   /// type mismatches. Recurses into every subpattern regardless of whether
   /// `subject` is fully known, so bindings are always produced even when the
   /// checker can't fully verify the pattern's shape.
+  /// Binds the loop variables of a `for` head — statement or comprehension
+  /// clause — against `element`, the type of one thing the iterable yields.
+  ///
+  /// One pattern matches the element whole (`for (k, v) in pairs`); several
+  /// are its positional components (`for k, v in pairs`), which is the same
+  /// destructuring written without parentheses. The multi-name form used to
+  /// bind every name to `k_unknown_type` — "could be anything" — so a body
+  /// that used a loop variable at the wrong type was accepted in silence and
+  /// then lowered against a type nobody had checked. Splitting an element
+  /// that is not a tuple, or into the wrong number of pieces, is a mistake
+  /// worth naming rather than papering over.
+  auto
+  check_loop_head_patterns(const std::vector<const ast::pattern *> &patterns,
+                           type_id element) -> void {
+    if (patterns.empty()) {
+      return;
+    }
+    if (patterns.size() == 1) {
+      if (patterns.front() != nullptr) {
+        check_pattern(*patterns.front(), element);
+      }
+      return;
+    }
+
+    const auto element_entry = types_.entry(element);
+    const auto is_tuple = element_entry.kind == type_kind::tuple_kind;
+    // Point at the loop variables. The enclosing statement's span runs to
+    // the end of the body, so using it would underline the loop's last line
+    // rather than the names actually at fault.
+    auto vars_span = source_span{};
+    for (const auto *pattern : patterns) {
+      if (pattern == nullptr) {
+        continue;
+      }
+      vars_span = vars_span.empty() ? pattern->span
+                                    : source_span{.start = vars_span.start,
+                                                  .end = pattern->span.end};
+    }
+
+    if (is_tuple && element_entry.args.size() != patterns.size()) {
+      error_with_help(
+          vars_span,
+          std::format(
+              "this loop binds {} names, but each element of `{}` has {}",
+              patterns.size(), types_.display(element),
+              element_entry.args.size()),
+          "the number of loop variables must match the element's arity",
+          "write one name per component, or bind the whole element with a "
+          "single name and index it");
+    } else if (!is_tuple && !types_.is_unknown(element)) {
+      error_with_help(
+          vars_span,
+          std::format("this loop binds {} names, but `{}` is not a tuple",
+                      patterns.size(), types_.display(element)),
+          "only a tuple element can be split across several loop variables",
+          "use a single loop variable here");
+    }
+
+    for (size_t i = 0; i < patterns.size(); ++i) {
+      if (patterns[i] == nullptr) {
+        continue;
+      }
+      const auto component = is_tuple && i < element_entry.args.size()
+                                 ? element_entry.args[i]
+                                 : k_unknown_type;
+      check_pattern(*patterns[i], component);
+    }
+  }
+
   auto check_pattern(const ast::pattern &pattern, type_id subject) -> void {
     if (pattern.has_error) {
       return;
@@ -11267,16 +11611,13 @@ private:
         }
       }
       push_scope();
-      if (stmt.patterns.size() == 1) {
-        if (stmt.patterns.front() != nullptr) {
-          check_pattern(*stmt.patterns.front(), element);
-        }
-      } else {
+      {
+        auto patterns = std::vector<const ast::pattern *>{};
+        patterns.reserve(stmt.patterns.size());
         for (const auto &pattern : stmt.patterns) {
-          if (pattern != nullptr) {
-            check_pattern(*pattern, k_unknown_type);
-          }
+          patterns.push_back(pattern.get());
         }
+        check_loop_head_patterns(patterns, element);
       }
       if (stmt.guard != nullptr) {
         require_bool(*stmt.guard, "a `for` guard");
@@ -13539,8 +13880,15 @@ private:
             std::format("{}:{}", trait_name, type_key_of(target_entry));
         const auto location =
             source_location{.file_id = impl.file_id, .span = impl.decl->span};
-        const auto [it, inserted] = impl_trait_index_.emplace(key, location);
+        const auto [it, inserted] = impl_trait_index_.emplace(
+            key, recorded_impl{.location = location, .target = target});
         if (inserted) {
+          continue;
+        }
+        if (!impl_targets_overlap(it->second.target, target)) {
+          // Two impls for two different instantiations of one generic
+          // declaration. Legal, and the key stays pointing at the first —
+          // `type_has_trait` only asks whether *some* impl exists.
           continue;
         }
         auto duplicate = diagnostic(
@@ -13552,9 +13900,11 @@ private:
         duplicate.children.push_back(
             diagnostic(diagnostic_level::note,
                        std::format("`{}` was first implemented for `{}` here",
-                                   trait_name, types_.display(target)),
-                       it->second.file_id)
-                .with_label(it->second.span, "previous implementation"));
+                                   trait_name,
+                                   types_.display(it->second.target)),
+                       it->second.location.file_id)
+                .with_label(it->second.location.span,
+                            "previous implementation"));
         duplicate.with_help(
             "A program contains at most one implementation of a trait for a "
             "type; remove or merge one of these.");

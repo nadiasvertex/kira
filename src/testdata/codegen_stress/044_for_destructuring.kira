@@ -1,0 +1,95 @@
+module codegen_stress.for_destructuring
+
+# Destructuring `for` heads (design R3a). Every loop lowerer binds exactly one
+# name per iteration, so a pattern head is reduced to that shape: the element
+# binds to one synthetic local and the pattern's names are emitted at the top
+# of the body, reading out of it — the same desugaring a destructuring `let`
+# already used. Until this landed, any head that was not a single bare name
+# was refused outright by lowering.
+#
+# Two spellings mean the same thing and must agree: `for (k, v) in pairs` and
+# the parenthesis-free `for k, v in pairs`. The second was the worse bug of
+# the two — it type-checked, because the checker bound each name to
+# `k_unknown_type`, which accepts anything. So a body using a loop variable at
+# the wrong type was accepted in silence and only lowering objected. A wrong
+# *value* here, not a diagnostic, is the regression to watch for.
+#
+# `cross` is the case a name collision would expose: two nested destructuring
+# loops each mint a synthetic element local, and the backends' `locals_` maps
+# keep the *first* registration for a given name. If both loops named their
+# subject the same thing, the inner loop would read the outer element and the
+# total would come out wrong rather than failing to compile.
+#
+# Split across several `def`s rather than written as one `main`: the bytecode
+# compiler does not reuse registers within a function, and a single body
+# holding every case here exceeds the 256 its u8 operands can address.
+#
+# 140 + 140 + 50 + 579 + 3840 + 140 + 66 = 4955.
+
+# expect: 4955
+
+# Parenthesized tuple pattern: 10 + 40 + 90.
+def paren_form() -> int32:
+    let pairs = [(1, 10), (2, 20), (3, 30)]
+    let mut total = 0
+    for (k, v) in pairs:
+        total = total + k * v
+    return total
+
+# The same loop without parentheses; must agree with `paren_form`.
+def bare_form() -> int32:
+    let pairs = [(1, 10), (2, 20), (3, 30)]
+    let mut total = 0
+    for k, v in pairs:
+        total = total + k * v
+    return total
+
+# The guard names a destructured variable, so the bindings have to be in scope
+# *ahead* of the guard, not just inside the body: 20 + 30.
+def guarded_form() -> int32:
+    let pairs = [(1, 10), (2, 20), (3, 30)]
+    let mut total = 0
+    for (k, v) in pairs if k > 1:
+        total = total + v
+    return total
+
+# A pattern nested inside a pattern: 123 + 456.
+def nested_pattern_form() -> int32:
+    let nested = [(1, (2, 3)), (4, (5, 6))]
+    let mut total = 0
+    for (x, (y, z)) in nested:
+        total = total + x * 100 + y * 10 + z
+    return total
+
+# Nested destructuring loops — see the note on `locals_` above.
+def nested_loop_form() -> int32:
+    let pairs = [(1, 10), (2, 20), (3, 30)]
+    let inner = [(10, 20), (30, 40)]
+    let mut total = 0
+    for (p, q) in pairs:
+        for (r, s) in inner:
+            total = total + p * r + q * s
+    return total
+
+# Comprehension clauses reach the same loop lowerers, in both spellings.
+def comprehension_paren_form() -> int32:
+    let pairs = [(1, 10), (2, 20), (3, 30)]
+    let products = for (k, v) in pairs => k * v
+    let mut total = 0
+    for p in products:
+        total = total + p
+    return total
+
+def comprehension_bare_form() -> int32:
+    let pairs = [(1, 10), (2, 20), (3, 30)]
+    let sums = for k, v in pairs => k + v
+    let mut total = 0
+    for s in sums:
+        total = total + s
+    return total
+
+def main() -> int32:
+    let a = paren_form() + bare_form() + guarded_form()
+    let b = nested_pattern_form() + nested_loop_form()
+    let c = comprehension_paren_form() + comprehension_bare_form()
+    return a + b + c

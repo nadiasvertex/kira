@@ -1898,6 +1898,102 @@ auto test_functor_body_impl_coherence_across_instantiations() -> void {
          "their own local type to be coherent (no false duplicate)");
 }
 
+auto test_impl_type_param_substituted_at_call_site() -> void {
+  // G1: an `impl` block's own type parameter is in scope over its methods'
+  // signatures without appearing on the method's `type_params`. Resolving
+  // `def get(self) -> T` against the method's parameters alone left `T`
+  // unresolvable, and the call's type came back as "unknown" — which unifies
+  // with everything, so binding the result to a `str` was accepted in
+  // silence. The bug here is a *missing* diagnostic, so what is asserted is
+  // that the mismatch is now reported.
+  const auto analyzed = analyze_sources({{
+      .path = "impl_type_param.kira",
+      .text = "module main\n"
+              "\n"
+              "trait get_it[T]:\n"
+              "    def get(self) -> T\n"
+              "\n"
+              "type holder[T] = { value: T }\n"
+              "\n"
+              "impl[T] get_it[T] for holder[T]:\n"
+              "    def get(self) -> T:\n"
+              "        return self.value\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let h = holder { value: 7 }\n"
+              "    let s: str = h.get()\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected `let s: str = h.get()` on a `holder[int32]` to be rejected "
+         "— the impl's `T` must be solved to `int32` from the receiver");
+  expect(analyzed.diagnostics.find("expected `str`, found `int32`") !=
+             std::string::npos,
+         std::format("expected a concrete `str`/`int32` mismatch, got: {}",
+                     analyzed.diagnostics));
+}
+
+auto test_impls_on_distinct_instantiations_are_coherent() -> void {
+  // Coherence is keyed at the *declaration* level, because `type_has_trait`
+  // has to find `impl[T] show for holder[T]` when asked about
+  // `holder[int32]`. That key alone, used as the conflict test, rejected two
+  // impls for two genuinely different concrete types — which the reference
+  // explicitly permits ("no two can apply to the same concrete type").
+  const auto analyzed = analyze_sources({{
+      .path = "instantiation_coherence.kira",
+      .text = "module main\n"
+              "\n"
+              "trait get_it[T]:\n"
+              "    def get(self) -> T\n"
+              "\n"
+              "type boxed[T] = { item: T }\n"
+              "\n"
+              "impl get_it[int32] for boxed[int32]:\n"
+              "    def get(self) -> int32:\n"
+              "        return self.item\n"
+              "\n"
+              "impl get_it[int64] for boxed[int64]:\n"
+              "    def get(self) -> int64:\n"
+              "        return self.item\n",
+  }});
+  expect(analyzed.error_count == 0,
+         std::format("expected impls for `boxed[int32]` and `boxed[int64]` to "
+                     "coexist — they are different concrete types, got: {}",
+                     analyzed.diagnostics));
+}
+
+auto test_overlapping_generic_impl_still_conflicts() -> void {
+  // The other direction, and the reason the conflict test stayed
+  // conservative: a blanket impl and a concrete one for the same declaration
+  // *do* both apply to `boxed[int32]`, so relaxing the key must not let this
+  // through. Without this case, `impl_targets_overlap` could be weakened to
+  // plain type-id equality and the suite would stay green.
+  const auto analyzed = analyze_sources({{
+      .path = "overlapping_impl.kira",
+      .text = "module main\n"
+              "\n"
+              "trait get_it[T]:\n"
+              "    def get(self) -> T\n"
+              "\n"
+              "type boxed[T] = { item: T }\n"
+              "\n"
+              "impl[T] get_it[T] for boxed[T]:\n"
+              "    def get(self) -> T:\n"
+              "        return self.item\n"
+              "\n"
+              "impl get_it[int32] for boxed[int32]:\n"
+              "    def get(self) -> int32:\n"
+              "        return self.item\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a blanket `impl[T] ... for boxed[T]` to conflict with a "
+         "concrete `impl ... for boxed[int32]` — both apply to `boxed[int32]`");
+  expect(analyzed.diagnostics.find("duplicate implementation") !=
+             std::string::npos,
+         std::format("expected a duplicate-implementation diagnostic, got: {}",
+                     analyzed.diagnostics));
+}
+
 auto test_functor_type_projection_resolves_concretely() -> void {
   // A `DB.conn` projection must resolve to the argument module's *concrete*
   // type (`postgres.conn` == int32), not silently to `k_unknown` — otherwise
@@ -1982,6 +2078,63 @@ auto test_functor_instantiation_arity_mismatch() -> void {
          "expected a wrong-arity functor instantiation to be rejected");
   expect_diagnostic(analyzed, "takes 1 argument(s), but 2 were supplied",
                     "expected the arity-mismatch diagnostic");
+}
+
+/// The parenthesis-free `for k, v in pairs` head used to bind every name to
+/// `k_unknown_type`, which unifies with everything — so a body using a loop
+/// variable at the wrong type was accepted in silence, and the loop was then
+/// lowered against a type nobody had checked. Asserting a *rejection* here is
+/// the point: the previous behavior was "compiles cleanly", not "wrong
+/// diagnostic".
+auto test_bare_for_names_bind_tuple_components() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "for_bare.kira",
+      .text = "module main\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let pairs = [(1, 10)]\n"
+              "    for k, v in pairs:\n"
+              "        let s: str = v\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected `v` to be bound as int32, not as an unknown type");
+  expect_diagnostic(analyzed, "expected `str`, found `int32`",
+                    "expected the loop variable to carry its component type");
+}
+
+auto test_for_head_arity_must_match_element() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "for_arity.kira",
+      .text = "module main\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let pairs = [(1, 10)]\n"
+              "    for k, v, w in pairs:\n"
+              "        let x = k\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected three loop variables over a 2-tuple to be rejected");
+  expect_diagnostic(analyzed, "but each element of",
+                    "expected the loop-head arity diagnostic");
+}
+
+auto test_for_head_cannot_split_a_non_tuple() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "for_non_tuple.kira",
+      .text = "module main\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let nums = [1, 2, 3]\n"
+              "    for a, b in nums:\n"
+              "        let x = a\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected splitting a non-tuple element to be rejected");
+  expect_diagnostic(analyzed, "is not a tuple",
+                    "expected the non-tuple loop-head diagnostic");
 }
 
 } // namespace
@@ -2147,6 +2300,12 @@ auto main() -> int {
     test_functor_body_impl_and_extend_members_check();
     test_functor_body_impl_coherence_across_instantiations();
     test_functor_instantiation_arity_mismatch();
+    test_bare_for_names_bind_tuple_components();
+    test_for_head_arity_must_match_element();
+    test_for_head_cannot_split_a_non_tuple();
+    test_impl_type_param_substituted_at_call_site();
+    test_impls_on_distinct_instantiations_are_coherent();
+    test_overlapping_generic_impl_still_conflicts();
   } catch (const std::exception &ex) {
     std::cerr << "check_test failed: unhandled exception: " << ex.what()
               << '\n';
