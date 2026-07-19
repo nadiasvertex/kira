@@ -1282,6 +1282,79 @@ auto test_reports_bad_explicit_generic_args() -> void {
       "expected too many bracket arguments to be reported");
 }
 
+auto test_accepts_return_position_inference() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_return_position_inference.kira");
+  expect(analyzed.error_count == 0,
+         "expected a type parameter appearing only in the return type to be "
+         "solved from the type each call site expects, in every position the "
+         "checker knows one");
+}
+
+auto test_reports_unsolved_return_position_type_param() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_unsolved_return_position_type_param.kira");
+  expect(analyzed.error_count > 0,
+         "expected a call with neither arguments nor context to fail");
+  expect_diagnostic(analyzed,
+                    "cannot tell what `T` is in this call to `nothing`",
+                    "expected an unannotated binding to leave `T` unsolved");
+  // The expected type is a fallback, never a constraint: it must not be able
+  // to re-solve `T` to `int64` and retype the call.
+  expect_diagnostic(analyzed, "expected `int64`, found `int32`",
+                    "expected an annotation disagreeing with the arguments to "
+                    "stay an ordinary type mismatch");
+}
+
+auto test_accepts_method_explicit_generic_args() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_method_explicit_generic_args.kira");
+  expect(analyzed.error_count == 0,
+         "expected brackets on a method call to be honored, and a nested "
+         "generic to be usable as an explicit type argument");
+}
+
+auto test_reports_bad_method_explicit_generic_args() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_bad_method_explicit_generic_args.kira");
+  expect(analyzed.error_count > 0,
+         "expected unusable brackets on a method call to fail");
+  expect_diagnostic(analyzed,
+                    "`echo`'s `T` is given as `int64` in brackets, but the "
+                    "arguments make it `int32`",
+                    "expected brackets disagreeing with the arguments to be "
+                    "reported rather than silently discarded");
+  expect_diagnostic(analyzed,
+                    "`plain` takes no compile-time parameters",
+                    "expected brackets on a non-generic method to be reported");
+}
+
+auto test_accepts_type_param_static_dispatch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_type_param_static_dispatch.kira");
+  expect(analyzed.error_count == 0,
+         "expected a static member reached through a solved type parameter to "
+         "resolve against the type that parameter was solved to");
+}
+
+auto test_reports_type_param_static_not_found() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_type_param_static_not_found.kira");
+  expect(analyzed.error_count > 0,
+         "expected a type parameter solved to a type without the needed "
+         "static to fail");
+  expect_diagnostic(analyzed, "no static `make` on type `int32`",
+                    "expected the diagnostic to name the solved type rather "
+                    "than report `C` as an undefined name");
+  expect_diagnostic(analyzed, "instantiated from here",
+                    "expected an instantiation-site note pointing back at the "
+                    "call that asked for this instance");
+  expect_diagnostic(analyzed,
+                    "`C` was solved to `int32` from the type expected here",
+                    "expected a note saying where the solution came from, "
+                    "since the user never wrote `int32` as a type argument");
+}
+
 auto test_reports_refinement_predicate_not_bool() -> void {
   const auto analyzed =
       analyze_test_data_file("report_refinement_predicate_not_bool.kira");
@@ -2025,6 +2098,12 @@ auto main() -> int {
     test_accepts_explicit_generic_args();
     test_accepts_generic_methods();
     test_reports_bad_explicit_generic_args();
+    test_accepts_return_position_inference();
+    test_reports_unsolved_return_position_type_param();
+    test_accepts_method_explicit_generic_args();
+    test_reports_bad_method_explicit_generic_args();
+    test_accepts_type_param_static_dispatch();
+    test_reports_type_param_static_not_found();
     test_reports_refinement_predicate_not_bool();
     test_accepts_refinement_predicate();
     test_accepts_concept_bound();

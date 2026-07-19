@@ -1,0 +1,22 @@
+module sample
+
+# The other half of G1: when no context supplies a type either, the call
+# genuinely cannot be inferred and saying so is correct.
+
+def nothing[T]() -> option[T]:
+    return none
+
+def identity[T](x: T) -> T:
+    return x
+
+def no_context() -> unit:
+    let a = nothing()
+    return unit
+
+# The hint must not be able to *re*-solve a parameter the arguments already
+# answered: `T` is `int32` from the argument, so this is an ordinary type
+# mismatch and not a silent retyping of the call to `int64`.
+def annotation_disagrees_with_argument() -> unit:
+    let n: int32 = 5
+    let bad: int64 = identity(n)
+    return unit

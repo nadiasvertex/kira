@@ -1,0 +1,58 @@
+module sample
+
+# G1 (`spec/generic-inference-design.md` §2): a type parameter that appears
+# only in the return type is solved from the type the call site expects. The
+# arguments say nothing about `T` in any of these calls — only the context
+# does.
+
+def nothing[T]() -> option[T]:
+    return none
+
+def takes(x: option[int32]) -> unit:
+    return unit
+
+type holder = { f: option[int32] }
+
+# Annotated binding.
+def from_let() -> unit:
+    let a: option[int32] = nothing()
+    return unit
+
+# Declared return type.
+def from_return() -> option[int32]:
+    return nothing()
+
+# Another call's parameter type.
+def from_argument() -> unit:
+    return takes(nothing())
+
+# Assignment target.
+def from_assignment() -> unit:
+    var a: option[int32] = none
+    a = nothing()
+    return unit
+
+# Struct literal field type.
+def from_struct_field() -> holder:
+    return holder { f: nothing() }
+
+# Array element type.
+def from_array_element() -> array[option[int32], 2]:
+    return [nothing(), nothing()]
+
+# Match arm result, joined against the other arms.
+def from_match_arm(n: int32) -> option[int32]:
+    return match n:
+        0 => nothing()
+        _ => none
+
+# The hint is a *fallback*, never a constraint: `T` is already pinned to
+# `int32` by the argument, so the `option[int32]` context adds nothing and
+# takes nothing away.
+def identity[T](x: T) -> T:
+    return x
+
+def context_does_not_override() -> int32:
+    let n: int32 = 5
+    let a: int32 = identity(n)
+    return a

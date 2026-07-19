@@ -1,0 +1,20 @@
+module sample
+
+# §5.4/§6: `C` carries no enforced bound, so an unsuitable one is not caught
+# at the call site — it fails inside the instance body, at a line the user
+# never wrote. The diagnostic therefore has to name the solved type, point
+# back at the call that asked for this instance, and say where the solution
+# came from.
+
+type counter = { n: int32 }
+
+extend counter:
+    def make(v: int32) -> counter:
+        return counter { n: v }
+
+def build[C](v: int32) -> C:
+    return C.make(v)
+
+def run() -> int32:
+    let a: int32 = build(4)
+    return a

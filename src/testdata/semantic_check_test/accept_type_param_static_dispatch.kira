@@ -1,0 +1,28 @@
+module sample
+
+# G3 (`spec/generic-inference-design.md` §5): a static member reached through
+# a solved type parameter. `C` is solved from the expected type (G1), then
+# `C.make` resolves against the impl for whatever `C` turned out to be —
+# dispatch is static and monomorphic, so nothing here needs object safety.
+
+type counter = { n: int32 }
+
+extend counter:
+    def make(v: int32) -> counter:
+        return counter { n: v * 10 }
+
+type doubler = { n: int32 }
+
+extend doubler:
+    def make(v: int32) -> doubler:
+        return doubler { n: v + 100 }
+
+def build[C](v: int32) -> C:
+    return C.make(v)
+
+# Two different `C`s, so two instances of one template, each naming the
+# static of the type it was solved to.
+def run() -> int32:
+    let a: counter = build(4)
+    let b: doubler = build(4)
+    return a.n + b.n

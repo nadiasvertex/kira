@@ -927,6 +927,27 @@ private:
   /// unify-with-everything rule from letting an unknown context quietly
   /// retype a well-understood call.
   std::unordered_map<const ast::call_expr *, type_id> call_expected_types_;
+  /// Per call site, the type parameters `solve_from_expected_type` answered
+  /// rather than the arguments. Read only to build the second note of §5.4:
+  /// once a parameter can be solved from context, an error inside the
+  /// instance has to say *which* context, or the binding appears to come
+  /// from nowhere the user wrote.
+  std::unordered_map<const ast::call_expr *, std::vector<std::string>>
+      expected_solved_params_;
+  /// The chain of generic instantiations currently being checked, innermost
+  /// last. `emit_diag` appends one note per frame, so a diagnostic raised
+  /// inside a monomorphized body points back at the call that asked for that
+  /// body — without which the user, who wrote an annotation and never named
+  /// the failing member at all, has nothing actionable to act on (§5.4).
+  struct instantiation_frame {
+    source_span call_span;      ///< The call that demanded this instance.
+    file_id_type call_file = 0; ///< File that call was written in.
+    std::string instance_name;  ///< e.g. `collect$list_iter_int32_$int32`.
+    /// One line per parameter solved from the expected type rather than from
+    /// an argument.
+    std::vector<std::string> context_solutions;
+  };
+  std::vector<instantiation_frame> instantiation_sites_;
   /// Every module-qualified or type-qualified call resolved by
   /// `infer_qualified_call`. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees_;
@@ -1220,7 +1241,36 @@ private:
     if (!emitted_diagnostics_.insert(std::move(key)).second) {
       return;
     }
-    diag_.emit(diag);
+    diag_.emit(with_instantiation_notes(diag));
+  }
+
+  /// Appends the §5.4 instantiation-site notes to an error raised while
+  /// checking a monomorphized body.
+  ///
+  /// A generic instance is compiled because some call asked for it, and the
+  /// user wrote that call — not the template. Without these notes a failure
+  /// inside `collect`'s body reads as an error in the standard library at a
+  /// line the user has never seen, and the type the parameter was solved to
+  /// appears to come from nowhere at all. Innermost frame first, so the
+  /// nearest call is the one read first.
+  auto with_instantiation_notes(const diagnostic &diag) -> diagnostic {
+    if (instantiation_sites_.empty() || diag.level != diagnostic_level::error) {
+      return diag;
+    }
+    auto annotated = diag;
+    for (const auto &frame : std::views::reverse(instantiation_sites_)) {
+      annotated.children.push_back(
+          diagnostic(diagnostic_level::note,
+                     std::format("instantiated from here, as `{}`",
+                                 frame.instance_name),
+                     frame.call_file)
+              .with_label(frame.call_span, "this call needs that copy"));
+      for (const auto &solution : frame.context_solutions) {
+        annotated.children.push_back(diagnostic(
+            diagnostic_level::note, solution, frame.call_file));
+      }
+    }
+    return annotated;
   }
 
   /// Emits a single-label error at `span` in the current file.
@@ -2238,11 +2288,27 @@ private:
   /// What a call site has pinned each of the callee's value parameters to.
   using value_bindings = std::unordered_map<std::string, linear_poly>;
 
-  /// A call's explicit compile-time arguments — the expressions inside the
-  /// brackets of `zeros[8]()` or `pair[int32, str](a, b)`, in written order.
-  /// Empty when the call names its callee bare and every parameter has to be
-  /// read off the arguments instead.
-  using explicit_generic_args = std::vector<const ast::expr *>;
+  /// One explicit compile-time argument, as the parser managed to write it
+  /// down.
+  ///
+  /// The brackets of `zeros[8]()` sit in expression position, where the
+  /// parser cannot know a type was meant, so they arrive as an `expr` that
+  /// `explicit_type_argument` maps back to a type when the declaration says
+  /// the parameter is one. The brackets of `b.take[int64](5)` sit in a
+  /// method-name suffix, which the grammar spells as a `type_arg_list`
+  /// outright, so those arrive already parsed as a `type_expr`. Exactly one
+  /// of the two is set; a value parameter can only be answered by the first,
+  /// since a type never folds to a constant.
+  struct explicit_generic_arg {
+    const ast::expr *value = nullptr;    ///< Written in expression position.
+    const ast::type_expr *type = nullptr; ///< Written in type position.
+    source_span span;                    ///< Span of the argument itself.
+  };
+
+  /// A call's explicit compile-time arguments, in written order. Empty when
+  /// the call names its callee bare and every parameter has to be read off
+  /// the arguments instead.
+  using explicit_generic_args = std::vector<explicit_generic_arg>;
 
   /// A narrowing obligation raised by one call argument, held back until the
   /// whole argument list has been seen — see `check_call_args_against`.
@@ -4446,9 +4512,21 @@ private:
     if (fixed_type_params != nullptr && !fixed_type_params->empty()) {
       type_params_.push_back(*fixed_type_params);
     }
+    // Recorded against the *caller's* file, captured before `file_id_` is
+    // swapped to the declaring one above — the whole point of the note is to
+    // name a line the user actually wrote.
+    auto frame = instantiation_frame{.call_span = call.span,
+                                     .call_file = saved_file_id,
+                                     .instance_name = name};
+    if (const auto solved = expected_solved_params_.find(&call);
+        solved != expected_solved_params_.end()) {
+      frame.context_solutions = solved->second;
+    }
+    instantiation_sites_.push_back(std::move(frame));
     ++instantiation_depth_;
     check_function(*instance, /*at_module_scope=*/false);
     --instantiation_depth_;
+    instantiation_sites_.pop_back();
     if (fixed_type_params != nullptr && !fixed_type_params->empty()) {
       pop_type_params();
     }
@@ -4482,7 +4560,8 @@ private:
       if (index.object == nullptr || index.index == nullptr) {
         return nullptr;
       }
-      args_out.push_back(index.index.get());
+      args_out.push_back(explicit_generic_arg{.value = index.index.get(),
+                                              .span = index.index->span});
       return index.object.get();
     }
     if (callee.kind == ast::node_kind::call_expr) {
@@ -4494,7 +4573,8 @@ private:
         if (arg.value == nullptr || arg.name.has_value()) {
           return nullptr; // a named bracket argument isn't this shape
         }
-        args_out.push_back(arg.value.get());
+        args_out.push_back(explicit_generic_arg{.value = arg.value.get(),
+                                                .span = arg.value->span});
       }
       return applied.callee.get();
     }
@@ -4506,26 +4586,113 @@ private:
   /// `resolve_type` on a synthesized `named_type` rather than resolved by
   /// hand, so an explicit argument reaches exactly the same builtins, user
   /// types, imports, and in-scope parameters an annotation would.
-  auto explicit_type_argument(const ast::expr &arg) -> std::optional<type_id> {
-    auto named = ast::named_type{};
-    named.span = arg.span;
-    switch (arg.kind) {
-    case ast::node_kind::ident_expr:
-      named.path = {dynamic_cast<const ast::ident_expr &>(arg).name};
-      break;
-    case ast::node_kind::module_path_expr:
-      named.path = dynamic_cast<const ast::module_path_expr &>(arg).segments;
-      break;
-    default:
+  auto explicit_type_argument(const explicit_generic_arg &arg)
+      -> std::optional<type_id> {
+    // Already a type on the way in (`b.take[int64](5)`): nothing to
+    // reinterpret, just resolve it.
+    if (arg.type != nullptr) {
+      const auto resolved = resolve_type(*arg.type, current_resolve_ctx());
+      return types_.is_unknown(resolved) || resolved == k_error_type
+                 ? std::nullopt
+                 : std::optional{resolved};
+    }
+    if (arg.value == nullptr) {
       return std::nullopt;
     }
-    if (named.path.empty()) {
+    auto named = expr_as_named_type(*arg.value);
+    if (named == nullptr) {
       return std::nullopt;
     }
-    const auto resolved = resolve_type(named, current_resolve_ctx());
+    const auto &type = *named;
+    synthesized_types_.push_back(std::move(named));
+    const auto resolved = resolve_type(type, current_resolve_ctx());
     return types_.is_unknown(resolved) || resolved == k_error_type
                ? std::nullopt
                : std::optional{resolved};
+  }
+
+  /// Rewrites an expression that was *meant* as a type into the `named_type`
+  /// the parser would have built had it been in type position — `int32` from
+  /// an `ident_expr`, `std.list` from a `module_path_expr`, and
+  /// `list[int32]` / `map[str, int32]` from the index and application shapes
+  /// `parse_postfix` gives one and several bracket arguments.
+  ///
+  /// The grammar already sanctions all of these: `type_arg` admits any
+  /// `type_expr` and `named_type` admits a nested `"[" type_arg_list "]"`, so
+  /// `list[int32]` is one well-formed type argument by the grammar's own
+  /// rules. Only the checker's expression-to-type mapping was narrower, which
+  /// is what made nested generic type arguments a defect rather than a
+  /// missing feature (§3.2).
+  ///
+  /// Hands back ownership rather than a borrowed pointer, so a nested result
+  /// can be parked straight into its parent's `type_args` and the caller
+  /// decides what keeps the outermost node alive.
+  auto expr_as_named_type(const ast::expr &arg) -> ast::ptr<ast::named_type> {
+    auto named = ast::make<ast::named_type>();
+    named->span = arg.span;
+
+    // Reads one bracket argument into `named`'s own type arguments, failing
+    // the whole rewrite if it isn't itself expressible as a type.
+    const auto take_arg = [&](const ast::expr &inner) -> bool {
+      auto nested = expr_as_named_type(inner);
+      if (nested == nullptr) {
+        return false;
+      }
+      auto slot = ast::type_arg{};
+      slot.span = inner.span;
+      slot.value = std::move(nested);
+      named->type_args.push_back(std::move(slot));
+      return true;
+    };
+
+    switch (arg.kind) {
+    case ast::node_kind::ident_expr:
+      named->path = {dynamic_cast<const ast::ident_expr &>(arg).name};
+      break;
+    case ast::node_kind::module_path_expr:
+      named->path = dynamic_cast<const ast::module_path_expr &>(arg).segments;
+      break;
+    case ast::node_kind::index_expr: {
+      // `list[int32]` — one bracket argument, which the parser spells as an
+      // index because in expression position that is all it could be.
+      const auto &index = dynamic_cast<const ast::index_expr &>(arg);
+      if (index.object == nullptr || index.index == nullptr) {
+        return nullptr;
+      }
+      auto base = expr_as_named_type(*index.object);
+      if (base == nullptr || !base->type_args.empty()) {
+        return nullptr;
+      }
+      named->path = base->path;
+      if (!take_arg(*index.index)) {
+        return nullptr;
+      }
+      break;
+    }
+    case ast::node_kind::call_expr: {
+      // `map[str, int32]` — several bracket arguments, which the parser
+      // spells as an application instead.
+      const auto &applied = dynamic_cast<const ast::call_expr &>(arg);
+      if (applied.callee == nullptr) {
+        return nullptr;
+      }
+      auto base = expr_as_named_type(*applied.callee);
+      if (base == nullptr || !base->type_args.empty()) {
+        return nullptr;
+      }
+      named->path = base->path;
+      for (const auto &inner : applied.args) {
+        if (inner.value == nullptr || inner.name.has_value() ||
+            !take_arg(*inner.value)) {
+          return nullptr;
+        }
+      }
+      break;
+    }
+    default:
+      return nullptr;
+    }
+    return named->path.empty() ? nullptr : std::move(named);
   }
 
   /// Folds one explicit *value* argument down to the constant it denotes.
@@ -4585,7 +4752,7 @@ private:
   auto solve_generic_params(
       const ast::call_expr &call, const ast::func_decl &decl,
       const module_members *owner, const value_bindings &solved,
-      const std::unordered_map<std::string, type_id> &type_bindings,
+      std::unordered_map<std::string, type_id> &type_bindings,
       const explicit_generic_args &explicit_args)
       -> std::optional<generic_solution> {
     if (explicit_args.size() > decl.type_params.size()) {
@@ -4607,7 +4774,7 @@ private:
     for (size_t i = 0; i < decl.type_params.size(); ++i) {
       const auto &param = decl.type_params[i];
       const auto *explicit_arg =
-          i < explicit_args.size() ? explicit_args[i] : nullptr;
+          i < explicit_args.size() ? &explicit_args[i] : nullptr;
 
       if (param.is_value_param) {
         const auto underlying = value_param_underlying(param, owner);
@@ -4616,7 +4783,13 @@ private:
           return std::nullopt;
         }
         if (explicit_arg != nullptr) {
-          const auto constant = explicit_value_argument(*explicit_arg);
+          // Written in type position (`.m[...]`), where the grammar parses a
+          // `type_arg_list` — a type never folds to a constant, so this
+          // parameter simply cannot be answered in that spelling.
+          const auto constant =
+              explicit_arg->value != nullptr
+                  ? explicit_value_argument(*explicit_arg->value)
+                  : std::optional<int64_t>{};
           if (!constant.has_value()) {
             error_with_help(
                 explicit_arg->span,
@@ -4669,6 +4842,31 @@ private:
                           decl.name, param.name));
           return std::nullopt;
         }
+        // The brackets win over the arguments — they are the more explicit
+        // of the two — but only after saying so when the two disagree. The
+        // binding is written back so the caller's own substitution into the
+        // declared return type sees the type the call was *actually*
+        // instantiated at, rather than the one unification happened to find.
+        if (const auto found = type_bindings.find(param.name);
+            found != type_bindings.end() && found->second != *resolved &&
+            !types_.is_unknown(found->second) &&
+            !mentions_abstract_type(found->second)) {
+          error_with_help(
+              explicit_arg->span,
+              std::format("`{}`'s `{}` is given as `{}` in brackets, but the "
+                          "arguments make it `{}`",
+                          decl.name, param.name, types_.display(*resolved),
+                          types_.display(found->second)),
+              std::format("this says `{}` is `{}`", param.name,
+                          types_.display(*resolved)),
+              std::format("A compile-time argument in brackets pins `{}` "
+                          "down, so the arguments have to agree with it. "
+                          "Either pass arguments that are `{}`, or drop the "
+                          "brackets and let the arguments decide.",
+                          param.name, types_.display(*resolved)));
+          return std::nullopt;
+        }
+        type_bindings[param.name] = *resolved;
         bind_generic_type(solution, param, *resolved);
         continue;
       }
@@ -4725,13 +4923,11 @@ private:
   auto solve_from_expected_type(
       const ast::call_expr &call, const ast::func_decl &decl,
       const module_members *owner,
-      std::unordered_map<std::string, type_id> &bindings) -> void {
+      std::unordered_map<std::string, type_id> &bindings,
+      const explicit_generic_args &explicit_args) -> void {
     if (decl.return_type == nullptr) {
       return;
     }
-    const auto hint = call_argument_mappings_.empty() ? k_unknown_type
-                                                      : k_unknown_type;
-    (void)hint;
     const auto found = call_expected_types_.find(&call);
     if (found == call_expected_types_.end()) {
       return;
@@ -4740,17 +4936,32 @@ private:
     if (types_.is_unknown(expected) || expected == k_error_type) {
       return;
     }
-    // Resolved in the *template's* terms, so `-> C` comes back as the
-    // abstract `C` that `unify_rigid` can bind rather than as `unknown`.
-    const auto declared =
-        resolve_type(*decl.return_type, resolve_ctx{.module = owner,
-                                                    .param_bindings = nullptr,
-                                                    .use_type_param_stack =
-                                                        true,
-                                                    .quiet = true,
-                                                    .existential_allowed =
-                                                        true});
-    unify_rigid(declared, expected, bindings);
+    // Resolved in the *template's* own terms — `signature_return_type` binds
+    // each type parameter to its abstract `type_param`, which is exactly the
+    // form `unify_rigid` knows how to solve, so `-> C` comes back as a
+    // bindable `C` rather than as `unknown`.
+    //
+    // Solved aside and merged in, rather than unified straight into
+    // `bindings`, so a parameter the brackets already answer never picks up
+    // a competing answer from context. Without that, `solve_generic_params`
+    // would see a hint-derived binding where it expects an argument-derived
+    // one and report a conflict the user's arguments never had — the hint is
+    // a fallback, and a fallback that can raise an error is not one.
+    auto from_expected = std::unordered_map<std::string, type_id>{};
+    unify_rigid(signature_return_type(decl, owner), expected, from_expected);
+    for (size_t i = 0; i < decl.type_params.size(); ++i) {
+      const auto &name = decl.type_params[i].name;
+      if (name.empty() || i < explicit_args.size() || bindings.contains(name)) {
+        continue;
+      }
+      if (const auto solved = from_expected.find(name);
+          solved != from_expected.end()) {
+        bindings.emplace(name, solved->second);
+        expected_solved_params_[&call].push_back(std::format(
+            "`{}` was solved to `{}` from the type expected here",
+            name, types_.display(solved->second)));
+      }
+    }
   }
 
   /// Monomorphizes `decl` for this call, returning the call's result type
@@ -4767,6 +4978,7 @@ private:
       const explicit_generic_args &explicit_args) -> std::optional<type_id> {
     auto type_bindings = std::unordered_map<std::string, type_id>{};
     solve_from_argument_types(call, params, type_bindings);
+    solve_from_expected_type(call, decl, owner, type_bindings, explicit_args);
 
     const auto solution = solve_generic_params(call, decl, owner, solved,
                                                type_bindings, explicit_args);
@@ -4849,7 +5061,10 @@ private:
         std::format("`{}` is compiled once per concrete type, so every type "
                     "parameter has to be pinned down. Either give it outright "
                     "in brackets (`{}[int32](...)`), or annotate the value "
-                    "that should determine `{}`.",
+                    "that should determine `{}` — an annotated `let`, a "
+                    "declared return type, or any other context with a known "
+                    "type is used to solve a parameter the arguments leave "
+                    "open.",
                     decl.name, decl.name, param.name));
   }
 
@@ -4925,15 +5140,24 @@ private:
   /// a `def at[n: usize](self, i: index[n])` is unified out of the receiver's
   /// own type and arrives as an interned constant, which
   /// `solve_generic_params` reads back.
+  ///
+  /// `bindings` is taken by mutable reference because the expected-type
+  /// solution (§2) is folded into it here: the callers substitute the same
+  /// map into the declared return type afterward, and a `C` solved only from
+  /// context has to reach that substitution too or the call would come back
+  /// typed as the abstract parameter.
   auto instantiate_hk_method(
       const ast::call_expr &call, const method_entry &method,
       std::string_view target_type_name,
-      const std::unordered_map<std::string, type_id> &bindings,
+      std::unordered_map<std::string, type_id> &bindings,
+      const explicit_generic_args &explicit_args = {},
       const value_bindings &solved = {}, type_id self_type = k_unknown_type)
       -> const ast::func_decl * {
     const auto &decl = *method.decl;
-    const auto solution = solve_generic_params(
-        call, decl, method.owner, solved, bindings, explicit_generic_args{});
+    solve_from_expected_type(call, decl, method.owner, bindings,
+                             explicit_args);
+    const auto solution = solve_generic_params(call, decl, method.owner, solved,
+                                               bindings, explicit_args);
     if (!solution.has_value()) {
       return nullptr;
     }
@@ -7135,11 +7359,10 @@ private:
   /// Returns `nullopt` when the method isn't a template, or when the
   /// enclosing declaration is itself one — inside a template the arguments
   /// are still symbols and there is nothing concrete to instantiate against.
-  auto check_generic_instance_method_call(const ast::call_expr &call,
-                                          const method_entry &method,
-                                          std::string_view target_type_name,
-                                          const ast::expr &receiver,
-                                          type_id receiver_type)
+  auto check_generic_instance_method_call(
+      const ast::call_expr &call, const method_entry &method,
+      std::string_view target_type_name, const ast::expr &receiver,
+      type_id receiver_type, const explicit_generic_args &explicit_args = {})
       -> std::optional<type_id> {
     if (!is_generic_template(*method.decl) || in_const_generic_template_ ||
         in_type_generic_template_) {
@@ -7162,8 +7385,9 @@ private:
     auto bindings = std::unordered_map<std::string, type_id>{};
     solve_from_argument_types(call, params, bindings);
 
-    const auto *instance = instantiate_hk_method(
-        call, method, target_type_name, bindings, solved, receiver_type);
+    const auto *instance =
+        instantiate_hk_method(call, method, target_type_name, bindings,
+                              explicit_args, solved, receiver_type);
     if (instance == nullptr) {
       return std::nullopt;
     }
@@ -7215,7 +7439,8 @@ private:
   auto check_receiver_call(const ast::call_expr &call,
                            const method_entry &method,
                            std::string_view target_type_name,
-                           const ast::expr &receiver, type_id receiver_type)
+                           const ast::expr &receiver, type_id receiver_type,
+                           const explicit_generic_args &explicit_args = {})
       -> type_id {
     const auto params = signature_params(*method.decl, method.owner, false);
     if (params.empty()) {
@@ -7260,8 +7485,8 @@ private:
     // backends see only concrete types. A non-generic method resolves
     // directly, exactly like a `self`-taking method does.
     if (!method.decl->type_params.empty()) {
-      if (const auto *instance =
-              instantiate_hk_method(call, method, target_type_name, bindings)) {
+      if (const auto *instance = instantiate_hk_method(
+              call, method, target_type_name, bindings, explicit_args)) {
         resolved_callees_[&call] =
             resolved_callee{.decl = instance,
                             .owner_module = method.owner->module_name,
@@ -7284,6 +7509,48 @@ private:
   /// `deriving`/prelude-trait-derived method, a callable struct field, or a
   /// builtin-type method — reporting an unknown-method error only for
   /// struct/sum/opaque objects, since builtin methods are best-effort.
+  /// The compile-time arguments a method call wrote after the method name
+  /// (`b.take[int64](5)`). Unlike the expression-position brackets of
+  /// `zeros[8]()`, these are parsed as types outright — the grammar spells
+  /// the suffix as a `type_arg_list` — so they need no reinterpretation.
+  auto method_explicit_generic_args(const ast::field_expr &field)
+      -> explicit_generic_args {
+    auto args = explicit_generic_args{};
+    args.reserve(field.generic_args.size());
+    for (const auto &arg : field.generic_args) {
+      if (arg != nullptr) {
+        args.push_back(
+            explicit_generic_arg{.type = arg.get(), .span = arg->span});
+      }
+    }
+    return args;
+  }
+
+  /// Rejects brackets on a method that has no compile-time parameters to
+  /// fill (§3.3). The shape can't mean indexing — that would index the
+  /// call's *result*, which is written `m(...)[i]` — so there is nothing
+  /// sensible to fall back to, and silently ignoring it is the bug this
+  /// whole section exists to fix.
+  auto check_method_accepts_generic_args(
+      const ast::field_expr &field, const ast::func_decl &decl,
+      const explicit_generic_args &explicit_args) -> bool {
+    if (explicit_args.empty() || !decl.type_params.empty()) {
+      return true;
+    }
+    error_with_help(
+        field.span,
+        std::format("`{}` takes no compile-time parameters, and this call "
+                    "gives it {} in brackets",
+                    decl.name, explicit_args.size()),
+        "no compile-time parameters to fill",
+        std::format(
+            "`{}` is declared without a `[...]` parameter list, so there is "
+            "nothing for these brackets to name. Drop them. (To index what "
+            "the call returns, put the brackets after it: `.{}( ... )[i]`.)",
+            decl.name, decl.name));
+    return false;
+  }
+
   auto infer_method_call(const ast::call_expr &call,
                          const ast::field_expr &field) -> type_id {
     if (field.object == nullptr) {
@@ -7408,6 +7675,10 @@ private:
 
     const auto object = strip_refs(infer_expr(*field.object, k_unknown_type));
     const auto &entry = types_.entry(object);
+    // `b.take[int64](5)`: the grammar's `"." IDENT "[" type_arg_list "]"`
+    // suffix, which the parser has always built and the checker used to
+    // throw away (§3 — a silently wrong answer, not a missing feature).
+    const auto explicit_args = method_explicit_generic_args(field);
 
     switch (entry.kind) {
     case type_kind::struct_kind:
@@ -7415,12 +7686,18 @@ private:
     case type_kind::opaque_kind: {
       if (const auto *method = find_method(entry, field.field_name)) {
         record_expr_type(field, fn_type_of(*method->decl, method->owner));
+        if (!check_method_accepts_generic_args(field, *method->decl,
+                                               explicit_args)) {
+          infer_call_args_loosely(call);
+          return k_error_type;
+        }
         if (receiver_fills_first_param(*method, entry)) {
           return check_receiver_call(call, *method, entry.name, *field.object,
-                                     object);
+                                     object, explicit_args);
         }
         if (const auto instantiated = check_generic_instance_method_call(
-                call, *method, entry.name, *field.object, object)) {
+                call, *method, entry.name, *field.object, object,
+                explicit_args)) {
           return *instantiated;
         }
         record_instance_method_callee(call, *method, entry.name, *field.object);
@@ -7517,9 +7794,14 @@ private:
         if (const auto *method =
                 find_builtin_impl_method(entry.name, field.field_name)) {
           record_expr_type(field, fn_type_of(*method->decl, method->owner));
+          if (!check_method_accepts_generic_args(field, *method->decl,
+                                                 explicit_args)) {
+            infer_call_args_loosely(call);
+            return k_error_type;
+          }
           if (receiver_fills_first_param(*method, entry)) {
             return check_receiver_call(call, *method, entry.name, *field.object,
-                                       object);
+                                       object, explicit_args);
           }
           record_instance_method_callee(call, *method, entry.name,
                                         *field.object);
@@ -7598,6 +7880,94 @@ private:
   /// immediately followed by `(` always parses as `field_expr` (see
   /// `parser::parse_ident_or_path_expr`), with `object` holding whatever
   /// dotted prefix, if any, preceded the call-adjacent final segment.
+  /// Resolves `C.member(...)` once `C` has been substituted for the concrete
+  /// `target` this instance solved it to (§5.2/§5.3).
+  ///
+  /// The instance name comes from the solved type's own interned name, so
+  /// `C.from_iter` inside `collect[list_iter[int32], list[int32]]` names
+  /// `list[int32]::from_iter`. That keeps lowering's naming scheme untouched:
+  /// it sees an ordinary impl member on a concrete type and never learns a
+  /// type parameter was involved.
+  ///
+  /// `nullopt` when `target` has no such static member, leaving the caller to
+  /// fall through to its remaining cases (and, ultimately, to an ordinary
+  /// unknown-member diagnostic carrying the §5.4 instantiation note).
+  auto resolve_type_param_static(const ast::call_expr &call,
+                                 const ast::field_expr &field, type_id target,
+                                 const std::string &fn_name)
+      -> std::optional<type_id> {
+    const auto &entry = types_.entry(target);
+    const auto *method = find_method(entry, fn_name);
+    if (method == nullptr) {
+      return std::nullopt;
+    }
+    // A `self`-taking method needs a receiver, and a qualified path gives it
+    // none — that is an ordinary method call written wrongly, not this.
+    if (!method->decl->params.empty() &&
+        param_name_of(method->decl->params.front()) == "self") {
+      return std::nullopt;
+    }
+
+    record_expr_type(field, fn_type_of(*method->decl, method->owner));
+    const auto target_name = types_.display(target);
+    const auto params = signature_params(*method->decl, method->owner,
+                                         /*skip_self=*/false);
+    auto solved = value_bindings{};
+    check_call_args_against(
+        call, params, method->decl->name,
+        source_location{.file_id = file_id_, .span = method->decl->span},
+        &solved);
+    check_call_preconditions(call, *method->decl, params);
+
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    solve_from_argument_types(call, params, bindings);
+
+    if (method->decl->type_params.empty()) {
+      resolved_callees_[&call] =
+          resolved_callee{.decl = method->decl,
+                          .owner_module = method->owner->module_name,
+                          .impl_target_type = target_name};
+      return substitute_solved(
+          signature_return_type(*method->decl, method->owner), bindings);
+    }
+    const auto *instance =
+        instantiate_hk_method(call, *method, target_name, bindings,
+                              /*explicit_args=*/{}, solved);
+    if (instance == nullptr) {
+      return k_error_type;
+    }
+    resolved_callees_[&call] =
+        resolved_callee{.decl = instance,
+                        .owner_module = method->owner->module_name,
+                        .impl_target_type = ""};
+    return substitute_solved(
+        signature_return_type(*method->decl, method->owner), bindings);
+  }
+
+  /// Explains a `C.member(...)` whose solved type has no such static member.
+  ///
+  /// This is the *common* failure of an inferred, unbounded generic like
+  /// `collect` (§6): `C` is decoration-bounded at most, so an unsuitable one
+  /// isn't caught at the call site and surfaces here instead. The message
+  /// therefore has to carry its own context — which parameter, what it was
+  /// solved to — because the instantiation notes supply the rest.
+  auto report_missing_type_param_static(const ast::field_expr &field,
+                                        const std::string &param_name,
+                                        type_id target,
+                                        const std::string &fn_name) -> void {
+    error_with_help(
+        field.span,
+        std::format("no static `{}` on type `{}`", fn_name,
+                    types_.display(target)),
+        std::format("`{}` was solved to `{}`, which provides no `{}`",
+                    param_name, types_.display(target), fn_name),
+        std::format("`{}` here stands for whatever type this instance solved "
+                    "it to, and the call needs that type to provide a static "
+                    "`{}`. Either add one in an `extend {}:` block, or use a "
+                    "type for `{}` that already has one.",
+                    param_name, fn_name, types_.display(target), param_name));
+  }
+
   auto infer_qualified_call(const ast::call_expr &call,
                             const ast::field_expr &field)
       -> std::optional<type_id> {
@@ -7716,6 +8086,35 @@ private:
                 signature_return_type(*method->decl, method->owner), bindings);
           }
         }
+      }
+
+      // A single-segment root naming a *type parameter* (`C.from_iter(it)`
+      // inside `def collect[I, C](self: I) -> C`). The parameter is
+      // substituted for whatever this instance solved it to, and the member
+      // is then resolved against that concrete type — dispatch is static and
+      // monomorphic, so nothing here needs the trait to be object-safe
+      // (§5.2).
+      if (const auto bound = lookup_type_param(root.front())) {
+        // Still a template: `C` is an abstract parameter, nothing is bound,
+        // and there is no type to look a member up on. The call types as
+        // `unknown` and is checked for real in each instance — the same
+        // discipline `find_or_check_generic_instance` applies to the rest of
+        // a generic body.
+        if (mentions_abstract_type(*bound) || types_.is_unknown(*bound)) {
+          infer_call_args_loosely(call);
+          return k_unknown_type;
+        }
+        if (const auto result =
+                resolve_type_param_static(call, field, *bound, fn_name)) {
+          return result;
+        }
+        // `C` is bound, so this path is definitely a type-parameter static
+        // dispatch — it just doesn't resolve. Diagnosed here rather than
+        // left to fall through, which would report the parameter itself as
+        // an undefined name and say nothing about the type it stands for.
+        report_missing_type_param_static(field, root.front(), *bound, fn_name);
+        infer_call_args_loosely(call);
+        return k_error_type;
       }
 
       // A single-segment root naming a type (`io_error.from(...)`) —
@@ -11665,7 +12064,7 @@ private:
               decl.trait_type->span,
               std::format("`{}` is a type, not a trait", trait_name),
               "impl requires a trait before `for`",
-              std::format("Write `impl {}:` to add inherent methods to a "
+              std::format("Write `extend {}:` to add inherent methods to a "
                           "type instead.",
                           trait_name));
         }

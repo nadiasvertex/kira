@@ -1,0 +1,23 @@
+module sample
+
+# The behavior change G2 pins down: these brackets used to be parsed and then
+# thrown away, so every case here compiled silently and wrongly.
+
+type point = { x: float64, y: float64 }
+
+extend point:
+    def echo[T](self, v: T) -> T:
+        return v
+    def plain(self) -> float64:
+        return self.x
+
+# The brackets say `int64`, the argument says `int32`. Explicit wins, but the
+# disagreement is reported rather than resolved behind the user's back.
+def brackets_disagree_with_argument(p: point) -> int32:
+    let n: int32 = 5
+    return p.echo[int64](n)
+
+# §3.3: a method with no compile-time parameters has nothing for brackets to
+# name, and this shape can't mean indexing the result either.
+def brackets_on_non_generic_method(p: point) -> float64:
+    return p.plain[int32]()

@@ -1,0 +1,40 @@
+module codegen_stress.type_param_static_dispatch
+
+# A static member reached through a *type parameter*, which is only solvable
+# because the type parameter itself is solved from the type the call site
+# expects — see `spec/generic-inference-design.md` §2 (G1) and §5 (G3).
+#
+# Neither backend learns that a type parameter was involved: `C.make` is
+# named after the type `C` was solved to, so lowering sees an ordinary impl
+# member on a concrete type, exactly as it does for any other monomorphized
+# instance (`semantic::checker::resolve_type_param_static`).
+
+type counter = { n: int32 }
+
+extend counter:
+    def make(v: int32) -> counter:
+        return counter { n: v * 10 }
+
+type doubler = { n: int32 }
+
+extend doubler:
+    def make(v: int32) -> doubler:
+        return doubler { n: v + 100 }
+
+# `C` appears nowhere but the return type, so nothing about the arguments
+# says what it is. Each call's annotation does.
+def build[C](v: int32) -> C:
+    return C.make(v)
+
+# A second template over the same ground, to pin that the instance cache
+# keys on the solution and not on the template alone.
+def build_twice[C](v: int32) -> C:
+    return C.make(v + 1)
+
+def main() -> int32:
+    let a: counter = build(4)       # 40
+    let b: doubler = build(4)       # 104
+    let c: counter = build_twice(4) # 50
+
+    # 40 + 104 + 50 = 194
+    return a.n + b.n + c.n

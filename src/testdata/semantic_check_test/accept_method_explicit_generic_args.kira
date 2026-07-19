@@ -1,0 +1,25 @@
+module sample
+
+# G2 (`spec/generic-inference-design.md` §3): brackets on a method call are
+# honored rather than silently discarded, and a nested generic is expressible
+# as an explicit type argument.
+
+type point = { x: float64, y: float64 }
+
+extend point:
+    def echo[T](self, v: T) -> T:
+        return v
+
+def nothing[T]() -> option[T]:
+    return none
+
+# The brackets agree with the argument, which is the whole point of being
+# allowed to write them.
+def method_brackets_honored(p: point) -> int32:
+    let n: int32 = 5
+    return p.echo[int32](n)
+
+# §3.2: `option[int32]` is one well-formed type argument. Before this it was
+# inexpressible — only a bare name resolved.
+def nested_generic_type_argument() -> option[option[int32]]:
+    return nothing[option[int32]]()
