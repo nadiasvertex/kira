@@ -1,0 +1,41 @@
+module codegen_stress.lambda_declared_result
+
+# Lambda spellings the grammar sanctions (`spec/kira-grammar.ebnf`,
+# `lambda_expr` / `lambda_params`). Only the `pure`-prefixed form used to
+# parse: `pure` and `move` were routed straight to the lambda parser, while
+# an unprefixed `(` reached the tuple parser and an `ident ->` head was not
+# recognized as a lambda head at all.
+#
+# Both backends see ordinary closures here -- the fix is entirely in how the
+# parser decides what it is looking at, so nothing downstream changed.
+
+def apply1(f: fn(int32) -> int32, a: int32) -> int32:
+    return f(a)
+
+def apply2(f: fn(int32, int32) -> int32, a: int32, b: int32) -> int32:
+    return f(a, b)
+
+def main() -> int32:
+    # Bare single parameter, no declared result.
+    let a = apply1(x => x + 1, 10)                        # 11
+
+    # Prefixed, fully annotated -- the form that already worked.
+    let b = apply1(pure (x: int32) -> int32 => x * 2, 10)  # 20
+
+    # Same, without the prefix: the `)` is followed by `->`.
+    let c = apply1((x: int32) -> int32 => x * 3, 10)       # 30
+
+    # Declared result on the single-ident head, with no parens at all.
+    let d = apply1(x -> int32 => x + 5, 10)                # 15
+
+    # Two parameters, which must not parse as a tuple.
+    let e = apply2((x, y) => x + y, 3, 4)                  # 7
+
+    # One parameter that happens to be parenthesized.
+    let f = apply1((x) => x - 1, 10)                       # 9
+
+    # Grouping still groups: this is not a lambda head.
+    let g = (3 + 4) * 2                                    # 14
+
+    # 11 + 20 + 30 + 15 + 7 + 9 + 14 = 106
+    return a + b + c + d + e + f + g

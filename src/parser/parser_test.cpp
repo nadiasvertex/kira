@@ -1623,6 +1623,52 @@ auto test_parser_accepts_nested_functor_instantiation() -> void {
          "expected no alias for an un-aliased instantiation");
 }
 
+auto test_parser_accepts_lambda_result_and_paren_params() -> void {
+  // Every one of these but the `pure`-prefixed form used to be a syntax
+  // error: an unprefixed `(` reached the tuple parser, and an `ident ->`
+  // head was never recognized as a lambda at all. Only `pure`/`move` got
+  // routed to the lambda parser, which had handled both shapes all along.
+  auto parsed = parse_source("module sample\n"
+                             "def run():\n"
+                             "  let a = x => x + 1\n"
+                             "  let b = pure (x: int32) -> int32 => x * 2\n"
+                             "  let c = (x: int32) -> int32 => x * 3\n"
+                             "  let d = x -> int32 => x + 5\n"
+                             "  let e = (x, y) => x + y\n"
+                             "  let g = (3 + 4) * 2\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *run_func = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected run function declaration");
+
+  const auto lambda_at = [&](size_t index) -> kira::ast::lambda_expr * {
+    auto *let_stmt = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[index].get(), kira::ast::node_kind::let_stmt,
+        "expected a let statement");
+    return expect_node<kira::ast::lambda_expr>(
+        let_stmt->initializer.get(), kira::ast::node_kind::lambda_expr,
+        "expected the initializer to parse as a lambda");
+  };
+
+  // A declared result type has to survive, not merely parse: it is what the
+  // checker propagates into the body as the expected type.
+  expect(lambda_at(2)->return_type != nullptr,
+         "expected `(x: int32) -> int32 =>` to keep its declared result");
+  expect(lambda_at(2)->params.size() == 1, "expected one parenthesized param");
+  expect(lambda_at(3)->return_type != nullptr,
+         "expected `x -> int32 =>` to keep its declared result");
+  expect(lambda_at(4)->params.size() == 2,
+         "expected `(x, y) =>` to parse as two params, not a tuple");
+
+  // The disambiguation must not swallow ordinary grouping.
+  auto *group_let = expect_node<kira::ast::let_stmt>(
+      run_func->body_stmts[5].get(), kira::ast::node_kind::let_stmt,
+      "expected a let statement");
+  expect(group_let->initializer->kind != kira::ast::node_kind::lambda_expr,
+         "expected `(3 + 4) * 2` to stay a grouped expression");
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -1631,7 +1677,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 32> tests = {{
+  const std::array<named_test, 33> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "doc_comments", .fn = test_parser_captures_doc_comments},
@@ -1690,6 +1736,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_functor_instantiation_use},
       {.name = "nested_functor_instantiation",
        .fn = test_parser_accepts_nested_functor_instantiation},
+      {.name = "lambda_result_and_paren_params",
+       .fn = test_parser_accepts_lambda_result_and_paren_params},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

@@ -46,6 +46,13 @@ def from_match_arm(n: int32) -> option[int32]:
         0 => nothing()
         _ => none
 
+# A lambda's declared result type. This row of §2.3's table could not be
+# written down until lambdas with declared results parsed at all -- the
+# checker threaded the expected type correctly the whole time.
+def from_lambda_result() -> option[int32]:
+    let f = () -> option[int32] => nothing()
+    return f()
+
 # The hint is a *fallback*, never a constraint: `T` is already pinned to
 # `int32` by the argument, so the `option[int32]` context adds nothing and
 # takes nothing away.

@@ -3700,8 +3700,12 @@ auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
   case token_kind::at:
     return parse_variant_expr();
 
-  // Parenthesized expr, tuple, or grouped.
+  // Parenthesized expr, tuple, or grouped -- unless the parens turn out to
+  // be a lambda's parameter list, which only what follows the `)` reveals.
   case token_kind::lparen:
+    if (at_lambda_param_list()) {
+      return parse_lambda_expr();
+    }
     return parse_paren_expr();
 
   // Array literal or fill.
@@ -4034,8 +4038,11 @@ auto parser::parse_string_literal_expr() -> ast::ptr<ast::expr> {
 }
 
 auto parser::parse_ident_or_path_expr() -> ast::ptr<ast::expr> {
-  // Check if this looks like a lambda: `ident => ...`
-  if (allow_lambda_expr_ && peek_at(1).is(token_kind::fat_arrow)) {
+  // Check if this looks like a lambda: `ident => ...`, or the same with a
+  // declared result, `ident -> type => ...`. An `->` here can only be a
+  // lambda's return type; every other use of it sits in type position.
+  if (allow_lambda_expr_ && (peek_at(1).is(token_kind::fat_arrow) ||
+                             peek_at(1).is(token_kind::arrow))) {
     return parse_lambda_expr();
   }
 
@@ -4290,6 +4297,47 @@ auto parser::parse_brace_expr() -> ast::ptr<ast::expr> {
   expect(token_kind::rbrace);
   s->span.extend_to(previous_span());
   return s;
+}
+
+auto parser::at_lambda_param_list() const noexcept -> bool {
+  if (!allow_lambda_expr_ || !at(token_kind::lparen)) {
+    return false;
+  }
+
+  // A `(` opens a lambda head only if the `)` closing it is followed by `=>`
+  // or by a `->` return type. Both are decisive: `->` occurs nowhere in
+  // expression position but a lambda's return type, and `=>` after a closed
+  // group is otherwise a syntax error. So one scan to the matching `)`
+  // settles the tuple-versus-lambda question without backtracking.
+  //
+  // Depth counts every bracket flavor, not just parens, so a parenthesized
+  // default or a nested call inside the list cannot end the scan early.
+  auto depth = 0;
+  for (uint32_t offset = 0; !peek_at(offset).is(token_kind::eof); ++offset) {
+    switch (peek_at(offset).kind) {
+    case token_kind::lparen:
+    case token_kind::lbracket:
+    case token_kind::lbrace:
+      ++depth;
+      break;
+
+    case token_kind::rparen:
+    case token_kind::rbracket:
+    case token_kind::rbrace:
+      --depth;
+      if (depth == 0) {
+        return peek_at(offset + 1).is(token_kind::fat_arrow) ||
+               peek_at(offset + 1).is(token_kind::arrow);
+      }
+      break;
+
+    default:
+      break;
+    }
+  }
+
+  // Unbalanced: let the ordinary paren path report it.
+  return false;
 }
 
 auto parser::parse_lambda_expr() -> ast::ptr<ast::expr> {

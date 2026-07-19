@@ -795,6 +795,9 @@ private:
   [[nodiscard]] auto parse_brace_expr() -> ast::ptr<ast::expr>;
   /// Parses lambda expressions.
   [[nodiscard]] auto parse_lambda_expr() -> ast::ptr<ast::expr>;
+  /// Returns whether the current `(` opens a lambda parameter list rather
+  /// than a tuple or a grouped expression.
+  [[nodiscard]] auto at_lambda_param_list() const noexcept -> bool;
   /// Parses `match` in expression position.
   [[nodiscard]] auto parse_match_expr() -> ast::ptr<ast::match_expr>;
   /// Parses `if` in expression position.
