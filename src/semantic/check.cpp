@@ -10784,15 +10784,30 @@ private:
       declared_result = expected_entry.result;
     }
 
+    // An inferred expectation that still mentions an unsolved type parameter
+    // is withheld from the body. Propagating it makes the body infer *as*
+    // that parameter — a `p => if ...: @some(x) else: @none` checked against
+    // `option[U]` comes back `option[U]`, not `option[int32]` — and a body
+    // type that mentions `U` tells the call-site solver nothing, so `U` is
+    // then reported unsolved on a call that plainly determines it. Checked
+    // against no expectation the body answers concretely and `U` falls out.
+    //
+    // Only for an expectation the *call site* supplied: a `return_type` the
+    // user wrote is theirs to be checked against, abstract or not.
+    const auto body_expectation =
+        lambda.return_type == nullptr && mentions_abstract_type(declared_result)
+            ? k_unknown_type
+            : declared_result;
+
     auto body_result = k_unknown_type;
     if (lambda.body_expr != nullptr) {
-      body_result = infer_expr(*lambda.body_expr, declared_result);
-      if (declared_result != k_unknown_type) {
-        type_mismatch(lambda.body_expr->span, declared_result, body_result,
+      body_result = infer_expr(*lambda.body_expr, body_expectation);
+      if (body_expectation != k_unknown_type) {
+        type_mismatch(lambda.body_expr->span, body_expectation, body_result,
                       "as the lambda result");
       }
     } else {
-      body_result = check_body_nodes(lambda.body_stmts, declared_result);
+      body_result = check_body_nodes(lambda.body_stmts, body_expectation);
     }
     pop_scope();
 

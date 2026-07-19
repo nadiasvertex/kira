@@ -1,0 +1,31 @@
+module main
+
+# A type parameter solved from a lambda body through a type constructor.
+#
+# `f: fn(T) -> option[U]` leaves `U` reachable only under `option`. The
+# checker used to push the still-abstract `option[U]` into the lambda body as
+# its expected type, so the body inferred as `option[U]` as well and `U` came
+# back unsolved on a call that plainly determines it. A bare `-> U` (as in
+# `map`) never hit this, because its body ignores the expectation.
+#
+# This is `filter_map`'s shape, reduced to something self-contained: the
+# corpus runs each file with no stdlib injected, so it cannot call the real
+# adapter.
+#
+# expect: 200
+
+def apply[T, U](x: T, f: fn(T) -> option[U]) -> option[U]:
+    return f(x)
+
+def total() -> int32:
+    var sum = 0
+    var i = 1
+    while i <= 8:
+        sum = sum + match apply(i, n => if n % 2 == 0: @some(n * 10) else: @none):
+            @some(v) => v
+            @none => 0
+        i = i + 1
+    return sum
+
+def main() -> int32:
+    return total()

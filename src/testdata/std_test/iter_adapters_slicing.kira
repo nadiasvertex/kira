@@ -1,0 +1,104 @@
+module main
+
+# The single-source adapters of design §6.1: `take`, `skip`, `take_while`,
+# `skip_while`, `step_by`, `filter_map`.
+#
+# Every count here is a positional weighted sum rather than a plain total, so
+# an adapter that yielded the right elements in the wrong order, or dropped
+# one and duplicated another, cannot land on the same number by coincidence. A
+# plain sum would accept all three mistakes.
+#
+# The predicates are chosen so the prefix adapters are actually distinguished
+# from the filtering ones: `take_while(< 4)` and `filter(< 4)` agree on a
+# sorted source, so the source deliberately is not sorted where that matters.
+
+def main() -> int32:
+    let xs = [1, 2, 3, 4, 5, 6, 7, 8]
+
+    # 1, 2, 3 → 1 + 2*10 + 3*100
+    var t = xs.iter().take(3)
+    var a = 0
+    var wa = 1
+    while let @some(v) = t.next():
+        a = a + *v * wa
+        wa = wa * 10
+    println("take={a}")
+
+    # 6, 7, 8 → 6 + 7*10 + 8*100
+    var s = xs.iter().skip(5)
+    var b = 0
+    var wb = 1
+    while let @some(v) = s.next():
+        b = b + *v * wb
+        wb = wb * 10
+    println("skip={b}")
+
+    # `take` is bounded by both its count and its source; `skip` subtracts.
+    # A `take` that ignored the source would report 20 here.
+    println("take_hint={xs.iter().take(20).size_hint()}")
+    println("skip_hint={xs.iter().skip(5).size_hint()}")
+
+    # `take_while` stops at the *first* failure and never resumes, where
+    # `filter` would keep testing. This source returns below the threshold
+    # after crossing it, so the two disagree: `take_while` yields 1, 2 and
+    # stops at 9, while `filter` would also collect the trailing 3.
+    let ys = [1, 2, 9, 3]
+    var tw = ys.iter().take_while(p => *p < 4)
+    var c = 0
+    var wc = 1
+    while let @some(v) = tw.next():
+        c = c + *v * wc
+        wc = wc * 10
+    println("take_while={c}")
+
+    # Draining alone cannot see the latch: a `take_while` that forgot to stop
+    # still returns `@none` for the element that failed, and the `while let`
+    # above ends there either way. The latch is only observable by asking
+    # again *after* exhaustion — an unlatched adapter resumes and yields the
+    # trailing 3. (Verified by removing the latch: the drain above was
+    # unchanged, and only this line moved.)
+    var resumed = 0
+    while let @some(v) = tw.next():
+        resumed = resumed + *v
+    println("take_while_resumed={resumed}")
+
+    # The mirror image: `skip_while` drops only the leading run, so the 1 and
+    # 2 *after* the 9 are kept even though they satisfy the predicate.
+    var sw = ys.iter().skip_while(p => *p < 4)
+    var d = 0
+    var wd = 1
+    while let @some(v) = sw.next():
+        d = d + *v * wd
+        wd = wd * 10
+    println("skip_while={d}")
+
+    # 1, 4, 7 → stride 3 from the first element.
+    var sb = xs.iter().step_by(3)
+    var e = 0
+    var we = 1
+    while let @some(v) = sb.next():
+        e = e + *v * we
+        we = we * 10
+    println("step_by={e}")
+
+    # `filter_map` in one pass. The `option[U]` return is the point: `U` is
+    # solved from the lambda's body through the `option` constructor, which
+    # the checker previously could not do — it reported `U` unsolved on a call
+    # that plainly determines it.
+    var fm = xs.iter().filter_map(p => if *p % 2 == 0: @some(*p * 10) else: @none)
+    var f = 0
+    var wf = 1
+    while let @some(v) = fm.next():
+        f = f + v * wf
+        wf = wf * 10
+    println("filter_map={f}")
+
+    # Composed: the adapters have to nest, not just work alone.
+    var chain = xs.iter().skip(2).take_while(p => *p < 8).step_by(2)
+    var g = 0
+    var wg = 1
+    while let @some(v) = chain.next():
+        g = g + *v * wg
+        wg = wg * 10
+    println("chain={g}")
+    return 0

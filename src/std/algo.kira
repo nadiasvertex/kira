@@ -78,3 +78,169 @@ pub def map[I, T, U](it: I, f: fn(T) -> U) -> map_iter[I, T, U] where I: iterato
 #:   an iterator yielding the elements of the source for which `pred` holds.
 pub def filter[I, T](it: I, pred: fn(T) -> bool) -> filter_iter[I, T] where I: iterator[T]:
     return filter_iter { inner: it, pred: pred }
+
+#: An iterator that yields at most the first `n` elements of another iterator.
+pub type take_iter[I, T] = { inner: I, left: usize }
+
+impl[I, T] iterator[T] for take_iter[I, T]:
+    def next(mut self) -> option[T]:
+        if self.left == 0:
+            return @none
+        self.left = self.left - 1
+        return self.inner.next()
+
+    # Bounded by both: `take` cannot yield more than `n`, and it cannot yield
+    # more than the source has.
+    def size_hint(self) -> usize:
+        let inner = self.inner.size_hint()
+        if inner < self.left:
+            return inner
+        return self.left
+
+#: An iterator that discards the first `n` elements of another iterator.
+pub type skip_iter[I, T] = { inner: I, left: usize }
+
+impl[I, T] iterator[T] for skip_iter[I, T]:
+    # The skipping happens on the first `next` rather than in the constructor,
+    # so building the adapter stays free and the chain stays lazy.
+    def next(mut self) -> option[T]:
+        while self.left > 0:
+            self.left = self.left - 1
+            match self.inner.next():
+                @some(x) => x
+                @none => return @none
+        return self.inner.next()
+
+    def size_hint(self) -> usize:
+        let inner = self.inner.size_hint()
+        if inner < self.left:
+            return 0
+        return inner - self.left
+
+#: An iterator that yields elements until a predicate first fails.
+pub type take_while_iter[I, T] = { inner: I, pred: fn(T) -> bool, done: bool }
+
+impl[I, T] iterator[T] for take_while_iter[I, T]:
+    # `done` latches. Without it a source whose elements alternate around the
+    # predicate would resume yielding after the stopping element, which is
+    # `filter`'s behaviour, not `take_while`'s.
+    #
+    # The `while let` runs at most one iteration — every path through the body
+    # returns. It is written that way because the alternatives are worse: a
+    # trait impl may not carry a helper method that is not part of the trait,
+    # and a match arm's result is a single expression, so no arm body can both
+    # latch `done` and produce a value.
+    def next(mut self) -> option[T]:
+        if self.done:
+            return @none
+        while let @some(x) = self.inner.next():
+            if (self.pred)(x):
+                return @some(x)
+            self.done = true
+            return @none
+        self.done = true
+        return @none
+
+#: An iterator that discards elements until a predicate first fails, then
+#: yields the rest.
+pub type skip_while_iter[I, T] = { inner: I, pred: fn(T) -> bool, skipping: bool }
+
+impl[I, T] iterator[T] for skip_while_iter[I, T]:
+    # Once the predicate fails the flag clears for good: `skip_while` drops a
+    # *prefix*, so later elements satisfying the predicate are still yielded.
+    def next(mut self) -> option[T]:
+        while let @some(x) = self.inner.next():
+            if self.skipping:
+                if not (self.pred)(x):
+                    self.skipping = false
+                    return @some(x)
+            else:
+                return @some(x)
+        return @none
+
+#: An iterator that yields every `n`th element of another iterator, starting
+#: with the first.
+pub type step_by_iter[I, T] = { inner: I, step: usize, first: bool }
+
+impl[I, T] iterator[T] for step_by_iter[I, T]:
+    def next(mut self) -> option[T]:
+        if self.first:
+            self.first = false
+            return self.inner.next()
+        var drop = self.step - 1
+        while drop > 0:
+            drop = drop - 1
+            match self.inner.next():
+                @some(x) => x
+                @none => return @none
+        return self.inner.next()
+
+#: An iterator that applies a function returning `option` and keeps the
+#: elements for which it yields `some`.
+pub type filter_map_iter[I, T, U] = { inner: I, f: fn(T) -> option[U] }
+
+impl[I, T, U] iterator[U] for filter_map_iter[I, T, U]:
+    def next(mut self) -> option[U]:
+        while let @some(x) = self.inner.next():
+            match (self.f)(x):
+                @some(y) => return @some(y)
+                @none => x
+        return @none
+
+#: Yields at most the first `n` elements of an iterator, lazily.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   n: the maximum number of elements to yield.
+#: Returns:
+#:   an iterator yielding at most `n` elements of the source.
+pub def take[I, T](it: I, n: usize) -> take_iter[I, T] where I: iterator[T]:
+    return take_iter { inner: it, left: n }
+
+#: Discards the first `n` elements of an iterator, lazily.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   n: the number of leading elements to discard.
+#: Returns:
+#:   an iterator yielding the source's elements after the first `n`.
+pub def skip[I, T](it: I, n: usize) -> skip_iter[I, T] where I: iterator[T]:
+    return skip_iter { inner: it, left: n }
+
+#: Yields elements until a predicate first fails, lazily.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   pred: the predicate an element must satisfy for iteration to continue.
+#: Returns:
+#:   an iterator yielding the source's longest prefix satisfying `pred`.
+pub def take_while[I, T](it: I, pred: fn(T) -> bool) -> take_while_iter[I, T] where I: iterator[T]:
+    return take_while_iter { inner: it, pred: pred, done: false }
+
+#: Discards elements until a predicate first fails, lazily.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   pred: the predicate whose first failure begins yielding.
+#: Returns:
+#:   an iterator yielding the source with its `pred`-satisfying prefix dropped.
+pub def skip_while[I, T](it: I, pred: fn(T) -> bool) -> skip_while_iter[I, T] where I: iterator[T]:
+    return skip_while_iter { inner: it, pred: pred, skipping: true }
+
+#: Yields every `n`th element of an iterator, starting with the first, lazily.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   n: the stride; `1` yields every element.
+#: Returns:
+#:   an iterator yielding elements `0`, `n`, `2n`, ... of the source.
+pub def step_by[I, T](it: I, n: usize) -> step_by_iter[I, T] where I: iterator[T]:
+    return step_by_iter { inner: it, step: n, first: true }
+
+#: Applies a function returning `option` and keeps only the `some` results,
+#: lazily.
+#:
+#: This is `map` and `filter` in one pass, and is the adapter to reach for when
+#: the test for keeping an element is the same work as producing it.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   f: the function producing `some(value)` to keep or `none` to drop.
+#: Returns:
+#:   an iterator yielding the `some` results of `f`.
+pub def filter_map[I, T, U](it: I, f: fn(T) -> option[U]) -> filter_map_iter[I, T, U] where I: iterator[T]:
+    return filter_map_iter { inner: it, f: f }
