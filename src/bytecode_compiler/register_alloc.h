@@ -52,13 +52,24 @@ namespace kira::bytecode_compiler {
 //    the loop body, so its physical gets reused — and the next iteration
 //    reads the clobbered value. See `loop_range`.
 //
-//  There is deliberately **no spilling**. Classic linear scan spills to
-//  stack slots when the active set exceeds the register file, but this ISA
-//  has no spill-slot addressing mode to spill *to*, and inventing one is a
-//  bytecode-format change, not an allocator change. Running out therefore
-//  still fails closed with `register_limit_exceeded`, exactly as before —
-//  the win here is that reuse makes reaching 256 *simultaneously live*
-//  registers vastly harder than reaching 256 allocated ones.
+//  There is deliberately **no spilling**, and unlike most linear-scan
+//  implementations this one needs none: register operands are `u16`
+//  (opcodes.h), so a frame can address 65536 registers while the compiler
+//  hands out at most 65535 virtuals. The active set cannot exceed the
+//  register file, so there is never anything to evict.
+//
+//  Spilling was the original plan, and widening the operand replaced it on
+//  purpose. Spilling is the smaller change, but it only ever executes above
+//  256 simultaneously-live values — a path no ordinary program takes, that
+//  cross-backend agreement cannot check (only this tier would spill), and
+//  whose bugs would therefore sit undiscovered. Widening is the larger
+//  change with the louder failure: get an operand width wrong and the
+//  instruction stream desynchronizes immediately, on every program.
+//
+//  What that leaves this pass responsible for is frame *size* only. It is
+//  an optimization now, not a correctness requirement — but the constraints
+//  below are still load-bearing, because they are about choosing the right
+//  register, not about running out of them.
 // ==========================================================================
 
 /// A virtual register id, unbounded during compilation.
@@ -139,24 +150,34 @@ struct allocation_input {
 
 struct allocation_result {
   /// `assignment[v]` is virtual `v`'s physical register.
-  std::vector<uint8_t> assignment;
+  std::vector<uint16_t> assignment;
   /// Frame size: one past the highest physical actually used.
   uint16_t register_count = 0;
 };
 
-/// Why allocation failed. The only possible cause is exhaustion — more
-/// registers simultaneously live than the `u8` operand encoding can address.
-struct allocation_error {
-  std::string message;
-};
-
 /// Assigns every virtual in `input` a physical register, reusing physicals
 /// across virtuals whose live intervals do not overlap.
+///
+/// This cannot fail, and deliberately returns no `std::expected` to say so.
+/// It used to: a `u8` register operand gave a frame 256 addressable
+/// registers, and a function needing more was a hard compile error the user
+/// could do nothing about except split the function by hand. Widening the
+/// operand to `u16` (see `opcodes.h`'s `k_register_operand_bytes`) makes
+/// exhaustion unreachable by construction rather than merely unlikely —
+/// `function_compiler` caps virtuals at `k_max_virtual_registers` (65535),
+/// which is strictly below the physicals available here, so the worst case
+/// where no virtual shares with any other still fits.
+///
+/// That demotes this pass from a correctness requirement to an
+/// optimization: it now only shrinks frames. Every constraint it honors
+/// (call-argument contiguity, the pinned parameter prefix, address-taken
+/// values, loop-carried liveness) remains load-bearing, because those are
+/// about assigning the *right* register, not about running out of them.
 [[nodiscard]] auto allocate_registers(const allocation_input &input)
-    -> std::expected<allocation_result, allocation_error>;
+    -> allocation_result;
 
 /// The number of physical registers a frame can address — `opcodes.h`
-/// encodes every register operand as a `u8`.
-inline constexpr uint32_t k_physical_register_count = 256;
+/// encodes every register operand as a `u16`.
+inline constexpr uint32_t k_physical_register_count = 65536;
 
 } // namespace kira::bytecode_compiler

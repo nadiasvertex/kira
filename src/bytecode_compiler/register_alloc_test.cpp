@@ -55,12 +55,10 @@ auto mention(allocation_input &input, uint32_t reg, size_t instruction)
 
 [[nodiscard]] auto allocate_or_fail(const allocation_input &input)
     -> allocation_result {
-  auto result = allocate_registers(input);
-  if (!result.has_value()) {
-    kira::testing::fail("allocation unexpectedly failed: " +
-                        result.error().message);
-  }
-  return *result;
+  // Allocation is total since register operands widened to `u16` — there is
+  // no failure left to unwrap. Kept as a named helper so the tests below read
+  // the same as they did when it could fail.
+  return allocate_registers(input);
 }
 
 /// Two virtuals whose ranges do not overlap share one physical — the whole
@@ -260,8 +258,15 @@ auto test_many_short_lived_virtuals_collapse() -> void {
          "physical register");
 }
 
-/// Exhaustion is still a hard failure — there is no spill slot to spill to.
-auto test_too_many_simultaneously_live_fails() -> void {
+/// The case that used to be a hard compile error, and is now ordinary.
+///
+/// With a `u8` register operand, 300 simultaneously live values had nowhere
+/// to go: the frame could not address a 257th register, there was no spill
+/// slot to spill to, and the user's only recourse was splitting the function
+/// by hand. Widening the operand to `u16` makes this unremarkable — it needs
+/// 300 registers and gets exactly 300, none shared, since every one of them
+/// really is live at the same time.
+auto test_many_simultaneously_live_values_all_get_distinct_physicals() -> void {
   constexpr auto k_count = uint32_t{300};
   auto input = with_instructions(2, k_count);
   for (auto index = uint32_t{0}; index < k_count; ++index) {
@@ -269,9 +274,18 @@ auto test_too_many_simultaneously_live_fails() -> void {
     mention(input, index, 1);
   }
 
-  const auto result = allocate_registers(input);
-  expect(!result.has_value(),
-         "300 simultaneously live virtuals cannot fit in 256 physicals");
+  const auto result = allocate_or_fail(input);
+  expect(result.register_count == k_count,
+         "300 values live at the same instant need 300 distinct physicals");
+
+  auto seen = std::vector<bool>(k_count, false);
+  for (auto index = uint32_t{0}; index < k_count; ++index) {
+    const auto physical = result.assignment[index];
+    expect(physical < k_count && !seen[physical],
+           "every simultaneously live value must get its own physical "
+           "register — sharing one would clobber a value still in use");
+    seen[physical] = true;
+  }
 }
 
 /// The same 300 virtuals, laid out so only a few are ever live at once, do
@@ -303,7 +317,7 @@ auto main() -> int {
   test_frame_covers_unread_parameters();
   test_address_taken_registers_live_to_the_end();
   test_many_short_lived_virtuals_collapse();
-  test_too_many_simultaneously_live_fails();
+  test_many_simultaneously_live_values_all_get_distinct_physicals();
   test_many_virtuals_fit_when_not_simultaneously_live();
   return 0;
 }

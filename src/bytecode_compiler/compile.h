@@ -38,10 +38,14 @@ enum class compile_error_kind : uint8_t {
                            ///< tier's scalar-only `slot_value` yet.
   unknown_callee,          ///< A call's callee could not be resolved to a
                            ///< function declared in the same compiled module.
-  register_limit_exceeded, ///< This function needed more than 256 registers
-                           ///< (`opcodes.h`'s `u8` register-index encoding)
-                           ///< — revisit the encoding width if a real
-                           ///< program ever gets close.
+  encoding_limit_exceeded, ///< Some count in this function exceeds what the
+                           ///< corresponding operand can encode: more than 255
+                           ///< `yield` points (a `u8` resume index), or an
+                           ///< aggregate whose element count or byte size
+                           ///< exceeds a `u16`. Notably *not* the register
+                           ///< file — register operands are `u16` and the
+                           ///< allocator cannot exhaust them
+                           ///< (`register_alloc.h`).
   internal_error,          ///< A self-check inside the compiler failed — not
                            ///< anything the user's program did wrong. Reported
                            ///< rather than asserted so it surfaces identically

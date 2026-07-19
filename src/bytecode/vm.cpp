@@ -770,17 +770,59 @@ auto store_sized(uint8_t *data, uint8_t size, uint64_t value) -> void {
 // std::vector<frame> rather than C++ call-stack recursion.
 // ---------------------------------------------------------------------------
 
+/// Reads one instruction's operands in order, advancing as it goes.
+///
+/// The dispatch loop below used to index operands by hand — `code[ip + 2]`
+/// for the third operand, then `f.pc = ip + 5` to step over the whole
+/// instruction. That works, but it encodes every opcode's operand layout as
+/// arithmetic scattered across ~52 `case` bodies, and it made the register
+/// operand's width a fact restated at every one of them. Reading
+/// sequentially states the layout once per opcode, in the order opcodes.h
+/// documents it, and makes `pos()` the instruction's end by construction
+/// rather than by a hand-computed constant that has to be kept in sync.
+///
+/// Callers must read each operand as its own statement rather than as
+/// arguments to one call: the order of evaluation of function arguments is
+/// unspecified, and these reads are order-dependent.
+struct operand_cursor {
+  const std::vector<uint8_t> &code;
+  size_t at;
+
+  [[nodiscard]] auto reg() -> uint16_t {
+    static_assert(k_register_operand_bytes == 2,
+                  "a register operand is decoded here as one little-endian "
+                  "u16, matching function_compiler::emit_register");
+    const auto value = read_u16(code, at);
+    at += k_register_operand_bytes;
+    return value;
+  }
+  [[nodiscard]] auto imm8() -> uint8_t { return code[at++]; }
+  [[nodiscard]] auto imm16() -> uint16_t {
+    const auto value = read_u16(code, at);
+    at += 2;
+    return value;
+  }
+  [[nodiscard]] auto rel32() -> int32_t {
+    const auto value = read_i32(code, at);
+    at += 4;
+    return value;
+  }
+  /// The offset just past the operands read so far — i.e. the start of the
+  /// next instruction, once every operand has been read.
+  [[nodiscard]] auto pos() const -> size_t { return at; }
+};
+
 struct frame {
   const bytecode_function *function = nullptr;
   std::vector<slot_value> registers;
   size_t pc = 0;
-  uint8_t result_reg = 0;
+  uint16_t result_reg = 0;
   bool has_caller = false;
 };
 
 auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
                 std::span<const slot_value> args, bool has_caller,
-                uint8_t result_reg) -> void {
+                uint16_t result_reg) -> void {
   if (frames.size() >= k_max_call_depth) {
     throw panic_error(panic_reason::stack_overflow);
   }
@@ -1323,17 +1365,19 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
 
       switch (op) {
       case opcode::op_load_const: {
-        const uint8_t dst = code[ip];
-        const uint16_t idx = read_u16(code, ip + 1);
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto idx = ops.imm16();
         f.registers[dst] = f.function->constants[idx];
-        f.pc = ip + 3;
+        f.pc = ops.pos();
         break;
       }
       case opcode::op_move: {
-        const uint8_t dst = code[ip];
-        const uint8_t src = code[ip + 1];
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto src = ops.reg();
         f.registers[dst] = f.registers[src];
-        f.pc = ip + 2;
+        f.pc = ops.pos();
         break;
       }
 
@@ -1359,53 +1403,59 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       case opcode::op_le:
       case opcode::op_gt:
       case opcode::op_ge: {
-        const uint8_t dst = code[ip];
-        const uint8_t lhs = code[ip + 1];
-        const uint8_t rhs = code[ip + 2];
-        const auto kind = static_cast<numeric_kind>(code[ip + 3]);
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto lhs = ops.reg();
+        const auto rhs = ops.reg();
+        const auto kind = static_cast<numeric_kind>(ops.imm8());
         f.registers[dst] =
             dispatch_binary(op, kind, f.registers[lhs], f.registers[rhs]);
-        f.pc = ip + 4;
+        f.pc = ops.pos();
         break;
       }
 
       case opcode::op_neg:
       case opcode::op_bitnot: {
-        const uint8_t dst = code[ip];
-        const uint8_t src = code[ip + 1];
-        const auto kind = static_cast<numeric_kind>(code[ip + 2]);
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto src = ops.reg();
+        const auto kind = static_cast<numeric_kind>(ops.imm8());
         f.registers[dst] = dispatch_unary(op, kind, f.registers[src]);
-        f.pc = ip + 3;
+        f.pc = ops.pos();
         break;
       }
 
       case opcode::op_not_bool: {
-        const uint8_t dst = code[ip];
-        const uint8_t src = code[ip + 1];
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto src = ops.reg();
         f.registers[dst] = store_bool((f.registers[src].u & 1U) == 0U);
-        f.pc = ip + 2;
+        f.pc = ops.pos();
         break;
       }
 
       case opcode::op_cast: {
-        const uint8_t dst = code[ip];
-        const uint8_t src = code[ip + 1];
-        const auto from_kind = static_cast<numeric_kind>(code[ip + 2]);
-        const auto to_kind = static_cast<numeric_kind>(code[ip + 3]);
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto src = ops.reg();
+        const auto from_kind = static_cast<numeric_kind>(ops.imm8());
+        const auto to_kind = static_cast<numeric_kind>(ops.imm8());
         f.registers[dst] = exec_cast(from_kind, to_kind, f.registers[src]);
-        f.pc = ip + 4;
+        f.pc = ops.pos();
         break;
       }
 
       case opcode::op_jump: {
-        const int32_t offset = read_i32(code, ip);
-        f.pc = static_cast<size_t>(static_cast<int64_t>(ip + 4) + offset);
+        auto ops = operand_cursor{code, ip};
+        const auto offset = ops.rel32();
+        f.pc = static_cast<size_t>(static_cast<int64_t>(ops.pos()) + offset);
         break;
       }
       case opcode::op_jump_if_false: {
-        const uint8_t cond = code[ip];
-        const int32_t offset = read_i32(code, ip + 1);
-        const size_t after = ip + 1 + 4;
+        auto ops = operand_cursor{code, ip};
+        const auto cond = ops.reg();
+        const auto offset = ops.rel32();
+        const size_t after = ops.pos();
         const bool value = (f.registers[cond].u & 1U) != 0U;
         f.pc = value
                    ? after
@@ -1413,9 +1463,10 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_jump_if_true: {
-        const uint8_t cond = code[ip];
-        const int32_t offset = read_i32(code, ip + 1);
-        const size_t after = ip + 1 + 4;
+        auto ops = operand_cursor{code, ip};
+        const auto cond = ops.reg();
+        const auto offset = ops.rel32();
+        const size_t after = ops.pos();
         const bool value = (f.registers[cond].u & 1U) != 0U;
         f.pc = value ? static_cast<size_t>(static_cast<int64_t>(after) + offset)
                      : after;
@@ -1423,11 +1474,12 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_call: {
-        const uint8_t dst = code[ip];
-        const uint16_t fn_idx = read_u16(code, ip + 1);
-        const uint8_t first_arg = code[ip + 3];
-        const uint8_t argc = code[ip + 4];
-        f.pc = ip + 5;
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto fn_idx = ops.imm16();
+        const auto first_arg = ops.reg();
+        const auto argc = ops.imm8();
+        f.pc = ops.pos();
         const std::vector<slot_value> call_args(f.registers.begin() + first_arg,
                                                 f.registers.begin() +
                                                     first_arg + argc);
@@ -1435,10 +1487,11 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         continue; // `f` is invalidated by push_frame's push_back.
       }
       case opcode::op_return_value: {
-        const uint8_t src = code[ip];
+        auto ops = operand_cursor{code, ip};
+        const auto src = ops.reg();
         const slot_value result = f.registers[src];
         const bool has_caller = f.has_caller;
-        const uint8_t result_reg = f.result_reg;
+        const auto result_reg = f.result_reg;
         frames.pop_back();
         if (!has_caller) {
           return vm_result{.has_value = true, .value = result};
@@ -1456,11 +1509,12 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_call_intrinsic: {
-        const uint8_t dst = code[ip];
-        const uint8_t intrinsic_id = code[ip + 1];
-        const uint8_t first_arg = code[ip + 2];
-        const uint8_t argc = code[ip + 3];
-        f.pc = ip + 4;
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto intrinsic_id = ops.imm8();
+        const auto first_arg = ops.reg();
+        const auto argc = ops.imm8();
+        f.pc = ops.pos();
         const std::span<const slot_value> call_args(
             f.registers.data() + first_arg, argc);
         f.registers[dst] = k_intrinsics.at(intrinsic_id)(call_args);
@@ -1468,67 +1522,74 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_alloc: {
-        const uint8_t dst = code[ip];
-        const uint16_t byte_size = read_u16(code, ip + 1);
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto byte_size = ops.imm16();
         auto *raw = kira::runtime::global_arena().allocate(byte_size);
         f.registers[dst] = ptr_to_slot(raw);
-        f.pc = ip + 3;
+        f.pc = ops.pos();
         break;
       }
       case opcode::op_load_slot: {
-        const uint8_t dst = code[ip];
-        const uint8_t ptr_reg = code[ip + 1];
-        const uint16_t byte_offset = read_u16(code, ip + 2);
-        const uint8_t field_size = code[ip + 4];
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto ptr_reg = ops.reg();
+        const auto byte_offset = ops.imm16();
+        const auto field_size = ops.imm8();
         f.registers[dst] = slot_value{load_sized(
             raw_bytes_of(f.registers[ptr_reg]) + byte_offset, field_size)};
-        f.pc = ip + 5;
+        f.pc = ops.pos();
         break;
       }
       case opcode::op_store_slot: {
-        const uint8_t ptr_reg = code[ip];
-        const uint16_t byte_offset = read_u16(code, ip + 1);
-        const uint8_t src = code[ip + 3];
-        const uint8_t field_size = code[ip + 4];
+        auto ops = operand_cursor{code, ip};
+        const auto ptr_reg = ops.reg();
+        const auto byte_offset = ops.imm16();
+        const auto src = ops.reg();
+        const auto field_size = ops.imm8();
         store_sized(raw_bytes_of(f.registers[ptr_reg]) + byte_offset,
                     field_size, f.registers[src].u);
-        f.pc = ip + 5;
+        f.pc = ops.pos();
         break;
       }
 
       case opcode::op_addr_local: {
-        const uint8_t dst = code[ip];
-        const uint8_t src = code[ip + 1];
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto src = ops.reg();
         // `registers` is a `std::vector`; its buffer is stable across the
         // *frame* vector reallocating on a nested call, so this address
         // stays valid for the frame's lifetime (see `op_addr_local`'s doc).
         f.registers[dst].u = static_cast<uint64_t>(
             reinterpret_cast<uintptr_t>(&f.registers[src]));
-        f.pc = ip + 2;
+        f.pc = ops.pos();
         break;
       }
       case opcode::op_addr_slot: {
-        const uint8_t dst = code[ip];
-        const uint8_t ptr_reg = code[ip + 1];
-        const uint16_t byte_offset = read_u16(code, ip + 2);
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto ptr_reg = ops.reg();
+        const auto byte_offset = ops.imm16();
         f.registers[dst].u = f.registers[ptr_reg].u + byte_offset;
-        f.pc = ip + 4;
+        f.pc = ops.pos();
         break;
       }
       case opcode::op_addr_indexed: {
-        const uint8_t dst = code[ip];
-        const uint8_t ptr_reg = code[ip + 1];
-        const uint8_t index_reg = code[ip + 2];
-        const uint8_t elem_size = code[ip + 3];
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto ptr_reg = ops.reg();
+        const auto index_reg = ops.reg();
+        const auto elem_size = ops.imm8();
         f.registers[dst].u = f.registers[ptr_reg].u +
                              (f.registers[index_reg].u * uint64_t{elem_size});
-        f.pc = ip + 4;
+        f.pc = ops.pos();
         break;
       }
 
       case opcode::op_load_str_const: {
-        const uint8_t dst = code[ip];
-        const uint16_t idx = read_u16(code, ip + 1);
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto idx = ops.imm16();
         const auto &text = f.function->string_constants[idx];
         auto *header =
             kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
@@ -1536,52 +1597,56 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         slots[0] = slot_value{static_cast<uint64_t>(text.size())};
         slots[1] = ptr_to_slot(const_cast<char *>(text.data()));
         f.registers[dst] = ptr_to_slot(header);
-        f.pc = ip + 3;
+        f.pc = ops.pos();
         break;
       }
 
       case opcode::op_load_indexed: {
-        const uint8_t dst = code[ip];
-        const uint8_t ptr_reg = code[ip + 1];
-        const uint8_t index_reg = code[ip + 2];
-        const uint8_t elem_size = code[ip + 3];
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto ptr_reg = ops.reg();
+        const auto index_reg = ops.reg();
+        const auto elem_size = ops.imm8();
         const auto index = f.registers[index_reg].u;
         f.registers[dst] = slot_value{load_sized(
             raw_bytes_of(f.registers[ptr_reg]) + index * elem_size, elem_size)};
-        f.pc = ip + 4;
+        f.pc = ops.pos();
         break;
       }
       case opcode::op_store_indexed: {
-        const uint8_t ptr_reg = code[ip];
-        const uint8_t index_reg = code[ip + 1];
-        const uint8_t src = code[ip + 2];
-        const uint8_t elem_size = code[ip + 3];
+        auto ops = operand_cursor{code, ip};
+        const auto ptr_reg = ops.reg();
+        const auto index_reg = ops.reg();
+        const auto src = ops.reg();
+        const auto elem_size = ops.imm8();
         const auto index = f.registers[index_reg].u;
         store_sized(raw_bytes_of(f.registers[ptr_reg]) + index * elem_size,
                     elem_size, f.registers[src].u);
-        f.pc = ip + 4;
+        f.pc = ops.pos();
         break;
       }
       case opcode::op_list_push: {
-        const uint8_t header_reg = code[ip];
-        const uint8_t value_reg = code[ip + 1];
-        const uint8_t elem_size = code[ip + 2];
+        auto ops = operand_cursor{code, ip};
+        const auto header_reg = ops.reg();
+        const auto value_reg = ops.reg();
+        const auto elem_size = ops.imm8();
         auto *header = reinterpret_cast<uint64_t *>(
             static_cast<uintptr_t>(f.registers[header_reg].u));
         auto *slot = kira::runtime::list_reserve_slot(header, elem_size);
         store_sized(static_cast<uint8_t *>(slot), elem_size,
                     f.registers[value_reg].u);
-        f.pc = ip + 3;
+        f.pc = ops.pos();
         break;
       }
 
       case opcode::op_panic_if: {
-        const uint8_t cond = code[ip];
-        const auto reason = static_cast<panic_reason>(code[ip + 1]);
+        auto ops = operand_cursor{code, ip};
+        const auto cond = ops.reg();
+        const auto reason = static_cast<panic_reason>(ops.imm8());
         if ((f.registers[cond].u & 1U) != 0U) {
           throw panic_error(reason);
         }
-        f.pc = ip + 2;
+        f.pc = ops.pos();
         break;
       }
 
@@ -1589,10 +1654,11 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         throw panic_error(panic_reason::explicit_panic);
 
       case opcode::op_make_closure: {
-        const uint8_t dst = code[ip];
-        const uint16_t fn_idx = read_u16(code, ip + 1);
-        const uint8_t env_reg = code[ip + 3];
-        f.pc = ip + 4;
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto fn_idx = ops.imm16();
+        const auto env_reg = ops.reg();
+        f.pc = ops.pos();
         auto *header =
             kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
@@ -1602,11 +1668,12 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_call_indirect: {
-        const uint8_t dst = code[ip];
-        const uint8_t closure_reg = code[ip + 1];
-        const uint8_t first_arg = code[ip + 2];
-        const uint8_t argc = code[ip + 3];
-        f.pc = ip + 4;
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto closure_reg = ops.reg();
+        const auto first_arg = ops.reg();
+        const auto argc = ops.imm8();
+        f.pc = ops.pos();
         const auto *closure = slots_of(f.registers[closure_reg]);
         const auto fn_idx = static_cast<uint16_t>(closure[0].u);
         const auto env_ptr = closure[1];
@@ -1620,10 +1687,11 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_make_generator: {
-        const uint8_t dst = code[ip];
-        const uint16_t step_fn_idx = read_u16(code, ip + 1);
-        const uint8_t state_ptr_reg = code[ip + 3];
-        f.pc = ip + 4;
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto step_fn_idx = ops.imm16();
+        const auto state_ptr_reg = ops.reg();
+        f.pc = ops.pos();
         auto *header =
             kira::runtime::global_arena().allocate(4 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
@@ -1635,10 +1703,11 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_yield: {
-        const uint8_t value_reg = code[ip];
-        const uint8_t generator_reg = code[ip + 1];
-        const uint8_t next_resume_index = code[ip + 2];
-        f.pc = ip + 3;
+        auto ops = operand_cursor{code, ip};
+        const auto value_reg = ops.reg();
+        const auto generator_reg = ops.reg();
+        const auto next_resume_index = ops.imm8();
+        f.pc = ops.pos();
         // `option::some(value)` — a 2-slot `{ tag=0; payload }` block,
         // matching `option`'s hardcoded variant order (`some`=0, `none`=1;
         // see `runtime::layout.cpp`'s `make_two_variants("some", 1, "none",
@@ -1654,7 +1723,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         gen_slots[2] = slot_value{static_cast<uint64_t>(next_resume_index)};
 
         const bool has_caller = f.has_caller;
-        const uint8_t result_reg = f.result_reg;
+        const auto result_reg = f.result_reg;
         frames.pop_back();
         if (!has_caller) {
           return vm_result{.has_value = true, .value = result};
@@ -1663,9 +1732,10 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         continue;
       }
       case opcode::op_generator_next: {
-        const uint8_t dst = code[ip];
-        const uint8_t generator_reg = code[ip + 1];
-        f.pc = ip + 2;
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto generator_reg = ops.reg();
+        f.pc = ops.pos();
         auto *gen_slots = slots_of(f.registers[generator_reg]);
         if (gen_slots[3].u != 0) {
           // `option::none` — a 2-slot `{ tag=1; payload }` block; the

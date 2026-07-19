@@ -31,6 +31,14 @@ auto chunk_writer::emit_u16(uint16_t value) -> void {
   code_.push_back(static_cast<uint8_t>((value >> 8) & 0xFFU));
 }
 
+auto chunk_writer::emit_register(uint16_t reg) -> void {
+  static_assert(
+      k_register_operand_bytes == 2,
+      "emit_register must encode exactly the width opcodes.h "
+      "declares, since instruction_size derives every offset from it");
+  emit_u16(reg);
+}
+
 auto chunk_writer::emit_i32(int32_t value) -> void {
   const auto bits = static_cast<uint32_t>(value);
   code_.push_back(static_cast<uint8_t>(bits & 0xFFU));

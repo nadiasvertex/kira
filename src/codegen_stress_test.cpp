@@ -429,24 +429,33 @@ auto run_llvm(const fs::path &path, const hir::hir_module &module,
 [[nodiscard]] auto expected_result_of(std::string_view text)
     -> std::optional<int64_t> {
   constexpr auto marker = std::string_view{"# expect:"};
-  const auto at = text.find(marker);
-  if (at == std::string_view::npos) {
-    return std::nullopt;
+  // Every occurrence is tried, not just the first, and one that doesn't parse
+  // is skipped rather than treated as "this file declares nothing."
+  //
+  // The first version stopped at the first match and gave up if it didn't
+  // parse. That made a file's own prose able to disable its check silently:
+  // `048_wide_simultaneous_liveness.kira` explains in a comment why it
+  // declares a `# expect:` value, that sentence contains the marker, and it
+  // sits above the real one — so the check was skipped entirely and the file
+  // passed with a deliberately wrong expected value. A test that cannot fail
+  // is the one thing this harness must not silently become.
+  for (auto at = text.find(marker); at != std::string_view::npos;
+       at = text.find(marker, at + marker.size())) {
+    auto rest = text.substr(at + marker.size());
+    rest = rest.substr(0, rest.find('\n'));
+    const auto first = rest.find_first_not_of(" \t");
+    if (first == std::string_view::npos) {
+      continue;
+    }
+    rest = rest.substr(first);
+    auto value = int64_t{0};
+    const auto *begin = rest.data();
+    const auto result = std::from_chars(begin, begin + rest.size(), value);
+    if (result.ec == std::errc{}) {
+      return value;
+    }
   }
-  auto rest = text.substr(at + marker.size());
-  rest = rest.substr(0, rest.find('\n'));
-  const auto first = rest.find_first_not_of(" \t");
-  if (first == std::string_view::npos) {
-    return std::nullopt;
-  }
-  rest = rest.substr(first);
-  auto value = int64_t{0};
-  const auto *begin = rest.data();
-  const auto result = std::from_chars(begin, begin + rest.size(), value);
-  if (result.ec != std::errc{}) {
-    return std::nullopt;
-  }
-  return value;
+  return std::nullopt;
 }
 
 auto run_one(const fs::path &path) -> void {

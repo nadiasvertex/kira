@@ -124,16 +124,7 @@ auto extend_across_loops(std::vector<scan_group> &groups,
 
 } // namespace
 
-auto allocate_registers(const allocation_input &input)
-    -> std::expected<allocation_result, allocation_error> {
-  if (input.pinned_prefix > k_physical_register_count) {
-    return std::unexpected(allocation_error{
-        .message = std::format(
-            "takes more parameters ({}) than the {} registers a frame can "
-            "address, so there is nowhere to put them at entry",
-            input.pinned_prefix, k_physical_register_count)});
-  }
-
+auto allocate_registers(const allocation_input &input) -> allocation_result {
   // ----------------------------------------------------------------------
   //  Live intervals, per virtual, from first and last mention.
   // ----------------------------------------------------------------------
@@ -222,7 +213,7 @@ auto allocate_registers(const allocation_input &input)
     return groups[lhs].first < groups[rhs].first;
   });
 
-  auto assignment = std::vector<uint8_t>(input.virtual_count, 0);
+  auto assignment = std::vector<uint16_t>(input.virtual_count, 0);
   auto busy = std::vector<bool>(k_physical_register_count, false);
   auto active = std::vector<active_group>{};
   auto highest = uint32_t{0};
@@ -231,7 +222,7 @@ auto allocate_registers(const allocation_input &input)
     for (auto offset = uint32_t{0}; offset < group.count; ++offset) {
       const auto id = group.first + offset;
       if (id < input.virtual_count) {
-        assignment[id] = static_cast<uint8_t>(physical + offset);
+        assignment[id] = static_cast<uint16_t>(physical + offset);
       }
       busy[physical + offset] = true;
     }
@@ -261,22 +252,25 @@ auto allocate_registers(const allocation_input &input)
     active = std::move(surviving);
 
     const auto pinned = group.first < input.pinned_prefix && group.count == 1;
-    const auto physical = pinned ? std::optional<uint32_t>{group.first}
-                                 : find_free_run(busy, group.count);
-    if (!physical.has_value()) {
-      return std::unexpected(allocation_error{
-          .message = std::format(
-              "needs more than {} values alive at the same time, which this "
-              "bytecode format's u8 register operands cannot address. Register "
-              "reuse already recycles each value's register as soon as it "
-              "dies, "
-              "so this is a function holding genuinely that many live values "
-              "at "
-              "once — splitting it into smaller functions is what shortens "
-              "their lifetimes",
-              k_physical_register_count)});
-    }
-    assign(group, *physical);
+    const auto reused = pinned ? std::optional<uint32_t>{group.first}
+                               : find_free_run(busy, group.count);
+
+    // Falling back to the high-water mark is what makes this pass total.
+    //
+    // Exhaustion is impossible — `function_compiler` hands out at most
+    // `k_max_virtual_registers` (65535) virtuals and there are 65536
+    // physicals — but *fragmentation* is not: a group needs its registers
+    // contiguous (call opcodes read `argc` consecutive registers), and a
+    // long-lived value sitting in the middle of an otherwise free run can
+    // block one while plenty of registers remain free elsewhere.
+    //
+    // Appending above everything allocated so far always succeeds and always
+    // fits. Each virtual is assigned exactly once, so if no group ever
+    // reused a physical, `highest` would equal `virtual_count` — bounded by
+    // 65535, one below the physicals available. Reuse only ever lowers it,
+    // so this branch cannot push the frame out of range.
+    const auto physical = reused.value_or(highest);
+    assign(group, physical);
   }
 
   // The frame must be large enough for the calling convention to write every
@@ -290,7 +284,7 @@ auto allocate_registers(const allocation_input &input)
   // physical against other virtuals claiming it.
   for (auto id = uint32_t{0}; id < input.pinned_prefix; ++id) {
     if (!intervals[id].live) {
-      assignment[id] = static_cast<uint8_t>(id);
+      assignment[id] = static_cast<uint16_t>(id);
     }
   }
 

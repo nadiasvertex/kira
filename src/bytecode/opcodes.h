@@ -49,12 +49,18 @@ namespace kira::bytecode {
 //  how many opcodes exist per width).
 //
 //  Operand encoding is fixed-width little-endian, appended directly after
-//  the one-byte opcode: `u8` for a register index (up to 256 per frame —
-//  ample for the scalar/control-flow subset this increment covers; revisit
-//  the width only if a real program's temporary count ever gets close),
-//  `u16` for a constant-pool or function-table index, `i32` for a relative
-//  jump offset. `chunk_writer` (chunk.h) is the only thing that needs to
-//  reason about instruction boundaries.
+//  the one-byte opcode: `u16` for a register index, `u16` for a
+//  constant-pool or function-table index, `u8` for a small tag or count
+//  (`numeric_kind`, `field_size`, `argc`, ...), `i32` for a relative jump
+//  offset. `operands_of` at the bottom of this file is the single
+//  description of which is which, and every instruction size and offset is
+//  derived from it.
+//
+//  The register index was a `u8` originally — "up to 256 per frame, ample
+//  for the scalar/control-flow subset this increment covers, revisit only
+//  if a real program's temporary count ever gets close." A real program's
+//  temporary count got close almost immediately, so it is `u16` now; see
+//  the operand-layout section below for why widening beat spilling.
 //
 //  Two hardware-inspired encoding ideas were considered for this
 //  instruction set and rejected — recorded here so they aren't
@@ -491,8 +497,7 @@ enum class operand_kind : uint8_t {
 /// stream. Changing this and `function_compiler::emit_register` is, by
 /// construction, the whole of a width change: every other size and offset
 /// in the encoding is derived from `operands_of` below.
-inline constexpr size_t k_register_operand_bytes = 1; // TEMPORARY: 2 once the
-                                                      // emitter and VM widen.
+inline constexpr size_t k_register_operand_bytes = 2;
 
 /// The ordered operand sequence of one opcode. No instruction in this ISA
 /// takes more than four operands, so this is a fixed array rather than a

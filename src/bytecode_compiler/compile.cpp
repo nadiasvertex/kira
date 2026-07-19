@@ -507,7 +507,7 @@ public:
     const auto yield_total = count_yields(*fn.body);
     if (yield_total > 255) {
       return std::unexpected(compile_error{
-          .kind = compile_error_kind::register_limit_exceeded,
+          .kind = compile_error_kind::encoding_limit_exceeded,
           .span = fn.span,
           .message = std::format("generator `{}` has more than 255 `yield` "
                                  "points, which this bytecode format's u8 "
@@ -690,7 +690,7 @@ private:
       -> std::expected<virtual_reg, compile_error> {
     if (next_register_ >= k_max_virtual_registers) {
       return std::unexpected(compile_error{
-          .kind = compile_error_kind::register_limit_exceeded,
+          .kind = compile_error_kind::encoding_limit_exceeded,
           .span = span,
           .message = std::format(
               "this function needed more than {} virtual registers while "
@@ -746,20 +746,18 @@ private:
         .address_taken = std::move(address_taken_),
     };
     const auto allocation = allocate_registers(input);
-    if (!allocation.has_value()) {
-      return std::unexpected(
-          compile_error{.kind = compile_error_kind::register_limit_exceeded,
-                        .span = span,
-                        .message = std::format("function `{}` {}", name,
-                                               allocation.error().message)});
-    }
     auto function = std::move(writer_).finish(std::move(name), param_count,
-                                              allocation->register_count);
+                                              allocation.register_count);
+    // Little-endian, matching `chunk_writer::emit_u16` — `emit_register`
+    // wrote the placeholder these two bytes overwrite.
     for (const auto &site : input.sites) {
-      function.code[site.code_offset] = allocation->assignment[site.reg.id];
+      const auto physical = allocation.assignment[site.reg.id];
+      function.code[site.code_offset] = static_cast<uint8_t>(physical & 0xFF);
+      function.code[site.code_offset + 1] =
+          static_cast<uint8_t>((physical >> 8) & 0xFF);
     }
     if (auto layout =
-            verify_operand_layout(function, input.instruction_offsets);
+            verify_operand_layout(function, input.instruction_offsets, span);
         !layout.has_value()) {
       return std::unexpected(layout.error());
     }
@@ -782,14 +780,14 @@ private:
   /// dedicated test, so the whole existing corpus checks it for free.
   [[nodiscard]] static auto
   verify_operand_layout(const bytecode::bytecode_function &function,
-                        const std::vector<size_t> &recorded)
+                        const std::vector<size_t> &recorded, source_span span)
       -> std::expected<void, compile_error> {
     auto offset = size_t{0};
     for (auto index = size_t{0}; index < recorded.size(); ++index) {
       if (offset != recorded[index]) {
         return std::unexpected(compile_error{
             .kind = compile_error_kind::internal_error,
-            .span = source_span{},
+            .span = span,
             .message = std::format(
                 "internal compiler error: in `{}`, instruction {} was emitted "
                 "at byte {} but `operands_of` in opcodes.h puts it at byte {} "
@@ -802,7 +800,7 @@ private:
     if (offset != function.code.size()) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::internal_error,
-          .span = source_span{},
+          .span = span,
           .message = std::format(
               "internal compiler error: in `{}`, walking the code buffer by "
               "`instruction_size` ends at byte {} but the buffer is {} bytes "
@@ -847,7 +845,11 @@ private:
   auto emit_register(virtual_reg reg) -> void {
     register_sites_.push_back(
         register_site{.code_offset = writer_.current_offset(), .reg = reg});
-    writer_.emit_u8(0);
+    static_assert(bytecode::k_register_operand_bytes == 2,
+                  "a register operand is emitted here as one little-endian "
+                  "u16; changing its width means changing this emit and the "
+                  "matching patch in finish_with_allocation together");
+    writer_.emit_u16(0);
   }
 
   /// Records that a backward jump at the current offset closes a loop whose
@@ -1633,7 +1635,7 @@ private:
                      source_span span) -> std::expected<void, compile_error> {
     if (values.size() > 0xFFFF) {
       return std::unexpected(compile_error{
-          .kind = compile_error_kind::register_limit_exceeded,
+          .kind = compile_error_kind::encoding_limit_exceeded,
           .span = span,
           .message = "this literal has more than 65535 elements/fields, "
                      "which this bytecode format's u16 slot-count operand "
@@ -1662,7 +1664,7 @@ private:
     const auto layout = runtime::struct_layout(types_, init.type);
     if (layout.size_bytes > 0xFFFF) {
       return std::unexpected(compile_error{
-          .kind = compile_error_kind::register_limit_exceeded,
+          .kind = compile_error_kind::encoding_limit_exceeded,
           .span = init.span,
           .message = "this struct literal's total size exceeds the "
                      "bytecode format's u16 byte-size operand"});
@@ -1718,7 +1720,7 @@ private:
     const auto byte_size = count * elem_size;
     if (byte_size > 0xFFFF) {
       return std::unexpected(compile_error{
-          .kind = compile_error_kind::register_limit_exceeded,
+          .kind = compile_error_kind::encoding_limit_exceeded,
           .span = init.span,
           .message = "this array literal's total size exceeds the "
                      "bytecode format's u16 byte-size operand"});

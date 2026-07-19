@@ -24,10 +24,15 @@ namespace kira::bytecode {
 /// those onto physical registers by linear scan, recycling one as soon as
 /// the value in it dies. It originally did not: each binding and
 /// subexpression took the next unused register and kept it, which made the
-/// `u8` operand encoding a ceiling on how many values a function could
+/// register operand's width a ceiling on how many values a function could
 /// *mention* rather than how many it needed simultaneously — reachable by
 /// unremarkable straight-line code, and the reason several
 /// `src/testdata/codegen_stress` files are split across extra `def`s.
+///
+/// This field was always a `uint16_t` and the VM has always sized frames
+/// straight from it, so the 256-register ceiling was never a property of
+/// the frame — only of the `u8` operand that named a register. That operand
+/// is a `u16` now (opcodes.h), which is what makes the two agree.
 struct bytecode_function {
   std::string name;
   uint16_t param_count = 0;
@@ -86,6 +91,14 @@ public:
   auto emit_opcode(opcode op) -> void;
   auto emit_u8(uint8_t value) -> void;
   auto emit_u16(uint16_t value) -> void;
+
+  /// Emits a register operand at whatever width `k_register_operand_bytes`
+  /// declares. Distinct from `emit_u8`/`emit_u16` so that "this operand is a
+  /// register" is stated at the call site rather than inferred from the
+  /// width that happens to be correct today — the bytecode compiler learned
+  /// this the expensive way, and hand-assembled bytecode needs it just as
+  /// much.
+  auto emit_register(uint16_t reg) -> void;
   auto emit_i32(int32_t value) -> void;
   auto emit_numeric_kind(numeric_kind kind) -> void;
 
