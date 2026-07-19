@@ -1,0 +1,24 @@
+module std.panic
+
+# The one way a Kira program terminates abnormally.
+#
+# `rt_panic` writes its message to stderr and aborts the process; it is the
+# single intrinsic that never returns, which is why it is declared `-> never`.
+# That return type is what lets a panicking branch stand where a value is
+# expected — `never` is compatible with every type (`type_table::compatible`,
+# `src/semantic/types.cpp`), so the `@none` arm of `option`'s `unwrap` can sit
+# beside an arm producing a `T` without the two having to agree.
+#
+# Terminating the process is inexpressible over the primitive substrate, which
+# is what justifies an intrinsic here at all — test (a) of the rule in
+# `spec/collections-algorithms-design.md`. Everything built on top of it,
+# including every method in `std.option` and `std.result`, is ordinary Kira.
+
+intrinsic def rt_panic(msg: str) -> never
+
+## Terminates the program, reporting `message` on stderr.
+##
+## This is for a bug in the program — a state the code believed unreachable.
+## An error the caller could plausibly handle belongs in a `result` instead.
+pub def panic(message: str) -> never:
+    return rt_panic(message)

@@ -1,0 +1,35 @@
+module std.result
+
+# Inherent methods on `result[T, E]`, the companion to `std.option`.
+#
+# Like that module these were `k_builtin_methods` entries the compiler typed
+# but no backend compiled; they are ordinary Kira now. See `std.option`'s
+# header for why the block is parameterized and why the intrinsic is declared
+# here rather than imported.
+
+# See `std.option` for why this is not `use std.panic.panic`.
+intrinsic def rt_panic(msg: str) -> never
+
+extend[T, E] result[T, E]:
+    ## The success value, or a panic if this is an `@err`.
+    ##
+    ## The error is not reported in the panic message: doing so would require
+    ## `E` to be printable, which would constrain every `result` in the
+    ## language to satisfy a formatting trait. Use `match` when the error's
+    ## content matters.
+    def unwrap(self) -> T:
+        return match self:
+            @ok(v) => v
+            @err(_) => rt_panic("called `unwrap` on an `@err` value")
+
+    ## Whether this holds a success value.
+    def is_ok(self) -> bool:
+        return match self:
+            @ok(_) => true
+            @err(_) => false
+
+    ## Whether this holds an error — the exact negation of `is_ok`.
+    def is_err(self) -> bool:
+        return match self:
+            @ok(_) => false
+            @err(_) => true

@@ -32,4 +32,8 @@ auto kira_rt_close(uint64_t *fd) -> uint64_t *;
 auto kira_rt_read(uint64_t *fd, uint64_t *buf) -> uint64_t *;
 auto kira_rt_write(uint64_t *fd, uint64_t *buf) -> uint64_t *;
 auto kira_rt_flush(uint64_t *fd) -> uint64_t *;
+/// Writes `msg` (a `str` header) to stderr and terminates the process. The
+/// only intrinsic that does not return; its `uint64_t *` result exists solely
+/// so it shares the uniform intrinsic ABI the two backends emit calls under.
+[[noreturn]] auto kira_rt_panic(uint64_t *msg) -> uint64_t *;
 }

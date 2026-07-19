@@ -179,10 +179,18 @@ struct builtin_method_signature {
 /// method that worked but could never be suggested, or a suggestion for a
 /// method that did not exist.
 ///
-/// Only methods with real lowering belong here. `str`'s `contains`,
+/// Only methods with real lowering belong here, and an entry *shadows* any
+/// `extend` method of the same name: this table is consulted first, and the
+/// `extend` lookup runs only when it answers nothing. `str`'s `contains`,
 /// `starts_with`, `split`, ... are genuine `extend str` methods in
 /// `std.string`, and are found by `find_extend_method_for_builtin` precisely
 /// *because* they are absent here — adding them would shadow that module.
+///
+/// The direction of travel is toward nothing: `option`/`result`'s methods
+/// moved out to `std.option`/`std.result` as ordinary Kira, which is what
+/// removing their entries here made possible. Prefer writing a method in the
+/// stdlib over adding a row plus a matching interception in
+/// `hir::lower_call` (spec/collections-algorithms-design.md).
 inline constexpr auto k_builtin_methods =
     std::to_array<builtin_method_signature>({
         {"list", "len", builtin_result_shape::usize_result},
@@ -202,13 +210,6 @@ inline constexpr auto k_builtin_methods =
         {"slice", "is_empty", builtin_result_shape::bool_result},
         {"str", "len", builtin_result_shape::usize_result},
         {"str", "as_bytes", builtin_result_shape::byte_slice},
-        {"option", "unwrap", builtin_result_shape::element},
-        {"option", "unwrap_or", builtin_result_shape::element},
-        {"option", "is_some", builtin_result_shape::bool_result},
-        {"option", "is_none", builtin_result_shape::bool_result},
-        {"result", "unwrap", builtin_result_shape::element},
-        {"result", "is_ok", builtin_result_shape::bool_result},
-        {"result", "is_err", builtin_result_shape::bool_result},
         {"generator", "next", builtin_result_shape::option_of_element},
     });
 
@@ -9012,6 +9013,19 @@ private:
         if (const auto *method =
                 find_extend_method_for_builtin(entry, field.field_name)) {
           record_expr_type(field, fn_type_of(*method->decl, method->owner));
+          // Same instantiation ladder the user-type path above runs. Without
+          // it an `extend[T] option[T]:` block type-checked and then compiled
+          // nothing, because the two arms below name one shared function for
+          // every element type and none was ever built.
+          if (const auto instantiated = check_generic_instance_method_call(
+                  call, *method, entry.name, *field.object, object,
+                  explicit_args)) {
+            return *instantiated;
+          }
+          if (const auto instantiated = check_impl_generic_method_call(
+                  call, *method, entry, *field.object, object)) {
+            return *instantiated;
+          }
           record_instance_method_callee(call, *method, entry.name,
                                         *field.object);
           return check_call_against_decl(call, *method->decl, method->owner,

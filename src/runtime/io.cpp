@@ -1,9 +1,11 @@
 #include "src/runtime/io.h"
 
 #include <cerrno>
+#include <cstdlib>
 #include <fcntl.h>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unistd.h>
 
 #include "src/runtime/arena.h"
@@ -117,6 +119,17 @@ auto kira_rt_flush(uint64_t * /*fd*/) -> uint64_t * {
   // No userspace buffering layer sits above the raw ::read/::write syscalls
   // above, so there is nothing for this tier to flush either.
   return make_result_ok(0);
+}
+
+[[noreturn]] auto kira_rt_panic(uint64_t *msg) -> uint64_t * {
+  // Written straight to fd 2 rather than through `std.io`: a panic must still
+  // report itself when the failure being reported is in the I/O layer.
+  const auto text = bytes_of(msg);
+  static constexpr auto k_prefix = std::string_view{"panic: "};
+  (void)::write(2, k_prefix.data(), k_prefix.size());
+  (void)::write(2, text.data(), text.size());
+  (void)::write(2, "\n", 1);
+  std::abort();
 }
 
 } // extern "C"

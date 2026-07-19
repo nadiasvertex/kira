@@ -1304,13 +1304,26 @@ namespace platform_query = kira::runtime::platform_query;
   return make_result_ok(alloc_struct(fields));
 }
 
+/// Mirrors `kira_rt_panic` (`src/runtime/io.cpp`) for the bytecode tier:
+/// reports `msg` on stderr and terminates. Both tiers abort rather than
+/// unwinding, so a panicking program behaves identically whichever backend
+/// ran it — which is what lets `codegen_stress_test` cross-check them.
+[[noreturn]] auto intrinsic_rt_panic(std::span<const slot_value> args)
+    -> slot_value {
+  const auto text = view_of(args[0]);
+  std::fputs("panic: ", stderr);
+  std::fwrite(text.data(), 1, text.size(), stderr);
+  std::fputc('\n', stderr);
+  std::abort();
+}
+
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 
 /// Indexed by `op_call_intrinsic`'s `intrinsic_id` operand — must stay in
 /// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 31> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, 32> k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
@@ -1342,6 +1355,7 @@ constexpr std::array<intrinsic_fn, 31> k_intrinsics = {{
     intrinsic_rt_libc_version,
     intrinsic_rt_windows_version,
     intrinsic_rt_macos_version,
+    intrinsic_rt_panic,
 }};
 
 static_assert(k_intrinsics.size() == kira::known_intrinsic_names.size(),

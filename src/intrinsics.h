@@ -22,7 +22,7 @@ namespace kira {
 //  only tracks names, since the signature itself is written and typechecked
 //  as ordinary Kira source at the `intrinsic def` site.
 // ==========================================================================
-inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
+inline constexpr std::array<std::string_view, 32> known_intrinsic_names = {{
     "rt_stdin",
     "rt_stdout",
     "rt_stderr",
@@ -69,6 +69,10 @@ inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
     "rt_libc_version",
     "rt_windows_version",
     "rt_macos_version",
+    // Aborts the process after writing `msg` to stderr. The one intrinsic
+    // that never returns: `option`/`result`'s `unwrap` need a failure path,
+    // and terminating the process is inexpressible on the primitive set.
+    "rt_panic",
 }};
 
 /// @brief Returns whether `name` is a recognized intrinsic.
@@ -100,7 +104,7 @@ inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
 /// declare each `kira_rt_*` function's LLVM signature — read from here
 /// rather than duplicated so the two backends' declared arities can't drift
 /// out of sync with each other or with `io.h`'s actual signatures.
-inline constexpr std::array<uint8_t, 31> known_intrinsic_arities = {{
+inline constexpr std::array<uint8_t, 32> known_intrinsic_arities = {{
     0, // rt_stdin
     0, // rt_stdout
     0, // rt_stderr
@@ -132,6 +136,7 @@ inline constexpr std::array<uint8_t, 31> known_intrinsic_arities = {{
     0, // rt_libc_version
     0, // rt_windows_version
     0, // rt_macos_version
+    1, // rt_panic          (msg)
 }};
 
 } // namespace kira

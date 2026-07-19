@@ -1,0 +1,14 @@
+unwrap=7
+unwrap_or_some=7
+unwrap_or_none=3
+is_some_some=true
+is_some_none=false
+is_none_some=false
+is_none_none=true
+ok_unwrap=4
+is_ok_ok=true
+is_ok_err=false
+is_err_ok=false
+is_err_err=true
+str_unwrap=hi
+str_unwrap_or=0

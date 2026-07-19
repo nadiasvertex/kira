@@ -1,0 +1,48 @@
+module main
+
+# `option` and `result`'s inherent methods (spec/todo.md item 10). These were
+# entries in the compiler's `k_builtin_methods` table, which answered their
+# types without any backend compiling them — every one below type-checked and
+# then failed to lower. They are ordinary Kira now, in `std.option` and
+# `std.result`, reached through a parameterized `extend` block.
+#
+# Values rather than "it compiled" are asserted throughout: the whole failure
+# mode being guarded against is a call the checker accepts and no backend
+# implements, so only running one proves anything.
+
+def main() -> int32:
+    let s: option[int32] = @some(7)
+    let n: option[int32] = @none
+
+    println("unwrap={s.unwrap()}")
+
+    # Both sides of `unwrap_or`: the fallback must be ignored when a value is
+    # present, which a `@none`-only check could not tell from always taking it.
+    println("unwrap_or_some={s.unwrap_or(3)}")
+    println("unwrap_or_none={n.unwrap_or(3)}")
+
+    # `is_some`/`is_none` are checked on both values for the same reason — a
+    # method that ignored its receiver and returned a constant would pass a
+    # one-sided test.
+    println("is_some_some={s.is_some()}")
+    println("is_some_none={n.is_some()}")
+    println("is_none_some={s.is_none()}")
+    println("is_none_none={n.is_none()}")
+
+    let good: result[int32, str] = @ok(4)
+    let bad: result[int32, str] = @err("nope")
+
+    println("ok_unwrap={good.unwrap()}")
+    println("is_ok_ok={good.is_ok()}")
+    println("is_ok_err={bad.is_ok()}")
+    println("is_err_ok={good.is_err()}")
+    println("is_err_err={bad.is_err()}")
+
+    # The element type is not fixed: `option`'s methods are compiled per
+    # receiver type, so a `str` payload has to work as well as an `int32` one.
+    # A single-instantiation implementation would fail here rather than differ
+    # in output.
+    let t: option[str] = @some("hi")
+    println("str_unwrap={t.unwrap()}")
+    println("str_unwrap_or={n.unwrap_or(0)}")
+    return 0

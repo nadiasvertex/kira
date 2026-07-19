@@ -1,0 +1,51 @@
+module std.option
+
+# Declared here rather than imported from `std.panic`, which is where it
+# belongs: a generic method's body is re-checked at each call site in the
+# *caller's* file context, so any name this block reached through an import of
+# its own would be undefined by the time an instance is built. See
+# `spec/todo.md` item 8. Once that is fixed this becomes `use std.panic.panic`.
+intrinsic def rt_panic(msg: str) -> never
+
+# Inherent methods on `option[T]`.
+#
+# These used to be entries in the compiler's `k_builtin_methods` table
+# (`src/semantic/check.cpp`), which answered their *types* without any backend
+# ever compiling them: `o.unwrap()` type-checked and then failed to lower. They
+# are ordinary Kira now, which is both the fix and the arrangement
+# `spec/collections-algorithms-design.md` asks for — the table shrinks toward
+# nothing rather than growing a matching interception per method.
+#
+# A parameterized `extend` block is what makes this expressible: the compiler
+# solves `T` per receiver type and compiles one instance for each, so
+# `option[int32]` and `option[str]` get their own `unwrap`.
+
+extend[T] option[T]:
+    ## The contained value, or a panic if there is none.
+    ##
+    ## Reach for `match` or `unwrap_or` when `@none` is a case your program
+    ## should actually handle; this is for when it would be a bug.
+    def unwrap(self) -> T:
+        return match self:
+            @some(v) => v
+            @none => rt_panic("called `unwrap` on a `@none` value")
+
+    ## The contained value, or `fallback` when there is none.
+    ##
+    ## `fallback` is evaluated whether or not it is needed, so keep it cheap.
+    def unwrap_or(self, fallback: T) -> T:
+        return match self:
+            @some(v) => v
+            @none => fallback
+
+    ## Whether a value is present.
+    def is_some(self) -> bool:
+        return match self:
+            @some(_) => true
+            @none => false
+
+    ## Whether no value is present — the exact negation of `is_some`.
+    def is_none(self) -> bool:
+        return match self:
+            @some(_) => false
+            @none => true
