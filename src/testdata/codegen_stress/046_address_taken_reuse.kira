@@ -1,0 +1,47 @@
+module codegen_stress.address_taken_reuse
+
+# A pointer to a *frame register* that outlives the last mention of the
+# register it points at — the one case register allocation cannot get right
+# by looking at mentions alone.
+#
+# The bytecode tier reuses a physical register as soon as the value holding
+# it dies, and it decides "dies" from the last place the register is
+# mentioned in the instruction stream. `op_addr_local` breaks that reasoning:
+# it hands out the address of a frame register, and that address can be
+# stored in a local and read back through arbitrarily much later. Nothing
+# about the *register's* last mention bounds how long the pointer is live.
+#
+# So `slot` below is deliberately never named again after `&mut slot`. Its
+# last mention is the address-of itself; every read and write afterwards goes
+# through `p`. An allocator that recycled it at its last mention would hand
+# its register to `a` — and then `*p` would be reading `a`.
+#
+# `042_scalar_reference_places` does not cover this. There the reference is
+# passed straight into a call (`bump(&mut total)`) and the local is named
+# again afterwards, so its register stays live across the whole span for
+# ordinary reasons and the address-taken rule never has to do any work.
+#
+# Why this checks a value rather than relying on VM/LLVM agreement: the LLVM
+# tier has no notion of register allocation at all — locals are allocas and
+# LLVM does its own thing — so the two tiers cannot disagree in a way that
+# implicates this. Only the computed answer can.
+#
+# 42 (through the pointer) + 29 (the values that would have clobbered it).
+
+# expect: 71
+
+def held_pointer() -> int32:
+    var slot = 5
+    let p = &mut slot
+
+    # `slot` is dead from here on as far as mentions go, so these three
+    # bindings are exactly what would be given its register.
+    let a = 11
+    let b = a * 2
+    let c = b + 7
+
+    *p = *p + 37
+    return *p + c
+
+def main() -> int32:
+    return held_pointer()

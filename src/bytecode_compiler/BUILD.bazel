@@ -2,8 +2,14 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 cc_library(
     name = "bytecode_compiler",
-    srcs = ["compile.cpp"],
-    hdrs = ["compile.h"],
+    srcs = [
+        "compile.cpp",
+        "register_alloc.cpp",
+    ],
+    hdrs = [
+        "compile.h",
+        "register_alloc.h",
+    ],
     deps = [
         "//src:intrinsics",
         "//src/bytecode:bytecode",
@@ -13,6 +19,15 @@ cc_library(
         "//src/semantic:semantic",
     ],
     visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "register_alloc_test",
+    srcs = ["register_alloc_test.cpp"],
+    deps = [
+        ":bytecode_compiler",
+        "//src/testing",
+    ],
 )
 
 cc_test(

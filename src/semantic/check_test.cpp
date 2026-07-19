@@ -2254,6 +2254,90 @@ auto test_ufcs_mut_receiver_must_be_mutable() -> void {
 
 /// The name exists but nothing accepts this receiver — the message a
 /// forgotten `.iter()` produces, and the one worth getting right.
+/// An unknown method on a *builtin* receiver is an error, and suggests the
+/// method that was probably meant.
+///
+/// This used to be silent. A user-defined receiver has always reported "no
+/// method `x` on type `y`", but a builtin one fell through every lookup and
+/// returned `k_unknown_type` with no diagnostic — and because
+/// `k_unknown_type` deliberately unifies with everything so one gap does not
+/// cascade, the bad call then propagated quietly through whatever consumed
+/// it. Two committed fixtures were calling a `str` method that did not exist
+/// anywhere, and checked "cleanly".
+auto test_unknown_method_on_builtin_receiver_is_reported() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "builtin_unknown_method.kira",
+      .text = "module main\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let nums = [1, 2, 3]\n"
+              "    let picked = nums.fliter()\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected an unknown method on a `list` receiver to be rejected");
+  expect_diagnostic(analyzed, "no method `fliter` on type `list[int32]`",
+                    "expected the unknown-method error to name the builtin "
+                    "receiver's full type");
+  expect_diagnostic(analyzed, "did you mean `filter`?",
+                    "expected a suggestion drawn from the builtin method set");
+}
+
+/// The suggestion pool includes `extend` methods on the builtin, not just the
+/// compiler's own inherent ones — otherwise a near-miss on a standard-library
+/// method would report "no method" while listing an unrelated set.
+auto test_builtin_method_suggestion_includes_extend_methods() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "builtin_extend_suggestion.kira",
+      .text = "module main\n"
+              "\n"
+              "extend str:\n"
+              "    def shout(self) -> str:\n"
+              "        return self\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let noise = \"hi\".shout()\n"
+              "    let bad = \"hi\".shou()\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected an unknown method on a `str` receiver to be rejected");
+  expect_diagnostic(analyzed, "did you mean `shout`?",
+                    "expected an `extend` method to be offered as a "
+                    "suggestion for a near-miss on a builtin receiver");
+}
+
+/// ...but a receiver whose type is still a type *parameter* must stay silent,
+/// and be reported once against the concrete type instead.
+///
+/// A generic body is checked as a template and again per instantiation. Only
+/// the instantiation knows what `T` actually is and therefore what methods it
+/// has, so reporting from the template too would produce two errors for one
+/// mistake — the second of them against `T`, a type whose method set is not
+/// knowable there. The restriction to builtin receiver kinds is what prevents
+/// that; this pins the single-error outcome it buys.
+auto test_unknown_method_on_generic_receiver_reports_once() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "generic_receiver.kira",
+      .text = "module main\n"
+              "\n"
+              "def call_it[T](x: T) -> int32:\n"
+              "    let r = x.whatever()\n"
+              "    return 0\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    return call_it(5)\n",
+  }});
+  expect(analyzed.error_count == 1,
+         "an unknown method in a generic body should be reported once, from "
+         "the instantiation that knows the concrete type");
+  expect_diagnostic(analyzed, "no method `whatever` on type `int32`",
+                    "expected the error to name the instantiated type");
+  expect(analyzed.diagnostics.find("on type `T`") == std::string::npos,
+         "a type parameter's method set is not knowable in the template, so "
+         "no error may be reported against `T` itself");
+}
+
 auto test_ufcs_reports_receiver_mismatch() -> void {
   const auto analyzed = analyze_sources({{
       .path = "ufcs_mismatch.kira",
@@ -2481,6 +2565,9 @@ auto main() -> int {
     test_method_wins_over_ufcs();
     test_ufcs_ambiguity_is_an_error();
     test_ufcs_mut_receiver_must_be_mutable();
+    test_unknown_method_on_builtin_receiver_is_reported();
+    test_builtin_method_suggestion_includes_extend_methods();
+    test_unknown_method_on_generic_receiver_reports_once();
     test_ufcs_reports_receiver_mismatch();
     test_ufcs_skips_private_functions_in_other_modules();
     test_impl_type_param_substituted_at_call_site();

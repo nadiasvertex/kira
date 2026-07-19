@@ -1,5 +1,7 @@
 #include "src/bytecode_compiler/compile.h"
 
+#include "src/bytecode_compiler/register_alloc.h"
+
 #include <algorithm>
 #include <bit>
 #include <charconv>
@@ -38,6 +40,12 @@ using hir::hir_node;
 using hir::hir_node_kind;
 using semantic::type_id;
 using semantic::type_table;
+
+/// A runaway guard on virtual-register allocation — see `alloc_register`.
+/// Nothing about the bytecode format cares about this number; the format's
+/// real limit is the 256 *physical* registers a `u8` operand can address,
+/// which `allocate_registers` enforces separately after reuse.
+inline constexpr size_t k_max_virtual_registers = 65535;
 
 // ==========================================================================
 //  Literal decoding — numeric and text escape handling.
@@ -413,8 +421,8 @@ public:
     }
     if (state_symbols.empty()) {
       const auto null_const = writer_.add_constant(slot_value{uint64_t{0}});
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(*state_ptr_reg);
+      emit_op(opcode::op_load_const);
+      emit_register(*state_ptr_reg);
       writer_.emit_u16(null_const);
     } else {
       emit_alloc_slots(*state_ptr_reg,
@@ -443,25 +451,15 @@ public:
     if (!obj_reg.has_value()) {
       return std::unexpected(obj_reg.error());
     }
-    writer_.emit_opcode(opcode::op_make_generator);
-    writer_.emit_u8(*obj_reg);
+    emit_op(opcode::op_make_generator);
+    emit_register(*obj_reg);
     writer_.emit_u16(step_fn_index);
-    writer_.emit_u8(*state_ptr_reg);
-    writer_.emit_opcode(opcode::op_return_value);
-    writer_.emit_u8(*obj_reg);
+    emit_register(*state_ptr_reg);
+    emit_op(opcode::op_return_value);
+    emit_register(*obj_reg);
 
-    if (next_register_ > 256) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::register_limit_exceeded,
-          .span = fn.span,
-          .message = std::format("generator `{}` needs more than 256 "
-                                 "registers, which this bytecode format's "
-                                 "u8 register operands cannot address",
-                                 fn.name)});
-    }
-    return std::move(writer_).finish(fn.name,
-                                     static_cast<uint16_t>(fn.params.size()),
-                                     static_cast<uint16_t>(next_register_));
+    return finish_with_allocation(
+        fn.name, static_cast<uint16_t>(fn.params.size()), fn.span);
   }
 
   /// Compiles a generator's actual body into its step function — the
@@ -525,20 +523,20 @@ public:
       if (!k_reg.has_value()) {
         return std::unexpected(k_reg.error());
       }
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(*k_reg);
+      emit_op(opcode::op_load_const);
+      emit_register(*k_reg);
       writer_.emit_u16(k_const);
       auto cmp_reg = alloc_register(fn.span);
       if (!cmp_reg.has_value()) {
         return std::unexpected(cmp_reg.error());
       }
-      writer_.emit_opcode(opcode::op_eq);
-      writer_.emit_u8(*cmp_reg);
-      writer_.emit_u8(*resume_reg);
-      writer_.emit_u8(*k_reg);
+      emit_op(opcode::op_eq);
+      emit_register(*cmp_reg);
+      emit_register(*resume_reg);
+      emit_register(*k_reg);
       writer_.emit_numeric_kind(numeric_kind::u64);
-      writer_.emit_opcode(opcode::op_jump_if_true);
-      writer_.emit_u8(*cmp_reg);
+      emit_op(opcode::op_jump_if_true);
+      emit_register(*cmp_reg);
       generator_resume_placeholders_.push_back(writer_.emit_jump_placeholder());
     }
     generator_next_yield_ordinal_ = 1;
@@ -553,18 +551,8 @@ public:
       return std::unexpected(result.error());
     }
 
-    if (next_register_ > 256) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::register_limit_exceeded,
-          .span = fn.span,
-          .message = std::format("generator `{}` needs more than 256 "
-                                 "registers, which this bytecode format's "
-                                 "u8 register operands cannot address",
-                                 fn.name)});
-    }
-    return std::move(writer_).finish(
-        std::format("<generator step> {}", fn.name), 3,
-        static_cast<uint16_t>(next_register_));
+    return finish_with_allocation(std::format("<generator step> {}", fn.name),
+                                  3, fn.span);
   }
 
   /// Builds `option::none`, marks the generator object (`generator_self_
@@ -586,8 +574,8 @@ public:
       return std::unexpected(one_reg.error());
     }
     const auto one_const = writer_.add_constant(slot_value{uint64_t{1}});
-    writer_.emit_opcode(opcode::op_load_const);
-    writer_.emit_u8(*one_reg);
+    emit_op(opcode::op_load_const);
+    emit_register(*one_reg);
     writer_.emit_u16(one_const);
     emit_store_slot(generator_self_reg_, 3, *one_reg);
 
@@ -604,13 +592,13 @@ public:
       return std::unexpected(none_tag_reg.error());
     }
     const auto none_tag_const = writer_.add_constant(slot_value{int64_t{1}});
-    writer_.emit_opcode(opcode::op_load_const);
-    writer_.emit_u8(*none_tag_reg);
+    emit_op(opcode::op_load_const);
+    emit_register(*none_tag_reg);
     writer_.emit_u16(none_tag_const);
     emit_store_slot(*none_reg, 0, *none_tag_reg);
 
-    writer_.emit_opcode(opcode::op_return_value);
-    writer_.emit_u8(*none_reg);
+    emit_op(opcode::op_return_value);
+    emit_register(*none_reg);
     return {};
   }
 
@@ -661,7 +649,7 @@ private:
       }
     }
     if (stmts.empty()) {
-      writer_.emit_opcode(opcode::op_return_unit);
+      emit_op(opcode::op_return_unit);
     } else {
       const auto &last = *stmts.back();
       if (last.kind == hir_node_kind::hir_expr_stmt) {
@@ -670,46 +658,157 @@ private:
         if (!reg.has_value()) {
           return std::unexpected(reg.error());
         }
-        writer_.emit_opcode(opcode::op_return_value);
-        writer_.emit_u8(*reg);
+        emit_op(opcode::op_return_value);
+        emit_register(*reg);
       } else {
         if (auto result = compile_stmt(last); !result.has_value()) {
           return std::unexpected(result.error());
         }
-        writer_.emit_opcode(opcode::op_return_unit);
+        emit_op(opcode::op_return_unit);
       }
     }
 
-    if (next_register_ > 256) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::register_limit_exceeded,
-          .span = span,
-          .message = std::format("function `{}` needs more than 256 "
-                                 "registers, which this bytecode format's "
-                                 "u8 register operands cannot address",
-                                 name)});
-    }
-    return std::move(writer_).finish(name, param_count,
-                                     static_cast<uint16_t>(next_register_));
+    return finish_with_allocation(name, param_count, span);
   }
   // ------------------------------------------------------------------
   //  Registers and locals.
   // ------------------------------------------------------------------
 
+  /// Hands out the next *virtual* register.
+  ///
+  /// Virtuals are unbounded: `register_alloc.h`'s linear scan maps them onto
+  /// the 256 physical registers `opcodes.h`'s `u8` operands can address,
+  /// reusing a physical as soon as the virtual holding it dies. What used to
+  /// fail here — allocating a 257th temporary — now only fails if 257 are
+  /// *simultaneously live*, which ordinary code does not do.
+  ///
+  /// The cap that remains is a runaway guard, not a representation limit: it
+  /// is far above anything real code reaches, and exists so a compiler bug
+  /// that allocates without bound is reported here with a source span rather
+  /// than exhausting memory.
   [[nodiscard]] auto alloc_register(source_span span)
-      -> std::expected<uint8_t, compile_error> {
-    if (next_register_ >= 256) {
+      -> std::expected<virtual_reg, compile_error> {
+    if (next_register_ >= k_max_virtual_registers) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::register_limit_exceeded,
           .span = span,
-          .message = "this function needs more than 256 registers, which this "
-                     "bytecode format's u8 register operands cannot address"});
+          .message = std::format(
+              "this function needed more than {} virtual registers while "
+              "compiling, far beyond what any real function requires — this "
+              "is a compiler bug, not a limit you can code around",
+              k_max_virtual_registers)});
     }
-    return static_cast<uint8_t>(next_register_++);
+    return virtual_reg{static_cast<uint32_t>(next_register_++)};
+  }
+
+  /// Allocates `count` virtuals that a call opcode will read as one
+  /// contiguous argument block, recording the contiguity constraint for the
+  /// allocator. Before this pass existed the constraint was satisfied
+  /// implicitly, by `alloc_register` handing out consecutive ids and nothing
+  /// ever reordering them; now that physicals are assigned independently of
+  /// virtual ids, it has to be stated.
+  [[nodiscard]] auto alloc_register_group(source_span span, uint32_t count)
+      -> std::expected<virtual_reg, compile_error> {
+    const auto first = alloc_register(span);
+    if (!first.has_value()) {
+      return std::unexpected(first.error());
+    }
+    for (auto index = uint32_t{1}; index < count; ++index) {
+      if (const auto next = alloc_register(span); !next.has_value()) {
+        return std::unexpected(next.error());
+      }
+    }
+    if (count > 0) {
+      groups_.push_back(register_group{.first = *first, .count = count});
+    }
+    return *first;
+  }
+
+  /// Runs register allocation over everything emitted so far, rewrites each
+  /// register operand placeholder with the physical register it was assigned,
+  /// and finalizes the function.
+  ///
+  /// This is the only place virtual registers become physical ones. Up to
+  /// here every register operand in the code buffer is a placeholder byte
+  /// whose real value is not yet known — which is why `emit_register`, not
+  /// `chunk_writer::emit_u8`, has to be what wrote it.
+  [[nodiscard]] auto finish_with_allocation(std::string name,
+                                            uint16_t param_count,
+                                            source_span span)
+      -> std::expected<bytecode::bytecode_function, compile_error> {
+    const auto input = allocation_input{
+        .virtual_count = static_cast<uint32_t>(next_register_),
+        .pinned_prefix = param_count,
+        .instruction_offsets = std::move(instruction_offsets_),
+        .sites = std::move(register_sites_),
+        .loops = std::move(loops_),
+        .groups = std::move(groups_),
+        .address_taken = std::move(address_taken_),
+    };
+    const auto allocation = allocate_registers(input);
+    if (!allocation.has_value()) {
+      return std::unexpected(
+          compile_error{.kind = compile_error_kind::register_limit_exceeded,
+                        .span = span,
+                        .message = std::format("function `{}` {}", name,
+                                               allocation.error().message)});
+    }
+    auto function = std::move(writer_).finish(std::move(name), param_count,
+                                              allocation->register_count);
+    for (const auto &site : input.sites) {
+      function.code[site.code_offset] = allocation->assignment[site.reg.id];
+    }
+    return function;
+  }
+
+  /// Reserves the contiguous register block a call's arguments are read
+  /// from, before any argument subexpression is compiled — so the block stays
+  /// contiguous no matter how many temporaries an argument needs internally.
+  ///
+  /// This used to be implicit: `next_register_` was bumped past the block and
+  /// `op_call`'s "argc consecutive registers" precondition held because
+  /// nothing ever reordered virtual ids. Physical registers are now assigned
+  /// by live range rather than by id, so the constraint has to be recorded
+  /// (`alloc_register_group`) instead of assumed.
+  [[nodiscard]] auto argument_block(source_span span, size_t argc)
+      -> std::expected<virtual_reg, compile_error> {
+    return alloc_register_group(span, static_cast<uint32_t>(argc));
+  }
+
+  /// The `index`th register of a block returned by `argument_block`.
+  [[nodiscard]] static auto nth_argument(virtual_reg first, size_t index)
+      -> virtual_reg {
+    return virtual_reg{first.id + static_cast<uint32_t>(index)};
+  }
+
+  /// Emits an opcode, recording where the instruction starts so the
+  /// allocator can map a register operand's byte offset back to the
+  /// instruction containing it — which is all it needs to order live
+  /// intervals, and is why it never has to know any opcode's operand layout.
+  auto emit_op(opcode op) -> void {
+    instruction_offsets_.push_back(writer_.current_offset());
+    writer_.emit_opcode(op);
+  }
+
+  /// Emits a register operand as a placeholder byte, remembering its offset
+  /// so `finish_with_allocation` can overwrite it with the physical register
+  /// the allocator chose.
+  auto emit_register(virtual_reg reg) -> void {
+    register_sites_.push_back(
+        register_site{.code_offset = writer_.current_offset(), .reg = reg});
+    writer_.emit_u8(0);
+  }
+
+  /// Records that a backward jump at the current offset closes a loop whose
+  /// body starts at `header_offset`. See `loop_range` — without this, a value
+  /// last *mentioned* early in a loop body looks dead for the rest of it.
+  auto note_loop(size_t header_offset) -> void {
+    loops_.push_back(loop_range{.header = header_offset,
+                                .back_edge = writer_.current_offset()});
   }
 
   [[nodiscard]] auto lookup_local(hir::symbol_id symbol) const
-      -> std::optional<uint8_t> {
+      -> std::optional<virtual_reg> {
     if (const auto found = locals_.find(symbol); found != locals_.end()) {
       return found->second;
     }
@@ -821,9 +920,9 @@ private:
   }
 
   /// Allocates a fresh, zeroed `byte_size`-byte heap block into `dst`.
-  auto emit_alloc(uint8_t dst, uint16_t byte_size) -> void {
-    writer_.emit_opcode(opcode::op_alloc);
-    writer_.emit_u8(dst);
+  auto emit_alloc(virtual_reg dst, uint16_t byte_size) -> void {
+    emit_op(opcode::op_alloc);
+    emit_register(dst);
     writer_.emit_u16(byte_size);
   }
 
@@ -831,71 +930,73 @@ private:
   /// payload/closure-env/`array[byte,N]`'s slot-count-worth-of-words/
   /// list-header construction all still allocate by *count*, not a
   /// pre-computed byte size.
-  auto emit_alloc_slots(uint8_t dst, uint16_t slot_count) -> void {
+  auto emit_alloc_slots(virtual_reg dst, uint16_t slot_count) -> void {
     emit_alloc(dst, static_cast<uint16_t>(slot_count * 8));
   }
 
   /// reg[dst] = a `field_size`-byte (1/2/4/8) read at
   /// `*(reg[ptr] + byte_offset)`.
-  auto emit_load_field(uint8_t dst, uint8_t ptr, uint16_t byte_offset,
+  auto emit_load_field(virtual_reg dst, virtual_reg ptr, uint16_t byte_offset,
                        uint8_t field_size) -> void {
-    writer_.emit_opcode(opcode::op_load_slot);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(ptr);
+    emit_op(opcode::op_load_slot);
+    emit_register(dst);
+    emit_register(ptr);
     writer_.emit_u16(byte_offset);
     writer_.emit_u8(field_size);
   }
 
   /// `emit_load_field`'s uniform-8-byte-slot convenience form —
   /// `byte_offset = slot_index * 8, field_size = 8`.
-  auto emit_load_slot(uint8_t dst, uint8_t ptr, uint16_t slot_index) -> void {
+  auto emit_load_slot(virtual_reg dst, virtual_reg ptr, uint16_t slot_index)
+      -> void {
     emit_load_field(dst, ptr, static_cast<uint16_t>(slot_index * 8), 8);
   }
 
   /// `*(reg[ptr] + byte_offset) = the low `field_size` bytes of reg[src].
-  auto emit_store_field(uint8_t ptr, uint16_t byte_offset, uint8_t src,
+  auto emit_store_field(virtual_reg ptr, uint16_t byte_offset, virtual_reg src,
                         uint8_t field_size) -> void {
-    writer_.emit_opcode(opcode::op_store_slot);
-    writer_.emit_u8(ptr);
+    emit_op(opcode::op_store_slot);
+    emit_register(ptr);
     writer_.emit_u16(byte_offset);
-    writer_.emit_u8(src);
+    emit_register(src);
     writer_.emit_u8(field_size);
   }
 
   /// `emit_store_field`'s uniform-8-byte-slot convenience form.
-  auto emit_store_slot(uint8_t ptr, uint16_t slot_index, uint8_t src) -> void {
+  auto emit_store_slot(virtual_reg ptr, uint16_t slot_index, virtual_reg src)
+      -> void {
     emit_store_field(ptr, static_cast<uint16_t>(slot_index * 8), src, 8);
   }
 
   /// reg[dst] = a `elem_size`-byte read at
   /// `*(reg[ptr] + reg[index_reg] * elem_size)`.
-  auto emit_load_indexed(uint8_t dst, uint8_t ptr, uint8_t index_reg,
-                         uint8_t elem_size) -> void {
-    writer_.emit_opcode(opcode::op_load_indexed);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(ptr);
-    writer_.emit_u8(index_reg);
+  auto emit_load_indexed(virtual_reg dst, virtual_reg ptr,
+                         virtual_reg index_reg, uint8_t elem_size) -> void {
+    emit_op(opcode::op_load_indexed);
+    emit_register(dst);
+    emit_register(ptr);
+    emit_register(index_reg);
     writer_.emit_u8(elem_size);
   }
 
   /// `*(reg[ptr] + reg[index_reg] * elem_size) = the low `elem_size` bytes
   /// of reg[src].
-  auto emit_store_indexed(uint8_t ptr, uint8_t index_reg, uint8_t src,
-                          uint8_t elem_size) -> void {
-    writer_.emit_opcode(opcode::op_store_indexed);
-    writer_.emit_u8(ptr);
-    writer_.emit_u8(index_reg);
-    writer_.emit_u8(src);
+  auto emit_store_indexed(virtual_reg ptr, virtual_reg index_reg,
+                          virtual_reg src, uint8_t elem_size) -> void {
+    emit_op(opcode::op_store_indexed);
+    emit_register(ptr);
+    emit_register(index_reg);
+    emit_register(src);
     writer_.emit_u8(elem_size);
   }
 
   /// Appends the low `elem_size` bytes of reg[value] onto the `list[T]`
   /// value at reg[header].
-  auto emit_list_push(uint8_t header, uint8_t value, uint8_t elem_size)
+  auto emit_list_push(virtual_reg header, virtual_reg value, uint8_t elem_size)
       -> void {
-    writer_.emit_opcode(opcode::op_list_push);
-    writer_.emit_u8(header);
-    writer_.emit_u8(value);
+    emit_op(opcode::op_list_push);
+    emit_register(header);
+    emit_register(value);
     writer_.emit_u8(elem_size);
   }
 
@@ -904,7 +1005,7 @@ private:
   // ------------------------------------------------------------------
 
   [[nodiscard]] auto compile_expr(const hir::hir_expr &expr)
-      -> std::expected<uint8_t, compile_error> {
+      -> std::expected<virtual_reg, compile_error> {
     auto reg = alloc_register(expr.span);
     if (!reg.has_value()) {
       return std::unexpected(reg.error());
@@ -915,7 +1016,8 @@ private:
     return *reg;
   }
 
-  [[nodiscard]] auto compile_expr_into(const hir::hir_expr &expr, uint8_t dst)
+  [[nodiscard]] auto compile_expr_into(const hir::hir_expr &expr,
+                                       virtual_reg dst)
       -> std::expected<void, compile_error> {
     switch (expr.kind) {
     case hir_node_kind::hir_literal: {
@@ -930,8 +1032,8 @@ private:
         // Bypasses `numeric_kind_for` below, which has no scalar kind for
         // `unit` at all.
         const auto index = writer_.add_constant(slot_value{uint64_t{0}});
-        writer_.emit_opcode(opcode::op_load_const);
-        writer_.emit_u8(dst);
+        emit_op(opcode::op_load_const);
+        emit_register(dst);
         writer_.emit_u16(index);
         return {};
       }
@@ -944,8 +1046,8 @@ private:
         return std::unexpected(value.error());
       }
       const auto index = writer_.add_constant(*value);
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(dst);
+      emit_op(opcode::op_load_const);
+      emit_register(dst);
       writer_.emit_u16(index);
       return {};
     }
@@ -963,9 +1065,9 @@ private:
                 ref.name)});
       }
       if (*src != dst) {
-        writer_.emit_opcode(opcode::op_move);
-        writer_.emit_u8(dst);
-        writer_.emit_u8(*src);
+        emit_op(opcode::op_move);
+        emit_register(dst);
+        emit_register(*src);
       }
       return {};
     }
@@ -1020,7 +1122,7 @@ private:
       // same way an `if`/`match` arm's body already is via
       // `compile_block_as_value`.
       return compile_block_as_value(dynamic_cast<const hir::hir_block &>(expr),
-                                    std::optional<uint8_t>(dst));
+                                    std::optional<virtual_reg>(dst));
     default:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
@@ -1030,7 +1132,7 @@ private:
     }
   }
 
-  [[nodiscard]] auto compile_binary(const hir::hir_binary &bin, uint8_t dst)
+  [[nodiscard]] auto compile_binary(const hir::hir_binary &bin, virtual_reg dst)
       -> std::expected<void, compile_error> {
     if (bin.op == ast::binary_op::logical_and ||
         bin.op == ast::binary_op::logical_or) {
@@ -1040,10 +1142,9 @@ private:
       if (auto result = compile_expr_into(*bin.lhs, dst); !result.has_value()) {
         return std::unexpected(result.error());
       }
-      writer_.emit_opcode(bin.op == ast::binary_op::logical_and
-                              ? opcode::op_jump_if_false
-                              : opcode::op_jump_if_true);
-      writer_.emit_u8(dst);
+      emit_op(bin.op == ast::binary_op::logical_and ? opcode::op_jump_if_false
+                                                    : opcode::op_jump_if_true);
+      emit_register(dst);
       const auto end_placeholder = writer_.emit_jump_placeholder();
       if (auto result = compile_expr_into(*bin.rhs, dst); !result.has_value()) {
         return std::unexpected(result.error());
@@ -1074,10 +1175,10 @@ private:
     if (!rhs.has_value()) {
       return std::unexpected(rhs.error());
     }
-    writer_.emit_opcode(*op);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*lhs);
-    writer_.emit_u8(*rhs);
+    emit_op(*op);
+    emit_register(dst);
+    emit_register(*lhs);
+    emit_register(*rhs);
     writer_.emit_numeric_kind(*kind);
     return {};
   }
@@ -1109,16 +1210,16 @@ private:
     }
   }
 
-  [[nodiscard]] auto compile_unary(const hir::hir_unary &un, uint8_t dst)
+  [[nodiscard]] auto compile_unary(const hir::hir_unary &un, virtual_reg dst)
       -> std::expected<void, compile_error> {
     if (un.op == ast::unary_op::logical_not) {
       auto src = compile_expr(*un.operand);
       if (!src.has_value()) {
         return std::unexpected(src.error());
       }
-      writer_.emit_opcode(opcode::op_not_bool);
-      writer_.emit_u8(dst);
-      writer_.emit_u8(*src);
+      emit_op(opcode::op_not_bool);
+      emit_register(dst);
+      emit_register(*src);
       return {};
     }
     if ((un.op == ast::unary_op::addr_of ||
@@ -1168,15 +1269,14 @@ private:
     if (!src.has_value()) {
       return std::unexpected(src.error());
     }
-    writer_.emit_opcode(un.op == ast::unary_op::neg ? opcode::op_neg
-                                                    : opcode::op_bitnot);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*src);
+    emit_op(un.op == ast::unary_op::neg ? opcode::op_neg : opcode::op_bitnot);
+    emit_register(dst);
+    emit_register(*src);
     writer_.emit_numeric_kind(*kind);
     return {};
   }
 
-  [[nodiscard]] auto compile_cast(const hir::hir_cast &cast, uint8_t dst)
+  [[nodiscard]] auto compile_cast(const hir::hir_cast &cast, virtual_reg dst)
       -> std::expected<void, compile_error> {
     auto from_kind = numeric_kind_for(cast.operand->type, cast.span);
     if (!from_kind.has_value()) {
@@ -1190,9 +1290,9 @@ private:
     if (!src.has_value()) {
       return std::unexpected(src.error());
     }
-    writer_.emit_opcode(opcode::op_cast);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*src);
+    emit_op(opcode::op_cast);
+    emit_register(dst);
+    emit_register(*src);
     writer_.emit_numeric_kind(*from_kind);
     writer_.emit_numeric_kind(*to_kind);
     return {};
@@ -1218,7 +1318,7 @@ private:
                : current_module_name_ + "::" + ref.name;
   }
 
-  [[nodiscard]] auto compile_call(const hir::hir_call &call, uint8_t dst)
+  [[nodiscard]] auto compile_call(const hir::hir_call &call, virtual_reg dst)
       -> std::expected<void, compile_error> {
     if (call.args.size() > 255) {
       return std::unexpected(compile_error{
@@ -1242,27 +1342,21 @@ private:
         // to `op_call_intrinsic` rather than `op_call`.
         if (const auto intrinsic_id = kira::intrinsic_index_of(ref.name);
             intrinsic_id.has_value()) {
-          if (next_register_ + argc > 256) {
-            return std::unexpected(compile_error{
-                .kind = compile_error_kind::register_limit_exceeded,
-                .span = call.span,
-                .message =
-                    "this call needs more than 256 registers, which this "
-                    "bytecode format's u8 register operands cannot address"});
+          const auto first_arg = argument_block(call.span, argc);
+          if (!first_arg.has_value()) {
+            return std::unexpected(first_arg.error());
           }
-          const auto first_arg_reg = static_cast<uint8_t>(next_register_);
-          next_register_ += argc;
           for (size_t i = 0; i < call.args.size(); ++i) {
-            const auto arg_reg = static_cast<uint8_t>(first_arg_reg + i);
-            if (auto result = compile_expr_into(*call.args[i], arg_reg);
+            if (auto result = compile_expr_into(*call.args[i],
+                                                nth_argument(*first_arg, i));
                 !result.has_value()) {
               return std::unexpected(result.error());
             }
           }
-          writer_.emit_opcode(opcode::op_call_intrinsic);
-          writer_.emit_u8(dst);
+          emit_op(opcode::op_call_intrinsic);
+          emit_register(dst);
           writer_.emit_u8(*intrinsic_id);
-          writer_.emit_u8(first_arg_reg);
+          emit_register(*first_arg);
           writer_.emit_u8(static_cast<uint8_t>(argc));
           return {};
         }
@@ -1277,33 +1371,21 @@ private:
                   "compiled module",
                   ref.name)});
         }
-        if (next_register_ + argc > 256) {
-          return std::unexpected(compile_error{
-              .kind = compile_error_kind::register_limit_exceeded,
-              .span = call.span,
-              .message = "this function needs more than 256 registers, which "
-                         "this bytecode format's u8 register operands cannot "
-                         "address"});
+        const auto first_arg = argument_block(call.span, argc);
+        if (!first_arg.has_value()) {
+          return std::unexpected(first_arg.error());
         }
-        // Reserve a contiguous register block up front (before compiling
-        // any argument subexpression) so op_call's "argc consecutive
-        // registers" precondition holds regardless of how many temporaries
-        // each argument expression needs internally — those get allocated
-        // after this block automatically, since next_register_ has already
-        // moved past it.
-        const auto first_arg_reg = static_cast<uint8_t>(next_register_);
-        next_register_ += argc;
         for (size_t i = 0; i < call.args.size(); ++i) {
-          const auto arg_reg = static_cast<uint8_t>(first_arg_reg + i);
-          if (auto result = compile_expr_into(*call.args[i], arg_reg);
+          if (auto result =
+                  compile_expr_into(*call.args[i], nth_argument(*first_arg, i));
               !result.has_value()) {
             return std::unexpected(result.error());
           }
         }
-        writer_.emit_opcode(opcode::op_call);
-        writer_.emit_u8(dst);
+        emit_op(opcode::op_call);
+        emit_register(dst);
         writer_.emit_u16(found->second);
-        writer_.emit_u8(first_arg_reg);
+        emit_register(*first_arg);
         writer_.emit_u8(static_cast<uint8_t>(argc));
         return {};
       }
@@ -1318,26 +1400,21 @@ private:
     if (!closure_reg.has_value()) {
       return std::unexpected(closure_reg.error());
     }
-    if (next_register_ + argc > 256) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::register_limit_exceeded,
-          .span = call.span,
-          .message = "this function needs more than 256 registers, which this "
-                     "bytecode format's u8 register operands cannot address"});
+    const auto first_arg = argument_block(call.span, argc);
+    if (!first_arg.has_value()) {
+      return std::unexpected(first_arg.error());
     }
-    const auto first_arg_reg = static_cast<uint8_t>(next_register_);
-    next_register_ += argc;
     for (size_t i = 0; i < call.args.size(); ++i) {
-      const auto arg_reg = static_cast<uint8_t>(first_arg_reg + i);
-      if (auto result = compile_expr_into(*call.args[i], arg_reg);
+      if (auto result =
+              compile_expr_into(*call.args[i], nth_argument(*first_arg, i));
           !result.has_value()) {
         return std::unexpected(result.error());
       }
     }
-    writer_.emit_opcode(opcode::op_call_indirect);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*closure_reg);
-    writer_.emit_u8(first_arg_reg);
+    emit_op(opcode::op_call_indirect);
+    emit_register(dst);
+    emit_register(*closure_reg);
+    emit_register(*first_arg);
     writer_.emit_u8(static_cast<uint8_t>(argc));
     return {};
   }
@@ -1349,7 +1426,7 @@ private:
   /// `compile_lambda_body`), and emits `op_make_closure` to tie the two
   /// together at `dst`.
   [[nodiscard]] auto compile_lambda_value(const hir::hir_lambda &lambda,
-                                          uint8_t dst)
+                                          virtual_reg dst)
       -> std::expected<void, compile_error> {
     // `free_variables` reports every symbol the body references that it does
     // not itself bind — which includes module-level functions (an ordinary
@@ -1367,7 +1444,7 @@ private:
       return !lookup_local(sym).has_value();
     });
 
-    uint8_t env_reg = 0;
+    virtual_reg env_reg;
     if (free_vars.empty()) {
       const auto reg = alloc_register(lambda.span);
       if (!reg.has_value()) {
@@ -1375,8 +1452,8 @@ private:
       }
       env_reg = *reg;
       const auto index = writer_.add_constant(slot_value{uint64_t{0}});
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(env_reg);
+      emit_op(opcode::op_load_const);
+      emit_register(env_reg);
       writer_.emit_u16(index);
     } else {
       const auto reg = alloc_register(lambda.span);
@@ -1410,10 +1487,10 @@ private:
     const auto fn_index = static_cast<uint16_t>(function_table_base_ +
                                                 lambda_functions_.size() - 1);
 
-    writer_.emit_opcode(opcode::op_make_closure);
-    writer_.emit_u8(dst);
+    emit_op(opcode::op_make_closure);
+    emit_register(dst);
     writer_.emit_u16(fn_index);
-    writer_.emit_u8(env_reg);
+    emit_register(env_reg);
     return {};
   }
 
@@ -1423,7 +1500,7 @@ private:
   /// position, where branch bodies are compiled for their side effects only
   /// (mirrors `hir_if`'s own doc comment on the two being the same node).
   [[nodiscard]] auto compile_if(const hir::hir_if &node,
-                                std::optional<uint8_t> want_result)
+                                std::optional<virtual_reg> want_result)
       -> std::expected<void, compile_error> {
     auto end_placeholders = std::vector<size_t>{};
     auto next_branch_placeholder = std::optional<size_t>{};
@@ -1437,15 +1514,15 @@ private:
       if (!cond.has_value()) {
         return std::unexpected(cond.error());
       }
-      writer_.emit_opcode(opcode::op_jump_if_false);
-      writer_.emit_u8(*cond);
+      emit_op(opcode::op_jump_if_false);
+      emit_register(*cond);
       next_branch_placeholder = writer_.emit_jump_placeholder();
 
       if (auto result = compile_block_as_value(*branch.body, want_result);
           !result.has_value()) {
         return std::unexpected(result.error());
       }
-      writer_.emit_opcode(opcode::op_jump);
+      emit_op(opcode::op_jump);
       end_placeholders.push_back(writer_.emit_jump_placeholder());
     }
 
@@ -1475,7 +1552,7 @@ private:
   // ------------------------------------------------------------------
 
   [[nodiscard]] auto compile_string_literal(const hir::hir_literal &lit,
-                                            uint8_t dst)
+                                            virtual_reg dst)
       -> std::expected<void, compile_error> {
     auto text = decode_string_literal(lit.value);
     if (!text.has_value()) {
@@ -1486,8 +1563,8 @@ private:
               std::format("could not decode string literal `{}`", lit.value)});
     }
     const auto index = writer_.add_string_constant(std::move(*text));
-    writer_.emit_opcode(opcode::op_load_str_const);
-    writer_.emit_u8(dst);
+    emit_op(opcode::op_load_str_const);
+    emit_register(dst);
     writer_.emit_u16(index);
     return {};
   }
@@ -1501,7 +1578,7 @@ private:
   /// stay on the uniform scheme, out of scope for this pass, matching
   /// sum-type payloads and closure envs).
   [[nodiscard]] auto
-  compile_slots_init(const hir::ptr_vec<hir::hir_expr> &values, uint8_t dst,
+  compile_slots_init(const hir::ptr_vec<hir::hir_expr> &values, virtual_reg dst,
                      source_span span) -> std::expected<void, compile_error> {
     if (values.size() > 0xFFFF) {
       return std::unexpected(compile_error{
@@ -1529,7 +1606,7 @@ private:
   /// field value's already-resolved HIR `type`) rather than every field
   /// costing a uniform 8 bytes.
   [[nodiscard]] auto compile_struct_init(const hir::hir_struct_init &init,
-                                         uint8_t dst)
+                                         virtual_reg dst)
       -> std::expected<void, compile_error> {
     const auto layout = runtime::struct_layout(types_, init.type);
     if (layout.size_bytes > 0xFFFF) {
@@ -1571,7 +1648,7 @@ private:
   /// byte offset, unrolled rather than a runtime loop since `N` is always
   /// statically known for a fixed array.
   [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init,
-                                        uint8_t dst)
+                                        virtual_reg dst)
       -> std::expected<void, compile_error> {
     if (is_list_type(init.type)) {
       return compile_list_init(init, dst);
@@ -1636,7 +1713,7 @@ private:
   /// shape is the only construction strategy that works uniformly whether
   /// `count` happens to be a literal or not.
   [[nodiscard]] auto compile_list_init(const hir::hir_array_init &init,
-                                       uint8_t dst)
+                                       virtual_reg dst)
       -> std::expected<void, compile_error> {
     const auto &list_entry = types_.entry(init.type);
     const auto elem_size = list_entry.args.empty()
@@ -1676,8 +1753,8 @@ private:
       return std::unexpected(idx_reg.error());
     }
     const auto zero_const = writer_.add_constant(slot_value{uint64_t{0}});
-    writer_.emit_opcode(opcode::op_load_const);
-    writer_.emit_u8(*idx_reg);
+    emit_op(opcode::op_load_const);
+    emit_register(*idx_reg);
     writer_.emit_u16(zero_const);
 
     const auto loop_start = writer_.current_offset();
@@ -1685,13 +1762,13 @@ private:
     if (!cmp_reg.has_value()) {
       return std::unexpected(cmp_reg.error());
     }
-    writer_.emit_opcode(opcode::op_lt);
-    writer_.emit_u8(*cmp_reg);
-    writer_.emit_u8(*idx_reg);
-    writer_.emit_u8(*count_reg);
+    emit_op(opcode::op_lt);
+    emit_register(*cmp_reg);
+    emit_register(*idx_reg);
+    emit_register(*count_reg);
     writer_.emit_numeric_kind(*count_kind);
-    writer_.emit_opcode(opcode::op_jump_if_false);
-    writer_.emit_u8(*cmp_reg);
+    emit_op(opcode::op_jump_if_false);
+    emit_register(*cmp_reg);
     const auto exit_placeholder = writer_.emit_jump_placeholder();
 
     emit_list_push(dst, *fill_reg, elem_size);
@@ -1701,16 +1778,22 @@ private:
     if (!one_reg.has_value()) {
       return std::unexpected(one_reg.error());
     }
-    writer_.emit_opcode(opcode::op_load_const);
-    writer_.emit_u8(*one_reg);
+    emit_op(opcode::op_load_const);
+    emit_register(*one_reg);
     writer_.emit_u16(one_const);
-    writer_.emit_opcode(opcode::op_add);
-    writer_.emit_u8(*idx_reg);
-    writer_.emit_u8(*idx_reg);
-    writer_.emit_u8(*one_reg);
+    emit_op(opcode::op_add);
+    emit_register(*idx_reg);
+    emit_register(*idx_reg);
+    emit_register(*one_reg);
     writer_.emit_numeric_kind(*count_kind);
 
-    writer_.emit_opcode(opcode::op_jump);
+    // A backward jump closes a loop. Live intervals come from first and
+    // last mention in the linear instruction order, which is unsound across
+    // a back edge on its own: a value last mentioned early in this body is
+    // still read on the next iteration. Recording the loop lets the
+    // allocator extend those intervals to cover it.
+    note_loop(loop_start);
+    emit_op(opcode::op_jump);
     const auto after_operand =
         static_cast<int64_t>(writer_.current_offset()) + 4;
     const auto back_offset =
@@ -1727,7 +1810,7 @@ private:
   /// this is the same one `op_load_slot` regardless of which container
   /// kind `node.object` actually is.
   [[nodiscard]] auto compile_container_len(const hir::hir_container_len &node,
-                                           uint8_t dst)
+                                           virtual_reg dst)
       -> std::expected<void, compile_error> {
     auto object_reg = compile_expr(*node.object);
     if (!object_reg.has_value()) {
@@ -1738,15 +1821,15 @@ private:
   }
 
   [[nodiscard]] auto compile_generator_next(const hir::hir_generator_next &node,
-                                            uint8_t dst)
+                                            virtual_reg dst)
       -> std::expected<void, compile_error> {
     auto object_reg = compile_expr(*node.object);
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
     }
-    writer_.emit_opcode(opcode::op_generator_next);
-    writer_.emit_u8(dst);
-    writer_.emit_u8(*object_reg);
+    emit_op(opcode::op_generator_next);
+    emit_register(dst);
+    emit_register(*object_reg);
     return {};
   }
 
@@ -1755,7 +1838,8 @@ private:
   /// Only a genuine place has an address; `&(a + b)` has nowhere to point,
   /// so anything else is rejected here with a diagnostic that says which
   /// forms do work rather than failing silently.
-  [[nodiscard]] auto compile_addr_of(const hir::hir_expr &place, uint8_t dst)
+  [[nodiscard]] auto compile_addr_of(const hir::hir_expr &place,
+                                     virtual_reg dst)
       -> std::expected<void, compile_error> {
     if (place.kind == hir_node_kind::hir_local_ref) {
       const auto &local = dynamic_cast<const hir::hir_local_ref &>(place);
@@ -1769,9 +1853,13 @@ private:
                 "local variable",
                 local.name)});
       }
-      writer_.emit_opcode(opcode::op_addr_local);
-      writer_.emit_u8(dst);
-      writer_.emit_u8(*reg);
+      // The address of a frame register can be stored anywhere and read back
+      // through arbitrarily much later, so this register's last *mention* is
+      // no bound on its lifetime — tell the allocator not to recycle it.
+      address_taken_.push_back(*reg);
+      emit_op(opcode::op_addr_local);
+      emit_register(dst);
+      emit_register(*reg);
       return {};
     }
     if (place.kind == hir_node_kind::hir_field) {
@@ -1791,9 +1879,9 @@ private:
       if (!object_reg.has_value()) {
         return std::unexpected(object_reg.error());
       }
-      writer_.emit_opcode(opcode::op_addr_slot);
-      writer_.emit_u8(dst);
-      writer_.emit_u8(*object_reg);
+      emit_op(opcode::op_addr_slot);
+      emit_register(dst);
+      emit_register(*object_reg);
       writer_.emit_u16(static_cast<uint16_t>(*offset));
       return {};
     }
@@ -1809,10 +1897,10 @@ private:
       if (!location.has_value()) {
         return std::unexpected(location.error());
       }
-      writer_.emit_opcode(opcode::op_addr_indexed);
-      writer_.emit_u8(dst);
-      writer_.emit_u8(location->data_reg);
-      writer_.emit_u8(location->index_reg);
+      emit_op(opcode::op_addr_indexed);
+      emit_register(dst);
+      emit_register(location->data_reg);
+      emit_register(location->index_reg);
       writer_.emit_u8(location->elem_size);
       return {};
     }
@@ -1824,7 +1912,7 @@ private:
                    "struct field, or an element"});
   }
 
-  [[nodiscard]] auto compile_field(const hir::hir_field &field, uint8_t dst)
+  [[nodiscard]] auto compile_field(const hir::hir_field &field, virtual_reg dst)
       -> std::expected<void, compile_error> {
     const auto offset = runtime::struct_field_offset(
         types_, strip_refs(field.object->type), field.field_name);
@@ -1847,7 +1935,7 @@ private:
   }
 
   [[nodiscard]] auto compile_tuple_index(const hir::hir_tuple_index &node,
-                                         uint8_t dst)
+                                         virtual_reg dst)
       -> std::expected<void, compile_error> {
     auto object_reg = compile_expr(*node.object);
     if (!object_reg.has_value()) {
@@ -1897,7 +1985,7 @@ private:
   /// every byte `rt_read` wrote.
   [[nodiscard]] auto compile_range_index(const hir::hir_index &node,
                                          const hir::hir_binary &range,
-                                         uint8_t dst)
+                                         virtual_reg dst)
       -> std::expected<void, compile_error> {
     if (range.lhs == nullptr || range.rhs == nullptr) {
       return std::unexpected(compile_error{
@@ -1929,23 +2017,23 @@ private:
       if (!one_reg.has_value()) {
         return std::unexpected(one_reg.error());
       }
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(*one_reg);
+      emit_op(opcode::op_load_const);
+      emit_register(*one_reg);
       writer_.emit_u16(one_const);
       auto inclusive_end_reg = alloc_register(node.span);
       if (!inclusive_end_reg.has_value()) {
         return std::unexpected(inclusive_end_reg.error());
       }
-      writer_.emit_opcode(opcode::op_add);
-      writer_.emit_u8(*inclusive_end_reg);
-      writer_.emit_u8(*end_reg);
-      writer_.emit_u8(*one_reg);
+      emit_op(opcode::op_add);
+      emit_register(*inclusive_end_reg);
+      emit_register(*end_reg);
+      emit_register(*one_reg);
       writer_.emit_numeric_kind(numeric_kind::u64);
       end_reg = inclusive_end_reg;
     }
 
-    uint8_t len_reg;
-    uint8_t data_reg;
+    virtual_reg len_reg;
+    virtual_reg data_reg;
     if (is_byte_array_type(node.object->type)) {
       const auto len_const =
           writer_.add_constant(slot_value{static_cast<uint64_t>(
@@ -1954,8 +2042,8 @@ private:
       if (!len_reg_exp.has_value()) {
         return std::unexpected(len_reg_exp.error());
       }
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(*len_reg_exp);
+      emit_op(opcode::op_load_const);
+      emit_register(*len_reg_exp);
       writer_.emit_u16(len_const);
       len_reg = *len_reg_exp;
       data_reg = *object_reg;
@@ -1980,19 +2068,19 @@ private:
     // range still reports as an inverted range even when `start` also
     // happens to exceed `len`.
     const auto emit_bounds_check =
-        [&](uint8_t lhs_reg,
-            uint8_t rhs_reg) -> std::expected<void, compile_error> {
+        [&](virtual_reg lhs_reg,
+            virtual_reg rhs_reg) -> std::expected<void, compile_error> {
       auto oob_reg = alloc_register(node.span);
       if (!oob_reg.has_value()) {
         return std::unexpected(oob_reg.error());
       }
-      writer_.emit_opcode(opcode::op_gt);
-      writer_.emit_u8(*oob_reg);
-      writer_.emit_u8(lhs_reg);
-      writer_.emit_u8(rhs_reg);
+      emit_op(opcode::op_gt);
+      emit_register(*oob_reg);
+      emit_register(lhs_reg);
+      emit_register(rhs_reg);
       writer_.emit_numeric_kind(numeric_kind::u64);
-      writer_.emit_opcode(opcode::op_panic_if);
-      writer_.emit_u8(*oob_reg);
+      emit_op(opcode::op_panic_if);
+      emit_register(*oob_reg);
       writer_.emit_u8(
           static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
       return {};
@@ -2010,20 +2098,20 @@ private:
     if (!new_data_reg_exp.has_value()) {
       return std::unexpected(new_data_reg_exp.error());
     }
-    writer_.emit_opcode(opcode::op_add);
-    writer_.emit_u8(*new_data_reg_exp);
-    writer_.emit_u8(data_reg);
-    writer_.emit_u8(*start_reg);
+    emit_op(opcode::op_add);
+    emit_register(*new_data_reg_exp);
+    emit_register(data_reg);
+    emit_register(*start_reg);
     writer_.emit_numeric_kind(numeric_kind::u64);
 
     auto new_len_reg_exp = alloc_register(node.span);
     if (!new_len_reg_exp.has_value()) {
       return std::unexpected(new_len_reg_exp.error());
     }
-    writer_.emit_opcode(opcode::op_sub);
-    writer_.emit_u8(*new_len_reg_exp);
-    writer_.emit_u8(*end_reg);
-    writer_.emit_u8(*start_reg);
+    emit_op(opcode::op_sub);
+    emit_register(*new_len_reg_exp);
+    emit_register(*end_reg);
+    emit_register(*start_reg);
     writer_.emit_numeric_kind(numeric_kind::u64);
 
     emit_alloc_slots(dst, 2);
@@ -2051,12 +2139,12 @@ private:
   /// an address-of that assumed the latter for all four would compute an
   /// address inside the header instead of an element.
   struct element_location {
-    uint8_t data_reg;
-    uint8_t index_reg;
+    virtual_reg data_reg;
+    virtual_reg index_reg;
     uint8_t elem_size;
   };
 
-  [[nodiscard]] auto compile_index(const hir::hir_index &node, uint8_t dst)
+  [[nodiscard]] auto compile_index(const hir::hir_index &node, virtual_reg dst)
       -> std::expected<void, compile_error> {
     if (node.index != nullptr &&
         node.index->kind == hir_node_kind::hir_binary) {
@@ -2131,8 +2219,8 @@ private:
                                     : element_stride(object_entry.args.front()))
                              : element_stride(object_entry.result));
 
-    uint8_t len_reg;
-    uint8_t data_reg;
+    virtual_reg len_reg;
+    virtual_reg data_reg;
     if (indexing_list || indexing_view) {
       auto len_reg_exp = alloc_register(node.span);
       if (!len_reg_exp.has_value()) {
@@ -2156,8 +2244,8 @@ private:
       if (!len_reg_exp.has_value()) {
         return std::unexpected(len_reg_exp.error());
       }
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(*len_reg_exp);
+      emit_op(opcode::op_load_const);
+      emit_register(*len_reg_exp);
       writer_.emit_u16(len_const);
       len_reg = *len_reg_exp;
       data_reg = *object_reg;
@@ -2167,13 +2255,13 @@ private:
     if (!oob_reg.has_value()) {
       return std::unexpected(oob_reg.error());
     }
-    writer_.emit_opcode(opcode::op_ge);
-    writer_.emit_u8(*oob_reg);
-    writer_.emit_u8(*index_reg);
-    writer_.emit_u8(len_reg);
+    emit_op(opcode::op_ge);
+    emit_register(*oob_reg);
+    emit_register(*index_reg);
+    emit_register(len_reg);
     writer_.emit_numeric_kind(numeric_kind::u64);
-    writer_.emit_opcode(opcode::op_panic_if);
-    writer_.emit_u8(*oob_reg);
+    emit_op(opcode::op_panic_if);
+    emit_register(*oob_reg);
     writer_.emit_u8(
         static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
 
@@ -2186,7 +2274,7 @@ private:
   /// safely reinterpret it as any variant), stores the runtime tag at
   /// slot 0, then each argument at its 1-based payload slot.
   [[nodiscard]] auto compile_variant_init(const hir::hir_variant_init &init,
-                                          uint8_t dst)
+                                          virtual_reg dst)
       -> std::expected<void, compile_error> {
     const auto tag =
         runtime::sum_variant_tag(types_, init.type, init.variant_name);
@@ -2210,8 +2298,8 @@ private:
     if (!tag_reg.has_value()) {
       return std::unexpected(tag_reg.error());
     }
-    writer_.emit_opcode(opcode::op_load_const);
-    writer_.emit_u8(*tag_reg);
+    emit_op(opcode::op_load_const);
+    emit_register(*tag_reg);
     writer_.emit_u16(tag_const);
     emit_store_slot(dst, 0, *tag_reg);
 
@@ -2230,7 +2318,7 @@ private:
   /// matches `variant_name` (see the node's own doc comment) — codegen
   /// just reads the corresponding payload slot without re-checking the tag.
   [[nodiscard]] auto
-  compile_variant_payload(const hir::hir_variant_payload &node, uint8_t dst)
+  compile_variant_payload(const hir::hir_variant_payload &node, virtual_reg dst)
       -> std::expected<void, compile_error> {
     const auto slot = runtime::sum_variant_payload_slots(
         types_, node.object->type, node.variant_name);
@@ -2290,8 +2378,8 @@ private:
   /// strings stored in different blocks.
   [[nodiscard]] auto
   compile_string_pattern_test(const hir::hir_literal_pattern &lit,
-                              uint8_t value_reg, type_id value_type)
-      -> std::expected<uint8_t, compile_error> {
+                              virtual_reg value_reg, type_id value_type)
+      -> std::expected<virtual_reg, compile_error> {
     if (!is_str_type(value_type)) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
@@ -2317,32 +2405,31 @@ private:
                      "compare with is missing from this build"});
     }
     // `op_call_intrinsic` reads its arguments from a *contiguous* register
-    // run, so both operands are materialized into freshly allocated
-    // adjacent registers (`alloc_register` hands out consecutive ids)
-    // rather than passing `value_reg` in place.
-    auto subject_reg = alloc_register(lit.span);
-    if (!subject_reg.has_value()) {
-      return std::unexpected(subject_reg.error());
+    // run, so both operands are materialized into one reserved two-register
+    // block rather than passing `value_reg` in place. This used to rely on
+    // `alloc_register` handing out consecutive ids; physicals are now
+    // assigned by live range, so the adjacency has to be declared.
+    const auto operands = argument_block(lit.span, 2);
+    if (!operands.has_value()) {
+      return std::unexpected(operands.error());
     }
-    auto literal_reg = alloc_register(lit.span);
-    if (!literal_reg.has_value()) {
-      return std::unexpected(literal_reg.error());
-    }
-    writer_.emit_opcode(opcode::op_move);
-    writer_.emit_u8(*subject_reg);
-    writer_.emit_u8(value_reg);
+    const auto subject_reg = nth_argument(*operands, 0);
+    const auto literal_reg = nth_argument(*operands, 1);
+    emit_op(opcode::op_move);
+    emit_register(subject_reg);
+    emit_register(value_reg);
     const auto index = writer_.add_string_constant(std::move(*text));
-    writer_.emit_opcode(opcode::op_load_str_const);
-    writer_.emit_u8(*literal_reg);
+    emit_op(opcode::op_load_str_const);
+    emit_register(literal_reg);
     writer_.emit_u16(index);
     auto boxed_reg = alloc_register(lit.span);
     if (!boxed_reg.has_value()) {
       return std::unexpected(boxed_reg.error());
     }
-    writer_.emit_opcode(opcode::op_call_intrinsic);
-    writer_.emit_u8(*boxed_reg);
+    emit_op(opcode::op_call_intrinsic);
+    emit_register(*boxed_reg);
     writer_.emit_u8(*intrinsic_id);
-    writer_.emit_u8(*subject_reg);
+    emit_register(subject_reg);
     writer_.emit_u8(uint8_t{2});
     // `rt_str_eq` yields a *boxed* bool (`box_bool` in `std/string.kira`);
     // unwrap its single slot the same way `.v` does.
@@ -2355,9 +2442,9 @@ private:
   }
 
   [[nodiscard]] auto compile_pattern_test(const hir::hir_pattern &pattern,
-                                          uint8_t value_reg,
+                                          virtual_reg value_reg,
                                           std::optional<type_id> value_type)
-      -> std::expected<uint8_t, compile_error> {
+      -> std::expected<virtual_reg, compile_error> {
     switch (pattern.kind) {
     case hir_node_kind::hir_wildcard_pattern: {
       auto reg = alloc_register(pattern.span);
@@ -2365,8 +2452,8 @@ private:
         return std::unexpected(reg.error());
       }
       const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(*reg);
+      emit_op(opcode::op_load_const);
+      emit_register(*reg);
       writer_.emit_u16(idx);
       return *reg;
     }
@@ -2397,17 +2484,17 @@ private:
         return std::unexpected(const_reg.error());
       }
       const auto idx = writer_.add_constant(*encoded);
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(*const_reg);
+      emit_op(opcode::op_load_const);
+      emit_register(*const_reg);
       writer_.emit_u16(idx);
       auto result_reg = alloc_register(pattern.span);
       if (!result_reg.has_value()) {
         return std::unexpected(result_reg.error());
       }
-      writer_.emit_opcode(opcode::op_eq);
-      writer_.emit_u8(*result_reg);
-      writer_.emit_u8(value_reg);
-      writer_.emit_u8(*const_reg);
+      emit_op(opcode::op_eq);
+      emit_register(*result_reg);
+      emit_register(value_reg);
+      emit_register(*const_reg);
       writer_.emit_numeric_kind(*kind);
       return *result_reg;
     }
@@ -2431,10 +2518,10 @@ private:
         if (!alt.has_value()) {
           return std::unexpected(alt.error());
         }
-        writer_.emit_opcode(opcode::op_bitor);
-        writer_.emit_u8(result_reg);
-        writer_.emit_u8(result_reg);
-        writer_.emit_u8(*alt);
+        emit_op(opcode::op_bitor);
+        emit_register(result_reg);
+        emit_register(result_reg);
+        emit_register(*alt);
         writer_.emit_numeric_kind(numeric_kind::boolean);
       }
       return result_reg;
@@ -2449,7 +2536,7 @@ private:
                        "subject type, which this position doesn't have yet"});
       }
       const auto &entry = types_.entry(*value_type);
-      auto result_reg = std::optional<uint8_t>{};
+      auto result_reg = std::optional<virtual_reg>{};
       for (size_t i = 0; i < tup.elements.size(); ++i) {
         auto elem_reg = alloc_register(pattern.span);
         if (!elem_reg.has_value()) {
@@ -2466,10 +2553,10 @@ private:
         if (!result_reg.has_value()) {
           result_reg = *sub;
         } else {
-          writer_.emit_opcode(opcode::op_bitand);
-          writer_.emit_u8(*result_reg);
-          writer_.emit_u8(*result_reg);
-          writer_.emit_u8(*sub);
+          emit_op(opcode::op_bitand);
+          emit_register(*result_reg);
+          emit_register(*result_reg);
+          emit_register(*sub);
           writer_.emit_numeric_kind(numeric_kind::boolean);
         }
       }
@@ -2479,8 +2566,8 @@ private:
           return std::unexpected(reg.error());
         }
         const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
-        writer_.emit_opcode(opcode::op_load_const);
-        writer_.emit_u8(*reg);
+        emit_op(opcode::op_load_const);
+        emit_register(*reg);
         writer_.emit_u16(idx);
         return *reg;
       }
@@ -2497,7 +2584,7 @@ private:
       }
       const auto &entry = types_.entry(*value_type);
       const auto elem_size = element_stride(entry.result);
-      auto result_reg = std::optional<uint8_t>{};
+      auto result_reg = std::optional<virtual_reg>{};
       for (size_t i = 0; i < arr.elements.size(); ++i) {
         auto elem_reg = alloc_register(pattern.span);
         if (!elem_reg.has_value()) {
@@ -2513,10 +2600,10 @@ private:
         if (!result_reg.has_value()) {
           result_reg = *sub;
         } else {
-          writer_.emit_opcode(opcode::op_bitand);
-          writer_.emit_u8(*result_reg);
-          writer_.emit_u8(*result_reg);
-          writer_.emit_u8(*sub);
+          emit_op(opcode::op_bitand);
+          emit_register(*result_reg);
+          emit_register(*result_reg);
+          emit_register(*sub);
           writer_.emit_numeric_kind(numeric_kind::boolean);
         }
       }
@@ -2526,8 +2613,8 @@ private:
           return std::unexpected(reg.error());
         }
         const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
-        writer_.emit_opcode(opcode::op_load_const);
-        writer_.emit_u8(*reg);
+        emit_op(opcode::op_load_const);
+        emit_register(*reg);
         writer_.emit_u16(idx);
         return *reg;
       }
@@ -2554,8 +2641,8 @@ private:
         return std::unexpected(reg.error());
       }
       const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(*reg);
+      emit_op(opcode::op_load_const);
+      emit_register(*reg);
       writer_.emit_u16(idx);
       return *reg;
     }
@@ -2607,17 +2694,17 @@ private:
       }
       const auto idx =
           writer_.add_constant(slot_value{static_cast<int64_t>(*tag)});
-      writer_.emit_opcode(opcode::op_load_const);
-      writer_.emit_u8(*const_reg);
+      emit_op(opcode::op_load_const);
+      emit_register(*const_reg);
       writer_.emit_u16(idx);
       auto result_reg = alloc_register(pattern.span);
       if (!result_reg.has_value()) {
         return std::unexpected(result_reg.error());
       }
-      writer_.emit_opcode(opcode::op_eq);
-      writer_.emit_u8(*result_reg);
-      writer_.emit_u8(*tag_reg);
-      writer_.emit_u8(*const_reg);
+      emit_op(opcode::op_eq);
+      emit_register(*result_reg);
+      emit_register(*tag_reg);
+      emit_register(*const_reg);
       writer_.emit_numeric_kind(numeric_kind::i64);
       return *result_reg;
     }
@@ -2634,7 +2721,7 @@ private:
       if (!kind.has_value()) {
         return std::unexpected(kind.error());
       }
-      auto result_reg = std::optional<uint8_t>{};
+      auto result_reg = std::optional<virtual_reg>{};
       if (range.start != nullptr) {
         auto start_reg = compile_expr(*range.start);
         if (!start_reg.has_value()) {
@@ -2644,10 +2731,10 @@ private:
         if (!cmp_reg.has_value()) {
           return std::unexpected(cmp_reg.error());
         }
-        writer_.emit_opcode(opcode::op_ge);
-        writer_.emit_u8(*cmp_reg);
-        writer_.emit_u8(value_reg);
-        writer_.emit_u8(*start_reg);
+        emit_op(opcode::op_ge);
+        emit_register(*cmp_reg);
+        emit_register(value_reg);
+        emit_register(*start_reg);
         writer_.emit_numeric_kind(*kind);
         result_reg = *cmp_reg;
       }
@@ -2660,16 +2747,16 @@ private:
         if (!cmp_reg.has_value()) {
           return std::unexpected(cmp_reg.error());
         }
-        writer_.emit_opcode(range.inclusive ? opcode::op_le : opcode::op_lt);
-        writer_.emit_u8(*cmp_reg);
-        writer_.emit_u8(value_reg);
-        writer_.emit_u8(*end_reg);
+        emit_op(range.inclusive ? opcode::op_le : opcode::op_lt);
+        emit_register(*cmp_reg);
+        emit_register(value_reg);
+        emit_register(*end_reg);
         writer_.emit_numeric_kind(*kind);
         if (result_reg.has_value()) {
-          writer_.emit_opcode(opcode::op_bitand);
-          writer_.emit_u8(*result_reg);
-          writer_.emit_u8(*result_reg);
-          writer_.emit_u8(*cmp_reg);
+          emit_op(opcode::op_bitand);
+          emit_register(*result_reg);
+          emit_register(*result_reg);
+          emit_register(*cmp_reg);
           writer_.emit_numeric_kind(numeric_kind::boolean);
         } else {
           result_reg = *cmp_reg;
@@ -2681,8 +2768,8 @@ private:
           return std::unexpected(reg.error());
         }
         const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
-        writer_.emit_opcode(opcode::op_load_const);
-        writer_.emit_u8(*reg);
+        emit_op(opcode::op_load_const);
+        emit_register(*reg);
         writer_.emit_u16(idx);
         return *reg;
       }
@@ -2706,7 +2793,7 @@ private:
   /// arm matched, the same defense-in-depth role `op_panic_if` plays for
   /// array bounds.
   [[nodiscard]] auto compile_match(const hir::hir_match &match,
-                                   std::optional<uint8_t> want_result)
+                                   std::optional<virtual_reg> want_result)
       -> std::expected<void, compile_error> {
     auto subject_reg = compile_expr(*match.subject);
     if (!subject_reg.has_value()) {
@@ -2723,8 +2810,8 @@ private:
         return std::unexpected(test_reg.error());
       }
       if (arm.guard != nullptr) {
-        writer_.emit_opcode(opcode::op_jump_if_false);
-        writer_.emit_u8(*test_reg);
+        emit_op(opcode::op_jump_if_false);
+        emit_register(*test_reg);
         const auto guard_skip = writer_.emit_jump_placeholder();
         if (auto result = compile_expr_into(*arm.guard, *test_reg);
             !result.has_value()) {
@@ -2732,19 +2819,19 @@ private:
         }
         writer_.patch_jump_to_here(guard_skip);
       }
-      writer_.emit_opcode(opcode::op_jump_if_false);
-      writer_.emit_u8(*test_reg);
+      emit_op(opcode::op_jump_if_false);
+      emit_register(*test_reg);
       const auto next_arm = writer_.emit_jump_placeholder();
 
       if (auto result = compile_block_as_value(*arm.body, want_result);
           !result.has_value()) {
         return std::unexpected(result.error());
       }
-      writer_.emit_opcode(opcode::op_jump);
+      emit_op(opcode::op_jump);
       end_placeholders.push_back(writer_.emit_jump_placeholder());
       writer_.patch_jump_to_here(next_arm);
     }
-    writer_.emit_opcode(opcode::op_panic);
+    emit_op(opcode::op_panic);
     for (const auto placeholder : end_placeholders) {
       writer_.patch_jump_to_here(placeholder);
     }
@@ -2760,8 +2847,9 @@ private:
   /// trailing value-producing expression takes — see `hir_expr_stmt`'s doc
   /// comment), that expression is compiled directly into `*want_result`
   /// instead of being evaluated for its side effect and discarded.
-  [[nodiscard]] auto compile_block_as_value(const hir::hir_block &block,
-                                            std::optional<uint8_t> want_result)
+  [[nodiscard]] auto
+  compile_block_as_value(const hir::hir_block &block,
+                         std::optional<virtual_reg> want_result)
       -> std::expected<void, compile_error> {
     const auto &stmts = block.stmts;
     for (size_t i = 0; i < stmts.size(); ++i) {
@@ -2812,15 +2900,15 @@ private:
         if (is_generator_step_) {
           return emit_generator_exhausted_return(ret.span);
         }
-        writer_.emit_opcode(opcode::op_return_unit);
+        emit_op(opcode::op_return_unit);
         return {};
       }
       auto reg = compile_expr(*ret.value);
       if (!reg.has_value()) {
         return std::unexpected(reg.error());
       }
-      writer_.emit_opcode(opcode::op_return_value);
-      writer_.emit_u8(*reg);
+      emit_op(opcode::op_return_value);
+      emit_register(*reg);
       return {};
     }
     case hir_node_kind::hir_yield: {
@@ -2852,9 +2940,9 @@ private:
         }
       }
       const auto ordinal = generator_next_yield_ordinal_++;
-      writer_.emit_opcode(opcode::op_yield);
-      writer_.emit_u8(*value_reg);
-      writer_.emit_u8(generator_self_reg_);
+      emit_op(opcode::op_yield);
+      emit_register(*value_reg);
+      emit_register(generator_self_reg_);
       writer_.emit_u8(ordinal);
       writer_.patch_jump_to_here(generator_resume_placeholders_[ordinal - 1]);
       return {};
@@ -2895,7 +2983,7 @@ private:
     // reference to the symbol keeps resolving to the untouched
     // (zero-initialized) preloaded one.
     const auto existing = lookup_local(let.symbol);
-    uint8_t reg = 0;
+    virtual_reg reg;
     if (existing.has_value()) {
       reg = *existing;
     } else {
@@ -3033,10 +3121,10 @@ private:
     if (!rhs.has_value()) {
       return std::unexpected(rhs.error());
     }
-    writer_.emit_opcode(*op);
-    writer_.emit_u8(*reg);
-    writer_.emit_u8(*reg);
-    writer_.emit_u8(*rhs);
+    emit_op(*op);
+    emit_register(*reg);
+    emit_register(*reg);
+    emit_register(*rhs);
     writer_.emit_numeric_kind(*kind);
     return {};
   }
@@ -3048,8 +3136,8 @@ private:
     if (!cond.has_value()) {
       return std::unexpected(cond.error());
     }
-    writer_.emit_opcode(opcode::op_jump_if_false);
-    writer_.emit_u8(*cond);
+    emit_op(opcode::op_jump_if_false);
+    emit_register(*cond);
     const auto exit_placeholder = writer_.emit_jump_placeholder();
 
     if (auto result = compile_block_as_value(*loop.body, std::nullopt);
@@ -3057,7 +3145,13 @@ private:
       return std::unexpected(result.error());
     }
 
-    writer_.emit_opcode(opcode::op_jump);
+    // A backward jump closes a loop. Live intervals come from first and
+    // last mention in the linear instruction order, which is unsound across
+    // a back edge on its own: a value last mentioned early in this body is
+    // still read on the next iteration. Recording the loop lets the
+    // allocator extend those intervals to cover it.
+    note_loop(loop_start);
+    emit_op(opcode::op_jump);
     const auto after_operand =
         static_cast<int64_t>(writer_.current_offset()) + 4;
     const auto back_offset =
@@ -3088,8 +3182,8 @@ private:
     if (!test_reg.has_value()) {
       return std::unexpected(test_reg.error());
     }
-    writer_.emit_opcode(opcode::op_jump_if_false);
-    writer_.emit_u8(*test_reg);
+    emit_op(opcode::op_jump_if_false);
+    emit_register(*test_reg);
     const auto exit_placeholder = writer_.emit_jump_placeholder();
 
     if (auto result = compile_block_as_value(*loop.body, std::nullopt);
@@ -3097,7 +3191,13 @@ private:
       return std::unexpected(result.error());
     }
 
-    writer_.emit_opcode(opcode::op_jump);
+    // A backward jump closes a loop. Live intervals come from first and
+    // last mention in the linear instruction order, which is unsound across
+    // a back edge on its own: a value last mentioned early in this body is
+    // still read on the next iteration. Recording the loop lets the
+    // allocator extend those intervals to cover it.
+    note_loop(loop_start);
+    emit_op(opcode::op_jump);
     const auto after_operand =
         static_cast<int64_t>(writer_.current_offset()) + 4;
     const auto back_offset =
@@ -3130,8 +3230,8 @@ private:
     if (!test_reg.has_value()) {
       return std::unexpected(test_reg.error());
     }
-    writer_.emit_opcode(opcode::op_jump_if_true);
-    writer_.emit_u8(*test_reg);
+    emit_op(opcode::op_jump_if_true);
+    emit_register(*test_reg);
     const auto continue_placeholder = writer_.emit_jump_placeholder();
 
     if (auto result = compile_block_as_value(*node.else_body, std::nullopt);
@@ -3177,11 +3277,11 @@ private:
     if (!violated_reg.has_value()) {
       return std::unexpected(violated_reg.error());
     }
-    writer_.emit_opcode(opcode::op_not_bool);
-    writer_.emit_u8(*violated_reg);
-    writer_.emit_u8(*condition_reg);
-    writer_.emit_opcode(opcode::op_panic_if);
-    writer_.emit_u8(*violated_reg);
+    emit_op(opcode::op_not_bool);
+    emit_register(*violated_reg);
+    emit_register(*condition_reg);
+    emit_op(opcode::op_panic_if);
+    emit_register(*violated_reg);
     writer_.emit_u8(static_cast<uint8_t>(panic_reason_for(check.kind)));
     return {};
   }
@@ -3214,8 +3314,18 @@ private:
   std::string entry_module_name_;
   std::string current_module_name_;
   chunk_writer writer_;
-  std::unordered_map<hir::symbol_id, uint8_t> locals_;
+  std::unordered_map<hir::symbol_id, virtual_reg> locals_;
   size_t next_register_ = 0;
+
+  // ------------------------------------------------------------------
+  //  Register-allocation bookkeeping, accumulated while emitting and
+  //  consumed once by `finish_with_allocation`. See `register_alloc.h`.
+  // ------------------------------------------------------------------
+  std::vector<size_t> instruction_offsets_;
+  std::vector<register_site> register_sites_;
+  std::vector<register_group> groups_;
+  std::vector<loop_range> loops_;
+  std::vector<virtual_reg> address_taken_;
 
   // ------------------------------------------------------------------
   //  Generator step-function state — only meaningful while
@@ -3225,8 +3335,8 @@ private:
   //  resume-dispatch chain patched as each `hir_yield` is compiled.
   // ------------------------------------------------------------------
   bool is_generator_step_ = false;
-  uint8_t generator_state_reg_ = 0;
-  uint8_t generator_self_reg_ = 0;
+  virtual_reg generator_state_reg_;
+  virtual_reg generator_self_reg_;
   std::vector<hir::symbol_id> generator_state_layout_;
   std::vector<size_t> generator_resume_placeholders_;
   uint8_t generator_next_yield_ordinal_ = 1;

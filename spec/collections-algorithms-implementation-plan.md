@@ -295,12 +295,57 @@ whole `std.algo` catalog will take. Six `check_test` cases cover the three
 diagnostics and the eligibility rule; each was confirmed to fail with its
 own mechanism reverted.
 
-**Found, not fixed:** on a *builtin* receiver an unrecognized method name
-resolves to `unknown` with no diagnostic at all (builtin method lookup is
-best-effort). This predates UFCS, but it blunts design §3.4's "no
-candidate" message exactly where §5 needs it most — `nums.fliter(...)` on a
-`list` stays silent rather than suggesting `filter`. Worth fixing in Phase
-5, where the enriched suggestion pool is specified.
+**Found in Phase 4, fixed in Phase 4a:** on a *builtin* receiver an
+unrecognized method name resolved to `unknown` with no diagnostic at all.
+See Phase 4a below.
+
+### Phase 4a — register allocation, and the builtin-receiver gap. DONE.
+
+Two pieces of groundwork Phase 5 needs, done together.
+
+**Linear scan register allocation** (`src/bytecode_compiler/register_alloc.h`,
+Poletto & Sarkar). The bytecode compiler bump-allocated registers and never
+reused one, so `opcodes.h`'s `u8` register operands capped a function at 256
+registers *ever allocated* — not 256 live at once. Ordinary straight-line
+code reached that, and several `codegen_stress` files are still split across
+extra `def`s purely to stay under it. The compiler now emits into an
+unbounded virtual space and maps it onto physicals by live range.
+
+Linear scan fits this compiler because its premise — live ranges as
+intervals over a linear ordering — is exactly what a flat instruction stream
+with no basic-block structure already provides; graph colouring would need a
+CFG that is never built. Four ISA constraints needed handling: contiguous
+call-argument runs (`register_group`), the calling convention's pinned
+parameter prefix, `op_addr_local` handing out the address of a frame
+register (so last-mention does not bound its lifetime), and back edges (a
+value last mentioned early in a loop body is still read next iteration).
+There is deliberately **no spilling** — this ISA has no spill-slot
+addressing mode to spill to — so exhaustion still fails closed, just at 256
+*simultaneously live* values rather than 256 allocations.
+
+Found while making the tests fail on purpose: parameter pinning was
+*emergent* rather than enforced (parameters sort first and the scan hands
+out the lowest free register, so identity mapping fell out for free) —
+except when an early parameter is never mentioned, where without pinning the
+next parameter is handed a register the caller never wrote to. Covered by
+`test_pinning_reserves_an_unmentioned_parameters_successor`.
+
+**The builtin-receiver gap.** `report_unknown_builtin_method` now reports
+`no method` on a builtin receiver, with a "did you mean" drawn from a single
+table (`k_builtin_methods`) that also answers what each method returns — one
+source of truth, so a name can never be callable but unsuggestable. The
+suggestion pool includes `extend` methods on the builtin, so a near-miss on
+a `std.string` method suggests it. Deliberately restricted to builtin
+receiver kinds: a type *parameter* receiver stays silent so a generic body
+reports once, from the instantiation that knows the concrete type, rather
+than twice with the second against `T`.
+
+That this was worth fixing is best shown by what it caught: **two committed
+fixtures** (`025_extend_builtin_type.kira`,
+`accept_extend_on_builtin_type.kira`) called `self.reversed()` on a `str`,
+a method that existed nowhere, and both asserted the program "checks
+cleanly." Both now declare `reversed`, preserving what they meant to test —
+an extend method calling a sibling on `self`.
 
 ### Phase 5 — `std.iter` protocol and `std.algo` catalog
 

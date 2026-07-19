@@ -144,6 +144,96 @@ struct fn_param_info {
 /// impl that didn't override it, or an `extend` block (`is_extension`).
 /// Inherent/impl methods win over trait defaults, which win over
 /// extensions — see `find_method`.
+/// What a builtin inherent method returns, relative to its receiver.
+///
+/// An enum rather than a `type_id` because these are described in one static
+/// table (`k_builtin_methods`) built before any `type_table` exists, and
+/// several of them depend on the receiver's element type — `list[T]::pop`
+/// returns `option[T]`, not one fixed type.
+enum class builtin_result_shape : uint8_t {
+  usize_result,      ///< `usize`.
+  bool_result,       ///< `bool`.
+  unit_result,       ///< `unit`.
+  element,           ///< The receiver's element type, `T`.
+  option_of_element, ///< `option[T]`.
+  list_of_element,   ///< `list[T]`.
+  byte_slice,        ///< `slice[byte]`.
+};
+
+/// One builtin inherent method: the receiver type constructor it belongs to,
+/// its name, and what it evaluates to.
+struct builtin_method_signature {
+  std::string_view owner;
+  std::string_view name;
+  builtin_result_shape result;
+};
+
+/// Every inherent method the compiler answers for a builtin receiver.
+///
+/// This is deliberately one table rather than a chain of `if` comparisons,
+/// because two separate questions have to be answered from it and they must
+/// never disagree: *what does `xs.pop()` evaluate to* (`builtin_method_result`)
+/// and *what names does a `list` actually have* (`builtin_method_names`, which
+/// feeds the "did you mean" suggestion on an unknown method). When those were
+/// allowed to be two lists, a name added to one but not the other produced a
+/// method that worked but could never be suggested, or a suggestion for a
+/// method that did not exist.
+///
+/// Only methods with real lowering belong here. `str`'s `contains`,
+/// `starts_with`, `split`, ... are genuine `extend str` methods in
+/// `std.string`, and are found by `find_extend_method_for_builtin` precisely
+/// *because* they are absent here — adding them would shadow that module.
+inline constexpr auto k_builtin_methods =
+    std::to_array<builtin_method_signature>({
+        {"list", "len", builtin_result_shape::usize_result},
+        {"list", "is_empty", builtin_result_shape::bool_result},
+        {"list", "contains", builtin_result_shape::bool_result},
+        {"list", "any", builtin_result_shape::bool_result},
+        {"list", "all", builtin_result_shape::bool_result},
+        {"list", "push", builtin_result_shape::unit_result},
+        {"list", "sort", builtin_result_shape::unit_result},
+        {"list", "clear", builtin_result_shape::unit_result},
+        {"list", "pop", builtin_result_shape::option_of_element},
+        {"list", "find", builtin_result_shape::option_of_element},
+        {"list", "first", builtin_result_shape::option_of_element},
+        {"list", "last", builtin_result_shape::option_of_element},
+        {"list", "filter", builtin_result_shape::list_of_element},
+        {"slice", "len", builtin_result_shape::usize_result},
+        {"slice", "is_empty", builtin_result_shape::bool_result},
+        {"str", "len", builtin_result_shape::usize_result},
+        {"str", "as_bytes", builtin_result_shape::byte_slice},
+        {"option", "unwrap", builtin_result_shape::element},
+        {"option", "unwrap_or", builtin_result_shape::element},
+        {"option", "is_some", builtin_result_shape::bool_result},
+        {"option", "is_none", builtin_result_shape::bool_result},
+        {"result", "unwrap", builtin_result_shape::element},
+        {"result", "is_ok", builtin_result_shape::bool_result},
+        {"result", "is_err", builtin_result_shape::bool_result},
+        {"generator", "next", builtin_result_shape::option_of_element},
+    });
+
+/// The key `k_builtin_methods` files a receiver under, or empty when the
+/// receiver is not a type builtin methods are answered for. `slice_mut`
+/// shares `slice`'s entries — the two differ in mutability, not in what
+/// inherent methods they carry.
+[[nodiscard]] inline auto builtin_method_owner(const type_entry &object)
+    -> std::string_view {
+  if (object.kind == type_kind::builtin_kind && object.name == "str") {
+    return "str";
+  }
+  if (object.kind != type_kind::builtin_generic_kind) {
+    return {};
+  }
+  if (object.name == "slice" || object.name == "slice_mut") {
+    return "slice";
+  }
+  if (object.name == "list" || object.name == "option" ||
+      object.name == "result" || object.name == "generator") {
+    return object.name;
+  }
+  return {};
+}
+
 struct method_entry {
   const ast::func_decl *decl = nullptr; ///< The method's declaration.
   const module_members *owner =
@@ -7398,87 +7488,132 @@ private:
   /// checkable declarations. Returns `unknown` for any other object kind or
   /// unrecognized method name, which is silently accepted rather than
   /// reported as an error.
+  /// The type `object.name(...)` evaluates to for a builtin inherent
+  /// method, or `k_unknown_type` when `name` is not one — which is what lets
+  /// the caller fall through to `extend`/`impl` methods and UFCS.
   auto builtin_method_result(const type_entry &object, std::string_view name)
       -> type_id {
+    const auto owner = builtin_method_owner(object);
+    if (owner.empty()) {
+      return k_unknown_type;
+    }
     const auto element = object.args.empty() ? k_unknown_type : object.args[0];
-    if (object.kind == type_kind::builtin_generic_kind &&
-        object.name == "list") {
-      if (name == "len") {
+    for (const auto &method : k_builtin_methods) {
+      if (method.owner != owner || method.name != name) {
+        continue;
+      }
+      switch (method.result) {
+      case builtin_result_shape::usize_result:
         return types_.builtin("usize");
-      }
-      if (name == "is_empty" || name == "contains" || name == "any" ||
-          name == "all") {
+      case builtin_result_shape::bool_result:
         return types_.builtin("bool");
-      }
-      if (name == "push" || name == "sort" || name == "clear") {
+      case builtin_result_shape::unit_result:
         return types_.builtin("unit");
-      }
-      if (name == "pop" || name == "find" || name == "first" ||
-          name == "last") {
+      case builtin_result_shape::element:
+        return element;
+      case builtin_result_shape::option_of_element:
         return types_.builtin_generic("option", {element});
-      }
-      if (name == "filter") {
+      case builtin_result_shape::list_of_element:
         return types_.builtin_generic("list", {element});
-      }
-      return k_unknown_type;
-    }
-    if (object.kind == type_kind::builtin_generic_kind &&
-        (object.name == "slice" || object.name == "slice_mut")) {
-      if (name == "len") {
-        return types_.builtin("usize");
-      }
-      if (name == "is_empty") {
-        return types_.builtin("bool");
-      }
-      return k_unknown_type;
-    }
-    if (object.kind == type_kind::builtin_kind && object.name == "str") {
-      // Only the two methods with real lowering are answered here (`len` and
-      // `as_bytes`, `src/hir/lower.cpp`). Everything else — `contains`,
-      // `starts_with`, `find`, `to_uppercase`, `split`, ... — is now provided
-      // as real `extend str` methods in `std.string` (spec/std-reference.md);
-      // returning `k_unknown_type` for those names is exactly what lets the
-      // caller fall through to `find_extend_method_for_builtin` and discover
-      // them. Re-adding a hardcoded rule here would shadow that module.
-      if (name == "len") {
-        return types_.builtin("usize");
-      }
-      if (name == "as_bytes") {
+      case builtin_result_shape::byte_slice:
         return types_.builtin_generic("slice", {types_.builtin("byte")});
       }
-      return k_unknown_type;
-    }
-    if (object.kind == type_kind::builtin_generic_kind &&
-        object.name == "option") {
-      if (name == "unwrap" || name == "unwrap_or") {
-        return element;
-      }
-      if (name == "is_some" || name == "is_none") {
-        return types_.builtin("bool");
-      }
-      return k_unknown_type;
-    }
-    if (object.kind == type_kind::builtin_generic_kind &&
-        object.name == "result") {
-      if (name == "unwrap") {
-        return element;
-      }
-      if (name == "is_ok" || name == "is_err") {
-        return types_.builtin("bool");
-      }
-      return k_unknown_type;
-    }
-    if (object.kind == type_kind::builtin_generic_kind &&
-        object.name == "generator") {
-      // The `next()` a `generator def` implicitly provides, satisfying
-      // `iterator[T]` — see `check_function`'s generator handling and
-      // `hir::lower_call`'s `generator_next` interception.
-      if (name == "next") {
-        return types_.builtin_generic("option", {element});
-      }
-      return k_unknown_type;
     }
     return k_unknown_type;
+  }
+
+  /// Reports `receiver.name(...)` naming no method that exists on a *builtin*
+  /// receiver, once every lookup — builtin inherent, `impl`, `extend`, UFCS —
+  /// has failed.
+  ///
+  /// This case used to fall through silently, returning `k_unknown_type` with
+  /// no diagnostic at all: `nums.fliter(...)` on a `list[int32]` compiled, and
+  /// whatever it "produced" unified with everything downstream because
+  /// `k_unknown_type` deliberately does. A user-defined receiver has always
+  /// reported "no method `x` on type `y`" here; a builtin one said nothing,
+  /// which is exactly backwards — `list`, `str` and `option` are the types a
+  /// beginner meets first.
+  ///
+  /// Returns `nullopt` rather than reporting when the receiver is a type
+  /// whose method set is not actually known. `k_unknown_type` is the whole
+  /// mechanism by which one gap in inference avoids cascading into unrelated
+  /// errors, and a type parameter's methods depend on bounds resolved
+  /// elsewhere — reporting on either would turn a silent gap into a wrong
+  /// error, which is worse than the gap.
+  [[nodiscard]] auto report_unknown_builtin_method(const ast::call_expr &call,
+                                                   const ast::field_expr &field,
+                                                   const type_entry &entry,
+                                                   type_id object)
+      -> std::optional<type_id> {
+    // Restricting to these two kinds is what keeps an unresolved receiver
+    // silent: `k_unknown_type` is `unknown_kind`, and a type parameter is
+    // `type_param_kind`, so neither reaches the report below.
+    if (entry.kind != type_kind::builtin_kind &&
+        entry.kind != type_kind::builtin_generic_kind) {
+      return std::nullopt;
+    }
+
+    build_method_table();
+    auto candidates = builtin_method_names(entry);
+    if (const auto found = extend_methods_by_builtin_.find(entry.name);
+        found != extend_methods_by_builtin_.end()) {
+      for (const auto &method : found->second) {
+        candidates.push_back(method.decl->name);
+      }
+    }
+    std::ranges::sort(candidates);
+    candidates.erase(std::ranges::unique(candidates).begin(), candidates.end());
+
+    const auto display = types_.display(object);
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("no method `{}` on type `{}`", field.field_name, display),
+        file_id_);
+    diag.with_label(field.span, "method not found");
+    if (const auto suggestion = best_suggestion(field.field_name, candidates)) {
+      diag.with_help(std::format("did you mean `{}`?", *suggestion));
+    } else if (!candidates.empty()) {
+      auto listed = std::string{};
+      for (const auto &name : candidates) {
+        if (!listed.empty()) {
+          listed += ", ";
+        }
+        listed += std::format("`{}`", name);
+      }
+      diag.with_note(std::format("`{}` provides {}", display, listed));
+      diag.with_help(std::format(
+          "A builtin type's methods come from the compiler itself and from "
+          "`extend {}:` blocks in the standard library. To add one of your "
+          "own, write a free function whose first parameter is `{}` — it is "
+          "then callable as a method.",
+          entry.name, display));
+    } else {
+      diag.with_help(std::format(
+          "`{}` has no methods. A free function whose first parameter is `{}` "
+          "is callable as a method on one.",
+          display, display));
+    }
+    emit_diag(diag);
+    mark_error();
+    infer_call_args_loosely(call);
+    return k_error_type;
+  }
+
+  /// Every inherent method name a builtin receiver answers to, for the "did
+  /// you mean" suggestion on an unknown method.
+  [[nodiscard]] static auto builtin_method_names(const type_entry &object)
+      -> std::vector<std::string> {
+    const auto owner = builtin_method_owner(object);
+    auto names = std::vector<std::string>{};
+    if (owner.empty()) {
+      return names;
+    }
+    for (const auto &method : k_builtin_methods) {
+      if (method.owner == owner) {
+        names.emplace_back(method.name);
+      }
+    }
+    return names;
   }
 
   /// Builds the comma-separated, sorted, deduplicated method-name list
@@ -8492,6 +8627,10 @@ private:
         // `is_unknown` guard, so a real builtin method still wins.
         if (const auto ufcs = try_ufcs_call(call, field, object)) {
           return *ufcs;
+        }
+        if (const auto reported =
+                report_unknown_builtin_method(call, field, entry, object)) {
+          return *reported;
         }
       }
       infer_call_args_loosely(call);

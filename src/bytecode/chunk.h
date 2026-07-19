@@ -15,12 +15,19 @@ namespace kira::bytecode {
 /// per-function rather than module-wide). `register_count` is the total
 /// size of the frame's register file — there is no separate "locals"
 /// storage (see opcodes.h's top comment): parameters occupy registers
-/// `[0, param_count)`, and every `let`/`var` binding *and* every
-/// intermediate expression result gets the next unused register in
-/// evaluation order (Decision, recorded in `spec/codegen-design.md`: no
-/// register reuse across sibling scopes/subexpressions for this first cut
-/// — simplest thing that works, at the cost of some wasted frame space,
-/// and doesn't constrain the instruction encoding if reuse is added later).
+/// `[0, param_count)`, and every `let`/`var` binding and every intermediate
+/// expression result lives in one of the registers above them.
+///
+/// This count is the number of values the function holds live *at once*,
+/// not the number it ever names. The compiler emits into an unbounded
+/// virtual register space and `bytecode_compiler/register_alloc.h` maps
+/// those onto physical registers by linear scan, recycling one as soon as
+/// the value in it dies. It originally did not: each binding and
+/// subexpression took the next unused register and kept it, which made the
+/// `u8` operand encoding a ceiling on how many values a function could
+/// *mention* rather than how many it needed simultaneously — reachable by
+/// unremarkable straight-line code, and the reason several
+/// `src/testdata/codegen_stress` files are split across extra `def`s.
 struct bytecode_function {
   std::string name;
   uint16_t param_count = 0;

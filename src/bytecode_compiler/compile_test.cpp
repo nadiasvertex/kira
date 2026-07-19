@@ -197,6 +197,83 @@ auto test_add_compiles_and_runs() -> void {
   expect(main_result->value.i == 42, "expected main()'s add(10, 32) == 42");
 }
 
+/// Register allocation, observed through the compiled frame size.
+///
+/// `register_alloc_test` covers the algorithm on synthetic inputs; this
+/// covers the thing that motivated it, on real Kira source. Before linear
+/// scan, every `let` and every intermediate subexpression consumed a register
+/// forever, so `register_count` grew with the *number* of values a function
+/// ever named and 256 of them was a hard compile error. It should now track
+/// how many are live at once, which for a straight-line chain of short-lived
+/// bindings is a handful regardless of length.
+///
+/// The `run_main` check is the half that matters most: a frame size assertion
+/// alone would be satisfied by an allocator that reused registers far too
+/// aggressively and computed nonsense.
+auto test_registers_are_reused_across_dead_values() -> void {
+  constexpr auto k_bindings = 120;
+  auto source =
+      std::string{"module sample\n\ndef chain() -> int32:\n    var acc = 0\n"};
+  auto expected = int64_t{0};
+  for (auto index = 1; index <= k_bindings; ++index) {
+    const auto value = (index * 7 + 3) % 11;
+    expected += value;
+    source += "    let t" + std::to_string(index) + " = (" +
+              std::to_string(index) + " * 7 + 3) % 11\n";
+    source += "    acc = acc + t" + std::to_string(index) + "\n";
+  }
+  source += "    return acc\n\ndef main() -> int32:\n    return chain()\n";
+
+  auto module = compile_fixture(source);
+  const auto &chain = module.functions[function_index(module, "chain")];
+
+  // Each binding costs several virtual registers, so this function allocates
+  // well over the 256 a `u8` operand can address — it did not compile at all
+  // before reuse existed.
+  expect(chain.register_count < 32,
+         "a chain of short-lived bindings should collapse onto a small frame, "
+         "regardless of how many bindings it names");
+
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() to succeed");
+  expect(main_result->value.i == expected,
+         "reusing a register must not change what the function computes");
+}
+
+/// A value carried across a loop back edge is *not* dead at its last mention,
+/// so its register cannot be recycled inside the body.
+///
+/// This is the case where interval endpoints taken from first/last mention in
+/// the linear instruction order are unsound on their own, and where a wrong
+/// answer — not a crash — is the symptom.
+auto test_loop_carried_value_keeps_its_register() -> void {
+  auto module = compile_fixture(
+      "module sample\n"
+      "\n"
+      "def total() -> int32:\n"
+      "    var carried = 7\n"
+      "    var sum = 0\n"
+      "    var i = 0\n"
+      "    while i < 5:\n"
+      // `carried` is read here and never mentioned again in the body, so
+      // everything below is a candidate to be given its register.
+      "        sum = sum + carried\n"
+      "        let a = i * 2\n"
+      "        let b = a + 1\n"
+      "        sum = sum + b\n"
+      "        i = i + 1\n"
+      "    return sum\n"
+      "\n"
+      "def main() -> int32:\n"
+      "    return total()\n");
+
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() to succeed");
+  // 5*7 + sum over i in 0..4 of (2i + 1) = 35 + 25 = 60.
+  expect(main_result->value.i == 60,
+         "a value read on every loop iteration must survive the whole body");
+}
+
 auto test_intrinsic_call_compiles_to_op_call_intrinsic() -> void {
   // `intrinsic def rt_stdout() -> raw_fd` has no body — hir::lower_module
   // skips it, and this compiler recognizes the call by name (src/
@@ -1398,6 +1475,8 @@ auto test_for_loop_over_generator_evaluates_iterable_once() -> void {
 auto main() -> int {
   try {
     test_add_compiles_and_runs();
+    test_registers_are_reused_across_dead_values();
+    test_loop_carried_value_keeps_its_register();
     test_intrinsic_call_compiles_to_op_call_intrinsic();
     test_intrinsic_result_constructs_and_matches_through_real_syntax();
     test_field_access_on_a_local_lowers_for_plain_lets_and_payload_bindings();

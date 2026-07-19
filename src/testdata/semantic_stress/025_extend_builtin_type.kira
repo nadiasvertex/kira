@@ -1,8 +1,21 @@
 module semantic_stress.extend_builtin_type
 
+# An `extend` block on a builtin type, where one extension method calls
+# another on `self` — the interaction actually being checked here, since
+# resolving `self.reversed()` has to find a sibling in the same block rather
+# than an inherent `str` method.
+#
+# `reversed` is declared here on purpose. This fixture originally called it
+# without ever declaring it, and "checked cleanly" only because an unknown
+# method on a *builtin* receiver used to resolve to `unknown` with no
+# diagnostic at all — so what it really asserted was that broken code
+# compiles.
 extend str:
     def is_palindrome(self) -> bool:
         return self == self.reversed()
+
+    def reversed(self) -> str:
+        return self
 
 def run() -> bool:
     return "racecar".is_palindrome()

@@ -1,6 +1,12 @@
 module sample
+# `reversed` is declared rather than merely called: an unknown method on a
+# builtin receiver used to resolve to `unknown` silently, so the original
+# version of this fixture checked "cleanly" while calling a method that did
+# not exist anywhere.
 extend str:
     def is_palindrome(self) -> bool:
         return self == self.reversed()
+    def reversed(self) -> str:
+        return self
 def run() -> bool:
     return "racecar".is_palindrome()

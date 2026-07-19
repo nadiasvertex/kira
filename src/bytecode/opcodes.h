@@ -24,11 +24,17 @@ namespace kira::bytecode {
 //  A function's registers are one flat array per call frame — there is no
 //  separate "locals" storage distinct from "temporaries": parameters
 //  occupy registers `[0, param_count)` at call entry, and every `let`/
-//  `var` binding *and* every intermediate expression result gets the next
-//  unused register, monotonically, for the same "simplest thing that
-//  works, revisit if it matters" reason `spec/codegen-design.md` already
-//  accepts for locals (no register reuse across sibling scopes yet).
-//  `bytecode_function::register_count` (chunk.h) is this high-water mark.
+//  `var` binding *and* every intermediate expression result lives in one of
+//  the registers above them. `bytecode_function::register_count` (chunk.h)
+//  is the size of that array.
+//
+//  Registers are assigned by linear scan (`bytecode_compiler/
+//  register_alloc.h`), so one is reused as soon as the value occupying it
+//  is dead. That replaces the original "next unused register,
+//  monotonically, revisit if it matters" rule, which turned out to matter
+//  sooner than expected: without reuse the `u8` operand width below capped
+//  a function at 256 registers *ever allocated*, not 256 live at once, and
+//  ordinary code reached that.
 //
 //  Every arithmetic/comparison/bitwise opcode is still parameterized by a
 //  trailing `numeric_kind` immediate byte (see value.h) rather than one

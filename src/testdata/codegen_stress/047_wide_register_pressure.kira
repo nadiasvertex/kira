@@ -1,0 +1,272 @@
+module codegen_stress.wide_register_pressure
+
+# A function that allocates far more registers than the bytecode format can
+# address, but never holds more than a handful of them live at once.
+#
+# Before linear scan register allocation, this did not compile at all. Every
+# `let` and every intermediate subexpression took the next unused register
+# and no register was ever reused, so `opcodes.h`'s `u8` register operands
+# put a hard ceiling of 256 *allocations* on a function — not 256 live
+# values, 256 allocations total. 120 bindings of three temporaries each blows
+# through that while only ever needing two or three registers at a time.
+# Several corpus files in this directory are still split across extra `def`s
+# for exactly that reason.
+#
+# The allocator maps these onto a frame of single digits. What this file
+# pins is that the mapping is *correct*, not merely that it fits: an
+# allocator that recycled a register one instruction too early would still
+# produce a small frame and a compiling program, and would simply return the
+# wrong number. The `# expect` value is the only thing that would notice,
+# since both tiers would not disagree — the LLVM tier does not allocate
+# registers at all.
+#
+# Sum of ((i * 7 + 3) mod 11) for i in 1..120.
+
+# expect: 602
+
+def wide_chain() -> int32:
+    var acc = 0
+    let t1 = (1 * 7 + 3) % 11
+    acc = acc + t1
+    let t2 = (2 * 7 + 3) % 11
+    acc = acc + t2
+    let t3 = (3 * 7 + 3) % 11
+    acc = acc + t3
+    let t4 = (4 * 7 + 3) % 11
+    acc = acc + t4
+    let t5 = (5 * 7 + 3) % 11
+    acc = acc + t5
+    let t6 = (6 * 7 + 3) % 11
+    acc = acc + t6
+    let t7 = (7 * 7 + 3) % 11
+    acc = acc + t7
+    let t8 = (8 * 7 + 3) % 11
+    acc = acc + t8
+    let t9 = (9 * 7 + 3) % 11
+    acc = acc + t9
+    let t10 = (10 * 7 + 3) % 11
+    acc = acc + t10
+    let t11 = (11 * 7 + 3) % 11
+    acc = acc + t11
+    let t12 = (12 * 7 + 3) % 11
+    acc = acc + t12
+    let t13 = (13 * 7 + 3) % 11
+    acc = acc + t13
+    let t14 = (14 * 7 + 3) % 11
+    acc = acc + t14
+    let t15 = (15 * 7 + 3) % 11
+    acc = acc + t15
+    let t16 = (16 * 7 + 3) % 11
+    acc = acc + t16
+    let t17 = (17 * 7 + 3) % 11
+    acc = acc + t17
+    let t18 = (18 * 7 + 3) % 11
+    acc = acc + t18
+    let t19 = (19 * 7 + 3) % 11
+    acc = acc + t19
+    let t20 = (20 * 7 + 3) % 11
+    acc = acc + t20
+    let t21 = (21 * 7 + 3) % 11
+    acc = acc + t21
+    let t22 = (22 * 7 + 3) % 11
+    acc = acc + t22
+    let t23 = (23 * 7 + 3) % 11
+    acc = acc + t23
+    let t24 = (24 * 7 + 3) % 11
+    acc = acc + t24
+    let t25 = (25 * 7 + 3) % 11
+    acc = acc + t25
+    let t26 = (26 * 7 + 3) % 11
+    acc = acc + t26
+    let t27 = (27 * 7 + 3) % 11
+    acc = acc + t27
+    let t28 = (28 * 7 + 3) % 11
+    acc = acc + t28
+    let t29 = (29 * 7 + 3) % 11
+    acc = acc + t29
+    let t30 = (30 * 7 + 3) % 11
+    acc = acc + t30
+    let t31 = (31 * 7 + 3) % 11
+    acc = acc + t31
+    let t32 = (32 * 7 + 3) % 11
+    acc = acc + t32
+    let t33 = (33 * 7 + 3) % 11
+    acc = acc + t33
+    let t34 = (34 * 7 + 3) % 11
+    acc = acc + t34
+    let t35 = (35 * 7 + 3) % 11
+    acc = acc + t35
+    let t36 = (36 * 7 + 3) % 11
+    acc = acc + t36
+    let t37 = (37 * 7 + 3) % 11
+    acc = acc + t37
+    let t38 = (38 * 7 + 3) % 11
+    acc = acc + t38
+    let t39 = (39 * 7 + 3) % 11
+    acc = acc + t39
+    let t40 = (40 * 7 + 3) % 11
+    acc = acc + t40
+    let t41 = (41 * 7 + 3) % 11
+    acc = acc + t41
+    let t42 = (42 * 7 + 3) % 11
+    acc = acc + t42
+    let t43 = (43 * 7 + 3) % 11
+    acc = acc + t43
+    let t44 = (44 * 7 + 3) % 11
+    acc = acc + t44
+    let t45 = (45 * 7 + 3) % 11
+    acc = acc + t45
+    let t46 = (46 * 7 + 3) % 11
+    acc = acc + t46
+    let t47 = (47 * 7 + 3) % 11
+    acc = acc + t47
+    let t48 = (48 * 7 + 3) % 11
+    acc = acc + t48
+    let t49 = (49 * 7 + 3) % 11
+    acc = acc + t49
+    let t50 = (50 * 7 + 3) % 11
+    acc = acc + t50
+    let t51 = (51 * 7 + 3) % 11
+    acc = acc + t51
+    let t52 = (52 * 7 + 3) % 11
+    acc = acc + t52
+    let t53 = (53 * 7 + 3) % 11
+    acc = acc + t53
+    let t54 = (54 * 7 + 3) % 11
+    acc = acc + t54
+    let t55 = (55 * 7 + 3) % 11
+    acc = acc + t55
+    let t56 = (56 * 7 + 3) % 11
+    acc = acc + t56
+    let t57 = (57 * 7 + 3) % 11
+    acc = acc + t57
+    let t58 = (58 * 7 + 3) % 11
+    acc = acc + t58
+    let t59 = (59 * 7 + 3) % 11
+    acc = acc + t59
+    let t60 = (60 * 7 + 3) % 11
+    acc = acc + t60
+    let t61 = (61 * 7 + 3) % 11
+    acc = acc + t61
+    let t62 = (62 * 7 + 3) % 11
+    acc = acc + t62
+    let t63 = (63 * 7 + 3) % 11
+    acc = acc + t63
+    let t64 = (64 * 7 + 3) % 11
+    acc = acc + t64
+    let t65 = (65 * 7 + 3) % 11
+    acc = acc + t65
+    let t66 = (66 * 7 + 3) % 11
+    acc = acc + t66
+    let t67 = (67 * 7 + 3) % 11
+    acc = acc + t67
+    let t68 = (68 * 7 + 3) % 11
+    acc = acc + t68
+    let t69 = (69 * 7 + 3) % 11
+    acc = acc + t69
+    let t70 = (70 * 7 + 3) % 11
+    acc = acc + t70
+    let t71 = (71 * 7 + 3) % 11
+    acc = acc + t71
+    let t72 = (72 * 7 + 3) % 11
+    acc = acc + t72
+    let t73 = (73 * 7 + 3) % 11
+    acc = acc + t73
+    let t74 = (74 * 7 + 3) % 11
+    acc = acc + t74
+    let t75 = (75 * 7 + 3) % 11
+    acc = acc + t75
+    let t76 = (76 * 7 + 3) % 11
+    acc = acc + t76
+    let t77 = (77 * 7 + 3) % 11
+    acc = acc + t77
+    let t78 = (78 * 7 + 3) % 11
+    acc = acc + t78
+    let t79 = (79 * 7 + 3) % 11
+    acc = acc + t79
+    let t80 = (80 * 7 + 3) % 11
+    acc = acc + t80
+    let t81 = (81 * 7 + 3) % 11
+    acc = acc + t81
+    let t82 = (82 * 7 + 3) % 11
+    acc = acc + t82
+    let t83 = (83 * 7 + 3) % 11
+    acc = acc + t83
+    let t84 = (84 * 7 + 3) % 11
+    acc = acc + t84
+    let t85 = (85 * 7 + 3) % 11
+    acc = acc + t85
+    let t86 = (86 * 7 + 3) % 11
+    acc = acc + t86
+    let t87 = (87 * 7 + 3) % 11
+    acc = acc + t87
+    let t88 = (88 * 7 + 3) % 11
+    acc = acc + t88
+    let t89 = (89 * 7 + 3) % 11
+    acc = acc + t89
+    let t90 = (90 * 7 + 3) % 11
+    acc = acc + t90
+    let t91 = (91 * 7 + 3) % 11
+    acc = acc + t91
+    let t92 = (92 * 7 + 3) % 11
+    acc = acc + t92
+    let t93 = (93 * 7 + 3) % 11
+    acc = acc + t93
+    let t94 = (94 * 7 + 3) % 11
+    acc = acc + t94
+    let t95 = (95 * 7 + 3) % 11
+    acc = acc + t95
+    let t96 = (96 * 7 + 3) % 11
+    acc = acc + t96
+    let t97 = (97 * 7 + 3) % 11
+    acc = acc + t97
+    let t98 = (98 * 7 + 3) % 11
+    acc = acc + t98
+    let t99 = (99 * 7 + 3) % 11
+    acc = acc + t99
+    let t100 = (100 * 7 + 3) % 11
+    acc = acc + t100
+    let t101 = (101 * 7 + 3) % 11
+    acc = acc + t101
+    let t102 = (102 * 7 + 3) % 11
+    acc = acc + t102
+    let t103 = (103 * 7 + 3) % 11
+    acc = acc + t103
+    let t104 = (104 * 7 + 3) % 11
+    acc = acc + t104
+    let t105 = (105 * 7 + 3) % 11
+    acc = acc + t105
+    let t106 = (106 * 7 + 3) % 11
+    acc = acc + t106
+    let t107 = (107 * 7 + 3) % 11
+    acc = acc + t107
+    let t108 = (108 * 7 + 3) % 11
+    acc = acc + t108
+    let t109 = (109 * 7 + 3) % 11
+    acc = acc + t109
+    let t110 = (110 * 7 + 3) % 11
+    acc = acc + t110
+    let t111 = (111 * 7 + 3) % 11
+    acc = acc + t111
+    let t112 = (112 * 7 + 3) % 11
+    acc = acc + t112
+    let t113 = (113 * 7 + 3) % 11
+    acc = acc + t113
+    let t114 = (114 * 7 + 3) % 11
+    acc = acc + t114
+    let t115 = (115 * 7 + 3) % 11
+    acc = acc + t115
+    let t116 = (116 * 7 + 3) % 11
+    acc = acc + t116
+    let t117 = (117 * 7 + 3) % 11
+    acc = acc + t117
+    let t118 = (118 * 7 + 3) % 11
+    acc = acc + t118
+    let t119 = (119 * 7 + 3) % 11
+    acc = acc + t119
+    let t120 = (120 * 7 + 3) % 11
+    acc = acc + t120
+    return acc
+
+def main() -> int32:
+    return wide_chain()
