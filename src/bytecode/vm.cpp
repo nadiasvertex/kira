@@ -1496,6 +1496,36 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
 
+      case opcode::op_addr_local: {
+        const uint8_t dst = code[ip];
+        const uint8_t src = code[ip + 1];
+        // `registers` is a `std::vector`; its buffer is stable across the
+        // *frame* vector reallocating on a nested call, so this address
+        // stays valid for the frame's lifetime (see `op_addr_local`'s doc).
+        f.registers[dst].u = static_cast<uint64_t>(
+            reinterpret_cast<uintptr_t>(&f.registers[src]));
+        f.pc = ip + 2;
+        break;
+      }
+      case opcode::op_addr_slot: {
+        const uint8_t dst = code[ip];
+        const uint8_t ptr_reg = code[ip + 1];
+        const uint16_t byte_offset = read_u16(code, ip + 2);
+        f.registers[dst].u = f.registers[ptr_reg].u + byte_offset;
+        f.pc = ip + 4;
+        break;
+      }
+      case opcode::op_addr_indexed: {
+        const uint8_t dst = code[ip];
+        const uint8_t ptr_reg = code[ip + 1];
+        const uint8_t index_reg = code[ip + 2];
+        const uint8_t elem_size = code[ip + 3];
+        f.registers[dst].u = f.registers[ptr_reg].u +
+                             (f.registers[index_reg].u * uint64_t{elem_size});
+        f.pc = ip + 4;
+        break;
+      }
+
       case opcode::op_load_str_const: {
         const uint8_t dst = code[ip];
         const uint16_t idx = read_u16(code, ip + 1);

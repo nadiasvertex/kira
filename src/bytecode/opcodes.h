@@ -281,33 +281,69 @@ enum class opcode : uint8_t {
   op_store_indexed,  ///< u8 ptr, u8 index, u8 src, u8 elem_size —
                      ///< *(reg[ptr] as uint8_t* + reg[index].u * elem_size)
                      ///< = the low `elem_size` bytes of reg[src].
-  op_list_push, ///< u8 header_ptr, u8 value, u8 elem_size — appends the low
-                ///< `elem_size` bytes of reg[value] onto the `list[T]`
-                ///< value at reg[header_ptr] (a 3-slot `{ len; cap; data }`
-                ///< header, `src/runtime/layout.h`, `data` itself a
-                ///< contiguous `elem_size`-byte-per-element block —
-                ///< `elem_size` generalizes what used to be a hardcoded
-                ///< 8-byte-per-element push), growing/copying to a larger
-                ///< `data` block when already at capacity. Unlike
-                ///< `op_load_slot`/`op_store_slot`, this is one
-                ///< opcode rather than several composed primitives:
-                ///< growth needs a real conditional allocate-and-copy
-                ///< that doesn't reduce to "one flat block of 8-byte
-                ///< slots," so this delegates to
-                ///< `kira::runtime::list_push` (the exact same
-                ///< function `llvm_codegen`'s generated IR calls via
-                ///< `kira_rt_list_push`) rather than reimplementing
-                ///< growth as a second copy of that logic here.
-  op_panic_if,  ///< u8 cond, u8 panic_reason — panics with
-                ///< `static_cast<panic_reason>(panic_reason)` if
-                ///< reg[cond] (a `boolean` register) is true; otherwise
-                ///< falls through. The bytecode-level building block a
-                ///< compiler-emitted bounds check (or any other
-                ///< source-triggered panic condition that isn't one of
-                ///< the checked-arithmetic opcodes' own built-in panics)
-                ///< composes from — mirrors `llvm_codegen`'s
-                ///< `guard_panic` helper, just reified as one opcode
-                ///< instead of a conditional branch to a call.
+
+  // ------------------------------------------------------------------
+  //  Address-of, for `&`/`&mut` on a *scalar* place. An aggregate needs
+  //  none of these: its compiled value already is the address a reference
+  //  to it would hold, so `&x`/`*p` on one is a passthrough with no
+  //  instruction at all (`is_heap_pointer_value` in both backends). A
+  //  scalar is different — it lives inline in a register or packed at its
+  //  natural width inside a block — so a reference to one has to be a real
+  //  computed address. The address these produce is consumed by the
+  //  ordinary `op_load_slot`/`op_store_slot` with `byte_offset = 0`; there
+  //  is deliberately no "load through pointer" opcode, because that is
+  //  exactly what a zero-offset slot access already is.
+  //
+  //  Width note: these yield the address of a location whose width is the
+  //  referent's *natural* size (4 bytes for an `int32` struct field), not
+  //  a uniform 8. Every load/store through one passes the same statically
+  //  known `field_size`, so the two always agree. Reading a 4-byte field
+  //  out of an 8-byte register slot is well-defined only because the low
+  //  bytes are the value's bytes — this assumes a little-endian host, the
+  //  same assumption `store_sized`/`load_sized` already make.
+  op_addr_local,   ///< u8 dst, u8 src — reg[dst].u = the address of the
+                   ///< current frame's register `src`. Safe to hold for the
+                   ///< frame's lifetime: a frame's registers are a
+                   ///< `std::vector` whose buffer does not move when the
+                   ///< frame *vector* reallocates on a call (`push_frame`),
+                   ///< so unlike a pointer into the frame vector itself,
+                   ///< this stays valid across nested calls. It does not
+                   ///< outlive the frame — returning it is a dangling
+                   ///< reference the checker, not this opcode, must reject.
+  op_addr_slot,    ///< u8 dst, u8 ptr, u16 byte_offset — reg[dst].u =
+                   ///< reg[ptr].u + byte_offset. The address counterpart of
+                   ///< `op_load_slot`: `&mut s.field` on a scalar field.
+  op_addr_indexed, ///< u8 dst, u8 ptr, u8 index, u8 elem_size — reg[dst].u
+                   ///< = reg[ptr].u + reg[index].u * elem_size. The address
+                   ///< counterpart of `op_load_indexed`: `&mut xs[i]`, and
+                   ///< the opcode `iter_mut` over a container is built on.
+  op_list_push,    ///< u8 header_ptr, u8 value, u8 elem_size — appends the low
+                   ///< `elem_size` bytes of reg[value] onto the `list[T]`
+                   ///< value at reg[header_ptr] (a 3-slot `{ len; cap; data }`
+                   ///< header, `src/runtime/layout.h`, `data` itself a
+                   ///< contiguous `elem_size`-byte-per-element block —
+                   ///< `elem_size` generalizes what used to be a hardcoded
+                   ///< 8-byte-per-element push), growing/copying to a larger
+                   ///< `data` block when already at capacity. Unlike
+                   ///< `op_load_slot`/`op_store_slot`, this is one
+                   ///< opcode rather than several composed primitives:
+                   ///< growth needs a real conditional allocate-and-copy
+                   ///< that doesn't reduce to "one flat block of 8-byte
+                   ///< slots," so this delegates to
+                   ///< `kira::runtime::list_push` (the exact same
+                   ///< function `llvm_codegen`'s generated IR calls via
+                   ///< `kira_rt_list_push`) rather than reimplementing
+                   ///< growth as a second copy of that logic here.
+  op_panic_if,     ///< u8 cond, u8 panic_reason — panics with
+                   ///< `static_cast<panic_reason>(panic_reason)` if
+                   ///< reg[cond] (a `boolean` register) is true; otherwise
+                   ///< falls through. The bytecode-level building block a
+                   ///< compiler-emitted bounds check (or any other
+                   ///< source-triggered panic condition that isn't one of
+                   ///< the checked-arithmetic opcodes' own built-in panics)
+                   ///< composes from — mirrors `llvm_codegen`'s
+                   ///< `guard_panic` helper, just reified as one opcode
+                   ///< instead of a conditional branch to a call.
 
   // --- Diagnostics ---------------------------------------------------------
   op_panic, ///< (no operands) — panics with `panic_reason::explicit_panic`

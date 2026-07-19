@@ -1,0 +1,53 @@
+module codegen_stress.scalar_reference_places
+
+# `&`/`&mut` on a *scalar*, which — unlike a reference to an aggregate — is a
+# real computed address rather than a passthrough. An aggregate's compiled
+# value already is the pointer a reference to it would hold, so `&c` on one
+# costs no instruction; a scalar lives inline in a register (or packed at its
+# natural width inside a block), so a reference to one has to be materialized.
+#
+# The three places a scalar reference can be taken, all exercised here:
+#   - a local           (`&mut total`)      -> op_addr_local  / the alloca
+#   - a struct field    (`&mut c.value`)    -> op_addr_slot   / byte_address
+#   - an array element  (`&mut xs[i]`)      -> op_addr_indexed/ a GEP
+#
+# Reading is `*p` and writing is `*p = v`, both of which are just a
+# zero-offset slot access through the pointer — there is deliberately no
+# separate load/store-through-pointer opcode, because that is what a
+# zero-offset slot access already is.
+#
+# The regression this pins on the LLVM side specifically: `storage_llvm_type`
+# stripped `&T` down to `T` before mapping, so a `&mut int32` parameter was
+# typed `i32` and silently became pass-by-value — the callee's writes went to
+# a copy and were lost. Every reference is now an opaque `ptr`, uniformly.
+#
+# 10 (local) + 21 (field) + 30 (element) = 61.
+
+# expect: 61
+
+type cell = { value: int32 }
+
+def read(x: &int32) -> int32:
+    return *x
+
+def bump(x: &mut int32) -> unit:
+    *x = *x + 1
+
+def main() -> int32:
+    # A reference to a plain local, written through and read back.
+    var total = 9
+    bump(&mut total)
+    let from_local = read(&total)
+
+    # A reference to a scalar *field*, so the write lands inside the
+    # struct's heap block and is visible through the struct afterwards.
+    var c = cell { value: 20 }
+    bump(&mut c.value)
+    let from_field = c.value
+
+    # A reference to a scalar *element* — the case `iter_mut` is built on.
+    var xs = [10, 20, 29]
+    bump(&mut xs[2])
+    let from_element = xs[2]
+
+    return from_local + from_field + from_element

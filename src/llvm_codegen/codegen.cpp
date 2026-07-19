@@ -288,6 +288,18 @@ using kira::decode_string_literal;
 [[nodiscard]] auto storage_llvm_type(const type_table &types,
                                      llvm::LLVMContext &ctx, type_id id)
     -> std::optional<llvm::Type *> {
+  // Every reference is an opaque `ptr`, and uniformly so. For an aggregate
+  // referent that is the same thing stripping would have produced (the
+  // referent is itself a pointer), so nothing changes for the cases that
+  // already worked; for a *scalar* referent it is the difference between a
+  // real address and a copy of the value — `&int32` must be `ptr`, not
+  // `i32`, or a `&mut int32` parameter silently becomes pass-by-value and
+  // the callee's writes go nowhere.
+  const auto &entry = types.entry(id);
+  if (entry.kind == semantic::type_kind::ref_kind ||
+      entry.kind == semantic::type_kind::ptr_kind) {
+    return llvm::PointerType::get(ctx, 0);
+  }
   const auto stripped = strip_refs(types, id);
   const auto kind = numeric_kind_of(types, stripped);
   if (kind.has_value()) {
@@ -1527,6 +1539,27 @@ private:
       // it would hold — compile it straight through, no new instruction.
       return compile_expr(*un.operand);
     }
+    if (un.op == ast::unary_op::addr_of ||
+        un.op == ast::unary_op::addr_of_mut) {
+      // A *scalar* referent has no address of its own until one is taken.
+      return compile_addr_of(*un.operand);
+    }
+    if (un.op == ast::unary_op::deref) {
+      if (is_heap_pointer_value(un.type)) {
+        // Mirror of the `addr_of` passthrough above: an aggregate
+        // reference's value already *is* the referent's.
+        return compile_expr(*un.operand);
+      }
+      auto ptr = compile_expr(*un.operand);
+      if (!ptr.has_value()) {
+        return std::unexpected(ptr.error());
+      }
+      auto elem_ty = storage_type_for(un.type, un.span);
+      if (!elem_ty.has_value()) {
+        return std::unexpected(elem_ty.error());
+      }
+      return builder_.CreateLoad(*elem_ty, *ptr);
+    }
     if (un.op != ast::unary_op::neg && un.op != ast::unary_op::bit_not) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
@@ -2098,6 +2131,61 @@ private:
     return header;
   }
 
+  /// The address of a *scalar* place — the `&x`/`&mut x` cases that can't
+  /// be the no-op passthrough an aggregate operand gets. The bytecode
+  /// compiler's `compile_addr_of` is the mirror of this, and rejects the
+  /// same non-place operands with the same wording.
+  [[nodiscard]] auto compile_addr_of(const hir::hir_expr &place)
+      -> std::expected<llvm::Value *, codegen_error> {
+    if (place.kind == hir_node_kind::hir_local_ref) {
+      const auto &local = dynamic_cast<const hir::hir_local_ref &>(place);
+      // Every local is already an `alloca`, so its address is the slot
+      // itself — nothing to compute.
+      if (auto *slot = lookup_local(local.symbol); slot != nullptr) {
+        return slot;
+      }
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = place.span,
+          .message = std::format(
+              "cannot take the address of `{}`: it does not resolve to a "
+              "local variable",
+              local.name)});
+    }
+    if (place.kind == hir_node_kind::hir_field) {
+      const auto &field = dynamic_cast<const hir::hir_field &>(place);
+      const auto offset = runtime::struct_field_offset(
+          types_, field.object->type, field.field_name);
+      if (!offset.has_value()) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = place.span,
+            .message =
+                std::format("cannot take the address of field `.{}`: it is "
+                            "not a field of a struct value",
+                            field.field_name)});
+      }
+      auto object = compile_expr(*field.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      return byte_address(*object, *offset);
+    }
+    if (place.kind == hir_node_kind::hir_index) {
+      // Shares `compile_index`'s own address computation, so `&mut xs[i]`
+      // is bounds-checked exactly like `xs[i]` and points into the same
+      // block a read would have loaded from (see `compile_element_address`).
+      return compile_element_address(
+          dynamic_cast<const hir::hir_index &>(place));
+    }
+    return std::unexpected(codegen_error{
+        .kind = codegen_error_kind::unsupported_construct,
+        .span = place.span,
+        .message = "cannot take the address of this expression — `&`/`&mut` "
+                   "needs a place that exists in memory: a local variable, a "
+                   "struct field, or an element"});
+  }
+
   [[nodiscard]] auto compile_field(const hir::hir_field &field)
       -> std::expected<llvm::Value *, codegen_error> {
     const auto offset = runtime::struct_field_offset(
@@ -2259,27 +2347,12 @@ private:
   /// (`src/runtime/layout.h`), with its length read from the header's
   /// `len` slot at runtime — everything past that point (the bounds check,
   /// the indexed load) is shared.
-  [[nodiscard]] auto compile_index(const hir::hir_index &node)
+  /// The bounds-checked address of one element — see `compile_index`.
+  /// A *range* index never reaches here: it produces a new slice header
+  /// value rather than an element address, so `compile_index` handles it
+  /// before delegating.
+  [[nodiscard]] auto compile_element_address(const hir::hir_index &node)
       -> std::expected<llvm::Value *, codegen_error> {
-    if (node.index != nullptr &&
-        node.index->kind == hir_node_kind::hir_binary) {
-      const auto &maybe_range =
-          dynamic_cast<const hir::hir_binary &>(*node.index);
-      if (maybe_range.op == ast::binary_op::range ||
-          maybe_range.op == ast::binary_op::range_inclusive) {
-        if (!is_byte_addressed_slice_type(node.object->type)) {
-          return std::unexpected(codegen_error{
-              .kind = codegen_error_kind::unsupported_construct,
-              .span = node.span,
-              .message =
-                  "range-indexing is only supported on `str`/`slice`/"
-                  "`slice_mut`/`array[byte, N]` yet — any other fixed array "
-                  "or list source needs an element-size-aware view model "
-                  "this backend doesn't have yet"});
-        }
-        return compile_range_index(node, maybe_range);
-      }
-    }
     const auto &object_entry =
         types_.entry(strip_refs(types_, node.object->type));
     const bool indexing_list = is_list_type(node.object->type);
@@ -2351,10 +2424,6 @@ private:
     auto *out_of_bounds = builder_.CreateICmpUGE(index64, len, "index.oob");
     guard_panic(out_of_bounds, panic_reason::index_out_of_bounds);
 
-    auto elem_ty = storage_type_for(node.type, node.span);
-    if (!elem_ty.has_value()) {
-      return std::unexpected(elem_ty.error());
-    }
     // A plain `slot_address`-style 8x-scaled offset is only correct when
     // `elem_size == 8`; every element type now has its own natural stride
     // (`element_stride`), so the address is always computed as an explicit
@@ -2364,7 +2433,44 @@ private:
         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), elem_size);
     auto *byte_offset =
         builder_.CreateMul(index64, stride_const, "index.byte_offset");
-    return builder_.CreateLoad(*elem_ty, byte_address(data, byte_offset));
+    return byte_address(data, byte_offset);
+  }
+
+  /// Loads the element `compile_element_address` located. Split so that
+  /// `compile_addr_of` can stop at the address and take it, instead of
+  /// recomputing where element `i` lives — recomputing it is what made
+  /// `&mut xs[2]` on a `list` point inside the `{len, cap, data}` header
+  /// rather than at the third element of the `data` block.
+  [[nodiscard]] auto compile_index(const hir::hir_index &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    if (node.index != nullptr &&
+        node.index->kind == hir_node_kind::hir_binary) {
+      const auto &maybe_range =
+          dynamic_cast<const hir::hir_binary &>(*node.index);
+      if (maybe_range.op == ast::binary_op::range ||
+          maybe_range.op == ast::binary_op::range_inclusive) {
+        if (!is_byte_addressed_slice_type(node.object->type)) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_construct,
+              .span = node.span,
+              .message =
+                  "range-indexing is only supported on `str`/`slice`/"
+                  "`slice_mut`/`array[byte, N]` yet — any other fixed array "
+                  "or list source needs an element-size-aware view model "
+                  "this backend doesn't have yet"});
+        }
+        return compile_range_index(node, maybe_range);
+      }
+    }
+    auto address = compile_element_address(node);
+    if (!address.has_value()) {
+      return std::unexpected(address.error());
+    }
+    auto elem_ty = storage_type_for(node.type, node.span);
+    if (!elem_ty.has_value()) {
+      return std::unexpected(elem_ty.error());
+    }
+    return builder_.CreateLoad(*elem_ty, *address);
   }
 
   /// A container's runtime element count (`for`/`while` loop bound
@@ -3187,6 +3293,39 @@ private:
 
   [[nodiscard]] auto compile_assign(const hir::hir_assign &assign)
       -> std::expected<bool, codegen_error> {
+    if (assign.target->kind == hir_node_kind::hir_unary) {
+      // `*p = value` — the write-side mirror of `compile_unary`'s `deref`.
+      // Mirrors `bytecode_compiler::compile_assign`'s own deref branch.
+      const auto &target = dynamic_cast<const hir::hir_unary &>(*assign.target);
+      if (target.op != ast::unary_op::deref) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = std::format(
+                "cannot assign to a `{}` expression — the left side of an "
+                "assignment has to be a place: a local variable, a struct "
+                "field, an element, or `*` through a reference",
+                ast::unary_op_name(target.op))});
+      }
+      if (assign.op != ast::assign_op::assign) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = "compound assignment through a reference is not "
+                       "supported by llvm_codegen yet — write "
+                       "`*p = *p + x` instead of `*p += x`"});
+      }
+      auto ptr = compile_expr(*target.operand);
+      if (!ptr.has_value()) {
+        return std::unexpected(ptr.error());
+      }
+      auto value = compile_expr(*assign.value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      builder_.CreateStore(*value, *ptr);
+      return false;
+    }
     if (assign.target->kind == hir_node_kind::hir_field) {
       // `self.field = value` — mirrors `compile_field`'s own read through
       // `byte_address`, just a store instead of a load.

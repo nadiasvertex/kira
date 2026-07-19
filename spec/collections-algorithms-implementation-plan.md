@@ -103,7 +103,7 @@ public entry points, so the two backends cannot drift on it) rather than at
 the four backend call sites. Covered by
 `codegen_stress/041_mutate_through_mut_ref.kira`; full suite green.
 
-**0b — scalar references (`&mut int32`). Remaining.** The genuinely new
+**0b — scalar references (`&mut int32`). DONE.** The genuinely new
 capability, needed because `iter_mut` over `list[int32]` yields `&mut
 int32`. Representation chosen: **a pointer value is the address of an
 8-byte slot**, held in `slot_value.u`. This works because slots are
@@ -114,11 +114,37 @@ local, load-through-pointer, store-through-pointer) with the width taken
 from the statically known referent type, plus the corresponding
 `load`/`store`/`getelementptr` in `llvm_codegen`.
 
+Three opcodes were added (`op_addr_local`/`op_addr_slot`/`op_addr_indexed`)
+and no load/store opcode was needed: reading through a pointer *is* a
+zero-offset `op_load_slot`, which already existed. On the LLVM side the
+one substantive change was `storage_llvm_type`, which stripped `&T` to `T`
+before mapping — so a `&mut int32` parameter was typed `i32` and silently
+became pass-by-value, losing the callee's writes. Every reference is now an
+opaque `ptr`, uniformly (an aggregate referent was already one, so nothing
+regressed).
+
+Both backends had to be taught that `&mut xs[i]` shares `xs[i]`'s own
+address computation rather than recomputing it — computing it separately
+addressed `header + i * stride` on a `list`, i.e. bytes inside the
+`{len, cap, data}` header. Both are now routed through one
+`compile_element_location`/`compile_element_address`, so address-of is
+bounds-checked exactly like a read and cannot drift from it.
+
+**Testing gap found and closed.** That `list` bug produced the *same wrong
+answer on both backends*, so `codegen_stress_test`'s cross-tier agreement
+check passed it silently. Agreement is blind to a bug two tiers share,
+which is what they do whenever they share a wrong assumption about
+`runtime/layout.h`. Corpus files may now declare `# expect: <n>`, checked
+in addition to agreement; opt-in, so existing files are unaffected.
+**Any phase below that changes layout or addressing should declare
+`# expect:`** — agreement alone will not catch it.
+
 - X1 lands here.
 
 **Exit:** `m1`/`m2` (`return *x`, `*x = *x + 1`) run correctly on both
-backends; a `codegen_stress` case mutates a caller's local through a
-`&mut` parameter (**done** — 041); `--run` and `--compile` agree.
+backends (**done**); a `codegen_stress` case mutates a caller's local
+through a `&mut` parameter (**done** — 041, 042); `--run` and `--compile`
+agree (**done**). Full suite green (24/24).
 
 ### Phase 1 — G0: lower impl methods on generic target types
 

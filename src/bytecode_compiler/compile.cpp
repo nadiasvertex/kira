@@ -1128,6 +1128,29 @@ private:
       // it would hold — compile it straight into `dst`, no new opcode.
       return compile_expr_into(*un.operand, dst);
     }
+    if (un.op == ast::unary_op::addr_of ||
+        un.op == ast::unary_op::addr_of_mut) {
+      // A *scalar* referent has no address of its own until one is taken:
+      // it lives inline in a register, or packed at its natural width
+      // inside a block. `compile_addr_of` computes the real one.
+      return compile_addr_of(*un.operand, dst);
+    }
+    if (un.op == ast::unary_op::deref) {
+      if (is_heap_pointer_value(un.type)) {
+        // Mirror of the `addr_of` passthrough above: for an aggregate
+        // referent the reference's value already *is* the referent's, so
+        // there is nothing to load.
+        return compile_expr_into(*un.operand, dst);
+      }
+      auto ptr = compile_expr(*un.operand);
+      if (!ptr.has_value()) {
+        return std::unexpected(ptr.error());
+      }
+      // A zero-offset slot read *is* "load through a pointer" — see
+      // `op_addr_local`'s note on why there is no separate opcode.
+      emit_load_field(dst, *ptr, 0, element_stride(un.type));
+      return {};
+    }
     if (un.op != ast::unary_op::neg && un.op != ast::unary_op::bit_not) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
@@ -1727,6 +1750,80 @@ private:
     return {};
   }
 
+  /// Computes the address of a *scalar* place into `dst` — the `&x`/`&mut x`
+  /// cases that can't be the no-op passthrough an aggregate operand gets.
+  /// Only a genuine place has an address; `&(a + b)` has nowhere to point,
+  /// so anything else is rejected here with a diagnostic that says which
+  /// forms do work rather than failing silently.
+  [[nodiscard]] auto compile_addr_of(const hir::hir_expr &place, uint8_t dst)
+      -> std::expected<void, compile_error> {
+    if (place.kind == hir_node_kind::hir_local_ref) {
+      const auto &local = dynamic_cast<const hir::hir_local_ref &>(place);
+      const auto reg = lookup_local(local.symbol);
+      if (!reg.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = place.span,
+            .message = std::format(
+                "cannot take the address of `{}`: it does not resolve to a "
+                "local variable",
+                local.name)});
+      }
+      writer_.emit_opcode(opcode::op_addr_local);
+      writer_.emit_u8(dst);
+      writer_.emit_u8(*reg);
+      return {};
+    }
+    if (place.kind == hir_node_kind::hir_field) {
+      const auto &field = dynamic_cast<const hir::hir_field &>(place);
+      const auto offset = runtime::struct_field_offset(
+          types_, field.object->type, field.field_name);
+      if (!offset.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = place.span,
+            .message =
+                std::format("cannot take the address of field `.{}`: it is "
+                            "not a field of a struct value",
+                            field.field_name)});
+      }
+      auto object_reg = compile_expr(*field.object);
+      if (!object_reg.has_value()) {
+        return std::unexpected(object_reg.error());
+      }
+      writer_.emit_opcode(opcode::op_addr_slot);
+      writer_.emit_u8(dst);
+      writer_.emit_u8(*object_reg);
+      writer_.emit_u16(static_cast<uint16_t>(*offset));
+      return {};
+    }
+    if (place.kind == hir_node_kind::hir_index) {
+      // Shares `compile_index`'s own element-location computation, so
+      // `&mut xs[i]` is bounds-checked exactly like `xs[i]` is, and points
+      // into the same block a read would have loaded from. Computing this
+      // separately here is what made `&mut xs[2]` on a `list` address
+      // `header + 2 * 4` — a byte inside the `{len, cap, data}` header —
+      // instead of the third element of the `data` block.
+      const auto &index = dynamic_cast<const hir::hir_index &>(place);
+      auto location = compile_element_location(index);
+      if (!location.has_value()) {
+        return std::unexpected(location.error());
+      }
+      writer_.emit_opcode(opcode::op_addr_indexed);
+      writer_.emit_u8(dst);
+      writer_.emit_u8(location->data_reg);
+      writer_.emit_u8(location->index_reg);
+      writer_.emit_u8(location->elem_size);
+      return {};
+    }
+    return std::unexpected(compile_error{
+        .kind = compile_error_kind::unsupported_construct,
+        .span = place.span,
+        .message = "cannot take the address of this expression — `&`/`&mut` "
+                   "needs a place that exists in memory: a local variable, a "
+                   "struct field, or an element"});
+  }
+
   [[nodiscard]] auto compile_field(const hir::hir_field &field, uint8_t dst)
       -> std::expected<void, compile_error> {
     const auto offset = runtime::struct_field_offset(
@@ -1944,6 +2041,21 @@ private:
   /// 3-slot header's `data` slot (`src/runtime/layout.h`), with its length
   /// read from the header's `len` slot at runtime — everything past that
   /// point (the bounds check, the indexed load) is shared.
+  /// The bounds-checked location one element of an indexable object lives
+  /// at: the block the elements are actually stored in, the register holding
+  /// the index, and the element stride. Shared by `compile_index` (which
+  /// then loads from it) and `compile_addr_of` (which then takes its
+  /// address), so the two can't disagree about where element `i` is — a
+  /// `list`/`str`/`slice` keeps its elements in a separate `data` block
+  /// reached through a header, while a fixed array *is* its own block, and
+  /// an address-of that assumed the latter for all four would compute an
+  /// address inside the header instead of an element.
+  struct element_location {
+    uint8_t data_reg;
+    uint8_t index_reg;
+    uint8_t elem_size;
+  };
+
   [[nodiscard]] auto compile_index(const hir::hir_index &node, uint8_t dst)
       -> std::expected<void, compile_error> {
     if (node.index != nullptr &&
@@ -1965,6 +2077,17 @@ private:
         return compile_range_index(node, maybe_range, dst);
       }
     }
+    auto location = compile_element_location(node);
+    if (!location.has_value()) {
+      return std::unexpected(location.error());
+    }
+    emit_load_indexed(dst, location->data_reg, location->index_reg,
+                      location->elem_size);
+    return {};
+  }
+
+  [[nodiscard]] auto compile_element_location(const hir::hir_index &node)
+      -> std::expected<element_location, compile_error> {
     const auto &object_entry = types_.entry(strip_refs(node.object->type));
     const bool indexing_list = is_list_type(node.object->type);
     // `str`/`slice`/`slice_mut` share a 2-slot `{ len; data }` header
@@ -2054,8 +2177,8 @@ private:
     writer_.emit_u8(
         static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
 
-    emit_load_indexed(dst, data_reg, *index_reg, elem_size);
-    return {};
+    return element_location{
+        .data_reg = data_reg, .index_reg = *index_reg, .elem_size = elem_size};
   }
 
   /// Sum-type variant construction `@variant(args...)`: allocates a heap
@@ -2830,6 +2953,42 @@ private:
       }
       emit_store_field(*object_reg, static_cast<uint16_t>(*offset), *value_reg,
                        element_stride(field.type));
+      return {};
+    }
+    if (assign.target->kind == hir_node_kind::hir_unary) {
+      // `*p = value`. The write-side mirror of `compile_unary`'s `deref`:
+      // a zero-offset slot store through the pointer, at the referent's own
+      // width. An aggregate referent never reaches here — assigning through
+      // a reference to one is a field/element store on the referent itself,
+      // which the `hir_field` branch above already handles.
+      const auto &target = dynamic_cast<const hir::hir_unary &>(*assign.target);
+      if (target.op != ast::unary_op::deref) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = std::format(
+                "cannot assign to a `{}` expression — the left side of an "
+                "assignment has to be a place: a local variable, a struct "
+                "field, an element, or `*` through a reference",
+                ast::unary_op_name(target.op))});
+      }
+      if (assign.op != ast::assign_op::assign) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = "compound assignment through a reference is not "
+                       "supported by the bytecode compiler yet — write "
+                       "`*p = *p + x` instead of `*p += x`"});
+      }
+      auto ptr = compile_expr(*target.operand);
+      if (!ptr.has_value()) {
+        return std::unexpected(ptr.error());
+      }
+      auto value_reg = compile_expr(*assign.value);
+      if (!value_reg.has_value()) {
+        return std::unexpected(value_reg.error());
+      }
+      emit_store_field(*ptr, 0, *value_reg, element_stride(target.type));
       return {};
     }
     if (assign.target->kind != hir_node_kind::hir_local_ref) {

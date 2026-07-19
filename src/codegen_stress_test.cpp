@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -410,6 +411,44 @@ auto run_llvm(const fs::path &path, const hir::hir_module &module,
   }
 }
 
+/// The value a corpus file declares `main` should return, written as a
+/// `# expect: <integer>` comment anywhere in the file, or `nullopt` if it
+/// declares none.
+///
+/// Cross-tier *agreement* is this harness's main check, and it is a strong
+/// one — but it is blind to a bug both tiers share, which is exactly what
+/// they do when they share a wrong assumption about the layout they both
+/// read from `runtime::layout.h`. A real instance: `&mut xs[2]` on a `list`
+/// computed `header + 2 * stride` in both backends, addressing bytes inside
+/// the `{len, cap, data}` header instead of the third element — both tiers
+/// returned the same wrong answer and agreement alone was happy. Declaring
+/// the expected value turns that from a silent pass into a failure.
+///
+/// Opt-in: a file with no `# expect:` keeps agreement-only checking, so
+/// this costs nothing for the cases where the value isn't the point.
+[[nodiscard]] auto expected_result_of(std::string_view text)
+    -> std::optional<int64_t> {
+  constexpr auto marker = std::string_view{"# expect:"};
+  const auto at = text.find(marker);
+  if (at == std::string_view::npos) {
+    return std::nullopt;
+  }
+  auto rest = text.substr(at + marker.size());
+  rest = rest.substr(0, rest.find('\n'));
+  const auto first = rest.find_first_not_of(" \t");
+  if (first == std::string_view::npos) {
+    return std::nullopt;
+  }
+  rest = rest.substr(first);
+  auto value = int64_t{0};
+  const auto *begin = rest.data();
+  const auto result = std::from_chars(begin, begin + rest.size(), value);
+  if (result.ec != std::errc{}) {
+    return std::nullopt;
+  }
+  return value;
+}
+
 auto run_one(const fs::path &path) -> void {
   const auto text = read_file(path);
   auto fixture = check_source(text, path);
@@ -484,6 +523,15 @@ auto run_one(const fs::path &path) -> void {
            std::format("`{}`: bytecode VM and LLVM JIT disagree on `main`'s "
                        "result",
                        path.string()));
+    if (const auto expected = expected_result_of(text); expected.has_value()) {
+      expect(!is_heap_result,
+             std::format("`{}`: `# expect:` only applies to a scalar `main` "
+                         "result",
+                         path.string()));
+      expect(vm_result.bits == static_cast<uint64_t>(*expected),
+             std::format("`{}`: `main` returned {}, but `# expect:` says {}",
+                         path.string(), vm_result.bits, *expected));
+    }
   }
 }
 

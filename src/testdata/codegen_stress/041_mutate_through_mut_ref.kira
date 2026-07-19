@@ -16,6 +16,8 @@ module codegen_stress.mutate_through_mut_ref
 #
 # 7, bumped twice through two different reference depths, read back = 9.
 
+# expect: 9
+
 type cell = { value: int32 }
 
 def bump(c: &mut cell) -> unit:
