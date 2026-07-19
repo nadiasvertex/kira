@@ -974,9 +974,6 @@ auto clone_expr(const expr &e) -> std::expected<ptr<expr>, clone_error> {
 
 auto clone_func_decl(const func_decl &decl)
     -> std::expected<ptr<func_decl>, clone_error> {
-  if (!decl.where_constraints.empty()) {
-    return unsupported(decl, "a `where` clause");
-  }
   if (decl.modifiers.async_context != nullptr || decl.modifiers.is_async) {
     return unsupported(decl, "an async function");
   }
@@ -1008,6 +1005,29 @@ auto clone_func_decl(const func_decl &decl)
                    .bound_or_type = std::move(*bound_or_type),
                    .is_value_param = param.is_value_param,
                    .higher_kinded_arity = param.higher_kinded_arity});
+  }
+
+  // Carried across like the type parameters, and for the same reason: the
+  // clone keeps the template's constraints and the checker substitutes while
+  // checking it. A `where` clause used to be refused outright here, which was
+  // right while bounds were inert — a constraint that changes nothing is one
+  // more thing to get wrong in a clone. `solve_from_bounds` gives them a job
+  // (`where I: iterator[T]` is what solves `T` for an adapter), so an
+  // instance that dropped them would be checked under weaker information than
+  // the call that asked for it.
+  for (const auto &constraint : decl.where_constraints) {
+    auto subject = clone_optional(constraint.subject);
+    if (!subject.has_value()) {
+      return std::unexpected(subject.error());
+    }
+    auto constraint_bound = clone_optional(constraint.bound_or_type);
+    if (!constraint_bound.has_value()) {
+      return std::unexpected(constraint_bound.error());
+    }
+    cloned->where_constraints.push_back(
+        where_constraint{.span = constraint.span,
+                         .subject = std::move(*subject),
+                         .bound_or_type = std::move(*constraint_bound)});
   }
 
   for (const auto &contract : decl.contracts) {

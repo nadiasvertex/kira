@@ -354,6 +354,64 @@ no denaturalization yet. Traits per §5.1 including `from_iter`/`collect`.
 All three iteration families including `iter_mut` (unblocked by Phase 0).
 Adapters per §5.3, catalog per §6.1. X2 lands before `collect`.
 
+**Prerequisites measured and fixed 2026-07-19, before any stdlib was
+written.** Spiking §5.3's adapter shape showed the design assumed two
+capabilities the compiler did not have. Neither was in this plan, and the
+design's claim that the mechanism needed "no further language work" was
+wrong. Both are now landed, with `codegen_stress/049` and `050` covering
+them; the full suite is green at 25/25.
+
+- **Gap B — `for` over an adapter with a generic impl.** Two failures in
+  one. `impl[I, T, U] iterator[U] for map_iter[...]` returned its element
+  type still written in `U`, so lowering refused the loop ("the iterator's
+  item type did not resolve to a concrete type"); and even with a concrete
+  element type, lowering asked for a `doubler::next` that no compiled module
+  defines, since a generic impl has no single compiled `next`.
+  `try_resolve_iterator` now solves the impl's parameters against the
+  concrete receiver, substitutes, and requests the per-receiver instance,
+  with the `for` statement itself as the instantiation site.
+  `find_or_check_generic_instance` was generalized from `call_expr` to
+  `node` to allow that. This subsumes the item Phase 2 deferred.
+
+- **Gap A — bounds must drive inference.** `map[I, T, U](it: I, f: fn(T) ->
+  U)` cannot solve `T`: `it` gives `I`, the lambda is what `T` is needed
+  *for*, nothing else mentions it. So **§6.1's "bounds are advisory only" no
+  longer holds for inference** — `solve_from_bounds` consults a `where I:
+  iterator[T]` clause, finds the impl of `iterator` for the concrete `I`,
+  and reads `T` off it. Bounds are still not *enforced* at call sites (R1 is
+  unchanged); an unsatisfied bound simply contributes no binding. Two
+  supporting changes: lambda arguments are now checked **last**, against a
+  parameter type substituted with everything else already solved (otherwise
+  a bare `x => x * 2` binds its parameter to the type parameter `T` and
+  fails in lowering); and `clone_func_decl` now clones `where` clauses
+  instead of refusing them, which it could do while bounds were inert.
+
+**Grammar corrections to the design.** §5.3's code did not parse in three
+separate ways (`case P:` for `P => ...`; multi-statement match arms, which
+have no indented block form; and type arguments on a struct literal). §5.3
+has been rewritten with code verified to compile and run, and the three
+rules stated inline.
+
+**`static def` in a `trait` body — fixed, was blocking `collect`.** It
+parsed only at module level, so §5.1's `from_iter` could not be *declared*;
+`extend` blocks refused it too. `kira-grammar.ebnf` lists `static` as an
+unrestricted function modifier, so the parser was the side out of step.
+`parser::at_static_func_decl` now performs the look-past-the-modifiers
+disambiguation that module scope already did, shared across all four sites
+instead of hand-unrolled to a fixed three tokens in two of them (which also
+means `static async[ctx] def`, previously unreachable behind a bracket
+group, now resolves). `codegen_stress/051` exercises the full `collect`
+shape — a static trait method dispatched through the type parameter `C` to
+two different impls — rather than only the parse; `parser_test` covers both
+directions of the disambiguation, including that `static counter = 0`
+remains a binding.
+
+Not fixed, and out of scope here: a trait's *required constant* is written
+`static NAME: Type` with no initializer in `kira-grammar.ebnf` line 81, and
+`parse_static_decl` demands an `= expr`. Pre-existing (verified against
+`master`), unrelated to `static def`, and a second place the parser and the
+grammar disagree.
+
 Also here: the R5 checks — instance-cache key includes nested type
 arguments, symbol-name hashing past a length threshold, `generic_depth_`
 ≥ 16 with a teaching diagnostic, and an eight-stage `codegen_stress` case

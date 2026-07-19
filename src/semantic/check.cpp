@@ -1033,7 +1033,7 @@ private:
   /// once a parameter can be solved from context, an error inside the
   /// instance has to say *which* context, or the binding appears to come
   /// from nowhere the user wrote.
-  std::unordered_map<const ast::call_expr *, std::vector<std::string>>
+  std::unordered_map<const ast::node *, std::vector<std::string>>
       expected_solved_params_;
   /// The chain of generic instantiations currently being checked, innermost
   /// last. `emit_diag` appends one note per frame, so a diagnostic raised
@@ -2410,6 +2410,30 @@ private:
   /// the call names its callee bare and every parameter has to be read off
   /// the arguments instead.
   using explicit_generic_args = std::vector<explicit_generic_arg>;
+
+  /// One call argument matched to the parameter it fills, held until
+  /// `check_call_args_against` decides the order to infer them in.
+  struct pending_argument {
+    const ast::expr *value = nullptr;
+    const fn_param_info *target = nullptr;
+  };
+
+  /// What `check_call_args_against` needs to solve a generic callee's type
+  /// parameters partway through checking its arguments, so a deferred lambda
+  /// can be checked against a substituted parameter type. Absent for a call
+  /// to a non-generic callee, which has nothing to substitute.
+  struct generic_call_context {
+    const ast::func_decl *decl = nullptr;
+    const module_members *owner = nullptr;
+    const explicit_generic_args *explicit_args = nullptr;
+    const ast::expr *ufcs_receiver = nullptr;
+    /// Bindings the caller already solved and is not re-deriving here. A UFCS
+    /// call solves its first parameter against the receiver before the
+    /// written arguments are looked at (`check_ufcs_call`), and that binding
+    /// is exactly the one a bound needs as its subject — `it.map(f)` knows
+    /// `I` from `it` and needs `where I: iterator[T]` to get `T`.
+    const std::unordered_map<std::string, type_id> *seed = nullptr;
+  };
 
   /// A narrowing obligation raised by one call argument, held back until the
   /// whole argument list has been seen — see `check_call_args_against`.
@@ -4235,7 +4259,9 @@ private:
                                const std::vector<fn_param_info> &params,
                                std::string_view callee_name,
                                source_location decl_location,
-                               value_bindings *solved_out = nullptr) -> void {
+                               value_bindings *solved_out = nullptr,
+                               const generic_call_context *generic = nullptr)
+      -> void {
     auto param_used = std::vector<bool>(params.size(), false);
     auto args_by_param = std::vector<const ast::expr *>(params.size(), nullptr);
     auto next_positional = size_t{0};
@@ -4243,6 +4269,7 @@ private:
     // See the deferral comment in the argument loop below.
     auto solved_values = value_bindings{};
     auto deferred = std::vector<deferred_narrowing>{};
+    auto pending = std::vector<pending_argument>{};
 
     for (const auto &arg : call.args) {
       const fn_param_info *target = nullptr;
@@ -4306,27 +4333,77 @@ private:
       }
 
       if (arg.value != nullptr) {
-        const auto expected = target != nullptr ? target->type : k_unknown_type;
-        const auto found = infer_expr(*arg.value, expected);
-        if (target != nullptr) {
-          // Structure is decided now; a *proof* has to wait. A refined
-          // parameter's predicate is written in the callee's value parameters
-          // (`index[n]`'s `n`), and which arguments pin those down isn't known
-          // until every argument has been seen — `safe_get(v, i)` learns `n`
-          // from `v`, which for a differently-ordered signature could just as
-          // easily come after `i`. So the shape check runs in place and the
-          // obligation is collected for the second pass below.
-          type_mismatch(arg.value->span, expected, found, "for this argument");
-          solve_value_params(expected, found, solved_values);
-          if (types_.entry(expected).kind == type_kind::refinement_kind) {
-            deferred.push_back(deferred_narrowing{
-                .expected = expected,
-                .found = found,
-                .value = arg.value.get(),
-                .span = arg.value->span,
-            });
-          }
-        }
+        pending.push_back(
+            pending_argument{.value = arg.value.get(), .target = target});
+      }
+    }
+
+    // `call_argument_mappings_` is published before the arguments are
+    // checked, not after, because the generic solving between the two passes
+    // below reads it back to find which argument reached which parameter.
+    call_argument_mappings_[&call] =
+        call_argument_mapping{.args_by_param = args_by_param};
+
+    const auto check_argument =
+        [&](const pending_argument &item,
+            const std::unordered_map<std::string, type_id> &bindings) -> void {
+      const auto expected =
+          item.target != nullptr
+              ? substitute_solved(item.target->type, bindings)
+              : k_unknown_type;
+      const auto found = infer_expr(*item.value, expected);
+      if (item.target == nullptr) {
+        return;
+      }
+      // Structure is decided now; a *proof* has to wait. A refined
+      // parameter's predicate is written in the callee's value parameters
+      // (`index[n]`'s `n`), and which arguments pin those down isn't known
+      // until every argument has been seen — `safe_get(v, i)` learns `n`
+      // from `v`, which for a differently-ordered signature could just as
+      // easily come after `i`. So the shape check runs in place and the
+      // obligation is collected for the second pass below.
+      type_mismatch(item.value->span, expected, found, "for this argument");
+      solve_value_params(expected, found, solved_values);
+      if (types_.entry(expected).kind == type_kind::refinement_kind) {
+        deferred.push_back(deferred_narrowing{
+            .expected = expected,
+            .found = found,
+            .value = item.value,
+            .span = item.value->span,
+        });
+      }
+    };
+
+    // Lambda arguments go last, and against a *substituted* parameter type.
+    //
+    // A lambda is the one argument whose type is decided by what is expected
+    // of it rather than by what it contains: `x => x * 2` passed to an
+    // `f: fn(T) -> U` has no type of its own until `T` is known. Checked in
+    // declaration order it would be inferred against the literal `fn(T) -> U`
+    // and bind its parameter to the type *parameter* `T`, which then reaches
+    // lowering as an abstract type and fails there rather than here ("type
+    // `T` has no scalar bytecode representation"). Every other argument
+    // determines its own type, so running those first — and solving the call's
+    // generic parameters from them plus the declared bounds — is what makes
+    // `T` known by the time the lambda needs it.
+    //
+    // Each argument is still inferred exactly once. This reorders when the
+    // lambdas are visited, it does not visit them twice: `infer_expr` mints
+    // symbols and declares locals, and running it twice over one lambda would
+    // register its parameters two times over.
+    auto no_bindings = std::unordered_map<std::string, type_id>{};
+    for (const auto &item : pending) {
+      if (item.value->kind != ast::node_kind::lambda_expr) {
+        check_argument(item, no_bindings);
+      }
+    }
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    if (generic != nullptr) {
+      bindings = preliminary_type_bindings(call, params, *generic);
+    }
+    for (const auto &item : pending) {
+      if (item.value->kind == ast::node_kind::lambda_expr) {
+        check_argument(item, bindings);
       }
     }
 
@@ -4358,9 +4435,6 @@ private:
       mark_error();
     }
 
-    call_argument_mappings_[&call] =
-        call_argument_mapping{.args_by_param = std::move(args_by_param)};
-
     if (solved_out != nullptr) {
       *solved_out = std::move(solved_values);
     }
@@ -4390,9 +4464,14 @@ private:
     }
     const auto params = signature_params(decl, owner, skip_self);
     auto solved = value_bindings{};
+    const auto generic = generic_call_context{.decl = &decl,
+                                              .owner = owner,
+                                              .explicit_args = &explicit_args,
+                                              .ufcs_receiver = nullptr};
     check_call_args_against(
         call, params, decl.name,
-        source_location{.file_id = decl_file, .span = decl.span}, &solved);
+        source_location{.file_id = decl_file, .span = decl.span}, &solved,
+        is_generic_template(decl) ? &generic : nullptr);
     check_call_preconditions(call, decl, params);
     // Not from inside a template: a call there is written in terms of
     // parameters that are still symbols (`get(v, i)` inside a function generic
@@ -4558,8 +4637,14 @@ private:
   /// that type out of `self_type_`, so an instance checked with it unset
   /// would find no type for `self` at all. `k_unknown_type` for a free
   /// function, which has no receiver to bind.
+  /// `site` is the syntax that asked for this instance. It is a `node` rather
+  /// than a `call_expr` because not every instantiation comes from a written
+  /// call: `for x in adapter:` desugars to `adapter.next()`, and the `next`
+  /// it needs a compiled copy of is reached from the `for` statement itself
+  /// (`try_resolve_iterator`). Only the span and the map identity are used,
+  /// both of which every node has.
   auto find_or_check_generic_instance(
-      const ast::call_expr &call, const ast::func_decl &decl,
+      const ast::node &call, const ast::func_decl &decl,
       const module_members *owner, std::optional<file_id_type> decl_file,
       const generic_solution &solution, const std::string &name,
       const std::unordered_map<std::string, type_id> *fixed_type_params,
@@ -5038,6 +5123,44 @@ private:
     }
   }
 
+  /// The bindings available *partway* through checking a call's arguments —
+  /// everything the brackets, the already-checked arguments, and the declared
+  /// bounds can answer between them. Used only to substitute into a deferred
+  /// lambda's expected type; the authoritative solution is still
+  /// `solve_generic_params`, which runs once every argument has been seen and
+  /// is the only one that reports an unsolved parameter.
+  ///
+  /// Quiet by construction: nothing here diagnoses. A parameter this cannot
+  /// answer simply stays abstract, and the lambda is checked against what is
+  /// known — which is exactly what happened for every call before deferral
+  /// existed.
+  auto preliminary_type_bindings(const ast::call_expr &call,
+                                 const std::vector<fn_param_info> &params,
+                                 const generic_call_context &generic)
+      -> std::unordered_map<std::string, type_id> {
+    auto bindings = generic.seed != nullptr
+                        ? *generic.seed
+                        : std::unordered_map<std::string, type_id>{};
+    const auto &decl = *generic.decl;
+    if (generic.explicit_args != nullptr) {
+      for (size_t i = 0;
+           i < generic.explicit_args->size() && i < decl.type_params.size();
+           ++i) {
+        const auto &param = decl.type_params[i];
+        if (param.is_value_param || param.name.empty()) {
+          continue;
+        }
+        if (const auto resolved =
+                explicit_type_argument((*generic.explicit_args)[i])) {
+          bindings.emplace(param.name, *resolved);
+        }
+      }
+    }
+    solve_from_argument_types(call, params, bindings, generic.ufcs_receiver);
+    solve_from_bounds(decl, generic.owner, bindings);
+    return bindings;
+  }
+
   /// The argument expression supplied for declared parameter `i`.
   ///
   /// A UFCS call (`recv.f(a)` reaching `f(recv, a)`) writes one fewer
@@ -5135,6 +5258,13 @@ private:
       const ast::expr *ufcs_receiver = nullptr) -> std::optional<type_id> {
     auto type_bindings = std::unordered_map<std::string, type_id>{};
     solve_from_argument_types(call, params, type_bindings, ufcs_receiver);
+    // Between the arguments and the expected type, because a bound is solved
+    // *from* an argument-derived binding (`I` answers `T` via
+    // `where I: iterator[T]`) and should still lose to an explicit annotation
+    // the way every argument-derived binding does. `def sum[I, T](it: I)`
+    // has no argument mentioning `T` at all, so without this the terminal of
+    // every adapter chain is unsolvable.
+    solve_from_bounds(decl, owner, type_bindings);
     solve_from_expected_type(call, decl, owner, type_bindings, explicit_args);
 
     const auto solution = solve_generic_params(call, decl, owner, solved,
@@ -7427,6 +7557,158 @@ private:
         std::format("{}:{}", trait_name, type_key_of(instance)));
   }
 
+  /// The concrete trait arguments the `impl` of `trait_name` for `concrete`
+  /// supplies: asked about `counter` and `iterator`, an
+  /// `impl iterator[int32] for counter` answers `[int32]`.
+  ///
+  /// Searched over every module's impls rather than read out of
+  /// `impl_trait_index_`, which is keyed at *declaration* level — one entry
+  /// per generic type rather than per instantiation — and records no
+  /// arguments at all. That is enough for `type_has_trait`'s "does some impl
+  /// exist", and not enough for "what does that impl say `T` is".
+  auto trait_args_of_impl_for(type_id concrete, std::string_view trait_name)
+      -> std::optional<std::vector<type_id>> {
+    for (const auto &[module_name, members] : index_.modules) {
+      for (const auto &impl : members.impls) {
+        if (impl.decl->has_error || impl.decl->trait_type == nullptr ||
+            impl.decl->trait_type->kind != ast::node_kind::named_type ||
+            trait_name_of_impl(*impl.decl) != trait_name) {
+          continue;
+        }
+        const auto target = strip_refs(resolve_impl_target(impl));
+        if (types_.is_unknown(target)) {
+          continue;
+        }
+        // Rigid unification alone does not mean the impl applies —
+        // `unify_rigid` reports what *would* make the pattern match without
+        // insisting that it does. Substituting the solution back and
+        // requiring the original settles it, so `impl ... for holder[T]` is
+        // accepted for `holder[int32]` and rejected for `boxed[int32]`.
+        auto impl_bindings = std::unordered_map<std::string, type_id>{};
+        unify_rigid(target, concrete, impl_bindings);
+        if (substitute_solved(target, impl_bindings) != concrete) {
+          continue;
+        }
+
+        auto param_bindings = std::unordered_map<std::string, type_id>{};
+        for (const auto &param : impl.decl->type_params) {
+          if (!param.name.empty()) {
+            param_bindings.emplace(
+                param.name,
+                types_.type_param(param.name, param.higher_kinded_arity));
+          }
+        }
+        const auto ctx = resolve_ctx{.module = &members,
+                                     .param_bindings = &param_bindings,
+                                     .use_type_param_stack = false,
+                                     .quiet = true};
+        const auto &named =
+            dynamic_cast<const ast::named_type &>(*impl.decl->trait_type);
+        auto args = std::vector<type_id>{};
+        for (const auto &arg : named.type_args) {
+          const auto *arg_type =
+              dynamic_cast<const ast::type_expr *>(arg.value.get());
+          args.push_back(arg_type != nullptr
+                             ? substitute_solved(resolve_type(*arg_type, ctx),
+                                                 impl_bindings)
+                             : k_unknown_type);
+        }
+        return args;
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// Solves type parameters that a bound relates to an already-solved one.
+  ///
+  /// `def map[I, T, U](it: I, f: fn(T) -> U) where I: iterator[T]` is the
+  /// shape every adapter in `spec/collections-algorithms-design.md` §5.3 is
+  /// built from, and the arguments alone cannot solve it: `it` answers `I`,
+  /// the lambda is what `T` is needed *for*, and nothing else mentions `T`.
+  /// The bound is the missing link — `I := counter` plus
+  /// `impl iterator[int32] for counter` gives `T := int32`.
+  ///
+  /// Bounds are otherwise advisory in this compiler (they are not enforced at
+  /// the call site), and this does not change that: an unsatisfied bound
+  /// still says nothing here, it merely fails to contribute a binding.
+  /// Existing bindings are never overwritten, so a bound can turn an
+  /// unsolvable call into a solved one and never re-answer a call the
+  /// arguments already settled.
+  auto solve_from_bounds(const ast::func_decl &decl,
+                         const module_members *owner,
+                         std::unordered_map<std::string, type_id> &bindings)
+      -> void {
+    auto pattern_params = generic_param_bindings(decl, /*enclosing_impl=*/nullptr);
+    const auto pattern_ctx = resolve_ctx{.module = owner,
+                                         .param_bindings = &pattern_params,
+                                         .use_type_param_stack = false,
+                                         .quiet = true};
+
+    const auto apply = [&](std::string_view subject_name,
+                           const ast::type_expr &bound_expr) -> void {
+      const auto solved = bindings.find(std::string(subject_name));
+      if (solved == bindings.end() || types_.is_unknown(solved->second) ||
+          mentions_abstract_type(solved->second)) {
+        return;
+      }
+      // A `+`-joined list contributes from each term independently; a bare
+      // `Trait[Args]` is the one-term case of the same thing.
+      auto terms = std::vector<const ast::type_expr *>{};
+      if (bound_expr.kind == ast::node_kind::bound_type) {
+        for (const auto &term :
+             dynamic_cast<const ast::bound_type &>(bound_expr).value.terms) {
+          if (term.type != nullptr) {
+            terms.push_back(term.type.get());
+          }
+        }
+      } else {
+        terms.push_back(&bound_expr);
+      }
+
+      for (const auto *term : terms) {
+        if (term->kind != ast::node_kind::named_type) {
+          continue;
+        }
+        const auto &named = dynamic_cast<const ast::named_type &>(*term);
+        if (named.path.empty() || named.type_args.empty()) {
+          continue;
+        }
+        const auto concrete_args =
+            trait_args_of_impl_for(strip_refs(solved->second), named.path.back());
+        if (!concrete_args.has_value()) {
+          continue;
+        }
+        for (size_t i = 0; i < named.type_args.size() && i < concrete_args->size();
+             ++i) {
+          const auto *arg_type = dynamic_cast<const ast::type_expr *>(
+              named.type_args[i].value.get());
+          if (arg_type == nullptr) {
+            continue;
+          }
+          unify_rigid(resolve_type(*arg_type, pattern_ctx), (*concrete_args)[i],
+                      bindings);
+        }
+      }
+    };
+
+    for (const auto &param : decl.type_params) {
+      if (!param.is_value_param && param.bound_or_type != nullptr) {
+        apply(param.name, *param.bound_or_type);
+      }
+    }
+    for (const auto &constraint : decl.where_constraints) {
+      if (constraint.subject == nullptr || constraint.bound_or_type == nullptr ||
+          constraint.subject->kind != ast::node_kind::named_type) {
+        continue;
+      }
+      const auto &subject =
+          dynamic_cast<const ast::named_type &>(*constraint.subject);
+      if (!subject.path.empty()) {
+        apply(subject.path.back(), *constraint.bound_or_type);
+      }
+    }
+  }
+
   /// Result types of methods derived through `deriving` or prelude traits.
   auto derived_method_result(const type_entry &instance, std::string_view name)
       -> std::optional<type_id> {
@@ -8195,10 +8477,15 @@ private:
       param.type = substitute_solved(param.type, bindings);
     }
     auto solved = value_bindings{};
+    const auto generic = generic_call_context{.decl = &decl,
+                                              .owner = candidate.owner,
+                                              .explicit_args = nullptr,
+                                              .ufcs_receiver = nullptr,
+                                              .seed = &bindings};
     check_call_args_against(
         call, rest, decl.name,
         source_location{.file_id = candidate.file_id, .span = decl.span},
-        &solved);
+        &solved, is_generic_template(decl) ? &generic : nullptr);
     check_call_preconditions(call, decl, params, field.object.get());
 
     if (!in_const_generic_template_ && !in_type_generic_template_ &&
@@ -10547,7 +10834,17 @@ private:
   /// call from). `nullopt` for any type that isn't shaped like an iterator —
   /// including the builtin iterables (`list`/`slice`/`range`/...), which have
   /// their own dedicated loop shapes and never reach this path.
-  auto try_resolve_iterator(type_id iterable)
+  /// `site`, when given, is the syntax whose iteration needs a *compiled*
+  /// `next` — the `for` statement. An adapter declared
+  /// `impl[I, T, U] iterator[U] for map_iter[I, T, U]` has no single compiled
+  /// `next`, exactly as a written `it.next()` call would not
+  /// (`check_impl_generic_method_call`); the difference is only that nothing
+  /// in the source names the call, so the instance has to be requested from
+  /// here or lowering finds no such function. Passing `nullptr` answers the
+  /// element type without compiling anything, which is what `element_type_of`
+  /// wants — it is asked about types in places that are not loops at all.
+  auto try_resolve_iterator(type_id iterable,
+                            const ast::node *site = nullptr)
       -> std::optional<iterator_loop_dispatch> {
     const auto stripped = strip_refs(iterable);
     const auto &entry = types_.entry(stripped);
@@ -10559,16 +10856,57 @@ private:
         param_name_of(method->decl->params.front()) != "self") {
       return std::nullopt;
     }
-    const auto ret = signature_return_type(*method->decl, method->owner);
+
+    // Solved unconditionally, not just when an instance is wanted: an impl
+    // parameter reaching the *element* type (`-> option[U]`) leaves the
+    // return type written in `U` until the receiver answers it, and an
+    // unsubstituted `U` is what `hir::lower_iterator_loop` rejects as "the
+    // iterator's item type did not resolve to a concrete type".
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    if (method->from_impl != nullptr) {
+      unify_rigid(method->impl_target_pattern, stripped, bindings);
+    }
+    const auto ret = substitute_solved(
+        signature_return_type(*method->decl, method->owner, method->from_impl),
+        bindings);
     const auto &ret_entry = types_.entry(strip_refs(ret));
     if (ret_entry.kind != type_kind::builtin_generic_kind ||
         ret_entry.name != "option" || ret_entry.args.empty()) {
       return std::nullopt;
     }
-    return iterator_loop_dispatch{.decl = method->decl,
-                                  .owner_module = method->owner->module_name,
-                                  .impl_target_type = entry.name,
-                                  .element_type = ret_entry.args.front()};
+
+    auto dispatch =
+        iterator_loop_dispatch{.decl = method->decl,
+                               .owner_module = method->owner->module_name,
+                               .impl_target_type = entry.name,
+                               .element_type = ret_entry.args.front()};
+
+    if (site == nullptr || !impl_needs_instance(*method, entry) ||
+        in_const_generic_template_ || in_type_generic_template_) {
+      return dispatch;
+    }
+
+    // Keyed on the receiver, and named after it, for the reason
+    // `check_impl_generic_method_call` documents: two impls on two
+    // instantiations of one target both claim `next`, and only the
+    // receiver's arguments tell them apart.
+    auto scoped_params = method->fixed_type_params;
+    scoped_params.insert(bindings.begin(), bindings.end());
+    auto solution = generic_solution{};
+    solution.suffix = std::format("${}", mangle_type_for_instance(stripped));
+    const auto name =
+        std::format("{}::{}{}", entry.name, method->decl->name, solution.suffix);
+    const auto *instance = find_or_check_generic_instance(
+        *site, *method->decl, method->owner, /*decl_file=*/std::nullopt,
+        solution, name, &scoped_params, stripped);
+    if (instance == nullptr) {
+      return dispatch;
+    }
+    // The instance's name already carries the receiver, so it is a plain
+    // function name rather than a `Type::method` pair to be joined later.
+    dispatch.decl = instance;
+    dispatch.impl_target_type = "";
+    return dispatch;
   }
 
   auto element_type_of(type_id iterable, source_span span) -> type_id {
@@ -12136,7 +12474,7 @@ private:
         element = element_type_of(iterable, stmt.iterable->span);
         // Record the `next`-method dispatch so lowering can desugar a
         // user-iterator loop into `while let @some(x) = it.next(): ...`.
-        if (auto iter = try_resolve_iterator(iterable)) {
+        if (auto iter = try_resolve_iterator(iterable, &stmt)) {
           for_iterator_dispatches_[&stmt] = std::move(*iter);
         }
       }

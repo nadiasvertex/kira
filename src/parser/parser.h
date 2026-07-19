@@ -668,6 +668,20 @@ private:
       -> ast::ptr<ast::func_decl>;
   /// Parses the leading modifier sequence for a function-like construct.
   [[nodiscard]] auto parse_func_modifiers() -> ast::func_modifiers;
+
+  /// Whether the `static` at the cursor opens a *function* (`static def`,
+  /// `static pure def`, ...) rather than a static binding
+  /// (`static NAME: Type`).
+  ///
+  /// `static` is the one function modifier that is also a declaration keyword
+  /// in its own right, so every construct that accepts both has to look past
+  /// the run of modifiers for a `def` before committing. Two call sites used
+  /// to unroll that by hand to a fixed depth of three tokens; sharing one
+  /// scan is what lets `trait`, `impl`, and `extend` bodies accept
+  /// `static def` on the same terms as module scope, which is what
+  /// `kira-grammar.ebnf` describes (`static` is listed there as an
+  /// unrestricted `func_modifier`).
+  [[nodiscard]] auto at_static_func_decl() const noexcept -> bool;
   /// Parses a function parameter list.
   [[nodiscard]] auto parse_param_list() -> std::vector<ast::param>;
   /// Parses one function parameter, including defaults.

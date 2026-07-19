@@ -1,0 +1,90 @@
+module codegen_stress.bound_driven_inference
+
+# Type parameters solved from a *declared bound* rather than from an
+# argument, and lambda arguments checked against the result.
+#
+# `def map[I, T, U](it: I, f: fn(T) -> U) where I: iterator[T]` is the shape
+# every adapter in `spec/collections-algorithms-design.md` §5.3 is built
+# from, and nothing about the arguments alone can solve it: `it` answers `I`,
+# the lambda is what `T` is needed *for*, and no other parameter mentions
+# `T`. The bound is the only link between them — `I := counter` plus
+# `impl iterator[int32] for counter` gives `T := int32`. `sum` is the sharper
+# case: it takes no written argument at all, so `T` comes from the bound or
+# from nowhere.
+#
+# The second half is ordering. A lambda has no type of its own until one is
+# expected of it, so `x => x * 2` checked in declaration order binds its
+# parameter to the type *parameter* `T` and reaches lowering as an abstract
+# type ("type `T` has no scalar bytecode representation"). Lambdas are now
+# checked last, against a substituted parameter type — which is why a bare
+# `x => x * 2` works here and used to need `(x: int32) => x * 2`.
+#
+# Both spellings appear below on purpose: `filter`/`map` are reached by UFCS
+# (`check_ufcs_call`, which seeds the bound's subject from the receiver) and
+# `tally` is called directly (`check_call_against_decl`). The two solve their
+# parameters by different routes and both have to arrive at `int32`.
+#
+# counter 0..13 yields 0..12; `filter x > 10` keeps 11 and 12; `map x * 2`
+# gives 22 and 24; `sum` is 46. `tally` adds 0+1+...+12 = 78 by the direct
+# route. 46 + 78 = 124.
+
+# expect: 124
+
+trait iterator[T]:
+    def next(mut self) -> option[T]
+
+type counter = { at: int32, stop: int32 }
+
+impl iterator[int32] for counter:
+    def next(mut self) -> option[int32]:
+        if self.at >= self.stop:
+            return @none
+        let value = self.at
+        self.at = self.at + 1
+        return @some(value)
+
+type map_iter[I, T, U] = { inner: I, f: fn(T) -> U }
+
+impl[I, T, U] iterator[U] for map_iter[I, T, U]:
+    def next(mut self) -> option[U]:
+        match self.inner.next():
+            @some(x) => return @some((self.f)(x))
+            @none => return @none
+
+type filter_iter[I, T] = { inner: I, pred: fn(T) -> bool }
+
+impl[I, T] iterator[T] for filter_iter[I, T]:
+    def next(mut self) -> option[T]:
+        while let @some(x) = self.inner.next():
+            if (self.pred)(x):
+                return @some(x)
+        return @none
+
+def map[I, T, U](it: I, f: fn(T) -> U) -> map_iter[I, T, U] where I: iterator[T]:
+    return map_iter { inner: it, f: f }
+
+def filter[I, T](it: I, pred: fn(T) -> bool) -> filter_iter[I, T] where I: iterator[T]:
+    return filter_iter { inner: it, pred: pred }
+
+# No argument mentions `T`, and there is no argument beyond the receiver at
+# all — the bound is the only thing that can answer it.
+def sum[I, T](it: I) -> int32 where I: iterator[T]:
+    var cursor = it
+    var total = 0
+    while let @some(x) = cursor.next():
+        total = total + x
+    return total
+
+# Same bound, reached by an ordinary call rather than by UFCS.
+def tally[I, T](it: I) -> int32 where I: iterator[T]:
+    var cursor = it
+    var total = 0
+    while let @some(x) = cursor.next():
+        total = total + x
+    return total
+
+def main() -> int32:
+    let source = counter { at: 0, stop: 13 }
+    let chained = source.filter(x => x > 10).map(x => x * 2).sum()
+    let direct = tally(counter { at: 0, stop: 13 })
+    return chained + direct

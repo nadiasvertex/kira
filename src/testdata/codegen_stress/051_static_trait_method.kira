@@ -1,0 +1,84 @@
+module codegen_stress.static_trait_method
+
+# `static def` inside a `trait` body, an `impl` body, and an `extend` block.
+#
+# `kira-grammar.ebnf` lists `static` among the unrestricted `func_modifier`s,
+# but the parser only honored it at module scope: inside a `trait` it read
+# `static` as the start of a static *constant* (`static NAME: Type`) and
+# reported ``expected a name but found `def` ``, and inside an `extend` block
+# it reported ``expected an extend member (function) but found `static` ``.
+# Every construct that accepts both forms now looks past the run of modifiers
+# for a `def` before committing (`parser::at_static_func_decl`), which is the
+# same disambiguation module scope already did — by hand, unrolled to a fixed
+# three tokens, in two separate copies.
+#
+# This is the shape `spec/collections-algorithms-design.md` §5.1 needs for
+# `from_iter`, and the reason the gap mattered: `collect` is written as
+# `C.from_iter(it)`, so the trait has to be able to *declare* a static method
+# at all. The whole `collect` shape is exercised here rather than just the
+# parse, because parsing is not the property being claimed — dispatching
+# through the type parameter `C` to the right impl is.
+#
+# Two collectors, not one, so a collision would show: if `C.from_iter`
+# resolved to a single body, both would come back the same and the arithmetic
+# below would not distinguish them.
+#
+# `total` collects 0+1+2+3+4 = 10; `counted` collects 5 elements.
+# `point.origin()` (a static `extend` method) contributes 7.
+# 10 * 10 + 5 * 100 + 7 = 607.
+
+# expect: 607
+
+trait iterator[T]:
+    def next(mut self) -> option[T]
+
+type counter = { at: int32, stop: int32 }
+
+impl iterator[int32] for counter:
+    def next(mut self) -> option[int32]:
+        if self.at >= self.stop:
+            return @none
+        let value = self.at
+        self.at = self.at + 1
+        return @some(value)
+
+# The declaration that used to be unparseable.
+trait from_iter[T]:
+    static def from_iter[I](it: I) -> self
+
+type total_box = { value: int32 }
+type count_box = { value: int32 }
+
+impl from_iter[int32] for total_box:
+    static def from_iter[I](it: I) -> total_box where I: iterator[int32]:
+        var cursor = it
+        var sum = 0
+        while let @some(x) = cursor.next():
+            sum = sum + x
+        return total_box { value: sum }
+
+impl from_iter[int32] for count_box:
+    static def from_iter[I](it: I) -> count_box where I: iterator[int32]:
+        var cursor = it
+        var seen = 0
+        while let @some(x) = cursor.next():
+            seen = seen + 1
+        return count_box { value: seen }
+
+# §5.1's `collect`, verbatim in shape: one function, the collector chosen by
+# the type expected at the call site.
+def collect[I, C](it: I) -> C:
+    return C.from_iter(it)
+
+type point = { x: int32 }
+
+# `static def` in an `extend` block, the third position that used to refuse it.
+extend point:
+    static def origin() -> point:
+        return point { x: 7 }
+
+def main() -> int32:
+    let total: total_box = collect(counter { at: 0, stop: 5 })
+    let counted: count_box = collect(counter { at: 0, stop: 5 })
+    let anchor = point.origin()
+    return total.value * 10 + counted.value * 100 + anchor.x

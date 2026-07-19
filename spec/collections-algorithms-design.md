@@ -385,6 +385,21 @@ Notes on each choice:
       return C.from_iter(self)
   ```
 
+  This snippet did not parse when it was written. `static def` was accepted
+  only at module level: inside a `trait` body the parser read `static` as the
+  start of a static *constant* (`static NAME: type`) and reported ``expected
+  a name but found `def` ``, and inside an `extend` block it reported
+  ``expected an extend member (function) but found `static` ``.
+  `kira-grammar.ebnf` lists `static` among the function modifiers with no
+  such restriction, so the parser was the side that disagreed with the
+  intent. Fixed 2026-07-19: every construct accepting both forms now looks
+  past the run of modifiers for a `def` before committing
+  (`parser::at_static_func_decl`), which is the disambiguation module scope
+  already performed — by hand, unrolled to three tokens, in two copies.
+  `trait`, `impl`, and `extend` bodies now take `static def` on the same
+  terms. `codegen_stress/051_static_trait_method.kira` covers the whole
+  `collect` shape, not just the parse.
+
   It infers from the expected type — `let names: list[str] = it.collect()` —
   and takes an explicit argument where no expected type exists:
   `it.collect[list[str]]()`. Named collectors are not shipped; they would be
@@ -430,22 +445,28 @@ pub type map_iter[I, T, U] = { inner: I, f: fn(T) -> U }
 impl[I, T, U] iterator[U] for map_iter[I, T, U]:
     def next(mut self) -> option[U]:
         match self.inner.next():
-            case @some(x): return @some((self.f)(x))
-            case @none: return @none
+            @some(x) => return @some((self.f)(x))
+            @none => return @none
 
-pub type filter_iter[I, T] = { inner: I, pred: fn(&T) -> bool }
+pub type filter_iter[I, T] = { inner: I, pred: fn(T) -> bool }
 
 impl[I, T] iterator[T] for filter_iter[I, T]:
     def next(mut self) -> option[T]:
-        while true:
-            match self.inner.next():
-                case @some(x):
-                    if (self.pred)(&x):
-                        return @some(x)
-                case @none:
-                    return @none
+        while let @some(x) = self.inner.next():
+            if (self.pred)(x):
+                return @some(x)
         return @none
 ```
+
+Three points of grammar, since an earlier revision of this section got all
+three wrong and none of the code in it compiled:
+
+- A match arm is `pattern => result`, not `case pattern:`.
+- A match arm's result is a single expression or statement. There is no
+  indented block form, which is why `filter_iter` is written as a `while let`
+  rather than as a `match` with a conditional arm.
+- A struct literal never takes type arguments: it is `map_iter { ... }`, with
+  the parameters solved from the field values, not `map_iter[I, T, U] { ... }`.
 
 The adapter *constructors* are free functions, and UFCS turns them into
 chaining:
@@ -453,15 +474,40 @@ chaining:
 ```kira
 module std.algo
 
-pub def map[I, T, U](it: I, f: fn(T) -> U) -> map_iter[I, T, U]:
-    return map_iter[I, T, U] { inner: it, f: f }
+pub def map[I, T, U](it: I, f: fn(T) -> U) -> map_iter[I, T, U] where I: iterator[T]:
+    return map_iter { inner: it, f: f }
 
-pub def filter[I, T](it: I, pred: fn(&T) -> bool) -> filter_iter[I, T]:
-    return filter_iter[I, T] { inner: it, pred: pred }
+pub def filter[I, T](it: I, pred: fn(T) -> bool) -> filter_iter[I, T] where I: iterator[T]:
+    return filter_iter { inner: it, pred: pred }
 ```
 
-This is the entire mechanism. Given §2, `scores.values().filter(p).map(f).sum()`
-type-checks to a concrete type with no further language work.
+**The `where` clause is load-bearing, not documentation.** This is the one
+place §6.1's "bounds are advisory only" does not hold, and the earlier claim
+that this needed "no further language work" was wrong. Nothing about the
+arguments can solve `T`: `it` answers `I`, the lambda is what `T` is needed
+*for*, and no other parameter mentions it. The bound is the only link between
+`I` and `T` — given `I := counter` and `impl iterator[int32] for counter`, it
+answers `T := int32`. Without it, `nums.map(x => x * 2)` reports `cannot tell
+what `T` is in this call to `map``, and `sum`, which takes no written argument
+at all, is unsolvable outright.
+
+Bounds remain unenforced in the sense R1 describes — an unsatisfied bound is
+not diagnosed at the call site — but they are now *consulted*, by
+`solve_from_bounds` in `check.cpp`. A bound can turn an unsolvable call into a
+solved one and can never re-answer one the arguments already settled.
+
+The second half is argument ordering. A lambda has no type of its own until
+one is expected of it, so `x => x * 2` checked in declaration order binds its
+parameter to the type *parameter* `T` and reaches lowering as an abstract
+type. Lambda arguments are therefore checked last, against a parameter type
+substituted with everything the other arguments and the bounds have solved.
+That is what allows a bare `x => x * 2` where an annotated
+`(x: int32) => x * 2` would otherwise be required.
+
+With those two mechanisms,
+`scores.values().filter(p).map(f).sum()` type-checks to a concrete type and
+runs on both backends. `codegen_stress/050_bound_driven_inference.kira` is
+this exact chain.
 
 ## 6. Catalog and containers
 

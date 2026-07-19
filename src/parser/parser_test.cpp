@@ -414,6 +414,90 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
   expect(return_stmt->value != nullptr, "expected final return value");
 }
 
+/// `static def` is a *function* wherever a static binding is also legal.
+///
+/// `kira-grammar.ebnf` lists `static` as an unrestricted `func_modifier`, but
+/// the parser used to honor it only at module scope — a `trait` body read
+/// `static` as the start of `static NAME: Type` and failed on the `def`.
+/// The disambiguation (`parser::at_static_func_decl`) has to look past a run
+/// of modifiers, so the interesting cases are the ones where `def` is not the
+/// very next token.
+auto test_parser_accepts_static_def_in_member_blocks() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "trait maker:\n"
+                             "  static def make(v: int) -> self\n"
+                             "  static def build(v: int) -> self\n"
+                             "\n"
+                             "impl maker for int:\n"
+                             "  static def make(v: int) -> int: v\n"
+                             "  static def build(v: int) -> int: v\n"
+                             "\n"
+                             "extend int:\n"
+                             "  static def zero() -> int: 0\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+
+  auto *trait_decl = expect_node<kira::ast::trait_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
+      "expected trait declaration");
+  expect(trait_decl->items.size() == 2, "expected two trait members");
+  for (const auto &item : trait_decl->items) {
+    auto *method = expect_node<kira::ast::func_decl>(
+        item.get(), kira::ast::node_kind::func_decl,
+        "a `static def` in a trait is a function, not a static binding");
+    expect(method->modifiers.is_static,
+           "the `static` modifier must survive onto the declaration");
+  }
+
+  auto *impl_decl = expect_node<kira::ast::impl_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::impl_decl,
+      "expected impl declaration");
+  expect(impl_decl->items.size() == 2, "expected two impl members");
+  for (const auto &item : impl_decl->items) {
+    auto *method = expect_node<kira::ast::func_decl>(
+        item.get(), kira::ast::node_kind::func_decl,
+        "a `static def` in an impl is a function, not a static binding");
+    expect(method->modifiers.is_static,
+           "the `static` modifier must survive onto the declaration");
+  }
+
+  auto *extend_decl = expect_node<kira::ast::extend_decl>(
+      parsed.file->items[2].get(), kira::ast::node_kind::extend_decl,
+      "expected extend declaration");
+  expect(extend_decl->items.size() == 1, "expected one extend member");
+  auto *extend_method = expect_node<kira::ast::func_decl>(
+      extend_decl->items[0].get(), kira::ast::node_kind::func_decl,
+      "a `static def` in an extend block is a function");
+  expect(extend_method->modifiers.is_static,
+         "the `static` modifier must survive onto the declaration");
+}
+
+/// The other side of the same disambiguation: `static` followed by anything
+/// that is not eventually a `def` is still a static *binding*. Without this,
+/// a lookahead that guessed "function" too eagerly would break every existing
+/// `static counter = 0` and nothing above would notice.
+auto test_parser_still_reads_static_bindings_as_bindings() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "impl worker for int:\n"
+                             "  static counter = 0\n"
+                             "  static def make(v: int) -> int: v\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+
+  auto *impl_decl = expect_node<kira::ast::impl_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::impl_decl,
+      "expected impl declaration");
+  expect(impl_decl->items.size() == 2, "expected binding and function");
+  expect_node<kira::ast::static_decl>(
+      impl_decl->items[0].get(), kira::ast::node_kind::static_decl,
+      "`static counter = 0` is a binding, not a function");
+  expect_node<kira::ast::func_decl>(
+      impl_decl->items[1].get(), kira::ast::node_kind::func_decl,
+      "`static def` beside a binding is still a function");
+}
+
 auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
   auto parsed = parse_source("module sample\n"
                              "\n"
@@ -1677,7 +1761,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 33> tests = {{
+  const std::array<named_test, 35> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "doc_comments", .fn = test_parser_captures_doc_comments},
@@ -1738,6 +1822,10 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_nested_functor_instantiation},
       {.name = "lambda_result_and_paren_params",
        .fn = test_parser_accepts_lambda_result_and_paren_params},
+      {.name = "static_def_in_member_blocks",
+       .fn = test_parser_accepts_static_def_in_member_blocks},
+      {.name = "static_bindings_stay_bindings",
+       .fn = test_parser_still_reads_static_bindings_as_bindings},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

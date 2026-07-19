@@ -866,11 +866,7 @@ auto parser::parse_top_level_item_dispatch(bool allow_script_stmts)
   }
 
   case token_kind::kw_static: {
-    if (peek_at(1).is(token_kind::kw_def) ||
-        (peek_at(1).is_func_modifier() &&
-         (peek_at(2).is(token_kind::kw_def) ||
-          (peek_at(2).is_func_modifier() &&
-           peek_at(3).is(token_kind::kw_def))))) {
+    if (at_static_func_decl()) {
       auto mods = parse_func_modifiers();
       if (at(token_kind::kw_def)) {
         return parse_func_decl(vis, std::move(mods));
@@ -1944,11 +1940,12 @@ auto parser::parse_trait_decl(ast::visibility vis)
       auto item_vis = parse_optional_visibility();
       auto items_before = decl->items.size();
 
-      if (at(token_kind::kw_static)) {
+      if (at(token_kind::kw_static) && !at_static_func_decl()) {
         decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_def) ||
                  at_any(token_kind::kw_pure, token_kind::kw_async,
-                        token_kind::kw_machine, token_kind::kw_generator)) {
+                        token_kind::kw_machine, token_kind::kw_generator,
+                        token_kind::kw_static)) {
         auto mods = parse_func_modifiers();
         if (at(token_kind::kw_def)) {
           decl->items.push_back(
@@ -2205,11 +2202,12 @@ auto parser::parse_impl_decl() -> ast::ptr<ast::impl_decl> {
       auto item_vis = parse_optional_visibility();
       auto items_before = decl->items.size();
 
-      if (at(token_kind::kw_static)) {
+      if (at(token_kind::kw_static) && !at_static_func_decl()) {
         decl->items.push_back(parse_static_decl(item_vis));
       } else if (at(token_kind::kw_def) ||
                  at_any(token_kind::kw_pure, token_kind::kw_async,
-                        token_kind::kw_machine, token_kind::kw_generator)) {
+                        token_kind::kw_machine, token_kind::kw_generator,
+                        token_kind::kw_static)) {
         auto mods = parse_func_modifiers();
         if (at(token_kind::kw_def)) {
           decl->items.push_back(
@@ -2273,7 +2271,8 @@ auto parser::parse_extend_decl() -> ast::ptr<ast::extend_decl> {
 
       if (at(token_kind::kw_def) ||
           at_any(token_kind::kw_pure, token_kind::kw_async,
-                 token_kind::kw_machine, token_kind::kw_generator)) {
+                 token_kind::kw_machine, token_kind::kw_generator,
+                 token_kind::kw_static)) {
         auto mods = parse_func_modifiers();
         if (at(token_kind::kw_def)) {
           decl->items.push_back(parse_func_decl(item_vis, std::move(mods)));
@@ -2300,6 +2299,30 @@ auto parser::parse_extend_decl() -> ast::ptr<ast::extend_decl> {
 // ==========================================================================
 //  Function declarations
 // ==========================================================================
+
+auto parser::at_static_func_decl() const noexcept -> bool {
+  auto ahead = uint32_t{1}; // past the `static` sitting at the cursor
+  while (peek_at(ahead).is_func_modifier()) {
+    ++ahead;
+    // `async` carries an optional `[Context]`. Skipping the bracket group
+    // keeps the `def` behind it reachable — a fixed-depth lookahead could
+    // not see past one, so `static async[io] def` used to read as a static
+    // binding and fail on the `def`.
+    auto depth = 0;
+    while (peek_at(ahead).is(token_kind::lbracket) || depth > 0) {
+      if (peek_at(ahead).is(token_kind::eof)) {
+        return false;
+      }
+      if (peek_at(ahead).is(token_kind::lbracket)) {
+        ++depth;
+      } else if (peek_at(ahead).is(token_kind::rbracket)) {
+        --depth;
+      }
+      ++ahead;
+    }
+  }
+  return peek_at(ahead).is(token_kind::kw_def);
+}
 
 auto parser::parse_func_modifiers() -> ast::func_modifiers {
   ast::func_modifiers mods;
@@ -2728,11 +2751,7 @@ auto parser::parse_stmt() -> ast::ptr<ast::node> {
     return make_error_node(peek().span);
   }
   case token_kind::kw_static: {
-    if (peek_at(1).is(token_kind::kw_def) ||
-        (peek_at(1).is_func_modifier() &&
-         (peek_at(2).is(token_kind::kw_def) ||
-          (peek_at(2).is_func_modifier() &&
-           peek_at(3).is(token_kind::kw_def))))) {
+    if (at_static_func_decl()) {
       auto mods = parse_func_modifiers();
       if (at(token_kind::kw_def)) {
         return parse_func_decl(ast::visibility::def, std::move(mods));

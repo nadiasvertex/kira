@@ -1,0 +1,86 @@
+module codegen_stress.generic_impl_iterator_adapter
+
+# A `for` loop over an adapter whose `iterator` impl is *generic*
+# (`impl[I, T, U] iterator[U] for map_iter[I, T, U]`). This is the shape
+# `spec/collections-algorithms-design.md` §5.3 builds every adapter from, and
+# until this landed neither half of it worked:
+#
+#   - The element type came back written in the impl's own parameter (`->
+#     option[U]`, never substituted), so lowering refused the loop with "the
+#     iterator's item type did not resolve to a concrete type".
+#   - Even with a *concrete* element type (`doubler` below, whose impl is
+#     generic in `I` but yields a fixed `int32`), checking passed and lowering
+#     then asked for a function named `doubler::next` that no compiled module
+#     defines — a generic impl has no single compiled `next`, exactly as a
+#     written `it.next()` call would not.
+#
+# `try_resolve_iterator` now solves the impl's parameters by rigid-unifying
+# its target pattern against the concrete receiver, substitutes the element
+# type, and requests the per-receiver instance that `check_impl_generic_method
+# _call` would have made for a hand-written call. The `for` statement itself
+# is the instantiation site, since nothing in the source names the call.
+#
+# `doubler` wraps a `map_iter` rather than the `counter` directly so that a
+# generic impl is nested inside a generic impl — one adapter's `next`
+# instance is compiled while another's is already being compiled.
+#
+# 0+3+6+9+12+15 = 45, then (0+1)*2 + (1+1)*2 + (2+1)*2 + (3+1)*2 = 20.
+# 45 + 20 = 65.
+
+# expect: 65
+
+trait iterator[T]:
+    def next(mut self) -> option[T]
+
+type counter = { at: int32, stop: int32 }
+
+impl iterator[int32] for counter:
+    def next(mut self) -> option[int32]:
+        if self.at >= self.stop:
+            return @none
+        let value = self.at
+        self.at = self.at + 1
+        return @some(value)
+
+# Generic in all three parameters, and the element type `U` is one of them —
+# so the loop's `x` is only concrete after substitution.
+type map_iter[I, T, U] = { inner: I, f: fn(T) -> U }
+
+impl[I, T, U] iterator[U] for map_iter[I, T, U]:
+    def next(mut self) -> option[U]:
+        match self.inner.next():
+            @some(x) => return @some((self.f)(x))
+            @none => return @none
+
+def map[I, T, U](it: I, f: fn(T) -> U) -> map_iter[I, T, U]:
+    return map_iter { inner: it, f: f }
+
+# Generic impl, *concrete* element type: the second failure mode above, where
+# checking was already correct and only the missing instance bit.
+type doubler[I] = { inner: I }
+
+impl[I] iterator[int32] for doubler[I]:
+    def next(mut self) -> option[int32]:
+        match self.inner.next():
+            @some(x) => return @some(x * 2)
+            @none => return @none
+
+def sum_tripled() -> int32:
+    let source = counter { at: 0, stop: 6 }
+    var tripled = map[counter, int32, int32](source, (x: int32) => x * 3)
+    var total = 0
+    for value in tripled:
+        total = total + value
+    return total
+
+def sum_nested() -> int32:
+    let source = counter { at: 0, stop: 4 }
+    let shifted = map[counter, int32, int32](source, (x: int32) => x + 1)
+    var nested = doubler { inner: shifted }
+    var total = 0
+    for value in nested:
+        total = total + value
+    return total
+
+def main() -> int32:
+    return sum_tripled() + sum_nested()
