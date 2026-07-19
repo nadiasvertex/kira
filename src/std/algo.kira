@@ -244,3 +244,157 @@ pub def step_by[I, T](it: I, n: usize) -> step_by_iter[I, T] where I: iterator[T
 #:   an iterator yielding the `some` results of `f`.
 pub def filter_map[I, T, U](it: I, f: fn(T) -> option[U]) -> filter_map_iter[I, T, U] where I: iterator[T]:
     return filter_map_iter { inner: it, f: f }
+
+#: An iterator that yields all of one iterator's elements, then all of
+#: another's.
+pub type chain_iter[I, J, T] = { first: I, second: J, on_first: bool }
+
+impl[I, J, T] iterator[T] for chain_iter[I, J, T]:
+    def next(mut self) -> option[T]:
+        # The `while let` runs at most one iteration: the body returns on the
+        # first element. It is a loop rather than a match because reaching the
+        # second source requires *latching* `on_first` first, and a match arm's
+        # result is a single expression, not an assignment.
+        if self.on_first:
+            while let @some(x) = self.first.next():
+                return @some(x)
+            self.on_first = false
+        return self.second.next()
+
+    def size_hint(self) -> usize:
+        return self.first.size_hint() + self.second.size_hint()
+
+#: An iterator that yields another iterator's elements back to front.
+pub type rev_iter[I, T] = { inner: I }
+
+# `rev` is the reason `double_ended` exists: with only `next` available,
+# reversing would mean draining into a buffer first, which is neither lazy nor
+# allocation-free.
+impl[I, T] iterator[T] for rev_iter[I, T] where I: double_ended[T]:
+    def next(mut self) -> option[T]:
+        return self.inner.next_back()
+
+    def size_hint(self) -> usize:
+        return self.inner.size_hint()
+
+#: An iterator whose next element can be examined without consuming it.
+pub type peekable_iter[I, T] = { inner: I, held: option[T], filled: bool }
+
+impl[I, T] iterator[T] for peekable_iter[I, T]:
+    def next(mut self) -> option[T]:
+        if self.filled:
+            self.filled = false
+            let held = self.held
+            self.held = @none
+            return held
+        return self.inner.next()
+
+    def size_hint(self) -> usize:
+        return self.inner.size_hint()
+
+#: An iterator that yields a running accumulation over another iterator.
+pub type scan_iter[I, T, S] = { inner: I, state: S, f: fn(S, T) -> S }
+
+impl[I, T, S] iterator[S] for scan_iter[I, T, S]:
+    # One-iteration `while let` again: the state update is a statement, so it
+    # cannot live in a match arm, and it cannot move to a helper method
+    # either — a trait impl may only carry the trait's own methods, and an
+    # inherent `impl` on a generic type is currently ignored outright
+    # (`spec/todo.md` item 11).
+    def next(mut self) -> option[S]:
+        while let @some(x) = self.inner.next():
+            self.state = (self.f)(self.state, x)
+            return @some(self.state)
+        return @none
+
+#: An iterator that runs a function on each element as it passes through,
+#: yielding the element unchanged.
+pub type inspect_iter[I, T] = { inner: I, f: fn(T) -> unit }
+
+impl[I, T] iterator[T] for inspect_iter[I, T]:
+    def next(mut self) -> option[T]:
+        while let @some(x) = self.inner.next():
+            (self.f)(x)
+            return @some(x)
+        return @none
+
+    def size_hint(self) -> usize:
+        return self.inner.size_hint()
+
+#: Yields all of one iterator's elements, then all of another's, lazily.
+#:
+#: Both sources must yield the same element type; this concatenates two
+#: streams, it does not interleave or pair them.
+#: Args:
+#:   it: the iterator to draw from first (moved).
+#:   rest: the iterator to draw from once the first is exhausted (moved).
+#: Returns:
+#:   an iterator yielding `it`'s elements followed by `rest`'s.
+pub def chain[I, J, T](it: I, rest: J) -> chain_iter[I, J, T] where I: iterator[T], J: iterator[T]:
+    return chain_iter { first: it, second: rest, on_first: true }
+
+#: Yields an iterator's elements back to front, lazily.
+#:
+#: Requires `double_ended`, which is what keeps this lazy: the source is
+#: consumed from its end rather than buffered.
+#: Args:
+#:   it: the iterator to reverse (moved).
+#: Returns:
+#:   an iterator yielding the source's elements in reverse order.
+pub def rev[I, T](it: I) -> rev_iter[I, T] where I: double_ended[T]:
+    return rev_iter { inner: it }
+
+#: Adapts an iterator so its next element can be examined without consuming
+#: it, lazily.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#: Returns:
+#:   an iterator supporting `peek`.
+pub def peekable[I, T](it: I) -> peekable_iter[I, T] where I: iterator[T]:
+    return peekable_iter { inner: it, held: @none, filled: false }
+
+#: Returns the next element without consuming it.
+#:
+#: A free function rather than a method, since `peek` is not part of the
+#: `iterator` protocol; under UFCS it still reads as `it.peek()`. Repeated
+#: calls return the same element, and the element a `peek` held is what the
+#: following `next` yields.
+#: Args:
+#:   it: the peekable iterator to examine.
+#: Returns:
+#:   some(element) if one is available, none otherwise.
+pub def peek[I, T](it: &mut peekable_iter[I, T]) -> option[T] where I: iterator[T]:
+    if it.filled:
+        return it.held
+    it.held = it.inner.next()
+    it.filled = true
+    return it.held
+
+#: Yields a running accumulation over an iterator, lazily.
+#:
+#: This is `fold` with its intermediate results kept: folding `+` over
+#: `1, 2, 3` gives `6`, while scanning it gives `1, 3, 6`. The initial state
+#: is not itself yielded — the first element out is the state after the first
+#: element in.
+#: Args:
+#:   it: the iterator to accumulate over (moved).
+#:   init: the starting state.
+#:   f: combines the state with an element to produce the next state.
+#: Returns:
+#:   an iterator yielding each successive state.
+pub def scan[I, T, S](it: I, init: S, f: fn(S, T) -> S) -> scan_iter[I, T, S] where I: iterator[T]:
+    return scan_iter { inner: it, state: init, f: f }
+
+#: Runs a function on each element as it passes through, yielding the element
+#: unchanged, lazily.
+#:
+#: For observing a pipeline without altering it — logging what reaches a given
+#: stage, or counting how often one runs. Because the chain is lazy, `f` runs
+#: only for elements actually drawn.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   f: the function to run on each element.
+#: Returns:
+#:   an iterator yielding the source's elements unchanged.
+pub def inspect[I, T](it: I, f: fn(T) -> unit) -> inspect_iter[I, T] where I: iterator[T]:
+    return inspect_iter { inner: it, f: f }

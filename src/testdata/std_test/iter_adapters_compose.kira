@@ -1,0 +1,83 @@
+module main
+
+# The composing adapters of design §6.1: `chain`, `rev`, `peekable`/`peek`,
+# `scan`, and `inspect`.
+#
+# As elsewhere in these samples the totals are positional weighted sums, so an
+# adapter that yields the right elements in the wrong order cannot pass — which
+# matters most for `rev`, where order is the entire behaviour and a plain sum
+# would be identical to not reversing at all.
+
+def main() -> int32:
+    let xs = [1, 2, 3]
+    let ys = [4, 5]
+
+    # 1, 2, 3, 4, 5 — the second source follows the first, in order.
+    var c = xs.iter().chain(ys.iter())
+    var a = 0
+    var wa = 1
+    while let @some(v) = c.next():
+        a = a + *v * wa
+        wa = wa * 10
+    println("chain={a}")
+    println("chain_hint={xs.iter().chain(ys.iter()).size_hint()}")
+
+    # Note on what is *not* tested here: `chain` latches its first source as
+    # exhausted, and that latch has no observable behaviour to assert. Every
+    # iterator in `std.iter` is fused — once exhausted it returns `@none`
+    # forever — so a `chain` that re-polled a spent first source would produce
+    # identical output. This was confirmed by removing the latch: every number
+    # in this file was unchanged. An attempt to make the polls visible with
+    # `inspect` failed for the same underlying reason, since `inspect` runs
+    # only on `@some` and a poll of an exhausted source yields nothing to see.
+    # The latch stays because it is correct for a source that is not fused and
+    # it avoids pointless work, but it is an efficiency measure, not a
+    # behaviour, and no assertion here pretends otherwise.
+
+    # 3, 2, 1. The weights are what make this an order check: a `rev` that
+    # forwarded `next` instead of `next_back` would total 321 here.
+    var r = xs.iter().rev()
+    var b = 0
+    var wb = 1
+    while let @some(v) = r.next():
+        b = b + *v * wb
+        wb = wb * 10
+    println("rev={b}")
+
+    # `peek` does not consume: two peeks agree, and the following `next`
+    # yields the very element they reported.
+    var p = xs.iter().peekable()
+    match p.peek():
+        @some(v) => println("peek1={*v}")
+        @none => println("peek1=none")
+    match p.peek():
+        @some(v) => println("peek2={*v}")
+        @none => println("peek2=none")
+    match p.next():
+        @some(v) => println("after_peek={*v}")
+        @none => println("after_peek=none")
+    # ...and the element is not yielded twice: the *next* `next` moves on.
+    match p.next():
+        @some(v) => println("then={*v}")
+        @none => println("then=none")
+
+    # Running sums 1, 3, 6 — `fold` with its intermediate results kept. The
+    # initial state is not itself yielded, so the first output is 1, not 0.
+    var s = xs.iter().scan(0, (acc, v) => acc + *v)
+    var d = 0
+    var wd = 1
+    while let @some(v) = s.next():
+        d = d + v * wd
+        wd = wd * 100
+    println("scan={d}")
+
+    # This is where laziness becomes observable rather than merely claimed:
+    # `inspect` prints per element drawn, and `take(2)` draws only two, so the
+    # third element of `xs` is never inspected at all. An eager pipeline would
+    # print three `saw=` lines.
+    var i = xs.iter().inspect(v => println("saw={*v}")).take(2)
+    var e = 0
+    while let @some(v) = i.next():
+        e = e + 1
+    println("inspect_drawn={e}")
+    return 0

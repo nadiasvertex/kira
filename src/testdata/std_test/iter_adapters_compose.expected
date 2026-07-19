@@ -1,0 +1,11 @@
+chain=54321
+chain_hint=5
+rev=123
+peek1=1
+peek2=1
+after_peek=1
+then=2
+scan=60301
+saw=1
+saw=2
+inspect_drawn=2
