@@ -15,6 +15,28 @@ using semantic::type_entry;
 using semantic::type_kind;
 using semantic::type_table;
 
+/// Unwraps `&T`/`&mut T` down to `T`. A reference's runtime representation
+/// *is* its referent's — both are the same single pointer into the same
+/// heap block (`layout.h`'s top comment, and `is_heap_pointer_value`'s
+/// `addr_of`/`addr_of_mut` passthrough in both backends) — so every layout
+/// question asked about `&T` has to be answered for `T`. The checker
+/// records the unstripped `&T` on a `hir_field`/`hir_index`'s `object`
+/// (`infer_index`/`infer_method_call` strip only for their own dispatch,
+/// not for what they record), so the reference arrives here routinely:
+/// `c.value = ...` through a `&mut cell` parameter reaches
+/// `struct_field_offset` with `&mut cell`, not `cell`. Stripping centrally
+/// here rather than at each backend call site keeps the two backends from
+/// having to agree on it separately.
+[[nodiscard]] auto strip_refs(const type_table &types, semantic::type_id id)
+    -> semantic::type_id {
+  const auto *entry = &types.entry(id);
+  while (entry->kind == type_kind::ref_kind) {
+    id = entry->result;
+    entry = &types.entry(id);
+  }
+  return id;
+}
+
 [[nodiscard]] auto struct_fields_of(const type_entry &instance)
     -> const std::vector<ast::struct_field> * {
   if (instance.kind != type_kind::struct_kind || instance.decl == nullptr ||
@@ -98,6 +120,7 @@ make_two_variants(std::string first_name, size_t first_payload_slots,
 
 auto struct_field_names(const type_table &types, semantic::type_id id)
     -> std::vector<std::string_view> {
+  id = strip_refs(types, id);
   auto result = std::vector<std::string_view>{};
   const auto *fields = struct_fields_of(types.entry(id));
   if (fields == nullptr) {
@@ -112,6 +135,7 @@ auto struct_field_names(const type_table &types, semantic::type_id id)
 
 auto struct_field_slot(const type_table &types, semantic::type_id id,
                        std::string_view name) -> std::optional<size_t> {
+  id = strip_refs(types, id);
   const auto *fields = struct_fields_of(types.entry(id));
   if (fields == nullptr) {
     return std::nullopt;
@@ -126,6 +150,7 @@ auto struct_field_slot(const type_table &types, semantic::type_id id,
 
 auto sum_variant_names(const type_table &types, semantic::type_id id)
     -> std::vector<std::string_view> {
+  id = strip_refs(types, id);
   auto result = std::vector<std::string_view>{};
   const auto *variants = sum_variants_of(types.entry(id));
   if (variants == nullptr) {
@@ -140,6 +165,7 @@ auto sum_variant_names(const type_table &types, semantic::type_id id)
 
 auto sum_variant_tag(const type_table &types, semantic::type_id id,
                      std::string_view name) -> std::optional<int64_t> {
+  id = strip_refs(types, id);
   const auto *variants = sum_variants_of(types.entry(id));
   if (variants == nullptr) {
     return std::nullopt;
@@ -154,6 +180,7 @@ auto sum_variant_tag(const type_table &types, semantic::type_id id,
 
 auto sum_variant_payload_slots(const type_table &types, semantic::type_id id,
                                std::string_view name) -> std::optional<size_t> {
+  id = strip_refs(types, id);
   const auto *variants = sum_variants_of(types.entry(id));
   if (variants == nullptr) {
     return std::nullopt;
@@ -168,6 +195,7 @@ auto sum_variant_payload_slots(const type_table &types, semantic::type_id id,
 
 auto sum_max_payload_slots(const type_table &types, semantic::type_id id)
     -> size_t {
+  id = strip_refs(types, id);
   const auto *variants = sum_variants_of(types.entry(id));
   if (variants == nullptr) {
     return 0;
@@ -376,6 +404,7 @@ template <typename Visit>
 
 auto layout_of(const type_table &types, semantic::type_id id)
     -> std::optional<layout_info> {
+  id = strip_refs(types, id);
   // A refinement is its base at runtime — the predicate is a compile-time fact
   // with no representation of its own (`spec/dependent-types-design.md` 3.1),
   // so a `positive` lays out exactly as the `int32` it refines. The checker
@@ -388,6 +417,7 @@ auto layout_of(const type_table &types, semantic::type_id id)
 }
 
 auto is_struct_packed(const type_table &types, semantic::type_id id) -> bool {
+  id = strip_refs(types, id);
   const auto &entry = types.entry(id);
   if (entry.kind != type_kind::struct_kind || entry.decl == nullptr) {
     return false;
@@ -397,6 +427,7 @@ auto is_struct_packed(const type_table &types, semantic::type_id id) -> bool {
 
 auto struct_layout(const type_table &types, semantic::type_id id)
     -> layout_info {
+  id = strip_refs(types, id);
   const auto result =
       walk_struct_layout(types, id, [](size_t, size_t, size_t) -> void {});
   return result.value_or(layout_info{});
@@ -404,6 +435,7 @@ auto struct_layout(const type_table &types, semantic::type_id id)
 
 auto struct_field_offset(const type_table &types, semantic::type_id id,
                          std::string_view name) -> std::optional<size_t> {
+  id = strip_refs(types, id);
   auto found = std::optional<size_t>{};
   const auto result = walk_struct_layout(
       types, id, [&](size_t index, size_t offset, size_t) -> void {

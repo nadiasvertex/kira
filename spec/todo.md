@@ -1,2 +1,3 @@
 1. Tail call optimization
 2. Full Unicode support for `std.string` (spec/std-reference.md ships Unicode *simple* 1:1 case mapping only). Deferred: full/special case mapping (`ß`→`SS`, final-sigma, locale-tailored Turkish/Azeri/Lithuanian), case folding for caseless comparison, NFC/NFD normalization, and grapheme-cluster segmentation (UAX #29) so `reversed`/`split` can operate on graphemes rather than scalars. Each needs additional generated Unicode tables.
+3. "with" style scoped blocks.

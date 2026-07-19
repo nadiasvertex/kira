@@ -1,0 +1,34 @@
+module codegen_stress.mutate_through_mut_ref
+
+# Writing a field through a `&mut T` parameter, so a callee's mutation is
+# visible to the caller. A reference's runtime representation *is* its
+# referent's — both are the same single pointer into the same heap block
+# (`runtime/layout.h`), so `&mut cell` needs no representation of its own and
+# `c.value = ...` is the same byte-offset store `cell.value = ...` would be.
+#
+# The regression this pins: the checker records the *unstripped* `&mut cell`
+# on the assignment target's `object` type, so `runtime::struct_field_offset`
+# was asked to find `.value` on a `ref_kind` and answered `nullopt` — which
+# both backends reported as "field `.value` is only assignable on struct
+# values yet", making every mutable-reference parameter uncompilable.
+# `runtime::layout` now strips refs at its entry points, centrally, so the
+# two backends can't drift on it.
+#
+# 7, bumped twice through two different reference depths, read back = 9.
+
+type cell = { value: int32 }
+
+def bump(c: &mut cell) -> unit:
+    c.value = c.value + 1
+
+def bump_twice(c: &mut cell) -> unit:
+    bump(c)
+    bump(c)
+
+def read(c: &cell) -> int32:
+    return c.value
+
+def main() -> int32:
+    var c = cell { value: 7 }
+    bump_twice(&mut c)
+    return read(&c)
