@@ -5434,13 +5434,22 @@ private:
   /// map into the declared return type afterward, and a `C` solved only from
   /// context has to reach that substitution too or the call would come back
   /// typed as the abstract parameter.
-  auto instantiate_hk_method(const ast::call_expr &call,
-                             const method_entry &method,
-                             std::string_view target_type_name,
-                             std::unordered_map<std::string, type_id> &bindings,
-                             const explicit_generic_args &explicit_args = {},
-                             const value_bindings &solved = {},
-                             type_id self_type = k_unknown_type)
+  /// `extra_fixed` carries bindings the *impl block* supplies, for a method
+  /// that is generic on both counts: `static def from_iter[I]` inside
+  /// `impl[T] from_iter[T] for list[T]` declares `I` and inherits `T`.
+  /// `solve_generic_params` only ever walks the declaration's own
+  /// `type_params`, so it solves `I` from the arguments and never learns `T`
+  /// exists — the instance then fails to check with ``undefined type `T` ``.
+  /// The impl's parameters have to arrive the way
+  /// `check_impl_generic_method_call` delivers them: as scoped fixed
+  /// bindings, not as solution slots.
+  auto instantiate_hk_method(
+      const ast::call_expr &call, const method_entry &method,
+      std::string_view target_type_name,
+      std::unordered_map<std::string, type_id> &bindings,
+      const explicit_generic_args &explicit_args = {},
+      const value_bindings &solved = {}, type_id self_type = k_unknown_type,
+      const std::unordered_map<std::string, type_id> *extra_fixed = nullptr)
       -> const ast::func_decl * {
     const auto &decl = *method.decl;
     solve_from_expected_type(call, decl, method.owner, bindings, explicit_args);
@@ -5451,9 +5460,13 @@ private:
     }
     const auto name =
         std::format("{}::{}{}", target_type_name, decl.name, solution->suffix);
+    auto scoped_params = method.fixed_type_params;
+    if (extra_fixed != nullptr) {
+      scoped_params.insert(extra_fixed->begin(), extra_fixed->end());
+    }
     return find_or_check_generic_instance(
         call, decl, method.owner, /*decl_file=*/std::nullopt, *solution, name,
-        &method.fixed_type_params, self_type);
+        &scoped_params, self_type);
   }
 
   /// Holds a callee's `pre` conditions to account at the call site.
@@ -9170,9 +9183,23 @@ private:
       return substitute_solved(
           signature_return_type(*method->decl, method->owner), bindings);
     }
+    // A method generic on both counts: its own parameters *and* the impl
+    // block's. The branch above deliberately declines these, because `I` still
+    // has to be solved from the arguments; but declining it must not also drop
+    // `T`. Unifying the impl's target pattern against the concrete target
+    // recovers it — `list[T]` against `list[int32]` gives `T := int32` — and
+    // it then rides into the instance as a fixed binding, so the body resolves
+    // `T` and the return type restates as `list[int32]` rather than `list[T]`.
+    auto impl_bindings = std::unordered_map<std::string, type_id>{};
+    if (method->from_impl != nullptr && !in_const_generic_template_ &&
+        !in_type_generic_template_) {
+      unify_rigid(method->impl_target_pattern, target, impl_bindings);
+      bindings.insert(impl_bindings.begin(), impl_bindings.end());
+    }
     const auto *instance =
         instantiate_hk_method(call, *method, target_name, bindings,
-                              /*explicit_args=*/{}, solved);
+                              /*explicit_args=*/{}, solved,
+                              /*self_type=*/k_unknown_type, &impl_bindings);
     if (instance == nullptr) {
       return k_error_type;
     }

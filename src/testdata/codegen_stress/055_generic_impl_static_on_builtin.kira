@@ -1,0 +1,125 @@
+module codegen_stress.generic_impl_static_on_builtin
+
+# A `static def` that is generic on *two* counts at once: its own type
+# parameters and its impl block's.
+#
+# `054` covered `static def` reached through a generic type, but every impl in
+# it was generic on only one count — either the method declared the parameters
+# (`static def from_iter[I]` in a monomorphic `impl from_iter[int32] for
+# list[int32]`) or the impl did (`impl[T] maker[T] for crate[T]`, whose `make`
+# declares none). The standard library's real collector is both at once:
+#
+#     impl[T] from_iter[T] for list[T]:
+#         static def from_iter[I](it: I) -> list[T] where I: iterator[T]
+#
+# `I` must be solved from the argument, so the call cannot take the
+# impl-parameters-only path `check_impl_generic_static_call` serves — it goes
+# to `instantiate_hk_method`, which solves the *declaration's* `type_params`
+# and knows nothing of the impl's. `T` was therefore never bound, and the
+# instance failed to check with ``undefined type `T` `` pointing inside
+# `std.iter`, carrying R1's instantiated-from note back to the user's
+# `collect`. Declining the impl-only path must not also drop the impl's
+# bindings: they now ride in as scoped fixed bindings, which is how
+# `check_impl_generic_method_call` has always delivered them for
+# receiver-taking methods.
+#
+# `# expect:` rather than cross-tier agreement, per CLAUDE.md: both backends
+# resolve static calls from the same checker output, so an instance built with
+# `T` bound to the wrong type would be built identically wrongly for both and
+# agree perfectly.
+#
+# Two element types go through the one generic impl, and a user-defined
+# generic target sits beside the builtin one, so a `T` that was bound once and
+# reused — or bound to the wrong argument — cannot satisfy all four results.
+
+# xs:      0+1+2+3+4 = 10                  -> 10 * 1000 = 10000
+# h.count: 5 elements                      ->  5 *  100 =   500
+# h.last:  last value seen = 4             ->  4 *   10 =    40
+# acc:     int64 10+20+30 = 60 -> chars 6   ->             =     6
+# 10000 + 500 + 40 + 6 = 10546
+# expect: 10546
+
+trait iterator[T]:
+    def next(mut self) -> option[T]
+
+trait from_iter[T]:
+    static def from_iter[I](it: I) -> self
+
+# The builtin generic target. Both the impl and the method are generic.
+impl[T] from_iter[T] for list[T]:
+    static def from_iter[I](it: I) -> list[T] where I: iterator[T]:
+        var out = []
+        var cursor = it
+        while let @some(x) = cursor.next():
+            out.push(x)
+        return out
+
+# `last` is an `option[T]` because an empty iterator yields no `T` and a
+# generic collector has no default to fall back on.
+type holder[T] = { last: option[T], count: int32 }
+
+# The same two-way-generic shape on a *user-defined* generic target, so the
+# fix is not specific to how builtin applied generics are keyed. Its arithmetic
+# differs from the list collector's, so collecting into the wrong one shows up
+# in the value rather than only in the type.
+impl[T] from_iter[T] for holder[T]:
+    static def from_iter[I](it: I) -> holder[T] where I: iterator[T]:
+        var cursor = it
+        var seen = 0
+        var final = cursor.next()
+        var cur = final
+        while let @some(x) = cur:
+            seen = seen + 1
+            final = @some(x)
+            cur = cursor.next()
+        return holder { last: final, count: seen }
+
+def collect[I, C](it: I) -> C:
+    return C.from_iter(it)
+
+type upto = { at: int32, end: int32 }
+
+impl iterator[int32] for upto:
+    def next(mut self) -> option[int32]:
+        if self.at >= self.end:
+            return @none
+        let v = self.at
+        self.at = self.at + 1
+        return @some(v)
+
+# A second element type for the same generic impl. `int64` rather than `str`
+# because the bytecode VM has no representation for non-scalar types until
+# `spec/codegen-design.md` increment 6 (heap types) lands, and this file has to
+# run on both tiers. A differing *width* exercises the binding just as well.
+type bigs = { at: int64 }
+
+impl iterator[int64] for bigs:
+    def next(mut self) -> option[int64]:
+        if self.at >= 3:
+            return @none
+        self.at = self.at + 1
+        return @some(self.at * 10)
+
+def main() -> int32:
+    let xs: list[int32] = collect(upto { at: 0, end: 5 })
+    var total = 0
+    for x in xs:
+        total = total + x
+
+    let h: holder[int32] = collect(upto { at: 0, end: 5 })
+    var last = 0
+    if let @some(v) = h.last:
+        last = v
+
+    # A second element type through the very same generic impl as `xs`. If `T`
+    # were bound once and reused, this `list[int64]` and the `list[int32]`
+    # above could not both be right.
+    let ys: list[int64] = collect(bigs { at: 0 })
+    var acc: int64 = 0
+    for y in ys:
+        acc = acc + y
+    var chars = 0
+    if acc == 60:
+        chars = 6
+
+    return total * 1000 + h.count * 100 + last * 10 + chars
