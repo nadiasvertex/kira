@@ -1,0 +1,62 @@
+module main
+
+# The pairing adapters of design §6.1: `zip` and `enumerate`.
+#
+# Both yield tuples, which constrains how they are consumed here. Nested
+# destructuring in a pattern (`@some((i, v))`) does not lower, so each pair is
+# bound whole and destructured in the loop body — the spelling the doc
+# comments point users at.
+#
+# Indices are `usize` and elements are `int32`, and Kira converts neither
+# implicitly, so index and value are accumulated separately rather than mixed
+# into one total. (`int32(...)` would be the obvious fix and does not lower
+# either — `spec/todo.md` item 8.)
+
+def main() -> int32:
+    let xs = [1, 2, 3]
+    let ys = [10, 20, 30, 40, 50]
+
+    # Pairs are (1,10), (2,20), (3,30): positionally weighted so a `zip` that
+    # paired elements in the wrong order could not produce this total.
+    var z = xs.iter().zip(ys.iter())
+    var a = 0
+    var wa = 1
+    while let @some(pair) = z.next():
+        let (l, r) = pair
+        a = a + (*l + *r) * wa
+        wa = wa * 100
+    println("zip={a}")
+
+    # The shorter source wins: 3, not 5. Both orders are checked, and the
+    # second is the one that carries the weight. With the *shorter* source
+    # first, "take the minimum" and "take the first source's hint" agree, so
+    # that case alone cannot detect a `zip` that just forwarded its first
+    # hint — verified by making exactly that change, which left the first
+    # number unchanged and only moved the second.
+    println("zip_hint_short_first={xs.iter().zip(ys.iter()).size_hint()}")
+    println("zip_hint_long_first={ys.iter().zip(xs.iter()).size_hint()}")
+
+    # Indices 0, 1, 2 alongside values 1, 2, 3.
+    var e = xs.iter().enumerate()
+    var idx: usize = 0
+    var val = 0
+    while let @some(pair) = e.next():
+        let (i, v) = pair
+        idx = idx * 10 + i
+        val = val * 10 + *v
+    println("enumerate_idx={idx}")
+    println("enumerate_val={val}")
+
+    # Position counts from where `enumerate` is applied, not from the source:
+    # after a `filter`, the kept elements are numbered 0, 1, 2 consecutively.
+    # Were it numbering by source position, the indices would be 2, 3, 4.
+    var f = ys.iter().filter(p => *p > 20).enumerate()
+    var fidx: usize = 0
+    var fval = 0
+    while let @some(pair) = f.next():
+        let (i, v) = pair
+        fidx = fidx * 10 + i
+        fval = fval * 10 + *v / 10
+    println("filtered_idx={fidx}")
+    println("filtered_val={fval}")
+    return 0

@@ -398,3 +398,72 @@ pub def scan[I, T, S](it: I, init: S, f: fn(S, T) -> S) -> scan_iter[I, T, S] wh
 #:   an iterator yielding the source's elements unchanged.
 pub def inspect[I, T](it: I, f: fn(T) -> unit) -> inspect_iter[I, T] where I: iterator[T]:
     return inspect_iter { inner: it, f: f }
+
+#: An iterator that pairs the elements of two iterators.
+pub type zip_iter[I, J, T, U] = { first: I, second: J }
+
+impl[I, J, T, U] iterator[(T, U)] for zip_iter[I, J, T, U]:
+    # Stops as soon as *either* source does, so the result is as long as the
+    # shorter one. The nested `while let`s each run at most one iteration;
+    # they stand in for a `match`, whose arms cannot hold the statements this
+    # needs.
+    def next(mut self) -> option[(T, U)]:
+        while let @some(x) = self.first.next():
+            while let @some(y) = self.second.next():
+                return @some((x, y))
+            return @none
+        return @none
+
+    # The shorter source bounds the pair count.
+    def size_hint(self) -> usize:
+        let a = self.first.size_hint()
+        let b = self.second.size_hint()
+        if a < b:
+            return a
+        return b
+
+#: An iterator that pairs each element with its position.
+pub type enumerate_iter[I, T] = { inner: I, at: usize }
+
+impl[I, T] iterator[(usize, T)] for enumerate_iter[I, T]:
+    def next(mut self) -> option[(usize, T)]:
+        while let @some(x) = self.inner.next():
+            let index = self.at
+            self.at = self.at + 1
+            return @some((index, x))
+        return @none
+
+    def size_hint(self) -> usize:
+        return self.inner.size_hint()
+
+#: Pairs the elements of two iterators, lazily.
+#:
+#: The result ends with the shorter source: zipping a 3-element iterator with
+#: a 5-element one yields 3 pairs, and the two extra elements are not drawn.
+#:
+#: Consume the pairs by binding the whole tuple and destructuring it:
+#:
+#:     while let @some(pair) = names.zip(scores.iter()).next():
+#:         let (name, score) = pair
+#:
+#: Destructuring inside the pattern itself (`@some((name, score))`) does not
+#: yet lower — see `spec/todo.md`.
+#: Args:
+#:   it: the iterator supplying each pair's first element (moved).
+#:   other: the iterator supplying each pair's second element (moved).
+#: Returns:
+#:   an iterator yielding `(a, b)` pairs.
+pub def zip[I, J, T, U](it: I, other: J) -> zip_iter[I, J, T, U] where I: iterator[T], J: iterator[U]:
+    return zip_iter { first: it, second: other }
+
+#: Pairs each element with its position, lazily.
+#:
+#: Positions count from 0 and from the point `enumerate` is applied — placing
+#: it after a `filter` numbers the *kept* elements consecutively, while
+#: placing it before numbers them by their position in the source.
+#: Args:
+#:   it: the iterator to number (moved).
+#: Returns:
+#:   an iterator yielding `(index, element)` pairs.
+pub def enumerate[I, T](it: I) -> enumerate_iter[I, T] where I: iterator[T]:
+    return enumerate_iter { inner: it, at: 0 }
