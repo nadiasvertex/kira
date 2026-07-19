@@ -2874,6 +2874,15 @@ auto lowerer::lower_indexed_loop(
     const ast::binding_pattern &loop_var,
     const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
         &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error> {
+  // `for x in xs` where `xs: &list[T]`. A reference to a container indexes
+  // and reports its length exactly like the container does — both backends
+  // read through it transparently — so the loop that indexing desugars to
+  // works unchanged, and the only thing standing in the way was this
+  // dispatch asking the reference type what kind of container it is. It
+  // answers `ref`, and the loop was refused as a "user-defined iterable".
+  while (checked_.types.entry(iterable_type).kind == type_kind::ref_kind) {
+    iterable_type = checked_.types.entry(iterable_type).result;
+  }
   const auto &entry = checked_.types.entry(iterable_type);
   auto element_type = k_unknown_type;
   auto static_size = std::optional<uint64_t>{};

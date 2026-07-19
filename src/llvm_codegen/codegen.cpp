@@ -3359,14 +3359,38 @@ private:
       builder_.CreateStore(*value, byte_address(*object, *offset));
       return false;
     }
+    if (assign.target->kind == hir_node_kind::hir_index) {
+      // `xs[i] = value` — the store to the address `compile_index` would have
+      // loaded from, sharing `compile_element_address` with both the read and
+      // `&mut xs[i]` so all three agree on where element `i` lives. Mirrors
+      // `bytecode_compiler::compile_assign`'s own index branch.
+      const auto &index = dynamic_cast<const hir::hir_index &>(*assign.target);
+      if (assign.op != ast::assign_op::assign) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = "compound assignment to an element is not supported by "
+                       "llvm_codegen yet — write `xs[i] = xs[i] + n` instead "
+                       "of `xs[i] += n`"});
+      }
+      auto address = compile_element_address(index);
+      if (!address.has_value()) {
+        return std::unexpected(address.error());
+      }
+      auto value = compile_expr(*assign.value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      builder_.CreateStore(*value, *address);
+      return false;
+    }
     if (assign.target->kind != hir_node_kind::hir_local_ref) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = assign.span,
-          .message = "assigning to an index target needs a heap/aggregate "
-                     "representation llvm_codegen doesn't have yet — only "
-                     "assigning directly to a local variable or a struct "
-                     "field is supported"});
+          .message = "the left side of an assignment has to be a place: a "
+                     "local variable, a struct field, an element, or `*` "
+                     "through a reference"});
     }
     const auto &target =
         dynamic_cast<const hir::hir_local_ref &>(*assign.target);

@@ -3096,6 +3096,35 @@ private:
                        element_stride(field.type));
       return {};
     }
+    if (assign.target->kind == hir_node_kind::hir_index) {
+      // `xs[i] = value`. The write-side mirror of `compile_index`, and it
+      // shares `compile_element_location` with both the read and `&mut xs[i]`
+      // so all three agree on where element `i` lives — the bounds check, the
+      // element stride, and the `data` pointer hiding behind a `list`'s
+      // `{len, cap, data}` header are computed in exactly one place. Deriving
+      // the address separately here is the mistake that made `&mut xs[2]`
+      // address a byte inside the header instead of the third element.
+      const auto &index = dynamic_cast<const hir::hir_index &>(*assign.target);
+      if (assign.op != ast::assign_op::assign) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = assign.span,
+            .message = "compound assignment to an element is not supported by "
+                       "the bytecode compiler yet — write `xs[i] = xs[i] + n` "
+                       "instead of `xs[i] += n`"});
+      }
+      auto location = compile_element_location(index);
+      if (!location.has_value()) {
+        return std::unexpected(location.error());
+      }
+      auto value_reg = compile_expr(*assign.value);
+      if (!value_reg.has_value()) {
+        return std::unexpected(value_reg.error());
+      }
+      emit_store_indexed(location->data_reg, location->index_reg, *value_reg,
+                         location->elem_size);
+      return {};
+    }
     if (assign.target->kind == hir_node_kind::hir_unary) {
       // `*p = value`. The write-side mirror of `compile_unary`'s `deref`:
       // a zero-offset slot store through the pointer, at the referent's own
@@ -3137,10 +3166,9 @@ private:
           .kind = compile_error_kind::unsupported_construct,
           .span = assign.span,
           .message =
-              "assigning to an index target needs a heap/aggregate "
-              "representation this bytecode compiler doesn't have yet — only "
-              "assigning directly to a local variable or a struct field is "
-              "supported"});
+              "the left side of an assignment has to be a place: a local "
+              "variable, a struct field, an element, or `*` through a "
+              "reference"});
     }
     const auto &target =
         dynamic_cast<const hir::hir_local_ref &>(*assign.target);

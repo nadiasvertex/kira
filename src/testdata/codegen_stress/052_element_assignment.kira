@@ -1,0 +1,84 @@
+module codegen_stress.element_assignment
+
+# Assigning to an element — `xs[i] = value` — and iterating a *reference* to
+# a container.
+#
+# Both backends refused element assignment outright ("assigning to an index
+# target needs a heap/aggregate representation ... doesn't have yet"), even on
+# a plain local list with no references involved. Everything the store needs
+# already existed on the read side: `op_store_indexed` was implemented in the
+# VM, and `compile_element_location`/`compile_element_address` already
+# computed the bounds-checked address for `xs[i]` and `&mut xs[i]`. Only the
+# assignment path never reached for them. Both backends now route the store
+# through that same shared address computation, so a read, a write, and an
+# `&mut` of element `i` cannot disagree about where element `i` is.
+#
+# Separately, `for x in xs` where `xs: &list[int32]` was refused as a
+# "user-defined iterable": the lowering asked the *reference* type what kind
+# of container it was and got `ref`. Indexing and `.len()` already read
+# through a reference transparently, so stripping the reference in
+# `lower_indexed_loop` is all the loop needed.
+#
+# This is what unblocks `iter_mut` and every in-place slice algorithm in
+# `spec/collections-algorithms-design.md` §6.1 — `sort`, `reverse`, `rotate`,
+# `dedup` are all element assignment and nothing else.
+#
+# `# expect:` is not optional here. This is exactly the case CLAUDE.md warns
+# about: the two tiers read their layout rules from the same
+# `src/runtime/layout.h`, so cross-tier agreement is no evidence at all that
+# the address is right. A store that lands in the `{len, cap, data}` header
+# instead of the data block agrees perfectly between backends and is still
+# wrong. Only an independently computed expected value catches that — and
+# `scale` below reads back every element it wrote, so a store that hit the
+# header would corrupt `len` and be caught rather than silently ignored.
+
+# 24 * 100 + 45 + 1503 + 45 * 100 = 2400 + 45 + 1503 + 4500 = 8448.
+# expect: 8448
+
+# Writes through a `&mut` reference, which the callee never sees as a local.
+def scale(xs: &mut list[int32], by: int32) -> unit:
+    var i: usize = 0
+    while i < xs.len():
+        xs[i] = xs[i] * by
+        i = i + 1
+
+# Reads back through a shared reference, with `for` doing the iterating.
+def total(xs: &list[int32]) -> int32:
+    var sum = 0
+    for x in xs:
+        sum = sum + x
+    return sum
+
+# In-place reversal: the shape every §6.1 slice algorithm has. Two element
+# stores per step, both to computed indices.
+def reverse(xs: &mut list[int32]) -> unit:
+    var lo: usize = 0
+    var hi: usize = xs.len() - 1
+    while lo < hi:
+        let tmp = xs[lo]
+        xs[lo] = xs[hi]
+        xs[hi] = tmp
+        lo = lo + 1
+        hi = hi - 1
+
+def main() -> int32:
+    # A local list, no references: the case that failed even without `&mut`.
+    var direct = [1, 2, 3]
+    direct[1] = 20
+    let direct_sum = direct[0] + direct[1] + direct[2]  # 1 + 20 + 3 = 24
+
+    # 1..5 scaled by 3 is 3,6,9,12,15 — sum 45.
+    var nums = [1, 2, 3, 4, 5]
+    scale(&mut nums, 3)
+    let scaled = total(&nums)
+
+    # Reversing puts 3 last, so element 4 is 3 and element 0 is 15. Checking
+    # both ends catches a reversal that wrote only one side of each swap.
+    reverse(&mut nums)
+    let ends = nums[0] * 100 + nums[4]  # 15 * 100 + 3 = 1503
+
+    # The sum must survive the reversal unchanged: a swap that dropped or
+    # duplicated an element would move this off 45 while `ends` stayed right.
+    let after = total(&nums)  # 45
+
+    return direct_sum * 100 + scaled + ends + after * 100
