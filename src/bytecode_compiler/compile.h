@@ -42,6 +42,13 @@ enum class compile_error_kind : uint8_t {
                            ///< (`opcodes.h`'s `u8` register-index encoding)
                            ///< — revisit the encoding width if a real
                            ///< program ever gets close.
+  internal_error,          ///< A self-check inside the compiler failed — not
+                           ///< anything the user's program did wrong. Reported
+                           ///< rather than asserted so it surfaces identically
+                           ///< in release builds, since the invariant it
+                           ///< guards (opcodes.h's operand-layout table
+                           ///< agreeing with what the emitter emits) fails
+                           ///< silently and destructively if it fails at all.
 };
 
 /// One reason compilation stopped, plus where in the source it happened.

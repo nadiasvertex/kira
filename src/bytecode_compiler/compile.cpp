@@ -758,7 +758,58 @@ private:
     for (const auto &site : input.sites) {
       function.code[site.code_offset] = allocation->assignment[site.reg.id];
     }
+    if (auto layout =
+            verify_operand_layout(function, input.instruction_offsets);
+        !layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
     return function;
+  }
+
+  /// Cross-checks `opcodes.h`'s operand-layout description against the code
+  /// this function actually emitted, by walking the finished buffer one
+  /// `instruction_size` at a time and requiring the offsets it lands on to
+  /// be exactly the ones `emit_op` recorded.
+  ///
+  /// The two are genuinely independent: `instruction_offsets_` comes from
+  /// ~130 hand-written emit sites, `operands_of` from a separate hand-written
+  /// table. A disagreement means one of them is wrong about an operand's
+  /// width — the single mistake that a register-width change can make, and
+  /// one that otherwise stays invisible until the instruction stream
+  /// desynchronizes somewhere with no obvious connection to the cause.
+  ///
+  /// This runs on every function of every compilation rather than in a
+  /// dedicated test, so the whole existing corpus checks it for free.
+  [[nodiscard]] static auto
+  verify_operand_layout(const bytecode::bytecode_function &function,
+                        const std::vector<size_t> &recorded)
+      -> std::expected<void, compile_error> {
+    auto offset = size_t{0};
+    for (auto index = size_t{0}; index < recorded.size(); ++index) {
+      if (offset != recorded[index]) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::internal_error,
+            .span = source_span{},
+            .message = std::format(
+                "internal compiler error: in `{}`, instruction {} was emitted "
+                "at byte {} but `operands_of` in opcodes.h puts it at byte {} "
+                "— one of the two is wrong about an operand's width",
+                function.name, index, recorded[index], offset)});
+      }
+      offset += bytecode::instruction_size(
+          static_cast<bytecode::opcode>(function.code[offset]));
+    }
+    if (offset != function.code.size()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::internal_error,
+          .span = source_span{},
+          .message = std::format(
+              "internal compiler error: in `{}`, walking the code buffer by "
+              "`instruction_size` ends at byte {} but the buffer is {} bytes "
+              "— the last instruction's declared operand layout is wrong",
+              function.name, offset, function.code.size())});
+    }
+    return {};
   }
 
   /// Reserves the contiguous register block a call's arguments are read

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace kira::bytecode {
@@ -446,5 +448,194 @@ enum class opcode : uint8_t {
                      ///< `finished=1` on the generator object, and
                      ///< `op_return_value` it).
 };
+
+// ==========================================================================
+//  Operand layout
+//
+//  The width of a register operand is stated once, here, rather than being
+//  implied by ~130 hand-written emit sites in the bytecode compiler and ~52
+//  hand-written decode sites in the VM. It is `2` (not `1`) because a `u8`
+//  register operand capped a function at 256 registers, and the frame
+//  itself never had that limit: `bytecode_function::register_count` is a
+//  `uint16_t` and the VM sizes frames straight from it, so the ceiling was
+//  purely an encoding artifact.
+//
+//  Widening was chosen over spilling deliberately. Spilling is the smaller
+//  change but has the worse failure mode: a spill bug only manifests above
+//  256 simultaneously-live values, which no ordinary program reaches and
+//  which both backends agreeing cannot detect (only this tier would spill).
+//  A widening mistake, by contrast, desynchronizes the instruction stream
+//  and breaks essentially every program on the first test run. Given a
+//  choice between a narrow quiet bug and a wide loud one, this ISA takes
+//  the loud one.
+//
+//  Note that only *register* operands are 2 bytes. The other `u8` operands
+//  — `numeric_kind`, `field_size`, `elem_size`, `argc`, `intrinsic_id`,
+//  `panic_reason`, `next_resume_index` — index small fixed sets and stay
+//  1 byte, so an instruction grows by exactly one byte per register it
+//  names rather than doubling.
+// ==========================================================================
+
+/// What one operand of an instruction encodes. `reg` is called out
+/// separately from `imm8`/`imm16` precisely because it is the one whose
+/// width is a property of the ISA rather than of the individual opcode —
+/// telling the two apart is what makes the width changeable in one place.
+enum class operand_kind : uint8_t {
+  reg,   ///< A register index, `k_register_operand_bytes` wide.
+  imm8,  ///< A 1-byte immediate (kind tag, size, count, id).
+  imm16, ///< A 2-byte immediate (constant index, byte offset, function index).
+  rel32, ///< A 4-byte signed relative jump offset.
+};
+
+/// The number of bytes a register operand occupies in the instruction
+/// stream. Changing this and `function_compiler::emit_register` is, by
+/// construction, the whole of a width change: every other size and offset
+/// in the encoding is derived from `operands_of` below.
+inline constexpr size_t k_register_operand_bytes = 1; // TEMPORARY: 2 once the
+                                                      // emitter and VM widen.
+
+/// The ordered operand sequence of one opcode. No instruction in this ISA
+/// takes more than four operands, so this is a fixed array rather than a
+/// heap sequence — it keeps `operands_of` usable in a constant expression.
+struct operand_signature {
+  std::array<operand_kind, 4> kinds{};
+  uint8_t count = 0;
+};
+
+/// The operand sequence of `op`.
+///
+/// Deliberately an exhaustive `switch` rather than a table indexed by
+/// opcode: under `-Wswitch -Werror`, adding an opcode without describing
+/// its operands here fails the build. A table would have silently returned
+/// a zero-length signature for the new opcode instead, and a wrong
+/// instruction length is exactly the kind of mistake that is invisible
+/// until the instruction stream desynchronizes somewhere unrelated.
+[[nodiscard]] constexpr auto operands_of(opcode op) -> operand_signature {
+  using enum operand_kind;
+  constexpr auto sig =
+      [](std::initializer_list<operand_kind> kinds) -> operand_signature {
+    auto result = operand_signature{};
+    for (const auto kind : kinds) {
+      result.kinds.at(result.count++) = kind;
+    }
+    return result;
+  };
+
+  switch (op) {
+  case opcode::op_load_const:
+    return sig({reg, imm16});
+  case opcode::op_move:
+    return sig({reg, reg});
+
+  // Arithmetic, bitwise, and comparison all share one shape: a destination,
+  // one or two sources, and a trailing `numeric_kind` tag.
+  case opcode::op_add:
+  case opcode::op_sub:
+  case opcode::op_mul:
+  case opcode::op_div:
+  case opcode::op_mod:
+  case opcode::op_add_wrap:
+  case opcode::op_sub_wrap:
+  case opcode::op_mul_wrap:
+  case opcode::op_add_sat:
+  case opcode::op_sub_sat:
+  case opcode::op_mul_sat:
+  case opcode::op_bitand:
+  case opcode::op_bitor:
+  case opcode::op_bitxor:
+  case opcode::op_shl:
+  case opcode::op_shr:
+  case opcode::op_eq:
+  case opcode::op_ne:
+  case opcode::op_lt:
+  case opcode::op_le:
+  case opcode::op_gt:
+  case opcode::op_ge:
+    return sig({reg, reg, reg, imm8});
+  case opcode::op_neg:
+  case opcode::op_bitnot:
+    return sig({reg, reg, imm8});
+  case opcode::op_not_bool:
+    return sig({reg, reg});
+  case opcode::op_cast:
+    return sig({reg, reg, imm8, imm8});
+
+  case opcode::op_jump:
+    return sig({rel32});
+  case opcode::op_jump_if_false:
+  case opcode::op_jump_if_true:
+    return sig({reg, rel32});
+
+  case opcode::op_call:
+    return sig({reg, imm16, reg, imm8});
+  case opcode::op_return_value:
+    return sig({reg});
+  case opcode::op_return_unit:
+    return sig({});
+  case opcode::op_call_intrinsic:
+    return sig({reg, imm8, reg, imm8});
+
+  case opcode::op_alloc:
+    return sig({reg, imm16});
+  case opcode::op_load_slot:
+    return sig({reg, reg, imm16, imm8});
+  case opcode::op_store_slot:
+    return sig({reg, imm16, reg, imm8});
+  case opcode::op_load_str_const:
+    return sig({reg, imm16});
+  case opcode::op_load_indexed:
+  case opcode::op_store_indexed:
+    return sig({reg, reg, reg, imm8});
+
+  case opcode::op_addr_local:
+    return sig({reg, reg});
+  case opcode::op_addr_slot:
+    return sig({reg, reg, imm16});
+  case opcode::op_addr_indexed:
+    return sig({reg, reg, reg, imm8});
+  case opcode::op_list_push:
+    return sig({reg, reg, imm8});
+  case opcode::op_panic_if:
+    return sig({reg, imm8});
+  case opcode::op_panic:
+    return sig({});
+
+  case opcode::op_make_closure:
+    return sig({reg, imm16, reg});
+  case opcode::op_call_indirect:
+    return sig({reg, reg, reg, imm8});
+
+  case opcode::op_make_generator:
+    return sig({reg, imm16, reg});
+  case opcode::op_yield:
+    return sig({reg, reg, imm8});
+  case opcode::op_generator_next:
+    return sig({reg, reg});
+  }
+  return operand_signature{};
+}
+
+/// How many bytes one `op` instruction occupies, opcode byte included.
+[[nodiscard]] constexpr auto instruction_size(opcode op) -> size_t {
+  auto size = size_t{1};
+  const auto signature = operands_of(op);
+  for (auto index = uint8_t{0}; index < signature.count; ++index) {
+    switch (signature.kinds.at(index)) {
+    case operand_kind::reg:
+      size += k_register_operand_bytes;
+      break;
+    case operand_kind::imm8:
+      size += 1;
+      break;
+    case operand_kind::imm16:
+      size += 2;
+      break;
+    case operand_kind::rel32:
+      size += 4;
+      break;
+    }
+  }
+  return size;
+}
 
 } // namespace kira::bytecode
