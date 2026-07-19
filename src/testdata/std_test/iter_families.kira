@@ -1,0 +1,88 @@
+module main
+
+# `std.iter`'s three iteration families, exercised through the real standard
+# library: `iter` (shared references), `iter_mut` (mutable references),
+# `into_iter` (by value), plus `exact_size`, `double_ended`, and `collect`
+# through the real `from_iter` impl on `list`.
+#
+# This lives in `std_test` rather than `codegen_stress` because the stress
+# harness checks each corpus file alone, with no stdlib injected — which is why
+# those files declare their own `iterator` trait locally. Only the driver
+# injects the prelude, so only a driver-run sample can reach the real
+# `std.iter`.
+#
+# The explicit `use std.iter` is deliberate and load-bearing. That import binds
+# the name `iter` to the *module*, and the unqualified-call path used to return
+# `k_unknown_type` whenever an import matched but named a module rather than a
+# member source. Because the unknown type unifies with everything, the call
+# type-checked and then failed in lowering with "no concrete checked type is
+# available for this node" — so writing `use std.iter` silently cost you the
+# `iter` function it was imported to reach.
+#
+# Values are printed rather than merely computed: every element written
+# through a `&mut T` is read back, and the arithmetic is positional wherever
+# order matters, so an iterator that failed to advance, yielded an element
+# twice, or walked the wrong way cannot produce this output by coincidence.
+
+use std.iter
+
+type upto = { at: int32, end: int32 }
+
+impl iterator[int32] for upto:
+    def next(mut self) -> option[int32]:
+        if self.at >= self.end:
+            return @none
+        let v = self.at
+        self.at = self.at + 1
+        return @some(v)
+
+def main() -> int32:
+    var xs = [1, 2, 3, 4]
+
+    # `iter`: shared references into the list.
+    var a = iter(&xs)
+    var byref = 0
+    while let @some(p) = a.next():
+        byref = byref + *p
+    println("byref={byref}")
+
+    # `exact_size`, and the back cursor. The descending weights make the
+    # *order* of `next_back` observable: one that walked forwards, or that
+    # returned the last element repeatedly, gives a different number.
+    var b = iter(&xs)
+    println("exact_len={b.exact_len()}")
+    var back = 0
+    var mult = 1
+    while let @some(p) = b.next_back():
+        back = back + *p * mult
+        mult = mult * 10
+    println("back={back}")
+
+    # `iter_mut`: mutation through a yielded `&mut T`. If this yielded copies,
+    # every value read back below would be unchanged.
+    var c = iter_mut(&mut xs)
+    while let @some(p) = c.next():
+        *p = *p * 10
+
+    # `into_iter`: by value, with the front and back cursors closing on each
+    # other. `mid` is what remains strictly between them, so it is only right
+    # if both cursors moved and the iterator stopped when they met.
+    var d = into_iter(xs)
+    var front = 0
+    if let @some(v) = d.next():
+        front = v
+    var tail = 0
+    if let @some(v) = d.next_back():
+        tail = v
+    var mid = 0
+    while let @some(v) = d.next():
+        mid = mid + v
+    println("front={front} tail={tail} mid={mid}")
+
+    # `collect`, through the real `impl[T] from_iter[T] for list[T]`.
+    let ys: list[int32] = collect(upto { at: 0, end: 5 })
+    var col = 0
+    for y in ys:
+        col = col + y
+    println("collected={col}")
+    return 0

@@ -6908,8 +6908,15 @@ private:
     if (file_no_prelude_) {
       return std::nullopt;
     }
-    static constexpr std::array<std::string_view, 1>
-        k_prelude_function_modules = {"std.console"};
+    // `std.iter` joins `std.console` because the iteration entry points are
+    // prelude-level vocabulary in the same way `println` is: §5.2's families
+    // (`iter`, `iter_mut`, `into_iter`) and `collect` are meant to be written
+    // unqualified, and under UFCS `xs.iter().collect()` is the spelling the
+    // design assumes throughout. Traits from `std.iter` were already reachable
+    // via `find_prelude_trait`; its free functions were not, so `collect` was
+    // an undefined name in every module that did not import it by hand.
+    static constexpr std::array<std::string_view, 2>
+        k_prelude_function_modules = {"std.console", "std.iter"};
     for (const auto module_name : k_prelude_function_modules) {
       if (const auto *source = index_.find_module(module_name)) {
         if (const auto it = source->functions.find(std::string(name));
@@ -9662,9 +9669,21 @@ private:
           infer_call_args_loosely(call);
           return k_unknown_type;
         }
+        infer_call_args_loosely(call);
+        return k_unknown_type;
       }
-      infer_call_args_loosely(call);
-      return k_unknown_type;
+      // The import binds a *module* rather than a member — `use std.iter`
+      // makes `iter` name the module, and `import_source_module` says so by
+      // returning null. A module is not callable, so this name is not this
+      // branch's to answer, and falling through lets prelude and builtin
+      // resolution have it.
+      //
+      // Returning `k_unknown_type` here instead made a module import shadow
+      // every same-named function: a file that wrote `use std.iter` lost the
+      // `iter` free function to the module binding, type-checked anyway
+      // because unknown unifies with everything, and then failed in lowering
+      // with "no concrete checked type is available for this node" — the
+      // silent-acceptance shape the unknown type exists to avoid, not cause.
     }
 
     // Functions re-exported by a session-owned wildcard import

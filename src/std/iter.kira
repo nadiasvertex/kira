@@ -8,3 +8,194 @@ pub trait iterator[T]:
     #: Returns:
     #:   some(value) if a value is available, none otherwise.
     def next(mut self) -> option[T]
+
+    #: A lower bound on the number of elements remaining.
+    #:
+    #: Only ever used to pre-size a collection in `collect`, so an answer that
+    #: is too small costs a reallocation and nothing else. Adapters that can
+    #: refine it should; the default is the always-correct answer.
+    #: Returns:
+    #:   a count no greater than the number of elements remaining.
+    def size_hint(self) -> usize:
+        return 0
+
+#: An iterator that can also yield from its end.
+#:
+#: This is what makes `rev`, `last`, and `rfind` linear rather than quadratic.
+pub trait double_ended[T] requires iterator[T]:
+    #: Removes and returns the last value.
+    #: Returns:
+    #:   some(value) if a value is available, none otherwise.
+    def next_back(mut self) -> option[T]
+
+#: An iterator whose remaining length is known exactly.
+pub trait exact_size[T] requires iterator[T]:
+    #: The exact number of elements remaining.
+    #:
+    #: Named `exact_len` rather than `len` because under UFCS a trait method
+    #: named `len` would collide with the free `len` on every container.
+    #: Returns:
+    #:   the number of elements remaining.
+    def exact_len(self) -> usize
+
+#: A type that can be converted into an iterator.
+#:
+#: `for` does not require this: it resolves iterators structurally, so a type
+#: with a suitable `next` is already usable in a loop. This trait is for the
+#: types where iterating means handing back something *else*.
+pub trait into_iterator[T]:
+    #: The iterator type this converts into.
+    type iter
+
+    #: Converts self into an iterator.
+    #: Args:
+    #:   self: the value (moved).
+    #: Returns:
+    #:   an iterator over the value's elements.
+    def into_iter(self) -> self.iter
+
+#: A collection that can be built from an iterator.
+#:
+#: Implement this to make a type available as a target of `collect`.
+pub trait from_iter[T]:
+    #: Builds self by draining an iterator.
+    #: Args:
+    #:   it: the iterator to drain (moved).
+    #: Returns:
+    #:   the collected value.
+    static def from_iter[I](it: I) -> self
+
+#: Collects an iterator into any collection that implements `from_iter`.
+#:
+#: The collection is chosen by the type expected at the call site:
+#:
+#:     let names: list[str] = words.collect()
+#:
+#: and given explicitly where no expected type exists:
+#:
+#:     words.collect[list[str]]()
+#:
+#: Note that `collect` is *inferred, not bounds-checked*. A `C` that is not a
+#: collection is still a compile-time error, but it is phrased indirectly — it
+#: surfaces as a missing `from_iter`, with a note pointing back at the call.
+#: Args:
+#:   it: the iterator to drain (moved).
+#: Returns:
+#:   the collected collection.
+pub def collect[I, C](it: I) -> C:
+    return C.from_iter(it)
+
+# ---------------------------------------------------------------------------
+# The three iteration families over `list`.
+#
+# `iter` borrows and yields `&T`, `iter_mut` borrows mutably and yields
+# `&mut T`, `into_iter` consumes and yields `T`. Each is a plain struct holding
+# its source and a cursor; nothing here needs a language feature beyond generic
+# structs and generic trait impls.
+# ---------------------------------------------------------------------------
+
+# Each carries *both* a front cursor (`at`) and a back cursor (`end`), rather
+# than only `at` with the length read from the source. A `next_back` that
+# returned `src[src.len() - 1]` would hand back the same element forever and
+# never meet `next` in the middle; the two cursors close on each other and the
+# iterator is exhausted when they touch.
+
+#: An iterator over shared references to a list's elements.
+pub type list_iter[T] = { src: &list[T], at: usize, end: usize }
+
+#: An iterator over mutable references to a list's elements.
+pub type list_iter_mut[T] = { src: &mut list[T], at: usize, end: usize }
+
+#: An iterator over a list's elements by value.
+pub type list_into_iter[T] = { src: list[T], at: usize, end: usize }
+
+#: Borrows a list and iterates over shared references to its elements.
+#: Args:
+#:   xs: the list to borrow.
+#: Returns:
+#:   an iterator yielding `&T`.
+pub def iter[T](xs: &list[T]) -> list_iter[T]:
+    return list_iter { src: xs, at: 0, end: xs.len() }
+
+#: Borrows a list mutably and iterates over mutable references to its
+#: elements, so the elements can be modified in place.
+#: Args:
+#:   xs: the list to borrow mutably.
+#: Returns:
+#:   an iterator yielding `&mut T`.
+pub def iter_mut[T](xs: &mut list[T]) -> list_iter_mut[T]:
+    return list_iter_mut { src: xs, at: 0, end: xs.len() }
+
+#: Consumes a list and iterates over its elements by value.
+#: Args:
+#:   xs: the list to consume (moved).
+#: Returns:
+#:   an iterator yielding `T`.
+pub def into_iter[T](xs: list[T]) -> list_into_iter[T]:
+    let n = xs.len()
+    return list_into_iter { src: xs, at: 0, end: n }
+
+impl[T] iterator[&T] for list_iter[T]:
+    def next(mut self) -> option[&T]:
+        if self.at >= self.end:
+            return @none
+        let slot = &self.src[self.at]
+        self.at = self.at + 1
+        return @some(slot)
+
+    def size_hint(self) -> usize:
+        return self.end - self.at
+
+impl[T] iterator[&mut T] for list_iter_mut[T]:
+    def next(mut self) -> option[&mut T]:
+        if self.at >= self.end:
+            return @none
+        let slot = &mut self.src[self.at]
+        self.at = self.at + 1
+        return @some(slot)
+
+    def size_hint(self) -> usize:
+        return self.end - self.at
+
+impl[T] iterator[T] for list_into_iter[T]:
+    def next(mut self) -> option[T]:
+        if self.at >= self.end:
+            return @none
+        let v = self.src[self.at]
+        self.at = self.at + 1
+        return @some(v)
+
+    def size_hint(self) -> usize:
+        return self.end - self.at
+
+impl[T] double_ended[&T] for list_iter[T]:
+    def next_back(mut self) -> option[&T]:
+        if self.at >= self.end:
+            return @none
+        self.end = self.end - 1
+        let slot = &self.src[self.end]
+        return @some(slot)
+
+impl[T] double_ended[T] for list_into_iter[T]:
+    def next_back(mut self) -> option[T]:
+        if self.at >= self.end:
+            return @none
+        self.end = self.end - 1
+        return @some(self.src[self.end])
+
+impl[T] exact_size[&T] for list_iter[T]:
+    def exact_len(self) -> usize:
+        return self.end - self.at
+
+impl[T] exact_size[T] for list_into_iter[T]:
+    def exact_len(self) -> usize:
+        return self.end - self.at
+
+#: Builds a list by draining an iterator.
+impl[T] from_iter[T] for list[T]:
+    static def from_iter[I](it: I) -> list[T] where I: iterator[T]:
+        var out = []
+        var cursor = it
+        while let @some(x) = cursor.next():
+            out.push(x)
+        return out
