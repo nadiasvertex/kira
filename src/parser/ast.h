@@ -1713,7 +1713,12 @@ struct impl_decl : node {
 /// without claiming trait conformance, so unlike `impl_decl` it carries no
 /// trait, no `where` clause, and no associated-type members.
 struct extend_decl : node {
-  ptr<type_expr> for_type;      ///< Concrete target type receiving the methods.
+  /// Type parameters of a parameterized inherent block (`extend[T] gen[T]:`).
+  /// Empty for the concrete form. These scope the members' signatures and
+  /// bodies exactly as an `impl` block's own parameters do, and are solved at
+  /// each call site by unifying `for_type` against the receiver.
+  std::vector<type_param> type_params;
+  ptr<type_expr> for_type;      ///< Target type receiving the methods.
   std::vector<ptr<node>> items; ///< Method (`func_decl`) definitions.
 
   extend_decl() : node(node_kind::extend_decl) {}

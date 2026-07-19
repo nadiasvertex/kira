@@ -1,0 +1,49 @@
+module main
+
+# Inherent methods on a parameterized type, via `extend` (spec/todo.md items 7
+# and 11). Before this worked there was no spelling that did: `impl[T] gen[T]:`
+# is rejected (an impl demands a trait), `extend[T] gen[T]:` did not parse, and
+# both `extend gen:` and `extend gen[int32]:` type-checked and then compiled
+# nothing at all — the second failing at the call with "could not be resolved
+# to a function in this compiled module".
+#
+# Two forms are exercised together because they take different paths: the
+# parameterized block is solved per receiver by unifying `pair[A, B]` against
+# the concrete type, while the applied block (`extend cell[int32]:`) has no
+# parameters of its own and is keyed purely on the receiver's arguments.
+#
+# The digits are positionally weighted so a method returning the wrong field —
+# `second` reading `a`, say — cannot produce the same total, which a plain sum
+# of the parts would not catch.
+#
+# expect: 7215
+
+pub type pair[A, B] = { a: A, b: B }
+
+extend[A, B] pair[A, B]:
+    def first(self) -> A:
+        return self.a
+
+    def second(self) -> B:
+        return self.b
+
+pub type cell[T] = { v: T }
+
+# A block over one instantiation rather than over every one. `T` is not in
+# scope here at all; the target is already complete.
+extend cell[int32]:
+    def doubled(self) -> int32:
+        return self.v * 2
+
+def main() -> int32:
+    # Both parameters instantiated at the same type...
+    let p = pair { a: 7, b: 2 }
+    # ...and at different ones, so a solution that assumed `A` and `B` were one
+    # parameter would fail here rather than silently agreeing.
+    let q = pair { a: 1, b: true }
+
+    var total = p.first() * 1000 + p.second() * 100
+    total = total + q.first() * 10
+    if q.second():
+        total = total + cell { v: 1 }.doubled() + 3
+    return total

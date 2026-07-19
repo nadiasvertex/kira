@@ -45,6 +45,7 @@ top_level_item
     | trait_decl
     | signature_decl
     | impl_decl
+    | extend_decl
     | concept_decl
     | func_decl
     | sub_module_decl
@@ -304,6 +305,26 @@ impl_item
 associated_type_def
     = "type" IDENT "=" type_expr NEWLINE
     | "static" IDENT [ ":" type_expr ] "=" expr NEWLINE
+    ;
+
+(* An `extend` block adds inherent methods to a type without claiming any
+   trait conformance, so unlike impl_decl it takes no trait, no where_clause,
+   and no associated types — only functions.
+
+   The optional type_params make the block generic over its target:
+   `extend[T] holder[T]:` adds a method to every `holder`, solved per call
+   site by matching the target against the receiver. Without them the target
+   must name a complete type, so `extend holder[int32]:` is fine while a bare
+   `extend holder:` over a generic `holder` is an error — it names a
+   constructor rather than a type. *)
+extend_decl
+    = "extend" [ type_params ] type_expr
+      ":" NEWLINE INDENT { extend_item } DEDENT
+    ;
+
+extend_item
+    = func_decl
+    | NEWLINE
     ;
 
 

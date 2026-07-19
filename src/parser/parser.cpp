@@ -2253,6 +2253,15 @@ auto parser::parse_extend_decl() -> ast::ptr<ast::extend_decl> {
   auto start = peek().span;
 
   expect(token_kind::kw_extend);
+
+  // Optional type parameters, as on `impl`: `extend[T] gen[T]:`. Without
+  // these a parameterized type has no inherent-method form at all — `impl`
+  // demands a trait, and a bare `extend gen:` cannot name `T` to talk about
+  // the field types it stores.
+  if (at(token_kind::lbracket)) {
+    decl->type_params = parse_type_params();
+  }
+
   decl->for_type = parse_type_expr();
 
   expect(token_kind::colon);

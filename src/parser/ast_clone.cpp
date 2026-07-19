@@ -1401,6 +1401,10 @@ auto clone_impl_decl(const impl_decl &decl)
 
 auto clone_extend_decl(const extend_decl &decl)
     -> std::expected<ptr<extend_decl>, clone_error> {
+  auto type_params = clone_type_params(decl.type_params);
+  if (!type_params.has_value()) {
+    return std::unexpected(type_params.error());
+  }
   auto for_type = clone_optional(decl.for_type);
   if (!for_type.has_value()) {
     return std::unexpected(for_type.error());
@@ -1413,6 +1417,7 @@ auto clone_extend_decl(const extend_decl &decl)
   auto cloned = make<extend_decl>();
   cloned->span = decl.span;
   cloned->documentation = decl.documentation;
+  cloned->type_params = std::move(*type_params);
   cloned->for_type = std::move(*for_type);
   cloned->items = std::move(*items);
   return cloned;

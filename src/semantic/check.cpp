@@ -247,14 +247,17 @@ struct method_entry {
   /// trait's constructor parameter here (`F := option`), so re-checking a
   /// per-call instance of it resolves `F[A]` the same way its own check did.
   std::unordered_map<std::string, type_id> fixed_type_params;
-  /// The `impl` block this method was declared in, or null for an `extend`
-  /// method or a trait default. Needed because an impl's *own* generic
-  /// parameters (`impl[T] get_it[T] for holder[T]`) scope the method's
-  /// signature and body without appearing on the method's `type_params` —
-  /// so the method looks non-generic while being anything but.
-  const ast::impl_decl *from_impl = nullptr;
-  /// The impl target as a *pattern*, with the impl's own type parameters left
-  /// as `type_param` types (`holder[T]`). Rigid-unifying this against the
+  /// Type parameters of the `impl` or `extend` block this method was declared
+  /// in, or null for a trait default. Needed because a block's *own* generic
+  /// parameters (`impl[T] get_it[T] for holder[T]`, `extend[T] holder[T]`)
+  /// scope the method's signature and body without appearing on the method's
+  /// `type_params` — so the method looks non-generic while being anything but.
+  /// A non-null pointer to an *empty* vector is meaningful: it marks a method
+  /// of a non-generic block over a possibly-generic target, which still needs
+  /// per-receiver instances (see `impl_needs_instance`).
+  const std::vector<ast::type_param> *block_type_params = nullptr;
+  /// The block's target as a *pattern*, with the block's own type parameters
+  /// left as `type_param` types (`holder[T]`). Rigid-unifying this against the
   /// concrete receiver is what solves those parameters at a call site; see
   /// `impl_generic_bindings`.
   type_id impl_target_pattern = k_unknown_type;
@@ -4127,11 +4130,12 @@ private:
 
   /// The rigid `type_param` stand-ins a declaration's signature resolves
   /// against: its own parameters, plus — when it is a method — those of the
-  /// `impl` block enclosing it, which are equally in scope over the signature
-  /// and are the only thing distinguishing `impl[T] ... for holder[T]` from an
-  /// impl for one concrete instantiation.
-  auto generic_param_bindings(const ast::func_decl &decl,
-                              const ast::impl_decl *enclosing_impl)
+  /// `impl` or `extend` block enclosing it, which are equally in scope over the
+  /// signature and are the only thing distinguishing `impl[T] ... for
+  /// holder[T]` from an impl for one concrete instantiation.
+  auto generic_param_bindings(
+      const ast::func_decl &decl,
+      const std::vector<ast::type_param> *enclosing_block_params)
       -> std::unordered_map<std::string, type_id> {
     auto bindings = std::unordered_map<std::string, type_id>{};
     const auto seed = [&](const ast::type_param &type_param) -> void {
@@ -4141,8 +4145,8 @@ private:
             types_.type_param(type_param.name, type_param.higher_kinded_arity));
       }
     };
-    if (enclosing_impl != nullptr) {
-      for (const auto &type_param : enclosing_impl->type_params) {
+    if (enclosing_block_params != nullptr) {
+      for (const auto &type_param : *enclosing_block_params) {
         seed(type_param);
       }
     }
@@ -4161,16 +4165,17 @@ private:
   /// generic parameters. `skip_self` drops a leading `self` parameter,
   /// since call-argument checking never expects the caller to pass it.
   ///
-  /// `enclosing_impl` seeds the *impl block's* parameters as well. A method of
-  /// `impl[T] get_it[T] for holder[T]` mentions `T` in its signature without
-  /// declaring it — the parameter belongs to the impl — so resolving the
-  /// signature against `decl.type_params` alone leaves `T` unresolvable, and
-  /// the method reads as if it had no generic content at all.
-  auto signature_params(const ast::func_decl &decl, const module_members *owner,
-                        bool skip_self,
-                        const ast::impl_decl *enclosing_impl = nullptr)
+  /// `enclosing_block_params` seeds the enclosing `impl`/`extend` block's
+  /// parameters as well. A method of `impl[T] get_it[T] for holder[T]`
+  /// mentions `T` in its signature without declaring it — the parameter
+  /// belongs to the block — so resolving the signature against
+  /// `decl.type_params` alone leaves `T` unresolvable, and the method reads as
+  /// if it had no generic content at all.
+  auto signature_params(
+      const ast::func_decl &decl, const module_members *owner, bool skip_self,
+      const std::vector<ast::type_param> *enclosing_block_params = nullptr)
       -> std::vector<fn_param_info> {
-    auto param_bindings = generic_param_bindings(decl, enclosing_impl);
+    auto param_bindings = generic_param_bindings(decl, enclosing_block_params);
     const auto ctx = resolve_ctx{.module = owner,
                                  .param_bindings = &param_bindings,
                                  .use_type_param_stack = false,
@@ -4204,14 +4209,14 @@ private:
   /// Resolves a function's declared return type against its own generic
   /// parameters; `unknown` for an unannotated return type (inferred from the
   /// body, never guessed from this signature alone).
-  auto signature_return_type(const ast::func_decl &decl,
-                             const module_members *owner,
-                             const ast::impl_decl *enclosing_impl = nullptr)
+  auto signature_return_type(
+      const ast::func_decl &decl, const module_members *owner,
+      const std::vector<ast::type_param> *enclosing_block_params = nullptr)
       -> type_id {
     if (decl.return_type == nullptr) {
       return k_unknown_type;
     }
-    auto param_bindings = generic_param_bindings(decl, enclosing_impl);
+    auto param_bindings = generic_param_bindings(decl, enclosing_block_params);
     const auto ctx =
         resolve_ctx{.module = owner,
                     .param_bindings = &param_bindings,
@@ -6993,14 +6998,25 @@ private:
     return resolve_type(*impl.decl->for_type, ctx);
   }
 
-  /// Resolves the concrete type an extend block targets (its `extend`
-  /// clause). Extend blocks carry no generic parameters of their own.
+  /// Resolves the type an extend block targets (its `extend` clause) as a
+  /// *pattern*: a parameterized block's own parameters resolve to rigid
+  /// `type_param` stand-ins, so `extend[T] holder[T]` yields `holder[T]` for
+  /// later unification against a concrete receiver, exactly as
+  /// `resolve_impl_target` does for `impl`.
   auto resolve_extend_target(const extend_ref &ext) -> type_id {
     if (ext.decl->for_type == nullptr) {
       return k_unknown_type;
     }
+    auto param_bindings = std::unordered_map<std::string, type_id>{};
+    for (const auto &param : ext.decl->type_params) {
+      if (!param.name.empty()) {
+        param_bindings.emplace(
+            param.name,
+            types_.type_param(param.name, param.higher_kinded_arity));
+      }
+    }
     const auto ctx = resolve_ctx{.module = index_.find_module(ext.module_name),
-                                 .param_bindings = nullptr,
+                                 .param_bindings = &param_bindings,
                                  .use_type_param_stack = false,
                                  .quiet = true};
     return resolve_type(*ext.decl->for_type, ctx);
@@ -7035,6 +7051,12 @@ private:
               .owner = &members,
               .from_trait = nullptr,
               .is_extension = true,
+              // An `extend` block is an inherent impl, and gets the same
+              // per-receiver instance discipline: without these two an
+              // `extend` on a generic type type-checked and then compiled
+              // nothing at all (spec/todo.md items 7 and 11).
+              .block_type_params = &ext.decl->type_params,
+              .impl_target_pattern = target,
           });
         }
         if (extend_methods.empty()) {
@@ -7103,7 +7125,7 @@ private:
               .decl = decl,
               .owner = &members,
               .from_trait = nullptr,
-              .from_impl = impl.decl,
+              .block_type_params = &impl.decl->type_params,
               .impl_target_pattern = target,
           });
         }
@@ -7673,7 +7695,7 @@ private:
                          std::unordered_map<std::string, type_id> &bindings)
       -> void {
     auto pattern_params =
-        generic_param_bindings(decl, /*enclosing_impl=*/nullptr);
+        generic_param_bindings(decl, /*enclosing_block_params=*/nullptr);
     const auto pattern_ctx = resolve_ctx{.module = owner,
                                          .param_bindings = &pattern_params,
                                          .use_type_param_stack = false,
@@ -8059,8 +8081,8 @@ private:
   /// all for either (design §2.1's G0).
   auto impl_needs_instance(const method_entry &method,
                            const type_entry &receiver) -> bool {
-    return method.from_impl != nullptr &&
-           (!method.from_impl->type_params.empty() || !receiver.args.empty());
+    return method.block_type_params != nullptr &&
+           (!method.block_type_params->empty() || !receiver.args.empty());
   }
 
   /// Types a call to a method whose *impl block* — not the method itself — is
@@ -8095,7 +8117,7 @@ private:
 
     auto bindings = std::unordered_map<std::string, type_id>{};
     unify_rigid(method.impl_target_pattern, receiver_type, bindings);
-    for (const auto &type_param : method.from_impl->type_params) {
+    for (const auto &type_param : *method.block_type_params) {
       if (type_param.name.empty() || bindings.contains(type_param.name)) {
         continue;
       }
@@ -8134,7 +8156,7 @@ private:
         std::format("${}", mangle_type_for_instance(receiver_type));
 
     auto params = signature_params(*method.decl, method.owner,
-                                   /*skip_self=*/true, method.from_impl);
+                                   /*skip_self=*/true, method.block_type_params);
     for (auto &param : params) {
       param.type = substitute_solved(param.type, bindings);
     }
@@ -8157,7 +8179,7 @@ private:
                         .impl_target_type = "",
                         .receiver = &receiver};
     return substitute_solved(
-        signature_return_type(*method.decl, method.owner, method.from_impl),
+        signature_return_type(*method.decl, method.owner, method.block_type_params),
         bindings);
   }
 
@@ -8188,7 +8210,7 @@ private:
       std::unordered_map<std::string, type_id> &bindings)
       -> const ast::func_decl * {
     unify_rigid(method.impl_target_pattern, target, bindings);
-    for (const auto &type_param : method.from_impl->type_params) {
+    for (const auto &type_param : *method.block_type_params) {
       if (type_param.name.empty() || bindings.contains(type_param.name)) {
         continue;
       }
@@ -9180,7 +9202,7 @@ private:
                             .impl_target_type = ""};
         return substitute_solved(signature_return_type(*method->decl,
                                                        method->owner,
-                                                       method->from_impl),
+                                                       method->block_type_params),
                                  bindings);
       }
     }
@@ -9201,7 +9223,7 @@ private:
     // it then rides into the instance as a fixed binding, so the body resolves
     // `T` and the return type restates as `list[int32]` rather than `list[T]`.
     auto impl_bindings = std::unordered_map<std::string, type_id>{};
-    if (method->from_impl != nullptr && !in_const_generic_template_ &&
+    if (method->block_type_params != nullptr && !in_const_generic_template_ &&
         !in_type_generic_template_) {
       unify_rigid(method->impl_target_pattern, target, impl_bindings);
       bindings.insert(impl_bindings.begin(), impl_bindings.end());
@@ -11075,11 +11097,11 @@ private:
     // unsubstituted `U` is what `hir::lower_iterator_loop` rejects as "the
     // iterator's item type did not resolve to a concrete type".
     auto bindings = std::unordered_map<std::string, type_id>{};
-    if (method->from_impl != nullptr) {
+    if (method->block_type_params != nullptr) {
       unify_rigid(method->impl_target_pattern, stripped, bindings);
     }
     const auto ret = substitute_solved(
-        signature_return_type(*method->decl, method->owner, method->from_impl),
+        signature_return_type(*method->decl, method->owner, method->block_type_params),
         bindings);
     const auto &ret_entry = types_.entry(strip_refs(ret));
     if (ret_entry.kind != type_kind::builtin_generic_kind ||
@@ -13622,10 +13644,40 @@ private:
   /// `requires` checking — `extend` makes no conformance claim, so it needs
   /// none of that bookkeeping.
   auto check_extend_decl(const ast::extend_decl &decl) -> void {
+    // A parameterized block's parameters scope its target type *and* every
+    // member, so they go on the stack before the target resolves — otherwise
+    // `extend[T] holder[T]` cannot even name `T` in its own `extend` clause.
+    push_type_params(decl.type_params);
     const auto target =
         decl.for_type != nullptr
             ? strip_refs(resolve_type(*decl.for_type, current_resolve_ctx()))
             : k_unknown_type;
+
+    // `extend gen:` where `gen` is generic: the target names a constructor
+    // that still takes arguments, so no member can say what `self`'s fields
+    // hold. This used to type-check and then die in lowering on the first use
+    // of a field ("no concrete checked type is available for this node"),
+    // which told the user nothing about the actual mistake.
+    const auto &target_entry = types_.entry(target);
+    const auto target_is_unapplied_ctor =
+        target_entry.kind == type_kind::ctor_ref_kind ||
+        (target_entry.decl != nullptr &&
+         !target_entry.decl->type_params.empty() && target_entry.args.empty());
+    if (decl.type_params.empty() && decl.for_type != nullptr &&
+        target_is_unapplied_ctor) {
+      const auto name = std::string(target_entry.name);
+      error_with_help(
+          decl.for_type->span,
+          std::format("`{}` still takes type arguments, so `extend {}:` does "
+                      "not name a type to extend",
+                      name, name),
+          "extend target is a type constructor, not a type",
+          std::format(
+              "Give the block its own parameter and pass it along — "
+              "`extend[T] {}[T]:` — to add methods to every `{}`, or name one "
+              "instantiation, as in `extend {}[int32]:`.",
+              name, name, name));
+    }
 
     const auto saved_self = self_type_;
     self_type_ = target;
@@ -13639,6 +13691,7 @@ private:
       }
     }
     self_type_ = saved_self;
+    pop_type_params();
   }
 
   /// Validates an impl's members against its trait's requirements: every

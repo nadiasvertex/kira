@@ -352,6 +352,81 @@ auto test_reports_extend_method_arity_mismatch() -> void {
                     "expected real arity checking against the extend method");
 }
 
+/// `extend gen:` where `gen` is generic names a constructor, not a type, so
+/// no member can know what `self`'s fields hold. This used to type-check and
+/// then die in lowering with "no concrete checked type is available for this
+/// node" — a compiler-internals message for what is really a mistake in the
+/// `extend` head, and one that named the field access rather than the head.
+auto test_reports_extend_on_unapplied_generic() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "extend_unapplied.kira",
+      .text = "module main\n"
+              "\n"
+              "type gen[T] = { v: T }\n"
+              "\n"
+              "extend gen:\n"
+              "    def doubled(self) -> int32:\n"
+              "        return self.v * 2\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected `extend` on an unapplied generic to be diagnosed");
+  expect_diagnostic(analyzed, "still takes type arguments",
+                    "expected the diagnostic to name the real mistake");
+  // The help is the part that matters: it has to point at the two spellings
+  // that work, since neither is guessable from the error alone.
+  expect_diagnostic(analyzed, "extend[T] gen[T]:",
+                    "expected a suggestion of the parameterized form");
+}
+
+/// The parameterized form the diagnostic above recommends must itself check —
+/// otherwise that help text sends users into a second wall.
+auto test_accepts_parameterized_extend() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "extend_parameterized.kira",
+      .text = "module main\n"
+              "\n"
+              "type gen[T] = { v: T }\n"
+              "\n"
+              "extend[T] gen[T]:\n"
+              "    def get(self) -> T:\n"
+              "        return self.v\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let g = gen{v: 7}\n"
+              "    let n: int32 = g.get()\n"
+              "    return n\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected a parameterized extend block to check cleanly");
+
+  // The clean check above cannot, on its own, show that `-> T` *solved*:
+  // an unsolved `T` stays `k_unknown_type`, which unifies with everything, so
+  // the `int32` annotation would be satisfied either way. Only a deliberately
+  // wrong annotation tells the two apart — it errors when `T` really became
+  // `int32`, and passes silently when it did not.
+  const auto mismatched = analyze_sources({{
+      .path = "extend_parameterized_mismatch.kira",
+      .text = "module main\n"
+              "\n"
+              "type gen[T] = { v: T }\n"
+              "\n"
+              "extend[T] gen[T]:\n"
+              "    def get(self) -> T:\n"
+              "        return self.v\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let g = gen{v: 7}\n"
+              "    let s: str = g.get()\n"
+              "    return 0\n",
+  }});
+  expect(mismatched.error_count > 0,
+         "expected `-> T` to solve to the receiver's argument `int32`, so "
+         "binding it to `str` is a type error rather than silently accepted");
+}
+
 auto test_reports_missing_return_value() -> void {
   const auto analyzed =
       analyze_test_data_file("report_missing_return_value.kira");
@@ -2419,6 +2494,8 @@ auto main() -> int {
     test_accepts_associated_type_self_output();
     test_accepts_extend_on_builtin_type();
     test_accepts_extend_on_user_type();
+    test_accepts_parameterized_extend();
+    test_reports_extend_on_unapplied_generic();
     test_impl_method_takes_priority_over_extend();
     test_accepts_intrinsic_decl();
     test_accepts_string_interpolation();

@@ -1055,6 +1055,33 @@ auto test_parser_accepts_extend_block() -> void {
       "expected extend member to be a function declaration");
 }
 
+/// `extend[T] holder[T]:` — a parameterized inherent block. The type
+/// parameters sit between `extend` and the target, as on `impl`, and are what
+/// let the block name the type it is generic over (spec/todo.md items 7, 11).
+auto test_parser_accepts_parameterized_extend_block() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "extend[A, B] pair[A, B]:\n"
+                             "  def first(self) -> A:\n"
+                             "    self.a\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1, "expected one top-level extend item");
+
+  auto *extend_decl = expect_node<kira::ast::extend_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::extend_decl,
+      "expected extend declaration");
+  expect(extend_decl->type_params.size() == 2,
+         "expected extend block to carry both of its type parameters");
+  expect(extend_decl->type_params[0].name == "A",
+         "expected first extend type parameter to be `A`");
+  expect(extend_decl->type_params[1].name == "B",
+         "expected second extend type parameter to be `B`");
+  expect(extend_decl->for_type != nullptr,
+         "expected extend block to carry a target type");
+  expect(extend_decl->items.size() == 1,
+         "expected one method in the extend block");
+}
+
 auto test_parser_accepts_intrinsic_def() -> void {
   auto parsed =
       parse_source("module sample\n"
@@ -1761,7 +1788,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 35> tests = {{
+  const std::array<named_test, 36> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "doc_comments", .fn = test_parser_captures_doc_comments},
@@ -1788,6 +1815,8 @@ auto main(int argc, char *argv[]) -> int {
       {.name = "index_vs_generic_instantiation",
        .fn = test_parser_disambiguates_index_from_generic_instantiation},
       {.name = "extend_block", .fn = test_parser_accepts_extend_block},
+      {.name = "parameterized_extend_block",
+       .fn = test_parser_accepts_parameterized_extend_block},
       {.name = "intrinsic_def", .fn = test_parser_accepts_intrinsic_def},
       {.name = "intrinsic_def_rejects_body",
        .fn = test_parser_rejects_intrinsic_def_with_body},
