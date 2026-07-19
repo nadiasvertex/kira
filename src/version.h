@@ -14,12 +14,12 @@ namespace kira {
 /// bzlmod-mandated string that can't read this header — keep it in sync by
 /// hand whenever these constants change.
 inline constexpr unsigned k_version_major = 0;
-inline constexpr unsigned k_version_minor = 14;
+inline constexpr unsigned k_version_minor = 15;
 inline constexpr unsigned k_version_patch = 0;
 
 /// "MAJOR.MINOR.PATCH", kept in sync with the constants above by hand (no
 /// constexpr formatting dependency needed for three small integers).
-inline constexpr std::string_view k_version_string = "0.14.0";
+inline constexpr std::string_view k_version_string = "0.15.0";
 
 /// ISO-8601 date this version was cut, updated by hand alongside the
 /// version constants above. `__DATE__` can't serve this role: Bazel's
@@ -27,6 +27,6 @@ inline constexpr std::string_view k_version_string = "0.14.0";
 /// reproducible builds (confirmed empirically — this compiler binary
 /// itself reports `__DATE__` as `"redacted"` under `bazelisk build`), so a
 /// build-time macro can't recover a real date at all.
-inline constexpr std::string_view k_release_date = "2026-07-18";
+inline constexpr std::string_view k_release_date = "2026-07-19";
 
 } // namespace kira
