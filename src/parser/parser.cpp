@@ -2324,6 +2324,23 @@ auto parser::at_static_func_decl() const noexcept -> bool {
   return peek_at(ahead).is(token_kind::kw_def);
 }
 
+auto parser::bracket_group_precedes_call() const noexcept -> bool {
+  auto ahead = uint32_t{0};
+  auto depth = 0;
+  while (peek_at(ahead).is(token_kind::lbracket) || depth > 0) {
+    if (peek_at(ahead).is(token_kind::eof)) {
+      return false;
+    }
+    if (peek_at(ahead).is(token_kind::lbracket)) {
+      ++depth;
+    } else if (peek_at(ahead).is(token_kind::rbracket)) {
+      --depth;
+    }
+    ++ahead;
+  }
+  return peek_at(ahead).is(token_kind::lparen);
+}
+
 auto parser::parse_func_modifiers() -> ast::func_modifiers {
   ast::func_modifiers mods;
 
@@ -3541,8 +3558,30 @@ auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base)
       field->object = std::move(base);
       field->field_name = std::string(field_tok.text);
 
-      // Check for generic method: `.method[T, U]`
-      if (at(token_kind::lbracket)) {
+      // `obj.field[...]` is ambiguous: explicit generic method arguments
+      // (`p.echo[int32](n)`) or indexing a field (`h.xs[0]`). A bare name
+      // inside the brackets could be either a type or a value, so no rule
+      // over the bracket contents alone can separate them.
+      //
+      // What does separate them is the token *after* the group. Generic
+      // arguments name the method being called, so a call always follows;
+      // an index stands on its own. So `.name[...](` is type arguments and
+      // `.name[...]` anything else is an index, which is left for the
+      // `lbracket` case below to build on the field this returns.
+      //
+      // This bracket used to be consumed as type arguments unconditionally,
+      // which made indexing a field unparseable — `h.xs[0]` reported
+      // ``expected `]` but found integer literal`` and `h.xs[h.at]`
+      // reported ``qualified type path `h.at` does not resolve``, since an
+      // integer and a field access are not types. Every iterator in
+      // `std.iter` reads `self.src[self.at]`, so this was load-bearing.
+      //
+      // The residual case the rule gets wrong is calling a function stored
+      // in a field-held container — `h.fns[0](x)` reads as type arguments.
+      // That is narrower than what it replaces, and it is diagnosable:
+      // the brackets reach `check_method_accepts_generic_args`, which
+      // reports a method that has nothing for them to name.
+      if (at(token_kind::lbracket) && bracket_group_precedes_call()) {
         advance();
         while (!at(token_kind::rbracket) && !at_eof()) {
           auto arg = parse_type_expr();

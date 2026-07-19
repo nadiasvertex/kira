@@ -682,6 +682,14 @@ private:
   /// `kira-grammar.ebnf` describes (`static` is listed there as an
   /// unrestricted `func_modifier`).
   [[nodiscard]] auto at_static_func_decl() const noexcept -> bool;
+  /// True when the balanced `[...]` group at the cursor is immediately
+  /// followed by `(`.
+  ///
+  /// This is how `obj.field[...]` is split between explicit generic method
+  /// arguments and indexing a field. Both can hold a bare name, so the
+  /// bracket contents cannot decide it; a following call can, because
+  /// generic arguments name the method that is about to be called.
+  [[nodiscard]] auto bracket_group_precedes_call() const noexcept -> bool;
   /// Parses a function parameter list.
   [[nodiscard]] auto parse_param_list() -> std::vector<ast::param>;
   /// Parses one function parameter, including defaults.

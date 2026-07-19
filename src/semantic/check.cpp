@@ -11607,7 +11607,17 @@ private:
       return;
     case ast::node_kind::binding_pattern: {
       const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
-      bind_value(binding.name, stripped,
+      // A binding takes the subject *unstripped*, unlike every structural
+      // pattern below. Stripping exists so that destructuring can see
+      // through a reference — matching a `&point` against `point { x, y }`
+      // has to reach the fields — but a binding does not destructure
+      // anything, it names the value it was handed. When that value really
+      // is a reference, stripping invented a different type for it:
+      // `@some(p)` on an `option[&mut int32]` bound `p` as `int32`, so `*p`
+      // had nothing to dereference and reached lowering with no concrete
+      // type at all. That is the shape every `iter_mut` yields.
+      record_expr_type(pattern, subject);
+      bind_value(binding.name, subject,
                  binding.is_mut ? binding_origin::mut_binding
                                 : binding_origin::pattern_binding,
                  binding.span);
@@ -11617,7 +11627,7 @@ private:
       // turns that type into the usable fact `i < 8`. Mutable bindings are
       // skipped for the same reason a `var` is — see `assume_binding`.
       if (!binding.is_mut) {
-        assume_binding(binding.name, stripped);
+        assume_binding(binding.name, subject);
       }
       return;
     }

@@ -1,0 +1,76 @@
+module codegen_stress.mutable_iteration
+
+# `iter_mut`: a generic iterator that yields `&mut T` into a container it
+# borrows, and mutation performed through what it yields.
+#
+# Two gaps stood in the way, both found by spiking this exact shape.
+#
+# `obj.field[i]` did not parse. `parse_postfix_suffix` consumed a `[` after a
+# field name as explicit generic method arguments, unconditionally, so
+# `it.src[it.at]` tried to read `it.at` as a *type* and reported ``qualified
+# type path `it.at` does not resolve``, and `h.xs[0]` reported ``expected `]`
+# but found integer literal``. Every iterator here reads `self.src[self.at]`,
+# so nothing in this file could be written at all. The bracket is now taken as
+# type arguments only when a call follows it — generic arguments name the
+# method about to be called, an index stands alone — which is decidable where
+# the bracket contents are not, since a bare name inside them could be either.
+#
+# `check_pattern` stripped references from every pattern's subject. That is
+# right for destructuring, which has to see through a `&point` to reach
+# `point`'s fields, but wrong for a plain binding, which does not destructure
+# anything — it names the value it was handed. So `@some(p)` on an
+# `option[&mut int32]` bound `p` as `int32`, and `*p` reached lowering with no
+# concrete type ("no concrete checked type is available for this node").
+# A binding now takes its subject unstripped.
+#
+# `# expect:` rather than cross-tier agreement, for the reason CLAUDE.md
+# gives: both backends compute element addresses from the same
+# `src/runtime/layout.h` rules, so a write through a yielded reference that
+# landed in the `{len, cap, data}` header would agree between tiers and still
+# be wrong. Every element written is read back below.
+
+# doubled: 1,2,3,4 -> 2,4,6,8, sum 20.
+# offsets: 10,20,30 -> 11,22,33 (each += its own 1-based position), sum 66.
+# 20 * 1000 + 66 = 20066.
+# expect: 20066
+
+type mut_cursor[T] = { src: &mut list[T], at: usize }
+
+# The `&mut` is threaded through a struct field, so the callee never sees the
+# container as a local of its own.
+def iter_mut[T](xs: &mut list[T]) -> mut_cursor[T]:
+    return mut_cursor { src: xs, at: 0 }
+
+# Yields a reference *into* the borrowed container, not a copy of an element.
+# If this returned a copy, every mutation below would be silently discarded
+# and both sums would come back unchanged — 10 and 60 instead of 20 and 66.
+def next_mut[T](it: &mut mut_cursor[T]) -> option[&mut T]:
+    if it.at >= it.src.len():
+        return @none
+    let slot = &mut it.src[it.at]
+    it.at = it.at + 1
+    return @some(slot)
+
+def sum(xs: &list[int32]) -> int32:
+    var total = 0
+    for x in xs:
+        total = total + x
+    return total
+
+def main() -> int32:
+    var doubled = [1, 2, 3, 4]
+    var it = iter_mut(&mut doubled)
+    while let @some(slot) = next_mut(&mut it):
+        *slot = *slot * 2
+
+    # A position-dependent update: every element gets a *different* increment,
+    # so a cursor that failed to advance, or one that handed back the same
+    # element twice, cannot land on the right total by coincidence.
+    var offsets = [10, 20, 30]
+    var walk = iter_mut(&mut offsets)
+    var step = 1
+    while let @some(slot) = next_mut(&mut walk):
+        *slot = *slot + step
+        step = step + 1
+
+    return sum(&doubled) * 1000 + sum(&offsets)
