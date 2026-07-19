@@ -1,0 +1,44 @@
+module std.list
+
+# Inherent methods on `list[T]`.
+#
+# Like `std.option` and `std.result`, these were `k_builtin_methods` entries
+# the compiler typed without any backend compiling them. They are ordinary
+# Kira here, over the primitives the builtin `list` still provides directly:
+# `len` and indexing.
+#
+# Only the direct accessors live here, deliberately. The builtin table also
+# carried `contains`, `any`, `all`, `find`, and `filter`, and those are *not*
+# reimplemented as list methods: they are iterator operations, and
+# `spec/collections-algorithms-design.md` puts them on the pipeline
+# (`xs.iter().any(...)`) so they compose and stay lazy. `std.algo` already
+# owns `filter` as a lazy adapter — an eager `list.filter` would have shadowed
+# it with a different meaning for the same name. The rest arrive with the
+# terminals in that same module.
+#
+# `sort` is likewise absent: it belongs with the slice algorithms, over a
+# range rather than a whole list. `pop` and `clear` need to *shrink* a list,
+# which no primitive exposes; they return once Phase 7 rebuilds `list` over
+# `alloc`/pointer primitives.
+#
+# All of them were removed from the builtin table regardless, since an entry
+# there with no lowering is worse than no entry at all: it type-checks and
+# then fails inside the compiler, where absence gives an honest "no method"
+# with a suggestion.
+
+extend[T] list[T]:
+    ## Whether this list has no elements.
+    def is_empty(self) -> bool:
+        return self.len() == 0
+
+    ## The first element, or `@none` when the list is empty.
+    def first(self) -> option[T]:
+        if self.len() == 0:
+            return @none
+        return @some(self[0])
+
+    ## The last element, or `@none` when the list is empty.
+    def last(self) -> option[T]:
+        if self.len() == 0:
+            return @none
+        return @some(self[self.len() - 1])

@@ -236,7 +236,7 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   // even though most sessions never actually reference it by name.
   for (const auto *filename :
        {"traits.kira", "iter.kira", "prelude.kira", "panic.kira",
-        "option.kira", "result.kira", "io.kira", "console.kira",
+        "option.kira", "result.kira", "list.kira", "io.kira", "console.kira",
         "algo.kira", "fmt.kira", "string.kira", "deriving.kira",
         "fs/path.kira"}) {
     const auto found = find_stdlib_source_file(cfg.program_name, filename);

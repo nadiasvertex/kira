@@ -1,0 +1,45 @@
+module main
+
+# `list`'s direct accessors (spec/todo.md item 10), now ordinary Kira in
+# `std.list` rather than `k_builtin_methods` entries the compiler typed and no
+# backend compiled.
+#
+# Only `is_empty`/`first`/`last` are covered because only those are list
+# methods now: `contains`/`any`/`all`/`find`/`filter` moved to the iterator
+# pipeline, `sort` to the slice algorithms, and `pop`/`clear` wait on Phase 7.
+# See `src/std/list.kira`.
+
+def main() -> int32:
+    let xs = [3, 1, 2]
+    let empty: list[int32] = []
+
+    # Both answers for each predicate: a method ignoring its receiver and
+    # returning a constant would satisfy a one-sided check.
+    println("is_empty_no={xs.is_empty()}")
+    println("is_empty_yes={empty.is_empty()}")
+
+    # `first` and `last` must disagree on this list — they would coincide on a
+    # single-element one, which is exactly the mistake that would go unseen.
+    match xs.first():
+        @some(v) => println("first={v}")
+        @none => println("first=none")
+    match xs.last():
+        @some(v) => println("last={v}")
+        @none => println("last=none")
+
+    # The empty cases are the ones that would index out of bounds if the
+    # length guard were missing, rather than merely returning the wrong value.
+    match empty.first():
+        @some(v) => println("efirst={v}")
+        @none => println("efirst=none")
+    match empty.last():
+        @some(v) => println("elast={v}")
+        @none => println("elast=none")
+
+    # A second element type: these compile once per receiver type, so `str`
+    # exercises a distinct instance rather than the same code again.
+    let ss: list[str] = ["a", "b"]
+    match ss.last():
+        @some(v) => println("strlast={v}")
+        @none => println("strlast=none")
+    return 0

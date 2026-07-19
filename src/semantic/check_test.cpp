@@ -2346,15 +2346,15 @@ auto test_unknown_method_on_builtin_receiver_is_reported() -> void {
               "\n"
               "def main() -> int32:\n"
               "    let nums = [1, 2, 3]\n"
-              "    let picked = nums.fliter()\n"
+              "    let picked = nums.pusk(4)\n"
               "    return 0\n",
   }});
   expect(analyzed.error_count > 0,
          "expected an unknown method on a `list` receiver to be rejected");
-  expect_diagnostic(analyzed, "no method `fliter` on type `list[int32]`",
+  expect_diagnostic(analyzed, "no method `pusk` on type `list[int32]`",
                     "expected the unknown-method error to name the builtin "
                     "receiver's full type");
-  expect_diagnostic(analyzed, "did you mean `filter`?",
+  expect_diagnostic(analyzed, "did you mean `push`?",
                     "expected a suggestion drawn from the builtin method set");
 }
 

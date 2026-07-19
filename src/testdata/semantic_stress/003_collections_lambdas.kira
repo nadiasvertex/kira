@@ -2,7 +2,13 @@ module semantic_stress.collections_and_lambdas
 
 def run() -> unit:
     let numbers = [1, 2, 3, 4, 5]
-    let doubled = numbers.filter(x => x > 2)
+    # `numbers.filter(...)` stood here while `filter` was a builtin-table
+    # entry: it type-checked and could never run, since no backend compiled
+    # it. Filtering is a lazy `std.algo` pipeline now, and this corpus runs
+    # with no stdlib injected, so the lambda this file exists to exercise is
+    # applied directly instead.
+    let big = x => x > 2
+    let has_big = big(numbers[0])
     var total = 0
     for n in numbers:
         total += n
