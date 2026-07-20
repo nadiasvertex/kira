@@ -465,3 +465,97 @@ pub def zip[I, J, T, U](it: I, other: J) -> zip_iter[I, J, T, U] where I: iterat
 #:   an iterator yielding `(index, element)` pairs.
 pub def enumerate[I, T](it: I) -> enumerate_iter[I, T] where I: iterator[T]:
     return enumerate_iter { inner: it, at: 0 }
+
+
+# ---------------------------------------------------------------------------
+# The nesting adapters: `flatten` and `flat_map`.
+#
+# Both must resume in the middle of an inner iterator across calls to `next`,
+# so the inner one is state: `cur` holds it while it is being drained, and is
+# `@none` between inners.
+#
+# Advancing it takes a copy-out/copy-back rather than mutation in place. A
+# payload binding copies -- `while let @some(c) = self.cur` yields a *value*,
+# not an alias, so `c.next()` advances a temporary and leaves the field
+# untouched, which spins forever. The inner is therefore bound, advanced, and
+# written back before yielding. Holding `J` unwrapped with a `live: bool`
+# beside it would avoid the copy, but there is no way to build a `J` for the
+# not-yet-started state: the first one only exists once the outer iterator has
+# produced something.
+#
+# The outer draw is an `if let`, not a `while let`. It must take exactly one
+# element -- a `while let` would drain the outer iterator, keeping only its
+# last inner. `break` would express this too, and reads better, but does not
+# lower (`spec/todo.md`).
+#
+# Neither refines `size_hint`. It is a *lower* bound, and the outer count says
+# nothing about it: an outer iterator of a hundred empty inners yields zero
+# elements. The trait's default of 0 is the honest answer.
+# ---------------------------------------------------------------------------
+
+#: An iterator that yields the elements of each of another iterator's
+#: iterators, in order.
+pub type flatten_iter[I, J, T] = { outer: I, cur: option[J] }
+
+impl[I, J, T] iterator[T] for flatten_iter[I, J, T]:
+    def next(mut self) -> option[T]:
+        # Loops because inner iterators may be empty: an empty one advances
+        # the outer without yielding, and any number may be empty in a row.
+        while true:
+            while let @some(c) = self.cur:
+                var inner = c
+                while let @some(x) = inner.next():
+                    self.cur = @some(inner)
+                    return @some(x)
+                self.cur = @none
+            if let @some(next_inner) = self.outer.next():
+                self.cur = @some(next_inner)
+            else:
+                return @none
+        return @none
+
+#: An iterator that maps each element to an iterator and yields the elements
+#: of each in turn.
+pub type flat_map_iter[I, T, J, U] = { outer: I, f: fn(T) -> J, cur: option[J] }
+
+impl[I, T, J, U] iterator[U] for flat_map_iter[I, T, J, U]:
+    def next(mut self) -> option[U]:
+        while true:
+            while let @some(c) = self.cur:
+                var inner = c
+                while let @some(x) = inner.next():
+                    self.cur = @some(inner)
+                    return @some(x)
+                self.cur = @none
+            if let @some(x) = self.outer.next():
+                self.cur = @some((self.f)(x))
+            else:
+                return @none
+        return @none
+
+#: Yields the elements of each of an iterator's iterators, in order.
+#:
+#: Flattens exactly one level: an iterator of iterators of `T` becomes an
+#: iterator of `T`, and an iterator of iterators of iterators becomes an
+#: iterator of iterators. Empty inner iterators contribute nothing and are
+#: skipped without yielding.
+#: Args:
+#:   it: the iterator of iterators to flatten (moved).
+#: Returns:
+#:   an iterator yielding every inner element, inner by inner.
+pub def flatten[I, J, T](it: I) -> flatten_iter[I, J, T] where I: iterator[J], J: iterator[T]:
+    return flatten_iter { outer: it, cur: @none }
+
+#: Maps each element to an iterator and yields the elements of each in turn.
+#:
+#: `xs.flat_map(f)` is `xs.map(f).flatten()`, and is the spelling to reach for
+#: when each element expands to zero or more results: returning an empty
+#: iterator drops the element, and returning several fans it out. `f` is not
+#: called on an element until its predecessor's elements have been drained.
+#: Args:
+#:   it: the iterator to adapt (moved).
+#:   f: the function mapping each element to an iterator.
+#: Returns:
+#:   an iterator yielding the elements of each produced iterator in turn.
+pub def flat_map[I, T, J, U](it: I, f: fn(T) -> J) -> flat_map_iter[I, T, J, U] where I: iterator[T], J: iterator[U]:
+    return flat_map_iter { outer: it, f: f, cur: @none }

@@ -1,0 +1,96 @@
+module main
+
+# The nesting adapters of design §6.1: `flatten` and `flat_map`.
+#
+# Every check here puts an *empty* inner iterator somewhere the adapter has to
+# skip past without yielding: at the front, in the middle, and at the end.
+# That is the whole of what distinguishes these from `map` -- an adapter that
+# assumed each outer element produces at least one inner element would pass a
+# test built only from non-empty inners, and would then either yield a bogus
+# value or stop early on the first empty one.
+#
+# Digits are accumulated positionally (`t * 10 + v`) rather than summed, so
+# the order of the result is pinned down too: a flatten that interleaved
+# inners, or drained the outer before the inner, could still reach the same
+# total under addition.
+
+# `n` maps to an empty list when n == 1, and otherwise to `n` elements
+# starting at n*10. So 1 -> [], 2 -> [20, 21], 3 -> [30, 31, 32].
+def spread(n: int32) -> list[int32]:
+    var out: list[int32] = []
+    if n == 1:
+        return out
+    var i = 0
+    while i < n:
+        out.push(n * 10 + i)
+        i = i + 1
+    return out
+
+def main() -> int32:
+    let xs = [1, 2, 3]
+
+    # The first outer element yields nothing at all, so a `flat_map` that
+    # reported its first inner's first element without checking would stop
+    # immediately and print 0.
+    var fm = xs.iter().flat_map(n => spread(*n).into_iter())
+    var order = 0
+    var count = 0
+    while let @some(v) = fm.next():
+        order = order * 100 + v
+        count = count + 1
+    println("flat_map={order}")
+    println("flat_map_count={count}")
+
+    # Empty inners at the front, between two non-empty ones, and at the end.
+    # `flatten` takes an iterator *of iterators*, so the `map` converting each
+    # list to one is part of the spelling, not a workaround.
+    var outer: list[list[int32]] = []
+    var empty_head: list[int32] = []
+    outer.push(empty_head)
+    var pair: list[int32] = []
+    pair.push(1)
+    pair.push(2)
+    outer.push(pair)
+    var empty_mid: list[int32] = []
+    outer.push(empty_mid)
+    var single: list[int32] = []
+    single.push(3)
+    outer.push(single)
+    var empty_tail: list[int32] = []
+    outer.push(empty_tail)
+
+    var fl = outer.into_iter().map(l => l.into_iter()).flatten()
+    var flat = 0
+    while let @some(v) = fl.next():
+        flat = flat * 10 + v
+    println("flatten={flat}")
+
+    # An outer iterator whose every inner is empty yields nothing, and must
+    # terminate rather than spinning: `next` has to keep drawing from the
+    # outer until it is exhausted, not just until one inner is empty.
+    var all_empty: list[list[int32]] = []
+    var e1: list[int32] = []
+    all_empty.push(e1)
+    var e2: list[int32] = []
+    all_empty.push(e2)
+    var ae = all_empty.into_iter().map(l => l.into_iter()).flatten()
+    var ae_count = 0
+    while let @some(v) = ae.next():
+        ae_count = ae_count + 1
+    println("all_empty_count={ae_count}")
+
+    # An empty outer iterator: there is no first inner to start with, which is
+    # the state `cur` is `@none` for.
+    var none_at_all: list[list[int32]] = []
+    var na = none_at_all.into_iter().map(l => l.into_iter()).flatten()
+    var na_count = 0
+    while let @some(v) = na.next():
+        na_count = na_count + 1
+    println("empty_outer_count={na_count}")
+
+    # `size_hint` stays 0. It is a *lower* bound, and neither adapter can
+    # promise anything: these two inners are empty, so the honest lower bound
+    # for an outer of size 2 is zero, not 2.
+    println("flatten_hint={all_empty.into_iter().map(l => l.into_iter()).flatten().size_hint()}")
+
+    return 0
