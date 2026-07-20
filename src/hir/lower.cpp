@@ -1077,6 +1077,26 @@ auto lowerer::lower_call(const ast::call_expr &call)
       return ok_expr(make<hir_variant_init>(call.span, *type, callee_ident.name,
                                             std::move(args)));
     }
+
+    // A conversion call — `int32(n)`, `float64(i)` — which Kira spells like
+    // a call because it has no cast operator in that position, but which is
+    // the same operation `expr as T` lowers to (`lower_cast`). There is no
+    // function being called: `check_conversion_call` types these off the
+    // target's name without ever resolving a declaration, so the callee ident
+    // has no type of its own and the ordinary path below fails on it rather
+    // than on anything the user wrote wrong. Guarded on the callee having no
+    // checked type so a real value that happens to be named for a scalar
+    // (`let int32 = ...`) still lowers as the local it is.
+    if (semantic::is_builtin_scalar_name(callee_ident.name) &&
+        call.args.size() == 1 && call.args.front().value != nullptr &&
+        !call.args.front().name.has_value() &&
+        !checked_.node_types.contains(call.callee.get())) {
+      auto operand = lower_expr(*call.args.front().value);
+      if (!operand.has_value()) {
+        return std::unexpected(operand.error());
+      }
+      return ok_expr(make<hir_cast>(call.span, *type, std::move(*operand)));
+    }
   }
 
   // A module- or type-qualified call (`std.io.open(...)`, `io_error.

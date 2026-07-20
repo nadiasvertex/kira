@@ -1,0 +1,33 @@
+module main
+
+# expect: 10
+
+# Constructor-style numeric conversions: `int32(x)`, `float64(x)`.
+#
+# Kira has no cast operator in expression position, so a width change is
+# spelled as a call on the target type's name. `check_conversion_call` types
+# these off that name alone and never resolves a declaration, so the callee
+# ident carries no type — and lowering, which reached it through the ordinary
+# call path, failed with "no concrete checked type is available for this node"
+# pointing at the conversion itself. Since Kira never converts implicitly,
+# that left mixed-width arithmetic (anything combining `usize` from `.len()`
+# with a sized integer) with no expressible form at all.
+#
+# The `# expect` matters more than agreement here: a conversion is exactly a
+# change of representation, so both tiers reading the same width rules could
+# agree on the same wrong answer. The values are chosen so a truncation or a
+# sign error moves the result.
+
+def main() -> int32:
+    let xs = [10, 20, 30]
+    # `usize` -> `int32`: the narrowing direction, and the one every
+    # `.len()`-based index computation needs.
+    let n = int32(xs.len())
+    # Integer -> float and back, through a value with no exact-width
+    # coincidence to hide a mistake.
+    let f = float64(n)
+    let g = int32(f * 2.0)
+    # `bool` is a legal conversion source (`numeric_kind_of` maps it to a
+    # 0/1 scalar), and is the one non-numeric source the checker admits.
+    let b = int32(true)
+    return n + g + b
