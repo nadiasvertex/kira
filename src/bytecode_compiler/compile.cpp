@@ -2788,14 +2788,27 @@ private:
       emit_register(*const_reg);
       writer_.emit_numeric_kind(numeric_kind::i64);
       // Payload sub-patterns, tested against the payload slots that follow
-      // the tag. Each is evaluated unconditionally and `and`ed in, exactly
-      // as the tuple/array cases above do: the payload area is sized to the
-      // widest variant, so these loads are always in bounds even when the
-      // tag says a different variant is live, and the tag test already in
-      // `result_reg` is what makes the combined answer false in that case.
+      // the tag — but only once the tag test has already passed. The jump
+      // below is what makes that true, and it is load-bearing rather than an
+      // optimization: when the tag says a *different* variant is live, the
+      // payload slots hold whatever that variant put there, and a sub-pattern
+      // that treats its slot as an aggregate address (a tuple, a struct) will
+      // dereference that unrelated value. Reading the slot is always in
+      // bounds, since the payload area is sized to the widest variant; using
+      // what comes back is not. An unconditional `and` — which is what the
+      // tuple and array cases above can safely do, having no tag to be wrong
+      // about — segfaults on `while let @some((a, b)) = ...` the first time
+      // the subject is `@none`.
+      //
       // The subject type comes from `subject_type`, which lowering resolved
       // (see `hir_pattern`) — it is the one thing `runtime::layout.h` will
       // not give us here.
+      auto payload_skip = std::optional<std::size_t>{};
+      if (!ctor.args.empty()) {
+        emit_op(opcode::op_jump_if_false);
+        emit_register(*result_reg);
+        payload_skip = writer_.emit_jump_placeholder();
+      }
       for (size_t i = 0; i < ctor.args.size(); ++i) {
         const auto &arg = *ctor.args[i];
         if (arg.kind == hir_node_kind::hir_wildcard_pattern) {
@@ -2819,6 +2832,9 @@ private:
         emit_register(*result_reg);
         emit_register(*sub);
         writer_.emit_numeric_kind(numeric_kind::boolean);
+      }
+      if (payload_skip.has_value()) {
+        writer_.patch_jump_to_here(*payload_skip);
       }
       return *result_reg;
     }

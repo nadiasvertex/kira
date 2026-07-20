@@ -1,6 +1,6 @@
 module main
 
-# expect: 4095
+# expect: 32767
 
 # Positional tuple access (`t.0`) and non-wildcard sub-patterns inside a
 # sum-type payload or a struct pattern.
@@ -13,7 +13,7 @@ module main
 #
 # Each check below contributes one bit, so the declared value pins down
 # exactly which one failed rather than just that the total moved -- a bare
-# sum would let two compensating errors cancel. All twelve passing is 4095.
+# sum would let two compensating errors cancel. All fifteen passing is 32767.
 #
 # Bit 6 is the one that caught a real bug during this work. A struct packs
 # its fields at their own widths, but a tuple's elements and a sum type's
@@ -24,6 +24,16 @@ module main
 # answer -- exactly the case cross-tier agreement cannot catch. `y` is kept
 # at a nonzero byte offset here, and narrower than a slot, so slot indexing
 # fails this file rather than passing it.
+#
+# Bits 12 and 13 cover the second real bug, which the `match` checks above
+# all miss: a payload sub-pattern must not be evaluated unless the tag test
+# has already passed. When it is, a non-matching variant's payload slot --
+# holding whatever the live variant put there -- gets dereferenced as an
+# aggregate address. `match` hides this, because every subject reaching it
+# here does match some arm with a scalar payload; a `while let` that runs to
+# exhaustion does not, so the loop-termination case is the one that segfaults.
+# Both routes to a payload (option sugar and a declared variant) are covered,
+# since they lower differently.
 
 type point = { x: int32, y: int32 }
 
@@ -56,6 +66,31 @@ def apply(o: op, n: int32) -> int32:
         @scale(k) => n * k
         @clamp(0, 0) => 888
         @clamp(lo, hi) => lo + hi + n
+
+# A declared variant carrying a tuple, so the guard is covered on the
+# constructor-pattern path too and not only through `option`'s sugar.
+type step = @done | @go((int32, int32))
+
+def walk(n: int32) -> step:
+    if n > 0:
+        return @go((n, n * 2))
+    return @done
+
+def countdown(n: int32) -> option[(int32, int32)]:
+    if n > 0:
+        return @some((n, n * 10))
+    return @none
+
+# A *literal* inside a tuple payload, which is the sub-pattern that actually
+# reads through the payload slot. A tuple of plain bindings emits no test at
+# all in the LLVM tier, so the loops above -- which do catch the missing guard
+# in the bytecode tier -- leave LLVM's copy of it unproven. Here the first arm
+# must compare against element 0 of a payload that is not live.
+def first_is(o: option[(int32, int32)]) -> int32:
+    match o:
+        @some((1, b)) => b
+        @some((a, b)) => a + b
+        @none => -1
 
 def pair_sum(o: option[(int32, int32)]) -> int32:
     match o:
@@ -104,5 +139,30 @@ def main() -> int32:
         score = score + 1024
     if apply(@inc, 5) == 6:
         score = score + 2048
+
+    # The loop must terminate normally rather than dereferencing `@none`'s
+    # payload slot as a tuple. Reaching the check at all is most of the
+    # point; the total also pins the arithmetic down, since 3+30, 2+20 and
+    # 1+10 sum to 66 only if every iteration bound both elements.
+    var sum = 0
+    var i = 3
+    while let @some((a, b)) = countdown(i):
+        sum = sum + a + b
+        i = i - 1
+    if sum == 66:
+        score = score + 4096
+
+    # The same, through a declared variant instead of option's sugar.
+    var wsum = 0
+    var j = 3
+    while let @go((a, b)) = walk(j):
+        wsum = wsum + a + b
+        j = j - 1
+    if wsum == 18:
+        score = score + 8192
+
+    # A literal sub-pattern reading through a payload slot that is not live.
+    if first_is(@none) == -1:
+        score = score + 16384
 
     return score

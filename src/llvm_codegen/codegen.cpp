@@ -2936,11 +2936,35 @@ private:
                                                static_cast<uint64_t>(*tag));
       llvm::Value *acc =
           builder_.CreateICmpEQ(tag_val, tag_const, "pat.tag_eq");
-      // Payload sub-patterns, over the slots following the tag. Evaluated
-      // unconditionally and `and`ed in, exactly as the tuple/array cases
-      // above do: the payload area is sized to the widest variant, so these
-      // loads stay in bounds even when a different variant is live, and the
-      // tag test already in `acc` is what makes the result false there.
+      if (ctor.args.empty()) {
+        return acc;
+      }
+      // Payload sub-patterns, over the slots following the tag — reached only
+      // when the tag test has already passed. That guard is load-bearing
+      // rather than an optimization: when a *different* variant is live, the
+      // payload slots hold whatever that variant put there, and a sub-pattern
+      // that treats its slot as an aggregate address (a tuple, a struct) will
+      // dereference that unrelated value. Reading the slot is always in
+      // bounds, since the payload area is sized to the widest variant; using
+      // what comes back is not. The tuple and array cases above can `and`
+      // unconditionally because they have no tag to be wrong about; here,
+      // doing so segfaults on `while let @some((a, b)) = ...` as soon as the
+      // subject is `@none`.
+      //
+      // Result goes through an alloca rather than a phi because a sub-test
+      // may branch internally, so the block reaching the merge is not
+      // necessarily the one entered — the same reason `compile_short_circuit`
+      // is written this way.
+      auto *result =
+          create_local_alloca(llvm::Type::getInt1Ty(ctx_), "pat.ctor.result");
+      builder_.CreateStore(acc, result);
+      auto *payload_bb =
+          llvm::BasicBlock::Create(ctx_, "pat.payload", current_fn_);
+      auto *merge_bb =
+          llvm::BasicBlock::Create(ctx_, "pat.ctor.end", current_fn_);
+      builder_.CreateCondBr(acc, payload_bb, merge_bb);
+      builder_.SetInsertPoint(payload_bb);
+
       // `subject_type` is lowering's record of the payload type, which
       // `runtime::layout.h` deliberately will not resolve (see its header).
       for (size_t i = 0; i < ctor.args.size(); ++i) {
@@ -2970,7 +2994,12 @@ private:
         }
         acc = builder_.CreateAnd(acc, *sub, "pat.and");
       }
-      return acc;
+      builder_.CreateStore(acc, result);
+      builder_.CreateBr(merge_bb);
+
+      builder_.SetInsertPoint(merge_bb);
+      return builder_.CreateLoad(llvm::Type::getInt1Ty(ctx_), result,
+                                 "pat.ctor.value");
     }
     case hir_node_kind::hir_range_pattern: {
       const auto &range = dynamic_cast<const hir::hir_range_pattern &>(pattern);

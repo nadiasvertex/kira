@@ -441,13 +441,11 @@ impl[I, T] iterator[(usize, T)] for enumerate_iter[I, T]:
 #: The result ends with the shorter source: zipping a 3-element iterator with
 #: a 5-element one yields 3 pairs, and the two extra elements are not drawn.
 #:
-#: Consume the pairs by binding the whole tuple and destructuring it:
+#: Consume the pairs by destructuring in the pattern:
 #:
-#:     while let @some(pair) = names.zip(scores.iter()).next():
-#:         let (name, score) = pair
+#:     while let @some((name, score)) = names.zip(scores.iter()).next():
+#:         ...
 #:
-#: Destructuring inside the pattern itself (`@some((name, score))`) does not
-#: yet lower — see `spec/todo.md`.
 #: Args:
 #:   it: the iterator supplying each pair's first element (moved).
 #:   other: the iterator supplying each pair's second element (moved).
