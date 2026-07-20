@@ -357,6 +357,69 @@ auto test_reports_extend_method_arity_mismatch() -> void {
 /// then die in lowering with "no concrete checked type is available for this
 /// node" — a compiler-internals message for what is really a mistake in the
 /// `extend` head, and one that named the field access rather than the head.
+/// `ord`'s `cmp` returns `ordering`, which is a real sum type in `std.traits`
+/// rather than the variant-less builtin name it used to be. `cmp` has no
+/// lowering yet -- `deriving ord` stays on the type-check-only path -- so the
+/// only thing that can be checked about it is its *type*, and that is exactly
+/// what would have been lost by answering `k_unknown_type`: unknown unifies
+/// with everything, so a wrong annotation would have been accepted in
+/// silence.
+auto test_derived_cmp_returns_the_ordering_sum_type() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "derived_cmp.kira",
+      .text = "module main\n"
+              "\n"
+              "type point = { x: int32 } deriving ord\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let a = point { x: 1 }\n"
+              "    let b = point { x: 2 }\n"
+              "    let n: int32 = a.cmp(b)\n"
+              "    return n\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected `cmp`'s result to be rejected where an `int32` is wanted");
+  expect_diagnostic(analyzed, "ordering",
+                    "expected the diagnostic to name the type `cmp` returns");
+}
+
+/// The other half: the variants of that type are constructible and matchable
+/// without an import, since `std.traits` is prelude-re-exported. A test that
+/// only checked the rejection above would pass against an `ordering` no one
+/// could ever write a `match` arm for.
+///
+/// The bare `let o = @less` is the case that needs the prelude *variant*
+/// lookup specifically. In `return @less` the declared return type is already
+/// the expected type, and `resolve_variant_value` matches the variant against
+/// it before ever reaching a by-name search -- so a version of this test
+/// without the bare binding passes with that lookup deleted.
+auto test_ordering_variants_are_prelude_reachable() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "ordering_variants.kira",
+      .text = "module main\n"
+              "\n"
+              "def sign(n: int32) -> ordering:\n"
+              "    if n < 0:\n"
+              "        return @less\n"
+              "    if n > 0:\n"
+              "        return @greater\n"
+              "    return @equal\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let o = @less\n"
+              "    let _ = match o:\n"
+              "        @less => 1\n"
+              "        @equal => 2\n"
+              "        @greater => 3\n"
+              "    return match sign(3):\n"
+              "        @less => 1\n"
+              "        @equal => 2\n"
+              "        @greater => 3\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected `ordering` and its variants to resolve without a `use`");
+}
+
 auto test_reports_extend_on_unapplied_generic() -> void {
   const auto analyzed = analyze_sources({{
       .path = "extend_unapplied.kira",
@@ -2594,6 +2657,8 @@ auto main() -> int {
     test_accepts_parameterized_extend();
     test_generic_method_body_sees_its_own_imports();
     test_qualified_type_path_through_import();
+    test_derived_cmp_returns_the_ordering_sum_type();
+    test_ordering_variants_are_prelude_reachable();
     test_reports_extend_on_unapplied_generic();
     test_impl_method_takes_priority_over_extend();
     test_accepts_intrinsic_decl();

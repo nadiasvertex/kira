@@ -13,12 +13,17 @@ namespace {
 
 /// Every scalar name recognized as a builtin type (numeric family, `bool`,
 /// `str`, quote-value types, and the two built-in execution contexts).
-constexpr std::array<std::string_view, 28> k_builtin_scalar_names = {
-    "bool",     "char",   "str",      "unit",      "never",   "byte",
-    "int8",     "int16",  "int32",    "int64",     "int128",  "uint8",
-    "uint16",   "uint32", "uint64",   "uint128",   "float32", "float64",
-    "float128", "isize",  "usize",    "ordering",  "io",      "cpu",
-    "expr",     "stmt",   "def_expr", "type_expr",
+/// `ordering` is deliberately absent: it is a real sum type declared in
+/// `std.traits` (`@less | @equal | @greater`). As a builtin scalar it had no
+/// variants and no runtime representation, so `ord`'s `cmp` could be declared
+/// but never called or matched on, and a user declaring their own `ordering`
+/// collided with it and got `expected `ordering`, found `ordering``.
+constexpr std::array<std::string_view, 27> k_builtin_scalar_names = {
+    "bool",    "char",     "str",       "unit",    "never",    "byte",
+    "int8",    "int16",    "int32",     "int64",   "int128",   "uint8",
+    "uint16",  "uint32",   "uint64",    "uint128", "float32",  "float64",
+    "float128", "isize",   "usize",     "io",      "cpu",      "expr",
+    "stmt",    "def_expr", "type_expr",
 };
 
 /// One prelude container name and its accepted generic-argument count

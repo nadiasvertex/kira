@@ -887,3 +887,108 @@ pub def eq_by[I, J, T, U](it: I, other: J, pred: fn(T, U) -> bool) -> bool where
         if not pred(a.unwrap(), b.unwrap()):
             return false
     return false
+
+# ---------------------------------------------------------------------------
+# The comparator-taking terminals.
+#
+# These take a three-way comparator, `fn(T, T) -> ordering`, rather than a
+# `less` predicate. A predicate cannot express "equal" without being called
+# twice, and `cmp_by` needs that distinction to decide whether to look at the
+# next pair at all.
+#
+# `ordering` was a builtin name with no variants until recently, which is why
+# these arrived after the rest of the terminals: a comparator could be
+# declared but not written.
+#
+# Tie-breaking matches `min`/`max`: `min_by` keeps the earliest of equal
+# elements, `max_by` the latest. That is what makes `min_by` and `max_by` over
+# a run of equals pick opposite ends rather than the same element.
+# ---------------------------------------------------------------------------
+
+# Reading an `ordering` inside a condition. These are private: `ordering` is
+# a sum type, and `match` at the use site is the spelling users should write.
+def is_less(o: ordering) -> bool:
+    return match o:
+        @less => true
+        @equal => false
+        @greater => false
+
+def is_equal(o: ordering) -> bool:
+    return match o:
+        @less => false
+        @equal => true
+        @greater => false
+
+def is_greater_or_equal(o: ordering) -> bool:
+    return match o:
+        @less => false
+        @equal => true
+        @greater => true
+
+#: The smallest of an iterator's elements, under a caller-supplied comparator.
+#:
+#: Ties keep the earliest. `cmp` is called once per element after the first.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   cmp: compares two elements, answering how the first relates to the second.
+#: Returns:
+#:   the smallest element, or `@none` when the source is empty.
+pub def min_by[I, T](it: I, cmp: fn(T, T) -> ordering) -> option[T] where I: iterator[T]:
+    var cursor = it
+    var best: option[T] = @none
+    while let @some(x) = cursor.next():
+        var better = true
+        if let @some(b) = best:
+            better = is_less(cmp(x, b))
+        if better:
+            best = @some(x)
+    return best
+
+#: The largest of an iterator's elements, under a caller-supplied comparator.
+#:
+#: Ties keep the latest, the mirror of `min_by` keeping the earliest.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   cmp: compares two elements, answering how the first relates to the second.
+#: Returns:
+#:   the largest element, or `@none` when the source is empty.
+pub def max_by[I, T](it: I, cmp: fn(T, T) -> ordering) -> option[T] where I: iterator[T]:
+    var cursor = it
+    var best: option[T] = @none
+    while let @some(x) = cursor.next():
+        var better = true
+        if let @some(b) = best:
+            better = is_greater_or_equal(cmp(x, b))
+        if better:
+            best = @some(x)
+    return best
+
+#: Compares two iterators lexicographically, under a caller-supplied
+#: comparator.
+#:
+#: Walks both in lockstep and answers at the first pair that is not equal,
+#: without drawing from either again. If one runs out first it is the smaller;
+#: two iterators that end together having compared equal throughout are equal.
+#: This is the ordering `sort` would give a list of sequences.
+#: Args:
+#:   it: the first iterator (moved).
+#:   other: the second iterator (moved).
+#:   cmp: compares an element of each, taken at the same position.
+#: Returns:
+#:   how the first iterator's sequence relates to the second's.
+pub def cmp_by[I, J, T, U](it: I, other: J, cmp: fn(T, U) -> ordering) -> ordering where I: iterator[T], J: iterator[U]:
+    var left = it
+    var right = other
+    while true:
+        let a = left.next()
+        let b = right.next()
+        if a.is_none() and b.is_none():
+            return @equal
+        if a.is_none():
+            return @less
+        if b.is_none():
+            return @greater
+        let step = cmp(a.unwrap(), b.unwrap())
+        if not is_equal(step):
+            return step
+    return @equal

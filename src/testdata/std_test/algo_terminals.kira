@@ -8,10 +8,8 @@ module main
 # throughout: `iter()` yields `&T`, and a terminal returning `T` then returns
 # a reference, which the bytecode VM cannot represent as a value yet.
 #
-# `min_by`/`max_by`/`cmp_by` are absent because they need a three-way
-# comparator, and `ordering` has no variants yet; `sum`/`product` need an
-# additive identity the language cannot name. Both are recorded in
-# `spec/todo.md`.
+# `sum`/`product` are absent: they need an additive identity the language
+# cannot name yet, which is recorded in `spec/todo.md`.
 
 def main() -> int32:
     let xs = [3, 1, 4, 1, 5]
@@ -94,4 +92,54 @@ def main() -> int32:
     println("eq_diff={a.into_iter().eq_by(c.into_iter(), (p, q) => p == q)}")
     println("eq_short_right={a.into_iter().eq_by(d.into_iter(), (p, q) => p == q)}")
     println("eq_short_left={d.into_iter().eq_by(a.into_iter(), (p, q) => p == q)}")
+
+    comparators()
     return 0
+
+# The comparator-taking terminals, which need a real `ordering`.
+def cmp_int(a: int32, b: int32) -> ordering:
+    if a < b:
+        return @less
+    if a > b:
+        return @greater
+    return @equal
+
+# Reversed, so `min_by` under it must agree with `max` and disagree with `min`
+# over the same source -- the same trick the `_by_key` checks use.
+def rcmp_int(a: int32, b: int32) -> ordering:
+    return cmp_int(b, a)
+
+# The comparators are passed as lambdas rather than by name: a bare function
+# value outside call position does not lower yet (`spec/todo.md`).
+def show_ord(o: ordering) -> int32:
+    return match o:
+        @less => 1
+        @equal => 2
+        @greater => 3
+
+def comparators() -> unit:
+    let xs = [3, 1, 4, 1, 5]
+    let empty: list[int32] = []
+
+    println("min_by={xs.into_iter().min_by((a, b) => cmp_int(a, b)).unwrap()}")
+    println("max_by={xs.into_iter().max_by((a, b) => cmp_int(a, b)).unwrap()}")
+    println("min_by_rev={xs.into_iter().min_by((a, b) => rcmp_int(a, b)).unwrap()}")
+    println("max_by_rev={xs.into_iter().max_by((a, b) => rcmp_int(a, b)).unwrap()}")
+    println("min_by_empty={empty.into_iter().min_by((a, b) => cmp_int(a, b)).is_none()}")
+
+    # Lexicographic: equal, then a difference decided at the second element
+    # rather than the first, then each length case. The differing pair is not
+    # in first position so a `cmp_by` that only ever looked at one pair would
+    # answer `@equal` for it.
+    let a = [1, 2, 3]
+    let b = [1, 2, 3]
+    let c = [1, 9, 0]
+    let d = [1, 2]
+    println("cmp_same={show_ord(a.into_iter().cmp_by(b.into_iter(), (a, b) => cmp_int(a, b)))}")
+    println("cmp_lt={show_ord(a.into_iter().cmp_by(c.into_iter(), (a, b) => cmp_int(a, b)))}")
+    println("cmp_gt={show_ord(c.into_iter().cmp_by(a.into_iter(), (a, b) => cmp_int(a, b)))}")
+
+    # A prefix is less than the whole, and the decision comes from running out
+    # rather than from any comparison.
+    println("cmp_prefix={show_ord(d.into_iter().cmp_by(a.into_iter(), (a, b) => cmp_int(a, b)))}")
+    println("cmp_longer={show_ord(a.into_iter().cmp_by(d.into_iter(), (a, b) => cmp_int(a, b)))}")

@@ -3870,6 +3870,13 @@ private:
       return k_unknown_type;
     }
 
+    // A `type` the prelude re-exports — `ordering`, which used to be a
+    // builtin scalar name and so needed no lookup at all. Tried after the
+    // module's own types and its imports, so a local declaration still wins.
+    if (const auto found = find_prelude_type(name)) {
+      return instantiate_user_type(*found->first, found->second, named, ctx);
+    }
+
     if (ctx.quiet || file_has_external_wildcard_) {
       return k_unknown_type;
     }
@@ -5792,6 +5799,29 @@ private:
       return instance_id;
     }
 
+    // A variant of a prelude-re-exported sum type (`@less` of `ordering`),
+    // reachable without a `use` exactly as the type itself is.
+    if (const auto found = find_prelude_variant(name)) {
+      const auto instance_id =
+          make_user_type(*found->sum_decl, found->module_name, {});
+      const auto &instance = types_.entry(instance_id);
+      if (call != nullptr) {
+        return check_variant_construction(*call, instance, *found->variant,
+                                          instance_id);
+      }
+      if (!found->variant->payload_types.empty()) {
+        error(span,
+              std::format("variant `@{}` of `{}` carries {} value{} and must "
+                          "be constructed with `@{}(...)`",
+                          name, found->sum_decl->name,
+                          found->variant->payload_types.size(),
+                          found->variant->payload_types.size() == 1 ? "" : "s",
+                          name),
+              "missing constructor values");
+      }
+      return instance_id;
+    }
+
     return std::nullopt;
   }
 
@@ -6855,6 +6885,13 @@ private:
     return find_prelude_trait(name);
   }
 
+  /// The stdlib modules whose members are reachable without an explicit
+  /// `use`. Shared by the type and variant lookups below, which have to agree:
+  /// a sum type reachable by name whose variants were not would let
+  /// `ordering` be written in a signature and never constructed.
+  static constexpr std::array<std::string_view, 3> k_prelude_reexport_modules =
+      {"prelude", "std.traits", "std.iter"};
+
   /// Finds a trait declaration named `name` in the auto-imported prelude —
   /// module `prelude` itself, or one of the stdlib modules it re-exports
   /// (currently `std.traits`, home of `from`/`drop`) — without requiring an
@@ -6868,13 +6905,59 @@ private:
     if (file_no_prelude_) {
       return std::nullopt;
     }
-    static constexpr std::array<std::string_view, 3>
-        k_prelude_reexport_modules = {"prelude", "std.traits", "std.iter"};
     for (const auto module_name : k_prelude_reexport_modules) {
       if (const auto *source = index_.find_module(module_name)) {
         if (const auto it = source->traits.find(std::string(name));
             it != source->traits.end()) {
           return it->second;
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// Finds a `type` declaration named `name` in the auto-imported prelude.
+  /// Mirrors `find_prelude_trait`, one map over instead of `traits`, and
+  /// returns the declaring module because a user type's identity includes it
+  /// — interning it under the *current* module would mint a second `ordering`
+  /// distinct from the one `cmp` returns.
+  auto find_prelude_type(std::string_view name)
+      -> std::optional<std::pair<const ast::type_decl *, std::string>> {
+    if (file_no_prelude_) {
+      return std::nullopt;
+    }
+    for (const auto module_name : k_prelude_reexport_modules) {
+      if (const auto *source = index_.find_module(module_name)) {
+        if (const auto it = source->types.find(std::string(name));
+            it != source->types.end()) {
+          return std::pair{it->second.decl, source->module_name};
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// Finds a sum variant named `name` declared by a prelude-re-exported type
+  /// — `@less`/`@equal`/`@greater` of `ordering`. Returns the declaring type
+  /// and module alongside the variant, for the same interning reason
+  /// `find_prelude_type` does.
+  struct prelude_variant_ref {
+    const ast::type_decl *sum_decl;
+    const ast::sum_variant *variant;
+    std::string module_name;
+  };
+  auto find_prelude_variant(std::string_view name)
+      -> std::optional<prelude_variant_ref> {
+    if (file_no_prelude_) {
+      return std::nullopt;
+    }
+    for (const auto module_name : k_prelude_reexport_modules) {
+      if (const auto *source = index_.find_module(module_name)) {
+        if (const auto it = source->variants.find(std::string(name));
+            it != source->variants.end()) {
+          return prelude_variant_ref{.sum_decl = it->second.sum_decl,
+                                     .variant = it->second.variant,
+                                     .module_name = source->module_name};
         }
       }
     }
@@ -7799,7 +7882,16 @@ private:
       return types_.builtin("uint64");
     }
     if (name == "cmp" && has("ord")) {
-      return types_.builtin("ordering");
+      // `ordering` is a real sum type in `std.traits`, not a builtin scalar,
+      // so it has to be looked up rather than named. A session without the
+      // standard library has no `ordering` at all; `k_unknown_type` is the
+      // honest answer there, and unifies with whatever the caller expects
+      // rather than inventing a second type with the same spelling.
+      if (const auto found =
+              find_type_decl_by_path({"std", "traits", "ordering"})) {
+        return types_.user_type(*found->first, found->second, {});
+      }
+      return k_unknown_type;
     }
     if (name == "eq" && has("eq")) {
       return types_.builtin("bool");

@@ -35,6 +35,15 @@ pub trait eq:
     #:   true if the values are equal, false otherwise.
     def eq(self, other: &self) -> bool
 
+#: The result of a three-way comparison: less than, equal to, or greater than.
+#:
+#: This was a builtin type name with no variants and no runtime
+#: representation, which made `ord`'s `cmp` a method that could be declared
+#: and never called or matched on. It is an ordinary sum type now, so a
+#: comparator can be written, returned, and matched -- which is what the
+#: comparator-taking algorithms in `std.algo` are built on.
+pub type ordering = @less | @equal | @greater
+
 #: Ordering comparison. Requires eq to be implemented.
 pub trait ord requires eq:
     #: Compares two values and returns their ordering.
