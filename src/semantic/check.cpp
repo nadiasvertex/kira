@@ -8144,8 +8144,9 @@ private:
     solution.suffix =
         std::format("${}", mangle_type_for_instance(receiver_type));
 
-    auto params = signature_params(*method.decl, method.owner,
-                                   /*skip_self=*/true, method.block_type_params);
+    auto params =
+        signature_params(*method.decl, method.owner,
+                         /*skip_self=*/true, method.block_type_params);
     for (auto &param : params) {
       param.type = substitute_solved(param.type, bindings);
     }
@@ -8167,9 +8168,9 @@ private:
                         .owner_module = method.owner->module_name,
                         .impl_target_type = "",
                         .receiver = &receiver};
-    return substitute_solved(
-        signature_return_type(*method.decl, method.owner, method.block_type_params),
-        bindings);
+    return substitute_solved(signature_return_type(*method.decl, method.owner,
+                                                   method.block_type_params),
+                             bindings);
   }
 
   /// The static-dispatch sibling of `check_impl_generic_method_call`: a
@@ -9202,10 +9203,10 @@ private:
             resolved_callee{.decl = instance,
                             .owner_module = method->owner->module_name,
                             .impl_target_type = ""};
-        return substitute_solved(signature_return_type(*method->decl,
-                                                       method->owner,
-                                                       method->block_type_params),
-                                 bindings);
+        return substitute_solved(
+            signature_return_type(*method->decl, method->owner,
+                                  method->block_type_params),
+            bindings);
       }
     }
 
@@ -11102,9 +11103,10 @@ private:
     if (method->block_type_params != nullptr) {
       unify_rigid(method->impl_target_pattern, stripped, bindings);
     }
-    const auto ret = substitute_solved(
-        signature_return_type(*method->decl, method->owner, method->block_type_params),
-        bindings);
+    const auto ret =
+        substitute_solved(signature_return_type(*method->decl, method->owner,
+                                                method->block_type_params),
+                          bindings);
     const auto &ret_entry = types_.entry(strip_refs(ret));
     if (ret_entry.kind != type_kind::builtin_generic_kind ||
         ret_entry.name != "option" || ret_entry.args.empty()) {
