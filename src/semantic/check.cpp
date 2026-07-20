@@ -9940,6 +9940,35 @@ private:
                       entry.name, existential_bound_names(entry)));
       return k_error_type;
     }
+    case type_kind::tuple_kind: {
+      // `t.0` — a tuple's elements are selected by position, and the parser
+      // hands the position through as the field name's text (see its
+      // `int_lit` case in `parse_postfix_suffix`).
+      const auto shown = types_.display(stripped);
+      const auto index = tuple_index_of(name);
+      if (!index.has_value()) {
+        error_with_help(
+            span, std::format("no field `{}` on tuple `{}`", name, shown),
+            "a tuple's elements have positions, not names",
+            std::format("Select an element by position instead, like `.0` "
+                        "through `.{}`.",
+                        entry.args.empty() ? 0 : entry.args.size() - 1));
+        return k_error_type;
+      }
+      if (*index >= entry.args.size()) {
+        error_with_help(
+            span,
+            std::format("tuple `{}` has no element at position {}", shown,
+                        *index),
+            std::format("this tuple has {} element(s)", entry.args.size()),
+            entry.args.empty()
+                ? std::string("This tuple has no elements to select.")
+                : std::format("Its positions run from `.0` to `.{}`.",
+                              entry.args.size() - 1));
+        return k_error_type;
+      }
+      return entry.args[*index];
+    }
     default: {
       const auto builtin_result = builtin_method_result(entry, name);
       if (types_.is_unknown(builtin_result)) {

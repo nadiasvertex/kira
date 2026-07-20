@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <format>
 #include <utility>
 
@@ -685,6 +686,22 @@ auto is_builtin_scalar_name(std::string_view name) -> bool {
   return std::ranges::any_of(
       k_builtin_scalar_names,
       [name](std::string_view candidate) -> bool { return candidate == name; });
+}
+
+auto tuple_index_of(std::string_view name) -> std::optional<std::size_t> {
+  if (name.empty() ||
+      !std::ranges::all_of(name, [](char c) -> bool {
+        return c >= '0' && c <= '9';
+      })) {
+    return std::nullopt;
+  }
+  auto value = std::size_t{0};
+  const auto result =
+      std::from_chars(name.data(), name.data() + name.size(), value);
+  if (result.ec != std::errc{} || result.ptr != name.data() + name.size()) {
+    return std::nullopt;
+  }
+  return value;
 }
 
 /// Linear search over `k_builtin_generic_arities`.

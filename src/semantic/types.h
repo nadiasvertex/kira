@@ -768,6 +768,19 @@ struct checked_types {
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).
 [[nodiscard]] auto is_builtin_scalar_name(std::string_view name) -> bool;
 
+/// The tuple element position `name` denotes, for the positional field
+/// access `t.0` — or `nullopt` if `name` is not a plain decimal position.
+///
+/// The parser carries a tuple index through as a `field_expr`'s name text
+/// (see its `int_lit` case in `parse_postfix_suffix`), so both the checker
+/// and lowering need to recover the number from it, and must agree on
+/// exactly which spellings count. Only plain decimal digits do: `t.0x1`,
+/// `t.1_000`, and a suffixed `t.0u8` are all rejected rather than being
+/// quietly reinterpreted, since a tuple position is a syntactic offset
+/// rather than a numeric value.
+[[nodiscard]] auto tuple_index_of(std::string_view name)
+    -> std::optional<std::size_t>;
+
 /// Expected generic-argument arity for a prelude container name, as an
 /// inclusive [min, max] pair; `nullopt` when the name is not a prelude
 /// container.

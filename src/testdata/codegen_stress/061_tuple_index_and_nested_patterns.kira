@@ -1,0 +1,108 @@
+module main
+
+# expect: 4095
+
+# Positional tuple access (`t.0`) and non-wildcard sub-patterns inside a
+# sum-type payload or a struct pattern.
+#
+# Before this, a tuple could only be taken apart by a `let (a, b) = t` in
+# statement position: `t.0` was a parse error, and `@some((a, b))` type-checked
+# but failed to lower ("only plain bindings are supported for payload
+# patterns"). Both mattered because every map-style iterator in the
+# collections design yields tuples.
+#
+# Each check below contributes one bit, so the declared value pins down
+# exactly which one failed rather than just that the total moved -- a bare
+# sum would let two compensating errors cancel. All twelve passing is 4095.
+#
+# Bit 6 is the one that caught a real bug during this work. A struct packs
+# its fields at their own widths, but a tuple's elements and a sum type's
+# payload each get a uniform 8-byte slot; testing a struct field pattern by
+# slot index therefore read the wrong bytes, and `{y: 0}` matched a point
+# whose `y` was 9 because it was really re-reading `x`. Both tiers derive
+# their layout from the same header, so both agreed on the same wrong
+# answer -- exactly the case cross-tier agreement cannot catch. `y` is kept
+# at a nonzero byte offset here, and narrower than a slot, so slot indexing
+# fails this file rather than passing it.
+
+type point = { x: int32, y: int32 }
+
+# A user-declared sum type, not the prelude's `option`. The two reach
+# lowering by different routes -- `@some(...)` is the option sugar, a
+# declared variant is an ordinary constructor pattern -- so a payload
+# sub-pattern has to be covered on both, and covering only `option` leaves
+# this path untested.
+type op = @inc | @scale(int32) | @clamp(int32, int32)
+
+def classify(o: option[int32]) -> int32:
+    match o:
+        @some(0) => 100
+        @some(x) => x
+        @none => -1
+
+def onaxis(p: point) -> int32:
+    match p:
+        {x: 0, y: 0} => 1
+        {x: 0} => 2
+        {y: 0} => 3
+        _ => 4
+
+def apply(o: op, n: int32) -> int32:
+    match o:
+        @inc => n + 1
+        # A literal sub-pattern in a declared variant's payload, and a
+        # second payload position, so a slot mix-up in either shows up.
+        @scale(0) => 777
+        @scale(k) => n * k
+        @clamp(0, 0) => 888
+        @clamp(lo, hi) => lo + hi + n
+
+def pair_sum(o: option[(int32, int32)]) -> int32:
+    match o:
+        @some((a, b)) => a + b
+        @none => 0
+
+def main() -> int32:
+    let t = (3, 4)
+    # A nested tuple: `q.0.1` is spelled with what the lexer first reads as
+    # the single float literal `0.1`, so it also covers the parser splitting
+    # that token back into two positions.
+    let q = ((5, 6), 7)
+    let mut score = 0
+
+    if t.0 == 3:
+        score = score + 1
+    if t.1 == 4:
+        score = score + 2
+    if q.0.1 == 6:
+        score = score + 4
+    if q.1 == 7:
+        score = score + 8
+    # A literal sub-pattern in a variant payload, and a binding one after it:
+    # the literal arm must match only its own value and must not swallow the
+    # rest.
+    if classify(@some(0)) == 100:
+        score = score + 16
+    if classify(@some(5)) == 5:
+        score = score + 32
+    # `x` is 9 and `y` is 0, so only the third arm may match.
+    if onaxis(point { x: 9, y: 0 }) == 3:
+        score = score + 64
+    if pair_sum(@some((3, 4))) == 7:
+        score = score + 128
+    # A declared variant's payload. 777 and 888 are values the binding arms
+    # below them cannot produce, so these distinguish "the literal arm
+    # matched" from "the literal arm was skipped and the binding caught it".
+    if apply(@scale(0), 5) == 777:
+        score = score + 256
+    if apply(@scale(3), 5) == 15:
+        score = score + 512
+    # Two payload positions, with a zero in the first: reading the second
+    # slot from the first one's offset would make the `@clamp(0, 0)` arm
+    # match and return 888 instead.
+    if apply(@clamp(0, 5), 5) == 10:
+        score = score + 1024
+    if apply(@inc, 5) == 6:
+        score = score + 2048
+
+    return score

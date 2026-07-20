@@ -3560,6 +3560,53 @@ auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base)
     // as a declarable method name (`def pure` — see parse_func_decl's name
     // handling and the spec's `monad` trait, whose lifting method is
     // canonically called `pure`).
+    // `t.0` — positional access into a tuple. The index is carried as the
+    // `field_name` text rather than in a dedicated AST node: a tuple's
+    // element is exactly a field selected by position instead of by name,
+    // and everything downstream of the parser (`infer_field`, lowering to
+    // `hir_tuple_index`) has to branch on the *object's* type anyway.
+    if (at(token_kind::int_lit)) {
+      auto index_tok = advance();
+      auto field = ast::make<ast::field_expr>();
+      field->span = base->span.merge(index_tok.span);
+      field->object = std::move(base);
+      field->field_name = std::string(index_tok.text);
+      return field;
+    }
+    // `q.0.1` — a nested tuple access, which the lexer has already
+    // committed to reading as the single float literal `0.1`, since it
+    // scans a number without knowing a `.` preceded it. Rather than
+    // complicate the lexer with parser context, split the token back into
+    // the two positions it spells. Only a plain `digits.digits` float
+    // qualifies: anything carrying an exponent, a suffix, or a `_`
+    // separator was written as a number and is reported as one.
+    if (at(token_kind::float_lit)) {
+      const auto text = peek().text;
+      const auto dot = text.find('.');
+      const auto digits_only = [](std::string_view s) -> bool {
+        return !s.empty() && std::ranges::all_of(s, [](char c) -> bool {
+          return c >= '0' && c <= '9';
+        });
+      };
+      if (dot != std::string_view::npos && digits_only(text.substr(0, dot)) &&
+          digits_only(text.substr(dot + 1))) {
+        auto index_tok = advance();
+        const auto split =
+            index_tok.span.start + static_cast<uint32_t>(dot);
+        auto outer = ast::make<ast::field_expr>();
+        outer->span = base->span.merge(
+            source_span{.start = index_tok.span.start, .end = split});
+        outer->object = std::move(base);
+        outer->field_name = std::string(text.substr(0, dot));
+
+        auto inner = ast::make<ast::field_expr>();
+        inner->span = outer->span.merge(
+            source_span{.start = split + 1, .end = index_tok.span.end});
+        inner->object = std::move(outer);
+        inner->field_name = std::string(text.substr(dot + 1));
+        return inner;
+      }
+    }
     if (at(token_kind::ident) || at(token_kind::kw_pure)) {
       auto field_tok = advance();
       auto field = ast::make<ast::field_expr>();

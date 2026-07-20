@@ -1229,6 +1229,25 @@ auto lowerer::lower_field(const ast::field_expr &field)
   if (!object.has_value()) {
     return std::unexpected(object.error());
   }
+  // `t.0` on a tuple is positional access, not a named field: the parser
+  // carries the position through as this node's name text, and the checker
+  // typed it off the tuple's element list. It lowers to the same
+  // `hir_tuple_index` a `let (a, b) = t` destructure produces, so both
+  // spellings share one code path in each backend. Keyed on the object's
+  // *type* rather than on the name's shape, since only a tuple gives a
+  // digit-spelled name this meaning.
+  auto object_type = (*object)->type;
+  while (checked_.types.entry(object_type).kind ==
+         semantic::type_kind::ref_kind) {
+    object_type = checked_.types.entry(object_type).result;
+  }
+  if (checked_.types.entry(object_type).kind ==
+      semantic::type_kind::tuple_kind) {
+    if (const auto index = semantic::tuple_index_of(field.field_name)) {
+      return ok_expr(make<hir_tuple_index>(field.span, *type,
+                                           std::move(*object), *index));
+    }
+  }
   return ok_expr(
       make<hir_field>(field.span, *type, std::move(*object), field.field_name));
 }
@@ -3626,6 +3645,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         if (!lowered.has_value()) {
           return std::unexpected(lowered.error());
         }
+        (*lowered)->subject_type = ftype;
         fields.push_back(hir_struct_pattern_field{
             .name = field_name, .pattern = std::move(*lowered)});
         continue;
@@ -3685,6 +3705,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       if (!lowered.has_value()) {
         return std::unexpected(lowered.error());
       }
+      (*lowered)->subject_type = atype;
       args.push_back(std::move(*lowered));
     }
     return ptr<hir_pattern>(make<hir_constructor_pattern>(
@@ -3711,6 +3732,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       if (!lowered.has_value()) {
         return std::unexpected(lowered.error());
       }
+      (*lowered)->subject_type = itype;
       args.push_back(std::move(*lowered));
     }
     return ptr<hir_pattern>(make<hir_constructor_pattern>(
@@ -3738,6 +3760,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       if (!lowered.has_value()) {
         return std::unexpected(lowered.error());
       }
+      (*lowered)->subject_type = itype;
       args.push_back(std::move(*lowered));
     }
     return ptr<hir_pattern>(

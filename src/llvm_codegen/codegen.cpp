@@ -2862,21 +2862,50 @@ private:
     }
     case hir_node_kind::hir_struct_pattern: {
       const auto &st = dynamic_cast<const hir::hir_struct_pattern &>(pattern);
+      llvm::Value *acc = nullptr;
       for (const auto &field : st.fields) {
-        if (field.pattern->kind != hir_node_kind::hir_wildcard_pattern) {
+        if (field.pattern->kind == hir_node_kind::hir_wildcard_pattern) {
+          continue;
+        }
+        if (!value_type.has_value()) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_construct,
+              .span = pattern.span,
+              .message = "a struct pattern here needs a statically tracked "
+                         "subject type, which this position doesn't have yet"});
+        }
+        // Byte offset, not slot index: a struct packs its fields at their
+        // own widths, unlike a tuple's elements or a sum payload. Mirrors
+        // `compile_field`.
+        const auto offset = runtime::struct_field_offset(
+            types_, strip_refs(types_, *value_type), field.name);
+        if (!offset.has_value() ||
+            field.pattern->subject_type == semantic::k_unknown_type) {
           return std::unexpected(codegen_error{
               .kind = codegen_error_kind::unsupported_construct,
               .span = pattern.span,
               .message = std::format(
-                  "struct field pattern `{}` needs a non-wildcard "
-                  "sub-pattern, which needs struct field type tracking "
-                  "this increment doesn't support yet — only plain "
-                  "bindings (`{{{}}}`) are supported for struct field "
-                  "patterns",
-                  field.name, field.name)});
+                  "field `{}` does not resolve to a declared field of this "
+                  "struct — this should have been rejected by the type "
+                  "checker",
+                  field.name)});
         }
+        auto field_ty =
+            storage_type_for(field.pattern->subject_type, pattern.span);
+        if (!field_ty.has_value()) {
+          return std::unexpected(field_ty.error());
+        }
+        auto *field_val =
+            builder_.CreateLoad(*field_ty, byte_address(value, *offset));
+        auto sub = compile_pattern_test(
+            *field.pattern, field_val,
+            std::optional<type_id>(field.pattern->subject_type));
+        if (!sub.has_value()) {
+          return std::unexpected(sub.error());
+        }
+        acc = acc == nullptr ? *sub : builder_.CreateAnd(acc, *sub, "pat.and");
       }
-      return llvm::ConstantInt::getTrue(ctx_);
+      return acc == nullptr ? llvm::ConstantInt::getTrue(ctx_) : acc;
     }
     case hir_node_kind::hir_constructor_pattern: {
       const auto &ctor =
@@ -2901,25 +2930,47 @@ private:
                 "checker",
                 ctor.variant_name)});
       }
-      for (const auto &arg : ctor.args) {
-        if (arg->kind != hir_node_kind::hir_wildcard_pattern) {
-          return std::unexpected(codegen_error{
-              .kind = codegen_error_kind::unsupported_construct,
-              .span = pattern.span,
-              .message = std::format(
-                  "variant `{}`'s payload pattern needs a non-wildcard "
-                  "sub-pattern, which needs sum-type payload type "
-                  "tracking this increment doesn't support yet — only "
-                  "plain bindings (`@{}(x)`) are supported for payload "
-                  "patterns",
-                  ctor.variant_name, ctor.variant_name)});
-        }
-      }
       auto *tag_val = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
                                           slot_address(value, size_t{0}));
       auto *tag_const = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
                                                static_cast<uint64_t>(*tag));
-      return builder_.CreateICmpEQ(tag_val, tag_const, "pat.tag_eq");
+      llvm::Value *acc =
+          builder_.CreateICmpEQ(tag_val, tag_const, "pat.tag_eq");
+      // Payload sub-patterns, over the slots following the tag. Evaluated
+      // unconditionally and `and`ed in, exactly as the tuple/array cases
+      // above do: the payload area is sized to the widest variant, so these
+      // loads stay in bounds even when a different variant is live, and the
+      // tag test already in `acc` is what makes the result false there.
+      // `subject_type` is lowering's record of the payload type, which
+      // `runtime::layout.h` deliberately will not resolve (see its header).
+      for (size_t i = 0; i < ctor.args.size(); ++i) {
+        const auto &arg = *ctor.args[i];
+        if (arg.kind == hir_node_kind::hir_wildcard_pattern) {
+          continue;
+        }
+        if (arg.subject_type == semantic::k_unknown_type) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_construct,
+              .span = pattern.span,
+              .message = std::format(
+                  "variant `{}`'s payload pattern has no tracked type at "
+                  "index {}",
+                  ctor.variant_name, i)});
+        }
+        auto slot_ty = storage_type_for(arg.subject_type, pattern.span);
+        if (!slot_ty.has_value()) {
+          return std::unexpected(slot_ty.error());
+        }
+        auto *slot_val =
+            builder_.CreateLoad(*slot_ty, slot_address(value, 1 + i));
+        auto sub = compile_pattern_test(
+            arg, slot_val, std::optional<type_id>(arg.subject_type));
+        if (!sub.has_value()) {
+          return std::unexpected(sub.error());
+        }
+        acc = builder_.CreateAnd(acc, *sub, "pat.and");
+      }
+      return acc;
     }
     case hir_node_kind::hir_range_pattern: {
       const auto &range = dynamic_cast<const hir::hir_range_pattern &>(pattern);

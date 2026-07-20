@@ -195,6 +195,23 @@ struct hir_item : hir_node {
 /// `symbol_id`.
 struct hir_pattern : hir_node {
   using hir_node::hir_node;
+
+  /// The checked type of the value this pattern is tested against, when
+  /// lowering could resolve it — otherwise `k_unknown_type`.
+  ///
+  /// A backend needs the subject's type to test a pattern (which numeric
+  /// kind to compare with, which variant tag a name denotes), and for most
+  /// positions it can derive that structurally: a tuple pattern's elements
+  /// come from the tuple type's own `args`, an array pattern's from its
+  /// element type. Two positions it cannot, because the answer needs
+  /// generic substitution that `runtime::layout.h` deliberately does not
+  /// do (see its header comment): a sum-type variant's payload, and a
+  /// struct's field. Lowering already resolves both — it must, to build
+  /// the `hir_variant_payload`/`hir_field` place expression a binding
+  /// reads through — so it records the type here rather than making each
+  /// backend re-derive it. Only those positions set it today; everywhere
+  /// else the structural derivation is already correct and cheaper.
+  type_id subject_type = k_unknown_type;
 };
 
 /// One lowered parameter (of a function or a lambda) — resolved symbol plus
