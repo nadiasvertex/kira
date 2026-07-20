@@ -1,0 +1,19 @@
+module main
+
+# `any` returns true if at least one element satisfies the predicate.
+#
+# Demonstrates: positive case, negative case, any on empty, and any using filter primeiro.
+
+def main() -> int32:
+    let nums = [1, 3, 5, 6, 7]
+
+    # 6 is even, so any of even returns true
+    println("any_even={nums.into_iter().any(x => *x % 2 == 0)}")
+
+    # No number is 100, so any of >100 returns false
+    println("any_gt_100={nums.into_iter().any(x => *x > 100)}")
+
+    # Empty iterator: no element satisfies anything
+    let empty: list[int32] = []
+    println("any_empty={empty.into_iter().any(x => *x > 0)}")
+    return 0

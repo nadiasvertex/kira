@@ -1,0 +1,19 @@
+module main
+
+# `take_while` yields elements while the predicate is true,
+# then stops (never resumes).
+#
+# Demonstrates: taking while less than 5, and the difference from filter.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 9, 4, 5]
+
+    # Take while < 5: yields 1, 2, 3, then stops at 9
+    var tw = nums.into_iter().take_while(x => *x < 5)
+    println("taken={tw.next().unwrap()}")
+    println("taken={tw.next().unwrap()}")
+    println("taken={tw.next().unwrap()}")
+
+    # After stopping, no more elements
+    println("stopped={tw.next().is_none()}")
+    return 0

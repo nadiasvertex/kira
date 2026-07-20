@@ -1,0 +1,25 @@
+module main
+
+# `reduce` is like `fold` but without an initial value —
+# it uses the first element as the starting point.
+#
+# Demonstrates: basic reduce, reduce on empty iterator,
+# and reduce where the combiner reverses order.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+
+    # Addition along the chain: (((1+2)+3)+4)+5 = 15
+    println("reduce_add={nums.into_iter().reduce((acc, x) => acc + *x).unwrap()}")
+
+    # Multiplication: (((1*2)*3)*4)*5 = 120
+    println("reduce_mul={nums.into_iter().reduce((acc, x) => acc * *x).unwrap()}")
+
+    # Inverse order: (acc, x) => *x - acc
+    # 5 - (4 - (3 - (2 - 1))) = 5 - (4 - (3 - 1)) = 5 - (4 - 2) = 5 - 2 = 3
+    println("reduce_reverse={nums.into_iter().reduce((acc, x) => *x - acc).unwrap()}")
+
+    # Empty iterator returns none
+    let empty: list[int32] = []
+    println("empty_reduce={empty.into_iter().reduce((acc, x) => acc + *x).is_none()}")
+    return 0

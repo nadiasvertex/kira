@@ -1,0 +1,25 @@
+module main
+
+# `take` yields at most n elements.
+#
+# Demonstrates: taking fewer than available, taking more than available,
+# and taking zero.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+
+    # Take 3 from 5
+    var first3 = nums.into_iter().take(3)
+    println("taken={first3.next().unwrap()}")
+    println("taken={first3.next().unwrap()}")
+    println("taken={first3.next().unwrap()}")
+    println("done={first3.next().is_none()}")
+
+    # Take 10 (only 5 available)
+    var all = nums.into_iter().take(10)
+    println("count={all.count()}")
+
+    # Take 0
+    var none = nums.into_iter().take(0)
+    println("zero={none.next().is_none()}")
+    return 0

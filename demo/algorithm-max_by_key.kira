@@ -1,0 +1,14 @@
+module main
+
+# `max_by_key` returns the element with the largest key value.
+#
+# Demonstrates: finding the longest string, and the number with most factors.
+
+def main() -> int32:
+    let words = ["hi", "hello", "hey", "supercalifragilistic"]
+    println("longest={words.into_iter().max_by_key(w => w.len()).unwrap()}")
+
+    # Number with the highest value
+    let nums = [3, 7, 2, 9, 1]
+    println("max_val={nums.into_iter().max_by_key(x => *x).unwrap()}")
+    return 0

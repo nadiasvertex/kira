@@ -1,0 +1,30 @@
+module main
+
+# `flatten` takes an iterator of iterators and yields all inner elements
+# in sequence, skipping empty inner iterators.
+#
+# Demonstrates: flattening a list of lists, with empty sublists.
+
+def main() -> int32:
+    # Create [[1, 2], [], [3], []]
+    var empty1: list[int32] = []
+    var pair: list[int32] = []
+    pair.push(1)
+    pair.push(2)
+    var single: list[int32] = []
+    single.push(3)
+    var empty2: list[int32] = []
+
+    var outer: list[list[int32]] = []
+    outer.push(empty1)
+    outer.push(pair)
+    outer.push(single)
+    outer.push(empty2)
+
+    # Flatten: skips empty lists, yields 1, 2, 3
+    var f = outer.into_iter().map(l => l.into_iter()).flatten()
+    println("flat={f.next().unwrap()}")
+    println("flat={f.next().unwrap()}")
+    println("flat={f.next().unwrap()}")
+    println("done={f.next().is_none()}")
+    return 0

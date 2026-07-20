@@ -1,0 +1,18 @@
+module main
+
+# `min_by_key` returns the element with the smallest key value.
+#
+# Demonstrates: finding the odd number closest to zero,
+# which is not the same as numeric min or max.
+
+def main() -> int32:
+    let nums = [-8, -3, 5, 7, 12]
+
+    # Min by absolute value: -3 has abs value 3, smallest among odds' absolute values
+    println("min_abs={nums.into_iter().min_by_key(x => if *x < 0: -*x else: *x).unwrap()}")
+
+    # Min by length of string
+    let words = ["hi", "hello", "hey", "a"]
+    println("shortest={words.into_iter().min_by_key(w => w.len()).unwrap()}")
+
+    return 0

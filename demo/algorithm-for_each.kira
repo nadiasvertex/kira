@@ -1,0 +1,16 @@
+module main
+
+# `for_each` calls a function for each element, for its side effects.
+#
+# Demonstrates: iterating with a lambda, and using for_each on filtered data.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+
+    # Print each number doubled
+    nums.into_iter().for_each(x => println("x2={*x * 2}"))
+
+    # Print only even numbers
+    println("---")
+    nums.into_iter().filter(x => *x % 2 == 0).for_each(x => println("even={*x}"))
+    return 0

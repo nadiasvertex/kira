@@ -1,0 +1,29 @@
+module main
+
+# `peekable` wraps an iterator, allowing you to inspect the next element
+# without consuming it via `peek()`.
+#
+# Demonstrates: peeking ahead, and peeking after consuming.
+
+def main() -> int32:
+    let nums = [1, 2, 3]
+
+    # Peekable wraps the iterator
+    var p = nums.into_iter().peekable()
+
+    # Peek without consuming
+    println("peek1={p.peek().unwrap()}")
+
+    # Peek again, same element
+    println("peek2={p.peek().unwrap()}")
+
+    # Now consume the peeked element
+    println("next1={p.next().unwrap()}")
+
+    # Peek the next element after consuming
+    println("peek_after={p.peek().unwrap()}")
+
+    # Drain the rest
+    println("next2={p.next().unwrap()}")
+    println("done={p.next().is_none()}")
+    return 0

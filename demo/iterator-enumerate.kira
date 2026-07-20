@@ -1,0 +1,22 @@
+module main
+
+# `enumerate` yields (index, element) tuples for each element.
+#
+# Demonstrates: enumerating a list, and enumerating after filtering.
+
+def main() -> int32:
+    let nums = ["a", "b", "c"]
+
+    # Positions 0, 1, 2 with values
+    var e = nums.into_iter().enumerate()
+    println("enum={e.next().unwrap()}")
+    println("enum={e.next().unwrap()}")
+    println("enum={e.next().unwrap()}")
+
+    # Enumerate after filter: indices start where enumerate begins
+    let all = [10, 20, 30, 40]
+    var filtered = all.into_iter().filter(x => *x > 15).enumerate()
+    println("fenum={filtered.next().unwrap()}")
+    println("fenum={filtered.next().unwrap()}")
+    println("fenum={filtered.next().unwrap()}")
+    return 0

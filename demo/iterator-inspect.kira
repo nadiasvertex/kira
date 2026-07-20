@@ -1,0 +1,16 @@
+module main
+
+# `inspect` calls a function on each element as it is yielded,
+# for observation (side effects), then passes the element through unchanged.
+#
+# Demonstrates: logging each element as it flows through.
+
+def main() -> int32:
+    let nums = [1, 2, 3]
+
+    # Print elements as they pass through
+    var iv = nums.into_iter().inspect(x => println("saw={*x}")).take(2)
+    println("next={iv.next().unwrap()}")
+    println("next={iv.next().unwrap()}")
+    println("done={iv.next().is_none()}")
+    return 0

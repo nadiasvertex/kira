@@ -1,0 +1,29 @@
+module main
+
+# `flat_map` maps each element to an iterator and flattens the result.
+# A combination of `map` + `flatten`.
+#
+# Demonstrates: expanding each number into a range, with empty expansions.
+
+def main() -> int32:
+    let nums = [1, 2, 3]
+
+    # Expand each n into [n*10, n*10+1, ... n*10+(n-1)]
+    # 1 -> [10], 2 -> [20, 21], 3 -> [30, 31, 32]
+    def spread(n: int32) -> list[int32]:
+        var out: list[int32] = []
+        var i = 0
+        while i < n:
+            out.push(n * 10 + i)
+            i = i + 1
+        return out
+
+    var fm = nums.into_iter().flat_map(n => spread(*n).into_iter())
+    println("flat={fm.next().unwrap()}")
+    println("flat={fm.next().unwrap()}")
+    println("flat={fm.next().unwrap()}")
+    println("flat={fm.next().unwrap()}")
+    println("flat={fm.next().unwrap()}")
+    println("flat={fm.next().unwrap()}")
+    println("done={fm.next().is_none()}")
+    return 0

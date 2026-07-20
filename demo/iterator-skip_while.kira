@@ -1,0 +1,16 @@
+module main
+
+# `skip_while` discards elements while the predicate is true,
+# then yields the rest.
+#
+# Demonstrates: skipping while less than 5.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 9, 4, 5]
+
+    # Skip while < 5: discards 1, 2, 3, then yields 9, 4, 5
+    var sw = nums.into_iter().skip_while(x => *x < 5)
+    println("seen={sw.next().unwrap()}")
+    println("seen={sw.next().unwrap()}")
+    println("seen={sw.next().unwrap()}")
+    return 0

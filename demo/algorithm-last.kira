@@ -1,0 +1,21 @@
+module main
+
+# `last` returns the last element of the iterator.
+#
+# Demonstrates: getting the last element, last on single-element iterator,
+# and last on empty iterator.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+
+    # Last element is 5
+    println("last={nums.into_iter().last().unwrap()}")
+
+    # Single element
+    let single = [42]
+    println("single_last={single.into_iter().last().unwrap()}")
+
+    # Empty
+    let empty: list[int32] = []
+    println("empty_last={empty.into_iter().last().is_none()}")
+    return 0

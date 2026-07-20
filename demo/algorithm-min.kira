@@ -1,0 +1,22 @@
+module main
+
+# `min` and `max` return the smallest and largest elements.
+#
+# Demonstrates: finding min and max of a list,
+# and min on empty list.
+
+def main() -> int32:
+    let nums = [5, 2, 8, 1, 9, 3]
+
+    println("min={nums.into_iter().min().unwrap()}")
+    println("max={nums.into_iter().max().unwrap()}")
+
+    # Single element
+    let single = [42]
+    println("single_min={single.into_iter().min().unwrap()}")
+    println("single_max={single.into_iter().max().unwrap()}")
+
+    # Empty
+    let empty: list[int32] = []
+    println("empty_min={empty.into_iter().min().is_none()}")
+    return 0

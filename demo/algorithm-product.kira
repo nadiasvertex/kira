@@ -1,0 +1,19 @@
+module main
+
+# `product` returns the product of all elements. Uses the `one` trait for the identity.
+#
+# Demonstrates: product of integers and floats.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4]
+
+    println("product={nums.into_iter().product()}")
+
+    # Negative numbers
+    let mixed = [-1, 2, -3]
+    println("mixed={mixed.into_iter().product()}")
+
+    # Empty returns 1 (the multiplicative identity)
+    let empty: list[int32] = []
+    println("empty={empty.into_iter().product()}")
+    return 0

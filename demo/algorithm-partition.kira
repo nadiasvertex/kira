@@ -1,0 +1,19 @@
+module main
+
+# `partition` splits the iterator into two lists based on a predicate.
+#
+# Demonstrates: partitioning evens and odds, and the partitioning property.
+
+def main() -> int32:
+    let xs = [3, 1, 4, 1, 5, 9, 2, 6]
+
+    # Partition by even
+    let (evens, odds) = xs.into_iter().partition(x => *x % 2 == 0)
+    println("evens_count={evens.len()}")
+    println("odds_count={odds.len()}")
+
+    # Partition by value > 4
+    let (big, small) = xs.into_iter().partition(x => *x > 4)
+    println("big_count={big.len()}")
+    println("small_count={small.len()}")
+    return 0

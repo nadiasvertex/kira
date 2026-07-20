@@ -1,0 +1,22 @@
+module main
+
+# `filter_map` combines mapping and filtering in one pass.
+# The function returns option[U]; @some values are yielded, @none are dropped.
+#
+# Demonstrates: converting strings to integers, and extracting even values as doubles.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4]
+
+    # Convert even numbers to their double, drop odd numbers
+    var fm = nums.into_iter().filter_map(x => if *x % 2 == 0: @some(*x * 10) else: @none)
+    println("mapped={fm.next().unwrap()}")
+    println("mapped={fm.next().unwrap()}")
+    println("done={fm.next().is_none()}")
+
+    # Parse strings that represent numbers
+    let mixed = ["42", "hello", "99", "world"]
+    var parsed = mixed.into_iter().filter_map(x => if x.len() == 2: @some(x.len()) else: @none)
+    println("parsed={parsed.next().unwrap()}")
+    println("parsed={parsed.next().unwrap()}")
+    return 0

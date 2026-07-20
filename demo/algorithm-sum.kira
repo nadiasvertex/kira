@@ -1,0 +1,19 @@
+module main
+
+# `sum` returns the sum of all elements. Uses the `zero` trait for the identity.
+#
+# Demonstrates: summing integers and floats, and summing an empty iterator.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4]
+
+    println("sum={nums.into_iter().sum()}")
+
+    # Negative numbers
+    let mixed = [-1, 2, -3, 4]
+    println("mixed={mixed.into_iter().sum()}")
+
+    # Empty
+    let empty: list[int32] = []
+    println("empty={empty.into_iter().sum()}")
+    return 0

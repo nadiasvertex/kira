@@ -1,0 +1,25 @@
+module main
+
+# `map` transforms each element by applying a function.
+#
+# Demonstrates: doubling values, converting to strings,
+# and composing with other adapters.
+
+def main() -> int32:
+    let nums = [1, 2, 3]
+
+    # Double each value
+    var doubled = nums.into_iter().map(x => *x * 2)
+    println("doubled={doubled.next().unwrap()}")
+    println("doubled={doubled.next().unwrap()}")
+    println("doubled={doubled.next().unwrap()}")
+
+    // Uppercase strings
+    let words = ["hello", "world"]
+    var upper = words.into_iter().map(x => x.to_uppercase())
+    println("upper={upper.next().unwrap()}")
+
+    // Chained with filter
+    var doubled_evens = nums.into_iter().filter(x => *x % 2 == 0).map(x => *x * 10)
+    println("doubled_evens={doubled_evens.next().unwrap()}")
+    return 0

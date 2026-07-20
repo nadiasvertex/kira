@@ -1,0 +1,15 @@
+module main
+
+# `count` returns the number of elements yielded by the iterator.
+#
+# Demonstrates: counting all elements, counting with a filter,
+# and counting on an empty iterator.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+    println("total={nums.into_iter().count()}")
+    println("even={nums.into_iter().filter(x => *x % 2 == 0).count()}")
+
+    let empty: list[int32] = []
+    println("empty={empty.into_iter().count()}")
+    return 0

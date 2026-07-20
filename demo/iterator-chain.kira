@@ -1,0 +1,25 @@
+module main
+
+# `chain` concatenates two iterators: yields all from the first, then all from the second.
+#
+# Demonstrates: chaining two lists, chaining three iterators.
+
+def main() -> int32:
+    let a = [1, 2]
+    let b = [3, 4]
+
+    # Chain a then b: 1, 2, 3, 4
+    var c = a.into_iter().chain(b.into_iter())
+    println("chained={c.next().unwrap()}")
+    println("chained={c.next().unwrap()}")
+    println("chained={c.next().unwrap()}")
+    println("chained={c.next().unwrap()}")
+    println("done={c.next().is_none()}")
+
+    # Chain same lists backwards
+    var c2 = b.into_iter().chain(a.into_iter())
+    println("reversed={c2.next().unwrap()}")
+    println("reversed={c2.next().unwrap()}")
+    println("reversed={c2.next().unwrap()}")
+    println("reversed={c2.next().unwrap()}")
+    return 0

@@ -1,0 +1,29 @@
+module main
+
+# `max_by` returns the maximum element using a custom comparator.
+#
+# Demonstrates: finding maximum by normal order, and minimum via reversed order.
+
+def main() -> int32:
+    let nums = [3, 1, 4, 1, 5]
+
+    def cmp_int(a: &int32, b: &int32) -> ordering:
+        if *a < *b:
+            return @less
+        elif *a > *b:
+            return @greater
+        return @equal
+
+    # Normal maximum
+    println("max={nums.into_iter().max_by(cmp_int).unwrap()}")
+
+    # Reversed comparison gives minimum
+    def rcmp(a: &int32, b: &int32) -> ordering:
+        if *a < *b:
+            return @greater
+        elif *a > *b:
+            return @less
+        return @equal
+
+    println("min_via_cmp={nums.into_iter().max_by(rcmp).unwrap()}")
+    return 0

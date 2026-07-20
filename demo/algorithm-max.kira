@@ -1,0 +1,16 @@
+module main
+
+# `max` returns the largest element.
+# Demonstrates: max on a list of numbers, strings, and empty list.
+
+def main() -> int32:
+    let nums = [5, 2, 8, 1, 9, 3]
+    println("max={nums.into_iter().max().unwrap()}")
+
+    # Max on strings (lexicographic comparison)
+    let words = ["apple", "banana", "cherry"]
+    println("max_word={words.into_iter().max().unwrap()}")
+
+    let empty: list[int32] = []
+    println("empty_max={empty.into_iter().max().is_none()}")
+    return 0

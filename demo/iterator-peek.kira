@@ -1,0 +1,36 @@
+module main
+
+# `peek` on a peekable iterator returns the next element without consuming it.
+# Combined with a peekable adapter to show the peek-inspect-advance pattern.
+#
+# Demonstrates: looking ahead before deciding to consume.
+
+def main() -> int32:
+    let nums = [10, 20, 30, 40]
+
+    # Make it peekable
+    var p = nums.into_iter().peekable()
+
+    # Peek first value
+    match p.peek():
+        @some(first) => println("first_is={*first}")
+        @none        => println("empty")
+
+    # Peek again (same value)
+    match p.peek():
+        @some(second) => println("second_is={*second}")
+        @none         => println("empty")
+
+    # Consume it
+    match p.next():
+        @some(v) => println("consumed={*v}")
+        @none    => println("empty")
+
+    # Peek the next one after consuming
+    match p.peek():
+        @some(next_v) => println("next_is={*next_v}")
+        @none         => println("empty")
+
+    # Drain remaining
+    println("remaining={p.count()}")
+    return 0

@@ -1,0 +1,17 @@
+module main
+
+# `nth` returns the element at a given index.
+#
+# Demonstrates: accessing elements at various positions,
+# and going past the end of the iterator.
+
+def main() -> int32:
+    let nums = [10, 20, 30, 40, 50]
+
+    println("nth0={nums.into_iter().nth(0).unwrap()}")
+    println("nth2={nums.into_iter().nth(2).unwrap()}")
+    println("nth4={nums.into_iter().nth(4).unwrap()}")
+
+    # Going past the end
+    println("nth_past={nums.into_iter().nth(10).is_none()}")
+    return 0

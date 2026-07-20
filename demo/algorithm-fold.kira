@@ -1,0 +1,22 @@
+module main
+
+# `fold` accumulates values using an initial state and a combining function.
+#
+# Demonstrates: a basic fold, fold on an empty iterator,
+# and accumulating a list via fold.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+    # Sum: start at 0, add each element
+    println("sum={nums.into_iter().fold(0, (acc, x) => acc + *x)}")
+    # Product: start at 1, multiply each element
+    println("product={nums.into_iter().fold(1, (acc, x) => acc * *x)}")
+    # String concatenation
+    let words = ["hello", " ", "world"]
+    let result = words.into_iter().fold("", (acc, x) => acc + x)
+    println("concat={result}")
+
+    # Empty iterator returns the initial value
+    let empty: list[int32] = []
+    println("empty_fold={empty.into_iter().fold(42, (acc, x) => acc + x)}")
+    return 0

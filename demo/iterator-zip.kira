@@ -1,0 +1,24 @@
+module main
+
+# `zip` pairs elements from two iterators, stopping at the shorter one.
+# Each yielded value is a tuple (left, right).
+#
+# Demonstrates: pairing two lists, and the shorter-source rule.
+
+def main() -> int32:
+    let a = [1, 2, 3]
+    let b = [10, 20, 30, 40]
+
+    # Zipped: (1,10), (2,20), (3,30) — stops at a's length
+    var z = a.into_iter().zip(b.into_iter())
+    println("zip={z.next().unwrap()}")
+    println("zip={z.next().unwrap()}")
+    println("zip={z.next().unwrap()}")
+    println("done={z.next().is_none()}")
+
+    # Reversed order: shorter is b (3 elements)
+    var z2 = b.into_iter().zip(a.into_iter())
+    println("zipped2={z2.next().unwrap()}")
+    println("zipped2={z2.next().unwrap()}")
+    println("zipped2={z2.next().unwrap()}")
+    return 0

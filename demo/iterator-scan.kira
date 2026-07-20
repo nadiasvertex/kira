@@ -1,0 +1,23 @@
+module main
+
+# `scan` threads an accumulator through the iterator,
+# yielding a value for each element based on the accumulator state.
+#
+# Demonstrates: running sums, and cumulative string prefixes.
+
+def main() -> int32:
+    let nums = [1, 2, 3]
+
+    # Running totals: 1, 3, 6
+    var s = nums.into_iter().scan(0, (acc, x) => acc + *x)
+    println("total={s.next().unwrap()}")
+    println("total={s.next().unwrap()}")
+    println("total={s.next().unwrap()}")
+    println("done={s.next().is_none()}")
+
+    # Running product: 1, 2, 6
+    var p = nums.into_iter().scan(1, (acc, x) => acc * *x)
+    println("prod={p.next().unwrap()}")
+    println("prod={p.next().unwrap()}")
+    println("prod={p.next().unwrap()}")
+    return 0
