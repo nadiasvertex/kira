@@ -1447,6 +1447,57 @@ auto test_lowers_module_qualified_call() -> void {
          "expected the callee to carry owner_module `tools`");
 }
 
+/// A generic function may return a generic type declared in a *third* module
+/// (spec/todo.md item 8).
+///
+/// This belongs at the lowering tier, not the checker's: the call always
+/// type-checked. Its `-> holder[T]` was resolved at the call site under the
+/// *caller's* imports, and `holder` is imported by the callee's file alone,
+/// so the call reached lowering carrying no concrete type and failed there.
+auto test_lowers_cross_module_generic_return_type() -> void {
+  auto fixture = check_fixture_multi({
+      {"types.kira", "module types\n"
+                     "pub type holder[T] = { pub value: T }\n"},
+      // The `use` below is the only thing that brings `holder` into scope for
+      // `wrap`'s signature — the caller never names it.
+      {"wrap.kira", "module wrap\n"
+                    "use types.holder\n"
+                    "pub def wrap[T](v: T) -> holder[T]:\n"
+                    "    return holder { value: v }\n"},
+      {"app.kira", "module app\n"
+                   "use wrap.wrap\n"
+                   "pub def run() -> int32:\n"
+                   "    let h = wrap(7)\n"
+                   "    return h.value\n"},
+  });
+
+  auto module_result =
+      hir::lower_module(*fixture.ast_files[2], "app", fixture.checked);
+  expect(module_result.has_value(),
+         "expected the calling module to lower a call to a generic function "
+         "returning another module's generic type");
+
+  const hir::hir_function *run = nullptr;
+  for (const auto &fn : (*module_result)->functions) {
+    if (fn->name == "run") {
+      run = fn.get();
+    }
+  }
+  expect(run != nullptr, "expected to find the lowered `run` function");
+
+  // Lowering succeeding is not by itself proof the *instance* was reached:
+  // naming it pins that the call resolved to the monomorphized `wrap$int32`
+  // rather than the template, which has no runtime form.
+  const auto &let_stmt =
+      dynamic_cast<const hir::hir_let &>(*run->body->stmts.front());
+  expect(let_stmt.initializer->kind == hir::hir_node_kind::hir_call,
+         "expected `run`'s first statement to bind a call");
+  const auto &call = dynamic_cast<const hir::hir_call &>(*let_stmt.initializer);
+  const auto &callee = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
+  expect(callee.name == "wrap$int32",
+         "expected the call to resolve to the `int32` instance of `wrap`");
+}
+
 auto test_lowers_type_qualified_associated_call() -> void {
   auto fixture = check_fixture("module app\n"
                                "pub trait from[T]:\n"
@@ -2406,6 +2457,7 @@ auto main() -> int {
     test_lowers_where_expression();
     test_lowers_call_to_named_function();
     test_lowers_module_qualified_call();
+    test_lowers_cross_module_generic_return_type();
     test_lowers_type_qualified_associated_call();
     test_lowers_named_call_arguments_in_declared_order();
     test_rejects_call_relying_on_default_argument();

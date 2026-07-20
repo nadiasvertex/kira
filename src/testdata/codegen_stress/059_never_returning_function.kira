@@ -1,0 +1,31 @@
+module main
+
+# expect: 42
+
+# A Kira function whose return type is `never`.
+#
+# `never` reached the backends only as the *intrinsic* `rt_panic`'s return
+# type, which the LLVM tier emits from its own C-ABI declaration rather than
+# from a Kira signature. The moment an ordinary `def` returned `never` — as
+# `std.panic`'s `panic` wrapper does — AOT failed with "return type of `panic`
+# has no scalar or heap-value llvm_codegen representation yet", because
+# `storage_llvm_type` had no case for it.
+#
+# `boom` is deliberately never called. The failure was at signature-emission
+# time, before any call site, so a program that merely *declares* the function
+# is enough to exercise it — and it keeps this file's result a deterministic
+# integer that both tiers can agree on, which an actually-aborting program
+# could not be.
+
+intrinsic def rt_panic(msg: str) -> never
+
+def boom(msg: str) -> never:
+    return rt_panic(msg)
+
+def main() -> int32:
+    # The unreachable branch keeps `boom` genuinely reachable-looking to any
+    # future dead-code pass, without ever running it.
+    let n = 42
+    if n < 0:
+        boom("unreachable")
+    return n

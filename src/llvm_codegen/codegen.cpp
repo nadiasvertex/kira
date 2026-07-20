@@ -320,6 +320,17 @@ using kira::decode_string_literal;
     // ever reads it back out.
     return llvm::Type::getInt64Ty(ctx);
   }
+  const auto &stripped_entry = types.entry(stripped);
+  if (stripped_entry.kind == semantic::type_kind::builtin_kind &&
+      stripped_entry.name == "never") {
+    // A `never`-returning function does not return, so nothing ever reads
+    // this and any representation would do. It is a pointer to match the
+    // `rt_panic` intrinsic's own C-ABI signature exactly: `std.panic`'s
+    // `panic` is a thin Kira wrapper around it, and the two must agree at
+    // the boundary. Without a case here a Kira `-> never` function has no
+    // signature at all, so only the intrinsic could be called directly.
+    return llvm::PointerType::get(ctx, 0);
+  }
   return std::nullopt;
 }
 

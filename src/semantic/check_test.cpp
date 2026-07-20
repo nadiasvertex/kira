@@ -383,6 +383,103 @@ auto test_reports_extend_on_unapplied_generic() -> void {
 
 /// The parameterized form the diagnostic above recommends must itself check —
 /// otherwise that help text sends users into a second wall.
+/// A generic method's body may call a function its *own* module imported
+/// (spec/todo.md item 8).
+///
+/// Each call site builds a fresh instance of the body and re-checks it, and
+/// name resolution reads imports out of the file being checked — so an
+/// instance checked under the caller's file could not see the callee module's
+/// imports at all. `twice` below is imported by the module declaring the
+/// `extend` block and by nobody else, which is exactly the arrangement that
+/// used to report ``undefined name `twice` `` against a line in the caller.
+auto test_generic_method_body_sees_its_own_imports() -> void {
+  const auto analyzed = analyze_sources({
+      {
+          .path = "xmod_helper.kira",
+          .text = "module xmod.helper\n"
+                  "\n"
+                  "pub def twice(n: int32) -> int32:\n"
+                  "    return n * 2\n",
+      },
+      {
+          .path = "xmod_methods.kira",
+          .text = "module xmod.methods\n"
+                  "\n"
+                  "use xmod.helper.twice\n"
+                  "\n"
+                  "extend[T] option[T]:\n"
+                  "    def doubled(self) -> int32:\n"
+                  "        return twice(5)\n",
+      },
+      {
+          .path = "xmod_caller.kira",
+          .text = "module main\n"
+                  "\n"
+                  "def main() -> int32:\n"
+                  "    let o: option[int32] = @some(1)\n"
+                  "    return o.doubled()\n",
+      },
+  });
+  expect(analyzed.error_count == 0,
+         "expected a generic method to resolve a name its own module "
+         "imported");
+}
+
+/// A qualified type path may lead with a name a `use` bound (spec/todo.md
+/// item 9): after `use pkg.inner`, `inner.holder` means that module's
+/// `holder`, not a submodule of the current one.
+auto test_qualified_type_path_through_import() -> void {
+  const auto analyzed = analyze_sources({
+      {
+          .path = "qpath_inner.kira",
+          .text = "module qpath.inner\n"
+                  "\n"
+                  "pub type holder[T] = { value: T }\n",
+      },
+      {
+          .path = "qpath_app.kira",
+          .text = "module main\n"
+                  "\n"
+                  "use qpath.inner\n"
+                  "use qpath.inner.holder\n"
+                  "\n"
+                  "def main() -> int32:\n"
+                  "    let h: inner.holder[int32] = holder { value: 7 }\n"
+                  "    return h.value\n",
+      },
+  });
+  expect(analyzed.error_count == 0,
+         "expected a qualified type path through an import to resolve");
+
+  // Resolving *through* the import must not make the path check permissive:
+  // a member the imported module does not declare is still an error, and
+  // without this case the fix above would be indistinguishable from deleting
+  // the check.
+  const auto missing = analyze_sources({
+      {
+          .path = "qpath_inner_missing.kira",
+          .text = "module qpath.inner\n"
+                  "\n"
+                  "pub type holder[T] = { value: T }\n",
+      },
+      {
+          .path = "qpath_app_missing.kira",
+          .text = "module main\n"
+                  "\n"
+                  "use qpath.inner\n"
+                  "\n"
+                  "def main() -> int32:\n"
+                  "    let h: inner.absent[int32] = 0\n"
+                  "    return 0\n",
+      },
+  });
+  expect(missing.error_count > 0,
+         "expected an absent member of an imported module to stay an error");
+  expect(missing.diagnostics.find("qpath.inner.absent") != std::string::npos,
+         "expected the diagnostic to name the path resolved through the "
+         "import, not one rooted at the current module");
+}
+
 auto test_accepts_parameterized_extend() -> void {
   const auto analyzed = analyze_sources({{
       .path = "extend_parameterized.kira",
@@ -2495,6 +2592,8 @@ auto main() -> int {
     test_accepts_extend_on_builtin_type();
     test_accepts_extend_on_user_type();
     test_accepts_parameterized_extend();
+    test_generic_method_body_sees_its_own_imports();
+    test_qualified_type_path_through_import();
     test_reports_extend_on_unapplied_generic();
     test_impl_method_takes_priority_over_extend();
     test_accepts_intrinsic_decl();

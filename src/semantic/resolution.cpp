@@ -297,9 +297,19 @@ struct qualified_path_resolution {
 
 /// Ambient state threaded through the qualified-path validation walk: the
 /// fully-qualified module and file the currently-visited node belongs to.
+/// What each name a file's `use` declarations bind locally stands for, as an
+/// absolute module path: `use p.q` binds `q` to `p.q`, and `use p.q.{r as s}`
+/// binds `s` to `p.q.r` for as long as `r` is itself a module.
+using module_alias_map =
+    std::unordered_map<std::string, std::vector<std::string>>;
+
 struct semantic_walk_context {
   std::string module_name;
   file_id_type file_id = 0;
+  /// The enclosing *file*'s import aliases, owned by `validate_qualified_
+  /// paths` for the length of the walk. Borrowed rather than copied because
+  /// an inline submodule inherits its file's imports unchanged.
+  const module_alias_map *aliases = nullptr;
 };
 
 /// Only multi-segment or `super`-rooted named-type paths are qualified
@@ -417,15 +427,50 @@ auto resolve_absolute_qualified_path(
   return result;
 }
 
+/// Collects `file`'s module-import aliases, so a qualified path written
+/// through one (`q.holder` after `use p.q`) can be resolved the way the
+/// checker already resolves it (`check.cpp`'s `resolve_named_type`).
+auto collect_module_aliases(const ast::file &file) -> module_alias_map {
+  auto aliases = module_alias_map{};
+  for (const auto &item : file.items) {
+    if (item == nullptr || item->has_error ||
+        item->kind != ast::node_kind::use_decl) {
+      continue;
+    }
+    const auto &use = dynamic_cast<const ast::use_decl &>(*item);
+    // A functor instantiation binds its alias to a module the checker
+    // materializes later, which is not something this pass can resolve a
+    // path through; `build_import_bindings` skips these for the same reason.
+    if (!use.instantiation_args.empty() || use.path.empty()) {
+      continue;
+    }
+    if (!use.selector.has_value()) {
+      aliases.emplace(use.path.back(), use.path);
+      continue;
+    }
+    if (use.selector->kind == ast::use_selector_kind::wildcard) {
+      continue;
+    }
+    for (const auto &selected : use.selector->items) {
+      auto full = use.path;
+      full.push_back(selected.name);
+      aliases.emplace(selected.alias.value_or(selected.name), std::move(full));
+    }
+  }
+  return aliases;
+}
+
 /// Resolves a named-type path, which may start with `super` (relative to
 /// the current module's parent), be implicitly relative to the current
-/// module, or be absolute if its root is a session-owned module — trying
-/// both relative and absolute interpretations and keeping the better one.
+/// module, be absolute if its root is a session-owned module, or lead with a
+/// name one of the file's imports bound — trying each interpretation and
+/// keeping the better one.
 auto resolve_named_type_path(const semantic_resolution_index &semantic_index,
                              const module_session_index &session_index,
                              std::string_view current_module_name,
                              const std::vector<std::string> &path,
-                             const std::vector<bool> &file_has_errors)
+                             const std::vector<bool> &file_has_errors,
+                             const module_alias_map *aliases = nullptr)
     -> qualified_path_resolution {
   if (path.empty()) {
     return qualified_path_resolution{.status = qualified_path_status::resolved};
@@ -466,6 +511,25 @@ auto resolve_named_type_path(const semantic_resolution_index &semantic_index,
         semantic_index, session_index, path, file_has_errors);
     if (is_better_resolution_candidate(absolute, best)) {
       best = std::move(absolute);
+    }
+  }
+
+  // Through the file's own imports last, and only as an improvement: after
+  // `use p.q`, the `q` in `q.holder` is the imported module, not a submodule
+  // of the current one. Without this the relative reading is the only one
+  // tried, and the path is reported unresolved while naming an absolute path
+  // (`app.q.holder`) the user never wrote — pointing them at declaring the
+  // symbol locally rather than at the import that already brought it in.
+  if (aliases != nullptr) {
+    if (const auto alias = aliases->find(path.front());
+        alias != aliases->end()) {
+      auto aliased = alias->second;
+      aliased.insert(aliased.end(), path.begin() + 1, path.end());
+      auto through_import = resolve_absolute_qualified_path(
+          semantic_index, session_index, aliased, file_has_errors);
+      if (is_better_resolution_candidate(through_import, best)) {
+        best = std::move(through_import);
+      }
     }
   }
 
@@ -765,7 +829,7 @@ auto validate_type_expr(const ast::type_expr &type,
 
     const auto resolution = resolve_named_type_path(
         semantic_index, session_index, context.module_name, named.path,
-        file_has_errors);
+        file_has_errors, context.aliases);
     if (resolution.status == qualified_path_status::blocked) {
       return;
     }
@@ -1592,6 +1656,9 @@ auto validate_ast_node(const ast::node &node,
     auto child_context = semantic_walk_context{
         .module_name = append_module_name(context.module_name, decl.name),
         .file_id = context.file_id,
+        // An inline submodule sits in the same file, and sees the same `use`
+        // declarations its enclosing file wrote.
+        .aliases = context.aliases,
     };
     validate_node_list(decl.items, child_context, semantic_index, session_index,
                        diag, file_has_errors);
@@ -2155,9 +2222,11 @@ auto validate_qualified_paths(const std::vector<parsed_module> &inputs,
       continue;
     }
 
+    const auto aliases = collect_module_aliases(*input.ast_file);
     auto context = semantic_walk_context{
         .module_name = join_strings(input.ast_file->module_decl->path, "."),
         .file_id = input.file_id,
+        .aliases = &aliases,
     };
     validate_node_list(input.ast_file->items, context, semantic_index,
                        session_index, diag, file_has_errors);

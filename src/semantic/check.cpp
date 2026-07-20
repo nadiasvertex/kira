@@ -231,6 +231,14 @@ struct method_entry {
       nullptr; ///< Owning trait, if this is a default method.
   bool is_extension =
       false; ///< Whether this method came from an `extend` block.
+  /// File the method was written in. Every per-call instance of this method
+  /// is re-checked, and name resolution reads imports out of the file being
+  /// checked — so an instance checked under the *caller's* file cannot see
+  /// anything the method's own module imported. That made a generic method
+  /// unable to call an imported function at all (`undefined name`, reported
+  /// against a line in the caller's file), which is why a generic stdlib
+  /// module could not depend on another one.
+  file_id_type file_id = 0;
   /// Bindings that are fixed for this method independent of any call — a
   /// higher-kinded trait default monomorphized for one impl carries its
   /// trait's constructor parameter here (`F := option`), so re-checking a
@@ -4619,9 +4627,14 @@ private:
   /// `f[n + 1]`) has no such fixed point, and is caught by the depth bound
   /// instead.
   ///
-  /// `decl_file` is `nullopt` for a method, whose `method_entry` records no
-  /// declaring file; an instance-check diagnostic then points at the
-  /// instantiating call, which is at least actionable. `fixed_type_params`
+  /// `decl_file` is the file the template was written in, and checking the
+  /// instance under it is load-bearing rather than cosmetic: name resolution
+  /// reads a file's imports out of `file_id_`, so an instance checked under
+  /// the caller's file sees the caller's imports and not the template's. A
+  /// generic method calling a function its own module imported then failed
+  /// with `undefined name`, against a span in a file that did not contain the
+  /// call. `nullopt` leaves the current file in place, for the callers that
+  /// genuinely have no better answer. `fixed_type_params`
   /// carries a trait default's own bindings (`F := option`), which scope the
   /// whole instance check.
   ///
@@ -5284,6 +5297,15 @@ private:
                                  .use_type_param_stack = false,
                                  .quiet = true,
                                  .existential_allowed = true};
+    // Under the *declaring* file, not the caller's: these type expressions
+    // were written in `decl`'s file and name what that file has in scope. A
+    // return type naming a struct the callee's module imported
+    // (`def wrap[T](v: T) -> holder[T]` over a `use other.holder`) resolves
+    // to nothing when read through the caller's imports, and the call then
+    // reaches lowering with no concrete type at all — the callee's own
+    // signature is not the caller's to interpret.
+    const auto saved_signature_file = file_id_;
+    file_id_ = decl_file;
     auto param_types = std::vector<type_id>{};
     for (const auto &param : decl.params) {
       param_types.push_back(param.type_annotation != nullptr
@@ -5293,6 +5315,7 @@ private:
     const auto result = decl.return_type != nullptr
                             ? resolve_type(*decl.return_type, ctx)
                             : types_.builtin("unit");
+    file_id_ = saved_signature_file;
     if (call.callee != nullptr) {
       record_expr_type(*call.callee,
                        types_.fn_of(std::move(param_types), result));
@@ -5458,8 +5481,8 @@ private:
       scoped_params.insert(extra_fixed->begin(), extra_fixed->end());
     }
     return find_or_check_generic_instance(call, decl, method.owner,
-                                          /*decl_file=*/std::nullopt, *solution,
-                                          name, &scoped_params, self_type);
+                                          method.file_id, *solution, name,
+                                          &scoped_params, self_type);
   }
 
   /// Holds a callee's `pre` conditions to account at the call site.
@@ -7044,6 +7067,7 @@ private:
               // per-receiver instance discipline: without these two an
               // `extend` on a generic type type-checked and then compiled
               // nothing at all (spec/todo.md items 7 and 11).
+              .file_id = ext.file_id,
               .block_type_params = &ext.decl->type_params,
               .impl_target_pattern = target,
           });
@@ -7114,6 +7138,7 @@ private:
               .decl = decl,
               .owner = &members,
               .from_trait = nullptr,
+              .file_id = impl.file_id,
               .block_type_params = &impl.decl->type_params,
               .impl_target_pattern = target,
           });
@@ -7166,6 +7191,7 @@ private:
                 .decl = decl,
                 .owner = trait_module,
                 .from_trait = trait_decl,
+                .file_id = trait_file_id,
             });
             continue;
           }
@@ -7247,6 +7273,7 @@ private:
         .decl = raw,
         .owner = trait_module,
         .from_trait = nullptr,
+        .file_id = trait_file_id,
         .fixed_type_params = std::move(bound_trait_params),
     });
     synthesized_trait_defaults_.push_back(
@@ -8158,8 +8185,8 @@ private:
     const auto name = std::format("{}::{}{}", receiver_entry.name,
                                   method.decl->name, solution.suffix);
     const auto *instance = find_or_check_generic_instance(
-        call, *method.decl, method.owner, /*decl_file=*/std::nullopt, solution,
-        name, &scoped_params, receiver_type);
+        call, *method.decl, method.owner, method.file_id, solution, name,
+        &scoped_params, receiver_type);
     if (instance == nullptr) {
       return std::nullopt;
     }
@@ -8220,8 +8247,8 @@ private:
     const auto name = std::format("{}::{}{}", target_name, method.decl->name,
                                   solution.suffix);
     return find_or_check_generic_instance(call, *method.decl, method.owner,
-                                          /*decl_file=*/std::nullopt, solution,
-                                          name, &scoped_params, target);
+                                          method.file_id, solution, name,
+                                          &scoped_params, target);
   }
 
   /// Whether `method` is *receiver-style* for an `instance` of some
@@ -11135,8 +11162,8 @@ private:
     const auto name = std::format("{}::{}{}", entry.name, method->decl->name,
                                   solution.suffix);
     const auto *instance = find_or_check_generic_instance(
-        *site, *method->decl, method->owner, /*decl_file=*/std::nullopt,
-        solution, name, &scoped_params, stripped);
+        *site, *method->decl, method->owner, method->file_id, solution, name,
+        &scoped_params, stripped);
     if (instance == nullptr) {
       return dispatch;
     }

@@ -1,11 +1,6 @@
 module std.option
 
-# Declared here rather than imported from `std.panic`, which is where it
-# belongs: a generic method's body is re-checked at each call site in the
-# *caller's* file context, so any name this block reached through an import of
-# its own would be undefined by the time an instance is built. See
-# `spec/todo.md` item 8. Once that is fixed this becomes `use std.panic.panic`.
-intrinsic def rt_panic(msg: str) -> never
+use std.panic.panic
 
 # Inherent methods on `option[T]`.
 #
@@ -28,7 +23,7 @@ extend[T] option[T]:
     def unwrap(self) -> T:
         return match self:
             @some(v) => v
-            @none => rt_panic("called `unwrap` on a `@none` value")
+            @none => panic("called `unwrap` on a `@none` value")
 
     ## The contained value, or `fallback` when there is none.
     ##

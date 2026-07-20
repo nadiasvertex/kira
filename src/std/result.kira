@@ -4,11 +4,9 @@ module std.result
 #
 # Like that module these were `k_builtin_methods` entries the compiler typed
 # but no backend compiled; they are ordinary Kira now. See `std.option`'s
-# header for why the block is parameterized and why the intrinsic is declared
-# here rather than imported.
+# header for why the block is parameterized.
 
-# See `std.option` for why this is not `use std.panic.panic`.
-intrinsic def rt_panic(msg: str) -> never
+use std.panic.panic
 
 extend[T, E] result[T, E]:
     ## The success value, or a panic if this is an `@err`.
@@ -20,7 +18,7 @@ extend[T, E] result[T, E]:
     def unwrap(self) -> T:
         return match self:
             @ok(v) => v
-            @err(_) => rt_panic("called `unwrap` on an `@err` value")
+            @err(_) => panic("called `unwrap` on an `@err` value")
 
     ## Whether this holds a success value.
     def is_ok(self) -> bool:
