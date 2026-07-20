@@ -4217,6 +4217,21 @@ auto parser::parse_ident_or_path_expr() -> ast::ptr<ast::expr> {
       path->span.extend_to(seg_tok.span);
     }
 
+    // A `{` after the path opens a struct literal with a module-qualified
+    // head, `q.holder { value: 7 }` — the same reading a bare `holder {`
+    // already gets above. Without this the path is returned as a complete
+    // expression and the `{` becomes a stray statement, which reported
+    // "expected end of line after this" pointing at the type name.
+    if (at(token_kind::lbrace)) {
+      auto expr = parse_brace_expr();
+      if (expr && expr->kind == ast::node_kind::struct_expr) {
+        auto *literal = dynamic_cast<ast::struct_expr *>(expr.get());
+        literal->span = path->span.merge(literal->span);
+        literal->type_name = std::move(path);
+      }
+      return expr;
+    }
+
     return path;
   }
 

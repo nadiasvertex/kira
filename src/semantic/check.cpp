@@ -3749,47 +3749,8 @@ private:
     }
 
     if (named.path.size() > 1) {
-      // A leading import alias (`use pkg.db as db` → `db.conn`): rewrite the
-      // alias to the aliased module's absolute path and resolve there. This is
-      // what makes a functor's `DB.conn` projection resolve, where `DB` is the
-      // module parameter bound to the argument module as an import alias.
-      if (const auto *binding = find_import(named.path.front());
-          binding != nullptr && binding->leaf_name.empty()) {
-        // The module the alias' head names. A whole-module import — a functor
-        // parameter `DB` bound to `postgres`, or a plain `use pkg.sub` — names
-        // a module directly (its `path`); a renamed member import falls back
-        // to the member's owning module. `import_source_module` deliberately
-        // returns null for a whole-module import (its members are reached by
-        // path), so it cannot be the only source consulted here.
-        const module_members *aliased =
-            index_.find_module(join_strings(binding->path, "."));
-        if (aliased == nullptr) {
-          aliased = import_source_module(*binding);
-        }
-        if (aliased != nullptr) {
-          auto absolute = split_module_name(aliased->module_name);
-          absolute.insert(absolute.end(), named.path.begin() + 1,
-                          named.path.end());
-          if (const auto *owner = find_session_module_of_path(absolute)) {
-            const auto &member = absolute.back();
-            if (const auto it = owner->types.find(member);
-                it != owner->types.end()) {
-              return instantiate_user_type(*it->second.decl, owner->module_name,
-                                           named, ctx);
-            }
-          }
-        }
-      }
-      // Multi-segment paths are validated by the qualified-path pass; here we
-      // only recover the declaration when the path stays in this session.
-      const auto *owner = find_session_module_of_path(named.path);
-      if (owner == nullptr) {
-        return k_unknown_type;
-      }
-      const auto member = named.path.back();
-      if (const auto it = owner->types.find(member); it != owner->types.end()) {
-        return instantiate_user_type(*it->second.decl, owner->module_name,
-                                     named, ctx);
+      if (const auto found = find_type_decl_by_path(named.path)) {
+        return instantiate_user_type(*found->first, found->second, named, ctx);
       }
       return k_unknown_type;
     }
@@ -10628,6 +10589,55 @@ private:
   /// Finds a `type` declaration by name in the current module or
   /// reachable through a non-wildcard import; returns the declaration paired
   /// with its owning module's name.
+  /// The type a multi-segment path names, with the module that owns it.
+  /// Shared by qualified type annotations (`q.holder` in a signature) and
+  /// qualified struct-literal heads (`q.holder { value: 7 }`) so the two
+  /// spellings cannot drift apart — they used to, because the literal form
+  /// did not parse at all.
+  ///
+  /// Multi-segment paths are validated by the qualified-path pass; this
+  /// only recovers the declaration when the path stays in this session.
+  auto find_type_decl_by_path(const std::vector<std::string> &path)
+      -> std::optional<std::pair<const ast::type_decl *, std::string>> {
+    // A leading import alias (`use pkg.db as db` → `db.conn`): rewrite the
+    // alias to the aliased module's absolute path and resolve there. This is
+    // what makes a functor's `DB.conn` projection resolve, where `DB` is the
+    // module parameter bound to the argument module as an import alias.
+    if (const auto *binding = find_import(path.front());
+        binding != nullptr && binding->leaf_name.empty()) {
+      // The module the alias' head names. A whole-module import — a functor
+      // parameter `DB` bound to `postgres`, or a plain `use pkg.sub` — names
+      // a module directly (its `path`); a renamed member import falls back
+      // to the member's owning module. `import_source_module` deliberately
+      // returns null for a whole-module import (its members are reached by
+      // path), so it cannot be the only source consulted here.
+      const module_members *aliased =
+          index_.find_module(join_strings(binding->path, "."));
+      if (aliased == nullptr) {
+        aliased = import_source_module(*binding);
+      }
+      if (aliased != nullptr) {
+        auto absolute = split_module_name(aliased->module_name);
+        absolute.insert(absolute.end(), path.begin() + 1, path.end());
+        if (const auto *owner = find_session_module_of_path(absolute)) {
+          if (const auto it = owner->types.find(absolute.back());
+              it != owner->types.end()) {
+            return std::pair{it->second.decl, owner->module_name};
+          }
+        }
+      }
+    }
+    const auto *owner = find_session_module_of_path(path);
+    if (owner == nullptr) {
+      return std::nullopt;
+    }
+    if (const auto it = owner->types.find(path.back());
+        it != owner->types.end()) {
+      return std::pair{it->second.decl, owner->module_name};
+    }
+    return std::nullopt;
+  }
+
   auto find_type_decl_by_name(std::string_view name)
       -> std::optional<std::pair<const ast::type_decl *, std::string>> {
     if (module_ != nullptr) {
@@ -10684,8 +10694,39 @@ private:
           }
           target = k_error_type;
         }
+      } else if (expr.type_name->kind == ast::node_kind::module_path_expr) {
+        // A module-qualified head, `q.holder { value: 7 }`. The path itself
+        // is validated by the qualified-path pass; all that is needed here
+        // is the declaration it names, looked up exactly the way the same
+        // path resolves in type position.
+        const auto &path =
+            dynamic_cast<const ast::module_path_expr &>(*expr.type_name);
+        if (const auto found = find_type_decl_by_path(path.segments)) {
+          target = make_user_type(*found->first, found->second, {});
+        } else {
+          // Reported here rather than left to the qualified-path pass,
+          // which does not cover struct-literal heads: without this the
+          // literal types as unknown and the failure surfaces from lowering
+          // as "no concrete checked type is available for this node" — a
+          // compiler-internals message for what is an ordinary typo.
+          const auto spelling = join_strings(path.segments, ".");
+          if (reported_undefined_.insert(std::format("type:{}", spelling))
+                  .second) {
+            error_with_help(
+                expr.type_name->span,
+                std::format("undefined type `{}`", spelling),
+                std::format("module `{}` declares no type named `{}`",
+                            join_strings(std::vector<std::string>(
+                                             path.segments.begin(),
+                                             path.segments.end() - 1),
+                                         "."),
+                            path.segments.back()),
+                "Check the spelling, or declare the type as `pub` in that "
+                "module so this one can see it.");
+          }
+          target = k_error_type;
+        }
       }
-      // Qualified struct heads are validated by the qualified-path pass.
     } else if (types_.entry(strip_refs(expected)).kind ==
                type_kind::struct_kind) {
       target = strip_refs(expected);

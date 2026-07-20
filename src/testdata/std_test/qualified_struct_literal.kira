@@ -1,0 +1,34 @@
+module main
+
+# A module-qualified struct literal, `io.raw_fd { value: 3 }`.
+#
+# The brace form used to be reachable only through an unqualified name: the
+# parser built a module path and returned it as a finished expression
+# without considering a following `{`, so the literal was read as a path
+# followed by a stray block and reported "expected end of line after this"
+# pointing at the type name. The *type* path in an annotation already
+# resolved, which is why the two spellings are both exercised here -- they
+# now share one lookup, so a regression in either shows up.
+
+use std.io
+
+# The qualified path in type position, which worked before this.
+def unwrap(fd: io.raw_fd) -> int64:
+    return fd.value
+
+def main() -> int32:
+    # The qualified path as a struct-literal head, which did not parse.
+    let fd = io.raw_fd { value: 3 }
+    println("qualified={fd.value}")
+
+    # Round-tripping through the annotation form proves the literal built a
+    # real `io.raw_fd` and not merely something field-compatible: a value of
+    # any other type would not be accepted here.
+    println("roundtrip={unwrap(fd)}")
+
+    # A second field value, so the test would notice a literal that
+    # silently produced a default-constructed value rather than reading the
+    # initializer.
+    let other = io.raw_fd { value: 41 }
+    println("other={unwrap(other)}")
+    return 0
