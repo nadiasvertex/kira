@@ -235,6 +235,13 @@ struct collector {
       for (const auto &stmt : node2.body->stmts) {
         walk_stmt(*stmt);
       }
+      // The step (a desugared `for`'s index increment) is ordinary code
+      // that reads and writes a local, so this walk must see it too.
+      if (node2.step != nullptr) {
+        for (const auto &stmt : node2.step->stmts) {
+          walk_stmt(*stmt);
+        }
+      }
       return;
     }
     case hir_node_kind::hir_while_let: {
@@ -258,6 +265,12 @@ struct collector {
       // those reads. (It can't fall through to the `hir_expr` downcast
       // below: `hir_contract_check` is a statement.)
       walk_expr(*dynamic_cast<const hir_contract_check &>(node).condition);
+      return;
+    case hir_node_kind::hir_break:
+    case hir_node_kind::hir_continue:
+      // Pure control transfer: no operand, so nothing here can reference
+      // another module. Listed explicitly because the downcast below is
+      // unchecked, and these are statements rather than expressions.
       return;
     default:
       walk_expr(dynamic_cast<const hir_expr &>(node));

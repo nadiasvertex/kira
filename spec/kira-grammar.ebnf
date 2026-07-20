@@ -392,6 +392,8 @@ stmt
     | assign_stmt
     | expr_stmt
     | return_stmt
+    | break_stmt
+    | continue_stmt
     | use_decl
     | type_decl
     | func_decl
@@ -432,6 +434,11 @@ assign_op
 expr_stmt = expr NEWLINE ;
 
 return_stmt = "return" [ expr ] NEWLINE ;
+
+(* Only valid inside a `while` or `for` body; the checker rejects one with
+   no enclosing loop. Neither carries a value or a loop label. *)
+break_stmt = "break" NEWLINE ;
+continue_stmt = "continue" NEWLINE ;
 
 static_decl
     = [ visibility ] "static" [ "if" expr ":" NEWLINE INDENT { top_level_item } DEDENT

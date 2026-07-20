@@ -1,0 +1,112 @@
+module main
+
+# expect: 63
+
+# `break` and `continue`, which are documented in spec/kira-reference.md but
+# until now did not exist: the lexer never tokenized them, so they parsed as
+# ordinary identifiers, the checker whitelisted those two spellings as
+# "always resolvable", and lowering then failed with an internal "no
+# concrete checked type is available for this node".
+#
+# Each check contributes one bit so the declared total says which one broke
+# rather than just that the sum moved. All six passing is 63.
+#
+# Bit 5 is the one that caught the real design bug here. A desugared `for`
+# keeps its index increment in the loop's *step*, not at the tail of its
+# body, because `continue` branches to the step: an increment left in the
+# body gets jumped over, and the loop spins forever rather than skipping an
+# iteration. A test that only exercised `continue` in a `while` -- where
+# there is no step and the two targets coincide -- would pass against that
+# bug, since the user writes the increment themselves and a `continue`
+# skipping it is the behavior they asked for.
+#
+# Bit 2 covers the other one. `while true:` used to get an `unreachable` at
+# its exit block, on the reasoning that the condition can never go false and
+# nothing else branches there. A `break` makes that block a live branch
+# target, and an `unreachable` at a live target is undefined behavior, not a
+# missed exit -- so the exit is only marked dead when no `break` claimed it.
+
+# Yields 1, 2, 3, ... and runs out at 8, so the `while let` below has a
+# natural exit of its own -- the `break` has to be what actually stops it.
+def step(n: int32) -> option[int32]:
+    if n < 7:
+        return @some(n + 1)
+    return @none
+
+def main() -> int32:
+    var score = 0
+
+    # A plain `break`: 1+2+3+4, stopping before 5 is added.
+    var i = 0
+    var sum = 0
+    while i < 10:
+        i = i + 1
+        if i == 5:
+            break
+        sum = sum + i
+    if sum == 10:
+        score = score + 1
+
+    # `continue` skipping the even values: 1+3+5+7+9.
+    var j = 0
+    var odd = 0
+    while j < 10:
+        j = j + 1
+        if j % 2 == 0:
+            continue
+        odd = odd + j
+    if odd == 25:
+        score = score + 2
+
+    # `while true` exited only by `break` -- the live-exit-block case.
+    var k = 0
+    while true:
+        k = k + 1
+        if k == 7:
+            break
+    if k == 7:
+        score = score + 4
+
+    # A `break` binds to the innermost loop only. The inner loop stops with
+    # b == 2 on each of three outer passes, so the total is 6 and not 30: an
+    # inner `break` that escaped to the outer loop would leave this at 2.
+    var outer = 0
+    var a = 0
+    while a < 3:
+        a = a + 1
+        var b = 0
+        while b < 10:
+            b = b + 1
+            if b == 2:
+                break
+        outer = outer + b
+    if outer == 6:
+        score = score + 8
+
+    # `break` out of a `while let`, whose exit is a pattern-match failure
+    # rather than a false condition -- a different exit path in both
+    # backends than `while`'s. `step` counts 1, 2, 3, ... and the `break`
+    # stops it at 4, so this sums 1+2+3. Without the `break` the loop would
+    # run to `step`'s own `@none` at 8 and total 28.
+    var n = 0
+    var taken = 0
+    while let @some(v) = step(n):
+        if v == 4:
+            break
+        taken = taken + v
+        n = n + 1
+    if taken == 6:
+        score = score + 16
+
+    # `continue` inside a `for`, which is the desugared-step case: 1+2+4+5.
+    # If the increment sat at the end of the body instead of in the step,
+    # this loop would never terminate.
+    var f = 0
+    for x in [1, 2, 3, 4, 5]:
+        if x == 3:
+            continue
+        f = f + x
+    if f == 12:
+        score = score + 32
+
+    return score

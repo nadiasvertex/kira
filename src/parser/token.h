@@ -102,6 +102,8 @@ enum class token_kind : uint8_t {
   kw_while, ///< Starts looping statements.
   kw_match, ///< Starts pattern-dispatch statements and expressions.
   kw_return, ///< Terminates function evaluation with an optional value.
+  kw_break,  ///< Exits the innermost enclosing loop.
+  kw_continue, ///< Advances the innermost enclosing loop to its next iteration.
   kw_in, ///< Separates iteration patterns from iterables and participates in
          ///< comparisons.
   kw_as, ///< Introduces casts and aliases depending on grammar position.
@@ -464,6 +466,8 @@ struct token {
     case token_kind::kw_let:
     case token_kind::kw_var:
     case token_kind::kw_return:
+    case token_kind::kw_break:
+    case token_kind::kw_continue:
     case token_kind::kw_if:
     case token_kind::kw_while:
     case token_kind::kw_for:
@@ -574,9 +578,17 @@ struct token {
       return token_kind::kw_assert;
     }
     break;
+  case 'b':
+    if (text == "break") {
+      return token_kind::kw_break;
+    }
+    break;
   case 'c':
     if (text == "concept") {
       return token_kind::kw_concept;
+    }
+    if (text == "continue") {
+      return token_kind::kw_continue;
     }
     if (text == "crew") {
       return token_kind::kw_crew;
@@ -886,6 +898,10 @@ struct token {
     return "`match`";
   case token_kind::kw_return:
     return "`return`";
+  case token_kind::kw_break:
+    return "`break`";
+  case token_kind::kw_continue:
+    return "`continue`";
   case token_kind::kw_in:
     return "`in`";
   case token_kind::kw_as:

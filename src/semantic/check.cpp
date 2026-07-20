@@ -1247,6 +1247,12 @@ private:
   /// `generator def`; when true, `yield` is legal and its operand must
   /// match `generator_item_type_` (see `infer_yield`/`check_function`).
   bool in_generator_ = false;
+
+  /// Enclosing `while`/`for` loops in the body currently being checked, used
+  /// to reject `break`/`continue` that have no loop to act on. Saved and
+  /// reset across every function and lambda body: a loop in the *enclosing*
+  /// function is not a loop this body can break out of.
+  unsigned loop_depth_ = 0;
   type_id generator_item_type_ = k_unknown_type;
   /// Whether the function body currently being checked declares a general
   /// `some Trait[Args]` existential return type (never true together with
@@ -5899,13 +5905,18 @@ private:
   }
 
   /// Names the checker treats as always resolvable without deeper lookup:
-  /// prelude functions, loop control keywords, execution-context names, and
-  /// concurrency primitives whose full typing is out of scope for now.
+  /// prelude functions, execution-context names, and concurrency primitives
+  /// whose full typing is out of scope for now.
+  ///
+  /// `break` and `continue` used to be listed here, back when they were not
+  /// tokenized as keywords and so arrived as ordinary identifiers. That made
+  /// them type-check as unknown and then fail in lowering with an internal
+  /// "no concrete checked type" message. They are real statements now.
   auto is_prelude_value_name(std::string_view name) -> bool {
     return name == "println" || name == "print" || name == "panic" ||
            name == "assert" || name == "size_of" || name == "args" ||
-           name == "env" || name == "min" || name == "max" || name == "break" ||
-           name == "continue" || name == "cancel" || name == "pool" ||
+           name == "env" || name == "min" || name == "max" ||
+           name == "cancel" || name == "pool" ||
            name == "io" || name == "cpu" || name == "channel" ||
            name == "watch" || name == "shared" || name == "expr";
   }
@@ -10836,6 +10847,10 @@ private:
     const auto &expected_entry = types_.entry(strip_refs(expected));
     const auto expected_is_fn = expected_entry.kind == type_kind::fn_kind;
 
+    // A lambda body is a separate function: a loop outside it is not one its
+    // `break` could reach.
+    const auto saved_loop_depth = std::exchange(loop_depth_, 0U);
+
     push_scope();
     auto param_types = std::vector<type_id>{};
     for (size_t i = 0; i < lambda.params.size(); ++i) {
@@ -10891,6 +10906,7 @@ private:
       body_result = check_body_nodes(lambda.body_stmts, body_expectation);
     }
     pop_scope();
+    loop_depth_ = saved_loop_depth;
 
     auto result =
         declared_result != k_unknown_type ? declared_result : body_result;
@@ -12755,6 +12771,29 @@ private:
       return result != k_unknown_type ? result : unit;
     }
 
+    case ast::node_kind::break_stmt:
+    case ast::node_kind::continue_stmt: {
+      // Both are only meaningful with a loop to act on. Outside one there is
+      // nothing to exit or advance, so this is an error rather than a no-op.
+      if (loop_depth_ == 0) {
+        const auto *word = node.kind == ast::node_kind::break_stmt
+                               ? "break"
+                               : "continue";
+        error_with_help(
+            node.span, std::format("`{}` is only allowed inside a loop", word),
+            std::format("there is no enclosing `while` or `for` loop for this "
+                        "`{}` to act on",
+                        word),
+            node.kind == ast::node_kind::break_stmt
+                ? "To leave a function early, use `return` instead."
+                : "`continue` skips to the next iteration of a loop; if you "
+                  "meant to skip the rest of a function, use `return`.");
+      }
+      // `never`, like `return`: control does not fall through to whatever
+      // follows, so this must not constrain a surrounding block's type.
+      return types_.builtin("never");
+    }
+
     case ast::node_kind::while_stmt: {
       const auto &stmt = dynamic_cast<const ast::while_stmt &>(node);
       if (stmt.condition != nullptr) {
@@ -12765,7 +12804,9 @@ private:
         const auto subject = infer_expr(*stmt.let_expr, k_unknown_type);
         check_pattern(*stmt.let_pattern, strip_refs(subject));
       }
+      ++loop_depth_;
       check_body_nodes(stmt.body, k_unknown_type);
+      --loop_depth_;
       pop_scope();
       return unit;
     }
@@ -12794,7 +12835,9 @@ private:
       if (stmt.guard != nullptr) {
         require_bool(*stmt.guard, "a `for` guard");
       }
+      ++loop_depth_;
       check_body_nodes(stmt.body, k_unknown_type);
+      --loop_depth_;
       pop_scope();
       return unit;
     }
@@ -13131,6 +13174,7 @@ private:
 
     const auto saved_in_generator = in_generator_;
     const auto saved_generator_item = generator_item_type_;
+    const auto saved_loop_depth = std::exchange(loop_depth_, 0U);
     in_generator_ = decl.modifiers.is_generator;
     generator_item_type_ = k_unknown_type;
     if (in_generator_) {
@@ -13351,6 +13395,7 @@ private:
     checking_existential_return_ = saved_checking_existential;
     existential_underlying_ = saved_existential_underlying;
     in_generator_ = saved_in_generator;
+    loop_depth_ = saved_loop_depth;
     generator_item_type_ = saved_generator_item;
     return_type_ = saved_return;
     return_annotated_ = saved_annotated;

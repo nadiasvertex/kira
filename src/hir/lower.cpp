@@ -487,18 +487,25 @@ private:
       const semantic::iterator_loop_dispatch &dispatch,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
           &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error>;
+  /// The two halves of a desugared `for`: the body proper, and the index
+  /// increment that must run even when the body ends in a `continue`.
+  struct for_loop_body {
+    ptr<hir_block> body;
+    ptr<hir_block> step;
+  };
+
   /// Shared tail `lower_range_loop`/`lower_indexed_loop` need: binds the
-  /// loop variable to `loop_var_value()` at the top of the loop body,
-  /// splices in `inner_stmts()`, then increments the index by one.
-  /// Returns the assembled loop body, not the loop itself — each caller
-  /// still builds its own start/end/condition and wraps the result in a
-  /// `hir_while`.
+  /// loop variable to `loop_var_value()` at the top of the loop body and
+  /// splices in `inner_stmts()`, with the index increment handed back
+  /// separately as the loop's step. Returns the assembled halves, not the
+  /// loop itself — each caller still builds its own start/end/condition and
+  /// wraps the result in a `hir_while`.
   [[nodiscard]] auto build_for_loop_body(
       source_span span, symbol_id index_symbol, type_id counter_type,
       const ast::binding_pattern &loop_var,
       const std::function<ptr<hir_expr>()> &loop_var_value,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-          &inner_stmts) -> std::expected<ptr<hir_block>, lowering_error>;
+          &inner_stmts) -> std::expected<for_loop_body, lowering_error>;
   /// A `for` *statement*'s `inner_stmts`: lowers the surface body, wrapping
   /// it in `if guard: ...` when a guard is present (see the `for_stmt` case
   /// in `lower_stmt` for why that's a plain conditional and not a
@@ -2353,6 +2360,10 @@ auto lowerer::lower_stmt(const ast::node &node)
     // postconditions is a whole little sequence (bind, check, return).
     return lower_return_value(ret.span, std::move(*value));
   }
+  case ast::node_kind::break_stmt:
+    return one_stmt(ptr<hir_node>(make<hir_break>(node.span)));
+  case ast::node_kind::continue_stmt:
+    return one_stmt(ptr<hir_node>(make<hir_continue>(node.span)));
   case ast::node_kind::if_stmt: {
     const auto &if_s = dynamic_cast<const ast::if_stmt &>(node);
     auto lowered =
@@ -2903,7 +2914,8 @@ auto lowerer::lower_range_loop(
   }
 
   result.push_back(ptr<hir_node>(
-      make<hir_while>(span, std::move(condition), std::move(*body_block))));
+      make<hir_while>(span, std::move(condition), std::move(body_block->body),
+                      std::move(body_block->step))));
 
   return result;
 }
@@ -3006,7 +3018,8 @@ auto lowerer::lower_indexed_loop(
   }
 
   result.push_back(ptr<hir_node>(
-      make<hir_while>(span, std::move(condition), std::move(*body_block))));
+      make<hir_while>(span, std::move(condition), std::move(body_block->body),
+                      std::move(body_block->step))));
 
   return result;
 }
@@ -3016,7 +3029,7 @@ auto lowerer::build_for_loop_body(
     const ast::binding_pattern &loop_var,
     const std::function<ptr<hir_expr>()> &loop_var_value,
     const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-        &inner_stmts) -> std::expected<ptr<hir_block>, lowering_error> {
+        &inner_stmts) -> std::expected<lowerer::for_loop_body, lowering_error> {
   push_scope();
   auto loop_var_place = loop_var_value();
   const auto loop_var_symbol =
@@ -3034,17 +3047,23 @@ auto lowerer::build_for_loop_body(
     body_stmts.push_back(std::move(stmt_ptr));
   }
 
-  body_stmts.push_back(ptr<hir_node>(hir::make<hir_assign>(
+  // The increment goes in the loop's *step*, not at the end of the body:
+  // a `continue` jumps straight to the step, and a step buried in the body
+  // would be jumped over -- an infinite loop rather than a skipped
+  // iteration. See `hir_while::step`.
+  auto step_stmts = ptr_vec<hir_node>{};
+  step_stmts.push_back(ptr<hir_node>(hir::make<hir_assign>(
       span, ast::assign_op::add_assign,
       ptr<hir_expr>(make<hir_local_ref>(span, counter_type, index_symbol,
                                         std::string("<for index>"))),
       ptr<hir_expr>(make<hir_literal>(span, counter_type, token_kind::int_lit,
                                       std::string("1"))))));
 
-  auto body_block =
-      make<hir_block>(span, k_unknown_type, std::move(body_stmts));
+  auto result = for_loop_body{
+      .body = make<hir_block>(span, k_unknown_type, std::move(body_stmts)),
+      .step = make<hir_block>(span, k_unknown_type, std::move(step_stmts))};
   pop_scope();
-  return body_block;
+  return result;
 }
 
 auto lowerer::lower_option_loop(

@@ -408,16 +408,22 @@ let pairs   = for x in 0..3, y in 0..3 => (x, y)
 
 ### `break` and `continue`
 
-Inside a `while` or `for` loop, `break` exits the loop and `continue` skips to the next iteration:
+Inside a `while` or `for` loop, `break` exits the innermost enclosing loop and `continue` skips to its next iteration:
 
 ```kira
 for line in lines:
-    if line.is_empty(): continue
-    if line == "stop":  break
+    if line.is_empty():
+        continue
+    if line == "stop":
+        break
     process(line)
 ```
 
-In a `for` expression that collects results, `break` ends the collection early and `continue` drops the current element.
+Both need an indented body. The single-line `if cond: expr` form takes an *expression*, and `break`/`continue` are statements, so `if line.is_empty(): continue` does not parse.
+
+Neither carries a value, and neither takes a loop label: `break` in a nested loop leaves only the inner one.
+
+A `for` *expression* (the `for x in xs => expr` comprehension) has no block body, so there is nowhere to put a `break` or `continue`. Use a guard — `for x in xs if keep(x) => f(x)` — to drop elements.
 
 ---
 

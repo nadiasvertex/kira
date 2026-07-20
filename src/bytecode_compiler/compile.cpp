@@ -3086,6 +3086,10 @@ private:
                            std::nullopt);
     case hir_node_kind::hir_while_let:
       return compile_while_let(dynamic_cast<const hir::hir_while_let &>(node));
+    case hir_node_kind::hir_break:
+      return compile_break(dynamic_cast<const hir::hir_break &>(node));
+    case hir_node_kind::hir_continue:
+      return compile_continue(dynamic_cast<const hir::hir_continue &>(node));
     case hir_node_kind::hir_let_else:
       return compile_let_else(dynamic_cast<const hir::hir_let_else &>(node));
     case hir_node_kind::hir_list_push:
@@ -3287,6 +3291,63 @@ private:
     return {};
   }
 
+  /// Where a `break` and a `continue` in the body currently being compiled
+  /// must land. `continue_target` is already-emitted code, so it is a fixed
+  /// offset; the exits are not emitted yet, so they accumulate as jump
+  /// placeholders and get patched when the loop's end is known.
+  /// A loop with a step (a desugared `for`) has no `continue_target` yet
+  /// when its body is compiled — the step is emitted after the body — so
+  /// those `continue`s become placeholders too. A loop without a step has
+  /// its target known up front: the already-emitted loop header.
+  struct loop_context {
+    std::optional<std::size_t> continue_target;
+    std::vector<std::size_t> break_placeholders;
+    std::vector<std::size_t> continue_placeholders;
+  };
+
+  std::vector<loop_context> loop_stack_;
+
+  /// Emits an unconditional jump back to `target`, the shape both the loop
+  /// back edge and a `continue` need. The offset is relative to the end of
+  /// the operand, hence the `+ 4`.
+  auto emit_jump_back_to(std::size_t target) -> void {
+    emit_op(opcode::op_jump);
+    const auto after_operand =
+        static_cast<int64_t>(writer_.current_offset()) + 4;
+    writer_.emit_i32(
+        static_cast<int32_t>(static_cast<int64_t>(target) - after_operand));
+  }
+
+  [[nodiscard]] auto compile_break(const hir::hir_break &node)
+      -> std::expected<void, compile_error> {
+    if (loop_stack_.empty()) {
+      return std::unexpected(
+          compile_error{compile_error_kind::unsupported_construct, node.span,
+                        "`break` outside of any loop reached code generation"});
+    }
+    emit_op(opcode::op_jump);
+    loop_stack_.back().break_placeholders.push_back(
+        writer_.emit_jump_placeholder());
+    return {};
+  }
+
+  [[nodiscard]] auto compile_continue(const hir::hir_continue &node)
+      -> std::expected<void, compile_error> {
+    if (loop_stack_.empty()) {
+      return std::unexpected(compile_error{
+          compile_error_kind::unsupported_construct, node.span,
+          "`continue` outside of any loop reached code generation"});
+    }
+    if (const auto target = loop_stack_.back().continue_target) {
+      emit_jump_back_to(*target);
+    } else {
+      emit_op(opcode::op_jump);
+      loop_stack_.back().continue_placeholders.push_back(
+          writer_.emit_jump_placeholder());
+    }
+    return {};
+  }
+
   [[nodiscard]] auto compile_while(const hir::hir_while &loop)
       -> std::expected<void, compile_error> {
     const auto loop_start = writer_.current_offset();
@@ -3298,9 +3359,32 @@ private:
     emit_register(*cond);
     const auto exit_placeholder = writer_.emit_jump_placeholder();
 
-    if (auto result = compile_block_as_value(*loop.body, std::nullopt);
-        !result.has_value()) {
-      return std::unexpected(result.error());
+    // A `continue` must run the step (a desugared `for`'s index increment)
+    // before re-testing, so it jumps to the step rather than to the
+    // condition. Its offset is only known after the body is emitted, so the
+    // jumps are placeholders even though they go backward in the source.
+    auto continue_placeholders = std::vector<std::size_t>{};
+    loop_stack_.push_back(
+        loop_context{.continue_target = loop.step != nullptr
+                                            ? std::optional<std::size_t>{}
+                                            : std::optional{loop_start},
+                     .break_placeholders = {},
+                     .continue_placeholders = {}});
+    auto body = compile_block_as_value(*loop.body, std::nullopt);
+    auto context = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+
+    if (loop.step != nullptr) {
+      for (const auto placeholder : context.continue_placeholders) {
+        writer_.patch_jump_to_here(placeholder);
+      }
+      if (auto step = compile_block_as_value(*loop.step, std::nullopt);
+          !step.has_value()) {
+        return std::unexpected(step.error());
+      }
     }
 
     // A backward jump closes a loop. Live intervals come from first and
@@ -3309,14 +3393,12 @@ private:
     // still read on the next iteration. Recording the loop lets the
     // allocator extend those intervals to cover it.
     note_loop(loop_start);
-    emit_op(opcode::op_jump);
-    const auto after_operand =
-        static_cast<int64_t>(writer_.current_offset()) + 4;
-    const auto back_offset =
-        static_cast<int32_t>(static_cast<int64_t>(loop_start) - after_operand);
-    writer_.emit_i32(back_offset);
+    emit_jump_back_to(loop_start);
 
     writer_.patch_jump_to_here(exit_placeholder);
+    for (const auto placeholder : context.break_placeholders) {
+      writer_.patch_jump_to_here(placeholder);
+    }
     return {};
   }
 
@@ -3344,9 +3426,17 @@ private:
     emit_register(*test_reg);
     const auto exit_placeholder = writer_.emit_jump_placeholder();
 
-    if (auto result = compile_block_as_value(*loop.body, std::nullopt);
-        !result.has_value()) {
-      return std::unexpected(result.error());
+    // `continue` lands on `loop_start`, which re-evaluates the subject and
+    // re-runs the pattern test — the same thing the back edge does. There
+    // is no separate step to skip past, unlike a counted `for`.
+    loop_stack_.push_back(loop_context{.continue_target = loop_start,
+                                       .break_placeholders = {},
+                                       .continue_placeholders = {}});
+    auto body = compile_block_as_value(*loop.body, std::nullopt);
+    auto context = std::move(loop_stack_.back());
+    loop_stack_.pop_back();
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
     }
 
     // A backward jump closes a loop. Live intervals come from first and
@@ -3355,14 +3445,12 @@ private:
     // still read on the next iteration. Recording the loop lets the
     // allocator extend those intervals to cover it.
     note_loop(loop_start);
-    emit_op(opcode::op_jump);
-    const auto after_operand =
-        static_cast<int64_t>(writer_.current_offset()) + 4;
-    const auto back_offset =
-        static_cast<int32_t>(static_cast<int64_t>(loop_start) - after_operand);
-    writer_.emit_i32(back_offset);
+    emit_jump_back_to(loop_start);
 
     writer_.patch_jump_to_here(exit_placeholder);
+    for (const auto placeholder : context.break_placeholders) {
+      writer_.patch_jump_to_here(placeholder);
+    }
     return {};
   }
 

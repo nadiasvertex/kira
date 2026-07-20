@@ -2748,6 +2748,10 @@ auto parser::parse_stmt() -> ast::ptr<ast::node> {
     return parse_var_stmt();
   case token_kind::kw_return:
     return parse_return_stmt();
+  case token_kind::kw_break:
+    return parse_break_stmt();
+  case token_kind::kw_continue:
+    return parse_continue_stmt();
   case token_kind::kw_if:
     return parse_if_stmt();
   case token_kind::kw_while:
@@ -2908,6 +2912,24 @@ auto parser::parse_return_stmt() -> ast::ptr<ast::return_stmt> {
 
   expect_newline();
 
+  stmt->span = start.merge(previous_span());
+  return stmt;
+}
+
+auto parser::parse_break_stmt() -> ast::ptr<ast::break_stmt> {
+  auto stmt = ast::make<ast::break_stmt>();
+  auto start = peek().span;
+  expect(token_kind::kw_break);
+  expect_newline();
+  stmt->span = start.merge(previous_span());
+  return stmt;
+}
+
+auto parser::parse_continue_stmt() -> ast::ptr<ast::continue_stmt> {
+  auto stmt = ast::make<ast::continue_stmt>();
+  auto start = peek().span;
+  expect(token_kind::kw_continue);
+  expect_newline();
   stmt->span = start.merge(previous_span());
   return stmt;
 }

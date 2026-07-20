@@ -1769,15 +1769,23 @@ auto test_lowers_range_for_loop() -> void {
   expect(condition.type == fixture.checked.types.bool_type(),
          "expected the condition's type to be bool");
 
-  expect(loop.body->stmts.size() == 3,
-         "expected the loop-var let, the assignment, and the increment");
+  expect(loop.body->stmts.size() == 2,
+         "expected the loop-var let and the assignment in the body");
   const auto &loop_var_let =
       dynamic_cast<const hir::hir_let &>(*loop.body->stmts[0]);
   expect(loop_var_let.name == "i", "expected the loop variable to be `i`");
   expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_assign,
          "expected the loop body's statement to be the assignment to `total`");
+
+  // The index increment belongs to the loop's *step*, not the tail of its
+  // body. A `continue` branches to the step, so an increment left in the
+  // body would be jumped over — an infinite loop rather than a skipped
+  // iteration. See `hir_while::step`.
+  expect(loop.step != nullptr, "expected a desugared `for` to carry a step");
+  expect(loop.step->stmts.size() == 1,
+         "expected the step to hold exactly the index increment");
   const auto &increment =
-      dynamic_cast<const hir::hir_assign &>(*loop.body->stmts[2]);
+      dynamic_cast<const hir::hir_assign &>(*loop.step->stmts[0]);
   expect(increment.op == kira::ast::assign_op::add_assign,
          "expected the index increment to be a compound `+=`");
 }
@@ -1803,11 +1811,14 @@ auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
   expect(condition.op == kira::ast::binary_op::lt_eq,
          "expected `..=` to lower to a `<=` bound check");
 
-  expect(loop.body->stmts.size() == 3,
-         "expected the loop-var let, the guarded body, and the increment");
+  expect(loop.body->stmts.size() == 2,
+         "expected the loop-var let and the guarded body");
+  expect(loop.step != nullptr, "expected a desugared `for` to carry a step");
+  // A guard stays a plain conditional wrapping the body. `continue` exists
+  // now, so `if not guard: continue` would also be correct, but there is no
+  // reason to spend a jump on what a conditional already expresses.
   expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_if,
-         "expected the guard to wrap the body in a hir_if rather than "
-         "using a `continue`-style jump (this language has none)");
+         "expected the guard to wrap the body in a hir_if");
   const auto &guarded = dynamic_cast<const hir::hir_if &>(*loop.body->stmts[1]);
   expect(guarded.branches.size() == 1, "expected a single guard branch");
   expect(guarded.else_body == nullptr,
@@ -2051,8 +2062,9 @@ auto test_lowers_simple_comprehension() -> void {
          "expected the range clause to lower to a hir_while loop");
   const auto &loop =
       dynamic_cast<const hir::hir_while &>(*comprehension.stmts[4]);
-  expect(loop.body->stmts.size() == 3,
-         "expected the loop-var let, the push, and the increment");
+  expect(loop.body->stmts.size() == 2,
+         "expected the loop-var let and the push (the increment is the step)");
+  expect(loop.step != nullptr, "expected a desugared `for` to carry a step");
   expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_list_push,
          "expected the yielded value to be appended via hir_list_push");
   const auto &push =
@@ -2124,17 +2136,22 @@ auto test_lowers_nested_comprehension() -> void {
       dynamic_cast<const hir::hir_while &>(*comprehension.stmts[4]);
 
   // outer loop-var let, then the inner clause's own start/end/index lets
-  // and its while (the same range-clause shape reused, nested), then the
-  // outer increment — no push at this level.
-  expect(outer_loop.body->stmts.size() == 6,
-         "expected the outer loop-var let, the inner clause's lets and "
-         "while, and the outer increment");
+  // and its while (the same range-clause shape reused, nested). The outer
+  // increment is the loop's step, not a body statement -- no push at this
+  // level.
+  expect(outer_loop.body->stmts.size() == 5,
+         "expected the outer loop-var let and the inner clause's lets and "
+         "while (the outer increment is the step)");
+  expect(outer_loop.step != nullptr,
+         "expected the outer desugared `for` to carry a step");
   expect(outer_loop.body->stmts[4]->kind == hir::hir_node_kind::hir_while,
          "expected the second clause to lower to a nested hir_while");
   const auto &inner_loop =
       dynamic_cast<const hir::hir_while &>(*outer_loop.body->stmts[4]);
-  expect(inner_loop.body->stmts.size() == 3,
-         "expected the inner loop-var let, the push, and the increment");
+  expect(inner_loop.body->stmts.size() == 2,
+         "expected the inner loop-var let and the push");
+  expect(inner_loop.step != nullptr,
+         "expected the inner desugared `for` to carry a step");
   expect(inner_loop.body->stmts[1]->kind == hir::hir_node_kind::hir_list_push,
          "expected the push to happen only at the innermost level");
 }

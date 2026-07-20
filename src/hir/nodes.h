@@ -124,6 +124,8 @@ enum class hir_node_kind : uint8_t {
              ///< lowering/codegen must keep walking `stmts` after it).
   hir_while,
   hir_while_let,
+  hir_break,
+  hir_continue,
   hir_list_push,
   hir_contract_check, ///< A `pre`/`post`/`invariant` the checker could not
                       ///< discharge statically, reified as a runtime check.
@@ -723,9 +725,21 @@ struct hir_while : hir_stmt {
   ptr<hir_expr> condition;
   ptr<hir_block> body;
 
-  hir_while(source_span s, ptr<hir_expr> cond, ptr<hir_block> b)
+  /// Runs after the body on every iteration that reaches the next test,
+  /// including one cut short by `continue`. Null for a surface `while`,
+  /// which has no step; a desugared `for` puts its index increment here.
+  ///
+  /// This exists precisely so `continue` is correct. The increment used to
+  /// sit as the last statement of `body`, which is indistinguishable from a
+  /// step until something can jump over it — a `continue` did exactly that
+  /// and produced an infinite loop. Backends must branch a `continue` to
+  /// the step, not to the condition.
+  ptr<hir_block> step;
+
+  hir_while(source_span s, ptr<hir_expr> cond, ptr<hir_block> b,
+            ptr<hir_block> st = nullptr)
       : hir_stmt(hir_node_kind::hir_while, s), condition(std::move(cond)),
-        body(std::move(b)) {}
+        body(std::move(b)), step(std::move(st)) {}
 };
 
 /// `while let pattern = expr: body`. Unlike a `for` loop's iterable
@@ -738,8 +752,8 @@ struct hir_while : hir_stmt {
 /// `pattern`'s names (reading from `subject_symbol`, the same convention
 /// `hir_match`/`hir_let_else` use) and run `body`, then loop again; if it
 /// doesn't match, exit the loop. There is no `else` — falling out of the
-/// loop on a failed match is simply what happens, matching how this
-/// language has no `break`/`continue` to express it any other way.
+/// loop on a failed match is simply what happens. A `break` in the body
+/// exits the same way; a `continue` returns to the subject re-evaluation.
 /// `pattern` can be any pattern `lower_pattern` supports (not just a
 /// simple binding), unlike a `for` loop's single plain loop variable.
 struct hir_while_let : hir_stmt {
@@ -820,6 +834,24 @@ struct hir_return : hir_stmt {
 
   hir_return(source_span s, ptr<hir_expr> v)
       : hir_stmt(hir_node_kind::hir_return, s), value(std::move(v)) {}
+};
+
+/// `break` — leaves the innermost enclosing loop. The checker has already
+/// rejected one with no loop to act on, so backends may assume a target
+/// exists.
+struct hir_break : hir_stmt {
+  explicit hir_break(source_span s)
+      : hir_stmt(hir_node_kind::hir_break, s) {}
+};
+
+/// `continue` — advances the innermost enclosing loop to its next
+/// iteration. For `hir_while` that means re-testing the condition; for
+/// `hir_while_let` it means re-evaluating the subject and re-matching; for
+/// a desugared `for` it means running the loop's step before the next test,
+/// so backends must branch to the step rather than straight to the header.
+struct hir_continue : hir_stmt {
+  explicit hir_continue(source_span s)
+      : hir_stmt(hir_node_kind::hir_continue, s) {}
 };
 
 /// `yield value` — a generator's suspension point. Unlike `hir_return`,

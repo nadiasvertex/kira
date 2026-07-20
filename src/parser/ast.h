@@ -85,6 +85,8 @@ struct var_stmt;
 struct assign_stmt;
 struct expr_stmt;
 struct return_stmt;
+struct break_stmt;
+struct continue_stmt;
 struct if_stmt;
 struct while_stmt;
 struct for_stmt;
@@ -233,7 +235,9 @@ enum class node_kind : uint8_t {
   var_stmt,    ///< Mutable binding statement.
   assign_stmt, ///< Assignment statement.
   expr_stmt,   ///< Expression used for side effects.
-  return_stmt, ///< Function return statement.
+  return_stmt,   ///< Function return statement.
+  break_stmt,    ///< Loop exit statement.
+  continue_stmt, ///< Loop next-iteration statement.
   if_stmt,     ///< Conditional statement.
   while_stmt,  ///< While-loop statement.
   for_stmt,    ///< For-loop statement.
@@ -1438,6 +1442,16 @@ struct return_stmt : stmt {
   ptr<expr> value; ///< Returned expression; null for bare `return`.
 
   return_stmt() : stmt(node_kind::return_stmt) {}
+};
+
+/// `break`
+struct break_stmt : stmt {
+  break_stmt() : stmt(node_kind::break_stmt) {}
+};
+
+/// `continue`
+struct continue_stmt : stmt {
+  continue_stmt() : stmt(node_kind::continue_stmt) {}
 };
 
 /// `if expr: block { elif expr: block } [else: block]`

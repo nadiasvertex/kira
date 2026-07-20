@@ -718,6 +718,8 @@ private:
   [[nodiscard]] auto parse_var_stmt() -> ast::ptr<ast::var_stmt>;
   /// Parses a `return` statement.
   [[nodiscard]] auto parse_return_stmt() -> ast::ptr<ast::return_stmt>;
+  [[nodiscard]] auto parse_break_stmt() -> ast::ptr<ast::break_stmt>;
+  [[nodiscard]] auto parse_continue_stmt() -> ast::ptr<ast::continue_stmt>;
   /// Parses an `if` statement chain.
   [[nodiscard]] auto parse_if_stmt() -> ast::ptr<ast::if_stmt>;
   /// Parses a `while` loop statement.

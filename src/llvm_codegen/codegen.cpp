@@ -434,9 +434,14 @@ auto collect_let_types(const hir_node &node,
     collect_let_types(*dynamic_cast<const hir::hir_let_else &>(node).else_body,
                       out);
     return;
-  case hir_node_kind::hir_while:
-    collect_let_types(*dynamic_cast<const hir::hir_while &>(node).body, out);
+  case hir_node_kind::hir_while: {
+    const auto &loop = dynamic_cast<const hir::hir_while &>(node);
+    collect_let_types(*loop.body, out);
+    if (loop.step != nullptr) {
+      collect_let_types(*loop.step, out);
+    }
     return;
+  }
   case hir_node_kind::hir_while_let:
     collect_let_types(*dynamic_cast<const hir::hir_while_let &>(node).body,
                       out);
@@ -3339,6 +3344,10 @@ private:
       return compile_match(dynamic_cast<const hir::hir_match &>(node), nullptr);
     case hir_node_kind::hir_while_let:
       return compile_while_let(dynamic_cast<const hir::hir_while_let &>(node));
+    case hir_node_kind::hir_break:
+      return compile_break(dynamic_cast<const hir::hir_break &>(node));
+    case hir_node_kind::hir_continue:
+      return compile_continue(dynamic_cast<const hir::hir_continue &>(node));
     case hir_node_kind::hir_let_else:
       return compile_let_else(dynamic_cast<const hir::hir_let_else &>(node));
     case hir_node_kind::hir_list_push:
@@ -3603,6 +3612,42 @@ private:
                token_kind::kw_true;
   }
 
+  /// Where a `break` and a `continue` in the body currently being compiled
+  /// must branch. `saw_break` is what lets `while true:` know its exit block
+  /// became reachable — without a `break` that block is genuinely dead and
+  /// gets an `unreachable`, and planting one where a `break` actually lands
+  /// would miscompile the loop into undefined behavior.
+  struct loop_context {
+    llvm::BasicBlock *continue_bb = nullptr;
+    llvm::BasicBlock *break_bb = nullptr;
+    bool saw_break = false;
+  };
+
+  std::vector<loop_context> loop_stack_;
+
+  [[nodiscard]] auto compile_break(const hir::hir_break &node)
+      -> std::expected<bool, codegen_error> {
+    if (loop_stack_.empty()) {
+      return std::unexpected(
+          codegen_error{codegen_error_kind::unsupported_construct, node.span,
+                        "`break` outside of any loop reached code generation"});
+    }
+    loop_stack_.back().saw_break = true;
+    builder_.CreateBr(loop_stack_.back().break_bb);
+    return true;
+  }
+
+  [[nodiscard]] auto compile_continue(const hir::hir_continue &node)
+      -> std::expected<bool, codegen_error> {
+    if (loop_stack_.empty()) {
+      return std::unexpected(codegen_error{
+          codegen_error_kind::unsupported_construct, node.span,
+          "`continue` outside of any loop reached code generation"});
+    }
+    builder_.CreateBr(loop_stack_.back().continue_bb);
+    return true;
+  }
+
   [[nodiscard]] auto compile_while(const hir::hir_while &loop)
       -> std::expected<bool, codegen_error> {
     const auto is_infinite =
@@ -3623,23 +3668,51 @@ private:
       builder_.CreateCondBr(*cond, body_bb, end_bb);
     }
 
+    // A `continue` must run the step (a desugared `for`'s index increment)
+    // before re-testing, so with a step present it targets the step block
+    // rather than the condition. Without one the two are the same place.
+    auto *step_bb =
+        loop.step != nullptr
+            ? llvm::BasicBlock::Create(ctx_, "while.step", current_fn_)
+            : cond_bb;
+
     builder_.SetInsertPoint(body_bb);
+    loop_stack_.push_back(
+        loop_context{.continue_bb = step_bb, .break_bb = end_bb});
     auto terminated = compile_block_as_value(*loop.body, nullptr);
+    const auto saw_break = loop_stack_.back().saw_break;
+    loop_stack_.pop_back();
     if (!terminated.has_value()) {
       return std::unexpected(terminated.error());
     }
     if (!*terminated) {
-      builder_.CreateBr(cond_bb);
+      builder_.CreateBr(step_bb);
+    }
+
+    if (loop.step != nullptr) {
+      builder_.SetInsertPoint(step_bb);
+      auto step_terminated = compile_block_as_value(*loop.step, nullptr);
+      if (!step_terminated.has_value()) {
+        return std::unexpected(step_terminated.error());
+      }
+      if (!*step_terminated) {
+        builder_.CreateBr(cond_bb);
+      }
     }
 
     builder_.SetInsertPoint(end_bb);
-    if (is_infinite) {
-      // Nothing ever branches here (no `break`, and the condition can never
-      // itself become false) — mark it unreachable rather than leaving an
-      // open block for a caller to plant a "falls through" return in, which
-      // would emit a `ret` whose value/type can't agree with the function's
-      // real return type (this loop's exits are all real `return`s inside
-      // its own body, already correctly typed).
+    if (is_infinite && !saw_break) {
+      // Nothing ever branches here: the condition can never itself become
+      // false, and no `break` in the body targeted this block. Mark it
+      // unreachable rather than leaving an open block for a caller to plant
+      // a "falls through" return in, which would emit a `ret` whose
+      // value/type can't agree with the function's real return type (this
+      // loop's exits are all real `return`s inside its own body, already
+      // correctly typed).
+      //
+      // The `saw_break` guard is load-bearing: `while true:` with a `break`
+      // reaches here normally, and an `unreachable` at a live branch target
+      // is undefined behavior, not a missed exit.
       builder_.CreateUnreachable();
       return true;
     }
@@ -3683,7 +3756,12 @@ private:
     builder_.CreateCondBr(*test, body_bb, end_bb);
 
     builder_.SetInsertPoint(body_bb);
+    // `continue` goes to `cond_bb`, which re-evaluates the subject and
+    // re-runs the pattern test — the same thing falling off the body does.
+    loop_stack_.push_back(
+        loop_context{.continue_bb = cond_bb, .break_bb = end_bb});
     auto terminated = compile_block_as_value(*loop.body, nullptr);
+    loop_stack_.pop_back();
     if (!terminated.has_value()) {
       return std::unexpected(terminated.error());
     }
