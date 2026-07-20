@@ -1,0 +1,37 @@
+count=5
+fold=31415
+reduce=31415
+fold_empty=7
+reduce_empty=true
+for_each=6
+for_each=2
+for_each=8
+for_each=2
+for_each=10
+any_yes=true
+any_no=false
+all_yes=true
+all_no=false
+any_empty=false
+all_empty=true
+find=4
+find_miss=true
+find_map=400
+position=2
+position_miss=true
+last=6
+last_empty=true
+nth0=3
+nth2=4
+nth_past=true
+min=1
+max=5
+min_empty=true
+min_by_key=5
+max_by_key=1
+part_yes=3 part_no=2
+part_first=3 part_last=5
+eq_same=true
+eq_diff=false
+eq_short_right=false
+eq_short_left=false

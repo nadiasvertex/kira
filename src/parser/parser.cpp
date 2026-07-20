@@ -3613,8 +3613,7 @@ auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base)
       if (dot != std::string_view::npos && digits_only(text.substr(0, dot)) &&
           digits_only(text.substr(dot + 1))) {
         auto index_tok = advance();
-        const auto split =
-            index_tok.span.start + static_cast<uint32_t>(dot);
+        const auto split = index_tok.span.start + static_cast<uint32_t>(dot);
         auto outer = ast::make<ast::field_expr>();
         outer->span = base->span.merge(
             source_span{.start = index_tok.span.start, .end = split});

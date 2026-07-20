@@ -1,0 +1,97 @@
+module main
+
+# The `std.algo` terminals (design §6.1).
+#
+# Each check pairs a true case with a false one, or uses positionally distinct
+# weights, so a terminal that returned the right *kind* of answer for the
+# wrong reason is still caught. Sources are `into_iter()` rather than `iter()`
+# throughout: `iter()` yields `&T`, and a terminal returning `T` then returns
+# a reference, which the bytecode VM cannot represent as a value yet.
+#
+# `min_by`/`max_by`/`cmp_by` are absent because they need a three-way
+# comparator, and `ordering` has no variants yet; `sum`/`product` need an
+# additive identity the language cannot name. Both are recorded in
+# `spec/todo.md`.
+
+def main() -> int32:
+    let xs = [3, 1, 4, 1, 5]
+
+    println("count={xs.into_iter().count()}")
+
+    # Positional weights: a fold that visited the right elements in the wrong
+    # order cannot reach the same total.
+    println("fold={xs.into_iter().fold(0, (a, x) => a * 10 + x)}")
+    println("reduce={xs.into_iter().reduce((a, x) => a * 10 + x).unwrap()}")
+
+    # The empty cases, where `fold` still answers and `reduce` cannot.
+    let empty: list[int32] = []
+    println("fold_empty={empty.into_iter().fold(7, (a, x) => a + x)}")
+    println("reduce_empty={empty.into_iter().reduce((a, x) => a + x).is_none()}")
+
+    # `for_each` is run for its effects, so the effect is what is checked.
+    # A lambda body is an expression, so the effect cannot be an assignment.
+    # Printing is the effect here, which also makes the order and the count
+    # observable rather than just the fact that something ran. (Accumulating
+    # into a captured local instead does not lower today -- `spec/todo.md`.)
+    xs.into_iter().for_each((x) => println("for_each={x * 2}"))
+
+    # True and false for each predicate terminal, over the same source.
+    println("any_yes={xs.into_iter().any((x) => x > 4)}")
+    println("any_no={xs.into_iter().any((x) => x > 9)}")
+    println("all_yes={xs.into_iter().all((x) => x > 0)}")
+    println("all_no={xs.into_iter().all((x) => x > 1)}")
+
+    # `all` over an empty source is true and `any` is false -- the readings
+    # that make them compose, and the ones most easily got backwards.
+    println("any_empty={empty.into_iter().any((x) => true)}")
+    println("all_empty={empty.into_iter().all((x) => false)}")
+
+    # `find` returns the *first* match: 4 and 5 both pass, so a terminal
+    # returning the last would answer 5.
+    println("find={xs.into_iter().find((x) => x > 3).unwrap()}")
+    println("find_miss={xs.into_iter().find((x) => x > 9).is_none()}")
+
+    # Likewise `find_map`, whose first `@some` is at the 4.
+    println("find_map={xs.into_iter().find_map((x) => if x > 3: @some(x * 100) else: @none).unwrap()}")
+
+    # 4 sits at index 2, which is neither its value nor the length -- an
+    # off-by-one or a returned element rather than an index would show.
+    println("position={xs.into_iter().position((x) => x > 3).unwrap()}")
+    println("position_miss={xs.into_iter().position((x) => x > 9).is_none()}")
+
+    # `last` is 5 and `max` is also 5, so `last` is checked on a source whose
+    # final element is *not* the largest.
+    let ys = [2, 9, 6]
+    println("last={ys.into_iter().last().unwrap()}")
+    println("last_empty={empty.into_iter().last().is_none()}")
+
+    println("nth0={xs.into_iter().nth(0).unwrap()}")
+    println("nth2={xs.into_iter().nth(2).unwrap()}")
+    println("nth_past={xs.into_iter().nth(5).is_none()}")
+
+    println("min={xs.into_iter().min().unwrap()}")
+    println("max={xs.into_iter().max().unwrap()}")
+    println("min_empty={empty.into_iter().min().is_none()}")
+
+    # A key that reverses the order, so `min_by_key` must disagree with `min`
+    # and agree with `max`. Sharing a source with them makes that visible.
+    println("min_by_key={xs.into_iter().min_by_key((x) => 0 - x).unwrap()}")
+    println("max_by_key={xs.into_iter().max_by_key((x) => 0 - x).unwrap()}")
+
+    # Both halves, and their order within each half. 3 and 4 and 5 pass; the
+    # two 1s do not, and stay in the order they were yielded.
+    let parts = xs.into_iter().partition((x) => x > 2)
+    println("part_yes={parts.0.len()} part_no={parts.1.len()}")
+    println("part_first={parts.0[0]} part_last={parts.0[2]}")
+
+    # Equal length and equal elements, then each failure mode separately: a
+    # differing element, a shorter left, and a shorter right.
+    let a = [1, 2, 3]
+    let b = [1, 2, 3]
+    let c = [1, 2, 4]
+    let d = [1, 2]
+    println("eq_same={a.into_iter().eq_by(b.into_iter(), (p, q) => p == q)}")
+    println("eq_diff={a.into_iter().eq_by(c.into_iter(), (p, q) => p == q)}")
+    println("eq_short_right={a.into_iter().eq_by(d.into_iter(), (p, q) => p == q)}")
+    println("eq_short_left={d.into_iter().eq_by(a.into_iter(), (p, q) => p == q)}")
+    return 0

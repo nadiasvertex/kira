@@ -689,8 +689,7 @@ auto is_builtin_scalar_name(std::string_view name) -> bool {
 }
 
 auto tuple_index_of(std::string_view name) -> std::optional<std::size_t> {
-  if (name.empty() ||
-      !std::ranges::all_of(name, [](char c) -> bool {
+  if (name.empty() || !std::ranges::all_of(name, [](char c) -> bool {
         return c >= '0' && c <= '9';
       })) {
     return std::nullopt;

@@ -840,8 +840,7 @@ struct hir_return : hir_stmt {
 /// rejected one with no loop to act on, so backends may assume a target
 /// exists.
 struct hir_break : hir_stmt {
-  explicit hir_break(source_span s)
-      : hir_stmt(hir_node_kind::hir_break, s) {}
+  explicit hir_break(source_span s) : hir_stmt(hir_node_kind::hir_break, s) {}
 };
 
 /// `continue` — advances the innermost enclosing loop to its next

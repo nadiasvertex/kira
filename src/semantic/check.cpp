@@ -5877,9 +5877,9 @@ private:
     return name == "println" || name == "print" || name == "panic" ||
            name == "assert" || name == "size_of" || name == "args" ||
            name == "env" || name == "min" || name == "max" ||
-           name == "cancel" || name == "pool" ||
-           name == "io" || name == "cpu" || name == "channel" ||
-           name == "watch" || name == "shared" || name == "expr";
+           name == "cancel" || name == "pool" || name == "io" ||
+           name == "cpu" || name == "channel" || name == "watch" ||
+           name == "shared" || name == "expr";
   }
 
   /// Resolves a value-position identifier through, in order: a variant
@@ -12861,9 +12861,8 @@ private:
       // Both are only meaningful with a loop to act on. Outside one there is
       // nothing to exit or advance, so this is an error rather than a no-op.
       if (loop_depth_ == 0) {
-        const auto *word = node.kind == ast::node_kind::break_stmt
-                               ? "break"
-                               : "continue";
+        const auto *word =
+            node.kind == ast::node_kind::break_stmt ? "break" : "continue";
         error_with_help(
             node.span, std::format("`{}` is only allowed inside a loop", word),
             std::format("there is no enclosing `while` or `for` loop for this "

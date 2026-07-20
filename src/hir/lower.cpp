@@ -1251,8 +1251,8 @@ auto lowerer::lower_field(const ast::field_expr &field)
   if (checked_.types.entry(object_type).kind ==
       semantic::type_kind::tuple_kind) {
     if (const auto index = semantic::tuple_index_of(field.field_name)) {
-      return ok_expr(make<hir_tuple_index>(field.span, *type,
-                                           std::move(*object), *index));
+      return ok_expr(
+          make<hir_tuple_index>(field.span, *type, std::move(*object), *index));
     }
   }
   return ok_expr(
@@ -2913,9 +2913,9 @@ auto lowerer::lower_range_loop(
     return std::unexpected(body_block.error());
   }
 
-  result.push_back(ptr<hir_node>(
-      make<hir_while>(span, std::move(condition), std::move(body_block->body),
-                      std::move(body_block->step))));
+  result.push_back(ptr<hir_node>(make<hir_while>(span, std::move(condition),
+                                                 std::move(body_block->body),
+                                                 std::move(body_block->step))));
 
   return result;
 }
@@ -3017,9 +3017,9 @@ auto lowerer::lower_indexed_loop(
     return std::unexpected(body_block.error());
   }
 
-  result.push_back(ptr<hir_node>(
-      make<hir_while>(span, std::move(condition), std::move(body_block->body),
-                      std::move(body_block->step))));
+  result.push_back(ptr<hir_node>(make<hir_while>(span, std::move(condition),
+                                                 std::move(body_block->body),
+                                                 std::move(body_block->step))));
 
   return result;
 }

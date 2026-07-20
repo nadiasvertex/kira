@@ -101,8 +101,8 @@ enum class token_kind : uint8_t {
   kw_for,   ///< Starts iteration statements and comprehension-like expressions.
   kw_while, ///< Starts looping statements.
   kw_match, ///< Starts pattern-dispatch statements and expressions.
-  kw_return, ///< Terminates function evaluation with an optional value.
-  kw_break,  ///< Exits the innermost enclosing loop.
+  kw_return,   ///< Terminates function evaluation with an optional value.
+  kw_break,    ///< Exits the innermost enclosing loop.
   kw_continue, ///< Advances the innermost enclosing loop to its next iteration.
   kw_in, ///< Separates iteration patterns from iterables and participates in
          ///< comparisons.

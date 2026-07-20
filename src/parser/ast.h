@@ -231,19 +231,19 @@ enum class node_kind : uint8_t {
   refinement_type,  ///< Refinement type with predicate clause.
 
   // Statements
-  let_stmt,    ///< Immutable binding statement.
-  var_stmt,    ///< Mutable binding statement.
-  assign_stmt, ///< Assignment statement.
-  expr_stmt,   ///< Expression used for side effects.
+  let_stmt,      ///< Immutable binding statement.
+  var_stmt,      ///< Mutable binding statement.
+  assign_stmt,   ///< Assignment statement.
+  expr_stmt,     ///< Expression used for side effects.
   return_stmt,   ///< Function return statement.
   break_stmt,    ///< Loop exit statement.
   continue_stmt, ///< Loop next-iteration statement.
-  if_stmt,     ///< Conditional statement.
-  while_stmt,  ///< While-loop statement.
-  for_stmt,    ///< For-loop statement.
-  match_stmt,  ///< Match statement.
-  crew_stmt,   ///< Crew orchestration statement.
-  asm_stmt,    ///< Inline assembly statement.
+  if_stmt,       ///< Conditional statement.
+  while_stmt,    ///< While-loop statement.
+  for_stmt,      ///< For-loop statement.
+  match_stmt,    ///< Match statement.
+  crew_stmt,     ///< Crew orchestration statement.
+  asm_stmt,      ///< Inline assembly statement.
 
   // Expressions
   ident_expr,       ///< Identifier expression.

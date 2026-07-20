@@ -485,8 +485,9 @@ pub def enumerate[I, T](it: I) -> enumerate_iter[I, T] where I: iterator[T]:
 #
 # The outer draw is an `if let`, not a `while let`. It must take exactly one
 # element -- a `while let` would drain the outer iterator, keeping only its
-# last inner. `break` would express this too, and reads better, but does not
-# lower (`spec/todo.md`).
+# last inner. A `while let` with a `break` expresses the same thing and now
+# lowers, but the `if let` says "at most one" in the construct itself rather
+# than in the body, so it stays.
 #
 # Neither refines `size_hint`. It is a *lower* bound, and the outer count says
 # nothing about it: an outer iterator of a hundred empty inners yields zero
@@ -559,3 +560,330 @@ pub def flatten[I, J, T](it: I) -> flatten_iter[I, J, T] where I: iterator[J], J
 #:   an iterator yielding the elements of each produced iterator in turn.
 pub def flat_map[I, T, J, U](it: I, f: fn(T) -> J) -> flat_map_iter[I, T, J, U] where I: iterator[T], J: iterator[U]:
     return flat_map_iter { outer: it, f: f, cur: @none }
+
+# ---------------------------------------------------------------------------
+# Terminals (design §6.1).
+#
+# Where an adapter returns a struct and evaluates nothing, a terminal drains
+# its source and returns an answer. Each takes its iterator by value and
+# moves it into a local `var`, because `next` needs a mutable receiver and a
+# parameter is not one.
+#
+# The short-circuiting terminals -- `any`, `all`, `find`, `find_map`,
+# `position` -- return from inside the loop rather than setting a flag and
+# draining to the end. That is the observable difference between them and
+# their fold-shaped equivalents: `any` over an infinite iterator terminates.
+#
+# `min`/`max` and the `_by_key` pair compare with `<` rather than through
+# `ord`'s `cmp`. The `where T: ord` bounds are advisory (design §8, R1), and
+# `cmp` returns `ordering`, which has no variants and no runtime
+# representation yet -- so `min_by`/`max_by`/`cmp_by`, which need a real
+# three-way comparator, are not here. They arrive with `ordering` itself.
+#
+# Ties: `min` keeps the earliest of equal elements and `max` the latest, which
+# is what makes `min`/`max` over the same sequence pick opposite ends of a run
+# of equals rather than the same one.
+# ---------------------------------------------------------------------------
+
+#: Counts an iterator's elements, draining it.
+#: Args:
+#:   it: the iterator to drain (moved).
+#: Returns:
+#:   the number of elements yielded.
+pub def count[I, T](it: I) -> usize where I: iterator[T]:
+    var cursor = it
+    var n: usize = 0
+    while let @some(_) = cursor.next():
+        n = n + 1
+    return n
+
+#: Combines an iterator's elements into a single value, left to right.
+#:
+#: `f` receives the accumulator and an element, and returns the next
+#: accumulator. This is the general shape the other folding terminals are
+#: special cases of: `count` is a fold adding one, `sum` a fold adding the
+#: element.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   init: the starting accumulator, and the result when the source is empty.
+#:   f: combines the accumulator with an element to give the next accumulator.
+#: Returns:
+#:   the accumulator after every element has been folded in.
+pub def fold[I, T, A](it: I, init: A, f: fn(A, T) -> A) -> A where I: iterator[T]:
+    var cursor = it
+    var acc = init
+    while let @some(x) = cursor.next():
+        acc = f(acc, x)
+    return acc
+
+#: Folds an iterator using its first element as the starting accumulator.
+#:
+#: Unlike `fold` this needs no initial value, which is what makes it usable
+#: where no identity exists -- but an empty iterator then has no answer, hence
+#: `option`.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   f: combines the accumulator with an element to give the next accumulator.
+#: Returns:
+#:   the folded value, or `@none` when the source is empty.
+pub def reduce[I, T](it: I, f: fn(T, T) -> T) -> option[T] where I: iterator[T]:
+    var cursor = it
+    var acc = cursor.next()
+    while let @some(x) = cursor.next():
+        acc = match acc:
+            @some(a) => @some(f(a, x))
+            @none => @some(x)
+    return acc
+
+#: Calls a function on each of an iterator's elements, for its effects.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   f: the function to call on each element.
+#: Returns:
+#:   unit (nothing).
+pub def for_each[I, T](it: I, f: fn(T) -> unit) -> unit where I: iterator[T]:
+    var cursor = it
+    while let @some(x) = cursor.next():
+        f(x)
+
+#: Whether any of an iterator's elements satisfies a predicate.
+#:
+#: Stops at the first element that does, leaving the rest undrained. False for
+#: an empty iterator.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   pred: the predicate to test each element with.
+#: Returns:
+#:   true if `pred` holds for at least one element.
+pub def any[I, T](it: I, pred: fn(T) -> bool) -> bool where I: iterator[T]:
+    var cursor = it
+    while let @some(x) = cursor.next():
+        if pred(x):
+            return true
+    return false
+
+#: Whether every one of an iterator's elements satisfies a predicate.
+#:
+#: Stops at the first element that does not. True for an empty iterator, which
+#: is the reading that makes `all` compose: no element fails.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   pred: the predicate to test each element with.
+#: Returns:
+#:   true if `pred` holds for every element.
+pub def all[I, T](it: I, pred: fn(T) -> bool) -> bool where I: iterator[T]:
+    var cursor = it
+    while let @some(x) = cursor.next():
+        if not pred(x):
+            return false
+    return true
+
+#: The first of an iterator's elements satisfying a predicate.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   pred: the predicate an element must satisfy.
+#: Returns:
+#:   the first matching element, or `@none` if none matches.
+pub def find[I, T](it: I, pred: fn(T) -> bool) -> option[T] where I: iterator[T]:
+    var cursor = it
+    while let @some(x) = cursor.next():
+        if pred(x):
+            return @some(x)
+    return @none
+
+#: The first non-`@none` result of applying a function to an iterator's
+#: elements.
+#:
+#: `xs.find_map(f)` is `xs.filter_map(f).next()`, and is the spelling to reach
+#: for when the test and the conversion are the same work -- it avoids doing
+#: that work twice, as `find` followed by a conversion would.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   f: the function mapping an element to an optional result.
+#: Returns:
+#:   the first `@some` result, or `@none` if `f` answers `@none` throughout.
+pub def find_map[I, T, U](it: I, f: fn(T) -> option[U]) -> option[U] where I: iterator[T]:
+    var cursor = it
+    while let @some(x) = cursor.next():
+        if let @some(y) = f(x):
+            return @some(y)
+    return @none
+
+#: The index of the first of an iterator's elements satisfying a predicate.
+#:
+#: Indices count from zero at the iterator's *current* position, not at the
+#: start of whatever it was built from: `xs.into_iter().skip(2).position(p)`
+#: answers relative to the third element.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   pred: the predicate an element must satisfy.
+#: Returns:
+#:   the zero-based index of the first match, or `@none` if none matches.
+pub def position[I, T](it: I, pred: fn(T) -> bool) -> option[usize] where I: iterator[T]:
+    var cursor = it
+    var at: usize = 0
+    while let @some(x) = cursor.next():
+        if pred(x):
+            return @some(at)
+        at = at + 1
+    return @none
+
+#: The last of an iterator's elements.
+#:
+#: Drains the whole iterator: there is no way to reach the end of a general
+#: one without visiting everything before it. A `double_ended` source can
+#: answer without draining, via `rev().next()`.
+#: Args:
+#:   it: the iterator to drain (moved).
+#: Returns:
+#:   the final element, or `@none` when the source is empty.
+pub def last[I, T](it: I) -> option[T] where I: iterator[T]:
+    var cursor = it
+    var seen: option[T] = @none
+    while let @some(x) = cursor.next():
+        seen = @some(x)
+    return seen
+
+#: The element at a zero-based offset from an iterator's current position.
+#:
+#: Consumes the skipped elements as well as the returned one, so repeated
+#: calls on the same iterator walk forward rather than re-indexing.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   n: the zero-based offset of the wanted element.
+#: Returns:
+#:   the element at that offset, or `@none` if the iterator is shorter.
+pub def nth[I, T](it: I, n: usize) -> option[T] where I: iterator[T]:
+    var cursor = it
+    var left = n
+    while let @some(x) = cursor.next():
+        if left == 0:
+            return @some(x)
+        left = left - 1
+    return @none
+
+#: The smallest of an iterator's elements.
+#:
+#: Ties keep the earliest. Compares with `<`; see this section's header on why
+#: the `ord` bound is advisory.
+#: Args:
+#:   it: the iterator to drain (moved).
+#: Returns:
+#:   the smallest element, or `@none` when the source is empty.
+pub def min[I, T](it: I) -> option[T] where I: iterator[T], T: ord:
+    var cursor = it
+    var best: option[T] = @none
+    while let @some(x) = cursor.next():
+        best = match best:
+            @some(b) => if x < b: @some(x) else: @some(b)
+            @none => @some(x)
+    return best
+
+#: The largest of an iterator's elements.
+#:
+#: Ties keep the latest, the mirror of `min` keeping the earliest.
+#: Args:
+#:   it: the iterator to drain (moved).
+#: Returns:
+#:   the largest element, or `@none` when the source is empty.
+pub def max[I, T](it: I) -> option[T] where I: iterator[T], T: ord:
+    var cursor = it
+    var best: option[T] = @none
+    while let @some(x) = cursor.next():
+        best = match best:
+            @some(b) => if x < b: @some(b) else: @some(x)
+            @none => @some(x)
+    return best
+
+#: The element of an iterator with the smallest key.
+#:
+#: `key` is called once per element, not once per comparison: the running
+#: best's key is kept alongside it. That matters when the key is expensive or
+#: has effects.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   key: maps an element to the value to compare on.
+#: Returns:
+#:   the element with the smallest key, or `@none` when the source is empty.
+pub def min_by_key[I, T, K](it: I, key: fn(T) -> K) -> option[T] where I: iterator[T], K: ord:
+    var cursor = it
+    var best: option[T] = @none
+    var best_key: option[K] = @none
+    while let @some(x) = cursor.next():
+        let k = key(x)
+        var better = true
+        if let @some(bk) = best_key:
+            better = k < bk
+        if better:
+            best = @some(x)
+            best_key = @some(k)
+    return best
+
+#: The element of an iterator with the largest key.
+#:
+#: Ties keep the latest, matching `max`.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   key: maps an element to the value to compare on.
+#: Returns:
+#:   the element with the largest key, or `@none` when the source is empty.
+pub def max_by_key[I, T, K](it: I, key: fn(T) -> K) -> option[T] where I: iterator[T], K: ord:
+    var cursor = it
+    var best: option[T] = @none
+    var best_key: option[K] = @none
+    while let @some(x) = cursor.next():
+        let k = key(x)
+        var better = true
+        if let @some(bk) = best_key:
+            better = not (k < bk)
+        if better:
+            best = @some(x)
+            best_key = @some(k)
+    return best
+
+#: Splits an iterator's elements into those satisfying a predicate and the
+#: rest.
+#:
+#: Both halves keep the source's relative order, so a `partition` followed by
+#: chaining the halves reconstructs a stable rearrangement rather than an
+#: arbitrary one.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:   pred: the predicate deciding which half an element belongs to.
+#: Returns:
+#:   a pair of lists: the elements satisfying `pred`, then the rest.
+pub def partition[I, T](it: I, pred: fn(T) -> bool) -> (list[T], list[T]) where I: iterator[T]:
+    var cursor = it
+    var yes = []
+    var no = []
+    while let @some(x) = cursor.next():
+        if pred(x):
+            yes.push(x)
+        else:
+            no.push(x)
+    return (yes, no)
+
+#: Whether two iterators yield equal elements, under a caller-supplied test.
+#:
+#: Length is part of equality: a prefix does not count as equal to the whole,
+#: and the shorter iterator's exhaustion is what decides it. `pred` is not
+#: called again once either has ended.
+#: Args:
+#:   it: the first iterator (moved).
+#:   other: the second iterator (moved).
+#:   pred: the test for a pair of elements taken at the same position.
+#: Returns:
+#:   true if both yield the same number of elements and every pair passes.
+pub def eq_by[I, J, T, U](it: I, other: J, pred: fn(T, U) -> bool) -> bool where I: iterator[T], J: iterator[U]:
+    var left = it
+    var right = other
+    while true:
+        let a = left.next()
+        let b = right.next()
+        if a.is_none() and b.is_none():
+            return true
+        if a.is_none() or b.is_none():
+            return false
+        if not pred(a.unwrap(), b.unwrap()):
+            return false
+    return false

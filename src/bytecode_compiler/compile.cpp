@@ -3364,12 +3364,11 @@ private:
     // condition. Its offset is only known after the body is emitted, so the
     // jumps are placeholders even though they go backward in the source.
     auto continue_placeholders = std::vector<std::size_t>{};
-    loop_stack_.push_back(
-        loop_context{.continue_target = loop.step != nullptr
-                                            ? std::optional<std::size_t>{}
-                                            : std::optional{loop_start},
-                     .break_placeholders = {},
-                     .continue_placeholders = {}});
+    loop_stack_.push_back(loop_context{
+        .continue_target = loop.step != nullptr ? std::optional<std::size_t>{}
+                                                : std::optional{loop_start},
+        .break_placeholders = {},
+        .continue_placeholders = {}});
     auto body = compile_block_as_value(*loop.body, std::nullopt);
     auto context = std::move(loop_stack_.back());
     loop_stack_.pop_back();
