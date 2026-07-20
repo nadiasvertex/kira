@@ -7503,6 +7503,34 @@ private:
     return false;
   }
 
+  /// Whether `id` is, or contains, an in-scope generic parameter — `J`,
+  /// `option[J]`, `fn(J) -> bool`.
+  ///
+  /// Deliberately separate from `mentions_abstract_type`, which does not
+  /// look at `type_param_kind` at all and so reads a bare `J` as concrete.
+  /// Widening that one would change what every one of its callers means by
+  /// "abstract"; this asks the narrower question its callers actually need:
+  /// is this type still written in parameters, i.e. are we looking at a
+  /// template rather than at something instantiable?
+  auto mentions_type_param(type_id id) -> bool {
+    const auto entry = types_.entry(id); // copy: callers may intern after
+    if (entry.kind == type_kind::type_param_kind ||
+        entry.kind == type_kind::param_app_kind) {
+      return true;
+    }
+    for (const auto arg : entry.args) {
+      if (mentions_type_param(arg)) {
+        return true;
+      }
+    }
+    if (entry.kind == type_kind::fn_kind || entry.kind == type_kind::ref_kind ||
+        entry.kind == type_kind::ptr_kind ||
+        entry.kind == type_kind::array_kind) {
+      return mentions_type_param(entry.result);
+    }
+    return false;
+  }
+
   /// Rewrites `id` with every solved type parameter replaced by its
   /// binding, re-interning bottom-up — so `M[B]` under `{M := option,
   /// B := str}` comes back as *the* `option[str]` id, indistinguishable
@@ -8100,6 +8128,22 @@ private:
       -> std::optional<type_id> {
     if (!impl_needs_instance(method, receiver_entry) ||
         in_const_generic_template_ || in_type_generic_template_) {
+      return std::nullopt;
+    }
+
+    // A receiver still written in type parameters — `self.cur.is_none()`
+    // where `cur: option[J]` inside `extend[J] holder[J]`. There is nothing
+    // concrete to instantiate yet; the enclosing body is itself a template,
+    // and the call will be checked again for real once `J` is known.
+    //
+    // The `in_*_template_` flags above do not cover this: they track the
+    // free-function generic paths, not a method body inside a generic
+    // `impl`/`extend` block. Without this the loop below would report
+    // "cannot tell which `T` this call to `is_none` means" -- blaming the
+    // user's call for the compiler looking at it a phase too early, and
+    // pointing them at a fix (move `T` onto the method) for a declaration
+    // in the prelude that they cannot edit and that is not wrong.
+    if (mentions_type_param(receiver_type)) {
       return std::nullopt;
     }
 

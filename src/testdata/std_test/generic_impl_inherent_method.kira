@@ -1,0 +1,61 @@
+module main
+
+# Calling an inherent method on a generic type whose type argument is itself
+# a parameter of the enclosing `extend`/`impl` block.
+#
+# `self.cur.is_none()`, where `cur: option[J]` inside `extend[J] holder[J]`,
+# used to report "cannot tell which `T` this call to `is_none` means" and
+# tell the user to move `T` onto `is_none` -- a method in the prelude they
+# cannot edit, and which is not wrong. The receiver was still written in
+# type parameters because the enclosing body is a template; the check that
+# solves an impl's parameters from a concrete receiver was running a phase
+# too early, and blamed the call for what it found.
+#
+# This lives here rather than in codegen_stress because that harness checks
+# each corpus file on its own, without the standard library, and `is_none`
+# and `is_some` are written in Kira in std.
+#
+# Every check pairs a true case with a false one. That matters more than
+# usual here: the failure this replaced was a *rejection*, so a test that
+# only asserted the program compiles would pass against a version that
+# accepted it and then answered every question wrong.
+
+type holder[J] = { cur: option[J] }
+
+extend[J] holder[J]:
+    # option[J] -- the method whose receiver mentions the block's parameter.
+    def empty(self) -> bool:
+        return self.cur.is_none()
+
+    def filled(self) -> bool:
+        return self.cur.is_some()
+
+    # A method calling a sibling method on the same generic receiver, so the
+    # deferral is exercised on a user-declared type and not only on option.
+    def same_as_filled(self) -> bool:
+        return self.filled()
+
+def make_int(v: option[int32]) -> holder[int32]:
+    return holder { cur: v }
+
+# A second instantiation, so the template really is instantiated more than
+# once rather than accidentally compiled for a single type.
+def make_bool(v: option[bool]) -> holder[bool]:
+    return holder { cur: v }
+
+def main() -> int32:
+    let none_int = make_int(@none)
+    let some_int = make_int(@some(5))
+    let none_bool = make_bool(@none)
+    let some_bool = make_bool(@some(true))
+
+    println("empty_none={none_int.empty()}")
+    println("empty_some={some_int.empty()}")
+    println("filled_none={none_int.filled()}")
+    println("filled_some={some_int.filled()}")
+
+    # The second instantiation, through the method that dispatches to a
+    # sibling rather than straight to the prelude.
+    println("sibling_none={none_bool.same_as_filled()}")
+    println("sibling_some={some_bool.same_as_filled()}")
+    return 0
