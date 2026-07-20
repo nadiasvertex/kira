@@ -8,8 +8,7 @@ module main
 # throughout: `iter()` yields `&T`, and a terminal returning `T` then returns
 # a reference, which the bytecode VM cannot represent as a value yet.
 #
-# `sum`/`product` are absent: they need an additive identity the language
-# cannot name yet, which is recorded in `spec/todo.md`.
+# `group_by` is absent: it needs a map type, which Phase 7 brings.
 
 def main() -> int32:
     let xs = [3, 1, 4, 1, 5]
@@ -94,6 +93,7 @@ def main() -> int32:
     println("eq_short_left={d.into_iter().eq_by(a.into_iter(), (p, q) => p == q)}")
 
     comparators()
+    identities()
     return 0
 
 # The comparator-taking terminals, which need a real `ordering`.
@@ -143,3 +143,26 @@ def comparators() -> unit:
     # rather than from any comparison.
     println("cmp_prefix={show_ord(d.into_iter().cmp_by(a.into_iter(), (a, b) => cmp_int(a, b)))}")
     println("cmp_longer={show_ord(a.into_iter().cmp_by(d.into_iter(), (a, b) => cmp_int(a, b)))}")
+
+# `sum` and `product` go through the `zero`/`one` traits in `std.traits`,
+# whose only implementors are the numeric primitives.
+def identities() -> unit:
+    let xs = [1, 2, 3, 4]
+    let empty: list[int32] = []
+
+    println("sum={xs.into_iter().sum()}")
+    println("product={xs.into_iter().product()}")
+
+    # The identities themselves, which are the whole reason these return `T`
+    # rather than `option[T]`. A `sum` that started from an uninitialized
+    # accumulator, or a `product` that started from zero, shows up here and
+    # nowhere else -- every non-empty case above would still be right.
+    println("sum_empty={empty.into_iter().sum()}")
+    println("product_empty={empty.into_iter().product()}")
+
+    # A second element type, so the impls really are per-type rather than one
+    # instantiation reused. `float64` also catches a `one()` written as an
+    # integer literal.
+    let fs = [1.5, 2.5]
+    println("sum_float={fs.into_iter().sum()}")
+    println("product_float={fs.into_iter().product()}")

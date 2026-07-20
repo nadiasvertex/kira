@@ -992,3 +992,41 @@ pub def cmp_by[I, J, T, U](it: I, other: J, cmp: fn(T, U) -> ordering) -> orderi
         if not is_equal(step):
             return step
     return @equal
+
+#: Adds up an iterator's elements.
+#:
+#: An empty iterator sums to `zero()` rather than to nothing, which is what
+#: makes `sum` return `T` where `reduce` has to return `option[T]`.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:
+#: The bound is `T: zero` alone, not `T: add + zero` as design §6.1 writes it:
+#: a compound bound cannot be cloned for monomorphization yet
+#: (`spec/todo.md`). `zero` is the half that has to be there, since the body
+#: calls `T.zero()`; `add` is advisory either way.
+#: Returns:
+#:   the sum of every element, or the additive identity if there are none.
+pub def sum[I, T](it: I) -> T where I: iterator[T], T: zero:
+    var cursor = it
+    var total = T.zero()
+    while let @some(x) = cursor.next():
+        total = total + x
+    return total
+
+#: Multiplies an iterator's elements together.
+#:
+#: An empty iterator has a product of `one()`, for the same reason `sum` of an
+#: empty iterator is `zero()`.
+#: Args:
+#:   it: the iterator to drain (moved).
+#:
+#: Bounded `T: one` alone for the same reason `sum` is bounded `T: zero` --
+#: see there.
+#: Returns:
+#:   the product of every element, or the multiplicative identity if none.
+pub def product[I, T](it: I) -> T where I: iterator[T], T: one:
+    var cursor = it
+    var total = T.one()
+    while let @some(x) = cursor.next():
+        total = total * x
+    return total

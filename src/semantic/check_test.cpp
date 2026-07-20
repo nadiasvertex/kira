@@ -364,6 +364,68 @@ auto test_reports_extend_method_arity_mismatch() -> void {
 /// what would have been lost by answering `k_unknown_type`: unknown unifies
 /// with everything, so a wrong annotation would have been accepted in
 /// silence.
+/// A static member reached through a *type parameter* solved to a primitive.
+/// Both spellings that can put one there have to work: `impl <trait> for
+/// int32` (which the standard library's `zero`/`one` use) and `extend int32:`
+/// (which the missing-static diagnostic's help text recommends). Neither was
+/// consulted, so the help told the user to write a block that was being
+/// ignored -- and the `impl` form was parsed, coherence-checked, and then
+/// silently dropped from the method table.
+///
+/// The two are separate tests because the standard library exercises only the
+/// `impl` form: a single test covering both would pass with the `extend`
+/// lookup deleted.
+auto test_finds_static_on_primitive_through_impl() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "primitive_static_impl.kira",
+      .text = "module main\n"
+              "\n"
+              "use std.iter.iterator\n"
+              "\n"
+              "trait unit_of:\n"
+              "    static def unit_of() -> self\n"
+              "\n"
+              "impl unit_of for int32:\n"
+              "    static def unit_of() -> int32:\n"
+              "        return 1\n"
+              "\n"
+              "def start[I, T](it: I) -> T where I: iterator[T], T: unit_of:\n"
+              "    return T.unit_of()\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let xs = [1, 2]\n"
+              "    return start(xs.into_iter())\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected `impl <trait> for int32` to provide a reachable static");
+}
+
+auto test_finds_static_on_primitive_through_extend() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "primitive_static_extend.kira",
+      .text = "module main\n"
+              "\n"
+              "use std.iter.iterator\n"
+              "\n"
+              "trait unit_of:\n"
+              "    static def unit_of() -> self\n"
+              "\n"
+              "extend int32:\n"
+              "    static def unit_of() -> int32:\n"
+              "        return 1\n"
+              "\n"
+              "def start[I, T](it: I) -> T where I: iterator[T], T: unit_of:\n"
+              "    return T.unit_of()\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let xs = [1, 2]\n"
+              "    return start(xs.into_iter())\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected `extend int32:` to provide a reachable static, as the "
+         "missing-static diagnostic's help text promises");
+}
+
 auto test_derived_cmp_returns_the_ordering_sum_type() -> void {
   const auto analyzed = analyze_sources({{
       .path = "derived_cmp.kira",
@@ -2657,6 +2719,8 @@ auto main() -> int {
     test_accepts_parameterized_extend();
     test_generic_method_body_sees_its_own_imports();
     test_qualified_type_path_through_import();
+    test_finds_static_on_primitive_through_impl();
+    test_finds_static_on_primitive_through_extend();
     test_derived_cmp_returns_the_ordering_sum_type();
     test_ordering_variants_are_prelude_reachable();
     test_reports_extend_on_unapplied_generic();

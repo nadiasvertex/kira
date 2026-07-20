@@ -165,3 +165,134 @@ pub trait neg:
     #: Returns:
     #:   the negated value.
     def neg(self) -> self.output
+
+#: The additive identity: the value `x + zero() == x` holds for.
+#:
+#: Needed to fold a sequence into a sum without a starting value the caller
+#: has to supply, which is what lets `std.algo`'s `sum` answer `0` for an
+#: empty iterator instead of `@none`. Split from `add` rather than folded into
+#: it because a type can be addable without having an identity.
+pub trait zero:
+    #: The value that leaves any value unchanged when added to it.
+    #: Returns:
+    #:   the additive identity for this type.
+    static def zero() -> self
+
+#: The multiplicative identity: the value `x * one() == x` holds for.
+#:
+#: The counterpart of `zero`, and what `std.algo`'s `product` starts from.
+pub trait one:
+    #: The value that leaves any value unchanged when multiplied by it.
+    #: Returns:
+    #:   the multiplicative identity for this type.
+    static def one() -> self
+
+# The numeric primitives. Written out one impl per type rather than generated,
+# because there is no way to be generic over "the numeric types" -- and the
+# literals differ between the integer and floating-point families anyway.
+#
+# An `impl <trait> for <primitive>` used to be parsed, coherence-checked, and
+# then silently dropped from the method table: builtin scalars have no
+# `type_decl` to key it by. These are the first impls in the standard library
+# that depend on that being fixed.
+#
+# The 128-bit types are absent. A reachable module is compiled in full, not
+# just the functions a program calls, so an `impl zero for int128` here would
+# make every program fail with "type `int128` has no scalar bytecode
+# representation yet". They arrive with codegen increment 6.
+impl zero for int8:
+    static def zero() -> int8:
+        return 0
+
+impl one for int8:
+    static def one() -> int8:
+        return 1
+
+impl zero for int16:
+    static def zero() -> int16:
+        return 0
+
+impl one for int16:
+    static def one() -> int16:
+        return 1
+
+impl zero for int32:
+    static def zero() -> int32:
+        return 0
+
+impl one for int32:
+    static def one() -> int32:
+        return 1
+
+impl zero for int64:
+    static def zero() -> int64:
+        return 0
+
+impl one for int64:
+    static def one() -> int64:
+        return 1
+
+impl zero for uint8:
+    static def zero() -> uint8:
+        return 0
+
+impl one for uint8:
+    static def one() -> uint8:
+        return 1
+
+impl zero for uint16:
+    static def zero() -> uint16:
+        return 0
+
+impl one for uint16:
+    static def one() -> uint16:
+        return 1
+
+impl zero for uint32:
+    static def zero() -> uint32:
+        return 0
+
+impl one for uint32:
+    static def one() -> uint32:
+        return 1
+
+impl zero for uint64:
+    static def zero() -> uint64:
+        return 0
+
+impl one for uint64:
+    static def one() -> uint64:
+        return 1
+
+impl zero for isize:
+    static def zero() -> isize:
+        return 0
+
+impl one for isize:
+    static def one() -> isize:
+        return 1
+
+impl zero for usize:
+    static def zero() -> usize:
+        return 0
+
+impl one for usize:
+    static def one() -> usize:
+        return 1
+
+impl zero for float32:
+    static def zero() -> float32:
+        return 0.0
+
+impl one for float32:
+    static def one() -> float32:
+        return 1.0
+
+impl zero for float64:
+    static def zero() -> float64:
+        return 0.0
+
+impl one for float64:
+    static def one() -> float64:
+        return 1.0
+

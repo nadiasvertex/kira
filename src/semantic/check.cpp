@@ -7161,11 +7161,20 @@ private:
         const auto is_builtin_applied_target =
             target_entry.kind == type_kind::builtin_generic_kind &&
             target_entry.decl == nullptr && !target_entry.name.empty();
+        // An impl for a builtin *scalar* (`impl zero for int32`). The third
+        // instance of the same shape: no `type_decl`, so it fell into the
+        // `continue` and was parsed, coherence-checked, and then silently
+        // never registered. `int32` and friends are where the numeric
+        // identity traits have to land, since nothing else can name a zero.
+        const auto is_builtin_scalar_target =
+            target_entry.kind == type_kind::builtin_kind &&
+            target_entry.decl == nullptr && !target_entry.name.empty();
         if (target_entry.decl == nullptr && !is_builtin_ctor_target &&
-            !is_builtin_applied_target) {
+            !is_builtin_applied_target && !is_builtin_scalar_target) {
           continue;
         }
-        auto &methods = (is_builtin_ctor_target || is_builtin_applied_target)
+        auto &methods = (is_builtin_ctor_target || is_builtin_applied_target ||
+                         is_builtin_scalar_target)
                             ? impl_methods_by_builtin_[target_entry.name]
                             : methods_[target_entry.decl];
         auto overridden_names = std::unordered_set<std::string>{};
@@ -9293,6 +9302,14 @@ private:
       // A builtin target (`list[int32]`) has no `type_decl` for `find_method`
       // to key on; its impl members live in the constructor-name-keyed table.
       method = find_builtin_impl_method(entry.name, fn_name);
+    }
+    if (method == nullptr && entry.decl == nullptr && !entry.name.empty()) {
+      // `extend int32: static def zero()`. The extend table is keyed the same
+      // way but was never consulted here, so `T.zero()` with `T` solved to a
+      // primitive reported "no static `zero` on type `int32`" — whose help
+      // text told the user to write the very `extend` block that was being
+      // ignored.
+      method = find_extend_method_for_builtin(entry, fn_name);
     }
     if (method == nullptr) {
       return std::nullopt;
