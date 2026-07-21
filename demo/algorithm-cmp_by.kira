@@ -4,21 +4,28 @@ module main
 #
 # Demonstrates: comparing equal, less, greater, and varying-length iterators.
 
+def cmp_int(x: int32, y:int32) -> ordering:
+  if x<y:
+    @less
+  elif x>y:
+    @greater
+  else:
+    @equal
+
+def ord_str(o: ordering) -> str:
+  match o:
+    @less => "less"
+    @greater => "greater"
+    _ => "equal"
+
 def main() -> int32:
     let a = [1, 2, 3]
     let b = [1, 2, 3]
     let c = [1, 2, 4]
     let d = [1, 2]
 
-    def cmp_int(x: &int32, y: &int32) -> ordering:
-        if *x < *y:
-            return @less
-        elif *x > *y:
-            return @greater
-        return @equal
-
-    println("cmp_same={a.into_iter().cmp_by(b.into_iter(), cmp_int)}")
-    println("cmp_lt={a.into_iter().cmp_by(c.into_iter(), cmp_int)}")
-    println("cmp_gt={c.into_iter().cmp_by(a.into_iter(), cmp_int)}")
-    println("cmp_prefix={d.into_iter().cmp_by(a.into_iter(), cmp_int)}")
+    println("cmp_same={ord_str(a.iter().cmp_by(b.iter(), cmp_int))}")
+    println("cmp_lt={ord_str(a.iter().cmp_by(c.iter(), cmp_int))}")
+    println("cmp_gt={ord_str(c.iter().cmp_by(a.iter(), cmp_int))}")
+    println("cmp_prefix={ord_str(d.iter().cmp_by(a.iter(), cmp_int))}")
     return 0
