@@ -8,11 +8,11 @@ def main() -> int32:
     let nums = [10, 20, 30, 40]
 
     # 30 is at position 2
-    println("position_of_30={nums.into_iter().position(x => *x == 30).unwrap()}")
+    println("position_of_30={nums.into_iter().position(x => x == 30).unwrap()}")
 
     # First even position is 0 (10 is even)
-    println("first_even_pos={nums.into_iter().position(x => *x % 2 == 0).unwrap()}")
+    println("first_even_pos={nums.into_iter().position(x => x % 2 == 0).unwrap()}")
 
     # Not finding
-    println("position_none={nums.into_iter().position(x => *x > 100).is_none()}")
+    println("position_none={nums.into_iter().position(x => x > 100).is_none()}")
     return 0

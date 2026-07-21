@@ -7,13 +7,13 @@ module main
 def main() -> int32:
     let nums = [1, 2, 3, 4]
 
-    println("product={nums.into_iter().product()}")
+    println("product={nums.iter().product()}")
 
     # Negative numbers
     let mixed = [-1, 2, -3]
-    println("mixed={mixed.into_iter().product()}")
+    println("mixed={mixed.iter().product()}")
 
     # Empty returns 1 (the multiplicative identity)
     let empty: list[int32] = []
-    println("empty={empty.into_iter().product()}")
+    println("empty={empty.iter().product()}")
     return 0
