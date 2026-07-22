@@ -1030,3 +1030,18 @@ pub def product[I, T](it: I) -> T where I: iterator[T], T: one:
     while let @some(x) = cursor.next():
         total = total * x
     return total
+
+#: Yields owned values by dereferencing a reference iterator.
+#:
+#: Takes an iterator yielding `&T` and produces an iterator yielding `T`.
+#: This avoids the manual `.map(x => *x)` that every reference-iteration chain needs:
+#:
+#:     # borrows `nums`; the list stays accessible
+#:     let total = nums.iter().values().sum()
+#:
+#: Args:
+#:   it: the iterator to adapt (moved).
+#: Returns:
+#:   an iterator yielding `x` for each `&x` of the source.
+pub def values[I, T](it: I) -> map[I, &T, T] where I: iterator[&T]:
+    return map(it, x => *x)
