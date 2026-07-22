@@ -1517,10 +1517,7 @@ private:
         return std::unexpected(reg.error());
       }
       env_reg = *reg;
-      const auto index = writer_.add_constant(slot_value{uint64_t{0}});
-      emit_op(opcode::op_load_const);
-      emit_register(env_reg);
-      writer_.emit_u16(index);
+      emit_alloc_slots(env_reg, 1);
     } else {
       const auto reg = alloc_register(lambda.span);
       if (!reg.has_value()) {

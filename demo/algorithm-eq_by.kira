@@ -11,11 +11,11 @@ def main() -> int32:
     let d = [1, 2]
 
     # Same elements in same order
-    println("eq_same={a.iter().eq_by(b.iter(), (x, y) => x == y)}")
+    println("eq_same={a.into_iter().eq_by(b.into_iter(), (x, y) => x == y)}")
 
     # Different element
-    println("eq_diff={a.iter().eq_by(c.iter(), (x, y) => x == y)}")
+    println("eq_diff={a.into_iter().eq_by(c.into_iter(), (x, y) => x == y)}")
 
     # Different length
-    println("eq_length={a.iter().eq_by(d.iter(), (x, y) => x == y)}")
+    println("eq_length={a.into_iter().eq_by(d.into_iter(), (x, y) => x == y)}")
     return 0
