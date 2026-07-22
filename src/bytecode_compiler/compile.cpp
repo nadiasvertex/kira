@@ -1108,14 +1108,26 @@ private:
       const auto &ref = dynamic_cast<const hir::hir_local_ref &>(expr);
       const auto src = lookup_local(ref.symbol);
       if (!src.has_value()) {
-        return std::unexpected(compile_error{
-            .kind = compile_error_kind::unsupported_construct,
-            .span = expr.span,
-            .message = std::format(
-                "reference to `{}` is not a local binding — a bare "
-                "function value used outside of call position is not "
-                "supported yet",
-                ref.name)});
+        // Check whether this is a module-level function reference,
+        // resolved against the same function table used by `compile_call`
+        // (but materialized as a callable register value for use as an
+        // argument to higher-order functions like `cmp_by`).
+        const auto key = resolve_callee_key(ref);
+        const auto found = functions_.find(key);
+        if (found == functions_.end()) {
+          return std::unexpected(compile_error{
+              .kind = compile_error_kind::unsupported_construct,
+              .span = expr.span,
+              .message = std::format(
+                  "reference to `{}` is not a local binding — a bare "
+                  "function value used outside of call position is not "
+                  "supported yet",
+                  ref.name)});
+        }
+        emit_op(opcode::op_load_direct_fn);
+        emit_register(dst);
+        writer_.emit_u16(found->second);
+        return {};
       }
       if (*src != dst) {
         emit_op(opcode::op_move);

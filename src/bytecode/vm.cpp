@@ -1667,6 +1667,20 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       case opcode::op_panic:
         throw panic_error(panic_reason::explicit_panic);
 
+      case opcode::op_load_direct_fn: {
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto fn_idx = ops.imm16();
+        f.pc = ops.pos();
+        auto *header =
+            kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+        auto *slots = static_cast<slot_value *>(header);
+        slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
+        slots[1] = slot_value{static_cast<uint64_t>(0)}; // null env for direct fn
+        f.registers[dst] = ptr_to_slot(header);
+        break;
+      }
+
       case opcode::op_make_closure: {
         auto ops = operand_cursor{code, ip};
         const auto dst = ops.reg();
@@ -1692,8 +1706,18 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto fn_idx = static_cast<uint16_t>(closure[0].u);
         const auto env_ptr = closure[1];
         std::vector<slot_value> call_args;
-        call_args.reserve(static_cast<size_t>(argc) + 1);
-        call_args.push_back(env_ptr);
+        // Direct function references (materialized by `op_load_direct_fn`)
+        // have slot[1] = 0x0000 as a null env sentinel; the VM skips the
+        // env pointer for direct functions rather than passing it as a
+        // hidden argument.  Real closures always have a non-null env_ptr
+        // (even when `free_vars` is empty and the ptr points at slot 0 of
+        // the caller's frame — that slot is never itself zero).
+        if (env_ptr.u != 0) {
+          call_args.reserve(static_cast<size_t>(argc) + 1);
+          call_args.push_back(env_ptr);
+        } else {
+          call_args.reserve(static_cast<size_t>(argc));
+        }
         call_args.insert(call_args.end(), f.registers.begin() + first_arg,
                          f.registers.begin() + first_arg + argc);
         push_frame(frames, module_.functions.at(fn_idx), call_args, true, dst);

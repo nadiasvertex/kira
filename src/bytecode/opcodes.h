@@ -375,8 +375,13 @@ enum class opcode : uint8_t {
             ///< now so the VM (increment 2) has one panic mechanism to
             ///< implement, not two.
 
+  // --- Direct function values (first-class module-level functions) --------
+  op_load_direct_fn, ///< u16 dst, u16 function_index — loads `{fn_index; 0}`
+                     ///< into a two-slot register value so it can be passed
+                     ///< as a `fn` argument or stored in a local.
+
   // --- Closures (spec/codegen-design.md increment 6) -----------------------
-  op_make_closure,  ///< u8 dst, u16 function_index, u8 env_ptr —
+  op_make_closure,  ///< u16 dst, u16 function_index, u8 env_ptr —
                     ///< reg[dst] = a fresh 2-slot heap block
                     ///< `{ function_index; reg[env_ptr] }` (`src/runtime/
                     ///< layout.h`'s closure layout). `env_ptr` is a plain
@@ -602,10 +607,13 @@ struct operand_signature {
     return sig({reg, reg, imm8});
   case opcode::op_panic_if:
     return sig({reg, imm8});
-  case opcode::op_panic:
-    return sig({});
+   case opcode::op_panic:
+     return sig({});
 
-  case opcode::op_make_closure:
+   case opcode::op_load_direct_fn:
+     return sig({reg, imm16});
+
+   case opcode::op_make_closure:
     return sig({reg, imm16, reg});
   case opcode::op_call_indirect:
     return sig({reg, reg, reg, imm8});

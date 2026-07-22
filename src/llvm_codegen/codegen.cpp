@@ -1060,6 +1060,12 @@ private:
       const auto &ref = dynamic_cast<const hir::hir_local_ref &>(expr);
       auto *alloca = lookup_local(ref.symbol);
       if (alloca == nullptr) {
+        // Try resolving against the module-level function table, just
+        // like `compile_call` does for the callee position.
+        const auto key = resolve_callee_key(ref);
+        if (const auto found = functions_.find(key); found != functions_.end()) {
+          return found->second;
+        }
         return std::unexpected(codegen_error{
             .kind = codegen_error_kind::unsupported_construct,
             .span = expr.span,
