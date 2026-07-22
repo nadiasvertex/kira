@@ -11,7 +11,8 @@ def main() -> int32:
     let d = [1, 2]
 
     # Same elements in same order
-    println("eq_same={a.into_iter().eq_by(b.into_iter(), (x, y) => x == y)}")
+    println("eq_same:into={a.into_iter().eq_by(b.into_iter(), (x, y) => x == y)}")
+    println("eq_same:iter={a.iter().eq_by(b.iter(), (x, y) => *x == *y)}")
 
     # Different element
     println("eq_diff={a.into_iter().eq_by(c.into_iter(), (x, y) => x == y)}")
