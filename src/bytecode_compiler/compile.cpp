@@ -870,6 +870,7 @@ private:
 
   [[nodiscard]] auto numeric_kind_for(type_id id, source_span span)
       -> std::expected<numeric_kind, compile_error> {
+    id = strip_refs(id);
     const auto kind = numeric_kind_of(types_, id);
     if (!kind.has_value()) {
       return std::unexpected(compile_error{
