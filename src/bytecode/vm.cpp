@@ -1676,7 +1676,8 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
             kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
-        slots[1] = slot_value{static_cast<uint64_t>(0)}; // null env for direct fn
+        slots[1] =
+            slot_value{static_cast<uint64_t>(0)}; // null env for direct fn
         f.registers[dst] = ptr_to_slot(header);
         break;
       }

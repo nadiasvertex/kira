@@ -19,11 +19,11 @@ namespace {
 /// but never called or matched on, and a user declaring their own `ordering`
 /// collided with it and got `expected `ordering`, found `ordering``.
 constexpr std::array<std::string_view, 27> k_builtin_scalar_names = {
-    "bool",    "char",     "str",       "unit",    "never",    "byte",
-    "int8",    "int16",    "int32",     "int64",   "int128",   "uint8",
-    "uint16",  "uint32",   "uint64",    "uint128", "float32",  "float64",
-    "float128", "isize",   "usize",     "io",      "cpu",      "expr",
-    "stmt",    "def_expr", "type_expr",
+    "bool",     "char",     "str",       "unit",    "never",   "byte",
+    "int8",     "int16",    "int32",     "int64",   "int128",  "uint8",
+    "uint16",   "uint32",   "uint64",    "uint128", "float32", "float64",
+    "float128", "isize",    "usize",     "io",      "cpu",     "expr",
+    "stmt",     "def_expr", "type_expr",
 };
 
 /// One prelude container name and its accepted generic-argument count

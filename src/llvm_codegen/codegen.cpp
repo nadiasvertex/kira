@@ -1063,7 +1063,8 @@ private:
         // Try resolving against the module-level function table, just
         // like `compile_call` does for the callee position.
         const auto key = resolve_callee_key(ref);
-        if (const auto found = functions_.find(key); found != functions_.end()) {
+        if (const auto found = functions_.find(key);
+            found != functions_.end()) {
           return found->second;
         }
         return std::unexpected(codegen_error{

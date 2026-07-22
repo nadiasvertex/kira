@@ -130,55 +130,55 @@ namespace kira::bytecode {
 // ==========================================================================
 enum class opcode : uint8_t {
   // --- Constants and register-to-register moves --------------------------
-  op_load_const, ///< u8 dst, u16 const_index — reg[dst] = constants[idx].
-  op_move,       ///< u8 dst, u8 src — reg[dst] = reg[src].
+  op_load_const, ///< u16 dst, u16 const_index — reg[dst] = constants[idx].
+  op_move,       ///< u16 dst, u16 src — reg[dst] = reg[src].
 
   // --- Checked arithmetic (panics on overflow/div-by-zero for integer
   //     kinds, per spec/kira-reference.md's "Integer Overflow" section;
   //     plain IEEE semantics — no panic, may produce inf/nan — for float
   //     kinds) -----------------------------------------------------------
-  op_add, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind — reg[dst] = lhs+rhs.
-  op_sub, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_mul, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_div, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_mod, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_neg, ///< u8 dst, u8 src, u8 numeric_kind — checked for integers.
+  op_add, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind — reg[dst] = lhs+rhs.
+  op_sub, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_mul, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_div, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_mod, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_neg, ///< u16 dst, u16 src, u8 numeric_kind — checked for integers.
 
   // --- Wrapping arithmetic (`+%`/`-%`/`*%` — integer kinds only; never
   //     called with a float numeric_kind) --------------------------------
-  op_add_wrap, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_sub_wrap, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_mul_wrap, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
+  op_add_wrap, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_sub_wrap, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_mul_wrap, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
 
   // --- Saturating arithmetic (`+|`/`-|`/`*|` — integer kinds only) ------
-  op_add_sat, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_sub_sat, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_mul_sat, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
+  op_add_sat, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_sub_sat, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_mul_sat, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
 
   // --- Bitwise / shift (integer kinds only) ------------------------------
-  op_bitand, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_bitor,  ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_bitxor, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_bitnot, ///< u8 dst, u8 src, u8 numeric_kind.
-  op_shl,    ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_shr,    ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind — arithmetic for
+  op_bitand, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_bitor,  ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_bitxor, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_bitnot, ///< u16 dst, u16 src, u8 numeric_kind.
+  op_shl,    ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_shr,    ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind — arithmetic for
              ///< signed kinds, logical for unsigned.
 
   // --- Logical (operates on `numeric_kind::boolean` registers only;
   //     `and`/`or` themselves never reach here — see below, they compile
   //     to jumps) ----------------------------------------------------------
-  op_not_bool, ///< u8 dst, u8 src.
+  op_not_bool, ///< u16 dst, u16 src.
 
   // --- Comparison (result is always a `boolean` register) ----------------
-  op_eq, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_ne, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_lt, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_le, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_gt, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
-  op_ge, ///< u8 dst, u8 lhs, u8 rhs, u8 numeric_kind.
+  op_eq, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_ne, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_lt, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_le, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_gt, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
+  op_ge, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind.
 
   // --- Cast ---------------------------------------------------------------
-  op_cast, ///< u8 dst, u8 src, u8 from_kind, u8 to_kind — converts reg[src]
+  op_cast, ///< u16 dst, u16 src, u8 from_kind, u8 to_kind — converts reg[src]
            ///< (as from_kind) into reg[dst] (as to_kind). Integer-to-
            ///< integer is truncate-or-extend; integer-to-float and
            ///< float-to-integer follow ordinary C++ conversion semantics;
@@ -201,25 +201,25 @@ enum class opcode : uint8_t {
   //  not require (and did not get) any HIR-level change.
   op_jump,          ///< i32 relative offset (from the position immediately
                     ///< after this instruction's operand) — unconditional.
-  op_jump_if_false, ///< u8 cond, i32 relative offset — jump if reg[cond]
+  op_jump_if_false, ///< u16 cond, i32 relative offset — jump if reg[cond]
                     ///< (a `boolean` register) is false.
-  op_jump_if_true,  ///< u8 cond, i32 relative offset — jump if reg[cond]
+  op_jump_if_true,  ///< u16 cond, i32 relative offset — jump if reg[cond]
                     ///< is true.
 
   // --- Calls and returns ---------------------------------------------------
-  op_call, ///< u8 dst, u16 function_index, u8 first_arg_reg, u8 argc —
+  op_call, ///< u16 dst, u16 function_index, u16 first_arg_reg, u8 argc —
            ///< copies `argc` consecutive registers starting at
            ///< `first_arg_reg` (in the *caller's* frame) into the new
            ///< callee frame's registers `[0, argc)`, transfers control to
            ///< `function_index`'s entry, and on return copies the callee's
            ///< result into the caller's `dst` register (unused/untouched
            ///< for a callee compiled with `op_return_unit`).
-  op_return_value, ///< u8 src — pop the current frame, hand reg[src] back
+  op_return_value, ///< u16 src — pop the current frame, hand reg[src] back
                    ///< to the caller as the call's result.
   op_return_unit,  ///< (no operands) — pop the current frame with no value
                    ///< to hand back (the callee's return type is `unit`).
 
-  op_call_intrinsic, ///< u8 dst, u8 intrinsic_id, u8 first_arg_reg, u8 argc
+  op_call_intrinsic, ///< u16 dst, u8 intrinsic_id, u16 first_arg_reg, u8 argc
                      ///< — calls the native implementation of the intrinsic
                      ///< at index `intrinsic_id` into
                      ///< `kira::known_intrinsic_names` (src/intrinsics.h)
@@ -246,7 +246,7 @@ enum class opcode : uint8_t {
   //  generic over "a flat block of 8-byte slots" (`src/runtime/layout.h`),
   //  matching the same "parameterize, don't combinatorially enumerate"
   //  choice `numeric_kind` already made for arithmetic.
-  op_alloc,          ///< u8 dst, u16 byte_size — reg[dst] = a fresh, zeroed
+  op_alloc,          ///< u16 dst, u16 byte_size — reg[dst] = a fresh, zeroed
                      ///< `byte_size`-byte block from the arena. Despite the
                      ///< name, this has always just allocated a byte count
                      ///< (`slot_count * 8` for the uniform-slot constructs
@@ -254,7 +254,7 @@ enum class opcode : uint8_t {
                      ///< whatever byte size their own representation needs
                      ///< (a byte-precise `runtime::struct_layout` size for a
                      ///< struct, `field_count * 8` for a tuple/sum/closure).
-  op_load_slot,      ///< u8 dst, u8 ptr, u16 byte_offset, u8 field_size —
+  op_load_slot,      ///< u16 dst, u16 ptr, u16 byte_offset, u8 field_size —
                      ///< reg[dst] = a `field_size`-byte (1/2/4/8), zero-
                      ///< extended-to-64-bit read at
                      ///< *(reg[ptr] as uint8_t* + byte_offset). Every
@@ -264,20 +264,20 @@ enum class opcode : uint8_t {
                      ///< observable behavior; a struct's own byte-precise
                      ///< `field_size`/`byte_offset` come from
                      ///< `runtime::struct_field_offset`/`layout_of`.
-  op_store_slot,     ///< u8 ptr, u16 byte_offset, u8 src, u8 field_size —
+  op_store_slot,     ///< u16 ptr, u16 byte_offset, u16 src, u8 field_size —
                      ///< *(reg[ptr] as uint8_t* + byte_offset) = the low
                      ///< `field_size` bytes (1/2/4/8) of reg[src]. Write-side
                      ///< counterpart to `op_load_slot`; same
                      ///< `field_size = 8` convention for uniform-slot
                      ///< constructs.
-  op_load_str_const, ///< u8 dst, u16 string_const_index — reg[dst] = a
+  op_load_str_const, ///< u16 dst, u16 string_const_index — reg[dst] = a
                      ///< fresh 2-slot `str` heap value `{ len; data_ptr }`
                      ///< whose `data_ptr` points directly at
                      ///< `bytecode_function::string_constants[idx]`'s own
                      ///< bytes (no arena copy — the function outlives the
                      ///< run, so this is safe, and literal string bytes are
                      ///< never mutated through a `str` value).
-  op_load_indexed,   ///< u8 dst, u8 ptr, u8 index, u8 elem_size — reg[dst] =
+  op_load_indexed,   ///< u16 dst, u16 ptr, u16 index, u8 elem_size — reg[dst] =
                      ///< a `elem_size`-byte (1/2/4/8), zero-extended read at
                      ///< *(reg[ptr] as uint8_t* + reg[index].u * elem_size).
                      ///< The runtime-indexed counterpart to `op_load_slot`'s
@@ -292,7 +292,7 @@ enum class opcode : uint8_t {
                      ///< `array[byte,N]` 1-byte special case) into one
                      ///< opcode parameterized the same "parameterize, don't
                      ///< enumerate" way `numeric_kind` already is.
-  op_store_indexed,  ///< u8 ptr, u8 index, u8 src, u8 elem_size —
+  op_store_indexed,  ///< u16 ptr, u16 index, u16 src, u8 elem_size —
                      ///< *(reg[ptr] as uint8_t* + reg[index].u * elem_size)
                      ///< = the low `elem_size` bytes of reg[src].
 
@@ -315,7 +315,7 @@ enum class opcode : uint8_t {
   //  out of an 8-byte register slot is well-defined only because the low
   //  bytes are the value's bytes — this assumes a little-endian host, the
   //  same assumption `store_sized`/`load_sized` already make.
-  op_addr_local,   ///< u8 dst, u8 src — reg[dst].u = the address of the
+  op_addr_local,   ///< u16 dst, u16 src — reg[dst].u = the address of the
                    ///< current frame's register `src`. Safe to hold for the
                    ///< frame's lifetime: a frame's registers are a
                    ///< `std::vector` whose buffer does not move when the
@@ -324,40 +324,40 @@ enum class opcode : uint8_t {
                    ///< this stays valid across nested calls. It does not
                    ///< outlive the frame — returning it is a dangling
                    ///< reference the checker, not this opcode, must reject.
-  op_addr_slot,    ///< u8 dst, u8 ptr, u16 byte_offset — reg[dst].u =
+  op_addr_slot,    ///< u16 dst, u16 ptr, u16 byte_offset — reg[dst].u =
                    ///< reg[ptr].u + byte_offset. The address counterpart of
                    ///< `op_load_slot`: `&mut s.field` on a scalar field.
-  op_addr_indexed, ///< u8 dst, u8 ptr, u8 index, u8 elem_size — reg[dst].u
+  op_addr_indexed, ///< u16 dst, u16 ptr, u16 index, u8 elem_size — reg[dst].u
                    ///< = reg[ptr].u + reg[index].u * elem_size. The address
                    ///< counterpart of `op_load_indexed`: `&mut xs[i]`, and
                    ///< the opcode `iter_mut` over a container is built on.
-  op_list_push,    ///< u8 header_ptr, u8 value, u8 elem_size — appends the low
-                   ///< `elem_size` bytes of reg[value] onto the `list[T]`
-                   ///< value at reg[header_ptr] (a 3-slot `{ len; cap; data }`
-                   ///< header, `src/runtime/layout.h`, `data` itself a
-                   ///< contiguous `elem_size`-byte-per-element block —
-                   ///< `elem_size` generalizes what used to be a hardcoded
-                   ///< 8-byte-per-element push), growing/copying to a larger
-                   ///< `data` block when already at capacity. Unlike
-                   ///< `op_load_slot`/`op_store_slot`, this is one
-                   ///< opcode rather than several composed primitives:
-                   ///< growth needs a real conditional allocate-and-copy
-                   ///< that doesn't reduce to "one flat block of 8-byte
-                   ///< slots," so this delegates to
-                   ///< `kira::runtime::list_push` (the exact same
-                   ///< function `llvm_codegen`'s generated IR calls via
-                   ///< `kira_rt_list_push`) rather than reimplementing
-                   ///< growth as a second copy of that logic here.
-  op_panic_if,     ///< u8 cond, u8 panic_reason — panics with
-                   ///< `static_cast<panic_reason>(panic_reason)` if
-                   ///< reg[cond] (a `boolean` register) is true; otherwise
-                   ///< falls through. The bytecode-level building block a
-                   ///< compiler-emitted bounds check (or any other
-                   ///< source-triggered panic condition that isn't one of
-                   ///< the checked-arithmetic opcodes' own built-in panics)
-                   ///< composes from — mirrors `llvm_codegen`'s
-                   ///< `guard_panic` helper, just reified as one opcode
-                   ///< instead of a conditional branch to a call.
+  op_list_push, ///< u16 header_ptr, u16 value, u8 elem_size — appends the low
+                ///< `elem_size` bytes of reg[value] onto the `list[T]`
+                ///< value at reg[header_ptr] (a 3-slot `{ len; cap; data }`
+                ///< header, `src/runtime/layout.h`, `data` itself a
+                ///< contiguous `elem_size`-byte-per-element block —
+                ///< `elem_size` generalizes what used to be a hardcoded
+                ///< 8-byte-per-element push), growing/copying to a larger
+                ///< `data` block when already at capacity. Unlike
+                ///< `op_load_slot`/`op_store_slot`, this is one
+                ///< opcode rather than several composed primitives:
+                ///< growth needs a real conditional allocate-and-copy
+                ///< that doesn't reduce to "one flat block of 8-byte
+                ///< slots," so this delegates to
+                ///< `kira::runtime::list_push` (the exact same
+                ///< function `llvm_codegen`'s generated IR calls via
+                ///< `kira_rt_list_push`) rather than reimplementing
+                ///< growth as a second copy of that logic here.
+  op_panic_if,  ///< u16 cond, u8 panic_reason — panics with
+                ///< `static_cast<panic_reason>(panic_reason)` if
+                ///< reg[cond] (a `boolean` register) is true; otherwise
+                ///< falls through. The bytecode-level building block a
+                ///< compiler-emitted bounds check (or any other
+                ///< source-triggered panic condition that isn't one of
+                ///< the checked-arithmetic opcodes' own built-in panics)
+                ///< composes from — mirrors `llvm_codegen`'s
+                ///< `guard_panic` helper, just reified as one opcode
+                ///< instead of a conditional branch to a call.
 
   // --- Diagnostics ---------------------------------------------------------
   op_panic, ///< (no operands) — panics with `panic_reason::explicit_panic`
@@ -381,7 +381,7 @@ enum class opcode : uint8_t {
                      ///< as a `fn` argument or stored in a local.
 
   // --- Closures (spec/codegen-design.md increment 6) -----------------------
-  op_make_closure,  ///< u16 dst, u16 function_index, u8 env_ptr —
+  op_make_closure,  ///< u16 dst, u16 function_index, u16 env_ptr —
                     ///< reg[dst] = a fresh 2-slot heap block
                     ///< `{ function_index; reg[env_ptr] }` (`src/runtime/
                     ///< layout.h`'s closure layout). `env_ptr` is a plain
@@ -389,7 +389,7 @@ enum class opcode : uint8_t {
                     ///< `op_alloc`'d slot block, one slot per free variable,
                     ///< populated via `op_store_slot`), or the sentinel `0`
                     ///< when the lambda captures nothing.
-  op_call_indirect, ///< u8 dst, u8 closure, u8 first_arg, u8 argc — reads
+  op_call_indirect, ///< u16 dst, u16 closure, u16 first_arg, u8 argc — reads
                     ///< `{ function_index; env_ptr }` out of reg[closure],
                     ///< then calls that function exactly like `op_call`
                     ///< except with `env_ptr` prepended as the callee's
@@ -420,7 +420,7 @@ enum class opcode : uint8_t {
   // the step function's body from the top) and `k` after the `k`th
   // `op_yield` — an index into the step function's own leading
   // resume-dispatch chain, not a raw saved program counter.
-  op_make_generator, ///< u8 dst, u16 step_function_index, u8 state_ptr —
+  op_make_generator, ///< u16 dst, u16 step_function_index, u16 state_ptr —
                      ///< reg[dst] = a fresh 4-slot heap block
   ///< `{ step_function_index; reg[state_ptr]; resume_index=0;
   ///< finished=0 }`. `state_ptr` is the sentinel `0`
@@ -429,22 +429,22 @@ enum class opcode : uint8_t {
   ///< Emitted by a generator's constructor function, not
   ///< at its call sites — calling a generator function
   ///< is an ordinary `op_call` into the constructor.
-  op_yield,          ///< u8 value_reg, u8 generator_reg, u8 next_resume_index —
-                     ///< writes `some(reg[value_reg])` into the *caller's*
-                     ///< result register (the same `result_reg`/
-                     ///< `has_caller` bookkeeping `op_return_value` already
-                     ///< threads through `frame`), sets
-                     ///< reg[generator_reg]'s `resume_index` slot to
-                     ///< `next_resume_index` (a compile-time constant —
-                     ///< this yield's own ordinal), and pops the current
-                     ///< frame *without* setting `finished` — the
-                     ///< coroutine analog of `op_return_value`, just
-                     ///< leaving the generator resumable instead of done.
-                     ///< Every locally-live symbol due to survive this
-                     ///< suspension is synced into `state_ptr` via ordinary
-                     ///< `op_store_slot`s immediately before this opcode,
-                     ///< not by this opcode itself.
-  op_generator_next, ///< u8 dst, u8 generator_reg — the compiled form of
+  op_yield, ///< u16 value_reg, u16 generator_reg, u8 next_resume_index —
+            ///< writes `some(reg[value_reg])` into the *caller's*
+            ///< result register (the same `result_reg`/
+            ///< `has_caller` bookkeeping `op_return_value` already
+            ///< threads through `frame`), sets
+            ///< reg[generator_reg]'s `resume_index` slot to
+            ///< `next_resume_index` (a compile-time constant —
+            ///< this yield's own ordinal), and pops the current
+            ///< frame *without* setting `finished` — the
+            ///< coroutine analog of `op_return_value`, just
+            ///< leaving the generator resumable instead of done.
+            ///< Every locally-live symbol due to survive this
+            ///< suspension is synced into `state_ptr` via ordinary
+            ///< `op_store_slot`s immediately before this opcode,
+            ///< not by this opcode itself.
+  op_generator_next, ///< u16 dst, u16 generator_reg — the compiled form of
                      ///< `.next()`. If reg[generator_reg]'s `finished` slot
                      ///< is set, writes `none` into dst directly (no frame
                      ///< push). Otherwise pushes a frame for the
@@ -607,13 +607,13 @@ struct operand_signature {
     return sig({reg, reg, imm8});
   case opcode::op_panic_if:
     return sig({reg, imm8});
-   case opcode::op_panic:
-     return sig({});
+  case opcode::op_panic:
+    return sig({});
 
-   case opcode::op_load_direct_fn:
-     return sig({reg, imm16});
+  case opcode::op_load_direct_fn:
+    return sig({reg, imm16});
 
-   case opcode::op_make_closure:
+  case opcode::op_make_closure:
     return sig({reg, imm16, reg});
   case opcode::op_call_indirect:
     return sig({reg, reg, reg, imm8});
