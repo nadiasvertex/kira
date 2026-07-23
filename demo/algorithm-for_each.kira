@@ -6,12 +6,11 @@ module main
 
 def main() -> int32:
     let nums = [1, 2, 3, 4, 5]
-    let nv = nums.iter().values()
 
     # Print each number doubled
-    nv.for_each(x => println("x2={x * 2}"))
+    nums.iter().values().for_each(x => println("x2={x * 2}"))
 
     # Print only even numbers
     println("---")
-    nv.filter(x => x % 2 == 0).for_each(x => println("even={x}"))
+    nums.iter().values().filter(x => x % 2 == 0).for_each(x => println("even={x}"))
     return 0
