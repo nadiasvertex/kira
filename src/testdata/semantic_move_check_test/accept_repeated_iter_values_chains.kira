@@ -1,0 +1,15 @@
+module main
+
+# The fixed shape of `demo/algorithm-for_each.kira`: each traversal builds
+# its own fresh iterator chain from `nums` rather than reusing one already
+# drained by a prior `for_each`. `nums.iter()` only borrows `nums`
+# (`iter[T](xs: &list[T])`), so building it twice is fine — this must check
+# cleanly.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+
+    nums.iter().values().for_each(x => println("x2={x * 2}"))
+
+    nums.iter().values().filter(x => x % 2 == 0).for_each(x => println("even={x}"))
+    return 0

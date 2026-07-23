@@ -1,0 +1,13 @@
+module main
+
+# Regression for the `src/testdata/std_test/algo_terminals.kira` bug: a
+# UFCS call on a *free function* (not a `self`-receiver method), here
+# `std.iter.into_iter[T](xs: list[T])`, moves its first argument exactly
+# like a plain by-value call argument would. Reusing `xs` afterward must be
+# a compile error.
+
+def main() -> usize:
+    let xs = [1, 2, 3]
+    let a = xs.into_iter().count()
+    let b = xs.into_iter().count()
+    return a + b

@@ -68,6 +68,20 @@ cc_test(
 )
 
 cc_test(
+    name = "move_check_test",
+    srcs = ["move_check_test.cpp"],
+    data = [
+        "//src:semantic_move_check_test_files",
+        "//src:std_sources",
+    ],
+    deps = [
+        ":semantic",
+        "//src/parser:parser",
+        "//src/testing",
+    ],
+)
+
+cc_test(
     name = "resolution_test",
     srcs = ["resolution_test.cpp"],
     data = [

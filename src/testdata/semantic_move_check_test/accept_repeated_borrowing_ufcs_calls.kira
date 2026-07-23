@@ -1,0 +1,18 @@
+module main
+
+# Guardrail: a UFCS call whose resolved first parameter is an explicit
+# `&`/`&mut` reference (not `self`, but still not by value) only borrows
+# its receiver, the same way `std.iter.peek[I, T](it: &mut peekable_iter[I,
+# T])` does. Calling it more than once on the same binding must not be
+# flagged as a use-after-move.
+
+type wrapper = { n: int32 }
+
+def peek(w: &wrapper) -> int32:
+    return w.n
+
+def main() -> int32:
+    let w = wrapper { n: 5 }
+    let a = w.peek()
+    let b = w.peek()
+    return a + b

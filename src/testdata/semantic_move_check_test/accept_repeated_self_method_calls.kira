@@ -1,0 +1,19 @@
+module main
+
+# Guardrail: a `self`-receiver method call always takes its receiver by
+# reference, regardless of `mut self` — the same way `impl iterator`'s
+# `next(mut self)` is called repeatedly on the same binding throughout
+# `std.algo`. The fix for the `for_each` move-checker gap must not start
+# flagging this as a use-after-move.
+
+type counter = { n: int32 }
+
+extend counter:
+    def show(self) -> int32:
+        return self.n
+
+def main() -> int32:
+    let c = counter { n: 1 }
+    let a = c.show()
+    let b = c.show()
+    return a + b

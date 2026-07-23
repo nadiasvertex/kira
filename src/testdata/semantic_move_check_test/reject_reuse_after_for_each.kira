@@ -1,0 +1,15 @@
+module main
+
+# Regression for the `demo/algorithm-for_each.kira` bug: `for_each`
+# (`std.algo`) takes its iterator by value (`it: I`), so calling it moves
+# `nv`. Reusing `nv` afterward must be a compile error, not a silent
+# no-op over an already-drained iterator.
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+    let nv = nums.iter().values()
+
+    nv.for_each(x => println("x2={x * 2}"))
+
+    nv.filter(x => x % 2 == 0).for_each(x => println("even={x}"))
+    return 0

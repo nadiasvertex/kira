@@ -99,6 +99,73 @@ private:
     return !types.is_boolean(id) && !types.is_numeric(id) && !types.is_unit(id);
   }
 
+  /// A parameter's bound name if it is a simple identifier pattern, or empty
+  /// for a destructuring pattern — mirrors `checker::param_name_of`
+  /// (`check.cpp`), which this pass can't reach directly (that helper lives
+  /// inside the checker's anonymous-namespace class).
+  [[nodiscard]] static auto param_name_of(const ast::param &param)
+      -> std::string {
+    if (param.pattern != nullptr &&
+        param.pattern->kind == ast::node_kind::binding_pattern) {
+      return dynamic_cast<const ast::binding_pattern &>(*param.pattern).name;
+    }
+    return {};
+  }
+
+  /// Whether a `receiver.method(...)` call moves `receiver`, the same way a
+  /// plain by-value call argument would. True only when the call resolved to
+  /// a real declaration (`checked_.resolved_callees`) whose first parameter
+  /// is neither a `self` receiver (methods always take `self` by reference,
+  /// regardless of `mut` — see `impl iterator`'s `next(mut self)`, called
+  /// repeatedly on the same binding throughout `std.algo`) nor an explicit
+  /// `&`/`&mut` reference. A first parameter with an ordinary name and a
+  /// plain (non-reference) type — `for_each[I, T](it: I, ...)` in
+  /// `std.algo`, e.g. — moves its receiver exactly like any other by-value
+  /// parameter: calling `nv.for_each(...)` and then reusing `nv` is a
+  /// use-after-move, the same as passing `nv` twice as a plain argument
+  /// would be. An unresolved call (callee not in `resolved_callees`, e.g. a
+  /// call through a plain `fn(...)`-typed value) is conservatively treated
+  /// as not moving, matching this pass's general policy of never guessing at
+  /// a type it can't look up.
+  [[nodiscard]] auto receiver_is_moved(const ast::call_expr &call) const
+      -> bool {
+    const auto it = checked_.resolved_callees.find(&call);
+    if (it == checked_.resolved_callees.end() || it->second.decl == nullptr) {
+      return false;
+    }
+    const auto &decl = *it->second.decl;
+    if (decl.params.empty()) {
+      return false;
+    }
+    const auto &front = decl.params.front();
+    if (param_name_of(front) == "self") {
+      return false;
+    }
+    const auto param_type = lookup_type(front.pattern.get());
+    if (checked_.types.is_unknown(param_type)) {
+      return false;
+    }
+    return checked_.types.entry(param_type).kind != type_kind::ref_kind;
+  }
+
+  /// A call's callee is walked specially rather than always through the
+  /// generic `walk_expr(..., consume_top=false)` path used for a plain field
+  /// access: when the callee is `receiver.method` and the resolved method
+  /// takes its receiver by value (see `receiver_is_moved`), the receiver is
+  /// consumed as a call argument would be. Otherwise this falls back to the
+  /// ordinary field-projection treatment — a plain function name callee, or
+  /// a method call that only borrows its receiver.
+  auto walk_callee(const ast::call_expr &call) -> void {
+    if (call.callee->kind == ast::node_kind::field_expr) {
+      const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+      if (field.object != nullptr && receiver_is_moved(call)) {
+        walk_expr(*field.object, /*consume_top=*/true);
+        return;
+      }
+    }
+    walk_expr(*call.callee, /*consume_top=*/false);
+  }
+
   auto declare(std::string_view name, source_span span, type_id type) -> void {
     if (name.empty() || scopes_.empty()) {
       return;
@@ -238,8 +305,9 @@ private:
       // Operators dispatch to a trait method under the hood (`a + b` is
       // `a.add(b)`), but unlike a real call, neither operand's spelling
       // looks like an ownership transfer the way a plain call argument
-      // does — so neither is treated as consumed, same as a method-call
-      // receiver never is (see `call_expr` below).
+      // does — so neither is treated as consumed, unlike a `receiver.method`
+      // call whose resolved method takes its receiver by value (see
+      // `walk_callee`, used from `call_expr` below).
       const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
       if (binary.lhs != nullptr) {
         walk_expr(*binary.lhs, /*consume_top=*/false);
@@ -253,7 +321,7 @@ private:
     case ast::node_kind::call_expr: {
       const auto &call = dynamic_cast<const ast::call_expr &>(expr);
       if (call.callee != nullptr) {
-        walk_expr(*call.callee, /*consume_top=*/false);
+        walk_callee(call);
       }
       for (const auto &arg : call.args) {
         if (arg.value != nullptr) {
