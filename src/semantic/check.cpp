@@ -5248,7 +5248,7 @@ private:
     solve_from_expected_type(call, decl, owner, type_bindings, explicit_args);
 
     const auto solution = solve_generic_params(call, decl, owner, solved,
-                                               type_bindings, explicit_args);
+                                                type_bindings, explicit_args);
     if (!solution.has_value()) {
       return std::nullopt;
     }
@@ -6380,6 +6380,35 @@ private:
                       "applicable) to support this operator.",
                       trait_name, entry.name, trait_name));
       return k_error_type;
+    }
+    if (entry.kind == type_kind::builtin_kind) {
+      if (wire_dispatch && binary.lhs != nullptr) {
+        // Look for an extension method on the builtin type.
+        if (const auto *method =
+                find_extend_method_for_builtin(entry, trait_name);
+            method != nullptr && !method->decl->params.empty() &&
+            param_name_of(method->decl->params.front()) == "self") {
+          operator_dispatches_[&binary] = resolved_callee{
+              .decl = method->decl,
+              .owner_module = method->owner->module_name,
+              .impl_target_type = entry.name,
+              .receiver = binary.lhs.get()};
+          return resolve_operator_return_type(target, trait_name, *method);
+        }
+        // Also check builtin impl methods (e.g., `impl add for str`).
+        if (const auto *method =
+                find_builtin_impl_method(entry.name, trait_name);
+            method != nullptr && !method->decl->params.empty() &&
+            param_name_of(method->decl->params.front()) == "self") {
+          operator_dispatches_[&binary] = resolved_callee{
+              .decl = method->decl,
+              .owner_module = method->owner->module_name,
+              .impl_target_type = entry.name,
+              .receiver = binary.lhs.get()};
+          return resolve_operator_return_type(target, trait_name, *method);
+        }
+      }
+      return k_unknown_type; // no trait impl or extension for this builtin
     }
     return k_unknown_type;
   }
@@ -7809,9 +7838,11 @@ private:
                                          .use_type_param_stack = false,
                                          .quiet = true};
 
-    const auto apply = [&](std::string_view subject_name,
+    const   auto apply = [&](std::string_view subject_name,
                            const ast::type_expr &bound_expr) -> void {
       const auto solved = bindings.find(std::string(subject_name));
+      if (solved != bindings.end()) {
+      }
       if (solved == bindings.end() || types_.is_unknown(solved->second) ||
           mentions_abstract_type(solved->second)) {
         return;
@@ -7838,19 +7869,20 @@ private:
         if (named.path.empty() || named.type_args.empty()) {
           continue;
         }
-        const auto concrete_args = trait_args_of_impl_for(
+        auto concrete_args = trait_args_of_impl_for(
             strip_refs(solved->second), named.path.back());
         if (!concrete_args.has_value()) {
           continue;
         }
         for (size_t i = 0;
-             i < named.type_args.size() && i < concrete_args->size(); ++i) {
+              i < named.type_args.size() && i < concrete_args->size(); ++i) {
           const auto *arg_type = dynamic_cast<const ast::type_expr *>(
               named.type_args[i].value.get());
           if (arg_type == nullptr) {
             continue;
           }
-          unify_rigid(resolve_type(*arg_type, pattern_ctx), (*concrete_args)[i],
+          const auto resolved_arg = resolve_type(*arg_type, pattern_ctx);
+          unify_rigid(resolved_arg, (*concrete_args)[i],
                       bindings);
         }
       }
@@ -8733,11 +8765,12 @@ private:
 
     if (!in_const_generic_template_ && !in_type_generic_template_ &&
         is_generic_template(decl) && is_free_function(decl, candidate.owner)) {
-      if (const auto result = instantiate_generic_function(
-              call, decl, candidate.owner, candidate.file_id, solved, params,
-              /*explicit_args=*/{}, field.object.get())) {
+    if (const auto result = instantiate_generic_function(
+            call, decl, candidate.owner, candidate.file_id, solved, params,
+            /*explicit_args=*/{}, field.object.get())) {
         return *result;
-      }
+    } else {
+    }
     }
 
     resolved_callees_[&call] =

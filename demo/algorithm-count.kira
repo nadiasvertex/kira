@@ -7,8 +7,8 @@ module main
 
 def main() -> int32:
     let nums = [1, 2, 3, 4, 5]
-    println("total={nums.into_iter().count()}")
-    println("even={nums.into_iter().filter(x => x % 2 == 0).count()}")
+    println("total={nums.iter().values().count()}")
+    println("even={nums.iter().values().filter(x => x % 2 == 0).count()}")
 
     let empty: list[int32] = []
     println("empty={empty.into_iter().count()}")

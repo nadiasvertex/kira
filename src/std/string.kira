@@ -175,3 +175,16 @@ extend str:
                 return pieces
             pieces.push(self[start .. r.pos])
             start = r.pos + sep.len()
+
+intrinsic def rt_str_concat(a: str, b: str) -> str
+
+#: Concatenates `a` and `b`, returning a string containing both.
+#: Args:
+#:   a: string whose contents are prepended to `b`.
+#:   b: string whose contents are appended to `a`.
+#: Returns:
+#:   a new string containing the contents of both.
+impl add for str:
+    type output = str
+    def add(self, other: str) -> str:
+        return rt_str_concat(self, other)

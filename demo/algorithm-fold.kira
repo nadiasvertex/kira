@@ -7,16 +7,18 @@ module main
 
 def main() -> int32:
     let nums = [1, 2, 3, 4, 5]
+    let nv = nums.iter().values()
+
     # Sum: start at 0, add each element
-    println("sum={nums.into_iter().fold(0, (acc, x) => acc + x)}")
+    println("sum={nv.fold(0, (acc, x) => acc + x)}")
     # Product: start at 1, multiply each element
-    println("product={nums.into_iter().fold(1, (acc, x) => acc * x)}")
+    println("product={nv.fold(1, (acc, x) => acc * x)}")
     # String concatenation
     let words = ["hello", " ", "world"]
-    let result = words.into_iter().fold("", (acc, x) => acc + x)
+    let result = words.iter().values().fold("", (acc, x) => acc + x)
     println("concat={result}")
 
     # Empty iterator returns the initial value
     let empty: list[int32] = []
-    println("empty_fold={empty.into_iter().fold(42, (acc, x) => acc + x)}")
+    println("empty_fold={empty.iter().values().fold(42, (acc, x) => acc + x)}")
     return 0

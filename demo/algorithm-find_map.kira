@@ -8,10 +8,11 @@ module main
 
 def main() -> int32:
     let nums = [2, 3, 4]
+    let nv = nums.iter().values()
 
     # Find first number whose double is 8
-    println("find_map={nums.into_iter().find_map(x => if x * 2 == 8: @some(x) else: @none).unwrap()}")
+    println("find_map={nv.find_map(x => if x * 2 == 8: @some(x) else: @none).unwrap()}")
 
     # Not finding
-    println("find_map_none={nums.into_iter().find_map(x => if x * 2 == 100: @some(x) else: @none).is_none()}")
+    println("find_map_none={nv.find_map(x => if x * 2 == 100: @some(x) else: @none).is_none()}")
     return 0

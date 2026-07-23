@@ -24,8 +24,13 @@ def main() -> int32:
     let c = [1, 2, 4]
     let d = [1, 2]
 
-    println("cmp_same={ord_str(a.iter().cmp_by(b.iter(), cmp_int))}")
-    println("cmp_lt={ord_str(a.iter().cmp_by(c.iter(), cmp_int))}")
-    println("cmp_gt={ord_str(c.iter().cmp_by(a.iter(), cmp_int))}")
-    println("cmp_prefix={ord_str(d.iter().cmp_by(a.iter(), cmp_int))}")
+    let av = a.iter().values()
+    let bv = b.iter().values()
+    let cv = c.iter().values()
+    let dv = d.iter().values()
+
+    println("cmp_same={ord_str(av.cmp_by(bv, cmp_int))}")
+    println("cmp_lt={ord_str(av.cmp_by(cv, cmp_int))}")
+    println("cmp_gt={ord_str(cv.cmp_by(av, cmp_int))}")
+    println("cmp_prefix={ord_str(dv.cmp_by(av, cmp_int))}")
     return 0
