@@ -1044,4 +1044,4 @@ pub def product[I, T](it: I) -> T where I: iterator[T], T: one:
 #: Returns:
 #:   an iterator yielding `x` for each `&x` of the source.
 pub def values[I, T](it: I) -> map_iter[I, &T, T] where I: iterator[&T]:
-    return map_iter(it, x => *x)
+    return map_iter { inner: it, f: (x: &T) => *x }

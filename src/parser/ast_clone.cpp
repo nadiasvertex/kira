@@ -730,6 +730,44 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     }
     return ptr<expr>(std::move(cloned));
   }
+  case node_kind::lambda_expr: {
+    const auto &lambda = dynamic_cast<const lambda_expr &>(e);
+    auto cloned = make<lambda_expr>();
+    cloned->span = lambda.span;
+    cloned->is_pure = lambda.is_pure;
+    cloned->is_move = lambda.is_move;
+    for (const auto &param : lambda.params) {
+      auto pattern = clone_optional(param.pattern);
+      if (!pattern.has_value()) {
+        return std::unexpected(pattern.error());
+      }
+      auto type_annotation = clone_optional(param.type_annotation);
+      if (!type_annotation.has_value()) {
+        return std::unexpected(type_annotation.error());
+      }
+      cloned->params.push_back(lambda_param{
+          .span = param.span,
+          .pattern = std::move(*pattern),
+          .type_annotation = std::move(*type_annotation),
+      });
+    }
+    auto return_type = clone_optional(lambda.return_type);
+    if (!return_type.has_value()) {
+      return std::unexpected(return_type.error());
+    }
+    cloned->return_type = std::move(*return_type);
+    auto body_expr = clone_optional(lambda.body_expr);
+    if (!body_expr.has_value()) {
+      return std::unexpected(body_expr.error());
+    }
+    cloned->body_expr = std::move(*body_expr);
+    auto body_stmts = clone_node_list(lambda.body_stmts);
+    if (!body_stmts.has_value()) {
+      return std::unexpected(body_stmts.error());
+    }
+    cloned->body_stmts = std::move(*body_stmts);
+    return ptr<expr>(std::move(cloned));
+  }
   case node_kind::yield_expr: {
     const auto &yield = dynamic_cast<const yield_expr &>(e);
     auto value = clone_optional(yield.value);
