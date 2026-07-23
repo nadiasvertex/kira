@@ -16,6 +16,10 @@ let factor = 3
 let scaled = numbers.map(x => x * factor)   # borrows factor; does not escape
 ```
 
+### Explicit capture lists
+
+The rule above is the *implicit* capture rule: a lambda with no capture list captures every outer-scope name its body uses. A capture list — `[...]` before the parameters, see [Lambdas](../01-core/05-lambdas.md) — replaces this with an explicit, closed set: only listed names are reachable from the enclosing scope, and each one names its own capture mode (`name` for the default borrow-or-move rule, `&name` to force borrow, `&mut name` for mutable borrow) instead of inheriting it from escape analysis. `move` still applies to the whole lambda, and when combined with a capture list forces move on every bare `name` entry — `&name`/`&mut name` entries are unaffected, since they already state their mode explicitly.
+
 ## `crew`-Scoped Borrowing
 
 Because a `crew`'s tasks cannot outlive the `crew`, and the `crew` cannot outlive its enclosing scope, a closure spawned into a `crew` may **borrow** local data — no `'static`-style requirement, no forced `move`. Full `crew` semantics are in [`crew`, `par`, `race`](28-crew-par-race.md); the rule stated here is that spawn sites are an exception to "an escaping closure must move."
@@ -77,6 +81,7 @@ handlers.push(box(e => metrics.record(e)))
 
 - `fn(A) -> B` closure types, lambda expressions, and monomorphized inlining at call sites are implemented and exercised throughout the semantic and codegen stress corpora.
 - The `move` keyword parses (`parser.cpp` sets `lambda_expr::is_move` on `kw_move`) and survives AST cloning, but no consumer was found: `src/semantic/move_check.cpp` and `src/hir/captures.cpp` (which computes `free_variables` for closure environments) do not branch on `is_move`. The capture-by-borrow-vs-capture-by-move *distinction* described above — including the requirement that an escaping closure without explicit `move` is rejected or otherwise forced to move — is not enforced by the checker today; `move` currently has no observable semantic effect beyond parsing.
+- Explicit capture lists (`[name, &name, &mut name]`) are pure design content: no `capture_list` production exists in the parser, and `free_variables` in `src/hir/captures.cpp` always computes the full implicit set with no path to restrict or reject an out-of-list reference.
 - The three ways to vary returned behavior: the dependent-type and sum-type forms rely on ordinary generics and sum types, both implemented (see [Generics and Inference](19-generics-and-inference.md)). `box[fn(A) -> B]` does **not** work today — no trait-object/vtable dynamic dispatch exists anywhere in the compiler (no lowering for `box` was found in `src/hir/`, `src/bytecode/`, or `src/llvm_codegen/`; `box` is registered only as a bare type constructor in `src/semantic/types.cpp`). See [Trait Objects](24-trait-objects.md) for the equivalent finding on `box[trait]` generally.
 
 ## See also

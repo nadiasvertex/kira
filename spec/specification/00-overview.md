@@ -8,10 +8,10 @@ This is the normative specification of the Kira language and standard library. I
 
 The specification is organized in three layered sections, followed by a standard library section:
 
-- **Core** (`core/`) — values, functions, types, pattern matching, built-in collections, and error handling. Most programs are written using only Core material.
-- **Intermediate** (`intermediate/`) — ownership and borrowing, traits and generics, and async concurrency. Needed for library code and concurrent programs.
-- **Advanced** (`advanced/`) — compile-time execution, dependent and refinement types, contracts, concepts, modules as compile-time values, and the low-level `machine` layer.
-- **Standard Library** (`stdlib/`) — the modules that ship with the compiler: collections, algorithms, string/formatting, and I/O/platform.
+- **Core** (`01-core/`) — values, functions, types, pattern matching, built-in collections, and error handling. Most programs are written using only Core material.
+- **Intermediate** (`02-intermediate/`) — ownership and borrowing, traits and generics, and async concurrency. Needed for library code and concurrent programs.
+- **Advanced** (`03-advanced/`) — compile-time execution, dependent and refinement types, contracts, concepts, modules as compile-time values, and the low-level `machine` layer.
+- **Standard Library** (`04-stdlib/`) — the modules that ship with the compiler: collections, algorithms, string/formatting, and I/O/platform.
 
 A later section never needs to be understood to use an earlier one. Within a section, each chapter is a single language or library feature, keeping the specification's chapters small and independently addressable — the goal, per the project's structuring intent, is that both a human and an LLM can find a specific rule without loading unrelated context.
 

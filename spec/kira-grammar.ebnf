@@ -629,12 +629,20 @@ struct_field_init
     ;
 
 lambda_expr
-    = lambda_prefix lambda_params [ "->" type_expr ] "=>" expr
-    | lambda_prefix lambda_params [ "->" type_expr ] "=>" ":" NEWLINE INDENT { stmt } DEDENT
+    = lambda_prefix [ capture_list ] lambda_params [ "->" type_expr ] "=>" expr
+    | lambda_prefix [ capture_list ] lambda_params [ "->" type_expr ] "=>" ":" NEWLINE INDENT { stmt } DEDENT
     ;
 
 lambda_prefix
     = [ "pure" ] [ "move" ]
+    ;
+
+capture_list = "[" [ capture_item { "," capture_item } [ "," ] ] "]" ;
+
+capture_item
+    = "&" "mut" IDENT
+    | "&" IDENT
+    | IDENT
     ;
 
 lambda_params
