@@ -36,6 +36,7 @@ namespace kira::semantic {
 /// code and structured `if`/`while`/`for`/`match`.
 auto check_moves(const std::vector<parsed_module> &inputs,
                  const checked_types &checked, diagnostic_bag &diag,
-                 std::vector<bool> &file_has_errors) -> void;
+                 std::vector<bool> &file_has_errors,
+                 unsigned skip_from_fileid) -> void;
 
 } // namespace kira::semantic

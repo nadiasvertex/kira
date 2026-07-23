@@ -584,8 +584,12 @@ auto walk_item(const ast::node &item, const checked_types &checked,
 
 auto check_moves(const std::vector<parsed_module> &inputs,
                  const checked_types &checked, diagnostic_bag &diag,
-                 std::vector<bool> &file_has_errors) -> void {
+                 std::vector<bool> &file_has_errors,
+                 unsigned skip_from_fileid) -> void {
   for (const auto &input : inputs) {
+    if (static_cast<unsigned>(input.file_id) >= skip_from_fileid) {
+      continue;
+    }
     if (input.ast_file == nullptr) {
       continue;
     }

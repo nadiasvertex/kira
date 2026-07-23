@@ -12,6 +12,7 @@
 #include "parse_stage.h"
 #include "run_build_stage.h"
 #include "src/semantic/analysis.h"
+#include "src/semantic/move_check.h"
 #include "src/util/path.h"
 #include "src/util/str.h"
 #include "src/version.h"
@@ -281,6 +282,7 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   auto report = compile_report{};
   const auto metadata_root = std::filesystem::path(cfg.metadata_dir);
+  const unsigned stdlib_start = static_cast<unsigned>(cfg.sources.size());
   auto sources = source_manager{};
   auto session_diagnostics = diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
@@ -305,6 +307,11 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   const auto checked = semantic::validate_semantics(
       semantic_inputs, session_diagnostics, file_has_errors,
       semantic::semantic_options{.check_names_and_types = !cfg.parse_only});
+
+  if (!cfg.parse_only) {
+    semantic::check_moves(semantic_inputs, checked, session_diagnostics,
+                          file_has_errors, stdlib_start);
+  }
 
   report.error_count += session_diagnostics.error_count();
   append_text(
