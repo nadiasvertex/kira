@@ -35,7 +35,7 @@ impl drop for file:
         close_fd(self.fd)
 ```
 
-`drop()` runs when a value's single owner goes out of scope — no `use`/`with`/`defer` block, and nothing is added to types that do not implement `drop` (zero cost when unused). Rules:
+`drop()` runs when a value's single owner goes out of scope, and nothing is added to types that do not implement `drop` (zero cost when unused). There is no Python-style `with`/context-manager protocol to opt into — a type just implements `drop`, and it runs at the end of *any* scope the value's owner is declared in, including a bare [`scope`](../01-core/08-control-flow.md#scope) block written solely to end that lifetime early. Rules:
 
 - A binding that was **moved from** never drops — ownership already transferred, nothing left to release.
 - Within one scope, values drop in **reverse declaration order**.
@@ -47,4 +47,5 @@ impl drop for file:
 ## See also
 
 - [Ownership and Borrowing](14-ownership-and-borrowing.md) — ownership and moves that `drop` runs against.
+- [Control Flow](../01-core/08-control-flow.md#scope) — the `scope` block, for ending a value's lifetime (and its drop) before the enclosing scope would.
 - [Data-Race Freedom](30-data-race-freedom.md) — `mutex[T]`/`rwlock[T]`/`atomic[T]` for mutating behind `shared`.

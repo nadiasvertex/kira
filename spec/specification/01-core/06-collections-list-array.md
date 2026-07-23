@@ -21,7 +21,7 @@ items.push(2)
 Standard operations include `map`, `filter`, `find` (returns `option[T]`), `any`, `all`:
 
 ```kira
-names.map(n => n.to_uppercase())       # produces a new list
+names.map(n => n.to_uppercase())      # produces a new list
 names.filter(n => n.len() > 3)        # keeps elements matching predicate
 names.find(n => n.starts_with("A"))   # returns option[str]
 names.any(n => n == "Bob")            # returns bool

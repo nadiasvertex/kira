@@ -403,6 +403,7 @@ stmt
     | for_stmt
     | match_stmt
     | crew_stmt
+    | scope_stmt
     | asm_stmt
     | splice_stmt
     | NEWLINE
@@ -464,6 +465,11 @@ for_stmt
     = "for" for_vars "in" expr [ "if" expr ] ":" block
     ;
 
+(* Each pattern in for_vars must be irrefutable (see the note under
+   `pattern`) — a for-loop head destructures every element the iterable
+   produces, it does not test whether one matches. There is no skip-on-
+   mismatch form; use a guard (`for x in xs if keep(x): ...`) or `while
+   let` against an explicit iterator to drop non-matching elements. *)
 for_vars
     = pattern { "," pattern }
     ;
@@ -482,6 +488,15 @@ crew_stmt
 crew_options = crew_option { "," crew_option } ;
 
 crew_option  = IDENT ":" IDENT ;
+
+(* A bare lexical scope: introduces a nested block whose bindings are not
+   visible past its DEDENT, and whose live locals drop (reverse
+   declaration order, per the `drop` rules) no later than that DEDENT —
+   including on an early `return`/`break`/`continue` out of it. Unlike
+   if/while/for/match/crew, it carries no condition or subject; it exists
+   purely to end bindings' lifetimes earlier than the enclosing scope
+   would. *)
+scope_stmt = "scope" ":" block ;
 
 asm_stmt = "asm" "{" ASM_CONTENT "}" NEWLINE ;
 
@@ -744,6 +759,16 @@ range_pattern
     | ".." expr
     ;
 
+(* A pattern is irrefutable when it is guaranteed to match any value of its
+   subject's type: "_", a plain or "mut" binding, a tuple/struct/array
+   pattern whose own subpatterns are all irrefutable, or an or-pattern
+   whose alternatives all are. A literal, a variant constructor ("@..."),
+   a range pattern, or an or-pattern with a refutable alternative is
+   refutable. `let`/`var`, function parameters, and for-loop heads
+   (for_vars) all require an irrefutable pattern; `match` arms, `if let`,
+   and `while let` are the only positions where a refutable pattern is
+   meaningful. *)
+
 
 (* ----------------------------------------------------------------- *)
 (*  Literals                                                          *)
@@ -859,7 +884,7 @@ DOC_COMMENT = "#:" { (* any character except newline *) } NEWLINE ;
 (* pub  internal  super  priv *)
 
 (* Control flow *)
-(* if  elif  else  for  while  match  return  in  as *)
+(* if  elif  else  for  while  match  return  in  as  break  continue  scope *)
 
 (* Pattern keywords *)
 (* _ *)
