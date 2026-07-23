@@ -216,6 +216,10 @@ struct target_os_info {
 }
 
 auto inject_stdlib_prelude(cli_config &cfg) -> void {
+  if (!cfg.stdlib_boundary) {
+    cfg.stdlib_boundary = static_cast<unsigned>(cfg.sources.size());
+  }
+
   auto already_present =
       [&cfg](const std::filesystem::path &candidate) -> bool {
     const auto normalized = normalize_path(candidate);
@@ -282,7 +286,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   auto report = compile_report{};
   const auto metadata_root = std::filesystem::path(cfg.metadata_dir);
-  const unsigned stdlib_start = static_cast<unsigned>(cfg.sources.size());
+  const auto stdlib_start =
+      cfg.stdlib_boundary.value_or(static_cast<unsigned>(cfg.sources.size()));
   auto sources = source_manager{};
   auto session_diagnostics = diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};

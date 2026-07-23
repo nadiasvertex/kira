@@ -16,6 +16,11 @@ struct cli_config {
   std::string program_name; ///< Executable name shown in usage and diagnostics.
   std::vector<std::string>
       sources; ///< Source file paths to compile in this session.
+  std::optional<unsigned> stdlib_boundary; ///< Number of user-provided
+      ///< sources before `inject_stdlib_prelude` appended stdlib files to
+      ///< `sources`; unset when it was never called (all of `sources` is
+      ///< then user code). `compile_sources` uses this to skip move-checking
+      ///< the stdlib.
   std::string metadata_dir =
       std::string(k_default_metadata_dir); ///< Output root for metadata files.
   bool show_help = false; ///< True when argument parsing requested help output.
