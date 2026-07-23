@@ -13180,7 +13180,8 @@ private:
         diag.with_help(std::format("did you mean `{}`?", *suggestion));
       } else {
         diag.with_help(
-            "see spec/stdlib.md for the list of recognized intrinsics");
+            "see spec/specification/stdlib/ for the modules that declare "
+            "recognized intrinsics");
       }
       emit_diag(diag);
       mark_error();

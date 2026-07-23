@@ -97,7 +97,7 @@ var big: int64 = 1000
 var narrow = big as int8     # truncates silently — no panic
 ```
 
-This contradicts the older tutorial prose's claim that "Kira has no cast operator" — that claim describes the checked constructor-call path only. Both mechanisms are real and coexist: prefer `T(x)` when a bad value should be a caught bug (panics on narrowing loss), and `as` when truncation/reinterpretation is the intended, silent behavior.
+Prefer `T(x)` when a bad value should be a caught bug (panics on narrowing loss), and `as` when truncation/reinterpretation is the intended, silent behavior.
 
 ## See also
 

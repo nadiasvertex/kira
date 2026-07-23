@@ -298,7 +298,7 @@ private:
       return fail(lowering_error_kind::unresolved_type, node.span,
                   "no concrete checked type is available for this node; "
                   "lowering only accepts fully type-checked, fully-annotated "
-                  "code (spec/typed-ir-design.md Decision 1)");
+                  "code (see spec/todo.md)");
     }
     return resolve_opaque(found->second);
   }
@@ -879,8 +879,8 @@ auto lowerer::lower_expr(const ast::expr &expr)
   }
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
-                std::format("expression kind {} is not lowered by the first "
-                            "milestone (spec/typed-ir-design.md)",
+                std::format("expression kind {} is not lowered yet "
+                            "(see spec/todo.md)",
                             static_cast<int>(expr.kind)));
   }
 }
@@ -1301,7 +1301,7 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
     return fail(lowering_error_kind::unresolved_type, path.span,
                 "no concrete checked type is available for this local "
                 "binding; lowering only accepts fully type-checked, "
-                "fully-annotated code (spec/typed-ir-design.md Decision 1)");
+                "fully-annotated code (see spec/todo.md)");
   }
   auto type = checked_type_of(path);
   if (!type.has_value()) {
@@ -2511,8 +2511,8 @@ auto lowerer::lower_stmt(const ast::node &node)
   }
   default:
     return fail(lowering_error_kind::unsupported_construct, node.span,
-                std::format("statement kind {} is not lowered by the first "
-                            "milestone (spec/typed-ir-design.md)",
+                std::format("statement kind {} is not lowered yet "
+                            "(see spec/todo.md)",
                             static_cast<int>(node.kind)));
   }
 }
@@ -2956,8 +2956,9 @@ auto lowerer::lower_indexed_loop(
   } else {
     return fail(lowering_error_kind::unsupported_construct, span,
                 "only range/array/list/slice/string/option iteration is "
-                "lowered yet (see spec/iterator-protocol-design.md) — any "
-                "user-defined iterable is still unsupported");
+                "lowered yet (see "
+                "spec/specification/stdlib/algorithms/48-iterator-protocol.md"
+                ") — any user-defined iterable is still unsupported");
   }
   if (element_type == k_unknown_type || element_type == k_error_type) {
     return fail(lowering_error_kind::unresolved_type, span,

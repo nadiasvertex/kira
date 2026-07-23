@@ -178,8 +178,7 @@ using kira::decode_string_literal;
         .kind = compile_error_kind::unsupported_construct,
         .span = span,
         .message = "string literals and other non-scalar literal kinds are not "
-                   "supported by the bytecode VM yet (heap types land in "
-                   "spec/codegen-design.md increment 6)"});
+                   "supported by the bytecode VM yet (see spec/todo.md)"});
   }
 }
 
@@ -879,8 +878,7 @@ private:
           .message = std::format(
               "type `{}` has no scalar bytecode representation yet — "
               "non-scalar types and 128-bit widths are not supported by "
-              "the bytecode VM until spec/codegen-design.md increment 6 "
-              "(heap types) lands",
+              "the bytecode VM yet (see spec/todo.md)",
               types_.display(id))});
     }
     return *kind;

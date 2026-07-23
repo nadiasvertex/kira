@@ -4063,8 +4063,8 @@ auto parser::parse_format_spec_text(std::string_view text,
                          "could not parse the rest of this format spec")
              .with_help("A format spec looks like "
                         "`[fill_align][sign][#][0][width][.precision][type]` — "
-                        "see spec/string-formatting-design.md for the full "
-                        "grammar."));
+                        "see spec/specification/stdlib/strings-and-formatting/"
+                        "53-std-format.md for the full grammar."));
   }
 
   return spec;

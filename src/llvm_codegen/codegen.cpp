@@ -868,8 +868,8 @@ private:
           .span = span,
           .message = std::format(
               "type `{}` has no scalar llvm_codegen representation yet — "
-              "non-scalar types and 128-bit widths are not supported until "
-              "spec/codegen-design.md increment 6 (heap types) lands",
+              "non-scalar types and 128-bit widths are not supported yet "
+              "(see spec/todo.md)",
               types_.display(id))});
     }
     return *kind;
@@ -1250,8 +1250,7 @@ private:
           .kind = codegen_error_kind::unsupported_construct,
           .span = span,
           .message = "string literals and other non-scalar literal kinds are "
-                     "not supported yet (heap types land in "
-                     "spec/codegen-design.md increment 6)"});
+                     "not supported yet (see spec/todo.md)"});
     }
   }
 
