@@ -61,10 +61,21 @@ public:
   }
 
 private:
+  using scope_stack = std::vector<std::unordered_map<std::string, binding_state>>;
+
   const checked_types &checked_;
   diagnostic_bag &diag_;
   file_id_type file_id_;
-  std::vector<std::unordered_map<std::string, binding_state>> scopes_;
+  scope_stack scopes_;
+  /// Set once the statement just walked unconditionally leaves the enclosing
+  /// block (`return`/`break`/`continue`): the rest of that block is dead
+  /// code, and — critically — an `if`/`match` branch that ends this way
+  /// contributes no state to what the construct's *fallthrough* looks like,
+  /// since control never reaches it from that branch. Cleared back to false
+  /// after a `while`/`for` body, since the loop itself may run zero times or
+  /// exit via its condition, so code after the loop is reachable regardless
+  /// of whether the body's last iteration diverged.
+  bool diverged_ = false;
 
   auto push_scope() -> void { scopes_.emplace_back(); }
   auto pop_scope() -> void { scopes_.pop_back(); }
@@ -191,9 +202,14 @@ private:
       if (unary.operand == nullptr) {
         return;
       }
+      // `&x`/`&mut x` never consume `x`, same as any other borrow. `*p`
+      // projects through the pointer to reach its pointee, the same way
+      // `x.field` projects through `x` — it never consumes `p` itself,
+      // regardless of what the dereferenced value is then used for.
       const auto is_borrow = unary.op == ast::unary_op::addr_of ||
                              unary.op == ast::unary_op::addr_of_mut;
-      walk_expr(*unary.operand, is_borrow ? false : consume_top);
+      const auto is_projection = unary.op == ast::unary_op::deref;
+      walk_expr(*unary.operand, (is_borrow || is_projection) ? false : consume_top);
       return;
     }
 
@@ -219,12 +235,17 @@ private:
     }
 
     case ast::node_kind::binary_expr: {
+      // Operators dispatch to a trait method under the hood (`a + b` is
+      // `a.add(b)`), but unlike a real call, neither operand's spelling
+      // looks like an ownership transfer the way a plain call argument
+      // does — so neither is treated as consumed, same as a method-call
+      // receiver never is (see `call_expr` below).
       const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
       if (binary.lhs != nullptr) {
-        walk_expr(*binary.lhs, /*consume_top=*/true);
+        walk_expr(*binary.lhs, /*consume_top=*/false);
       }
       if (binary.rhs != nullptr) {
-        walk_expr(*binary.rhs, /*consume_top=*/true);
+        walk_expr(*binary.rhs, /*consume_top=*/false);
       }
       return;
     }
@@ -350,7 +371,35 @@ private:
       if (stmt != nullptr) {
         walk_stmt(*stmt);
       }
+      if (diverged_) {
+        // Everything after a `return`/`break`/`continue` in this block is
+        // unreachable; walking it would attribute moves to a path that
+        // never executes.
+        break;
+      }
     }
+  }
+
+  /// Merges the end states of every branch of an `if`/`match` that can
+  /// actually fall through (i.e. did not end in `return`/`break`/`continue`)
+  /// into one state: a binding reads as moved afterward only if every
+  /// surviving branch moved it. All entries share the same outer-scope
+  /// shape, since each branch pushes and pops exactly its own scope.
+  static auto merge_states(const std::vector<scope_stack> &results)
+      -> scope_stack {
+    auto merged = results.front();
+    for (size_t i = 1; i < results.size(); ++i) {
+      const auto &other = results[i];
+      for (size_t s = 0; s < merged.size() && s < other.size(); ++s) {
+        for (auto &[name, state] : merged[s]) {
+          const auto it = other[s].find(name);
+          if (it != other[s].end() && !it->second.moved) {
+            state.moved = false;
+          }
+        }
+      }
+    }
+    return merged;
   }
 
   auto walk_stmt(const ast::node &node) -> void {
@@ -411,6 +460,13 @@ private:
       if (stmt.value != nullptr) {
         walk_expr(*stmt.value, /*consume_top=*/true);
       }
+      diverged_ = true;
+      return;
+    }
+
+    case ast::node_kind::break_stmt:
+    case ast::node_kind::continue_stmt: {
+      diverged_ = true;
       return;
     }
 
@@ -434,6 +490,10 @@ private:
       }
       walk_body(stmt.body);
       pop_scope();
+      // The loop may run zero times, or exit normally once its condition
+      // goes false — either way code after it is reachable regardless of
+      // how the last-walked body iteration ended.
+      diverged_ = false;
       return;
     }
 
@@ -453,6 +513,10 @@ private:
       }
       walk_body(stmt.body);
       pop_scope();
+      // The source iterator may be exhausted immediately, so as with
+      // `while`, code after the loop is reachable no matter how the body's
+      // last-walked iteration ended.
+      diverged_ = false;
       return;
     }
 
@@ -481,9 +545,16 @@ private:
     }
   }
 
+  /// Conditions run in sequence — each one only reached once every prior
+  /// condition was false — so their effect on state chains from one branch
+  /// to the next. Each branch's *body*, in contrast, is one of several
+  /// alternatives: it forks off that chained state, and its outcome only
+  /// feeds into the merged state after the whole construct, not into the
+  /// next condition.
   auto walk_if_branches(const std::vector<ast::if_branch> &branches,
                         const std::vector<ast::ptr<ast::node>> &else_body)
       -> void {
+    auto live_results = std::vector<scope_stack>{};
     for (const auto &branch : branches) {
       if (branch.condition != nullptr) {
         walk_expr(*branch.condition, /*consume_top=*/true);
@@ -491,22 +562,51 @@ private:
       if (branch.let_expr != nullptr) {
         walk_expr(*branch.let_expr, /*consume_top=*/true);
       }
+      const auto chain_state = scopes_;
       push_scope();
       if (const auto *pat =
               dynamic_cast<const ast::pattern *>(branch.let_pattern.get())) {
         bind_pattern(*pat);
       }
+      diverged_ = false;
       walk_body(branch.body);
       pop_scope();
+      if (!diverged_) {
+        live_results.push_back(scopes_);
+      }
+      scopes_ = chain_state;
     }
     if (!else_body.empty()) {
       push_scope();
+      diverged_ = false;
       walk_body(else_body);
       pop_scope();
+      if (!diverged_) {
+        live_results.push_back(scopes_);
+      }
+    } else {
+      // No `else`: the implicit "no branch taken" path leaves state exactly
+      // as it was once every condition had evaluated false.
+      live_results.push_back(scopes_);
     }
+
+    if (live_results.empty()) {
+      // Every branch diverges, so this whole if/else diverges too.
+      diverged_ = true;
+      return;
+    }
+    scopes_ = merge_states(live_results);
+    diverged_ = false;
   }
 
+  /// Match arms are checked exhaustive upstream, so — unlike `if` — there is
+  /// no implicit "no arm taken" path to fold into the merge. Guards run in
+  /// sequence like `if` conditions (each only reached once every prior
+  /// pattern/guard failed to match), so their effect on the outer scopes
+  /// chains from one arm to the next; each arm's own pattern bindings stay
+  /// local and never enter that chain.
   auto walk_match_arms(const std::vector<ast::match_arm> &arms) -> void {
+    auto live_results = std::vector<scope_stack>{};
     for (const auto &arm : arms) {
       push_scope();
       if (const auto *pat =
@@ -516,12 +616,29 @@ private:
       if (arm.guard != nullptr) {
         walk_expr(*arm.guard, /*consume_top=*/true);
       }
+      auto arm_scope = std::move(scopes_.back());
+      scopes_.pop_back();
+      const auto chain_state = scopes_;
+      scopes_.push_back(std::move(arm_scope));
+
+      diverged_ = false;
       if (arm.body_expr != nullptr) {
         walk_expr(*arm.body_expr, /*consume_top=*/true);
       }
       walk_body(arm.body_stmts);
       pop_scope();
+      if (!diverged_) {
+        live_results.push_back(scopes_);
+      }
+      scopes_ = chain_state;
     }
+
+    if (live_results.empty()) {
+      diverged_ = true;
+      return;
+    }
+    scopes_ = merge_states(live_results);
+    diverged_ = false;
   }
 };
 
