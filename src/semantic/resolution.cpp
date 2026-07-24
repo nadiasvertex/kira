@@ -903,6 +903,15 @@ auto validate_type_expr(const ast::type_expr &type,
     return;
   }
 
+  case ast::node_kind::mut_type: {
+    const auto &mt = dynamic_cast<const ast::mut_type &>(type);
+    if (mt.inner != nullptr) {
+      validate_type_expr(*mt.inner, context, semantic_index, session_index,
+                         diag, file_has_errors);
+    }
+    return;
+  }
+
   case ast::node_kind::fn_type: {
     const auto &fn = dynamic_cast<const ast::fn_type &>(type);
     for (const auto &param_type : fn.param_types) {
@@ -1882,6 +1891,7 @@ auto validate_ast_node(const ast::node &node,
   case ast::node_kind::array_type:
   case ast::node_kind::ref_type:
   case ast::node_kind::ptr_type:
+  case ast::node_kind::mut_type:
   case ast::node_kind::fn_type:
   case ast::node_kind::quote_type:
   case ast::node_kind::union_type:

@@ -1569,6 +1569,19 @@ auto parser::parse_prim_type_expr() -> ast::ptr<ast::type_expr> {
   case token_kind::star:
     return parse_ptr_type();
 
+  case token_kind::kw_mut: {
+    // Bare `mut` in type position — only meaningful before a view type
+    // (`mut slice[T]`, `mut cell[T]`); semantic analysis rejects any other
+    // inner type with a diagnostic, mirroring how `&mut`/`*mut` accept the
+    // sigil generically but their inner type still has to make sense.
+    auto tok = advance();
+    auto mt = ast::make<ast::mut_type>();
+    mt->span = tok.span;
+    mt->inner = parse_prim_type_expr();
+    mt->span.extend_to(previous_span());
+    return mt;
+  }
+
   case token_kind::kw_fn:
     return parse_fn_type();
 

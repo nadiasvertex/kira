@@ -48,6 +48,7 @@ struct slice_type;
 struct array_type;
 struct ref_type;
 struct ptr_type;
+struct mut_type;
 struct fn_type;
 struct quote_type;
 struct splice_type;
@@ -224,6 +225,9 @@ enum class node_kind : uint8_t {
   array_type,       ///< Fixed-length array type expression.
   ref_type,         ///< Reference type expression.
   ptr_type,         ///< Raw pointer type expression.
+  mut_type,         ///< Bare `mut` prefix in type position (`mut slice[T]`,
+                    ///< `mut cell[T]`) — mutability of a view type, not a
+                    ///< reference/pointer.
   fn_type,          ///< Function type expression.
   quote_type,       ///< Quote-type marker for syntax values.
   splice_type,      ///< Type-position splice: `~(expr)`.
@@ -461,6 +465,18 @@ struct ptr_type : type_expr {
       false; ///< Whether the pointed-to value is mutable through the pointer.
 
   ptr_type() : type_expr(node_kind::ptr_type) {}
+};
+
+/// @brief Bare `mut` prefix in type position (`mut slice[T]`, `mut cell[T]`).
+///
+/// Unlike `ref_type`/`ptr_type` (whose `is_mut` flag modifies a sigil that's
+/// always present), a bare leading `mut` only makes sense before a view type
+/// — semantic analysis, not the parser, decides whether `inner` is one of
+/// those and rejects it otherwise.
+struct mut_type : type_expr {
+  ptr<type_expr> inner; ///< The type `mut` applies to.
+
+  mut_type() : type_expr(node_kind::mut_type) {}
 };
 
 /// @brief Function type syntax with parameter and return types.

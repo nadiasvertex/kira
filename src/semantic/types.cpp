@@ -35,13 +35,19 @@ struct generic_arity_entry {
 };
 
 /// Prelude container names and their allowed generic-argument arities.
-constexpr std::array<generic_arity_entry, 13> k_builtin_generic_arities = {{
+constexpr std::array<generic_arity_entry, 15> k_builtin_generic_arities = {{
     {.name = "list", .min_args = 1, .max_args = 1},
     {.name = "option", .min_args = 1, .max_args = 1},
     {.name = "result", .min_args = 2, .max_args = 2},
     {.name = "box", .min_args = 1, .max_args = 1},
     {.name = "slice", .min_args = 1, .max_args = 1},
     {.name = "slice_mut", .min_args = 1, .max_args = 1},
+    // Single-element views (`cell[T]`/`mut cell[T]`) — see
+    // spec/specification/02-intermediate/15-views.md. `cell_mut` shares
+    // `cell`'s inherent methods, differing only in mutability, exactly like
+    // `slice`/`slice_mut` above.
+    {.name = "cell", .min_args = 1, .max_args = 1},
+    {.name = "cell_mut", .min_args = 1, .max_args = 1},
     {.name = "shared", .min_args = 0, .max_args = 1},
     {.name = "task", .min_args = 1, .max_args = 3},
     {.name = "channel", .min_args = 1, .max_args = 1},

@@ -133,6 +133,17 @@ template <typename T>
     cloned->is_mut = raw.is_mut;
     return ptr<type_expr>(std::move(cloned));
   }
+  case node_kind::mut_type: {
+    const auto &mt = dynamic_cast<const mut_type &>(t);
+    auto inner = clone_optional(mt.inner);
+    if (!inner.has_value()) {
+      return std::unexpected(inner.error());
+    }
+    auto cloned = make<mut_type>();
+    cloned->span = mt.span;
+    cloned->inner = std::move(*inner);
+    return ptr<type_expr>(std::move(cloned));
+  }
   case node_kind::tuple_type: {
     const auto &tuple = dynamic_cast<const tuple_type &>(t);
     auto cloned = make<tuple_type>();

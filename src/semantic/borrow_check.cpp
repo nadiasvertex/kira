@@ -370,12 +370,14 @@ private:
            dynamic_cast<const ast::binding_pattern &>(*param.pattern).is_mut;
   }
 
-  /// Whether `id` is a view type (`slice[T]` / `mut slice[T]`) — the one
-  /// borrowing value the language lets outlive a single call.
+  /// Whether `id` is a view type (`slice[T]` / `mut slice[T]`, `cell[T]` /
+  /// `mut cell[T]`) — the borrowing values the language lets outlive a
+  /// single call.
   [[nodiscard]] auto is_view_type(type_id id) const -> bool {
     const auto &entry = checked_.types.entry(id);
     return entry.kind == type_kind::builtin_generic_kind &&
-           (entry.name == "slice" || entry.name == "slice_mut");
+           (entry.name == "slice" || entry.name == "slice_mut" ||
+            entry.name == "cell" || entry.name == "cell_mut");
   }
 
   /// Whether `unary` is a plain-reference borrow — an `&`/`&mut` whose result
@@ -578,15 +580,15 @@ private:
     return checked_.view_bearing_types.contains(lookup_type(&expr));
   }
 
-  /// The mutability of a view type: `mut slice` (`slice_mut`) after peeling any
-  /// enclosing references, else shared.
+  /// The mutability of a view type: `mut slice`/`mut cell` (`slice_mut`/
+  /// `cell_mut`) after peeling any enclosing references, else shared.
   [[nodiscard]] auto view_is_mut(type_id id) const -> bool {
     const auto *entry = &checked_.types.entry(id);
     while (entry->kind == type_kind::ref_kind) {
       entry = &checked_.types.entry(entry->result);
     }
     return entry->kind == type_kind::builtin_generic_kind &&
-           entry->name == "slice_mut";
+           (entry->name == "slice_mut" || entry->name == "cell_mut");
   }
 
   /// The source roots a view-bearing value borrows and keeps live — the

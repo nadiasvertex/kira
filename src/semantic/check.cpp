@@ -151,13 +151,15 @@ struct fn_param_info {
 /// several of them depend on the receiver's element type — `list[T]::pop`
 /// returns `option[T]`, not one fixed type.
 enum class builtin_result_shape : uint8_t {
-  usize_result,      ///< `usize`.
-  bool_result,       ///< `bool`.
-  unit_result,       ///< `unit`.
-  element,           ///< The receiver's element type, `T`.
-  option_of_element, ///< `option[T]`.
-  list_of_element,   ///< `list[T]`.
-  byte_slice,        ///< `slice[byte]`.
+  usize_result,                  ///< `usize`.
+  bool_result,                   ///< `bool`.
+  unit_result,                   ///< `unit`.
+  element,                       ///< The receiver's element type, `T`.
+  option_of_element,             ///< `option[T]`.
+  list_of_element,               ///< `list[T]`.
+  byte_slice,                    ///< `slice[byte]`.
+  cell_of_element,               ///< `cell[T]`.
+  option_of_mut_cell_of_element, ///< `option[cell_mut[T]]`.
 };
 
 /// One builtin inherent method: the receiver type constructor it belongs to,
@@ -195,10 +197,16 @@ inline constexpr auto k_builtin_methods =
     std::to_array<builtin_method_signature>({
         {"list", "len", builtin_result_shape::usize_result},
         {"list", "push", builtin_result_shape::unit_result},
+        {"list", "cell", builtin_result_shape::cell_of_element},
+        {"list", "mutable_cell",
+         builtin_result_shape::option_of_mut_cell_of_element},
         {"slice", "len", builtin_result_shape::usize_result},
         {"str", "len", builtin_result_shape::usize_result},
         {"str", "as_bytes", builtin_result_shape::byte_slice},
         {"generator", "next", builtin_result_shape::option_of_element},
+        {"cell", "get", builtin_result_shape::element},
+        {"cell_mut", "get", builtin_result_shape::element},
+        {"cell_mut", "set", builtin_result_shape::unit_result},
     });
 
 /// The key `k_builtin_methods` files a receiver under, or empty when the
@@ -215,6 +223,12 @@ inline constexpr auto k_builtin_methods =
   }
   if (object.name == "slice" || object.name == "slice_mut") {
     return "slice";
+  }
+  if (object.name == "cell" || object.name == "cell_mut") {
+    // Unlike `slice`/`slice_mut`, `cell` and `cell_mut` do *not* share one
+    // bucket: `set` is only ever valid on a `cell_mut` receiver, and folding
+    // both into one owner would offer it on a read-only `cell` too.
+    return object.name;
   }
   if (object.name == "list" || object.name == "option" ||
       object.name == "result" || object.name == "generator") {
@@ -1835,6 +1849,8 @@ private:
           ptr.inner != nullptr ? resolve_type(*ptr.inner, ctx) : k_unknown_type;
       return types_.ptr_to(inner, ptr.is_mut);
     }
+    case ast::node_kind::mut_type:
+      return resolve_mut_type(dynamic_cast<const ast::mut_type &>(type), ctx);
     case ast::node_kind::fn_type: {
       const auto &fn = dynamic_cast<const ast::fn_type &>(type);
       auto params = std::vector<type_id>{};
@@ -3802,27 +3818,46 @@ private:
               : resolve_length_arg(*named.type_args[1].value, ctx);
       return array_with_length(element, length);
     }
-    if (const auto arity = builtin_generic_arity(name)) {
-      // Kind-directed: where a higher-kinded slot is being filled, a bare
-      // prelude generic names the *constructor* itself (`monad[option]`,
-      // `impl monad for option`), not an instantiation.
-      if (named.type_args.empty() && ctx.expected_ctor_arity.has_value()) {
-        return check_ctor_against_expected(
-            types_.ctor_ref(name, "", nullptr, arity->first), name,
-            arity->first, named.span, ctx);
+    // `cell` predates this compiler's own `cell[T]`/`mut cell[T]` view type
+    // in existing user code and test fixtures (`type cell = {...}`,
+    // `type cell[T] = {...}`) — unlike the other prelude generics, whose
+    // names were never legal user type names in practice, a user's own
+    // `cell` declaration has to keep winning over the builtin so those
+    // programs don't silently start resolving to a different type.
+    const auto shadowed_by_user_cell = [&] {
+      if (name != "cell") {
+        return false;
       }
-      auto args = resolve_type_args(named, ctx);
-      if (!ctx.quiet && !named.type_args.empty() &&
-          (named.type_args.size() < arity->first ||
-           named.type_args.size() > arity->second)) {
-        error(named.span,
-              std::format("type `{}` expects {} type argument{}, found {}",
-                          name, arity->first, arity->first == 1 ? "" : "s",
-                          named.type_args.size()),
-              "wrong number of type arguments");
-        return k_error_type;
+      const auto *members =
+          ctx.module != nullptr ? ctx.module : index_.find_module(module_name_);
+      if (members != nullptr && members->types.contains(name)) {
+        return true;
       }
-      return types_.builtin_generic(name, std::move(args));
+      return find_import(name) != nullptr;
+    }();
+    if (!shadowed_by_user_cell) {
+      if (const auto arity = builtin_generic_arity(name)) {
+        // Kind-directed: where a higher-kinded slot is being filled, a bare
+        // prelude generic names the *constructor* itself (`monad[option]`,
+        // `impl monad for option`), not an instantiation.
+        if (named.type_args.empty() && ctx.expected_ctor_arity.has_value()) {
+          return check_ctor_against_expected(
+              types_.ctor_ref(name, "", nullptr, arity->first), name,
+              arity->first, named.span, ctx);
+        }
+        auto args = resolve_type_args(named, ctx);
+        if (!ctx.quiet && !named.type_args.empty() &&
+            (named.type_args.size() < arity->first ||
+             named.type_args.size() > arity->second)) {
+          error(named.span,
+                std::format("type `{}` expects {} type argument{}, found {}",
+                            name, arity->first, arity->first == 1 ? "" : "s",
+                            named.type_args.size()),
+                "wrong number of type arguments");
+          return k_error_type;
+        }
+        return types_.builtin_generic(name, std::move(args));
+      }
     }
     if (name == "fn") {
       return k_unknown_type;
@@ -3886,6 +3921,45 @@ private:
     }
 
     emit_undefined_type(named, name);
+    return k_error_type;
+  }
+
+  /// Resolves a bare `mut` prefix in type position (`mut slice[T]`,
+  /// `mut cell[T]`) to the `_mut` builtin-generic counterpart of the view
+  /// type it prefixes. `mut` is only meaningful immediately before `slice[T]`
+  /// or `cell[T]` — every other inner type (`mut int32`, `mut list[T]`, a
+  /// user struct) has no defined meaning, so it is a diagnostic here rather
+  /// than a silent pass-through.
+  auto resolve_mut_type(const ast::mut_type &mt, const resolve_ctx &ctx)
+      -> type_id {
+    const auto *named =
+        mt.inner != nullptr
+            ? dynamic_cast<const ast::named_type *>(mt.inner.get())
+            : nullptr;
+    if (named != nullptr && named->path.size() == 1 &&
+        (named->path.front() == "slice" || named->path.front() == "cell")) {
+      const auto mut_name = named->path.front() + "_mut";
+      const auto arity = builtin_generic_arity(mut_name);
+      auto args = resolve_type_args(*named, ctx);
+      if (!ctx.quiet && arity.has_value() && !named->type_args.empty() &&
+          (named->type_args.size() < arity->first ||
+           named->type_args.size() > arity->second)) {
+        error(named->span,
+              std::format("type `{}` expects {} type argument{}, found {}",
+                          mut_name, arity->first, arity->first == 1 ? "" : "s",
+                          named->type_args.size()),
+              "wrong number of type arguments");
+        return k_error_type;
+      }
+      return types_.builtin_generic(mut_name, std::move(args));
+    }
+    if (ctx.quiet) {
+      return k_error_type;
+    }
+    error_with_help(
+        mt.span, "`mut` is not valid here in type position", "unexpected `mut`",
+        "`mut` may only appear immediately before `slice[T]` or `cell[T]` — "
+        "e.g. `mut slice[T]`, `mut cell[T]`.");
     return k_error_type;
   }
 
@@ -4044,7 +4118,8 @@ private:
     }
     const auto &e = types_.entry(id);
     if (e.kind == type_kind::builtin_generic_kind &&
-        (e.name == "slice" || e.name == "slice_mut")) {
+        (e.name == "slice" || e.name == "slice_mut" || e.name == "cell" ||
+         e.name == "cell_mut")) {
       return true;
     }
     if (e.result != k_unknown_type && type_contains_view(e.result, visited)) {
@@ -8081,6 +8156,11 @@ private:
         return types_.builtin_generic("list", {element});
       case builtin_result_shape::byte_slice:
         return types_.builtin_generic("slice", {types_.builtin("byte")});
+      case builtin_result_shape::cell_of_element:
+        return types_.builtin_generic("cell", {element});
+      case builtin_result_shape::option_of_mut_cell_of_element:
+        return types_.builtin_generic(
+            "option", {types_.builtin_generic("cell_mut", {element})});
       }
     }
     return k_unknown_type;
