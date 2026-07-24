@@ -371,9 +371,9 @@ struct error_node : node {
 /// Parsing converts surface keywords into this enum immediately so later phases
 /// can reason about access control without depending on token spellings.
 enum class visibility : uint8_t {
-  def, ///< No explicit modifier; use the language's default visibility rules
-       ///< (same as `module`).
-  pub, ///< Publicly visible outside the defining module boundary.
+  def,    ///< No explicit modifier; use the language's default visibility rules
+          ///< (same as `module`).
+  pub,    ///< Publicly visible outside the defining module boundary.
   module, ///< Visible anywhere within the current module (the default when
           ///< no modifier is written).
   file,   ///< Visible only within the immediately enclosing file.

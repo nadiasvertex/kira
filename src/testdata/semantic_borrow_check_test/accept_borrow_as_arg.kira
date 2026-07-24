@@ -1,0 +1,16 @@
+module borrow_check.borrow_as_arg
+
+# The spec's own examples: lending a value to a call with `&`/`&mut` is exactly
+# what borrows are for. The owner keeps the value and it stays accessible.
+
+def read(x: &int32) -> int32:
+    return *x
+
+def bump(x: &mut int32) -> unit:
+    *x = *x + 1
+
+def demo() -> int32:
+    var n = 5
+    let a = read(&n)
+    bump(&mut n)
+    return a + read(&n)

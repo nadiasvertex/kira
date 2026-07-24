@@ -61,7 +61,8 @@ public:
   }
 
 private:
-  using scope_stack = std::vector<std::unordered_map<std::string, binding_state>>;
+  using scope_stack =
+      std::vector<std::unordered_map<std::string, binding_state>>;
 
   const checked_types &checked_;
   diagnostic_bag &diag_;
@@ -276,7 +277,8 @@ private:
       const auto is_borrow = unary.op == ast::unary_op::addr_of ||
                              unary.op == ast::unary_op::addr_of_mut;
       const auto is_projection = unary.op == ast::unary_op::deref;
-      walk_expr(*unary.operand, (is_borrow || is_projection) ? false : consume_top);
+      walk_expr(*unary.operand,
+                (is_borrow || is_projection) ? false : consume_top);
       return;
     }
 
@@ -769,8 +771,8 @@ auto walk_item(const ast::node &item, const checked_types &checked,
 
 auto check_moves(const std::vector<parsed_module> &inputs,
                  const checked_types &checked, diagnostic_bag &diag,
-                 std::vector<bool> &file_has_errors,
-                 unsigned skip_from_fileid) -> void {
+                 std::vector<bool> &file_has_errors, unsigned skip_from_fileid)
+    -> void {
   for (const auto &input : inputs) {
     if (static_cast<unsigned>(input.file_id) >= skip_from_fileid) {
       continue;

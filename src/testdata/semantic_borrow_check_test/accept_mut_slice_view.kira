@@ -1,0 +1,10 @@
+module borrow_check.mut_slice_view
+
+# `&mut xs[0..2]` is a *view* (a `slice_mut`), not a plain borrow: views are
+# the one borrowing value allowed to outlive a call, so storing one in a
+# binding must NOT be reported as an escaping borrow.
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let s = &mut xs[0..2]
+    return xs[3]

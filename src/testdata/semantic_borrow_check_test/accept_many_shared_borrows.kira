@@ -1,0 +1,11 @@
+module borrow_check.many_shared_borrows
+
+# Any number of immutable borrows may exist simultaneously, so passing `&n`
+# several times to one call is fine.
+
+def add3(a: &int32, b: &int32, c: &int32) -> int32:
+    return *a + *b + *c
+
+def demo() -> int32:
+    var n = 5
+    return add3(&n, &n, &n)

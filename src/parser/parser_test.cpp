@@ -1013,8 +1013,7 @@ auto test_parser_disambiguates_module_visibility_from_module_decl() -> void {
                              "  static y = 2\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
-  expect(parsed.file->items.size() == 2,
-         "expected two submodule declarations");
+  expect(parsed.file->items.size() == 2, "expected two submodule declarations");
 
   auto *bare = expect_node<kira::ast::sub_module_decl>(
       parsed.file->items[0].get(), kira::ast::node_kind::sub_module_decl,

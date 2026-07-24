@@ -1,0 +1,10 @@
+module borrow_check.store_borrow_in_let
+
+# A `&` borrow lends `n` for the duration of a call; it is not a value that can
+# be parked in a binding. `let r = &n` tries to store the borrow past the call
+# it was made for, which the borrow checker rejects.
+
+def demo() -> int32:
+    var n = 5
+    let r = &n
+    return *r

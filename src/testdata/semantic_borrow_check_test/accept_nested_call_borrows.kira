@@ -1,0 +1,19 @@
+module borrow_check.nested_call_borrows
+
+# `&mut n` and `&n` here are arguments of two *different* inner calls, evaluated
+# one after another; neither is an argument of the outer `combine` call. They
+# are not simultaneously live, so exclusivity is not violated.
+
+def read(x: &int32) -> int32:
+    return *x
+
+def bump_read(x: &mut int32) -> int32:
+    *x = *x + 1
+    return *x
+
+def combine(a: int32, b: int32) -> int32:
+    return a + b
+
+def demo() -> int32:
+    var n = 5
+    return combine(bump_read(&mut n), read(&n))

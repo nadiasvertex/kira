@@ -1,0 +1,9 @@
+module borrow_check.borrow_in_aggregate
+
+# Placing a borrow into a tuple (or any struct field / collection) stores it
+# beyond the call it was made for. A borrow cannot escape that way.
+
+def demo() -> int32:
+    var n = 5
+    let t = (&n, 3)
+    return t.1

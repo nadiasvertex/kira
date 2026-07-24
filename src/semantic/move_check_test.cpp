@@ -76,13 +76,12 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
   const auto std_dir = find_std_dir();
   auto fixtures = std::vector<source_fixture>{};
   for (const auto *filename :
-       {"traits.kira", "iter.kira", "prelude.kira", "panic.kira",
-        "option.kira", "result.kira", "list.kira", "io.kira", "console.kira",
-        "algo.kira", "fmt.kira", "string.kira", "deriving.kira"}) {
+       {"traits.kira", "iter.kira", "prelude.kira", "panic.kira", "option.kira",
+        "result.kira", "list.kira", "io.kira", "console.kira", "algo.kira",
+        "fmt.kira", "string.kira", "deriving.kira"}) {
     fixtures.push_back(source_fixture{
         .path = std::string("std/") + filename,
-        .text = kira::testing::load_test_data_file(std_dir.string(),
-                                                    filename),
+        .text = kira::testing::load_test_data_file(std_dir.string(), filename),
     });
   }
   return fixtures;
@@ -182,7 +181,7 @@ auto test_reuse_after_by_value_ufcs_call_is_rejected() -> void {
          "expected reusing an iterator after `for_each` moved it to be "
          "rejected");
   expect_diagnostic(analyzed, "use of moved value `nv`",
-                     "expected a use-after-move diagnostic naming `nv`");
+                    "expected a use-after-move diagnostic naming `nv`");
 }
 
 auto test_reuse_after_by_value_free_function_ufcs_call_is_rejected() -> void {
@@ -191,7 +190,7 @@ auto test_reuse_after_by_value_free_function_ufcs_call_is_rejected() -> void {
   expect(analyzed.error_count > 0,
          "expected reusing a list after `into_iter` moved it to be rejected");
   expect_diagnostic(analyzed, "use of moved value `xs`",
-                     "expected a use-after-move diagnostic naming `xs`");
+                    "expected a use-after-move diagnostic naming `xs`");
 }
 
 // ==========================================================================

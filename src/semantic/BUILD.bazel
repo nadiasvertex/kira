@@ -5,6 +5,7 @@ cc_library(
     srcs = [
         "analysis.cpp",
         "binding_walk.cpp",
+        "borrow_check.cpp",
         "check.cpp",
         "linear_poly.cpp",
         "module_index.cpp",
@@ -19,6 +20,7 @@ cc_library(
     hdrs = [
         "analysis.h",
         "binding_walk.h",
+        "borrow_check.h",
         "check.h",
         "ids.h",
         "linear_poly.h",
@@ -72,6 +74,20 @@ cc_test(
     srcs = ["move_check_test.cpp"],
     data = [
         "//src:semantic_move_check_test_files",
+        "//src:std_sources",
+    ],
+    deps = [
+        ":semantic",
+        "//src/parser:parser",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "borrow_check_test",
+    srcs = ["borrow_check_test.cpp"],
+    data = [
+        "//src:semantic_borrow_check_test_files",
         "//src:std_sources",
     ],
     deps = [

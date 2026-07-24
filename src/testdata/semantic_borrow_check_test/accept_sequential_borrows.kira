@@ -1,0 +1,16 @@
+module borrow_check.sequential_borrows
+
+# A `&mut` borrow and a later `&` borrow in *separate* statements are never
+# live at the same time — each ends with its own call — so this is fine.
+
+def bump(x: &mut int32) -> unit:
+    *x = *x + 1
+
+def read(x: &int32) -> int32:
+    return *x
+
+def demo() -> int32:
+    var n = 5
+    bump(&mut n)
+    let v = read(&n)
+    return v

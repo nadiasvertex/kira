@@ -12,6 +12,7 @@
 #include "parse_stage.h"
 #include "run_build_stage.h"
 #include "src/semantic/analysis.h"
+#include "src/semantic/borrow_check.h"
 #include "src/semantic/move_check.h"
 #include "src/util/path.h"
 #include "src/util/str.h"
@@ -316,6 +317,8 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   if (!cfg.parse_only) {
     semantic::check_moves(semantic_inputs, checked, session_diagnostics,
                           file_has_errors, stdlib_start);
+    semantic::check_borrows(semantic_inputs, checked, session_diagnostics,
+                            file_has_errors, stdlib_start);
   }
 
   report.error_count += session_diagnostics.error_count();

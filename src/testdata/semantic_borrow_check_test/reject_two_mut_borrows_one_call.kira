@@ -1,0 +1,13 @@
+module borrow_check.two_mut_borrows
+
+# At most one `&mut` borrow of a value may exist at a time. Passing `&mut x`
+# twice to the same call creates two simultaneous mutable borrows of `x`.
+
+def swap2(a: &mut int32, b: &mut int32) -> unit:
+    let tmp = *a
+    *a = *b
+    *b = tmp
+
+def demo() -> unit:
+    var x = 5
+    swap2(&mut x, &mut x)

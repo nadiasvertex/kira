@@ -1,0 +1,12 @@
+module borrow_check.mut_and_shared
+
+# A `&mut` borrow cannot coexist with any `&` borrow of the same value. Passing
+# both `&mut x` and `&x` to one call creates exactly that overlap.
+
+def observe(a: &mut int32, b: &int32) -> int32:
+    *a = *a + *b
+    return *a
+
+def demo() -> int32:
+    var x = 5
+    return observe(&mut x, &x)

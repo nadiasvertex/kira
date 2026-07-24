@@ -1,0 +1,8 @@
+module borrow_check.return_borrow
+
+# Returning a freshly made borrow lets it outlive the call it belongs to (and,
+# here, the local it points at). A borrow cannot escape by being returned.
+
+def borrow_local() -> &int32:
+    var n = 5
+    return &n
