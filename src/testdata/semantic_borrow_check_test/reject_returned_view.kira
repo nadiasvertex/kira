@@ -1,0 +1,19 @@
+module borrow_check.returned_view
+
+# `head` returns a view sliced from its argument, so the returned `slice`
+# keeps `xs` borrowed for as long as `s` lives. Mutating `xs` through
+# `bump(&mut xs)` while `s` is still in use aliases the view's source. The
+# checker cannot see *which* argument the view came from, so it conservatively
+# treats every reference argument as borrowed for the result's lifetime.
+
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def head(xs: &list[int32]) -> slice[int32]:
+    return xs[0..2]
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let s = head(&xs)
+    let r = bump(&mut xs)
+    return s[0] + r

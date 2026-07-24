@@ -33,9 +33,12 @@ namespace kira::semantic {
 ///     evaluation of another, not only within one argument list. The walk
 ///     therefore threads the set of borrows made by the enclosing (still
 ///     in-progress) calls down each sub-expression, and checks each new borrow
-///     against it. Because the escape rule forbids storing a borrow, no borrow
-///     outlives the statement that created it, so this per-statement live set
-///     is all the dataflow the check needs. Within the live set: any number of
+///     against it. Because the escape rule forbids storing a plain borrow, no
+///     plain borrow outlives the statement that created it, so a per-statement
+///     live set is all the dataflow that plain borrows need — a view, the one
+///     borrow that *can* outlive a statement, is threaded across statements
+///     separately (see View-borrow lifetimes below). Within the live set: any
+///     number of
 ///     `&` borrows may coexist, but at most one `&mut`, and a `&mut` may not
 ///     coexist with any `&`. Borrows are compared at whole-variable
 ///     (root-binding) granularity, matching the move checker; two borrows of
@@ -53,6 +56,37 @@ namespace kira::semantic {
 ///     declaration (`checked.resolved_callees`); a call through a plain
 ///     `fn(...)`-typed value is conservatively treated as borrowing nothing
 ///     implicitly, matching the move checker's policy.
+///
+///   * **View-borrow lifetimes.** A view (`slice`/`mut slice`) is the one
+///     borrowing value the language lets *outlive* a call, so unlike a plain
+///     borrow it survives past the statement that made it: bound to a `let`/
+///     `var`, or stored in a struct, it keeps its source collection borrowed
+///     for as long as the binding is live. This pass tracks that. When a
+///     statement binds a view-bearing value (a value whose type carries a
+///     view — see `checked_types::view_bearing_types`), it registers a *live
+///     view* recording which collection root(s) the value was traced back to,
+///     each root's borrow mutability, and the extent over which the binding is
+///     live — from its declaration through the last statement that mentions it
+///     (last-use, not lexical scope, so a view consumed early frees its source
+///     for the rest of the block). Those live-view borrows seed the
+///     exclusivity check of every following statement in the block, so a
+///     conflicting borrow of the collection while the view is live is caught
+///     by exactly the `borrows_conflict` rule above.
+///
+///     A value's borrowed roots (its *provenance*) are traced structurally: a
+///     slice `xs[a..b]` borrows `xs`; a sub-slice or field access of an
+///     existing view inherits that view's roots; an aggregate literal unions
+///     its view-bearing parts; and — the conservative case, since the language
+///     has no lifetime annotations to say *which* argument a returned view
+///     borrows from — a call whose result carries a view keeps every place
+///     reachable through its reference arguments and receiver borrowed for the
+///     result's lifetime. That over-approximates (it can borrow an argument
+///     the view doesn't actually alias), never under-approximates, so it is
+///     sound at the cost of an occasional false positive. Not covered: the
+///     precision of *which* argument a view borrows from (needs the view
+///     provenance inference the Views chapter still lists as partial), views
+///     produced by exotic expression forms, and field/index-precise places
+///     (borrows are compared at whole-variable granularity throughout).
 ///
 /// `checked` must be the result of `check_program` over the same `inputs`;
 /// this pass only trusts types it can look up in `checked.node_types`. Files

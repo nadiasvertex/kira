@@ -893,6 +893,9 @@ public:
     for (auto &[node, dispatch] : interp_dispatches_) {
       dispatch.value_type = types_.erase_refinements(dispatch.value_type);
     }
+    // Precompute which interned types carry a view, before `types_` is moved
+    // out below — the borrow checker reads this to track view-borrow lifetimes.
+    auto view_bearing = compute_view_bearing_types();
     return checked_types{
         .types = std::move(types_),
         .node_types = std::move(node_types_),
@@ -916,7 +919,8 @@ public:
         .synthesized_const_literals = std::move(synthesized_const_literals_),
         .static_const_values = std::move(static_const_values_),
         .proven_in_bounds = std::move(proven_in_bounds_),
-        .elided_contracts = std::move(elided_contracts_)};
+        .elided_contracts = std::move(elided_contracts_),
+        .view_bearing_types = std::move(view_bearing)};
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
@@ -4018,6 +4022,78 @@ private:
                                         : k_unknown_type);
     }
     return payload;
+  }
+
+  /// Whether `id` transitively carries a *view* (`slice`/`slice_mut`) —
+  /// directly, or through a reference/pointer inner type, array/tuple element,
+  /// generic argument, struct field, or sum-variant payload. `str` is
+  /// deliberately not a view here (see `checked_types::view_bearing_types`).
+  /// Resolving a struct field's or a variant payload's type requires the
+  /// instance's generic substitution, which is exactly what the borrow-check
+  /// pass consuming this result cannot do — so it is computed here, over the
+  /// whole table, once checking finishes. `visited` breaks recursive types
+  /// (`type tree = { kids: list[tree] }`); a genuine view is always reachable
+  /// on an acyclic path, so cycle edges may safely report "no view".
+  auto type_contains_view(type_id id, std::unordered_set<type_id> &visited)
+      -> bool {
+    if (types_.is_unknown(id) || id == k_error_type) {
+      return false;
+    }
+    if (!visited.insert(id).second) {
+      return false;
+    }
+    const auto &e = types_.entry(id);
+    if (e.kind == type_kind::builtin_generic_kind &&
+        (e.name == "slice" || e.name == "slice_mut")) {
+      return true;
+    }
+    if (e.result != k_unknown_type && type_contains_view(e.result, visited)) {
+      return true;
+    }
+    for (const auto arg : e.args) {
+      if (type_contains_view(arg, visited)) {
+        return true;
+      }
+    }
+    if (e.kind == type_kind::struct_kind) {
+      if (const auto *fields = struct_fields_of(e)) {
+        for (const auto &field : *fields) {
+          const auto ft = struct_field_type(e, field.name);
+          if (ft.has_value() && type_contains_view(*ft, visited)) {
+            return true;
+          }
+        }
+      }
+    } else if (e.kind == type_kind::sum_kind) {
+      if (const auto *variants = sum_variants_of(e)) {
+        for (const auto &variant : *variants) {
+          for (const auto payload : variant_payload_types(e, variant)) {
+            if (type_contains_view(payload, visited)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Classifies every interned `type_id` with `type_contains_view`, for
+  /// `checked_types::view_bearing_types`. Snapshots the table size first: a
+  /// struct/sum query may intern further types via `resolve_type`, but ids are
+  /// dense and existing entries are stable, and no expression the borrow
+  /// checker queries can have a type minted only during this walk.
+  auto compute_view_bearing_types() -> std::unordered_set<type_id> {
+    auto result = std::unordered_set<type_id>{};
+    const auto snapshot = types_.count();
+    for (std::size_t raw = 0; raw < snapshot; ++raw) {
+      const auto id = static_cast<type_id>(raw);
+      auto visited = std::unordered_set<type_id>{};
+      if (type_contains_view(id, visited)) {
+        result.insert(id);
+      }
+    }
+    return result;
   }
 
   // ==========================================================================

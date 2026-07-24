@@ -1,12 +1,186 @@
 #include "borrow_check.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <format>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace kira::semantic {
 namespace {
+
+/// Whether the identifier `name` appears anywhere in `node`'s subtree — the
+/// last-use test for view liveness. It must never *under*-report (a missed
+/// mention would end a view's live region too early and hide a real conflict),
+/// so an unrecognized node kind conservatively reports a mention: keeping a
+/// view live one statement too long can at worst raise a false positive, never
+/// mask an alias. Every construct that can hold an expression is recursed
+/// precisely so that safety valve is rarely reached.
+[[nodiscard]] auto subtree_mentions(const ast::node &node,
+                                    std::string_view name) -> bool;
+
+/// Recurses a statement/expression list for `subtree_mentions`.
+[[nodiscard]] auto any_mentions(const std::vector<ast::ptr<ast::node>> &nodes,
+                                std::string_view name) -> bool {
+  return std::ranges::any_of(nodes, [&](const ast::ptr<ast::node> &n) -> bool {
+    return n != nullptr && subtree_mentions(*n, name);
+  });
+}
+
+[[nodiscard]] auto mentions_opt(const ast::expr *expr, std::string_view name)
+    -> bool {
+  return expr != nullptr && subtree_mentions(*expr, name);
+}
+
+/// Whether `name` appears in any `if`/`elif` branch or the `else` body — shared
+/// by `if_expr` and `if_stmt`, which have identical shapes.
+[[nodiscard]] auto
+branches_mention(const std::vector<ast::if_branch> &branches,
+                 const std::vector<ast::ptr<ast::node>> &else_body,
+                 std::string_view name) -> bool {
+  const auto in_branch = [&](const ast::if_branch &branch) -> bool {
+    return mentions_opt(branch.condition.get(), name) ||
+           mentions_opt(branch.let_expr.get(), name) ||
+           any_mentions(branch.body, name);
+  };
+  return std::ranges::any_of(branches, in_branch) ||
+         any_mentions(else_body, name);
+}
+
+/// Whether `name` appears in any match arm — shared by `match_expr` and
+/// `match_stmt`.
+[[nodiscard]] auto arms_mention(const std::vector<ast::match_arm> &arms,
+                                std::string_view name) -> bool {
+  return std::ranges::any_of(arms, [&](const ast::match_arm &arm) -> bool {
+    return mentions_opt(arm.guard.get(), name) ||
+           mentions_opt(arm.body_expr.get(), name) ||
+           any_mentions(arm.body_stmts, name);
+  });
+}
+
+auto subtree_mentions(const ast::node &node, std::string_view name) -> bool {
+  switch (node.kind) {
+  case ast::node_kind::ident_expr:
+    return dynamic_cast<const ast::ident_expr &>(node).name == name;
+  case ast::node_kind::literal_expr:
+  case ast::node_kind::break_stmt:
+  case ast::node_kind::continue_stmt:
+    return false;
+  case ast::node_kind::group_expr:
+    return mentions_opt(dynamic_cast<const ast::group_expr &>(node).inner.get(),
+                        name);
+  case ast::node_kind::unary_expr:
+    return mentions_opt(
+        dynamic_cast<const ast::unary_expr &>(node).operand.get(), name);
+  case ast::node_kind::cast_expr:
+    return mentions_opt(
+        dynamic_cast<const ast::cast_expr &>(node).operand.get(), name);
+  case ast::node_kind::try_expr:
+    return mentions_opt(dynamic_cast<const ast::try_expr &>(node).operand.get(),
+                        name);
+  case ast::node_kind::binary_expr: {
+    const auto &e = dynamic_cast<const ast::binary_expr &>(node);
+    return mentions_opt(e.lhs.get(), name) || mentions_opt(e.rhs.get(), name);
+  }
+  case ast::node_kind::field_expr:
+    return mentions_opt(
+        dynamic_cast<const ast::field_expr &>(node).object.get(), name);
+  case ast::node_kind::index_expr: {
+    const auto &e = dynamic_cast<const ast::index_expr &>(node);
+    return mentions_opt(e.object.get(), name) ||
+           mentions_opt(e.index.get(), name);
+  }
+  case ast::node_kind::call_expr: {
+    const auto &e = dynamic_cast<const ast::call_expr &>(node);
+    return mentions_opt(e.callee.get(), name) ||
+           std::ranges::any_of(e.args, [&](const ast::call_arg &arg) -> bool {
+             return mentions_opt(arg.value.get(), name);
+           });
+  }
+  case ast::node_kind::tuple_expr: {
+    const auto &e = dynamic_cast<const ast::tuple_expr &>(node);
+    return std::ranges::any_of(e.elements,
+                               [&](const ast::ptr<ast::expr> &el) -> bool {
+                                 return mentions_opt(el.get(), name);
+                               });
+  }
+  case ast::node_kind::array_expr: {
+    const auto &e = dynamic_cast<const ast::array_expr &>(node);
+    return std::ranges::any_of(e.elements,
+                               [&](const ast::ptr<ast::expr> &el) -> bool {
+                                 return mentions_opt(el.get(), name);
+                               }) ||
+           mentions_opt(e.fill_value.get(), name) ||
+           mentions_opt(e.fill_count.get(), name);
+  }
+  case ast::node_kind::struct_expr: {
+    const auto &e = dynamic_cast<const ast::struct_expr &>(node);
+    return std::ranges::any_of(
+        e.fields, [&](const ast::struct_field_init &field) -> bool {
+          return mentions_opt(field.value.get(), name);
+        });
+  }
+  case ast::node_kind::if_expr: {
+    const auto &e = dynamic_cast<const ast::if_expr &>(node);
+    return branches_mention(e.branches, e.else_body, name);
+  }
+  case ast::node_kind::match_expr: {
+    const auto &e = dynamic_cast<const ast::match_expr &>(node);
+    return mentions_opt(e.subject.get(), name) || arms_mention(e.arms, name);
+  }
+  case ast::node_kind::block_expr:
+    return any_mentions(dynamic_cast<const ast::block_expr &>(node).stmts,
+                        name);
+  case ast::node_kind::lambda_expr: {
+    const auto &e = dynamic_cast<const ast::lambda_expr &>(node);
+    return mentions_opt(e.body_expr.get(), name) ||
+           any_mentions(e.body_stmts, name);
+  }
+  case ast::node_kind::let_stmt: {
+    const auto &e = dynamic_cast<const ast::let_stmt &>(node);
+    return mentions_opt(e.initializer.get(), name) ||
+           any_mentions(e.else_body, name);
+  }
+  case ast::node_kind::var_stmt:
+    return mentions_opt(
+        dynamic_cast<const ast::var_stmt &>(node).initializer.get(), name);
+  case ast::node_kind::assign_stmt: {
+    const auto &e = dynamic_cast<const ast::assign_stmt &>(node);
+    return mentions_opt(e.target.get(), name) ||
+           mentions_opt(e.value.get(), name);
+  }
+  case ast::node_kind::expr_stmt:
+    return mentions_opt(dynamic_cast<const ast::expr_stmt &>(node).expr.get(),
+                        name);
+  case ast::node_kind::return_stmt:
+    return mentions_opt(
+        dynamic_cast<const ast::return_stmt &>(node).value.get(), name);
+  case ast::node_kind::if_stmt: {
+    const auto &e = dynamic_cast<const ast::if_stmt &>(node);
+    return branches_mention(e.branches, e.else_body, name);
+  }
+  case ast::node_kind::while_stmt: {
+    const auto &e = dynamic_cast<const ast::while_stmt &>(node);
+    return mentions_opt(e.condition.get(), name) ||
+           mentions_opt(e.let_expr.get(), name) || any_mentions(e.body, name);
+  }
+  case ast::node_kind::for_stmt: {
+    const auto &e = dynamic_cast<const ast::for_stmt &>(node);
+    return mentions_opt(e.iterable.get(), name) ||
+           mentions_opt(e.guard.get(), name) || any_mentions(e.body, name);
+  }
+  case ast::node_kind::match_stmt: {
+    const auto &e = dynamic_cast<const ast::match_stmt &>(node);
+    return mentions_opt(e.subject.get(), name) || arms_mention(e.arms, name);
+  }
+  default:
+    // An unrecognized construct that might mention `name`: assume it does, so a
+    // view is never dropped early.
+    return true;
+  }
+}
 
 /// Peels enclosing parentheses off an expression. `f((&x))` lends `x` exactly
 /// like `f(&x)` does, so a borrow wrapped in one or more `group_expr`s is
@@ -74,7 +248,27 @@ struct call_borrow {
   /// released before the receiver's call runs), but still conflicts with a
   /// `&mut` — and when it does, it is a genuine `&mut`, so it reports as one.
   bool reserved = false;
+  /// True when this borrow is held by a *view* (`slice`/`mut slice`) that
+  /// outlives the statement rather than by an in-flight call argument. It
+  /// changes only the diagnostic wording (see `report_exclusivity`); a view
+  /// borrow conflicts by exactly the same `borrows_conflict` rule.
+  bool is_view = false;
+  /// The binding that holds the view, when `is_view` — for the diagnostic and
+  /// for last-use liveness tracking.
+  std::string via;
   source_span span = source_span::dummy();
+};
+
+/// A view binding that is live across statements, keeping its source
+/// collection(s) borrowed. `borrows` has one entry per source root the view
+/// was traced back to (usually one, but a view built from several — a struct
+/// literal storing two slices, say — borrows all of them). `last_use` is the
+/// index, within the declaring block, of the last statement that mentions
+/// `binding`; the view is live from its declaration through that statement.
+struct live_view {
+  std::vector<call_borrow> borrows;
+  std::string binding;
+  std::size_t last_use = 0;
 };
 
 /// Whether two borrows of the same value may not coexist. Any `&mut`
@@ -131,14 +325,14 @@ public:
     if (decl.body_expr != nullptr) {
       walk_expr(*decl.body_expr, /*borrow_ok=*/false, {});
     }
-    walk_body(decl.body_stmts);
+    walk_body(decl.body_stmts, {});
   }
 
   auto check_lambda(const ast::lambda_expr &lambda) -> void {
     if (lambda.body_expr != nullptr) {
       walk_expr(*lambda.body_expr, /*borrow_ok=*/false, {});
     }
-    walk_body(lambda.body_stmts);
+    walk_body(lambda.body_stmts, {});
   }
 
 private:
@@ -374,12 +568,220 @@ private:
     }
   }
 
+  // ------------------------------------------------------------------
+  //  View provenance: the persistent borrows a view-bearing value holds.
+  // ------------------------------------------------------------------
+
+  /// Whether `expr`'s recorded type transitively carries a view — see
+  /// `checked_types::view_bearing_types`.
+  [[nodiscard]] auto is_view_bearing(const ast::expr &expr) const -> bool {
+    return checked_.view_bearing_types.contains(lookup_type(&expr));
+  }
+
+  /// The mutability of a view type: `mut slice` (`slice_mut`) after peeling any
+  /// enclosing references, else shared.
+  [[nodiscard]] auto view_is_mut(type_id id) const -> bool {
+    const auto *entry = &checked_.types.entry(id);
+    while (entry->kind == type_kind::ref_kind) {
+      entry = &checked_.types.entry(entry->result);
+    }
+    return entry->kind == type_kind::builtin_generic_kind &&
+           entry->name == "slice_mut";
+  }
+
+  /// The source roots a view-bearing value borrows and keeps live — the
+  /// provenance rules in `borrow_check.h`. `views` is the set of views
+  /// currently live, so a value aliasing an existing view binding (`let n = m`,
+  /// or a sub-slice `m[a..b]`) inherits that binding's roots rather than
+  /// treating the view itself as a fresh collection. Returns empty for a value
+  /// carrying no view, or a view whose source cannot be traced to a named root
+  /// (conservatively untracked).
+  [[nodiscard]] auto provenance_of(const ast::expr &expr,
+                                   const live_set &views) const
+      -> std::vector<call_borrow> {
+    const auto &e = strip_groups(expr);
+    if (!is_view_bearing(e)) {
+      return {};
+    }
+    switch (e.kind) {
+    case ast::node_kind::unary_expr: {
+      const auto &unary = dynamic_cast<const ast::unary_expr &>(e);
+      auto inner = unary.operand != nullptr
+                       ? provenance_of(*unary.operand, views)
+                       : std::vector<call_borrow>{};
+      if (unary.op == ast::unary_op::addr_of_mut) {
+        for (auto &borrow : inner) {
+          borrow.is_mut = true;
+        }
+      }
+      return inner;
+    }
+    case ast::node_kind::index_expr: {
+      const auto &index = dynamic_cast<const ast::index_expr &>(e);
+      if (index.object == nullptr) {
+        return {};
+      }
+      // A sub-slice of an existing view (`m[a..b]`) borrows *m*'s sources, not
+      // `m` itself; a slice of a real collection borrows that collection.
+      if (is_view_bearing(*index.object)) {
+        return provenance_of(*index.object, views);
+      }
+      auto root = root_binding_name(*index.object);
+      if (root.empty()) {
+        return provenance_of(*index.object, views);
+      }
+      return {call_borrow{.root = std::move(root),
+                          .is_mut = view_is_mut(lookup_type(&e)),
+                          .span = e.span}};
+    }
+    case ast::node_kind::ident_expr: {
+      const auto &ident = dynamic_cast<const ast::ident_expr &>(e);
+      auto out = std::vector<call_borrow>{};
+      for (const auto &borrow : views) {
+        if (borrow.is_view && borrow.via == ident.name) {
+          out.push_back(borrow);
+        }
+      }
+      return out;
+    }
+    case ast::node_kind::field_expr: {
+      const auto &field = dynamic_cast<const ast::field_expr &>(e);
+      return field.object != nullptr ? provenance_of(*field.object, views)
+                                     : std::vector<call_borrow>{};
+    }
+    case ast::node_kind::cast_expr: {
+      const auto &cast = dynamic_cast<const ast::cast_expr &>(e);
+      return cast.operand != nullptr ? provenance_of(*cast.operand, views)
+                                     : std::vector<call_borrow>{};
+    }
+    case ast::node_kind::tuple_expr: {
+      const auto &tuple = dynamic_cast<const ast::tuple_expr &>(e);
+      auto out = std::vector<call_borrow>{};
+      for (const auto &element : tuple.elements) {
+        append_provenance(out, element.get(), views);
+      }
+      return out;
+    }
+    case ast::node_kind::array_expr: {
+      const auto &array = dynamic_cast<const ast::array_expr &>(e);
+      auto out = std::vector<call_borrow>{};
+      for (const auto &element : array.elements) {
+        append_provenance(out, element.get(), views);
+      }
+      append_provenance(out, array.fill_value.get(), views);
+      return out;
+    }
+    case ast::node_kind::struct_expr: {
+      const auto &literal = dynamic_cast<const ast::struct_expr &>(e);
+      auto out = std::vector<call_borrow>{};
+      for (const auto &field : literal.fields) {
+        append_provenance(out, field.value.get(), views);
+      }
+      return out;
+    }
+    case ast::node_kind::call_expr: {
+      // A call whose result carries a view keeps every place reachable through
+      // its reference arguments and receiver borrowed for the view's lifetime —
+      // the conservative rule that needs no per-argument provenance inference.
+      const auto &call = dynamic_cast<const ast::call_expr &>(e);
+      const auto borrows = collect_call_borrows(call);
+      auto out = borrows.args;
+      if (borrows.receiver.has_value()) {
+        out.push_back(*borrows.receiver);
+      }
+      for (const auto &arg : call.args) {
+        append_provenance(out, arg.value.get(), views);
+      }
+      return out;
+    }
+    default:
+      // A view produced by an exotic expression form (comprehension, block,
+      // etc.) is not one of the language's ordinary view producers; its source
+      // is left untracked. This is a precision gap, not a fresh unsoundness in
+      // the channels the design targets (slice, call-return, aggregate store).
+      return {};
+    }
+  }
+
+  /// Appends `expr`'s provenance to `out` (no-op for a null or non-view expr).
+  auto append_provenance(std::vector<call_borrow> &out, const ast::expr *expr,
+                         const live_set &views) const -> void {
+    if (expr == nullptr) {
+      return;
+    }
+    auto more = provenance_of(*expr, views);
+    out.insert(out.end(), more.begin(), more.end());
+  }
+
+  /// If `node` binds or stores a view-bearing value into a named holder,
+  /// registers one live view per source root, checks it against the borrows
+  /// already live (`seed`), and computes its last-use extent over the rest of
+  /// `stmts`. `index` is `node`'s position within `stmts`.
+  auto register_views(const ast::node &node, std::size_t index,
+                      const std::vector<ast::ptr<ast::node>> &stmts,
+                      const live_set &seed, std::vector<live_view> &block_views)
+      -> void {
+    std::string holder;
+    const ast::expr *initializer = nullptr;
+    switch (node.kind) {
+    case ast::node_kind::let_stmt: {
+      const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
+      if (stmt.pattern != nullptr &&
+          stmt.pattern->kind == ast::node_kind::binding_pattern) {
+        holder = dynamic_cast<const ast::binding_pattern &>(*stmt.pattern).name;
+      }
+      initializer = stmt.initializer.get();
+      break;
+    }
+    case ast::node_kind::var_stmt: {
+      const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
+      holder = stmt.name;
+      initializer = stmt.initializer.get();
+      break;
+    }
+    case ast::node_kind::assign_stmt: {
+      const auto &stmt = dynamic_cast<const ast::assign_stmt &>(node);
+      if (stmt.target != nullptr) {
+        holder = root_binding_name(*stmt.target);
+      }
+      initializer = stmt.value.get();
+      break;
+    }
+    default:
+      return;
+    }
+    if (holder.empty() || initializer == nullptr) {
+      return;
+    }
+    auto borrows = provenance_of(*initializer, seed);
+    if (borrows.empty()) {
+      return;
+    }
+    for (auto &borrow : borrows) {
+      borrow.is_view = true;
+      borrow.via = holder;
+    }
+    // A newly created view conflicts with any incompatible borrow already live
+    // (another `mut` view of the same collection, say).
+    check_new_borrows(seed, borrows);
+    auto last_use = index;
+    for (auto j = index + 1; j < stmts.size(); ++j) {
+      if (stmts[j] != nullptr && subtree_mentions(*stmts[j], holder)) {
+        last_use = j;
+      }
+    }
+    block_views.push_back(live_view{.borrows = std::move(borrows),
+                                    .binding = std::move(holder),
+                                    .last_use = last_use});
+  }
+
   /// Walks `expr`. `borrow_ok` is true only in a *passing* position — a direct
   /// call argument, the callee, or the base of a field/index projection —
   /// where a plain-reference borrow lends its operand rather than escaping. A
   /// borrow found with `borrow_ok` false is stored, and rejected. `live` is
-  /// the set of borrows made by enclosing calls still being evaluated, used to
-  /// enforce exclusivity across call nesting.
+  /// the set of borrows made by enclosing calls still being evaluated, plus the
+  /// views live across the enclosing statement, used to enforce exclusivity
+  /// across call nesting and against live views.
   auto walk_expr(const ast::expr &expr, bool borrow_ok, const live_set &live)
       -> void {
     if (expr.has_error) {
@@ -539,7 +941,7 @@ private:
 
     case ast::node_kind::if_expr: {
       const auto &if_e = dynamic_cast<const ast::if_expr &>(expr);
-      walk_if_branches(if_e.branches, if_e.else_body);
+      walk_if_branches(if_e.branches, if_e.else_body, live);
       return;
     }
 
@@ -548,13 +950,13 @@ private:
       if (match_e.subject != nullptr) {
         walk_expr(*match_e.subject, /*borrow_ok=*/false, live);
       }
-      walk_match_arms(match_e.arms);
+      walk_match_arms(match_e.arms, live);
       return;
     }
 
     case ast::node_kind::block_expr: {
       const auto &block = dynamic_cast<const ast::block_expr &>(expr);
-      walk_body(block.stmts);
+      walk_body(block.stmts, live);
       return;
     }
 
@@ -565,35 +967,52 @@ private:
     }
   }
 
-  auto walk_body(const std::vector<ast::ptr<ast::node>> &stmts) -> void {
-    for (const auto &stmt : stmts) {
-      if (stmt != nullptr) {
-        walk_stmt(*stmt);
+  /// Walks a statement list in order. `outer` holds the views live from
+  /// enclosing blocks; each statement is walked with `outer` plus this block's
+  /// own views that are still live at that point (last-use gated). A `let`/
+  /// `var`/`assign` that binds a view-bearing value registers a live view for
+  /// the rest of the block.
+  auto walk_body(const std::vector<ast::ptr<ast::node>> &stmts,
+                 const live_set &outer) -> void {
+    auto block_views = std::vector<live_view>{};
+    for (std::size_t i = 0; i < stmts.size(); ++i) {
+      if (stmts[i] == nullptr) {
+        continue;
       }
+      auto seed = outer;
+      for (const auto &view : block_views) {
+        if (i <= view.last_use) {
+          seed.insert(seed.end(), view.borrows.begin(), view.borrows.end());
+        }
+      }
+      walk_stmt(*stmts[i], seed);
+      register_views(*stmts[i], i, stmts, seed, block_views);
     }
   }
 
-  auto walk_stmt(const ast::node &node) -> void {
+  /// Walks one statement. `seed` is the set of views live across it (plus, when
+  /// this statement is itself nested in an expression, the enclosing call
+  /// borrows) — the exclusivity check for any borrow the statement makes starts
+  /// from it rather than from an empty set, which is how a borrow is caught
+  /// conflicting with a view created in an earlier statement.
+  auto walk_stmt(const ast::node &node, const live_set &seed) -> void {
     if (node.has_error) {
       return;
     }
-    // Each statement starts a fresh live set: a borrow cannot outlive the call
-    // it was made for, and the escape rule forbids storing one, so no borrow
-    // survives past the end of the statement that created it.
     switch (node.kind) {
     case ast::node_kind::let_stmt: {
       const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
       if (stmt.initializer != nullptr) {
-        walk_expr(*stmt.initializer, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.initializer, /*borrow_ok=*/false, seed);
       }
-      walk_body(stmt.else_body);
+      walk_body(stmt.else_body, seed);
       return;
     }
 
     case ast::node_kind::var_stmt: {
       const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
       if (stmt.initializer != nullptr) {
-        walk_expr(*stmt.initializer, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.initializer, /*borrow_ok=*/false, seed);
       }
       return;
     }
@@ -601,10 +1020,10 @@ private:
     case ast::node_kind::assign_stmt: {
       const auto &stmt = dynamic_cast<const ast::assign_stmt &>(node);
       if (stmt.value != nullptr) {
-        walk_expr(*stmt.value, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.value, /*borrow_ok=*/false, seed);
       }
       if (stmt.target != nullptr) {
-        walk_expr(*stmt.target, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.target, /*borrow_ok=*/false, seed);
       }
       return;
     }
@@ -612,7 +1031,7 @@ private:
     case ast::node_kind::expr_stmt: {
       const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
       if (stmt.expr != nullptr) {
-        walk_expr(*stmt.expr, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.expr, /*borrow_ok=*/false, seed);
       }
       return;
     }
@@ -620,7 +1039,7 @@ private:
     case ast::node_kind::return_stmt: {
       const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
       if (stmt.value != nullptr) {
-        walk_expr(*stmt.value, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.value, /*borrow_ok=*/false, seed);
       }
       return;
     }
@@ -631,81 +1050,82 @@ private:
 
     case ast::node_kind::if_stmt: {
       const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
-      walk_if_branches(stmt.branches, stmt.else_body);
+      walk_if_branches(stmt.branches, stmt.else_body, seed);
       return;
     }
 
     case ast::node_kind::while_stmt: {
       const auto &stmt = dynamic_cast<const ast::while_stmt &>(node);
       if (stmt.condition != nullptr) {
-        walk_expr(*stmt.condition, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.condition, /*borrow_ok=*/false, seed);
       }
       if (stmt.let_expr != nullptr) {
-        walk_expr(*stmt.let_expr, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.let_expr, /*borrow_ok=*/false, seed);
       }
-      walk_body(stmt.body);
+      walk_body(stmt.body, seed);
       return;
     }
 
     case ast::node_kind::for_stmt: {
       const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
       if (stmt.iterable != nullptr) {
-        walk_expr(*stmt.iterable, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.iterable, /*borrow_ok=*/false, seed);
       }
       if (stmt.guard != nullptr) {
-        walk_expr(*stmt.guard, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.guard, /*borrow_ok=*/false, seed);
       }
-      walk_body(stmt.body);
+      walk_body(stmt.body, seed);
       return;
     }
 
     case ast::node_kind::match_stmt: {
       const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
       if (stmt.subject != nullptr) {
-        walk_expr(*stmt.subject, /*borrow_ok=*/false, {});
+        walk_expr(*stmt.subject, /*borrow_ok=*/false, seed);
       }
-      walk_match_arms(stmt.arms);
+      walk_match_arms(stmt.arms, seed);
       return;
     }
 
     case ast::node_kind::block_expr: {
       const auto &block = dynamic_cast<const ast::block_expr &>(node);
-      walk_body(block.stmts);
+      walk_body(block.stmts, seed);
       return;
     }
 
     default:
       if (const auto *expr = dynamic_cast<const ast::expr *>(&node)) {
-        walk_expr(*expr, /*borrow_ok=*/false, {});
+        walk_expr(*expr, /*borrow_ok=*/false, seed);
       }
       return;
     }
   }
 
   auto walk_if_branches(const std::vector<ast::if_branch> &branches,
-                        const std::vector<ast::ptr<ast::node>> &else_body)
-      -> void {
+                        const std::vector<ast::ptr<ast::node>> &else_body,
+                        const live_set &seed) -> void {
     for (const auto &branch : branches) {
       if (branch.condition != nullptr) {
-        walk_expr(*branch.condition, /*borrow_ok=*/false, {});
+        walk_expr(*branch.condition, /*borrow_ok=*/false, seed);
       }
       if (branch.let_expr != nullptr) {
-        walk_expr(*branch.let_expr, /*borrow_ok=*/false, {});
+        walk_expr(*branch.let_expr, /*borrow_ok=*/false, seed);
       }
-      walk_body(branch.body);
+      walk_body(branch.body, seed);
     }
-    walk_body(else_body);
+    walk_body(else_body, seed);
   }
 
-  auto walk_match_arms(const std::vector<ast::match_arm> &arms) -> void {
+  auto walk_match_arms(const std::vector<ast::match_arm> &arms,
+                       const live_set &seed) -> void {
     for (const auto &arm : arms) {
       if (arm.guard != nullptr) {
-        walk_expr(*arm.guard, /*borrow_ok=*/false, {});
+        walk_expr(*arm.guard, /*borrow_ok=*/false, seed);
       }
       if (arm.body_expr != nullptr) {
-        walk_expr(*arm.body_expr, /*borrow_ok=*/false, {});
+        walk_expr(*arm.body_expr, /*borrow_ok=*/false, seed);
       }
-      walk_body(arm.body_stmts);
+      walk_body(arm.body_stmts, seed);
     }
   }
 
@@ -737,6 +1157,10 @@ private:
 
   auto report_exclusivity(const call_borrow &earlier, const call_borrow &later)
       -> void {
+    if (earlier.is_view || later.is_view) {
+      report_view_conflict(earlier, later);
+      return;
+    }
     const auto both_mut = earlier.is_mut && later.is_mut;
     auto message =
         both_mut
@@ -767,6 +1191,48 @@ private:
     d.with_help(std::format(
         "pass a single borrow of `{0}` to this call, or copy `{0}` so each "
         "call receives its own value",
+        later.root));
+    diag_.emit(d);
+  }
+
+  /// Reports a borrow that conflicts with a *view* still holding the same
+  /// collection borrowed across statements. At least one of `earlier`/`later`
+  /// is a view; `later` is the borrow that triggered the conflict.
+  auto report_view_conflict(const call_borrow &earlier,
+                            const call_borrow &later) -> void {
+    const auto describe = [](const call_borrow &borrow) -> std::string {
+      if (borrow.is_view && !borrow.via.empty()) {
+        return std::format("the view `{}` of `{}`", borrow.via, borrow.root);
+      }
+      return std::format("a borrow of `{}`", borrow.root);
+    };
+    auto message = std::format("cannot borrow `{}` while {} is still in use",
+                               later.root, describe(earlier));
+    auto d = diagnostic(diagnostic_level::error, std::move(message), file_id_);
+    d.with_label(
+        later.span,
+        later.is_view ? std::format("view `{}` of `{}` created here", later.via,
+                                    later.root)
+        : later.is_mut
+            ? std::format("`{}` borrowed as mutable here", later.root)
+            : std::format("`{}` borrowed as immutable here", later.root));
+    d.with_secondary_label(
+        earlier.span,
+        earlier.is_view && !earlier.via.empty()
+            ? std::format("the view `{}` borrows `{}` here, and is still used "
+                          "later",
+                          earlier.via, earlier.root)
+            : std::format("`{}` already borrowed here", earlier.root));
+    d.with_note("a view (`slice`/`mut slice`) keeps its source collection "
+                "borrowed for as long as the view is live; while it is, the "
+                "collection allows at most one `&mut` and no `&mut` alongside "
+                "any `&`, exactly like a direct borrow");
+    d.with_note("a value that stores or returns a view — including one built "
+                "by a call — keeps every collection it was traced back to "
+                "borrowed for as long as that value lives");
+    d.with_help(std::format(
+        "finish using the view before borrowing `{0}` again, or copy the data "
+        "so the view no longer aliases `{0}`",
         later.root));
     diag_.emit(d);
   }

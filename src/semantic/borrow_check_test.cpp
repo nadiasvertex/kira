@@ -333,6 +333,96 @@ auto test_two_phase_receiver_with_nested_mut_is_rejected() -> void {
       "expected a two-mutable-borrows diagnostic for the reserved receiver");
 }
 
+// ==========================================================================
+//  View-borrow exclusivity: a view (`slice`/`mut slice`) is the one borrowing
+//  value allowed to outlive a call, so it keeps its source collection borrowed
+//  across statements — from its binding through its last use. A conflicting
+//  borrow of that collection while the view is live must be rejected, whether
+//  the view came from a direct slice, a slice-returning call, or a struct that
+//  stores one.
+// ==========================================================================
+
+auto test_mut_view_across_mutation_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_mut_view_across_mutation.kira");
+  expect(analyzed.error_count > 0,
+         "expected mutating `xs` while a `mut slice` view of it is live to be "
+         "rejected");
+  expect_diagnostic(analyzed,
+                    "cannot borrow `xs` while the view `s` of `xs` is still in "
+                    "use",
+                    "expected a live-view conflict diagnostic naming `xs`/`s`");
+}
+
+auto test_two_mut_views_are_rejected() -> void {
+  const auto analyzed = analyze_test_data_file("reject_two_mut_views.kira");
+  expect(analyzed.error_count > 0,
+         "expected two simultaneously live `mut slice` views of `xs` to be "
+         "rejected");
+  expect_diagnostic(analyzed, "cannot borrow `xs` while the view `a` of `xs`",
+                    "expected a conflict between the two mutable views");
+}
+
+auto test_mut_view_with_shared_borrow_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_mut_view_with_shared_borrow.kira");
+  expect(analyzed.error_count > 0,
+         "expected a shared `&xs` borrow taken while a `mut slice` view of "
+         "`xs` is live to be rejected");
+  expect_diagnostic(analyzed, "cannot borrow `xs` while the view `s` of `xs`",
+                    "expected a mutable-view-vs-shared-borrow conflict");
+}
+
+auto test_returned_view_is_tracked() -> void {
+  const auto analyzed = analyze_test_data_file("reject_returned_view.kira");
+  expect(analyzed.error_count > 0,
+         "expected a view returned from a call to keep its source collection "
+         "borrowed, so a later mutation of that collection is rejected");
+  expect_diagnostic(analyzed, "cannot borrow `xs` while the view `s` of `xs`",
+                    "expected the returned view to conflict with `&mut xs`");
+}
+
+auto test_view_stored_in_struct_is_tracked() -> void {
+  const auto analyzed = analyze_test_data_file("reject_view_in_struct.kira");
+  expect(analyzed.error_count > 0,
+         "expected a struct that stores a view to keep the sliced collection "
+         "borrowed, so a later mutation of it is rejected");
+  expect_diagnostic(
+      analyzed, "cannot borrow `xs` while the view `w` of `xs`",
+      "expected the struct-stored view to conflict with `&mut xs`");
+}
+
+auto test_two_shared_views_are_accepted() -> void {
+  const auto analyzed = analyze_test_data_file("accept_two_shared_views.kira");
+  expect(analyzed.error_count == 0,
+         "expected any number of shared `slice` views of `xs` to check "
+         "cleanly — two shared borrows never conflict");
+}
+
+auto test_view_dead_at_last_use_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_view_last_use_ends.kira");
+  expect(analyzed.error_count == 0,
+         "expected re-borrowing `xs` after a view's last use to check cleanly "
+         "— liveness ends at the last use, not the end of scope");
+}
+
+auto test_view_of_other_variable_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_view_of_other_variable.kira");
+  expect(analyzed.error_count == 0,
+         "expected a live view of `xs` to place no constraint on a borrow of a "
+         "different collection `ys`");
+}
+
+auto test_owned_return_keeps_args_free_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_owned_return_keeps_args_free.kira");
+  expect(analyzed.error_count == 0,
+         "expected a call returning an owned (non-view) value to keep none of "
+         "its reference arguments borrowed past the call");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -353,6 +443,15 @@ auto main() -> int {
     test_receiver_mut_with_shared_arg_is_rejected();
     test_two_phase_receiver_is_accepted();
     test_two_phase_receiver_with_nested_mut_is_rejected();
+    test_mut_view_across_mutation_is_rejected();
+    test_two_mut_views_are_rejected();
+    test_mut_view_with_shared_borrow_is_rejected();
+    test_returned_view_is_tracked();
+    test_view_stored_in_struct_is_tracked();
+    test_two_shared_views_are_accepted();
+    test_view_dead_at_last_use_is_accepted();
+    test_view_of_other_variable_is_accepted();
+    test_owned_return_keeps_args_free_is_accepted();
   } catch (const std::exception &ex) {
     std::cerr << "borrow_check_test failed: unhandled exception: " << ex.what()
               << '\n';

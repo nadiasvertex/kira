@@ -1,0 +1,10 @@
+module borrow_check.two_shared_views
+
+# Any number of shared (`slice`) views of the same collection may be live at
+# once — two shared borrows never conflict, exactly like two `&` borrows.
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let a = xs[0..2]
+    let b = xs[2..4]
+    return a[0] + b[0]

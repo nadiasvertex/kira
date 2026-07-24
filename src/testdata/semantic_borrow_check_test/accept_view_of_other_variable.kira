@@ -1,0 +1,14 @@
+module borrow_check.view_of_other_variable
+
+# A live `mut slice` view of `xs` places no constraint on a borrow of a
+# *different* collection: `s` borrows `xs`, `bump` borrows `ys`.
+
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    var ys = [5, 6, 7, 8]
+    let s = &mut xs[0..2]
+    let r = bump(&mut ys)
+    return s[0] + r

@@ -1,0 +1,20 @@
+module borrow_check.view_in_struct
+
+# `make_window` returns an ordinary struct, but the struct stores a `slice` of
+# the argument, so the returned `window` keeps `xs` borrowed exactly as if the
+# slice had been returned directly. Mutating `xs` while `w` is still used must
+# be rejected.
+
+type window = { s: slice[int32] }
+
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def make_window(xs: &list[int32]) -> window:
+    return window { s: xs[0..2] }
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let w = make_window(&xs)
+    let r = bump(&mut xs)
+    return w.s[0] + r

@@ -334,6 +334,8 @@ auto type_table::mutable_entry(type_id id) -> type_entry & {
   return entries_[id];
 }
 
+auto type_table::count() const -> std::size_t { return entries_.size(); }
+
 auto type_table::bool_type() const -> type_id {
   const auto it = interned_.find("b:bool");
   return it != interned_.end() ? it->second : k_unknown_type;

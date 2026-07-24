@@ -1,0 +1,12 @@
+module borrow_check.two_mut_views
+
+# Two `mut slice` views of the same collection cannot be live at once: each
+# keeps `xs` mutably borrowed, and at most one `&mut` of a value may exist at a
+# time (compared at whole-variable granularity, so different sub-ranges still
+# conflict).
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let a = &mut xs[0..2]
+    let b = &mut xs[2..4]
+    return a[0] + b[0]

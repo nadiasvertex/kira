@@ -277,6 +277,13 @@ public:
   /// — see `type_entry`'s doc comment). `id` must already be a valid,
   /// in-range id; unlike `entry`, this does not fall back to `unknown`.
   [[nodiscard]] auto mutable_entry(type_id id) -> type_entry &;
+  /// The number of interned entries, so a caller can enumerate every live
+  /// `type_id` as `[0, count())`. Used by `check_program` to precompute which
+  /// interned types transitively carry a view (`checked_types::
+  /// view_bearing_types`). Ids are dense and never reused, so a snapshot of
+  /// this taken before an enumeration stays a valid upper bound even if the
+  /// walk interns further types (`std::deque` keeps existing entries stable).
+  [[nodiscard]] auto count() const -> std::size_t;
   /// Renders `id` as the user-facing type spelling used in diagnostics
   /// (e.g. `list[int32]`, `fn(int32) -> str`).
   [[nodiscard]] auto display(type_id id) const -> std::string;
@@ -763,6 +770,21 @@ struct checked_types {
   /// proved, which is the ordinary case and the reason contracts have a
   /// runtime form at all.
   std::unordered_set<const ast::contract_clause *> elided_contracts;
+  /// Every interned `type_id` that transitively carries a *view*
+  /// (`slice[T]`/`mut slice[T]`, directly or inside a struct field, sum
+  /// variant payload, tuple element, reference, or generic argument) — see
+  /// `checker::type_contains_view`, which computes this over the whole table
+  /// once checking finishes. The borrow checker (`check_borrows`) reads it to
+  /// decide whether a value keeps a borrow of its source collection alive past
+  /// the statement that made it (a call returning a `window[T]` that stores a
+  /// `slice` still borrows the sliced collection); it cannot compute this
+  /// itself because resolving a struct's field types needs the generic
+  /// substitution only the checker has. `str` is deliberately *excluded* even
+  /// though the language models it as a view: the implementation treats `str`
+  /// as an owned value everywhere, and tracking it as a borrow would reject
+  /// pervasive valid code — matching `is_view_type`, which also lists only
+  /// `slice`/`slice_mut`.
+  std::unordered_set<type_id> view_bearing_types;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

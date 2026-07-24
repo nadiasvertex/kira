@@ -1,0 +1,18 @@
+module borrow_check.owned_return_keeps_args_free
+
+# `total` borrows `xs` but returns a plain `int32` — an owned value that holds
+# no view. Its result keeps nothing borrowed, so `bump(&mut xs)` on the next
+# line is free to re-borrow `xs`. This guards the conservative view-provenance
+# rule against firing on ordinary (non-view) return types.
+
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def total(xs: &list[int32]) -> int32:
+    return xs[0]
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let n = total(&xs)
+    let r = bump(&mut xs)
+    return n + r

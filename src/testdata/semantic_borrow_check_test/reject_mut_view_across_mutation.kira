@@ -1,0 +1,15 @@
+module borrow_check.mut_view_across_mutation
+
+# `s` is a `mut slice` view of `xs`; a view keeps its source collection
+# borrowed for as long as it is live. `s` is used on the last line, so it is
+# still live when `bump(&mut xs)` takes a second mutable borrow of `xs` — an
+# alias the borrow checker must reject.
+
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let s = &mut xs[0..2]
+    let r = bump(&mut xs)
+    return s[0] + r

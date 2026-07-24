@@ -1,0 +1,13 @@
+module borrow_check.mut_view_with_shared_borrow
+
+# A live `mut slice` view of `xs` cannot coexist with a shared `&xs` borrow:
+# a mutable view excludes every other borrow of its source while it is alive.
+
+def peek(v: &list[int32]) -> int32:
+    return v[0]
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let s = &mut xs[0..2]
+    let r = peek(&xs)
+    return s[0] + r

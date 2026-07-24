@@ -1,0 +1,15 @@
+module borrow_check.view_last_use_ends
+
+# `s` is a `mut slice` view of `xs`, but its last use is `let a = s[0]`. After
+# that the view is dead, so `bump(&mut xs)` re-borrows `xs` with no live view
+# to conflict with. Liveness is tracked to the last use, not the end of scope.
+
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let s = &mut xs[0..2]
+    let a = s[0]
+    let r = bump(&mut xs)
+    return a + r
