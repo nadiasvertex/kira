@@ -9,12 +9,12 @@ Standard stream handle accessors and the `print`/`println`/`eprint`/`eprintln` f
 ## Stream handles
 
 ```kira
-pub def stdout() -> std.io.file
-pub def stderr() -> std.io.file
-pub def stdin() -> std.io.file
+pub def stdout() -> std.io.file_handle
+pub def stderr() -> std.io.file_handle
+pub def stdin() -> std.io.file_handle
 ```
 
-Each returns a fresh `std.io.file` wrapping the corresponding standard descriptor, via `std.io.stdout_handle`/`stderr_handle`/`stdin_handle`.
+Each returns a fresh `std.io.file_handle` wrapping the corresponding standard descriptor, via `std.io.stdout_handle`/`stderr_handle`/`stdin_handle`.
 
 ## Printing
 
@@ -29,8 +29,8 @@ pub def eprintln(s: str) -> unit
 - `println(s)` calls `print(s)` then `print("\n")` — two separate writes, not one.
 - `eprint`/`eprintln` are the same pair against `stderr()`.
 
-None of these four functions can report a write failure to the caller; a failing `write_all` is silently discarded. There is no error-propagating counterpart in this module — a caller that must observe I/O errors writes directly against a `std.io.file` and its `writer` trait.
+None of these four functions can report a write failure to the caller; a failing `write_all` is silently discarded. There is no error-propagating counterpart in this module — a caller that must observe I/O errors writes directly against a `std.io.file_handle` and its `writer` trait.
 
 ## See also
 
-- [`std.io`](54-std-io.md) — `file`, `writer`, `write_all`, the traits these functions are built on.
+- [`std.io`](54-std-io.md) — `file_handle`, `writer`, `write_all`, the traits these functions are built on.

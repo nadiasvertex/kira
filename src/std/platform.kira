@@ -261,7 +261,7 @@ pub def version() -> result[str, io_error]:
 #:   r: a result value to convert.
 #: Returns:
 #:   some(value) if r is @ok, none if r is @err.
-priv def result_to_option(r: result[str, io_error]) -> option[str]:
+file def result_to_option(r: result[str, io_error]) -> option[str]:
     match r:
         @ok(v) => @some(v)
         @err(_) => @none
@@ -347,7 +347,7 @@ pub def mac_ver() -> option[macos_version]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-priv def parse_windows_version(raw: winver_raw) -> windows_version:
+file def parse_windows_version(raw: winver_raw) -> windows_version:
     windows_version {
         release: "{raw.major}.{raw.minor}",
         version: "{raw.major}.{raw.minor}.{raw.build}",
@@ -355,7 +355,7 @@ priv def parse_windows_version(raw: winver_raw) -> windows_version:
         platform_type: "{raw.platform_id}",
     }
 
-priv def parse_macos_version(raw: macver_raw) -> macos_version:
+file def parse_macos_version(raw: macver_raw) -> macos_version:
     macos_version {
         release: raw.release,
         version: raw.version,

@@ -937,8 +937,8 @@ auto test_parser_accepts_phase1_audit_regressions() -> void {
   auto parsed = parse_source("module sample\n"
                              "\n"
                              "# leading comment\n"
-                             "internal use std.io\n"
-                             "super module parent_only\n"
+                             "module use std.io\n"
+                             "file module file_only\n"
                              "static search_path = [\"src\", \"vendor\"]\n"
                              "\n"
                              "trait monad[M[_]]:\n"
@@ -958,17 +958,17 @@ auto test_parser_accepts_phase1_audit_regressions() -> void {
   expect(parsed.file->items.size() == 6,
          "expected audit regression source to parse cleanly");
 
-  auto *internal_use = expect_node<kira::ast::use_decl>(
+  auto *module_use = expect_node<kira::ast::use_decl>(
       parsed.file->items[0].get(), kira::ast::node_kind::use_decl,
-      "expected internal use declaration");
-  expect(internal_use->visibility == kira::ast::visibility::internal,
-         "expected internal visibility on use declaration");
+      "expected module-visible use declaration");
+  expect(module_use->visibility == kira::ast::visibility::module,
+         "expected module visibility on use declaration");
 
-  auto *super_module = expect_node<kira::ast::sub_module_decl>(
+  auto *file_module = expect_node<kira::ast::sub_module_decl>(
       parsed.file->items[1].get(), kira::ast::node_kind::sub_module_decl,
-      "expected super-visible submodule declaration");
-  expect(super_module->visibility == kira::ast::visibility::super,
-         "expected super visibility on module declaration");
+      "expected file-visible submodule declaration");
+  expect(file_module->visibility == kira::ast::visibility::file,
+         "expected file visibility on module declaration");
 
   auto *impl_decl = expect_node<kira::ast::impl_decl>(
       parsed.file->items[4].get(), kira::ast::node_kind::impl_decl,
@@ -999,6 +999,37 @@ auto test_parser_accepts_phase1_audit_regressions() -> void {
       handle_decl->body_stmts[1].get(), kira::ast::node_kind::crew_stmt,
       "expected plain crew statement");
   expect(crew_stmt->options.empty(), "expected plain crew without options");
+}
+
+auto test_parser_disambiguates_module_visibility_from_module_decl() -> void {
+  // `module` is dual-purpose: the module-visibility modifier and the
+  // sub_module_decl keyword share one spelling. `module inner:` (bare) must
+  // parse as a default-visibility submodule; `module module inner:` (doubled)
+  // must parse as an explicitly module-visible submodule.
+  auto parsed = parse_source("module sample\n"
+                             "module inner:\n"
+                             "  static x = 1\n"
+                             "module module explicit_inner:\n"
+                             "  static y = 2\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 2,
+         "expected two submodule declarations");
+
+  auto *bare = expect_node<kira::ast::sub_module_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::sub_module_decl,
+      "expected bare submodule declaration");
+  expect(bare->name == "inner", "expected submodule named `inner`");
+  expect(bare->visibility == kira::ast::visibility::def,
+         "expected default visibility on bare `module inner:`");
+
+  auto *explicit_module = expect_node<kira::ast::sub_module_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::sub_module_decl,
+      "expected explicitly module-visible submodule declaration");
+  expect(explicit_module->name == "explicit_inner",
+         "expected submodule named `explicit_inner`");
+  expect(explicit_module->visibility == kira::ast::visibility::module,
+         "expected explicit module visibility on `module module ...:`");
 }
 
 auto test_parser_disambiguates_index_from_generic_instantiation() -> void {
@@ -1788,7 +1819,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 36> tests = {{
+  const std::array<named_test, 37> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "doc_comments", .fn = test_parser_captures_doc_comments},
@@ -1812,6 +1843,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_multi_arity_higher_kinded_params},
       {.name = "phase1_audit_regressions",
        .fn = test_parser_accepts_phase1_audit_regressions},
+      {.name = "module_visibility_vs_module_decl",
+       .fn = test_parser_disambiguates_module_visibility_from_module_decl},
       {.name = "index_vs_generic_instantiation",
        .fn = test_parser_disambiguates_index_from_generic_instantiation},
       {.name = "extend_block", .fn = test_parser_accepts_extend_block},

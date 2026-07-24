@@ -16,17 +16,17 @@ pub type path = { raw: str }
 # Internal scanning helpers
 # ---------------------------------------------------------------------------
 
-priv def is_sep(c: str) -> bool:
+file def is_sep(c: str) -> bool:
     match c:
         "/"  => true
         "\\" => std.platform.is_windows()
         _    => false
 
-priv def native_sep() -> str:
+file def native_sep() -> str:
     "\\" if std.platform.is_windows() else "/"
 
 # Reverse byte-index scan for the last separator in `raw`.
-priv def last_sep_index(raw: str) -> option[usize]:
+file def last_sep_index(raw: str) -> option[usize]:
     var i: usize = raw.len()
     while i > 0:
         i = i - 1
@@ -34,14 +34,14 @@ priv def last_sep_index(raw: str) -> option[usize]:
             return @some(i)
     return @none
 
-priv def strip_trailing_seps(raw: str) -> str:
+file def strip_trailing_seps(raw: str) -> str:
     var end: usize = raw.len()
     while end > 0 and is_sep(raw[end - 1 .. end]):
         end = end - 1
     return raw[0 .. end]
 
 # Reverse byte-index scan for the last `.` in `name`.
-priv def last_dot_index(name: str) -> option[usize]:
+file def last_dot_index(name: str) -> option[usize]:
     var i: usize = name.len()
     while i > 0:
         i = i - 1
@@ -49,10 +49,10 @@ priv def last_dot_index(name: str) -> option[usize]:
             return @some(i)
     return @none
 
-priv def is_alpha(c: str) -> bool:
+file def is_alpha(c: str) -> bool:
     return "abcdefghijklmnopqrstuvwxyz".contains(c.to_lowercase())
 
-priv def strip_leading_dot(ext: str) -> str:
+file def strip_leading_dot(ext: str) -> str:
     if ext.len() > 0 and ext[0 .. 1].eq("."):
         return ext[1 .. ext.len()]
     return ext

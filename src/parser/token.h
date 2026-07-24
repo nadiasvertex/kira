@@ -84,12 +84,19 @@ enum class token_kind : uint8_t {
 
   // ------------------------------------------------------------------
   //  Visibility keywords
+  //
+  //  The visibility model is `pub` / `module` / `file`. `module`-level
+  //  visibility reuses `kw_module` itself as its keyword (disambiguated
+  //  from a submodule declaration by lookahead in
+  //  `parser::parse_optional_visibility`) rather than a dedicated token.
   // ------------------------------------------------------------------
-  kw_pub,      ///< Widest visibility for exported declarations.
-  kw_internal, ///< Visibility scoped to the current package or compilation
-               ///< unit.
-  kw_super,    ///< Visibility scoped to the parent module boundary.
-  kw_priv,     ///< Narrowest explicit visibility.
+  kw_pub,  ///< Visible to any importer, anywhere.
+  kw_file, ///< Visible only within the immediately enclosing file.
+
+  // ------------------------------------------------------------------
+  //  Path keywords
+  // ------------------------------------------------------------------
+  kw_super, ///< Leading path segment naming the parent module's scope.
 
   // ------------------------------------------------------------------
   //  Control flow keywords
@@ -334,10 +341,14 @@ struct token {
            kind == token_kind::kw_unit;
   }
 
-  /// @brief Returns whether this token starts a visibility modifier sequence.
+  /// @brief Returns whether this token can start a visibility modifier
+  /// sequence, ignoring the `module`-visibility-vs-submodule-declaration
+  /// ambiguity — callers that need to disambiguate `kw_module` use
+  /// `parser::parse_optional_visibility`'s lookahead instead of this
+  /// predicate alone.
   [[nodiscard]] constexpr auto is_visibility() const noexcept -> bool {
-    return kind == token_kind::kw_pub || kind == token_kind::kw_internal ||
-           kind == token_kind::kw_super || kind == token_kind::kw_priv;
+    return kind == token_kind::kw_pub || kind == token_kind::kw_module ||
+           kind == token_kind::kw_file;
   }
 
   /// @brief Returns whether this token is a function-level modifier keyword.
@@ -479,9 +490,7 @@ struct token {
     case token_kind::kw_def:
     case token_kind::kw_static:
     case token_kind::kw_pub:
-    case token_kind::kw_internal:
-    case token_kind::kw_super:
-    case token_kind::kw_priv:
+    case token_kind::kw_file:
     case token_kind::kw_pure:
     case token_kind::kw_async:
     case token_kind::kw_machine:
@@ -514,9 +523,7 @@ struct token {
     case token_kind::kw_module:
     case token_kind::kw_dep:
     case token_kind::kw_pub:
-    case token_kind::kw_internal:
-    case token_kind::kw_super:
-    case token_kind::kw_priv:
+    case token_kind::kw_file:
     case token_kind::kw_pure:
     case token_kind::kw_async:
     case token_kind::kw_machine:
@@ -629,6 +636,9 @@ struct token {
     if (text == "fn") {
       return token_kind::kw_fn;
     }
+    if (text == "file") {
+      return token_kind::kw_file;
+    }
     break;
   case 'g':
     if (text == "generator") {
@@ -644,9 +654,6 @@ struct token {
     }
     if (text == "impl") {
       return token_kind::kw_impl;
-    }
-    if (text == "internal") {
-      return token_kind::kw_internal;
     }
     if (text == "invariant") {
       return token_kind::kw_invariant;
@@ -714,9 +721,6 @@ struct token {
     }
     if (text == "post") {
       return token_kind::kw_post;
-    }
-    if (text == "priv") {
-      return token_kind::kw_priv;
     }
     break;
   case 'r':
@@ -877,12 +881,10 @@ struct token {
 
   case token_kind::kw_pub:
     return "`pub`";
-  case token_kind::kw_internal:
-    return "`internal`";
+  case token_kind::kw_file:
+    return "`file`";
   case token_kind::kw_super:
     return "`super`";
-  case token_kind::kw_priv:
-    return "`priv`";
 
   case token_kind::kw_if:
     return "`if`";

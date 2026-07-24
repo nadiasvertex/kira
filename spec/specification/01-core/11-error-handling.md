@@ -53,7 +53,7 @@ The checker (`infer_try` in `src/semantic/check.cpp`) requires:
 
 ## Implementation status
 
-The design (and the old tutorial) describe `?` as *converting* a propagated error through `from` when the operand's error type differs from the enclosing function's declared error type — e.g. propagating a `parse_error` out of a function that returns `result[_, io_error]` via `impl from[parse_error] for io_error`. **This conversion is not implemented.** `lower_try` in `src/hir/lower.cpp` desugars `x?` to a two-arm match whose failure arm returns the original subject value *unchanged*:
+The design describe `?` as *converting* a propagated error through `from` when the operand's error type differs from the enclosing function's declared error type — e.g. propagating a `parse_error` out of a function that returns `result[_, io_error]` via `impl from[parse_error] for io_error`. **This conversion is not implemented.** `lower_try` in `src/hir/lower.cpp` desugars `x?` to a two-arm match whose failure arm returns the original subject value *unchanged*:
 
 > "The failure arm returns the *original* subject value rather than reconstructing `@err(e)`/`@none` — it's already exactly that value; the checker only requires the enclosing function to also return a result/option (not that the two share the same success type), so nothing needs rebuilding here." (`src/hir/lower.cpp`, `lower_try`)
 

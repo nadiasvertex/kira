@@ -119,7 +119,7 @@ intrinsic def rt_write(fd: raw_fd, buf: &slice[byte]) -> result[usize, io_errno]
 intrinsic def rt_flush(fd: raw_fd) -> result[unit, io_errno]
 
 #: A file handle that can be used for reading and writing operations.
-pub type file = { fd: raw_fd }
+pub type file_handle = { fd: raw_fd }
 
 #: Opens a file with the specified path and options.
 #: Args:
@@ -127,36 +127,36 @@ pub type file = { fd: raw_fd }
 #:   opts: open options controlling read/write/create/truncate behavior.
 #: Returns:
 #:   a file handle on success, or an io_error on failure.
-pub def open(path: str, opts: open_options) -> result[file, io_error]:
+pub def open(path: str, opts: open_options) -> result[file_handle, io_error]:
     match rt_open(path, opts):
-        @ok(fd) => @ok(file { fd: fd })
+        @ok(fd) => @ok(file_handle { fd: fd })
         @err(e) => @err(io_error.from(e))
 
 #: Returns a file handle for standard input.
 #: Returns:
 #:   a file handle for stdin.
-pub def stdin_handle() -> file:
-    return file { fd: rt_stdin() }
+pub def stdin_handle() -> file_handle:
+    return file_handle { fd: rt_stdin() }
 
 #: Returns a file handle for standard output.
 #: Returns:
 #:   a file handle for stdout.
-pub def stdout_handle() -> file:
-    return file { fd: rt_stdout() }
+pub def stdout_handle() -> file_handle:
+    return file_handle { fd: rt_stdout() }
 
 #: Returns a file handle for standard error.
 #: Returns:
 #:   a file handle for stderr.
-pub def stderr_handle() -> file:
-    return file { fd: rt_stderr() }
+pub def stderr_handle() -> file_handle:
+    return file_handle { fd: rt_stderr() }
 
-impl reader for file:
+impl reader for file_handle:
     def read(mut self, buf: &mut slice_mut[byte]) -> result[usize, io_error]:
         match rt_read(self.fd, buf):
             @ok(n) => @ok(n)
             @err(e) => @err(io_error.from(e))
 
-impl writer for file:
+impl writer for file_handle:
     def write(mut self, buf: &slice[byte]) -> result[usize, io_error]:
         match rt_write(self.fd, buf):
             @ok(n) => @ok(n)
@@ -166,12 +166,12 @@ impl writer for file:
             @ok(u) => @ok(u)
             @err(e) => @err(io_error.from(e))
 
-impl drop for file:
+impl drop for file_handle:
     def drop(mut self) -> unit:
         rt_close(self.fd)
         return unit
 
-extend file:
+extend file_handle:
     #: Closes the file handle. The handle becomes invalid after this call.
     #: Args:
     #:   self: the file handle to close (moved).

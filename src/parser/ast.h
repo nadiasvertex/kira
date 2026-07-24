@@ -371,12 +371,12 @@ struct error_node : node {
 /// Parsing converts surface keywords into this enum immediately so later phases
 /// can reason about access control without depending on token spellings.
 enum class visibility : uint8_t {
-  def, ///< No explicit modifier; use the language's default visibility rules.
+  def, ///< No explicit modifier; use the language's default visibility rules
+       ///< (same as `module`).
   pub, ///< Publicly visible outside the defining module boundary.
-  internal, ///< Visible within the current package or internal compilation
-            ///< unit.
-  super,    ///< Visible to the parent module scope.
-  priv,     ///< Visible only within the immediately enclosing scope/module.
+  module, ///< Visible anywhere within the current module (the default when
+          ///< no modifier is written).
+  file,   ///< Visible only within the immediately enclosing file.
 };
 
 /// @brief Maps a visibility keyword token into the AST visibility enum.
@@ -390,12 +390,10 @@ enum class visibility : uint8_t {
   switch (kind) {
   case token_kind::kw_pub:
     return visibility::pub;
-  case token_kind::kw_internal:
-    return visibility::internal;
-  case token_kind::kw_super:
-    return visibility::super;
-  case token_kind::kw_priv:
-    return visibility::priv;
+  case token_kind::kw_module:
+    return visibility::module;
+  case token_kind::kw_file:
+    return visibility::file;
   default:
     return visibility::def;
   }

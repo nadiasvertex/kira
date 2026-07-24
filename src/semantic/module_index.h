@@ -144,7 +144,7 @@ auto module_resolution_blocked_by_errors(
 
 /// Whether a submodule declared with `declaration`'s visibility is visible to
 /// an importer in `importer_module_name`/`importer_file_id`, following
-/// Kira's `pub`/`module`/`file`/`super` visibility rules.
+/// Kira's `pub`/`module`/`file` visibility rules.
 auto is_import_visible(const submodule_declaration_record &declaration,
                        std::string_view importer_module_name,
                        file_id_type importer_file_id) -> bool;

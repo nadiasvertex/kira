@@ -1,6 +1,6 @@
 # 12. Modules and Imports
 
-**Status:** Implemented, with a naming discrepancy from the old tutorial noted below
+**Status:** Implemented
 
 Covers `use`, visibility, and re-exporting with `pub use`. This is the basic module chapter; module-spanning-files and project structure are covered in the Intermediate module-system chapter.
 
@@ -18,20 +18,19 @@ A `use_selector` may also be `*` for a wildcard import of everything a module ex
 
 ## Visibility
 
-**The real keyword set is `pub` / `internal` / `super` / `priv`** (`ast::visibility` in `src/parser/ast.h`; `spec/kira-grammar.ebnf`'s `visibility` production). This differs from the older tutorial prose, which described only `pub`/`module`/`file` — those `module` and `file` keywords do not exist in the grammar or lexer (`src/parser/token.h` has no such visibility keyword tokens). The correspondence to that older, informal terminology is approximate, not exact:
+The keyword set is `pub` / `module` / `file` (`ast::visibility` in `src/parser/ast.h`; `spec/kira-grammar.ebnf`'s `visibility` production):
 
 ```
-pub       visible to any importer, anywhere
-internal  visible within the current package/compilation unit — this is the
-          default when no visibility modifier is written (roughly what the
-          old tutorial called "module" visibility)
-super     visible only to the parent module scope (no equivalent in the old
-          tutorial's two-level pub/module/file model)
-priv      visible only within the immediately enclosing scope/file (roughly
-          what the old tutorial called "file" visibility)
+pub     visible to any importer, anywhere
+module  visible anywhere within the current module (declaring module and
+        its descendants) — this is the default when no visibility modifier
+        is written
+file    visible only within the immediately enclosing file
 ```
 
-`token_to_visibility` maps an absent modifier to `visibility::def`, which `module_index.cpp`'s `visibility_name` reports as `"internal"` — confirming `internal` is the true default, not a separate case from writing `internal` explicitly.
+`token_to_visibility` maps an absent modifier to `visibility::def`, which `module_index.cpp`'s `visibility_name` reports as `"module"` — confirming `module` is the true default, not a separate case from writing `module` explicitly.
+
+`module` visibility reuses the same keyword spelling as the `module` keyword that introduces a submodule declaration (`sub_module_decl = [visibility] "module" IDENT ...`). The parser resolves the two uses with one token of lookahead: a `module` token immediately followed by an identifier is always the submodule-declaration keyword itself (a bare identifier never starts a declaration on its own), so `module module inner:` declares a submodule named `inner` with explicit `module` visibility, while a plain `module inner:` declares it with the (identical) default visibility.
 
 ```kira
 module my_app.geometry
@@ -43,7 +42,7 @@ pub def distance(a: point, b: point) -> float64:
     let dy = a.y - b.y
     sqrt(dx*dx + dy*dy)
 
-priv def scratch_helper() -> float64:    # file-private
+file def scratch_helper() -> float64:    # file-private
     ...
 ```
 

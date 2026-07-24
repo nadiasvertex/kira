@@ -275,7 +275,7 @@ auto test_compile_sources_writes_module_metadata() -> void {
 
   auto metadata = kira::metadata::v1::ModuleMetadata{};
   expect(metadata.ParseFromIstream(&in), "expected metadata protobuf to parse");
-  expect(metadata.schema_version() == 3, "expected metadata schema version");
+  expect(metadata.schema_version() == 4, "expected metadata schema version");
   expect(metadata.module_path_size() == 2, "expected module path components");
   expect(metadata.module_path(0) == "sample",
          "expected first module path part");

@@ -2,9 +2,9 @@
 
 **Status:** Implemented
 
-Byte-level I/O: error types, the `reader`/`writer` traits, `open_options`, and the `file` handle type.
+Byte-level I/O: error types, the `reader`/`writer` traits, `open_options`, and the `file_handle` type.
 
-`std.io` (`src/std/io.kira`) is the foundation `std.console` and `std.fs.path` build on: `std.console` implements printing in terms of `file`'s `writer` impl, and `std.string` builds on `std.io`'s `writer` trait for its own formatting entry points.
+`std.io` (`src/std/io.kira`) is the foundation `std.console` and `std.fs.path` build on: `std.console` implements printing in terms of `file_handle`'s `writer` impl, and `std.string` builds on `std.io`'s `writer` trait for its own formatting entry points.
 
 ## Types
 
@@ -85,41 +85,41 @@ intrinsic def rt_write(fd: raw_fd, buf: &slice[byte]) -> result[usize, io_errno]
 intrinsic def rt_flush(fd: raw_fd) -> result[unit, io_errno]
 ```
 
-Native entry points, implemented on both backends (`src/runtime/io.cpp`, `src/bytecode/vm.cpp`, `src/llvm_codegen/codegen.cpp`) via the shared intrinsic-dispatch table (`src/intrinsics.h`). None of these is called directly by ordinary code; `file` and the module-level `open`/`stdin_handle`/`stdout_handle`/`stderr_handle` functions wrap them.
+Native entry points, implemented on both backends (`src/runtime/io.cpp`, `src/bytecode/vm.cpp`, `src/llvm_codegen/codegen.cpp`) via the shared intrinsic-dispatch table (`src/intrinsics.h`). None of these is called directly by ordinary code; `file_handle` and the module-level `open`/`stdin_handle`/`stdout_handle`/`stderr_handle` functions wrap them.
 
-## The `file` type
-
-```kira
-pub type file = { fd: raw_fd }
-```
-
-A handle wrapping a `raw_fd`.
+## The `file_handle` type
 
 ```kira
-pub def open(path: str, opts: open_options) -> result[file, io_error]
-pub def stdin_handle() -> file
-pub def stdout_handle() -> file
-pub def stderr_handle() -> file
+pub type file_handle = { fd: raw_fd }
 ```
 
-- `open` calls `rt_open` and wraps the resulting descriptor in a `file`, converting any `io_errno` to `io_error`.
+A handle wrapping a `raw_fd`. (Named `file_handle` rather than `file` because `file` is a reserved visibility keyword — see [Modules and Imports](../../01-core/12-modules-and-imports.md).)
+
+```kira
+pub def open(path: str, opts: open_options) -> result[file_handle, io_error]
+pub def stdin_handle() -> file_handle
+pub def stdout_handle() -> file_handle
+pub def stderr_handle() -> file_handle
+```
+
+- `open` calls `rt_open` and wraps the resulting descriptor in a `file_handle`, converting any `io_errno` to `io_error`.
 - `stdin_handle`/`stdout_handle`/`stderr_handle` wrap the corresponding niladic intrinsic; these never fail.
 
 ### Trait implementations
 
-- `impl reader for file`: `read` delegates to `rt_read`, converting the error.
-- `impl writer for file`: `write` delegates to `rt_write`; `flush` delegates to `rt_flush`; both convert the error. `write_all` is inherited from the trait default.
-- `impl drop for file`: calls `rt_close` on drop, discarding the result — a `file` going out of scope closes its descriptor unconditionally.
+- `impl reader for file_handle`: `read` delegates to `rt_read`, converting the error.
+- `impl writer for file_handle`: `write` delegates to `rt_write`; `flush` delegates to `rt_flush`; both convert the error. `write_all` is inherited from the trait default.
+- `impl drop for file_handle`: calls `rt_close` on drop, discarding the result — a `file_handle` going out of scope closes its descriptor unconditionally.
 
-### `extend file`
+### `extend file_handle`
 
 ```kira
 pub def close(mut self) -> result[unit, io_error]
 ```
 
-Explicitly closes the handle via `rt_close`, sets `self.fd` to the sentinel `raw_fd { value: -1 }`, and returns the result (unlike `drop`, which discards it). Intended for callers that need to observe a close failure; a `file` not explicitly closed is still closed by `drop`.
+Explicitly closes the handle via `rt_close`, sets `self.fd` to the sentinel `raw_fd { value: -1 }`, and returns the result (unlike `drop`, which discards it). Intended for callers that need to observe a close failure; a `file_handle` not explicitly closed is still closed by `drop`.
 
 ## See also
 
-- [`std.console`](55-std-console.md) — `print`/`println`/`eprint`/`eprintln`, built on `file`'s `writer` impl.
+- [`std.console`](55-std-console.md) — `print`/`println`/`eprint`/`eprintln`, built on `file_handle`'s `writer` impl.
 - [`std.platform`](56-std-platform.md) — reuses the same `io_errno`-to-`io_error` conversion pattern for OS-level queries.

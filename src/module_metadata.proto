@@ -123,14 +123,12 @@ enum TopLevelSymbolKind {
 enum ModuleVisibility {
   // Visibility was omitted or could not be determined.
   MODULE_VISIBILITY_UNSPECIFIED = 0;
-  // No explicit visibility modifier was written.
+  // No explicit visibility modifier was written (same as `MODULE`).
   MODULE_VISIBILITY_DEFAULT = 1;
   // Visible to any importer.
   MODULE_VISIBILITY_PUBLIC = 2;
   // Visible within the declaring module tree.
-  MODULE_VISIBILITY_INTERNAL = 3;
-  // Visible only to the parent module.
-  MODULE_VISIBILITY_SUPER = 4;
+  MODULE_VISIBILITY_MODULE = 3;
   // Visible only inside the declaring file.
-  MODULE_VISIBILITY_PRIVATE = 5;
+  MODULE_VISIBILITY_FILE = 4;
 }

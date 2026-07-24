@@ -551,6 +551,16 @@ auto parser::parse_comma_list(std::function<std::optional<T>()> parse_element,
 // ==========================================================================
 
 auto parser::parse_optional_visibility() -> ast::visibility {
+  // `module` is dual-purpose: it is both the `module`-visibility modifier and
+  // the keyword that introduces a submodule declaration (`sub_module_decl =
+  // [visibility] "module" IDENT ...`). Declarations always start with a
+  // keyword, never a bare identifier, so a `module` token immediately
+  // followed by an identifier can only be the submodule keyword itself
+  // (default visibility, no modifier written) — anything else following
+  // means this `module` is the visibility modifier.
+  if (at(token_kind::kw_module) && peek_at(1).is(token_kind::ident)) {
+    return ast::visibility::def;
+  }
   if (peek().is_visibility()) {
     auto tok = advance();
     return ast::token_to_visibility(tok.kind);
@@ -904,7 +914,7 @@ auto parser::parse_top_level_item_dispatch(bool allow_script_stmts)
                            token_kind_name(current())),
                file_id_)
                .with_label(peek().span, "expected a declaration here")
-               .with_help("Visibility modifiers (`pub`, `priv`, etc.) can "
+               .with_help("Visibility modifiers (`pub`, `module`, `file`) can "
                           "only appear before declarations like `def`, "
                           "`type`, `trait`, `use`, etc."));
       synchronize_to_newline();
@@ -2791,9 +2801,7 @@ auto parser::parse_stmt() -> ast::ptr<ast::node> {
   }
 
   case token_kind::kw_pub:
-  case token_kind::kw_internal:
-  case token_kind::kw_super:
-  case token_kind::kw_priv: {
+  case token_kind::kw_file: {
     auto vis = parse_optional_visibility();
     if (at(token_kind::kw_def) || peek().is_func_modifier()) {
       auto mods = parse_func_modifiers();
@@ -5196,9 +5204,7 @@ auto starts_item(token_kind kind) -> bool {
   case token_kind::kw_module:
   case token_kind::kw_dep:
   case token_kind::kw_pub:
-  case token_kind::kw_internal:
-  case token_kind::kw_super:
-  case token_kind::kw_priv:
+  case token_kind::kw_file:
   case token_kind::kw_pure:
   case token_kind::kw_async:
   case token_kind::kw_machine:

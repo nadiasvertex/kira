@@ -103,7 +103,12 @@ dep_decl = "dep" IDENT ":" NEWLINE INDENT dep_field { dep_field } DEDENT ;
 
 dep_field = IDENT "=" STRING_LIT NEWLINE ;
 
-visibility = "pub" | "internal" | "super" | "priv" ;
+visibility = "pub" | "module" | "file" ;
+    (* The "module" visibility keyword reuses the literal spelling of the
+       "module" keyword used to introduce sub_module_decl; a "module" token
+       immediately followed by IDENT is always the sub_module_decl keyword
+       itself (declarations never start with a bare IDENT), so this is
+       unambiguous by one token of lookahead. *)
 
 
 (* ----------------------------------------------------------------- *)
@@ -881,7 +886,7 @@ DOC_COMMENT = "#:" { (* any character except newline *) } NEWLINE ;
 (* pure  async  machine *)
 
 (* Visibility *)
-(* pub  internal  super  priv *)
+(* pub  module  file *)
 
 (* Control flow *)
 (* if  elif  else  for  while  match  return  in  as  break  continue  scope *)

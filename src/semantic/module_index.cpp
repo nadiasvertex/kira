@@ -181,21 +181,19 @@ auto is_same_or_descendant_module(std::string_view module_name,
                                      module_name[ancestor.size()] == '.');
 }
 
-/// `def` (no explicit modifier) reports as "internal" here, matching Kira's
+/// `def` (no explicit modifier) reports as "module" here, matching Kira's
 /// default module-visibility rule.
 auto visibility_name(ast::visibility visibility) -> std::string_view {
   switch (visibility) {
   case ast::visibility::def:
-  case ast::visibility::internal:
-    return "internal";
+  case ast::visibility::module:
+    return "module";
   case ast::visibility::pub:
     return "pub";
-  case ast::visibility::super:
-    return "super";
-  case ast::visibility::priv:
-    return "priv";
+  case ast::visibility::file:
+    return "file";
   }
-  return "internal";
+  return "module";
 }
 
 /// Tailors the fix-it suggestion to the specific visibility that blocked an
@@ -208,15 +206,11 @@ auto visibility_help(ast::visibility visibility, std::string_view parent_name)
         "Mark the module `pub` only when it should be importable outside `{}`.",
         parent_name);
   case ast::visibility::def:
-  case ast::visibility::internal:
+  case ast::visibility::module:
     return std::format("Import this module from `{}` or one of its submodules, "
                        "or widen the declaration's visibility.",
                        parent_name);
-  case ast::visibility::super:
-    return std::format("Only the parent module `{}` can import this module; "
-                       "widen the declaration if other modules need it.",
-                       parent_name);
-  case ast::visibility::priv:
+  case ast::visibility::file:
     return "Keep the import in the declaring file, or widen the module "
            "declaration's visibility.";
   }
@@ -484,9 +478,8 @@ auto module_resolution_blocked_by_errors(
 }
 
 /// Implements Kira's visibility rules: `pub` is visible everywhere, the
-/// default/`internal` visibility is visible to the declaring module and its
-/// descendants, `super` only to the exact parent module, and `priv` only to
-/// the exact declaring file.
+/// default/`module` visibility is visible to the declaring module and its
+/// descendants, and `file` only to the exact declaring file.
 auto is_import_visible(const submodule_declaration_record &declaration,
                        std::string_view importer_module_name,
                        file_id_type importer_file_id) -> bool {
@@ -494,12 +487,10 @@ auto is_import_visible(const submodule_declaration_record &declaration,
   case ast::visibility::pub:
     return true;
   case ast::visibility::def:
-  case ast::visibility::internal:
+  case ast::visibility::module:
     return is_same_or_descendant_module(importer_module_name,
                                         declaration.parent_module_name);
-  case ast::visibility::super:
-    return importer_module_name == declaration.parent_module_name;
-  case ast::visibility::priv:
+  case ast::visibility::file:
     return importer_file_id == declaration.parent_file_id;
   }
   return false;

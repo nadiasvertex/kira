@@ -1,5 +1,5 @@
 module stress.comments_and_visibility
 
 # top-level comment coverage
-internal use std.io
-super module parent_only
+module use std.io
+file module parent_only

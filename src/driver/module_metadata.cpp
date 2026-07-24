@@ -24,7 +24,7 @@ namespace fs = std::filesystem;
 constexpr std::string_view k_metadata_extension = ".kmeta";
 
 /// Schema version embedded in every emitted module metadata payload.
-constexpr uint32_t k_module_metadata_schema_version = 3;
+constexpr uint32_t k_module_metadata_schema_version = 4;
 
 } // namespace
 
@@ -33,14 +33,12 @@ constexpr uint32_t k_module_metadata_schema_version = 3;
     -> std::string_view {
   switch (visibility) {
   case ast::visibility::def:
-  case ast::visibility::internal:
-    return "internal";
+  case ast::visibility::module:
+    return "module";
   case ast::visibility::pub:
     return "pub";
-  case ast::visibility::super:
-    return "super";
-  case ast::visibility::priv:
-    return "priv";
+  case ast::visibility::file:
+    return "file";
   }
   return "__unspecified__";
 }
@@ -55,15 +53,11 @@ constexpr uint32_t k_module_metadata_schema_version = 3;
         "Mark the module `pub` only when it should be importable outside `{}`.",
         parent_name);
   case ast::visibility::def:
-  case ast::visibility::internal:
+  case ast::visibility::module:
     return std::format("Import this module from `{}` or one of its submodules, "
                        "or widen the declaration's visibility.",
                        parent_name);
-  case ast::visibility::super:
-    return std::format("Only the parent module `{}` can import this module; "
-                       "widen the declaration if other modules need it.",
-                       parent_name);
-  case ast::visibility::priv:
+  case ast::visibility::file:
     return "Keep the import in the declaring file, or widen the module "
            "declaration's visibility.";
   }
@@ -284,12 +278,10 @@ write_module_metadata(const fs::path &metadata_root, const ast::file &file,
     return metadata::v1::MODULE_VISIBILITY_DEFAULT;
   case ast::visibility::pub:
     return metadata::v1::MODULE_VISIBILITY_PUBLIC;
-  case ast::visibility::internal:
-    return metadata::v1::MODULE_VISIBILITY_INTERNAL;
-  case ast::visibility::super:
-    return metadata::v1::MODULE_VISIBILITY_SUPER;
-  case ast::visibility::priv:
-    return metadata::v1::MODULE_VISIBILITY_PRIVATE;
+  case ast::visibility::module:
+    return metadata::v1::MODULE_VISIBILITY_MODULE;
+  case ast::visibility::file:
+    return metadata::v1::MODULE_VISIBILITY_FILE;
   }
   return metadata::v1::MODULE_VISIBILITY_UNSPECIFIED;
 }

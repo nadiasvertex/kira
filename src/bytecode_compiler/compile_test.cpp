@@ -606,7 +606,7 @@ auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
 // (`self.poke(1)`) to the real impl method. Nothing in the existing test
 // suite compiles or runs a `self`-receiver method call of any kind (only
 // type-checks it), so this is the first thing to prove the mechanism that
-// `std.console.println` -> `std.io.file::write_all` -> `file::write` relies
+// `std.console.println` -> `std.io.file_handle::write_all` -> `file_handle::write` relies
 // on actually produces runnable bytecode, in isolation from that much
 // larger call graph.
 auto test_calls_a_self_receiver_trait_default_method_across_modules() -> void {
