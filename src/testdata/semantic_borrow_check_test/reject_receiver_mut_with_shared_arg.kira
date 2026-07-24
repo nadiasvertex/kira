@@ -1,0 +1,15 @@
+module borrow_check.receiver_mut_shared_arg
+
+# `b.mutate(&b)` borrows `b` mutably through the `mut self` receiver and
+# immutably through the explicit `&b` argument at the same time.
+
+type cell = { n: int32 }
+
+extend cell:
+    def mutate(mut self, r: &cell) -> int32:
+        self.n = self.n + r.n
+        return self.n
+
+def demo() -> int32:
+    var b = cell { n: 5 }
+    return b.mutate(&b)

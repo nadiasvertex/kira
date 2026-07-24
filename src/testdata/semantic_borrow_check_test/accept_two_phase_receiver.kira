@@ -1,0 +1,20 @@
+module borrow_check.two_phase_receiver
+
+# `b.scale(b.val())` autorefs `b` as the `mut self` receiver of `scale`, but
+# the nested `b.val()` only borrows `b` shared and returns before `scale`
+# actually runs. Two-phase reservation makes this legal, like Rust's
+# `v.push(v.len())`.
+
+type cell = { n: int32 }
+
+extend cell:
+    def val(self) -> int32:
+        return self.n
+
+    def scale(mut self, factor: int32) -> int32:
+        self.n = self.n * factor
+        return self.n
+
+def demo() -> int32:
+    var b = cell { n: 5 }
+    return b.scale(b.val())

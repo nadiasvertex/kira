@@ -1,0 +1,21 @@
+module borrow_check.two_phase_receiver_nested_mut
+
+# The `mut self` receiver reservation of `scale` is compatible with a *shared*
+# nested borrow (see accept_two_phase_receiver), but NOT with a nested `&mut`
+# of the same value: `steal(&mut b)` mutably borrows `b` while `b` is reserved
+# for `scale`. This must be rejected.
+
+type cell = { n: int32 }
+
+extend cell:
+    def scale(mut self, factor: int32) -> int32:
+        self.n = self.n * factor
+        return self.n
+
+def steal(x: &mut cell) -> int32:
+    *x = cell { n: 0 }
+    return 1
+
+def demo() -> int32:
+    var b = cell { n: 5 }
+    return b.scale(steal(&mut b))

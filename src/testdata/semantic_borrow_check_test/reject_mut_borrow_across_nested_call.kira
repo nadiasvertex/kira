@@ -1,0 +1,17 @@
+module borrow_check.mut_across_nested
+
+# `&mut n` is a *direct* argument of `observe`, so it is live for the whole
+# `observe` call — including while the nested `read(&n)` argument is evaluated.
+# The `&n` there therefore aliases the live `&mut n`. This must be rejected;
+# a per-call-local check that only looks inside one argument list misses it.
+
+def read(x: &int32) -> int32:
+    return *x
+
+def observe(a: &mut int32, b: int32) -> int32:
+    *a = *a + b
+    return *a
+
+def demo() -> int32:
+    var n = 5
+    return observe(&mut n, read(&n))

@@ -1,0 +1,14 @@
+module borrow_check.shared_across_nested
+
+# A direct `&n` and a nested `&n` are both shared, so even though they are
+# simultaneously live across the nested call, they do not conflict.
+
+def read(x: &int32) -> int32:
+    return *x
+
+def observe(a: &int32, b: int32) -> int32:
+    return *a + b
+
+def demo() -> int32:
+    var n = 5
+    return observe(&n, read(&n))

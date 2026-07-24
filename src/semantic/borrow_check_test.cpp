@@ -259,6 +259,80 @@ auto test_mutable_slice_view_is_not_an_escape() -> void {
          "cleanly — a view is not a plain borrow");
 }
 
+// ==========================================================================
+//  Exclusivity across nesting: a borrow made as a direct argument of a call
+//  stays live while that call's *other* (nested) arguments are evaluated, so
+//  a conflicting borrow made inside one of them must be caught. A per-call
+//  local check that never looks past one argument list would miss these.
+// ==========================================================================
+
+auto test_mut_borrow_across_nested_call_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_mut_borrow_across_nested_call.kira");
+  expect(analyzed.error_count > 0,
+         "expected a `&mut` direct argument aliasing a nested `&` argument to "
+         "be rejected");
+  expect_diagnostic(
+      analyzed, "cannot borrow `n` as mutable and immutable at the same time",
+      "expected a mutable-and-immutable diagnostic across the nested call");
+}
+
+auto test_two_mut_borrows_across_nested_call_are_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_two_mut_across_nested_call.kira");
+  expect(analyzed.error_count > 0,
+         "expected two `&mut` borrows live across a nested call to be "
+         "rejected");
+  expect_diagnostic(
+      analyzed, "cannot borrow `n` as mutable more than once in the same call",
+      "expected a two-mutable-borrows diagnostic across the nested call");
+}
+
+auto test_shared_borrows_across_nested_call_are_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_shared_across_nested_call.kira");
+  expect(analyzed.error_count == 0,
+         "expected a direct `&` and a nested `&` of the same value to check "
+         "cleanly — two shared borrows never conflict");
+}
+
+// ==========================================================================
+//  Method-receiver borrows: an autoref receiver participates in exclusivity.
+//  A `mut self` receiver conflicts with a same-value `&` argument (it is
+//  active at the call), but is only *reserved* while its own arguments are
+//  evaluated, so a nested shared borrow of the same value is fine (two-phase).
+// ==========================================================================
+
+auto test_receiver_mut_with_shared_arg_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_receiver_mut_with_shared_arg.kira");
+  expect(analyzed.error_count > 0,
+         "expected a `mut self` receiver aliasing an explicit `&` argument of "
+         "the same call to be rejected");
+  expect_diagnostic(
+      analyzed, "cannot borrow `b` as mutable and immutable at the same time",
+      "expected a mutable-and-immutable diagnostic for the receiver");
+}
+
+auto test_two_phase_receiver_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_two_phase_receiver.kira");
+  expect(analyzed.error_count == 0,
+         "expected `b.scale(b.val())` to check cleanly — the `mut self` "
+         "reservation is compatible with a nested shared borrow");
+}
+
+auto test_two_phase_receiver_with_nested_mut_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_two_phase_receiver_nested_mut.kira");
+  expect(analyzed.error_count > 0,
+         "expected a nested `&mut` of the receiver to conflict with the "
+         "`mut self` reservation");
+  expect_diagnostic(
+      analyzed, "cannot borrow `b` as mutable more than once in the same call",
+      "expected a two-mutable-borrows diagnostic for the reserved receiver");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -273,6 +347,12 @@ auto main() -> int {
     test_sequential_borrows_are_accepted();
     test_borrows_in_different_nested_calls_are_accepted();
     test_mutable_slice_view_is_not_an_escape();
+    test_mut_borrow_across_nested_call_is_rejected();
+    test_two_mut_borrows_across_nested_call_are_rejected();
+    test_shared_borrows_across_nested_call_are_accepted();
+    test_receiver_mut_with_shared_arg_is_rejected();
+    test_two_phase_receiver_is_accepted();
+    test_two_phase_receiver_with_nested_mut_is_rejected();
   } catch (const std::exception &ex) {
     std::cerr << "borrow_check_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -1,0 +1,15 @@
+module borrow_check.two_mut_across_nested
+
+# Two `&mut n` borrows made live at the same time across a nested call.
+
+def bump(x: &mut int32) -> int32:
+    *x = *x + 1
+    return *x
+
+def observe(a: &mut int32, b: int32) -> int32:
+    *a = *a + b
+    return *a
+
+def demo() -> int32:
+    var n = 5
+    return observe(&mut n, bump(&mut n))
