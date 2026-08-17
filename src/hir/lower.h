@@ -72,6 +72,20 @@ struct lowering_options {
                                 const lowering_options &options = {})
     -> std::expected<ptr<hir_module>, lowering_error>;
 
+/// Lowers every inline `module child:` declared in `file` into a standalone
+/// HIR module named `<module_name>.child`, recursing for modules nested
+/// further. `lower_module` covers only the file's own top-level items — a
+/// submodule's functions belong to a module of their own, since that dotted
+/// path is the `owner_module` the checker records for calls into it and the
+/// key both backends dispatch those calls on. A functor submodule is skipped
+/// (see `lower_functor_modules`), as is a bodyless forward declaration, whose
+/// contents are lowered from the file that actually defines them.
+[[nodiscard]] auto
+lower_inline_submodules(const ast::file &file, const std::string &module_name,
+                        const semantic::checked_types &checked,
+                        const lowering_options &options = {})
+    -> std::expected<ptr_vec<hir_module>, lowering_error>;
+
 /// Lowers every materialized functor instantiation (`checked.functor_
 /// instances`) into standalone HIR modules — one `hir_module` per distinct
 /// synthetic module name, holding that instantiation's cloned `def`s. A

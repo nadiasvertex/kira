@@ -1282,6 +1282,15 @@ auto lowerer::lower_field(const ast::field_expr &field)
 /// lower yet either.
 auto lowerer::lower_module_path(const ast::module_path_expr &path)
     -> std::expected<ptr<hir_expr>, lowering_error> {
+  // A module-qualified scalar `static` (`main.inner.limit`, or `r.limit`
+  // after `use p.r`): `semantic::checker::infer_module_path` already
+  // evaluated it and recorded the literal to embed, exactly as it does for a
+  // bare name in `lower_ident`. Checked before the shape rules below, since
+  // such a path is a constant, not a projection out of a local.
+  if (const auto it = checked_.static_const_values.find(&path);
+      it != checked_.static_const_values.end()) {
+    return lower_literal(*it->second);
+  }
   if (path.segments.size() != 2) {
     return fail(lowering_error_kind::unsupported_construct, path.span,
                 "only a two-segment `value.field` path is lowered by the "
@@ -4332,12 +4341,17 @@ auto lower_function(const ast::func_decl &decl,
   return {};
 }
 
-auto lower_module(const ast::file &file, std::string module_name,
-                  const semantic::checked_types &checked,
-                  const lowering_options &options)
-    -> std::expected<ptr<hir_module>, lowering_error> {
-  auto functions = ptr_vec<hir_function>{};
-  for (const auto &item : file.items) {
+/// Lowers every runtime function `items` declares directly — free `def`s,
+/// `impl` associated functions, and `extend` methods — appending each to
+/// `functions`. Shared by a file's own top-level items and by the body of an
+/// inline `module inner:` declared within it, so a submodule's functions are
+/// lowered by exactly the same rules (and exclusions) as a file's.
+auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
+                        const semantic::checked_types &checked,
+                        const lowering_options &options,
+                        ptr_vec<hir_function> &functions)
+    -> std::expected<void, lowering_error> {
+  for (const auto &item : items) {
     if (item == nullptr) {
       continue;
     }
@@ -4393,6 +4407,22 @@ auto lower_module(const ast::file &file, std::string module_name,
     }
     functions.push_back(std::move(*lowered));
   }
+  return {};
+}
+
+/// Lowers everything the checker synthesized *for the module named
+/// `module_name`* rather than for any item a source file holds: trait
+/// defaults, monomorphized generic instances, and item-level splices. Each is
+/// filed under its owner module's name, so an inline submodule's share of
+/// them is found by passing that submodule's dotted name here — a generic
+/// `def` declared inside `module inner:` has its `make$int32` instance owned
+/// by `main.inner`, and lowering it into the parent would put it under a key
+/// no call site ever looks up.
+auto lower_module_synthesized(const std::string &module_name,
+                              const semantic::checked_types &checked,
+                              const lowering_options &options,
+                              ptr_vec<hir_function> &functions)
+    -> std::expected<void, lowering_error> {
   // Trait-default methods `semantic::checker::monomorphize_trait_default`
   // (`check.cpp`) cloned and concretely type-checked for one impl each —
   // they have no `impl_decl`/`func_decl` item of their own in `file` to
@@ -4441,8 +4471,100 @@ auto lower_module(const ast::file &file, std::string module_name,
       return std::unexpected(result.error());
     }
   }
+  return {};
+}
+
+auto lower_module(const ast::file &file, std::string module_name,
+                  const semantic::checked_types &checked,
+                  const lowering_options &options)
+    -> std::expected<ptr<hir_module>, lowering_error> {
+  auto functions = ptr_vec<hir_function>{};
+  if (auto result = lower_module_items(file.items, checked, options, functions);
+      !result.has_value()) {
+    return std::unexpected(result.error());
+  }
+  if (auto result =
+          lower_module_synthesized(module_name, checked, options, functions);
+      !result.has_value()) {
+    return std::unexpected(result.error());
+  }
   return make<hir_module>(file.span, std::move(module_name),
                           std::move(functions));
+}
+
+namespace {
+
+/// Recursively lowers each inline `module child:` in `items` into a standalone
+/// `hir_module` named `parent.child`, appending it (and any module nested
+/// inside it) to `out`.
+///
+/// A submodule's functions have to land in a module of their own, not in the
+/// parent's: both backends dispatch a cross-module call on the callee's
+/// `owner_module` (`bytecode_compiler`'s `resolve_callee_key`), and the
+/// checker records that as the submodule's full dotted path. Before this,
+/// nothing walked into a `sub_module_decl` at all — `main.inner.val()`
+/// type-checked and then failed with "call to `val` could not be resolved to
+/// a function in this compiled module".
+auto lower_inline_submodules_into(const std::vector<ast::ptr<ast::node>> &items,
+                                  const std::string &parent_module_name,
+                                  const semantic::checked_types &checked,
+                                  const lowering_options &options,
+                                  ptr_vec<hir_module> &out)
+    -> std::expected<void, lowering_error> {
+  for (const auto &item : items) {
+    if (item == nullptr || item->kind != ast::node_kind::sub_module_decl) {
+      continue;
+    }
+    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+    if (decl.is_functor() || decl.items.empty()) {
+      // A functor is not a module in the graph — it is instantiated per
+      // argument tuple, and `lower_functor_modules` lowers those instances.
+      // `semantic::collect_submodule_declarations` skips it for the same
+      // reason. An empty body is a forward declaration whose contents live in
+      // another file, which that file's own `lower_module` call covers.
+      continue;
+    }
+
+    const auto module_name = parent_module_name.empty()
+                                 ? decl.name
+                                 : parent_module_name + "." + decl.name;
+    auto functions = ptr_vec<hir_function>{};
+    if (auto result =
+            lower_module_items(decl.items, checked, options, functions);
+        !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+    if (auto result =
+            lower_module_synthesized(module_name, checked, options, functions);
+        !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+    out.push_back(
+        make<hir_module>(decl.span, module_name, std::move(functions)));
+
+    if (auto result = lower_inline_submodules_into(decl.items, module_name,
+                                                   checked, options, out);
+        !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+  }
+  return {};
+}
+
+} // namespace
+
+auto lower_inline_submodules(const ast::file &file,
+                             const std::string &module_name,
+                             const semantic::checked_types &checked,
+                             const lowering_options &options)
+    -> std::expected<ptr_vec<hir_module>, lowering_error> {
+  auto modules = ptr_vec<hir_module>{};
+  if (auto result = lower_inline_submodules_into(file.items, module_name,
+                                                 checked, options, modules);
+      !result.has_value()) {
+    return std::unexpected(result.error());
+  }
+  return modules;
 }
 
 auto lower_functor_modules(const semantic::checked_types &checked,

@@ -1107,7 +1107,32 @@ auto parser::parse_sub_module_decl(ast::visibility vis)
   }
 
   if (at(token_kind::colon)) {
+    const auto colon_span = peek().span;
     advance(); // consume `:`
+    // A module body is a block and only a block (spec/kira-grammar.ebnf's
+    // `sub_module_decl`), unlike a function body, which also has an inline
+    // `: expr` form. Both non-block spellings therefore have to be
+    // diagnosed here: without this, `module inner: pub type holder = ...`
+    // parsed as an empty submodule and the items after the `:` were read as
+    // items of the *parent* module — silently, so `main.inner.holder` did
+    // not resolve while a bare `holder` did.
+    if (!at(token_kind::newline)) {
+      emit(diagnostic(diagnostic_level::error,
+                      "expected an indented block after `:` for this module",
+                      file_id_)
+               .with_label(peek().span, "this belongs on its own line")
+               .with_help(
+                   "A module body is always an indented block on the "
+                   "following lines — there is no single-line form. Write "
+                   "`module name:`, then indent the items it contains. To "
+                   "declare a module whose contents live in another file, "
+                   "leave off the `:` entirely."));
+      decl->has_error = true;
+      synchronize();
+      decl->span = start.merge(previous_span());
+      return decl;
+    }
+
     skip_newlines();
 
     if (match(token_kind::indent)) {
@@ -1125,6 +1150,16 @@ auto parser::parse_sub_module_decl(ast::visibility vis)
         }
       }
       expect_block_end("module");
+    } else {
+      emit(diagnostic(diagnostic_level::error,
+                      "expected an indented block after `:` for this module",
+                      file_id_)
+               .with_label(colon_span, "the `:` is here")
+               .with_help("After `:` the module's items go on the following "
+                          "lines, indented one level. To declare a module "
+                          "whose contents live in another file, leave off the "
+                          "`:` entirely."));
+      decl->has_error = true;
     }
   } else {
     expect_newline();

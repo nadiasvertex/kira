@@ -125,6 +125,31 @@ auto lower_and_emit_modules(const cli_config &cfg,
     } else {
       report_lowering_failure(cfg, lowered_result.error(), module_name,
                               input.file_id, renderer, report);
+      continue;
+    }
+
+    // An inline `module inner:` has no source file of its own for the loop
+    // above to visit, so its functions are lowered here into modules named
+    // `main.inner` — the same dotted path a `main.inner.val()` call site
+    // records as its callee's owner, which is what makes the two link up.
+    auto submodules = hir::lower_inline_submodules(
+        *input.ast_file, module_name, checked,
+        hir::lowering_options{.contract_checks = cfg.contract_checks});
+    if (submodules.has_value()) {
+      for (auto &submodule : *submodules) {
+        report.hir_modules.push_back(hir_lowering_result{
+            .module_path = submodule->module_name, .lowered = true});
+        lowered_modules.push_back(std::move(submodule));
+      }
+    } else {
+      report.hir_modules.push_back(hir_lowering_result{
+          .module_path = module_name,
+          .lowered = false,
+          .error =
+              std::format("{} (byte offset {})", submodules.error().message,
+                          submodules.error().span.start)});
+      report_lowering_failure(cfg, submodules.error(), module_name,
+                              input.file_id, renderer, report);
     }
   }
 

@@ -687,6 +687,118 @@ auto test_qualified_type_path_through_import() -> void {
          "import, not one rooted at the current module");
 }
 
+/// A submodule declared inline in the same file is reachable both fully
+/// qualified (`main.inner.holder`) and relative to the module it is declared
+/// in (`inner.holder`), in every position a qualified path can appear:
+/// a type annotation, a struct-literal head, and a call (spec/todo.md item 8).
+auto test_inline_submodule_paths_resolve() -> void {
+  const auto analyzed = analyze_sources({
+      {
+          .path = "submod_app.kira",
+          .text =
+              "module main\n"
+              "\n"
+              "module inner:\n"
+              "    pub type holder = { cur: int32 }\n"
+              "\n"
+              "    pub def make(n: int32) -> holder:\n"
+              "        return holder { cur: n }\n"
+              "\n"
+              "def qualified(h: main.inner.holder) -> int32:\n"
+              "    return h.cur\n"
+              "\n"
+              "def relative(h: inner.holder) -> int32:\n"
+              "    return h.cur\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let a: main.inner.holder = main.inner.holder { cur: 1 }\n"
+              "    let b: inner.holder = inner.holder { cur: 2 }\n"
+              "    let c: int32 = main.inner.make(3).cur\n"
+              "    let d: int32 = inner.make(4).cur\n"
+              "    return qualified(a) + relative(b) + c + d\n",
+      },
+  });
+  expect(analyzed.error_count == 0,
+         "expected an inline submodule to resolve both qualified and "
+         "relative, in type, struct-literal, and call position");
+
+  // The relative reading must not become a way to reach anything at all: a
+  // member the submodule does not declare is still an error, and one that
+  // names no module at all must not silently fall back to the parent's own
+  // `holder` (which is what a longest-prefix lookup would do).
+  const auto missing = analyze_sources({
+      {
+          .path = "submod_missing.kira",
+          .text = "module main\n"
+                  "\n"
+                  "type holder = { cur: int32 }\n"
+                  "\n"
+                  "module inner:\n"
+                  "    pub type present = { cur: int32 }\n"
+                  "\n"
+                  "def main() -> int32:\n"
+                  "    let a: inner.absent = inner.absent { cur: 1 }\n"
+                  "    return 0\n",
+      },
+  });
+  expect(missing.error_count > 0,
+         "expected an absent submodule member to stay an error");
+  expect_diagnostic(missing, "inner.absent",
+                    "expected the absent submodule member to be reported");
+
+  // Separate fixture: the first error above marks the file, which suppresses
+  // later stages, so this case has to be the only one in its program.
+  const auto undeclared = analyze_sources({
+      {
+          .path = "submod_undeclared.kira",
+          .text = "module main\n"
+                  "\n"
+                  "type holder = { cur: int32 }\n"
+                  "\n"
+                  "module inner:\n"
+                  "    pub type present = { cur: int32 }\n"
+                  "\n"
+                  "def main() -> int32:\n"
+                  "    let b: nosuch.holder = nosuch.holder { cur: 2 }\n"
+                  "    return b.cur\n",
+      },
+  });
+  expect(undeclared.error_count > 0,
+         "expected a path through an undeclared module to stay an error, not "
+         "resolve to the parent module's own `holder`");
+  expect_diagnostic(undeclared, "nosuch.holder",
+                    "expected the undeclared module path to be reported");
+}
+
+/// A `use`d module wins over a same-named inline submodule: after
+/// `use subprec.inner`, `inner.holder` is the *imported* module's `holder`.
+/// The relative reading is tried last precisely so this stays true.
+auto test_import_wins_over_inline_submodule() -> void {
+  const auto analyzed = analyze_sources({
+      {
+          .path = "subprec_inner.kira",
+          .text = "module subprec.inner\n"
+                  "\n"
+                  "pub type holder = { imported: int32 }\n",
+      },
+      {
+          .path = "subprec_app.kira",
+          .text = "module main\n"
+                  "\n"
+                  "use subprec.inner\n"
+                  "\n"
+                  "module inner:\n"
+                  "    pub type holder = { local: int32 }\n"
+                  "\n"
+                  "def main() -> int32:\n"
+                  "    let h: inner.holder = inner.holder { imported: 7 }\n"
+                  "    return h.imported\n",
+      },
+  });
+  expect(analyzed.error_count == 0,
+         "expected an import to win over a same-named inline submodule");
+}
+
 auto test_accepts_parameterized_extend() -> void {
   const auto analyzed = analyze_sources({{
       .path = "extend_parameterized.kira",
@@ -2966,6 +3078,8 @@ auto main() -> int {
     test_ufcs_reports_receiver_mismatch();
     test_ufcs_skips_private_functions_in_other_modules();
     test_impl_type_param_substituted_at_call_site();
+    test_inline_submodule_paths_resolve();
+    test_import_wins_over_inline_submodule();
     test_impls_on_distinct_instantiations_are_coherent();
     test_overlapping_generic_impl_still_conflicts();
   } catch (const std::exception &ex) {

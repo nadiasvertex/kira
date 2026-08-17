@@ -1311,6 +1311,13 @@ private:
   // --- caches ---------------------------------------------------------------
   std::unordered_map<const ast::static_decl *, type_id> static_types_;
   std::unordered_set<const ast::static_decl *> statics_in_progress_;
+  /// Each `static let`'s evaluated compile-time value, keyed by declaration
+  /// so same-named statics in different modules stay distinct — see
+  /// `ensure_static_binding_evaluated`. `nullopt` records an initializer
+  /// that failed to evaluate, so it is not retried (and re-diagnosed) at
+  /// every later reference.
+  std::unordered_map<const ast::static_decl *, std::optional<comptime::value>>
+      static_binding_values_;
   /// Compile-time evaluator backing `static let`/`static assert`/
   /// `static if`. One instance for the whole session (parallel to
   /// `static_types_`/`types_`) so `static let` bindings evaluated while
@@ -1774,6 +1781,95 @@ private:
       }
     }
     return found;
+  }
+
+  /// The module a *relative* qualified path names: `inner.holder` written
+  /// inside `module main` means `main.inner`'s `holder`, which is how a
+  /// submodule declared in the same file is meant to be reachable from its
+  /// parent (`resolution.cpp`'s `resolve_named_type_path` has always
+  /// accepted this spelling; only the checker did not, so the reference
+  /// typed as unknown and the failure surfaced from lowering).
+  ///
+  /// Unlike `find_session_module_of_path` this requires the *whole* prefix
+  /// to name a module, rather than taking the longest one that matches:
+  /// falling back to a shorter prefix here would make `bogus.holder`
+  /// silently resolve to the current module's own `holder`.
+  ///
+  /// Always tried *after* imports and the absolute reading — after
+  /// `use pkg.inner`, `inner.holder` is the imported module's, not a
+  /// submodule of this one (see `test_qualified_type_path_through_import`).
+  /// A leading `super` chain steps up to the parent module first, so a
+  /// submodule can name a sibling (`super.a.holder` from inside `main.b`) —
+  /// the same reading `resolution.cpp`'s `resolve_named_type_path` gives it.
+  [[nodiscard]] auto
+  find_submodule_of_current_module(const std::vector<std::string> &path) const
+      -> const module_members * {
+    if (module_ == nullptr || path.empty()) {
+      return nullptr;
+    }
+    auto base = module_->module_name;
+    auto first = size_t{0};
+    while (first < path.size() && path[first] == "super") {
+      base = parent_module_name(base);
+      if (base.empty()) {
+        return nullptr; // `super` from a root module has no parent
+      }
+      ++first;
+    }
+    // Without a `super` prefix the path needs at least one segment naming a
+    // module plus the member itself; with one, the parent module alone can
+    // be the owner (`super.helper`).
+    if (path.size() - first < (first == 0 ? 2 : 1)) {
+      return nullptr;
+    }
+    auto qualified = base;
+    for (size_t i = first; i + 1 < path.size(); ++i) {
+      qualified += '.';
+      qualified += path[i];
+    }
+    return index_.find_module(qualified);
+  }
+
+  /// The module whose `static` bindings include the one `path` names, trying
+  /// the three readings `find_type_decl_by_path` tries, in the same order: a
+  /// leading import alias, the absolute path, then relative to the module
+  /// being checked. Returns null when the path names no module-scope
+  /// `static` at all, so the caller can fall through to the existing
+  /// "validated elsewhere" behavior rather than reporting anything here.
+  [[nodiscard]] auto
+  find_static_owner_of_path(const std::vector<std::string> &path) const
+      -> const module_members * {
+    if (path.size() < 2) {
+      return nullptr;
+    }
+    const auto owns = [&path](const module_members *members) -> bool {
+      return members != nullptr && members->statics.contains(path.back());
+    };
+
+    if (const auto *binding = find_import(path.front());
+        binding != nullptr && binding->leaf_name.empty()) {
+      const module_members *aliased =
+          index_.find_module(join_strings(binding->path, "."));
+      if (aliased == nullptr) {
+        aliased = import_source_module(*binding);
+      }
+      if (aliased != nullptr) {
+        auto absolute = split_module_name(aliased->module_name);
+        absolute.insert(absolute.end(), path.begin() + 1, path.end());
+        if (const auto *owner = find_session_module_of_path(absolute);
+            owns(owner)) {
+          return owner;
+        }
+      }
+    }
+    if (const auto *owner = find_session_module_of_path(path); owns(owner)) {
+      return owner;
+    }
+    if (const auto *owner = find_submodule_of_current_module(path);
+        owns(owner)) {
+      return owner;
+    }
+    return nullptr;
   }
 
   /// Whether `path`'s first segment names (or prefixes) a module declared
@@ -6397,14 +6493,27 @@ private:
         decl.name.empty()) {
       return nullptr;
     }
+    // Memoized per *declaration*, and deliberately not read back out of
+    // `comptime_eval_`'s globals by name: those are one flat namespace keyed
+    // by the bare name, so a parent module and an inline submodule that each
+    // declare `static limit` collide there. Reading by name handed every
+    // reference whichever of the two was evaluated first — a silently wrong
+    // value, not an error. The global binding is still written (first
+    // writer wins), because that namespace is what makes one compile-time
+    // initializer able to reference another by name.
+    if (const auto it = static_binding_values_.find(&decl);
+        it != static_binding_values_.end()) {
+      return it->second.has_value() ? &*it->second : nullptr;
+    }
+    const auto evaluated = comptime_eval_.evaluate(*decl.initializer);
+    if (evaluated.is_error()) {
+      static_binding_values_.emplace(&decl, std::nullopt);
+      return nullptr;
+    }
     if (!comptime_eval_.has_global(decl.name)) {
-      const auto evaluated = comptime_eval_.evaluate(*decl.initializer);
-      if (evaluated.is_error()) {
-        return nullptr;
-      }
       comptime_eval_.bind_global(decl.name, evaluated);
     }
-    return comptime_eval_.global_value(decl.name);
+    return &*static_binding_values_.emplace(&decl, evaluated).first->second;
   }
 
   /// If `decl` (the `static let` a name just resolved to) evaluates to a
@@ -6419,15 +6528,22 @@ private:
   /// given the exact same type in `node_types_` — lowering requires every
   /// node it visits, including one this pass synthesizes, to already have
   /// a recorded checked type.
-  auto record_static_const_reference(const ast::ident_expr &ident,
+  /// `reference` is the node the literal is substituted for: an
+  /// `ident_expr` for a bare name, or a `module_path_expr` for a
+  /// module-qualified one (`main.inner.limit`) — `static_const_values` is
+  /// keyed on `ast::node` precisely so both spellings can be recorded, and
+  /// `hir::lower_module_path` looks the path form up the same way
+  /// `hir::lower_ident` looks up the bare one.
+  auto record_static_const_reference(const ast::expr &reference,
                                      const ast::static_decl &decl, type_id type)
       -> void {
     const auto *value = ensure_static_binding_evaluated(decl);
     if (value == nullptr) {
       return;
     }
-    if (const auto *lit = materialize_const_literal(*value, ident.span, type)) {
-      static_const_values_[&ident] = lit;
+    if (const auto *lit =
+            materialize_const_literal(*value, reference.span, type)) {
+      static_const_values_[&reference] = lit;
     }
   }
 
@@ -9810,6 +9926,23 @@ private:
       }
     }
 
+    // Relative to the module being checked: `inner.val()` inside `module
+    // main` is `main.inner`'s `val`. An import binding this root wins, the
+    // same precedence `find_type_decl_by_path` gives the two spellings — so
+    // this needs the whole path plus `fn_name` as the module member, which
+    // is what appending the name to `root` asks for.
+    if (find_import(root.front()) == nullptr) {
+      auto member_path = root;
+      member_path.push_back(fn_name);
+      if (const auto *owner = find_submodule_of_current_module(member_path)) {
+        if (const auto it = owner->functions.find(fn_name);
+            it != owner->functions.end()) {
+          return resolve_against(*it->second.decl, owner, it->second.file_id,
+                                 "");
+        }
+      }
+    }
+
     if (root.size() == 1) {
       // A single-segment root naming an imported module (`use std.console`,
       // then `console.println(...)`).
@@ -10482,6 +10615,20 @@ private:
     }
 
     if (!value_rooted) {
+      // A module-qualified `static` binding (`main.inner.limit`, or
+      // `r.limit` after `use p.r`). Resolving it here is what gives the
+      // reference a concrete type *and* a literal for lowering to embed —
+      // without both, the path typed as unknown and the program died in
+      // codegen with "only a two-segment `value.field` path is lowered".
+      // Everything else module-rooted is still validated elsewhere.
+      if (const auto *owner = find_static_owner_of_path(path.segments)) {
+        if (const auto it = owner->statics.find(path.segments.back());
+            it != owner->statics.end()) {
+          const auto type = static_binding_type(*it->second.decl, owner);
+          record_static_const_reference(path, *it->second.decl, type);
+          return type;
+        }
+      }
       return k_unknown_type; // module references are validated elsewhere
     }
     for (size_t i = 1; i < path.segments.size(); ++i) {
@@ -11118,13 +11265,20 @@ private:
         }
       }
     }
-    const auto *owner = find_session_module_of_path(path);
-    if (owner == nullptr) {
-      return std::nullopt;
+    if (const auto *owner = find_session_module_of_path(path)) {
+      if (const auto it = owner->types.find(path.back());
+          it != owner->types.end()) {
+        return std::pair{it->second.decl, owner->module_name};
+      }
     }
-    if (const auto it = owner->types.find(path.back());
-        it != owner->types.end()) {
-      return std::pair{it->second.decl, owner->module_name};
+    // Last: relative to the module being checked, so a submodule declared in
+    // this same file is reachable as `inner.holder` and not only as the
+    // fully-qualified `main.inner.holder`.
+    if (const auto *owner = find_submodule_of_current_module(path)) {
+      if (const auto it = owner->types.find(path.back());
+          it != owner->types.end()) {
+        return std::pair{it->second.decl, owner->module_name};
+      }
     }
     return std::nullopt;
   }

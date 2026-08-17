@@ -1031,6 +1031,37 @@ auto test_parser_disambiguates_module_visibility_from_module_decl() -> void {
          "expected explicit module visibility on `module module ...:`");
 }
 
+/// A module body is a block and only a block. Both non-block spellings used
+/// to be dropped in silence: the parser consumed the `:`, found no INDENT,
+/// and left `items` empty — so `module inner: pub type holder = ...` declared
+/// an *empty* `inner` and the caller went on to parse `pub type holder` as an
+/// item of the parent module. No diagnostic anywhere, and `inner.holder`
+/// resolved to nothing while a bare `holder` resolved fine.
+auto test_parser_rejects_non_block_module_body() -> void {
+  auto same_line = parse_source("module sample\n"
+                                "module inner: pub type holder = { cur: 1 }\n");
+  expect(same_line.error_count > 0,
+         "expected a same-line module body to be reported, not dropped");
+  expect(same_line.diagnostics.find("expected an indented block after `:`") !=
+             std::string::npos,
+         same_line.diagnostics);
+
+  auto unindented = parse_source("module sample\n"
+                                 "module inner:\n"
+                                 "static x = 1\n");
+  expect(unindented.error_count > 0,
+         "expected `:` with no indented block to be reported");
+  expect(unindented.diagnostics.find("expected an indented block after `:`") !=
+             std::string::npos,
+         unindented.diagnostics);
+
+  // A bodyless `module child` (contents in another file) is a different
+  // construct and stays valid — the diagnostic above must not swallow it.
+  auto forward = parse_source("module sample\n"
+                              "module child\n");
+  expect(forward.error_count == 0, forward.diagnostics);
+}
+
 auto test_parser_disambiguates_index_from_generic_instantiation() -> void {
   auto parsed = parse_source("module sample\n"
                              "def run(values, identity) -> int32:\n"
@@ -1913,7 +1944,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 39> tests = {{
+  const std::array<named_test, 40> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "doc_comments", .fn = test_parser_captures_doc_comments},
@@ -1939,6 +1970,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_phase1_audit_regressions},
       {.name = "module_visibility_vs_module_decl",
        .fn = test_parser_disambiguates_module_visibility_from_module_decl},
+      {.name = "non_block_module_body",
+       .fn = test_parser_rejects_non_block_module_body},
       {.name = "index_vs_generic_instantiation",
        .fn = test_parser_disambiguates_index_from_generic_instantiation},
       {.name = "extend_block", .fn = test_parser_accepts_extend_block},

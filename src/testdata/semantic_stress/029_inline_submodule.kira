@@ -1,0 +1,33 @@
+module semantic_stress.inline_submodule
+
+# A submodule declared inline in this same file, named every way it can be
+# named: fully qualified, relative to the module it is declared in, and
+# through `super` from a sibling submodule (spec/todo.md item 8). The
+# relative spelling used to type as `unknown` with no diagnostic at all, so
+# a signature like `take_relative` below checked "cleanly" and then failed in
+# lowering.
+
+module inner:
+    pub type holder = { cur: int32 }
+
+    pub static limit: int32 = 40
+
+    pub def make(n: int32) -> holder:
+        return holder { cur: n }
+
+module sibling:
+    pub def widen(n: int32) -> super.inner.holder:
+        return super.inner.make(n)
+
+def take_qualified(h: semantic_stress.inline_submodule.inner.holder) -> int32:
+    return h.cur
+
+def take_relative(h: inner.holder) -> int32:
+    return h.cur
+
+def run() -> int32:
+    let a: semantic_stress.inline_submodule.inner.holder = inner.make(1)
+    let b: inner.holder = inner.holder { cur: 2 }
+    let c: inner.holder = sibling.widen(3)
+    let bound: int32 = semantic_stress.inline_submodule.inner.limit
+    return take_qualified(a) + take_relative(b) + c.cur + bound

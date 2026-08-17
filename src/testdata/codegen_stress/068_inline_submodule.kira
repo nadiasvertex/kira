@@ -1,0 +1,59 @@
+module codegen_stress.inline_submodule
+
+# A `module inner:` declared inline in this same file, reached every way it
+# can be reached: fully qualified through this module's own name, relative to
+# it, and — from a sibling submodule — through `super` (spec/todo.md item 8).
+#
+# The functions matter as much as the types. Nothing used to walk into a
+# `sub_module_decl` during lowering at all, so a submodule `def` became no
+# `hir_function` anywhere and `codegen_stress.inline_submodule.inner.make(...)`
+# failed with "call to `make` could not be resolved to a function in this
+# compiled module" — after type-checking cleanly.
+#
+# `# expect:` is not optional here. This is a test about *naming* — which
+# module a function and a `static` belong to — and both tiers read that from
+# the same lowered module set, so they would agree on the same wrong answer.
+# The two `limit`s are the sharp case: a parent and a submodule may each
+# declare one, and the compile-time evaluator's globals are a single flat
+# namespace keyed by the bare name. Reading a value back out of it by name
+# gave every reference whichever was evaluated first — 3 twice, never 40.
+
+static limit: int32 = 3
+
+module inner:
+    pub static limit: int32 = 40
+
+    pub type holder = { cur: int32 }
+
+    pub def make(n: int32) -> holder:
+        return holder { cur: n }
+
+    # A *generic* def in a submodule: the checker files its `swap$int32`
+    # instance under `...inline_submodule.inner`, not under this file's own
+    # module, so lowering has to ask for that module's synthesized functions
+    # by the submodule's dotted name too — walking the submodule's items
+    # alone leaves the instance under a key no call site looks up.
+    pub def tagged[T](marker: T, n: int32) -> holder:
+        return holder { cur: n }
+
+module sibling:
+    pub def through_super(n: int32) -> int32:
+        let h: super.inner.holder = super.inner.make(n)
+        return h.cur
+
+def qualified(h: codegen_stress.inline_submodule.inner.holder) -> int32:
+    return h.cur
+
+def relative(h: inner.holder) -> int32:
+    return h.cur
+
+def main() -> int64:
+    let a: inner.holder = codegen_stress.inline_submodule.inner.holder { cur: 1 }
+    let b: inner.holder = inner.holder { cur: 2 }
+    let made = inner.make(4)
+    let sib = sibling.through_super(5)
+    let generic = inner.tagged(true, 7)
+    let statics = limit + inner.limit
+    return (qualified(a) + relative(b) + made.cur + sib + statics + generic.cur) as int64
+
+# expect: 62

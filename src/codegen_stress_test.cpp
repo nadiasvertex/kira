@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -182,9 +183,10 @@ struct bytecode_run {
   outcome result;
 };
 
-auto run_bytecode(const fs::path &path, const hir::hir_module &module,
+auto run_bytecode(const fs::path &path,
+                  std::span<const hir::hir_module *const> modules,
                   const kira::semantic::type_table &types) -> bytecode_run {
-  auto compiled = bcc::compile_module(module, types);
+  auto compiled = bcc::compile_module(modules, types);
   expect(compiled.has_value(),
          std::format("`{}`: expected bytecode_compiler to accept this "
                      "corpus file: {}",
@@ -216,11 +218,12 @@ struct llvm_run {
 // `as_ptr` selects `jit_module::run_ptr_result` (heap-typed `main`) over
 // `jit_module::run` with `return_kind` (scalar/unit `main`) — mirrors
 // `run_one`'s own `is_heap_result` classification.
-auto run_llvm(const fs::path &path, const hir::hir_module &module,
+auto run_llvm(const fs::path &path,
+              std::span<const hir::hir_module *const> modules,
               const kira::semantic::type_table &types,
               std::optional<bc::numeric_kind> return_kind, bool as_ptr)
     -> llvm_run {
-  auto compiled = lc::compile_module(module, types);
+  auto compiled = lc::compile_module(modules, types);
   expect(
       compiled.has_value(),
       std::format("`{}`: expected llvm_codegen to accept this corpus file: {}",
@@ -478,6 +481,20 @@ auto run_one(const fs::path &path) -> void {
          std::format("`{}`: expected corpus file to lower to HIR: {}",
                      path.string(), lowered.error().message));
 
+  // An inline `module inner:` lowers to a module of its own, exactly as the
+  // driver does it (`driver::lower_and_emit_modules`) — a call into one is
+  // dispatched on that dotted name, so both tiers have to be handed the
+  // whole set, entry module first, not just the file's top level.
+  auto submodules = hir::lower_inline_submodules(*fixture.ast_file, module_name,
+                                                 fixture.checked);
+  expect(submodules.has_value(),
+         std::format("`{}`: expected inline submodules to lower to HIR: {}",
+                     path.string(), submodules.error().message));
+  auto module_set = std::vector<const hir::hir_module *>{lowered->get()};
+  for (const auto &submodule : *submodules) {
+    module_set.push_back(submodule.get());
+  }
+
   const auto *main_fn = static_cast<const hir::hir_function *>(nullptr);
   for (const auto &fn : (*lowered)->functions) {
     if (fn != nullptr && fn->name == "main") {
@@ -502,8 +519,8 @@ auto run_one(const fs::path &path) -> void {
   // Kept alive for the whole function (not just the compile-and-run call
   // above) since a heap-typed result's `bits` may point into memory either
   // one owns — see `bytecode_run`/`llvm_run`'s doc comment.
-  auto bc_run = run_bytecode(path, **lowered, fixture.checked.types);
-  auto llvm_run_result = run_llvm(path, **lowered, fixture.checked.types,
+  auto bc_run = run_bytecode(path, module_set, fixture.checked.types);
+  auto llvm_run_result = run_llvm(path, module_set, fixture.checked.types,
                                   return_kind, is_heap_result);
   const auto &vm_result = bc_run.result;
   const auto &jit_result = llvm_run_result.result;
