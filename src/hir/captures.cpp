@@ -1,5 +1,6 @@
 #include "src/hir/captures.h"
 
+#include <functional>
 #include <unordered_set>
 
 namespace kira::hir {
@@ -20,6 +21,10 @@ struct walker {
   std::unordered_set<symbol_id> bound;
   std::unordered_set<symbol_id> seen_free;
   std::vector<symbol_id> free;
+  /// Optional hook fired for every `hir_lambda` this walk reaches, before
+  /// descending into its body. Lets a caller that only wants to *find*
+  /// lambdas reuse this traversal instead of duplicating it.
+  std::function<void(const hir_lambda &)> on_lambda;
 
   auto bind(symbol_id sym) -> void { bound.insert(sym); }
 
@@ -135,6 +140,9 @@ struct walker {
       // so its body is walked with the same `bound`/`free` accumulators
       // rather than starting a fresh walk.
       const auto &node = dynamic_cast<const hir_lambda &>(expr);
+      if (on_lambda) {
+        on_lambda(node);
+      }
       const auto outer_bound = bound;
       for (const auto &param : node.params) {
         bind(param.symbol);
@@ -323,6 +331,44 @@ auto free_variables(const hir_lambda &lambda) -> std::vector<symbol_id> {
     w.walk_stmt(*stmt);
   }
   return std::move(w.free);
+}
+
+auto capture_plan(const hir_lambda &lambda) -> std::vector<hir_capture> {
+  if (lambda.captures.has_value()) {
+    return *lambda.captures;
+  }
+  auto plan = std::vector<hir_capture>{};
+  for (const auto symbol : free_variables(lambda)) {
+    plan.push_back(
+        hir_capture{.symbol = symbol, .mode = ast::capture_mode::by_value});
+  }
+  return plan;
+}
+
+auto ref_captured_symbols(const hir_block &body)
+    -> std::unordered_set<symbol_id> {
+  // Reuses `walker` purely as a traversal: its free-variable bookkeeping is
+  // irrelevant here and its result is discarded. What matters is that it
+  // already knows how to reach every subexpression of every node kind,
+  // including into nested lambda bodies, so the hook below sees every
+  // capture list in `body` without this function having to re-enumerate the
+  // node taxonomy and fall out of date with it.
+  auto found = std::unordered_set<symbol_id>{};
+  auto w = walker{};
+  w.on_lambda = [&found](const hir_lambda &lambda) -> void {
+    if (!lambda.captures.has_value()) {
+      return;
+    }
+    for (const auto &entry : *lambda.captures) {
+      if (entry.mode != ast::capture_mode::by_value) {
+        found.insert(entry.symbol);
+      }
+    }
+  };
+  for (const auto &stmt : body.stmts) {
+    w.walk_stmt(*stmt);
+  }
+  return found;
 }
 
 } // namespace kira::hir

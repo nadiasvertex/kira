@@ -1504,6 +1504,27 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
                 "function type");
   }
 
+  // Resolved before the lambda's own scope opens, so each entry names the
+  // *enclosing* binding — which is exactly what the environment must hold.
+  // The checker has already proven every entry resolves to a local here, so
+  // a miss can only mean the two phases disagree.
+  auto captures = std::optional<std::vector<hir_capture>>{};
+  if (lambda.captures.has_value()) {
+    auto resolved = std::vector<hir_capture>{};
+    resolved.reserve(lambda.captures->size());
+    for (const auto &item : *lambda.captures) {
+      const auto symbol = lookup_local(item.name);
+      if (!symbol.has_value()) {
+        return fail(lowering_error_kind::unsupported_construct, item.span,
+                    "a captured name did not resolve to a local of the "
+                    "enclosing function — capture checking and lowering "
+                    "have gotten out of sync");
+      }
+      resolved.push_back(hir_capture{.symbol = *symbol, .mode = item.mode});
+    }
+    captures = std::move(resolved);
+  }
+
   push_scope();
 
   auto params = std::vector<hir_param>{};
@@ -1598,7 +1619,8 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
   }
 
   return ok_expr(make<hir_lambda>(lambda.span, *lambda_type, std::move(params),
-                                  return_type, std::move(*body)));
+                                  return_type, std::move(*body),
+                                  std::move(captures)));
 }
 
 auto lowerer::lower_where(const ast::where_expr &where)

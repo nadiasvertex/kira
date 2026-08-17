@@ -1,0 +1,15 @@
+module borrow_two_mut_captures
+
+# Two closures holding `&mut total` at once. A `&mut` capture borrows for as
+# long as the closure lives, so the second is the same violation as two `&mut`
+# views of one collection — and without it, both closures would be writing
+# through to the same variable with no exclusivity at all.
+def run() -> int32:
+    var total = 0
+    let a = [&mut total] (x: int32) -> int32 =>:
+        total = total + x
+        return total
+    let b = [&mut total] (x: int32) -> int32 =>:
+        total = total + x
+        return total
+    return a(1) + b(2)

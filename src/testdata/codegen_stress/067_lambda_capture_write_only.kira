@@ -1,0 +1,17 @@
+module codegen_stress.lambda_capture_write_only
+
+# A `&mut` capture the body only *writes*, never reads. Distinct from
+# `063_lambda_capture_list_mut_ref` on two counts: the checker's use-tracking
+# has to count an assignment *target* as a use (otherwise this warns
+# "captured but never used"), and the bytecode VM's cell path has to take the
+# plain-store branch rather than the read-modify-write one.
+
+def main() -> int64:
+    var total = 0
+    let setit = [&mut total] (x: int32) -> int32 =>:
+        total = x
+        return x
+    let a = setit(41)
+    return (a + total) as int64
+
+# expect: 82

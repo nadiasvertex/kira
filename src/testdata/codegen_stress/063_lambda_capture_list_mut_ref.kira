@@ -1,0 +1,29 @@
+module codegen_stress.lambda_capture_list_mut_ref
+
+# `&mut` capture, the whole point of a capture list stating modes: a write
+# inside the lambda has to reach the *original* binding, not a copy of it.
+#
+# The `# expect:` value is mandatory here rather than relying on the two
+# backends agreeing. Agreement is exactly the check that cannot save this
+# case: if by-reference capture silently degraded to the by-value copy both
+# backends did before capture lists existed, both would degrade the same way
+# and return the same (wrong) 0. Only a stated number catches that.
+#
+# `acc` is called three times, accumulating 5 + 15 + 22 into `total`.
+
+def call_twice(f: fn(int32) -> int32, a: int32, b: int32) -> int32:
+    let x = f(a)
+    let y = f(b)
+    return x + y
+
+def main() -> int64:
+    var total = 0
+    let acc = [&mut total] (x: int32) -> int32 =>:
+        total = total + x
+        return total
+    let first = acc(5)
+    let rest = call_twice(acc, 15, 22)
+    # first == 5, rest == 20 + 42 == 62, total == 42.
+    return (first + rest + total) as int64
+
+# expect: 109

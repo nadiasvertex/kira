@@ -1,0 +1,12 @@
+module borrow_by_value_capture
+
+# A bare `total` entry is a by-value copy, which borrows nothing — so two of
+# them coexist freely. This is the control for
+# `reject_two_mut_capture_closures`: if by-value entries were tracked as
+# borrows too, this would be rejected and the mode distinction would mean
+# nothing.
+def run() -> int32:
+    var total = 0
+    let a = [total] (x: int32) -> int32 => x + total
+    let b = [total] (x: int32) -> int32 => x + total
+    return a(1) + b(2)

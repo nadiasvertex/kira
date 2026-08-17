@@ -539,7 +539,7 @@ public:
       }
       auto *alloca = create_local_alloca(*ty, param.name);
       builder_.CreateStore(llvm_fn->getArg(static_cast<unsigned>(i)), alloca);
-      locals_.emplace(param.symbol, alloca);
+      bind_local(param.symbol, alloca);
     }
 
     if (fn.is_generator) {
@@ -571,9 +571,8 @@ public:
     } else {
       state_block = compile_heap_alloc(state_symbols.size());
       for (size_t i = 0; i < fn.params.size(); ++i) {
-        auto *alloca = lookup_local(state_symbols[i]);
-        auto *value = builder_.CreateLoad(alloca->getAllocatedType(), alloca,
-                                          "state.init");
+        const auto slot = lookup_local(state_symbols[i]);
+        auto *value = builder_.CreateLoad(slot.type, slot.addr, "state.init");
         builder_.CreateStore(value, slot_address(state_block, i));
       }
     }
@@ -671,7 +670,7 @@ public:
       auto *loaded =
           builder_.CreateLoad(*ty, slot_address(state_arg, i), "state");
       builder_.CreateStore(loaded, alloca);
-      locals_.emplace(state_symbols[i], alloca);
+      bind_local(state_symbols[i], alloca);
     }
 
     const auto yield_total = count_yields(*fn.body);
@@ -744,11 +743,9 @@ public:
   /// captured variable's own alloca in the *enclosing* function) before the
   /// body runs — mirrors `compile`, just with a different argument-to-local
   /// binding prelude.
-  [[nodiscard]] auto
-  compile_lambda_body(const hir::hir_lambda &lambda,
-                      const std::vector<hir::symbol_id> &free_vars,
-                      const std::vector<llvm::Type *> &capture_types,
-                      llvm::Function *llvm_fn)
+  [[nodiscard]] auto compile_lambda_body(
+      const hir::hir_lambda &lambda, const std::vector<hir::hir_capture> &plan,
+      const std::vector<llvm::Type *> &capture_types, llvm::Function *llvm_fn)
       -> std::expected<void, codegen_error> {
     current_fn_ = llvm_fn;
     return_is_unit_ = types_.is_unit(lambda.return_type);
@@ -775,14 +772,29 @@ public:
       auto *alloca = create_local_alloca(*ty, param.name);
       builder_.CreateStore(llvm_fn->getArg(static_cast<unsigned>(i + 1)),
                            alloca);
-      locals_.emplace(param.symbol, alloca);
+      bind_local(param.symbol, alloca);
     }
-    for (size_t i = 0; i < free_vars.size(); ++i) {
-      auto *alloca = create_local_alloca(capture_types[i], "capture");
-      auto *loaded = builder_.CreateLoad(capture_types[i],
-                                         slot_address(env_arg, i), "capture");
-      builder_.CreateStore(loaded, alloca);
-      locals_.emplace(free_vars[i], alloca);
+    for (size_t i = 0; i < plan.size(); ++i) {
+      if (plan[i].mode == ast::capture_mode::by_value) {
+        // A by-value capture owns its copy: read the value out of the
+        // environment once, into a local slot of this frame.
+        auto *alloca = create_local_alloca(capture_types[i], "capture");
+        auto *loaded = builder_.CreateLoad(capture_types[i],
+                                           slot_address(env_arg, i), "capture");
+        builder_.CreateStore(loaded, alloca);
+        bind_local(plan[i].symbol, alloca);
+        continue;
+      }
+      // A by-reference capture: the environment slot holds the *address* of
+      // the enclosing frame's storage, not a copy of its contents. Binding
+      // that pointer as the symbol's slot makes every ordinary read and
+      // write in the body go through to the original — which is exactly
+      // what `&`/`&mut` promise, and why `local_slot` can't be narrowed to
+      // an `AllocaInst`.
+      auto *addr = builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
+                                       slot_address(env_arg, i), "capture.ref");
+      locals_.emplace(plan[i].symbol,
+                      local_slot{.addr = addr, .type = capture_types[i]});
     }
 
     return compile_body_and_finish(*lambda.body);
@@ -853,10 +865,29 @@ private:
     return tmp.CreateAlloca(ty, nullptr, name);
   }
 
-  [[nodiscard]] auto lookup_local(hir::symbol_id symbol) const
-      -> llvm::AllocaInst * {
+  /// Where a local lives, and what type lives there. Almost every local is
+  /// an `alloca` in this frame, but a by-reference capture's storage belongs
+  /// to the *enclosing* frame and reaches this one as a plain pointer loaded
+  /// out of the closure environment — so the address cannot be narrowed to
+  /// `llvm::AllocaInst *`, and the pointee type has to travel alongside it
+  /// rather than being recovered via `getAllocatedType`.
+  struct local_slot {
+    llvm::Value *addr = nullptr;
+    llvm::Type *type = nullptr;
+
+    [[nodiscard]] auto valid() const -> bool { return addr != nullptr; }
+  };
+
+  [[nodiscard]] auto lookup_local(hir::symbol_id symbol) const -> local_slot {
     const auto found = locals_.find(symbol);
-    return found == locals_.end() ? nullptr : found->second;
+    return found == locals_.end() ? local_slot{} : found->second;
+  }
+
+  /// Registers `alloca` as `symbol`'s storage. The common case: the local
+  /// lives in this frame, so its type is the alloca's own.
+  auto bind_local(hir::symbol_id symbol, llvm::AllocaInst *alloca) -> void {
+    locals_.emplace(
+        symbol, local_slot{.addr = alloca, .type = alloca->getAllocatedType()});
   }
 
   [[nodiscard]] auto numeric_kind_for(type_id id, source_span span)
@@ -1058,8 +1089,8 @@ private:
       return compile_literal(dynamic_cast<const hir::hir_literal &>(expr));
     case hir_node_kind::hir_local_ref: {
       const auto &ref = dynamic_cast<const hir::hir_local_ref &>(expr);
-      auto *alloca = lookup_local(ref.symbol);
-      if (alloca == nullptr) {
+      const auto slot = lookup_local(ref.symbol);
+      if (!slot.valid()) {
         // Try resolving against the module-level function table, just
         // like `compile_call` does for the callee position.
         const auto key = resolve_callee_key(ref);
@@ -1075,7 +1106,7 @@ private:
                 "value used outside of call position is not supported yet",
                 ref.name)});
       }
-      return builder_.CreateLoad(alloca->getAllocatedType(), alloca, ref.name);
+      return builder_.CreateLoad(slot.type, slot.addr, ref.name);
     }
     case hir_node_kind::hir_binary:
       return compile_binary(dynamic_cast<const hir::hir_binary &>(expr));
@@ -1677,7 +1708,7 @@ private:
     // time to a real `llvm::Function*` — the common case.
     if (call.callee->kind == hir_node_kind::hir_local_ref) {
       const auto &ref = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
-      if (lookup_local(ref.symbol) == nullptr) {
+      if (!lookup_local(ref.symbol).valid()) {
         // `intrinsic def` declarations never enter `functions_` (mirrors
         // `bytecode_compiler::compile_call` — `hir::lower_module` skips
         // them, there is no body to lower), so a call to a known intrinsic
@@ -1792,22 +1823,22 @@ private:
     // captures. Filtering to real locals keeps this env layout and the env
     // reads in `compile_lambda_body` in lock-step. (Mirrors the identical
     // filter in the bytecode backend's `compile_lambda_value`.)
-    auto free_vars = hir::free_variables(lambda);
-    std::erase_if(free_vars, [&](hir::symbol_id sym) -> bool {
-      return lookup_local(sym) == nullptr;
+    auto plan = hir::capture_plan(lambda);
+    std::erase_if(plan, [&](const hir::hir_capture &entry) -> bool {
+      return !lookup_local(entry.symbol).valid();
     });
 
     auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
     llvm::Value *env_ptr = nullptr;
     auto capture_types = std::vector<llvm::Type *>{};
-    if (free_vars.empty()) {
+    if (plan.empty()) {
       env_ptr = llvm::ConstantPointerNull::get(ptr_ty);
     } else {
-      auto *env_block = compile_heap_alloc(free_vars.size());
-      capture_types.reserve(free_vars.size());
-      for (size_t i = 0; i < free_vars.size(); ++i) {
-        auto *alloca = lookup_local(free_vars[i]);
-        if (alloca == nullptr) {
+      auto *env_block = compile_heap_alloc(plan.size());
+      capture_types.reserve(plan.size());
+      for (size_t i = 0; i < plan.size(); ++i) {
+        const auto slot = lookup_local(plan[i].symbol);
+        if (!slot.valid()) {
           return std::unexpected(codegen_error{
               .kind = codegen_error_kind::unsupported_construct,
               .span = lambda.span,
@@ -1815,10 +1846,15 @@ private:
                          "function's locals — capture analysis and codegen "
                          "have gotten out of sync"});
         }
-        auto *ty = alloca->getAllocatedType();
-        capture_types.push_back(ty);
-        auto *value = builder_.CreateLoad(ty, alloca, "capture");
-        builder_.CreateStore(value, slot_address(env_block, i));
+        // `capture_types[i]` is the *pointee* type either way; what differs
+        // is whether the environment slot holds the value or its address.
+        capture_types.push_back(slot.type);
+        if (plan[i].mode == ast::capture_mode::by_value) {
+          auto *value = builder_.CreateLoad(slot.type, slot.addr, "capture");
+          builder_.CreateStore(value, slot_address(env_block, i));
+        } else {
+          builder_.CreateStore(slot.addr, slot_address(env_block, i));
+        }
       }
       env_ptr = env_block;
     }
@@ -1851,7 +1887,7 @@ private:
         ctx_, types_, functions_, panic_fn_, alloc_fn_, list_reserve_slot_fn_,
         intrinsic_fns_, entry_module_name_, current_module_name_);
     auto compiled =
-        nested.compile_lambda_body(lambda, free_vars, capture_types, lambda_fn);
+        nested.compile_lambda_body(lambda, plan, capture_types, lambda_fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
     }
@@ -2163,8 +2199,8 @@ private:
       const auto &local = dynamic_cast<const hir::hir_local_ref &>(place);
       // Every local is already an `alloca`, so its address is the slot
       // itself — nothing to compute.
-      if (auto *slot = lookup_local(local.symbol); slot != nullptr) {
-        return slot;
+      if (const auto slot = lookup_local(local.symbol); slot.valid()) {
+        return slot.addr;
       }
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
@@ -2546,10 +2582,9 @@ private:
   [[nodiscard]] auto emit_generator_exhausted_return(source_span /*span*/)
       -> std::expected<void, codegen_error> {
     for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
-      auto *alloca = lookup_local(generator_state_layout_[i]);
-      if (alloca != nullptr) {
-        auto *loaded = builder_.CreateLoad(alloca->getAllocatedType(), alloca,
-                                           "state.sync");
+      const auto slot = lookup_local(generator_state_layout_[i]);
+      if (slot.valid()) {
+        auto *loaded = builder_.CreateLoad(slot.type, slot.addr, "state.sync");
         builder_.CreateStore(loaded, slot_address(generator_state_arg_, i));
       }
     }
@@ -3089,7 +3124,7 @@ private:
     }
     auto *subject_alloca = create_local_alloca(*subject_ty, "match.subject");
     builder_.CreateStore(*subject, subject_alloca);
-    locals_.emplace(match.subject_symbol, subject_alloca);
+    bind_local(match.subject_symbol, subject_alloca);
     const auto subject_type = std::optional<type_id>(match.subject->type);
 
     auto *merge_bb = llvm::BasicBlock::Create(ctx_, "match.end", current_fn_);
@@ -3317,10 +3352,10 @@ private:
       // Resync every generator-state symbol's current value back into the
       // state block immediately before suspending.
       for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
-        auto *alloca = lookup_local(generator_state_layout_[i]);
-        if (alloca != nullptr) {
-          auto *loaded = builder_.CreateLoad(alloca->getAllocatedType(), alloca,
-                                             "state.sync");
+        const auto slot = lookup_local(generator_state_layout_[i]);
+        if (slot.valid()) {
+          auto *loaded =
+              builder_.CreateLoad(slot.type, slot.addr, "state.sync");
           builder_.CreateStore(loaded, slot_address(generator_state_arg_, i));
         }
       }
@@ -3387,13 +3422,14 @@ private:
     // allocating fresh here would store the initializer's real value into
     // an alloca nothing ever reads, while every reference to the symbol
     // keeps resolving to the untouched (zero-initialized) preloaded one.
-    auto *existing = lookup_local(let.symbol);
-    auto *alloca =
-        existing != nullptr ? existing : create_local_alloca(*ty, let.name);
-    builder_.CreateStore(*value, alloca);
-    if (existing == nullptr) {
-      locals_.emplace(let.symbol, alloca);
+    const auto existing = lookup_local(let.symbol);
+    if (existing.valid()) {
+      builder_.CreateStore(*value, existing.addr);
+      return false;
     }
+    auto *alloca = create_local_alloca(*ty, let.name);
+    builder_.CreateStore(*value, alloca);
+    bind_local(let.symbol, alloca);
     return false;
   }
 
@@ -3500,8 +3536,8 @@ private:
     }
     const auto &target =
         dynamic_cast<const hir::hir_local_ref &>(*assign.target);
-    auto *alloca = lookup_local(target.symbol);
-    if (alloca == nullptr) {
+    const auto slot = lookup_local(target.symbol);
+    if (!slot.valid()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = assign.span,
@@ -3514,7 +3550,7 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      builder_.CreateStore(*value, alloca);
+      builder_.CreateStore(*value, slot.addr);
       return false;
     }
 
@@ -3526,13 +3562,12 @@ private:
     if (!rhs.has_value()) {
       return std::unexpected(rhs.error());
     }
-    auto *current =
-        builder_.CreateLoad(alloca->getAllocatedType(), alloca, target.name);
+    auto *current = builder_.CreateLoad(slot.type, slot.addr, target.name);
     auto new_value = compound_assign_value(assign, *kind, current, *rhs);
     if (!new_value.has_value()) {
       return std::unexpected(new_value.error());
     }
-    builder_.CreateStore(*new_value, alloca);
+    builder_.CreateStore(*new_value, slot.addr);
     return false;
   }
 
@@ -3738,7 +3773,7 @@ private:
     }
     auto *subject_alloca =
         create_local_alloca(*subject_ty, "while_let.subject");
-    locals_.emplace(loop.subject_symbol, subject_alloca);
+    bind_local(loop.subject_symbol, subject_alloca);
     const auto subject_type = std::optional<type_id>(loop.subject->type);
 
     auto *cond_bb =
@@ -3800,7 +3835,7 @@ private:
     }
     auto *subject_alloca = create_local_alloca(*subject_ty, "let_else.subject");
     builder_.CreateStore(*value, subject_alloca);
-    locals_.emplace(node.subject_symbol, subject_alloca);
+    bind_local(node.subject_symbol, subject_alloca);
     const auto subject_type = std::optional<type_id>(node.initializer->type);
 
     auto test = compile_pattern_test(*node.pattern, *value, subject_type);
@@ -3864,7 +3899,7 @@ private:
   llvm::IRBuilder<> builder_;
   llvm::Function *current_fn_ = nullptr;
   llvm::AllocaInst *alloca_marker_ = nullptr;
-  std::unordered_map<hir::symbol_id, llvm::AllocaInst *> locals_;
+  std::unordered_map<hir::symbol_id, local_slot> locals_;
   bool return_is_unit_ = false;
   llvm::Type *return_llvm_type_ = nullptr;
 

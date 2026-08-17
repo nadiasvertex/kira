@@ -1,0 +1,6 @@
+module capture_duplicate
+
+def run() -> int32:
+    let factor = 3
+    let scaled = [factor, factor] (x: int32) -> int32 => x * factor
+    return scaled(1)

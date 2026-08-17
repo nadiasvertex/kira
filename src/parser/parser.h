@@ -822,6 +822,11 @@ private:
   /// Returns whether the current `(` opens a lambda parameter list rather
   /// than a tuple or a grouped expression.
   [[nodiscard]] auto at_lambda_param_list() const noexcept -> bool;
+  /// Returns whether the current `[` opens a lambda's explicit capture list
+  /// rather than an array literal.
+  [[nodiscard]] auto at_capture_list() const noexcept -> bool;
+  /// Parses a lambda's explicit capture list, the `[` already current.
+  [[nodiscard]] auto parse_capture_list() -> std::vector<ast::lambda_capture>;
   /// Parses `match` in expression position.
   [[nodiscard]] auto parse_match_expr() -> ast::ptr<ast::match_expr>;
   /// Parses `if` in expression position.

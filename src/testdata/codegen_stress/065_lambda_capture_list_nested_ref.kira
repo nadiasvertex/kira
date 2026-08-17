@@ -1,0 +1,24 @@
+module codegen_stress.lambda_capture_list_nested_ref
+
+# A by-reference capture passing through an enclosing lambda's list. This is
+# what forces the bytecode VM to cell-promote a local *inside a lambda body*,
+# not just inside a top-level function, and what forces the outer lambda's
+# environment slot to carry the cell pointer rather than a copy.
+
+def apply(f: fn(int32) -> int32, x: int32) -> int32:
+    return f(x)
+
+def main() -> int64:
+    var total = 0
+    let outer = [&mut total] (x: int32) -> int32 =>:
+        let inner = [&mut total] (y: int32) -> int32 =>:
+            total = total + y
+            return total
+        let a = inner(x)
+        let b = inner(x)
+        return a + b
+    # inner(3) twice: total 3 then 6, returning 3 + 6 == 9.
+    let got = apply(outer, 3)
+    return (got + total) as int64
+
+# expect: 15

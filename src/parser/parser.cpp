@@ -3864,8 +3864,12 @@ auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
     }
     return parse_paren_expr();
 
-  // Array literal or fill.
+  // Array literal or fill -- unless the brackets turn out to be a lambda's
+  // capture list, which only what follows the `]` reveals.
   case token_kind::lbracket:
+    if (at_capture_list()) {
+      return parse_lambda_expr();
+    }
     return parse_bracket_expr();
 
   // Struct literal.
@@ -4511,6 +4515,131 @@ auto parser::at_lambda_param_list() const noexcept -> bool {
   return false;
 }
 
+auto parser::at_capture_list() const noexcept -> bool {
+  if (!allow_lambda_expr_ || !at(token_kind::lbracket)) {
+    return false;
+  }
+
+  // Same bounded-lookahead trick as `at_lambda_param_list`: scan to the `]`
+  // that closes this `[`, counting every bracket flavor so a nested group
+  // can't end the scan early, then let what follows decide. A capture list
+  // is always followed by the lambda's parameters, which are either a bare
+  // ident (then `=>` or a `->` return type) or a parenthesized list that
+  // `at_lambda_param_list` recognizes. Nothing else can follow a bracketed
+  // *expression* in either of those shapes, so the scan is decisive and no
+  // backtracking is needed.
+  auto depth = 0;
+  auto after = uint32_t{0};
+  for (uint32_t offset = 0; !peek_at(offset).is(token_kind::eof); ++offset) {
+    switch (peek_at(offset).kind) {
+    case token_kind::lparen:
+    case token_kind::lbracket:
+    case token_kind::lbrace:
+      ++depth;
+      break;
+
+    case token_kind::rparen:
+    case token_kind::rbracket:
+    case token_kind::rbrace:
+      --depth;
+      if (depth == 0) {
+        after = offset + 1;
+      }
+      break;
+
+    default:
+      break;
+    }
+    if (after != 0) {
+      break;
+    }
+  }
+  if (after == 0) {
+    // Unbalanced: let the ordinary array path report it.
+    return false;
+  }
+
+  if (peek_at(after).is(token_kind::ident)) {
+    return peek_at(after + 1).is(token_kind::fat_arrow) ||
+           peek_at(after + 1).is(token_kind::arrow);
+  }
+  if (!peek_at(after).is(token_kind::lparen)) {
+    return false;
+  }
+
+  // Re-run the paren scan from `after`, the same rule `at_lambda_param_list`
+  // applies at the cursor: the `(...)` is a lambda head iff `=>` or `->`
+  // follows it.
+  auto paren_depth = 0;
+  for (auto offset = after; !peek_at(offset).is(token_kind::eof); ++offset) {
+    switch (peek_at(offset).kind) {
+    case token_kind::lparen:
+    case token_kind::lbracket:
+    case token_kind::lbrace:
+      ++paren_depth;
+      break;
+
+    case token_kind::rparen:
+    case token_kind::rbracket:
+    case token_kind::rbrace:
+      --paren_depth;
+      if (paren_depth == 0) {
+        return peek_at(offset + 1).is(token_kind::fat_arrow) ||
+               peek_at(offset + 1).is(token_kind::arrow);
+      }
+      break;
+
+    default:
+      break;
+    }
+  }
+  return false;
+}
+
+auto parser::parse_capture_list() -> std::vector<ast::lambda_capture> {
+  auto captures = std::vector<ast::lambda_capture>{};
+  advance(); // consume `[`
+
+  while (!at(token_kind::rbracket) && !at_eof()) {
+    auto item = ast::lambda_capture{};
+    item.span = peek().span;
+
+    if (match(token_kind::amp)) {
+      item.mode = match(token_kind::kw_mut) ? ast::capture_mode::by_mut_ref
+                                            : ast::capture_mode::by_ref;
+    }
+
+    if (at(token_kind::ident)) {
+      const auto name_tok = advance();
+      item.name = std::string(name_tok.text);
+      item.span.extend_to(name_tok.span);
+      captures.push_back(std::move(item));
+    } else {
+      emit(diagnostic(diagnostic_level::error,
+                      "expected a variable name in this capture list", file_id_)
+               .with_label(peek().span, "expected a name here")
+               .with_help(
+                   "A capture list names the outer variables the lambda may "
+                   "use: `name` to capture by value, `&name` to capture by "
+                   "reference, or `&mut name` to capture it mutably. For "
+                   "example: `[factor] x => x * factor`."));
+      // Resynchronize inside the list rather than abandoning the lambda: the
+      // parameters and body after the `]` are still worth parsing.
+      while (!at_any(token_kind::comma, token_kind::rbracket, token_kind::eof,
+                     token_kind::newline)) {
+        advance();
+      }
+    }
+
+    if (!match(token_kind::comma)) {
+      break;
+    }
+  }
+
+  expect(token_kind::rbracket);
+  return captures;
+}
+
 auto parser::parse_lambda_expr() -> ast::ptr<ast::expr> {
   auto lambda = ast::make<ast::lambda_expr>();
   auto start = peek().span;
@@ -4518,6 +4647,15 @@ auto parser::parse_lambda_expr() -> ast::ptr<ast::expr> {
   // Optional `pure` and `move` prefixes.
   lambda->is_pure = match(token_kind::kw_pure);
   lambda->is_move = match(token_kind::kw_move);
+
+  // Optional explicit capture list. Past the prefixes a `[` can only open
+  // one, so no disambiguation is needed here — the callers that dispatch on
+  // a leading `[` do that work in `at_capture_list`.
+  if (at(token_kind::lbracket)) {
+    const auto list_start = peek().span;
+    lambda->captures = parse_capture_list();
+    lambda->captures_span = list_start.merge(previous_span());
+  }
 
   // Lambda params: either a single ident or `(param_list)`.
   if (at(token_kind::ident) && peek_at(1).is(token_kind::fat_arrow)) {

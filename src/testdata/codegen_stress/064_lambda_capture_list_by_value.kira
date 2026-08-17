@@ -1,0 +1,18 @@
+module codegen_stress.lambda_capture_list_by_value
+
+# The other half of the mode contract: a bare `n` entry captures by *value*,
+# so a write inside the lambda must NOT reach the enclosing binding. Without
+# a stated expectation a backend that boxed everything would pass a
+# backend-agreement check while quietly making by-value captures aliasing.
+
+def main() -> int64:
+    var n = 7
+    let bump = [n] (x: int32) -> int32 =>:
+        n = n + x
+        return n
+    let inside = bump(100)
+    # `inside` saw the lambda's own copy: 7 + 100 == 107.
+    # `n` outside is untouched, still 7.
+    return (inside + n) as int64
+
+# expect: 114

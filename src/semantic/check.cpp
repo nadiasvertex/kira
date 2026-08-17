@@ -1248,6 +1248,23 @@ private:
 
   // --- current function context -------------------------------------------
   std::vector<std::unordered_map<std::string, value_binding>> scopes_;
+  /// One entry per lambda currently being checked, innermost last. `scopes_`
+  /// is a flat stack with no notion of a function boundary, so this is what
+  /// records where each lambda began and, when it declared an explicit
+  /// capture list, which outer names it is allowed to reach across that
+  /// boundary. A lambda with no list pushes an entry with `allowed` unset,
+  /// so nested lambdas still compose correctly.
+  struct capture_barrier {
+    size_t scope_floor = 0;
+    const ast::lambda_expr *lambda = nullptr;
+    std::optional<std::unordered_map<std::string, ast::capture_mode>> allowed;
+    /// Listed names the body actually read, filled in as it is checked.
+    std::unordered_set<std::string> used;
+    /// Listed names already diagnosed, so the "captured but never used"
+    /// warning doesn't pile a second complaint onto a broken entry.
+    std::unordered_set<std::string> invalid;
+  };
+  std::vector<capture_barrier> capture_barriers_;
   std::vector<std::unordered_map<std::string, type_id>> type_params_;
   type_id self_type_ = k_unknown_type;
   /// Associated-type names in scope for `self.<name>` references, valid
@@ -1540,14 +1557,130 @@ private:
   }
 
   /// Looks up `name` from the innermost scope outward, returning the first
-  /// (most-shadowing) match, or `nullptr` if unbound.
+  /// (most-shadowing) match, or `nullptr` if unbound — or if reaching that
+  /// match would cross a lambda whose explicit capture list does not name
+  /// it, which makes the name genuinely unreachable from here.
   auto lookup_value(std::string_view name) -> const value_binding * {
-    for (auto &scope : std::views::reverse(scopes_)) {
-      if (const auto it = scope.find(std::string(name)); it != scope.end()) {
-        return &it->second;
+    const auto found = find_value_in_scopes(name);
+    if (found.blocked_by != nullptr) {
+      return nullptr;
+    }
+    if (found.binding != nullptr) {
+      note_capture_use(name, found.depth);
+    }
+    return found.binding;
+  }
+
+  /// Records that `name`, bound at scope index `depth`, was actually read
+  /// from inside every lambda whose boundary the reference crossed. What is
+  /// left unmarked when the body finishes is a capture the body never used,
+  /// which is worth telling the programmer about.
+  auto note_capture_use(std::string_view name, size_t depth) -> void {
+    for (auto &barrier : capture_barriers_) {
+      if (barrier.scope_floor > depth && barrier.allowed.has_value()) {
+        barrier.used.emplace(name);
       }
     }
-    return nullptr;
+  }
+
+  /// The result of a scope-stack walk: the binding that was found (if any),
+  /// and the innermost capture list that stands between the reference and
+  /// that binding (if any). A non-null `blocked_by` with a non-null
+  /// `binding` is the interesting case — the name exists in an enclosing
+  /// function, but this lambda declared it out of reach.
+  struct scope_lookup {
+    const value_binding *binding = nullptr;
+    const capture_barrier *blocked_by = nullptr;
+    size_t depth = 0; ///< Index in `scopes_` the binding was found at.
+  };
+
+  auto find_value_in_scopes(std::string_view name) -> scope_lookup {
+    const auto key = std::string(name);
+    for (size_t depth = scopes_.size(); depth > 0; --depth) {
+      const auto &scope = scopes_[depth - 1];
+      const auto it = scope.find(key);
+      if (it == scope.end()) {
+        continue;
+      }
+      // The match sits at scope index `depth - 1`; every barrier opened
+      // above that index is a lambda boundary this reference crosses.
+      // Report the innermost one that refuses the name, so the diagnostic
+      // points at the capture list the programmer most likely meant to edit.
+      for (const auto &barrier : capture_barriers_) {
+        if (barrier.scope_floor <= depth - 1 || !barrier.allowed.has_value()) {
+          continue;
+        }
+        if (!barrier.allowed->contains(key)) {
+          return scope_lookup{.binding = &it->second,
+                              .blocked_by = &barrier,
+                              .depth = depth - 1};
+        }
+      }
+      return scope_lookup{
+          .binding = &it->second, .blocked_by = nullptr, .depth = depth - 1};
+    }
+    return scope_lookup{};
+  }
+
+  /// The capture list that puts `name` out of reach, or `nullptr`. Used to
+  /// replace the generic "undefined name" diagnostic with one that explains
+  /// the real cause.
+  auto capture_barrier_blocking(std::string_view name)
+      -> const capture_barrier * {
+    return find_value_in_scopes(name).blocked_by;
+  }
+
+  /// Reports a reference to an outer name a capture list left out. Separate
+  /// from `emit_undefined_name` because the cause and the fix are different:
+  /// the name is perfectly well defined, it is just not reachable from
+  /// inside this lambda.
+  auto emit_capture_not_listed(source_span span, std::string_view name,
+                               const capture_barrier &barrier) -> void {
+    if (!reported_undefined_.insert(std::format("capture:{}", name)).second) {
+      return;
+    }
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("`{}` is not in this lambda's capture list", name),
+        file_id_);
+    diag.with_label(span, std::format("`{}` is not reachable here", name));
+    if (barrier.lambda != nullptr) {
+      diag.with_secondary_label(
+          barrier.lambda->captures_span,
+          barrier.allowed->empty()
+              ? "this lambda captures nothing, so no outer name is in scope"
+              : std::format(
+                    "this capture list is the complete set of outer names "
+                    "this lambda can reach: {}",
+                    format_capture_names(*barrier.allowed)));
+    }
+    diag.with_help(std::format(
+        "Add `{}` to the capture list, or drop the list entirely to capture "
+        "every outer name the body uses. Module-level functions and `static` "
+        "bindings are always in scope and never need listing.",
+        name));
+    emit_diag(diag);
+    mark_error();
+  }
+
+  static auto format_capture_names(
+      const std::unordered_map<std::string, ast::capture_mode> &allowed)
+      -> std::string {
+    auto names = std::vector<std::string>{};
+    names.reserve(allowed.size());
+    for (const auto &[key, mode] : allowed) {
+      names.push_back(std::format("`{}`", key));
+      (void)mode;
+    }
+    std::ranges::sort(names);
+    auto out = std::string{};
+    for (const auto &entry : names) {
+      if (!out.empty()) {
+        out += ", ";
+      }
+      out += entry;
+    }
+    return out;
   }
 
   /// Opens a new generic-parameter scope, interning each named parameter as
@@ -6121,6 +6254,14 @@ private:
       }
       return binding->type;
     }
+    // Checked before every module-level fallback below: a local an enclosing
+    // capture list left out must be reported as *that*, not silently
+    // re-resolved to a same-named module item or fluffed into `unknown` by
+    // one of the resilience paths further down.
+    if (const auto *barrier = capture_barrier_blocking(name)) {
+      emit_capture_not_listed(ident.span, name, *barrier);
+      return k_error_type;
+    }
     if (name == "self" && self_type_ != k_unknown_type) {
       return self_type_;
     }
@@ -10006,6 +10147,15 @@ private:
       return k_error_type;
     }
 
+    // Same precedence as in `infer_ident`: a callee an enclosing capture
+    // list left out is reported as that rather than resolving to a
+    // same-named module-level function.
+    if (const auto *barrier = capture_barrier_blocking(name)) {
+      emit_capture_not_listed(ident.span, name, *barrier);
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+
     if (module_ != nullptr) {
       if (const auto it = module_->functions.find(name);
           it != module_->functions.end()) {
@@ -11224,6 +11374,216 @@ private:
   /// against the body's inferred type. Always yields a concrete `fn(...)`
   /// type — Kira monomorphizes closures, so there is no separate closure
   /// type distinct from the function-value type it's assigned/passed as.
+  /// The set of names a lambda's body may reach across the lambda boundary,
+  /// or `nullopt` when it declared no capture list (capture implicitly, the
+  /// pre-existing behavior). Note that `[]` yields an *empty set*, not
+  /// `nullopt`: "capture nothing" and "capture everything used" are opposite
+  /// answers and must not collapse.
+  static auto capture_allow_set(const ast::lambda_expr &lambda)
+      -> std::optional<std::unordered_map<std::string, ast::capture_mode>> {
+    if (!lambda.captures.has_value()) {
+      return std::nullopt;
+    }
+    auto allowed = std::unordered_map<std::string, ast::capture_mode>{};
+    for (const auto &entry : *lambda.captures) {
+      allowed.insert_or_assign(entry.name, entry.mode);
+    }
+    return allowed;
+  }
+
+  /// Whether `name` names a function or `static` this file can already see
+  /// without capturing it — a module member, an import, or a prelude name.
+  auto is_module_level_value(std::string_view name) -> bool {
+    const auto key = std::string(name);
+    if (module_ != nullptr &&
+        (module_->functions.contains(key) || module_->statics.contains(key))) {
+      return true;
+    }
+    if (find_import(name) != nullptr) {
+      return true;
+    }
+    for (const auto *source : wildcard_import_sources()) {
+      if (source->functions.contains(key) || source->statics.contains(key)) {
+        return true;
+      }
+    }
+    return is_prelude_value_name(name);
+  }
+
+  /// Warns about a listed name the body never read. Runs after the body has
+  /// been checked, while the barrier is still on the stack.
+  auto warn_unused_captures(const ast::lambda_expr &lambda,
+                            const capture_barrier &barrier) -> void {
+    if (!lambda.captures.has_value()) {
+      return;
+    }
+    for (const auto &entry : *lambda.captures) {
+      if (barrier.used.contains(entry.name) ||
+          barrier.invalid.contains(entry.name)) {
+        continue;
+      }
+      auto diag = diagnostic(
+          diagnostic_level::warning,
+          std::format("`{}` is captured but never used", entry.name), file_id_);
+      diag.with_label(entry.span, "this capture has no effect");
+      diag.with_help(std::format(
+          "The lambda's body never reads `{}`, so listing it only widens "
+          "what the lambda can reach. Remove it from the capture list.",
+          entry.name));
+      emit_diag(diag);
+    }
+  }
+
+  /// Validates a lambda's explicit capture list against the enclosing scope.
+  /// Must run before the lambda's own scope and barrier are pushed, so each
+  /// entry resolves where the programmer wrote it.
+  auto check_capture_list(const ast::lambda_expr &lambda)
+      -> std::unordered_set<std::string> {
+    auto invalid = std::unordered_set<std::string>{};
+    if (!lambda.captures.has_value()) {
+      return invalid;
+    }
+
+    auto seen = std::unordered_map<std::string, source_span>{};
+    for (const auto &entry : *lambda.captures) {
+      if (const auto it = seen.find(entry.name); it != seen.end()) {
+        auto diag = diagnostic(
+            diagnostic_level::error,
+            std::format("`{}` is captured twice in this list", entry.name),
+            file_id_);
+        diag.with_label(entry.span, "captured again here");
+        diag.with_secondary_label(it->second, "first captured here");
+        diag.with_help("Each variable may appear at most once in a capture "
+                       "list; a second entry cannot mean anything the first "
+                       "one didn't already say.");
+        emit_diag(diag);
+        mark_error();
+        invalid.insert(entry.name);
+        continue;
+      }
+      seen.emplace(entry.name, entry.span);
+
+      const auto found = find_value_in_scopes(entry.name);
+      if (found.binding == nullptr) {
+        // A module-level name in a capture list is a misunderstanding of
+        // what a list is for, not a typo — say which one it is.
+        if (is_module_level_value(entry.name)) {
+          auto diag = diagnostic(
+              diagnostic_level::error,
+              std::format("`{}` does not need to be captured", entry.name),
+              file_id_);
+          diag.with_label(entry.span, "this is a module-level item");
+          diag.with_help(std::format(
+              "A capture list controls which *local* variables cross into "
+              "the lambda. `{}` is declared at module level, so it is in "
+              "scope inside the lambda whether it is listed or not — remove "
+              "it from the list.",
+              entry.name));
+          emit_diag(diag);
+          mark_error();
+          invalid.insert(entry.name);
+          continue;
+        }
+        auto diag = diagnostic(diagnostic_level::error,
+                               std::format("cannot capture `{}`", entry.name),
+                               file_id_);
+        diag.with_label(entry.span,
+                        "no local variable with this name is in scope here");
+        if (const auto suggestion =
+                best_suggestion(entry.name, value_name_candidates())) {
+          diag.with_help(std::format("did you mean `{}`?", *suggestion));
+        } else {
+          diag.with_help(
+              "A capture list names local variables from the enclosing "
+              "scope. Module-level functions and `static` bindings are "
+              "always in scope and are never captured.");
+        }
+        emit_diag(diag);
+        mark_error();
+        invalid.insert(entry.name);
+        continue;
+      }
+      if (found.blocked_by != nullptr) {
+        // The name exists, but an enclosing lambda already put it out of
+        // reach — capturing it here would reach through a boundary that
+        // refused it.
+        emit_capture_not_listed(entry.span, entry.name, *found.blocked_by);
+        invalid.insert(entry.name);
+        continue;
+      }
+
+      // Naming an outer local in *this* list is itself a use of it as far as
+      // any enclosing capture list is concerned: the value has to reach here
+      // before it can reach further in.
+      note_capture_use(entry.name, found.depth);
+
+      // Capturing by reference through an enclosing lambda that captured the
+      // same name *by value* would write into that intermediate copy, not
+      // into the original. The by-value copy is where the chain breaks, so
+      // point at it rather than letting the write silently go nowhere.
+      if (entry.mode != ast::capture_mode::by_value) {
+        for (const auto &barrier : capture_barriers_) {
+          if (barrier.scope_floor <= found.depth ||
+              !barrier.allowed.has_value()) {
+            continue;
+          }
+          const auto outer = barrier.allowed->find(entry.name);
+          if (outer == barrier.allowed->end() ||
+              outer->second != ast::capture_mode::by_value) {
+            continue;
+          }
+          auto diag = diagnostic(
+              diagnostic_level::error,
+              std::format("cannot capture `{}` by reference through an "
+                          "enclosing by-value capture",
+                          entry.name),
+              file_id_);
+          diag.with_label(
+              entry.span,
+              std::format("this reaches `{}` by reference", entry.name));
+          if (barrier.lambda != nullptr) {
+            diag.with_secondary_label(
+                barrier.lambda->captures_span,
+                std::format("but this enclosing lambda captured `{}` by "
+                            "value, so only its own copy is reachable here",
+                            entry.name));
+          }
+          diag.with_help(std::format(
+              "Write `&{0}` (or `&mut {0}`) in the enclosing lambda's capture "
+              "list too, so the reference reaches the original binding rather "
+              "than a copy of it.",
+              entry.name));
+          emit_diag(diag);
+          mark_error();
+          invalid.insert(entry.name);
+          break;
+        }
+      }
+
+      if (entry.mode == ast::capture_mode::by_mut_ref &&
+          found.binding->origin != binding_origin::var_binding &&
+          found.binding->origin != binding_origin::mut_binding) {
+        auto diag = diagnostic(
+            diagnostic_level::error,
+            std::format("cannot capture `{}` by mutable reference", entry.name),
+            file_id_);
+        diag.with_label(entry.span, std::format("`{}` is not declared mutable",
+                                                entry.name));
+        diag.with_secondary_label(found.binding->span, "declared here");
+        diag.with_help(std::format(
+            "`&mut {0}` lets the lambda write through to the original "
+            "binding, so `{0}` has to be mutable. Declare it with `var` "
+            "instead of `let`, or capture it by value as `{0}` or by shared "
+            "reference as `&{0}`.",
+            entry.name));
+        emit_diag(diag);
+        mark_error();
+        invalid.insert(entry.name);
+      }
+    }
+    return invalid;
+  }
+
   auto infer_lambda(const ast::lambda_expr &lambda, type_id expected)
       -> type_id {
     const auto &expected_entry = types_.entry(strip_refs(expected));
@@ -11233,7 +11593,17 @@ private:
     // `break` could reach.
     const auto saved_loop_depth = std::exchange(loop_depth_, 0U);
 
+    // Validated *before* the barrier and the body scope go up, so each entry
+    // resolves against the enclosing scope the way the programmer wrote it.
+    auto invalid_captures = check_capture_list(lambda);
+
     push_scope();
+    capture_barriers_.push_back(capture_barrier{
+        .scope_floor = scopes_.size() - 1,
+        .lambda = &lambda,
+        .allowed = capture_allow_set(lambda),
+        .invalid = std::move(invalid_captures),
+    });
     auto param_types = std::vector<type_id>{};
     for (size_t i = 0; i < lambda.params.size(); ++i) {
       const auto &param = lambda.params[i];
@@ -11277,6 +11647,20 @@ private:
             ? k_unknown_type
             : declared_result;
 
+    // A `return` inside a lambda body returns from the *lambda*, so it must
+    // be checked against the lambda's own result, not the enclosing
+    // function's. Without this a block-bodied lambda in an `int64`-returning
+    // function could not `return` an `int32` even when its own declared
+    // result said `int32`. (`lower_lambda` already scopes the enclosing
+    // function's postconditions out for the same reason.)
+    const auto saved_return = std::exchange(return_type_, declared_result);
+    const auto saved_annotated =
+        std::exchange(return_annotated_, declared_result != k_unknown_type);
+    const auto restore_return = [&] -> void {
+      return_type_ = saved_return;
+      return_annotated_ = saved_annotated;
+    };
+
     auto body_result = k_unknown_type;
     if (lambda.body_expr != nullptr) {
       body_result = infer_expr(*lambda.body_expr, body_expectation);
@@ -11287,6 +11671,9 @@ private:
     } else {
       body_result = check_body_nodes(lambda.body_stmts, body_expectation);
     }
+    restore_return();
+    warn_unused_captures(lambda, capture_barriers_.back());
+    capture_barriers_.pop_back();
     pop_scope();
     loop_depth_ = saved_loop_depth;
 
@@ -13490,6 +13877,10 @@ private:
         });
     auto saved_scopes = std::move(scopes_);
     scopes_.clear();
+    // Barriers index into `scopes_`, so they have to travel with it: a stale
+    // `scope_floor` left behind here would refuse names in the fresh stack.
+    auto saved_barriers = std::move(capture_barriers_);
+    capture_barriers_.clear();
     push_scope();
     auto saved_reported = std::move(reported_undefined_);
     reported_undefined_.clear();
@@ -13784,6 +14175,7 @@ private:
     reported_undefined_ = std::move(saved_reported);
     facts_ = std::move(saved_facts);
     scopes_ = std::move(saved_scopes);
+    capture_barriers_ = std::move(saved_barriers);
     in_const_generic_template_ = saved_template;
     in_type_generic_template_ = saved_type_template;
     pop_type_params();

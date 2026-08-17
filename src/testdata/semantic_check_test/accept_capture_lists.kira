@@ -1,0 +1,26 @@
+module capture_lists
+
+# A capture list restricts what a lambda may reach, but module-level items
+# stay in scope without being listed and never need capturing.
+def bump(n: int32) -> int32:
+    return n + 1
+
+def run() -> int32:
+    let factor = 3
+    var total = 0
+    let scaled = [factor] (x: int32) -> int32 => x * factor
+    let counted = [&mut total] (x: int32) -> int32 =>:
+        total = total + x
+        return total
+    let pure_double = [] (x: int32) -> int32 => x * 2
+    let with_global = [factor] (x: int32) -> int32 => bump(x) + factor
+    let borrowed = [&factor] (x: int32) -> int32 => x + factor
+    # A by-reference capture may pass through an enclosing by-reference one.
+    let nested = [&mut total] (x: int32) -> int32 =>:
+        let inner = [&mut total] (y: int32) -> int32 =>:
+            total = total + y
+            return total
+        return x
+    let a = scaled(1) + counted(2) + pure_double(3)
+    let b = with_global(4) + borrowed(5) + nested(6)
+    return a + b

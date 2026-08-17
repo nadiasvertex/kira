@@ -1,0 +1,9 @@
+module capture_module_level
+
+def bump(n: int32) -> int32:
+    return n + 1
+
+def run() -> int32:
+    # `bump` is module-level: always in scope, never captured.
+    let apply = [bump] (x: int32) -> int32 => bump(x)
+    return apply(1)

@@ -1810,6 +1810,101 @@ auto test_parser_accepts_lambda_result_and_paren_params() -> void {
          "expected `(3 + 4) * 2` to stay a grouped expression");
 }
 
+auto test_parser_accepts_lambda_capture_lists() -> void {
+  auto parsed =
+      parse_source("module sample\n"
+                   "def run():\n"
+                   "  let a = [n] x => x + n\n"
+                   "  let b = [] x => x * 2\n"
+                   "  let c = [&p, &mut q,] x => x\n"
+                   "  let d = pure move [n] (x: int32) -> int32 => x\n"
+                   "  let e = [n] (x, y) => x + y + n\n"
+                   "  let f = x => x\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *run_func = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected run function declaration");
+
+  const auto lambda_at = [&](size_t index) -> kira::ast::lambda_expr * {
+    auto *let_stmt = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[index].get(), kira::ast::node_kind::let_stmt,
+        "expected a let statement");
+    return expect_node<kira::ast::lambda_expr>(
+        let_stmt->initializer.get(), kira::ast::node_kind::lambda_expr,
+        "expected the initializer to parse as a lambda");
+  };
+
+  auto *single = lambda_at(0);
+  expect(single->captures.has_value(), "expected `[n] x =>` to carry a list");
+  expect(single->captures->size() == 1, "expected one capture entry");
+  expect((*single->captures)[0].name == "n", "expected the entry to name `n`");
+  expect((*single->captures)[0].mode == kira::ast::capture_mode::by_value,
+         "expected a bare name to capture by value");
+
+  // `[]` (capture nothing) and no list at all (capture implicitly) are
+  // opposite ends of the spectrum, so they must stay distinguishable.
+  auto *empty = lambda_at(1);
+  expect(empty->captures.has_value() && empty->captures->empty(),
+         "expected `[]` to parse as an empty-but-present capture list");
+  expect(!lambda_at(5)->captures.has_value(),
+         "expected a lambda with no list to leave `captures` unset");
+
+  auto *modes = lambda_at(2);
+  expect(modes->captures.has_value() && modes->captures->size() == 2,
+         "expected two entries, the trailing comma tolerated");
+  expect((*modes->captures)[0].mode == kira::ast::capture_mode::by_ref,
+         "expected `&p` to capture by reference");
+  expect((*modes->captures)[1].mode == kira::ast::capture_mode::by_mut_ref,
+         "expected `&mut q` to capture by mutable reference");
+
+  auto *prefixed = lambda_at(3);
+  expect(prefixed->is_pure && prefixed->is_move,
+         "expected `pure move` to survive in front of a capture list");
+  expect(prefixed->captures.has_value(),
+         "expected the list after `pure move` to be recognized");
+  expect(prefixed->return_type != nullptr,
+         "expected the declared result to survive a capture list");
+
+  expect(lambda_at(4)->params.size() == 2,
+         "expected `[n] (x, y) =>` to parse as two params, not a tuple");
+}
+
+auto test_parser_keeps_array_literals_out_of_the_capture_path() -> void {
+  // The `[`-dispatch change is the whole risk of capture lists: every one of
+  // these has to stay an array, an index, or a `for` iterable.
+  auto parsed = parse_source("module sample\n"
+                             "def run():\n"
+                             "  let a = [1, 2, 3]\n"
+                             "  let b = [0; 4]\n"
+                             "  let c = []\n"
+                             "  let d = a[0]\n"
+                             "  let e = [a][0]\n"
+                             "  for v in [1, 2, 3]:\n"
+                             "    let q = v\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *run_func = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected run function declaration");
+
+  for (size_t index = 0; index < 3; ++index) {
+    auto *let_stmt = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[index].get(), kira::ast::node_kind::let_stmt,
+        "expected a let statement");
+    expect(let_stmt->initializer->kind == kira::ast::node_kind::array_expr,
+           "expected a bracketed literal to stay an array expression");
+  }
+
+  for (size_t index = 3; index < 5; ++index) {
+    auto *let_stmt = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[index].get(), kira::ast::node_kind::let_stmt,
+        "expected a let statement");
+    expect(let_stmt->initializer->kind == kira::ast::node_kind::index_expr,
+           "expected a bracketed index to stay an index expression");
+  }
+}
+
 struct named_test {
   const char *name;
   void (*fn)();
@@ -1818,7 +1913,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 37> tests = {{
+  const std::array<named_test, 39> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "doc_comments", .fn = test_parser_captures_doc_comments},
@@ -1883,6 +1978,10 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_nested_functor_instantiation},
       {.name = "lambda_result_and_paren_params",
        .fn = test_parser_accepts_lambda_result_and_paren_params},
+      {.name = "lambda_capture_lists",
+       .fn = test_parser_accepts_lambda_capture_lists},
+      {.name = "array_literals_stay_arrays",
+       .fn = test_parser_keeps_array_literals_out_of_the_capture_path},
       {.name = "static_def_in_member_blocks",
        .fn = test_parser_accepts_static_def_in_member_blocks},
       {.name = "static_bindings_stay_bindings",

@@ -1,0 +1,7 @@
+module capture_mut_of_let
+
+def run() -> int32:
+    let factor = 3
+    # `&mut` writes through to the original, so the original must be mutable.
+    let scaled = [&mut factor] (x: int32) -> int32 => x * factor
+    return scaled(1)

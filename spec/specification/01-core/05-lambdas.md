@@ -33,7 +33,8 @@ let offset = 10
 let scaled = numbers.map([factor] x => x * factor)   # `offset` is not in scope here
 
 var total = 0
-let accumulate = [&mut total] x =>: total = total + x
+let accumulate = [&mut total] x =>:
+    total = total + x
 
 let pure_double = [] x => x * 2   # no outer state reachable
 ```
@@ -63,7 +64,8 @@ A parameter's type, when omitted, is inferred the same way an unannotated functi
 ## Implementation status
 
 - Lambda expressions, both single-expression and multi-line block form, are implemented and exercised throughout the semantic and codegen stress corpora.
-- Capture lists are design-only: `capture_list` is not in the parser's grammar today, and no restriction of implicit whole-scope capture exists in `src/hir/captures.cpp`. See [Closures and Capture](../02-intermediate/16-closures-and-capture.md) for the related, also-unenforced, `move`-keyword status.
+- Explicit capture lists are implemented end to end. All three entry forms parse (`parser.cpp`'s `parse_capture_list`, reached from a leading `[` via the `at_capture_list` lookahead), the restriction is enforced by the checker (a reference to an outer local not in the list is rejected with a diagnostic naming the list), and both modes lower on both backends — see [Closures and Capture](../02-intermediate/16-closures-and-capture.md) for the mode semantics and the remaining `move` gap.
+- One caveat on the multi-line form: `params =>:` requires the block to start on the *next* line, indented. The single-line spelling `x =>: total = total + x` used in an example above does not parse, and never did; write it as a `=>:` followed by an indented block.
 
 ## See also
 

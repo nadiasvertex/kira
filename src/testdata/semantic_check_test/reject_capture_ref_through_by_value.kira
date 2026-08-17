@@ -1,0 +1,12 @@
+module capture_ref_through_value
+
+def run() -> int32:
+    var total = 0
+    # The outer lambda took a *copy* of `total`, so the inner `&mut` could
+    # only ever write into that copy.
+    let outer = [total] (x: int32) -> int32 =>:
+        let inner = [&mut total] (y: int32) -> int32 =>:
+            total = total + y
+            return total
+        return x + total
+    return outer(1)

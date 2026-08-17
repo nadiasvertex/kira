@@ -1,0 +1,7 @@
+module capture_empty
+
+def run() -> int32:
+    let factor = 3
+    # `[]` captures nothing, so even a name the body plainly uses is out.
+    let scaled = [] (x: int32) -> int32 => x * factor
+    return scaled(1)

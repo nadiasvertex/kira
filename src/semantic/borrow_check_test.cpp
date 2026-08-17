@@ -415,6 +415,36 @@ auto test_view_of_other_variable_is_accepted() -> void {
          "different collection `ys`");
 }
 
+auto test_two_mut_capture_closures_are_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_two_mut_capture_closures.kira");
+  expect(analyzed.error_count != 0,
+         "expected two closures holding `&mut total` at once to be rejected");
+  expect_diagnostic(analyzed,
+                    "cannot borrow `total` while the closure `a` is still in "
+                    "use",
+                    "expected the closure to be named as the live borrower");
+  expect_diagnostic(analyzed, "entry in a capture list borrows that variable",
+                    "expected the capture-list rule to be explained, not the "
+                    "`slice`/`cell` view rule");
+}
+
+auto test_by_value_capture_is_not_a_borrow() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_by_value_capture_is_not_a_borrow.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected bare by-value captures to borrow nothing:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_shared_capture_closures_are_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_shared_capture_closures.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected any number of `&` captures to coexist:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_owned_return_keeps_args_free_is_accepted() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_owned_return_keeps_args_free.kira");
@@ -451,6 +481,9 @@ auto main() -> int {
     test_two_shared_views_are_accepted();
     test_view_dead_at_last_use_is_accepted();
     test_view_of_other_variable_is_accepted();
+    test_two_mut_capture_closures_are_rejected();
+    test_by_value_capture_is_not_a_borrow();
+    test_shared_capture_closures_are_accepted();
     test_owned_return_keeps_args_free_is_accepted();
   } catch (const std::exception &ex) {
     std::cerr << "borrow_check_test failed: unhandled exception: " << ex.what()

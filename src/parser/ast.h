@@ -1017,13 +1017,36 @@ struct lambda_param {
   ptr<type_expr> type_annotation; ///< Optional parameter type annotation.
 };
 
+/// How one entry of an explicit capture list reaches its variable.
+enum class capture_mode : uint8_t {
+  by_value,   ///< `name` — a copy of the enclosing local.
+  by_ref,     ///< `&name` — reads go through the enclosing local's storage.
+  by_mut_ref, ///< `&mut name` — reads *and* writes go through it.
+};
+
+/// One entry of a lambda's explicit capture list (`spec/kira-grammar.ebnf`'s
+/// `capture_item`).
+struct lambda_capture {
+  source_span span; ///< Full source range of the entry, `&mut` included.
+  std::string name; ///< The captured variable's name.
+  capture_mode mode = capture_mode::by_value;
+};
+
 /// @brief Lambda or closure expression.
 ///
 /// The parser preserves both compact expression bodies and block bodies so
 /// later lowering can choose the most natural internal form.
 struct lambda_expr : expr {
-  bool is_pure = false;             ///< Whether the lambda was declared `pure`.
-  bool is_move = false;             ///< Whether captures should be by move.
+  bool is_pure = false; ///< Whether the lambda was declared `pure`.
+  bool is_move = false; ///< Whether captures should be by move.
+  /// The explicit capture list, when one was written. `nullopt` means no
+  /// list — capture implicitly, every outer name the body uses. An *empty*
+  /// vector means `[]` was written — capture nothing. The two must not be
+  /// collapsed: they are opposite ends of the capture spectrum.
+  std::optional<std::vector<lambda_capture>> captures;
+  /// Source range of the `[...]` itself, for diagnostics that need to point
+  /// at the list rather than at the whole (possibly multi-line) lambda.
+  source_span captures_span;
   std::vector<lambda_param> params; ///< Parameter list in source order.
   ptr<type_expr> return_type;       ///< Optional explicit return type.
   /// Body is either a single expression or a block (vector of statements).

@@ -747,6 +747,8 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->span = lambda.span;
     cloned->is_pure = lambda.is_pure;
     cloned->is_move = lambda.is_move;
+    cloned->captures = lambda.captures;
+    cloned->captures_span = lambda.captures_span;
     for (const auto &param : lambda.params) {
       auto pattern = clone_optional(param.pattern);
       if (!pattern.has_value()) {

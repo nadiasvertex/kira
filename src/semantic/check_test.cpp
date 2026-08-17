@@ -220,6 +220,88 @@ auto test_accepts_packed_struct() -> void {
          "expected a packed struct declaration to check cleanly");
 }
 
+auto test_accepts_capture_lists() -> void {
+  const auto analyzed = analyze_test_data_file("accept_capture_lists.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected capture lists to check cleanly:\n") +
+             analyzed.diagnostics);
+  // Every capture in the fixture is read by its body; a stray "captured but
+  // never used" warning here would mean use-tracking has stopped following
+  // some reference shape.
+  expect(analyzed.diagnostics.find("captured but never used") ==
+             std::string::npos,
+         std::string("expected no unused-capture warnings:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_reports_capture_list_omits_name() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_capture_list_omits_name.kira");
+  expect(analyzed.error_count != 0,
+         "expected an out-of-list reference to be rejected");
+  expect_diagnostic(analyzed, "`offset` is not in this lambda's capture list",
+                    "expected the capture list to be named as the cause");
+  expect_diagnostic(analyzed, "Add `offset` to the capture list",
+                    "expected the diagnostic to say how to fix it");
+}
+
+auto test_reports_empty_capture_list_blocks_everything() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_capture_list_empty_blocks_all.kira");
+  expect(analyzed.error_count != 0,
+         "expected `[]` to put every outer name out of reach");
+  expect_diagnostic(analyzed, "this lambda captures nothing",
+                    "expected `[]` to be explained as capturing nothing");
+}
+
+auto test_reports_capture_list_unknown_name() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_capture_list_unknown_name.kira");
+  expect(analyzed.error_count != 0,
+         "expected capturing an undeclared name to be rejected");
+  expect_diagnostic(analyzed, "cannot capture `nope`",
+                    "expected the unknown capture to be named");
+}
+
+auto test_reports_capture_list_module_level_name() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_capture_list_module_level.kira");
+  expect(analyzed.error_count != 0,
+         "expected capturing a module-level item to be rejected");
+  expect_diagnostic(analyzed, "`bump` does not need to be captured",
+                    "expected module-level items to get their own message");
+}
+
+auto test_reports_duplicate_capture() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_capture_list_duplicate.kira");
+  expect(analyzed.error_count != 0,
+         "expected a duplicated capture entry to be rejected");
+  expect_diagnostic(analyzed, "is captured twice in this list",
+                    "expected the duplicate to be reported as such");
+}
+
+auto test_reports_mut_ref_capture_of_immutable() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_capture_mut_ref_of_let.kira");
+  expect(analyzed.error_count != 0,
+         "expected `&mut` of a `let` binding to be rejected");
+  expect_diagnostic(analyzed, "cannot capture `factor` by mutable reference",
+                    "expected the mutability requirement to be reported");
+  expect_diagnostic(analyzed, "Declare it with `var`",
+                    "expected the diagnostic to say how to fix it");
+}
+
+auto test_reports_ref_capture_through_by_value_capture() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_capture_ref_through_by_value.kira");
+  expect(analyzed.error_count != 0,
+         "expected a `&mut` reaching through a by-value capture to be "
+         "rejected rather than silently writing into the copy");
+  expect_diagnostic(analyzed, "through an enclosing by-value capture",
+                    "expected the intervening copy to be named as the cause");
+}
+
 auto test_accepts_collections_and_lambdas() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_collections_and_lambdas.kira");
@@ -2700,6 +2782,14 @@ auto main() -> int {
     test_accepts_structs_and_methods();
     test_accepts_packed_struct();
     test_accepts_collections_and_lambdas();
+    test_accepts_capture_lists();
+    test_reports_capture_list_omits_name();
+    test_reports_empty_capture_list_blocks_everything();
+    test_reports_capture_list_unknown_name();
+    test_reports_capture_list_module_level_name();
+    test_reports_duplicate_capture();
+    test_reports_mut_ref_capture_of_immutable();
+    test_reports_ref_capture_through_by_value_capture();
     test_accepts_option_result_flow();
     test_accepts_cross_module_qualified_types();
     test_accepts_module_qualified_call();

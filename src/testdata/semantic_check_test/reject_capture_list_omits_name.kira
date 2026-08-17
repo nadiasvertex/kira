@@ -1,0 +1,8 @@
+module capture_omits
+
+def run() -> int32:
+    let factor = 3
+    let offset = 10
+    # `offset` is not listed, so it is not reachable from inside the lambda.
+    let scaled = [factor] (x: int32) -> int32 => x * factor + offset
+    return scaled(1)

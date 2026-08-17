@@ -386,12 +386,20 @@ public:
 
   [[nodiscard]] auto compile(const hir::hir_function &fn)
       -> std::expected<bytecode::bytecode_function, compile_error> {
+    cell_promoted_ = hir::ref_captured_symbols(*fn.body);
     for (const auto &param : fn.params) {
       const auto reg = alloc_register(fn.span);
       if (!reg.has_value()) {
         return std::unexpected(reg.error());
       }
       locals_.emplace(param.symbol, *reg);
+    }
+    // Only after every parameter has its register: the calling convention
+    // fixes parameters to the first registers of the frame, so a cell
+    // allocated mid-loop would displace the ones after it.
+    if (auto promoted = promote_captured_params(fn.params, fn.span);
+        !promoted.has_value()) {
+      return std::unexpected(promoted.error());
     }
     if (fn.is_generator) {
       return compile_generator_constructor(fn);
@@ -610,8 +618,12 @@ public:
   /// the matching `op_make_closure`.
   [[nodiscard]] auto
   compile_lambda_body(const hir::hir_lambda &lambda,
-                      const std::vector<hir::symbol_id> &free_vars)
+                      const std::vector<hir::hir_capture> &plan)
       -> std::expected<bytecode::bytecode_function, compile_error> {
+    // Locals of *this* body that a nested lambda captures by reference.
+    // The incoming by-reference captures below are already cells — the
+    // enclosing frame boxed them — so they are marked, not allocated.
+    cell_promoted_ = hir::ref_captured_symbols(*lambda.body);
     const auto env_reg = alloc_register(lambda.span);
     if (!env_reg.has_value()) {
       return std::unexpected(env_reg.error());
@@ -623,13 +635,23 @@ public:
       }
       locals_.emplace(param.symbol, *reg);
     }
-    for (size_t i = 0; i < free_vars.size(); ++i) {
+    for (size_t i = 0; i < plan.size(); ++i) {
       const auto reg = alloc_register(lambda.span);
       if (!reg.has_value()) {
         return std::unexpected(reg.error());
       }
       emit_load_slot(*reg, *env_reg, static_cast<uint16_t>(i));
-      locals_.emplace(free_vars[i], *reg);
+      locals_.emplace(plan[i].symbol, *reg);
+      if (plan[i].mode != ast::capture_mode::by_value) {
+        // The slot held the enclosing frame's cell pointer, so `reg` now
+        // carries that same cell: reads and writes here reach the original.
+        cell_locals_.insert(plan[i].symbol);
+        address_taken_.push_back(*reg);
+      }
+    }
+    if (auto promoted = promote_captured_params(lambda.params, lambda.span);
+        !promoted.has_value()) {
+      return std::unexpected(promoted.error());
     }
     return compile_body_and_finish(
         *lambda.body, lambda.span, "<lambda>",
@@ -865,6 +887,75 @@ private:
       return found->second;
     }
     return std::nullopt;
+  }
+
+  /// Whether `symbol` was promoted to a heap cell because some lambda in
+  /// this body captures it by reference. For a promoted symbol, `locals_`
+  /// holds the register carrying the *cell pointer*, not the value: this
+  /// frame's reads and writes go through `op_load_slot`/`op_store_slot`
+  /// exactly as the closure's do, which is what makes the two frames see
+  /// the same variable. VM registers have no addresses of their own, so
+  /// this boxing is what a by-reference capture costs here; the LLVM
+  /// backend needs none of it, since an `alloca` is already a cell.
+  /// Boxes any parameter a nested lambda captures by reference. Must run
+  /// after every parameter register is allocated, never between them.
+  [[nodiscard]] auto
+  promote_captured_params(const std::vector<hir::hir_param> &params,
+                          source_span span)
+      -> std::expected<void, compile_error> {
+    for (const auto &param : params) {
+      if (!cell_promoted_.contains(param.symbol) ||
+          cell_locals_.contains(param.symbol)) {
+        continue;
+      }
+      const auto reg = lookup_local(param.symbol);
+      if (!reg.has_value()) {
+        continue;
+      }
+      cell_locals_.insert(param.symbol);
+      auto cell = promote_to_cell(param.symbol, *reg, span);
+      if (!cell.has_value()) {
+        return std::unexpected(cell.error());
+      }
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto is_cell_local(hir::symbol_id symbol) const -> bool {
+    return cell_locals_.contains(symbol);
+  }
+
+  /// Allocates a one-slot cell for `symbol`, seeded with `value`, and makes
+  /// it the symbol's storage.
+  [[nodiscard]] auto promote_to_cell(hir::symbol_id symbol, virtual_reg value,
+                                     source_span span)
+      -> std::expected<virtual_reg, compile_error> {
+    const auto cell = alloc_register(span);
+    if (!cell.has_value()) {
+      return std::unexpected(cell.error());
+    }
+    emit_alloc_slots(*cell, 1);
+    emit_store_slot(*cell, 0, value);
+    // The cell pointer outlives its last textual mention (a closure built
+    // later still reads it), so it must not be recycled by the allocator.
+    address_taken_.push_back(*cell);
+    locals_.insert_or_assign(symbol, *cell);
+    return *cell;
+  }
+
+  /// Materializes the current value of `symbol` into `dst`, reading through
+  /// its cell when it has one.
+  auto read_local_into(hir::symbol_id symbol, virtual_reg src, virtual_reg dst)
+      -> void {
+    if (is_cell_local(symbol)) {
+      emit_load_slot(dst, src, 0);
+      return;
+    }
+    if (src != dst) {
+      emit_op(opcode::op_move);
+      emit_register(dst);
+      emit_register(src);
+    }
   }
 
   [[nodiscard]] auto numeric_kind_for(type_id id, source_span span)
@@ -1128,11 +1219,7 @@ private:
         writer_.emit_u16(found->second);
         return {};
       }
-      if (*src != dst) {
-        emit_op(opcode::op_move);
-        emit_register(dst);
-        emit_register(*src);
-      }
+      read_local_into(ref.symbol, *src, dst);
       return {};
     }
     case hir_node_kind::hir_binary:
@@ -1503,13 +1590,13 @@ private:
     // and the env reads in `compile_lambda_body` in lock-step; without it, a
     // captured global would both fail to be found among this function's
     // locals and, if it were, shadow the direct-call path in the body.
-    auto free_vars = hir::free_variables(lambda);
-    std::erase_if(free_vars, [&](hir::symbol_id sym) -> bool {
-      return !lookup_local(sym).has_value();
+    auto plan = hir::capture_plan(lambda);
+    std::erase_if(plan, [&](const hir::hir_capture &entry) -> bool {
+      return !lookup_local(entry.symbol).has_value();
     });
 
     virtual_reg env_reg;
-    if (free_vars.empty()) {
+    if (plan.empty()) {
       const auto reg = alloc_register(lambda.span);
       if (!reg.has_value()) {
         return std::unexpected(reg.error());
@@ -1522,9 +1609,9 @@ private:
         return std::unexpected(reg.error());
       }
       env_reg = *reg;
-      emit_alloc_slots(env_reg, static_cast<uint16_t>(free_vars.size()));
-      for (size_t i = 0; i < free_vars.size(); ++i) {
-        const auto src = lookup_local(free_vars[i]);
+      emit_alloc_slots(env_reg, static_cast<uint16_t>(plan.size()));
+      for (size_t i = 0; i < plan.size(); ++i) {
+        const auto src = lookup_local(plan[i].symbol);
         if (!src.has_value()) {
           return std::unexpected(compile_error{
               .kind = compile_error_kind::unsupported_construct,
@@ -1533,6 +1620,19 @@ private:
                          "function's locals — capture analysis and register "
                          "allocation have gotten out of sync"});
         }
+        if (plan[i].mode != ast::capture_mode::by_value &&
+            !is_cell_local(plan[i].symbol)) {
+          return std::unexpected(compile_error{
+              .kind = compile_error_kind::unsupported_construct,
+              .span = lambda.span,
+              .message = "a by-reference capture's variable was not boxed "
+                         "into a cell — `ref_captured_symbols` and register "
+                         "allocation have gotten out of sync"});
+        }
+        // Either way this stores the register's contents. For a cell-promoted
+        // local that *is* the cell pointer, which is precisely what a
+        // by-reference capture needs the environment to hold; for an ordinary
+        // local it is the value, the by-value copy.
         emit_store_slot(env_reg, static_cast<uint16_t>(i), *src);
       }
     }
@@ -1540,7 +1640,7 @@ private:
     auto compiled = function_compiler(types_, functions_, lambda_functions_,
                                       function_table_base_, entry_module_name_,
                                       current_module_name_)
-                        .compile_lambda_body(lambda, free_vars);
+                        .compile_lambda_body(lambda, plan);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
     }
@@ -3139,9 +3239,34 @@ private:
         !result.has_value()) {
       return std::unexpected(result.error());
     }
-    if (!existing.has_value()) {
-      locals_.emplace(let.symbol, reg);
+    if (existing.has_value()) {
+      // A generator's preloaded state register (see above). Cell promotion
+      // and generator-state preloading both want to own the symbol's
+      // storage, and reconciling them would mean teaching the suspend/resume
+      // state sync to round-trip through the cell. Rejecting the
+      // combination is the honest answer; silently picking one would
+      // miscompile the other.
+      if (cell_promoted_.contains(let.symbol)) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = let.span,
+            .message = std::format(
+                "`{}` is both part of a generator's suspended state and "
+                "captured by reference by a lambda — that combination is not "
+                "supported by the bytecode compiler yet",
+                let.name)});
+      }
+      return {};
     }
+    if (cell_promoted_.contains(let.symbol)) {
+      cell_locals_.insert(let.symbol);
+      auto cell = promote_to_cell(let.symbol, reg, let.span);
+      if (!cell.has_value()) {
+        return std::unexpected(cell.error());
+      }
+      return {};
+    }
+    locals_.emplace(let.symbol, reg);
     return {};
   }
 
@@ -3272,7 +3397,17 @@ private:
                           target.name)});
     }
     if (assign.op == ast::assign_op::assign) {
-      return compile_expr_into(*assign.value, *reg);
+      if (!is_cell_local(target.symbol)) {
+        return compile_expr_into(*assign.value, *reg);
+      }
+      // Writing a cell-promoted local: the value goes into the cell, so
+      // that a closure holding the same cell sees the write.
+      auto value = compile_expr(*assign.value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      emit_store_slot(*reg, 0, *value);
+      return {};
     }
     const auto op = compound_assign_opcode_for(assign.op);
     if (!op.has_value()) {
@@ -3290,6 +3425,21 @@ private:
     auto rhs = compile_expr(*assign.value);
     if (!rhs.has_value()) {
       return std::unexpected(rhs.error());
+    }
+    if (is_cell_local(target.symbol)) {
+      // Read-modify-write through the cell rather than in place.
+      const auto current = alloc_register(assign.span);
+      if (!current.has_value()) {
+        return std::unexpected(current.error());
+      }
+      emit_load_slot(*current, *reg, 0);
+      emit_op(*op);
+      emit_register(*current);
+      emit_register(*current);
+      emit_register(*rhs);
+      writer_.emit_numeric_kind(*kind);
+      emit_store_slot(*reg, 0, *current);
+      return {};
     }
     emit_op(*op);
     emit_register(*reg);
@@ -3568,6 +3718,14 @@ private:
   std::string current_module_name_;
   chunk_writer writer_;
   std::unordered_map<hir::symbol_id, virtual_reg> locals_;
+  /// Symbols whose `locals_` register holds a cell pointer rather than the
+  /// value itself — see `is_cell_local`.
+  std::unordered_set<hir::symbol_id> cell_locals_;
+  /// Symbols this body must box on declaration, from the pre-pass over the
+  /// body's lambdas (`hir::ref_captured_symbols`). A symbol lands in
+  /// `cell_locals_` once its cell actually exists; the two differ only
+  /// between a symbol's promotion being *decided* and it being *done*.
+  std::unordered_set<hir::symbol_id> cell_promoted_;
   size_t next_register_ = 0;
 
   // ------------------------------------------------------------------

@@ -5,3 +5,18 @@ def run():
   let rich = pure move (x: int, y) -> int => x
   let block = x =>:
     return x
+
+def captures():
+  let nothing = [] x => x * 2
+  let one = [n] x => x + n
+  let modes = [&p, &mut q,] x => x
+  let prefixed = pure move [n] (x: int, y) -> int => x
+  let parened = [n] (x, y) => x + y + n
+  let blocked = [&mut q] x =>:
+    return x
+
+  # The bracket-dispatch change must leave every other bracketed form alone.
+  let literal = [1, 2, 3]
+  let fill = [0; 4]
+  let empty = []
+  let indexed = literal[0]

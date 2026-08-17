@@ -1,0 +1,9 @@
+module borrow_shared_captures
+
+# Any number of `&` captures may coexist, exactly as any number of shared
+# borrows may.
+def run() -> int32:
+    let total = 5
+    let a = [&total] (x: int32) -> int32 => x + total
+    let b = [&total] (x: int32) -> int32 => x + total
+    return a(1) + b(2)

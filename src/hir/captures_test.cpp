@@ -138,6 +138,81 @@ auto test_locally_bound_names_are_not_captured() -> void {
          "inside the lambda's own body");
 }
 
+auto test_capture_plan_falls_back_to_free_variables() -> void {
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def make_adder(n: int32) -> fn(int32) -> int32:\n"
+                    "    let f = pure (x: int32) -> int32 => x + n\n"
+                    "    return f\n");
+  const auto lowered = lower_first_lambda(fixture, "make_adder");
+  expect(!lowered.lambda->captures.has_value(),
+         "expected a lambda with no capture list to leave `captures` unset");
+
+  const auto plan = hir::capture_plan(*lowered.lambda);
+  expect(plan.size() == 1, "expected the implicit plan to hold one entry");
+  expect(plan[0].symbol == lowered.function->params[0].symbol,
+         "expected the implicit plan to name the outer parameter `n`");
+  expect(plan[0].mode == kira::ast::capture_mode::by_value,
+         "expected implicit capture to stay by value");
+}
+
+auto test_capture_plan_uses_the_explicit_list_verbatim() -> void {
+  // Written out of source order relative to the body's use order (`b` is
+  // read first) so the assertion below distinguishes "the list, in source
+  // order" from "whatever `free_variables` happened to report".
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def make(a: int32, b: int32) -> fn(int32) -> int32:\n"
+                    "    let f = [a, b] (x: int32) -> int32 => x + b + a\n"
+                    "    return f\n");
+  const auto lowered = lower_first_lambda(fixture, "make");
+  expect(lowered.lambda->captures.has_value(),
+         "expected the explicit list to survive lowering");
+
+  const auto plan = hir::capture_plan(*lowered.lambda);
+  expect(plan.size() == 2, "expected two entries");
+  expect(plan[0].symbol == lowered.function->params[0].symbol,
+         "expected the plan to follow the capture list's order (`a` first), "
+         "not the body's first-reference order (`b` first)");
+  expect(plan[1].symbol == lowered.function->params[1].symbol,
+         "expected `b` second, as written");
+}
+
+auto test_capture_plan_distinguishes_empty_list_from_no_list() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def make() -> fn(int32) -> int32:\n"
+                               "    let f = [] (x: int32) -> int32 => x * 2\n"
+                               "    return f\n");
+  const auto lowered = lower_first_lambda(fixture, "make");
+  expect(lowered.lambda->captures.has_value(),
+         "expected `[]` to lower as a present-but-empty list, not as an "
+         "absent one — `capture nothing` and `capture what you use` are "
+         "opposite answers");
+  expect(lowered.lambda->captures->empty(), "expected `[]` to hold no entries");
+  expect(hir::capture_plan(*lowered.lambda).empty(),
+         "expected an empty plan for `[]`");
+}
+
+auto test_ref_captured_symbols_finds_by_reference_captures() -> void {
+  auto fixture = check_fixture(
+      "module sample\n"
+      "def run() -> int32:\n"
+      "    var total = 0\n"
+      "    let by_value = 1\n"
+      "    let f = [&mut total, by_value] (x: int32) -> int32 =>:\n"
+      "        total = total + x + by_value\n"
+      "        return total\n"
+      "    return f(1)\n");
+  const auto &decl = find_func(*fixture.ast_file, "run");
+  auto lowered = hir::lower_function(decl, fixture.checked);
+  expect(lowered.has_value(), "expected the fixture function to lower");
+
+  const auto refs = hir::ref_captured_symbols(*(*lowered)->body);
+  expect(refs.size() == 1,
+         "expected exactly `total` to need boxing — a by-value entry has no "
+         "address to share");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -145,6 +220,10 @@ auto main() -> int {
     test_non_capturing_lambda_has_no_free_variables();
     test_lambda_captures_an_outer_parameter();
     test_locally_bound_names_are_not_captured();
+    test_capture_plan_falls_back_to_free_variables();
+    test_capture_plan_uses_the_explicit_list_verbatim();
+    test_capture_plan_distinguishes_empty_list_from_no_list();
+    test_ref_captured_symbols_finds_by_reference_captures();
   } catch (const std::exception &ex) {
     std::cerr << "captures_test failed: unhandled exception: " << ex.what()
               << '\n';

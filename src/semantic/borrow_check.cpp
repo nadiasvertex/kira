@@ -135,6 +135,15 @@ auto subtree_mentions(const ast::node &node, std::string_view name) -> bool {
                         name);
   case ast::node_kind::lambda_expr: {
     const auto &e = dynamic_cast<const ast::lambda_expr &>(node);
+    // A capture list mentions its names as surely as the body does — more
+    // so, since a `&mut` entry is where the borrow is actually taken.
+    if (e.captures.has_value() &&
+        std::ranges::any_of(*e.captures,
+                            [&](const ast::lambda_capture &entry) -> bool {
+                              return entry.name == name;
+                            })) {
+      return true;
+    }
     return mentions_opt(e.body_expr.get(), name) ||
            any_mentions(e.body_stmts, name);
   }
@@ -256,6 +265,11 @@ struct call_borrow {
   /// The binding that holds the view, when `is_view` — for the diagnostic and
   /// for last-use liveness tracking.
   std::string via;
+  /// True when this borrow is a closure's `&`/`&mut` capture rather than a
+  /// `slice`/`cell` view. It conflicts by exactly the same rule; the flag
+  /// only changes the diagnostic's wording, since telling a programmer their
+  /// closure is a `slice` would be worse than saying nothing.
+  bool is_capture = false;
   source_span span = source_span::dummy();
 };
 
@@ -598,10 +612,46 @@ private:
   /// treating the view itself as a fresh collection. Returns empty for a value
   /// carrying no view, or a view whose source cannot be traced to a named root
   /// (conservatively untracked).
+  /// The borrows a lambda's explicit capture list makes. A bare `name` entry
+  /// is a by-value copy and borrows nothing; `&name` and `&mut name` borrow
+  /// the named local for as long as the closure lives.
+  ///
+  /// A lambda with *no* capture list captures implicitly, and implicit
+  /// capture is by value in every lowering today (both backends copy into
+  /// the environment block), so there is nothing to track for it here — the
+  /// borrow-vs-move distinction `16-closures-and-capture.md` describes for
+  /// implicit capture is not enforced anywhere yet.
+  [[nodiscard]] static auto capture_borrows(const ast::lambda_expr &lambda)
+      -> std::vector<call_borrow> {
+    auto out = std::vector<call_borrow>{};
+    if (!lambda.captures.has_value()) {
+      return out;
+    }
+    for (const auto &entry : *lambda.captures) {
+      if (entry.mode == ast::capture_mode::by_value) {
+        continue;
+      }
+      out.push_back(
+          call_borrow{.root = entry.name,
+                      .is_mut = entry.mode == ast::capture_mode::by_mut_ref,
+                      .is_capture = true,
+                      .span = entry.span});
+    }
+    return out;
+  }
+
   [[nodiscard]] auto provenance_of(const ast::expr &expr,
                                    const live_set &views) const
       -> std::vector<call_borrow> {
     const auto &e = strip_groups(expr);
+    // A closure with `&`/`&mut` capture entries borrows those variables and
+    // holds the borrow for as long as the closure itself is live — the same
+    // shape as a view binding, and tracked the same way. Checked before the
+    // `is_view_bearing` gate below: a closure's type is `fn(...)`, so the
+    // type alone never says it borrows; only its capture list does.
+    if (e.kind == ast::node_kind::lambda_expr) {
+      return capture_borrows(dynamic_cast<const ast::lambda_expr &>(e));
+    }
     if (!is_view_bearing(e)) {
       return {};
     }
@@ -1202,40 +1252,62 @@ private:
   /// is a view; `later` is the borrow that triggered the conflict.
   auto report_view_conflict(const call_borrow &earlier,
                             const call_borrow &later) -> void {
-    const auto describe = [](const call_borrow &borrow) -> std::string {
+    const auto holder = [](const call_borrow &borrow) -> std::string_view {
+      return borrow.is_capture ? "closure" : "view";
+    };
+    const auto describe = [&](const call_borrow &borrow) -> std::string {
       if (borrow.is_view && !borrow.via.empty()) {
-        return std::format("the view `{}` of `{}`", borrow.via, borrow.root);
+        // A closure names only itself here; the secondary label below
+        // already says which variable it borrows, so repeating it inline
+        // would make the sentence read twice as long and no clearer.
+        return borrow.is_capture ? std::format("the closure `{}`", borrow.via)
+                                 : std::format("the view `{}` of `{}`",
+                                               borrow.via, borrow.root);
       }
       return std::format("a borrow of `{}`", borrow.root);
     };
+    const auto involves_capture = earlier.is_capture || later.is_capture;
     auto message = std::format("cannot borrow `{}` while {} is still in use",
                                later.root, describe(earlier));
     auto d = diagnostic(diagnostic_level::error, std::move(message), file_id_);
     d.with_label(
         later.span,
-        later.is_view ? std::format("view `{}` of `{}` created here", later.via,
-                                    later.root)
+        later.is_view
+            ? std::format("this {} borrows `{}`", holder(later), later.root)
         : later.is_mut
             ? std::format("`{}` borrowed as mutable here", later.root)
             : std::format("`{}` borrowed as immutable here", later.root));
     d.with_secondary_label(
         earlier.span,
         earlier.is_view && !earlier.via.empty()
-            ? std::format("the view `{}` borrows `{}` here, and is still used "
+            ? std::format("the {} `{}` borrows `{}` here, and is still used "
                           "later",
-                          earlier.via, earlier.root)
+                          holder(earlier), earlier.via, earlier.root)
             : std::format("`{}` already borrowed here", earlier.root));
-    d.with_note("a view (`slice`/`mut slice`) keeps its source collection "
-                "borrowed for as long as the view is live; while it is, the "
-                "collection allows at most one `&mut` and no `&mut` alongside "
-                "any `&`, exactly like a direct borrow");
+    if (involves_capture) {
+      d.with_note("a `&`/`&mut` entry in a capture list borrows that variable "
+                  "for as long as the closure is live; while it is, the "
+                  "variable allows at most one `&mut` and no `&mut` alongside "
+                  "any `&`, exactly like a direct borrow");
+    } else {
+      d.with_note("a view (`slice`/`mut slice`) keeps its source collection "
+                  "borrowed for as long as the view is live; while it is, the "
+                  "collection allows at most one `&mut` and no `&mut` "
+                  "alongside any `&`, exactly like a direct borrow");
+    }
     d.with_note("a value that stores or returns a view — including one built "
                 "by a call — keeps every collection it was traced back to "
                 "borrowed for as long as that value lives");
-    d.with_help(std::format(
-        "finish using the view before borrowing `{0}` again, or copy the data "
-        "so the view no longer aliases `{0}`",
-        later.root));
+    d.with_help(
+        involves_capture
+            ? std::format(
+                  "finish using the closure before borrowing `{0}` again, or "
+                  "capture `{0}` by value so the closure no longer aliases it",
+                  later.root)
+            : std::format("finish using the view before borrowing `{0}` "
+                          "again, or copy the data so the view no longer "
+                          "aliases `{0}`",
+                          later.root));
     diag_.emit(d);
   }
 };

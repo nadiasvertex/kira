@@ -1,0 +1,18 @@
+module codegen_stress.lambda_capture_list_empty
+
+# `[]` captures nothing, so the closure's environment is empty and the body
+# may still reach module-level functions directly — the same globals-filtering
+# path `036_lambda_captures_local_not_global` exercises, now with an explicit
+# list rather than an inferred one.
+
+def bump(n: int32) -> int32:
+    return n + 1
+
+def call_it(f: fn(int32) -> int32, x: int32) -> int32:
+    return f(x)
+
+def main() -> int64:
+    let doubled = [] (x: int32) -> int32 => bump(x) * 2
+    return call_it(doubled, 20) as int64
+
+# expect: 42

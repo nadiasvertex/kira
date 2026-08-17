@@ -535,15 +535,28 @@ struct hir_match : hir_expr {
 /// context (an expected `fn(...)` type at the lambda's use site) instead
 /// of an annotation; lowering doesn't distinguish the two sources, only
 /// requiring that a concrete type was resolved one way or another.
+/// One entry of a lambda's explicit capture list, resolved to a symbol.
+struct hir_capture {
+  symbol_id symbol = 0;
+  ast::capture_mode mode = ast::capture_mode::by_value;
+};
+
 struct hir_lambda : hir_expr {
   std::vector<hir_param> params;
   type_id return_type = k_unknown_type;
   ptr<hir_block> body;
+  /// The explicit capture list, when the source declared one. `nullopt`
+  /// means the environment is the implicit set `free_variables` computes.
+  /// Use `capture_plan` (`captures.h`) rather than reading this directly —
+  /// it collapses both cases into the one ordered list the backends build
+  /// the environment block from.
+  std::optional<std::vector<hir_capture>> captures;
 
   hir_lambda(source_span s, type_id t, std::vector<hir_param> p, type_id ret,
-             ptr<hir_block> b)
+             ptr<hir_block> b,
+             std::optional<std::vector<hir_capture>> caps = std::nullopt)
       : hir_expr(hir_node_kind::hir_lambda, s, t), params(std::move(p)),
-        return_type(ret), body(std::move(b)) {}
+        return_type(ret), body(std::move(b)), captures(std::move(caps)) {}
 };
 
 /// `_` — matches unconditionally. Also stands in for a plain name binding
