@@ -590,6 +590,15 @@ private:
   [[nodiscard]] auto parse_struct_body() -> ast::struct_body;
   /// Parses a sum-type variant body for a type declaration.
   [[nodiscard]] auto parse_sum_body() -> ast::sum_body;
+  /// Parses the multi-line sum body written as an indented block of
+  /// `| @variant` lines after the `=`. The caller has already consumed the
+  /// INDENT; parsing stops at the first line that does not start a variant,
+  /// leaving any `deriving`/`invariant` clause and the DEDENT to the caller.
+  [[nodiscard]] auto parse_indented_sum_def() -> ast::ptr<ast::node>;
+  /// Parses the `deriving`/`invariant` clauses inside a type declaration's
+  /// indented block and consumes the closing DEDENT. The caller has already
+  /// consumed the INDENT.
+  void parse_type_decl_block_clauses(ast::type_decl &decl);
   /// Parses one field inside a struct body.
   [[nodiscard]] auto parse_struct_field() -> ast::struct_field;
   /// Parses one variant inside a sum body.

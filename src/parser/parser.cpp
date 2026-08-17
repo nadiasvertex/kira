@@ -1254,8 +1254,38 @@ auto parser::parse_type_decl(ast::visibility vis, ast::type_modifiers mods)
 
   expect(token_kind::eq);
 
+  // A sum type may be written across lines: `=`, then an indented block of
+  // `| @variant` lines. Only a `|` directly after the INDENT can begin one, so
+  // a single token of lookahead past the INDENT decides it — and deciding here
+  // keeps the sum `|` away from `parse_type_expr`, where `|` means a union.
+  bool in_type_block = false;
+  if (at(token_kind::newline)) {
+    auto saved_pos = pos_;
+    advance();
+    skip_newlines();
+
+    // Look past the INDENT for the `|` that marks a sum body. A `#:` doc
+    // comment (and the newline ending it) may sit in between, documenting the
+    // first variant.
+    uint32_t probe = 1;
+    while (peek_at(probe).is(token_kind::doc_comment) ||
+           peek_at(probe).is(token_kind::newline)) {
+      ++probe;
+    }
+
+    if (at(token_kind::indent) && peek_at(probe).is(token_kind::pipe)) {
+      advance(); // consume the INDENT
+      in_type_block = true;
+      decl->definition = parse_indented_sum_def();
+    } else {
+      pos_ = saved_pos;
+    }
+  }
+
   // Parse the type definition.
-  decl->definition = parse_type_def();
+  if (!decl->definition) {
+    decl->definition = parse_type_def();
+  }
 
   // Check for inline deriving.
   if (at(token_kind::kw_deriving)) {
@@ -1269,40 +1299,20 @@ auto parser::parse_type_decl(ast::visibility vis, ast::type_modifiers mods)
     }
   }
 
-  // If there's a newline followed by an indent, check for deriving/invariant
-  // clauses.
-  if (at(token_kind::newline)) {
+  if (in_type_block) {
+    // A multi-line sum body already opened the block, and the same block
+    // carries any `deriving`/`invariant` clauses that follow the variants.
+    parse_type_decl_block_clauses(*decl);
+  } else if (at(token_kind::newline)) {
+    // If there's a newline followed by an indent, check for
+    // deriving/invariant clauses.
     auto saved_pos = pos_;
     advance();
     skip_newlines();
 
     if (at(token_kind::indent)) {
       advance();
-      // Look for deriving and invariant clauses.
-      while (!at_any(token_kind::dedent, token_kind::eof)) {
-        skip_newlines();
-        if (at_any(token_kind::dedent, token_kind::eof)) {
-          break;
-        }
-
-        if (at(token_kind::kw_deriving)) {
-          advance();
-          auto id_tok = expect(token_kind::ident);
-          decl->deriving.emplace_back(id_tok.text);
-          while (match(token_kind::comma)) {
-            auto next_tok = expect(token_kind::ident);
-            decl->deriving.emplace_back(next_tok.text);
-          }
-          expect_newline();
-        } else if (at(token_kind::kw_invariant)) {
-          advance();
-          decl->invariant = parse_expr();
-          expect_newline();
-        } else {
-          break;
-        }
-      }
-      expect_block_end("type");
+      parse_type_decl_block_clauses(*decl);
     } else {
       // No indent block — restore position.
       pos_ = saved_pos;
@@ -1314,6 +1324,34 @@ auto parser::parse_type_decl(ast::visibility vis, ast::type_modifiers mods)
 
   decl->span = start.merge(previous_span());
   return decl;
+}
+
+void parser::parse_type_decl_block_clauses(ast::type_decl &decl) {
+  // Look for deriving and invariant clauses.
+  while (!at_any(token_kind::dedent, token_kind::eof)) {
+    skip_newlines();
+    if (at_any(token_kind::dedent, token_kind::eof)) {
+      break;
+    }
+
+    if (at(token_kind::kw_deriving)) {
+      advance();
+      auto id_tok = expect(token_kind::ident);
+      decl.deriving.emplace_back(id_tok.text);
+      while (match(token_kind::comma)) {
+        auto next_tok = expect(token_kind::ident);
+        decl.deriving.emplace_back(next_tok.text);
+      }
+      expect_newline();
+    } else if (at(token_kind::kw_invariant)) {
+      advance();
+      decl.invariant = parse_expr();
+      expect_newline();
+    } else {
+      break;
+    }
+  }
+  expect_block_end("type");
 }
 
 auto parser::parse_type_def() -> ast::ptr<ast::node> {
@@ -1424,11 +1462,62 @@ auto parser::parse_sum_body() -> ast::sum_body {
   return body;
 }
 
+auto parser::parse_indented_sum_def() -> ast::ptr<ast::node> {
+  ast::sum_body body;
+  body.span = peek().span;
+
+  // The caller consumed the INDENT and checked that a `|` opens the block
+  // (past any `#:` doc comment), so the first iteration always yields a
+  // variant.
+  while (!at_any(token_kind::dedent, token_kind::eof)) {
+    // A `#:` line above a variant documents that variant. It sits before the
+    // `|`, so it is collected here rather than inside `parse_sum_variant`.
+    auto doc = collect_doc_comments();
+    skip_newlines();
+
+    if (!match(token_kind::pipe)) {
+      if (!at(token_kind::at)) {
+        // `deriving`/`invariant`, or a stray line the caller diagnoses.
+        break;
+      }
+      // A variant line whose leading `|` was dropped. Say so directly rather
+      // than ending the block here and reporting a stray `@` afterwards, and
+      // parse the variant anyway so one missing pipe doesn't cascade.
+      emit(diagnostic(diagnostic_level::error,
+                      "expected `|` before this sum-type variant", file_id_)
+               .with_label(peek().span, "this variant needs a leading `|`")
+               .with_help("Every variant of a multi-line sum type starts with "
+                          "`|`, e.g. `| @circle(float64)`."));
+    }
+
+    auto variant = parse_sum_variant();
+    if (variant.documentation.empty()) {
+      variant.documentation = std::move(doc);
+    }
+    body.variants.push_back(std::move(variant));
+
+    if (at_any(token_kind::dedent, token_kind::eof) ||
+        at(token_kind::kw_deriving) || at(token_kind::kw_invariant)) {
+      // A `deriving` on the last variant's line is the inline form; the
+      // caller picks it up.
+      break;
+    }
+    expect_newline();
+  }
+
+  body.span.extend_to(previous_span());
+
+  auto result = ast::make<ast::sum_type_def>();
+  result->span = body.span;
+  result->body = std::move(body);
+  return result;
+}
+
 auto parser::parse_sum_variant() -> ast::sum_variant {
   ast::sum_variant variant;
-  // Attach any preceding `#:` doc comment. Sum variants are written on one
-  // line today, so this rarely fires, but keeps variant docs in the AST if a
-  // documented multi-line form is ever supported.
+  // Attach any preceding `#:` doc comment. In the multi-line sum form each
+  // variant sits on its own line, so a `#:` line above it documents that
+  // variant; the single-line form leaves this empty.
   variant.documentation = collect_doc_comments();
   variant.span = peek().span;
 

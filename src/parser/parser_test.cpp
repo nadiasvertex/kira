@@ -131,6 +131,109 @@ auto test_parser_builds_type_body_nodes() -> void {
          "expected second sum variant name");
 }
 
+/// The multi-line sum form the specification documents: `=` followed by an
+/// indented block of `| @variant` lines. Only the single-line form parsed
+/// before, so every declaration in `src/std` uses that one and this stayed
+/// invisible. `deriving` may follow the variants inside the same block, or
+/// ride on the last variant's line, and a `#:` line documents the variant
+/// beneath it.
+auto test_parser_accepts_multiline_sum_type() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "type shape =\n"
+                             "    | @circle(float64)           # radius\n"
+                             "    | @rect(float64, float64)    # w and h\n"
+                             "    | @point                     # nothing\n"
+                             "\n"
+                             "type app_error =\n"
+                             "    #: the file was missing\n"
+                             "    | @file_not_found(str)\n"
+                             "    | @parse_failed(str)\n"
+                             "    deriving eq, show\n"
+                             "\n"
+                             "type step =\n"
+                             "    | @done\n"
+                             "    | @go(int32) deriving show\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 3,
+         "expected three top-level type declarations");
+
+  auto *shape_decl = expect_node<kira::ast::type_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::type_decl,
+      "expected first item to be a type declaration");
+  auto *shape_def = expect_node<kira::ast::sum_type_def>(
+      shape_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+      "expected the multi-line form to build a sum type definition");
+  expect(shape_def->body.variants.size() == 3,
+         "expected all three variant lines to be preserved");
+  expect(shape_def->body.variants[0].name == "circle",
+         "expected first multi-line sum variant name");
+  expect(shape_def->body.variants[0].payload_types.size() == 1,
+         "expected one payload type on `@circle`");
+  expect(shape_def->body.variants[1].name == "rect",
+         "expected second multi-line sum variant name");
+  expect(shape_def->body.variants[1].payload_types.size() == 2,
+         "expected two payload types on `@rect`");
+  expect(shape_def->body.variants[2].name == "point",
+         "expected the unit variant to close the block");
+  expect(shape_def->body.variants[2].payload_types.empty(),
+         "expected no payload types on `@point`");
+
+  auto *error_decl = expect_node<kira::ast::type_decl>(
+      parsed.file->items[1].get(), kira::ast::node_kind::type_decl,
+      "expected second item to be a type declaration");
+  auto *error_def = expect_node<kira::ast::sum_type_def>(
+      error_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+      "expected a sum type definition after a leading doc comment");
+  expect(error_def->body.variants.size() == 2,
+         "expected both variants of the documented sum type");
+  expect(error_def->body.variants[0].documentation == "the file was missing",
+         "expected the `#:` line to document the variant beneath it");
+  expect(error_decl->deriving.size() == 2,
+         "expected a `deriving` line inside the block to be collected");
+  expect(error_decl->deriving[0] == "eq" && error_decl->deriving[1] == "show",
+         "expected both derived trait names");
+
+  auto *step_decl = expect_node<kira::ast::type_decl>(
+      parsed.file->items[2].get(), kira::ast::node_kind::type_decl,
+      "expected third item to be a type declaration");
+  auto *step_def = expect_node<kira::ast::sum_type_def>(
+      step_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+      "expected a sum type definition with inline deriving");
+  expect(step_def->body.variants.size() == 2,
+         "expected both variants when `deriving` rides the last line");
+  expect(step_decl->deriving.size() == 1 && step_decl->deriving[0] == "show",
+         "expected the trailing inline `deriving` to be collected");
+}
+
+/// A dropped leading `|` gets its own diagnostic, and parsing continues
+/// through the rest of the variants rather than spilling the block's
+/// remaining lines into the top level.
+auto test_parser_reports_missing_sum_variant_pipe() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "type shape =\n"
+                             "    | @circle(float64)\n"
+                             "    @rect(float64, float64)\n"
+                             "    | @point\n");
+
+  expect(parsed.error_count == 1,
+         "expected exactly one diagnostic for the missing `|`");
+  expect(parsed.diagnostics.find(
+             "expected `|` before this sum-type variant") != std::string::npos,
+         parsed.diagnostics);
+
+  auto *shape_decl = expect_node<kira::ast::type_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::type_decl,
+      "expected the type declaration to survive the missing `|`");
+  auto *shape_def = expect_node<kira::ast::sum_type_def>(
+      shape_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+      "expected a sum type definition despite the missing `|`");
+  expect(shape_def->body.variants.size() == 3,
+         "expected recovery to keep parsing the remaining variants");
+}
+
 auto test_parser_captures_doc_comments() -> void {
   auto parsed = parse_source("#: The sample module.\n"
                              "module sample\n"
@@ -1944,9 +2047,13 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 40> tests = {{
+  const std::array<named_test, 42> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
+      {.name = "multiline_sum_type",
+       .fn = test_parser_accepts_multiline_sum_type},
+      {.name = "missing_sum_variant_pipe",
+       .fn = test_parser_reports_missing_sum_variant_pipe},
       {.name = "doc_comments", .fn = test_parser_captures_doc_comments},
       {.name = "associated_types_where_aliases",
        .fn = test_parser_preserves_associated_types_where_and_aliases},

@@ -1,0 +1,75 @@
+module main
+
+# expect: 127
+
+# The multi-line sum form -- `=` followed by an indented block of `| @variant`
+# lines -- which the specification documents but the parser only just learned
+# to read. Parsing it is not the whole claim: the claim is that it produces
+# exactly the same type as the single-line form, so this file constructs and
+# matches values of a multi-line sum rather than merely declaring one.
+#
+# Both tiers derive variant layout from the same header, so cross-tier
+# agreement cannot catch a wrong tag or a payload read from the wrong slot;
+# the declared total is what pins those down. Each check contributes one bit,
+# so the value says which one broke rather than only that something did.
+# All seven passing is 127.
+
+type shape =
+    | @circle(int32)          # one payload
+    | @rect(int32, int32)     # two payloads, to catch a slot mix-up
+    | @point                  # no payload, to catch a tag mix-up
+
+# A `#:` line above a variant documents that variant, and `deriving` may
+# follow the variants inside the same block. Both shapes have to keep
+# lowering, not just parse.
+type step =
+    #: nothing left to do
+    | @done
+    | @go(int32)
+    deriving eq
+
+def area(s: shape) -> int32:
+    match s:
+        @circle(r) => r * r * 3
+        @rect(w, h) => w * h
+        @point => 0
+
+# A second payload position read on its own, so `@rect`'s two slots are
+# distinguished rather than only their product.
+def width(s: shape) -> int32:
+    match s:
+        @rect(w, _) => w
+        _ => -1
+
+def height(s: shape) -> int32:
+    match s:
+        @rect(_, h) => h
+        _ => -1
+
+def advance(s: step) -> int32:
+    match s:
+        @done => 0
+        @go(n) => n + 1
+
+def main() -> int32:
+    var score = 0
+
+    if area(@circle(4)) == 48:
+        score = score + 1
+    if area(@rect(3, 5)) == 15:
+        score = score + 2
+    # The unit variant must take its own arm, not fall into a payload one.
+    if area(@point) == 0:
+        score = score + 4
+    # 7 and 11 are distinct and neither divides the other, so reading the
+    # wrong slot cannot produce the right pair.
+    if width(@rect(7, 11)) == 7:
+        score = score + 8
+    if height(@rect(7, 11)) == 11:
+        score = score + 16
+    if advance(@go(41)) == 42:
+        score = score + 32
+    if advance(@done) == 0:
+        score = score + 64
+
+    return score

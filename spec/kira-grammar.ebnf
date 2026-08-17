@@ -123,6 +123,12 @@ type_decl
           [ deriving_clause ]
           [ invariant_clause ]
       DEDENT
+    | [ visibility ] type_prefix "type" IDENT [ type_params ] "="
+      NEWLINE INDENT
+          indented_sum_body
+          [ deriving_clause ]
+          [ invariant_clause ]
+      DEDENT      (* multi-line sum body; see indented_sum_body *)
     ;
 
 type_prefix
@@ -148,7 +154,21 @@ struct_body = "{" struct_field { "," struct_field } [ "," ] "}" ;
 
 struct_field = [ visibility ] IDENT ":" type_expr ;
 
-sum_body = "|" sum_variant { "|" sum_variant } ;
+sum_body
+    = "|" sum_variant { "|" sum_variant }
+    | sum_variant { "|" sum_variant }    (* leading "|" optional *)
+    ;
+
+(* The multi-line form, one variant per line inside the type block. A
+   leading "|" is required here -- it is what distinguishes an indented
+   sum body from the deriving/invariant-only type block, so it is not
+   optional the way it is on one line. The last variant's line may carry
+   an inline "deriving" list; a deriving_clause of its own may follow.
+   Only reachable from type_decl. *)
+indented_sum_body
+    = "|" sum_variant [ "deriving" deriving_list ] NEWLINE
+      { "|" sum_variant [ "deriving" deriving_list ] NEWLINE }
+    ;
 
 sum_variant
     = "@" IDENT

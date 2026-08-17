@@ -1,0 +1,12 @@
+module stress.type_sum_multiline
+
+type shape =
+    | @circle(int)            # holds a radius
+    | @rect(int, int)         # holds width and height
+    | @point                  # holds nothing
+
+type app_error =
+    #: the file was missing
+    | @file_not_found(str)
+    | @parse_failed(str)
+    deriving eq
