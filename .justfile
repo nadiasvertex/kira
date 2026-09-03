@@ -12,6 +12,14 @@ build:
 test:
     bazelisk test --config=debug //...
 
+# Wipe all Bazel state (cache + external repos) and rebuild from scratch
+clean:
+    # Run this after a toolchain change (e.g. an Xcode update) leaves stale
+    # builtin-include paths behind and builds fail with
+    # "absolute path inclusion(s) found".
+    bazelisk clean --expunge
+    bazelisk build --config=debug //src:kira
+
 # Build release archives for the kira CLI
 package:
     #!/usr/bin/env bash
