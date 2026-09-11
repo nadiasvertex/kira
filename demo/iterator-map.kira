@@ -9,7 +9,7 @@ def main() -> int32:
     let nums = [1, 2, 3]
 
     # Double each value
-    var doubled = nums.into_iter().map(x => *x * 2)
+    var doubled = nums.into_iter().map(x => x * 2)
     println("doubled={doubled.next().unwrap()}")
     println("doubled={doubled.next().unwrap()}")
     println("doubled={doubled.next().unwrap()}")
@@ -20,6 +20,7 @@ def main() -> int32:
     println("upper={upper.next().unwrap()}")
 
     # Chained with filter
-    var doubled_evens = nums.into_iter().filter(x => *x % 2 == 0).map(x => *x * 10)
+    let more_nums = [1, 2, 3]
+    var doubled_evens = more_nums.into_iter().filter(x => x % 2 == 0).map(x => x * 10)
     println("doubled_evens={doubled_evens.next().unwrap()}")
     return 0
