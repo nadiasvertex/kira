@@ -9,7 +9,7 @@ def main() -> int32:
     let nums = [1, 2, 3, 9, 4, 5]
 
     # Take while < 5: yields 1, 2, 3, then stops at 9
-    var tw = nums.into_iter().take_while(x => *x < 5)
+    var tw = nums.into_iter().take_while(x => x < 5)
     println("taken={tw.next().unwrap()}")
     println("taken={tw.next().unwrap()}")
     println("taken={tw.next().unwrap()}")

@@ -9,7 +9,7 @@ def main() -> int32:
     let nums = [1, 2, 3]
 
     # Print elements as they pass through
-    var iv = nums.into_iter().inspect(x => println("saw={*x}")).take(2)
+    var iv = nums.into_iter().inspect(x => println("saw={x}")).take(2)
     println("next={iv.next().unwrap()}")
     println("next={iv.next().unwrap()}")
     println("done={iv.next().is_none()}")

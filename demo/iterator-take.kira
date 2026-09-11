@@ -16,10 +16,12 @@ def main() -> int32:
     println("done={first3.next().is_none()}")
 
     # Take 10 (only 5 available)
-    var all = nums.into_iter().take(10)
+    let nums2 = [1, 2, 3, 4, 5]
+    var all = nums2.into_iter().take(10)
     println("count={all.count()}")
 
     # Take 0
-    var none = nums.into_iter().take(0)
+    let nums3 = [1, 2, 3, 4, 5]
+    var none = nums3.into_iter().take(0)
     println("zero={none.next().is_none()}")
     return 0

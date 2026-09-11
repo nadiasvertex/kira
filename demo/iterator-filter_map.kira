@@ -9,7 +9,7 @@ def main() -> int32:
     let nums = [1, 2, 3, 4]
 
     # Convert even numbers to their double, drop odd numbers
-    var fm = nums.into_iter().filter_map(x => if *x % 2 == 0: @some(*x * 10) else: @none)
+    var fm = nums.into_iter().filter_map(x => if x % 2 == 0: @some(x * 10) else: @none)
     println("mapped={fm.next().unwrap()}")
     println("mapped={fm.next().unwrap()}")
     println("done={fm.next().is_none()}")

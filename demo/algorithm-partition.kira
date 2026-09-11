@@ -13,7 +13,8 @@ def main() -> int32:
     println("odds_count={odds.len()}")
 
     # Partition by value > 4
-    let (big, small) = xs.into_iter().partition(x => x > 4)
+    let ys = [3, 1, 4, 1, 5, 9, 2, 6]
+    let (big, small) = ys.into_iter().partition(x => x > 4)
     println("big_count={big.len()}")
     println("small_count={small.len()}")
     return 0

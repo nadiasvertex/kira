@@ -10,3 +10,4 @@ def main() -> int32:
   println("Pi:   {pi :.2f}")
   println("Hex:  {255 :04x}")
   println("Bin:  {255 :08b}")
+  return 0

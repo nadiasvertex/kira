@@ -9,14 +9,20 @@ def main() -> int32:
 
     # Positions 0, 1, 2 with values
     var e = nums.into_iter().enumerate()
-    println("enum={e.next().unwrap()}")
-    println("enum={e.next().unwrap()}")
-    println("enum={e.next().unwrap()}")
+    let (i0, v0) = e.next().unwrap()
+    println("enum={i0}:{v0}")
+    let (i1, v1) = e.next().unwrap()
+    println("enum={i1}:{v1}")
+    let (i2, v2) = e.next().unwrap()
+    println("enum={i2}:{v2}")
 
     # Enumerate after filter: indices start where enumerate begins
     let all = [10, 20, 30, 40]
-    var filtered = all.into_iter().filter(x => *x > 15).enumerate()
-    println("fenum={filtered.next().unwrap()}")
-    println("fenum={filtered.next().unwrap()}")
-    println("fenum={filtered.next().unwrap()}")
+    var filtered = all.into_iter().filter(x => x > 15).enumerate()
+    let (fi0, fv0) = filtered.next().unwrap()
+    println("fenum={fi0}:{fv0}")
+    let (fi1, fv1) = filtered.next().unwrap()
+    println("fenum={fi1}:{fv1}")
+    let (fi2, fv2) = filtered.next().unwrap()
+    println("fenum={fi2}:{fv2}")
     return 0

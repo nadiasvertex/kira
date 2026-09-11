@@ -11,14 +11,22 @@ def main() -> int32:
 
     # Zipped: (1,10), (2,20), (3,30) — stops at a's length
     var z = a.into_iter().zip(b.into_iter())
-    println("zip={z.next().unwrap()}")
-    println("zip={z.next().unwrap()}")
-    println("zip={z.next().unwrap()}")
+    let (za0, zb0) = z.next().unwrap()
+    println("zip={za0},{zb0}")
+    let (za1, zb1) = z.next().unwrap()
+    println("zip={za1},{zb1}")
+    let (za2, zb2) = z.next().unwrap()
+    println("zip={za2},{zb2}")
     println("done={z.next().is_none()}")
 
     # Reversed order: shorter is b (3 elements)
-    var z2 = b.into_iter().zip(a.into_iter())
-    println("zipped2={z2.next().unwrap()}")
-    println("zipped2={z2.next().unwrap()}")
-    println("zipped2={z2.next().unwrap()}")
+    let a2 = [1, 2, 3]
+    let b2 = [10, 20, 30, 40]
+    var z2 = b2.into_iter().zip(a2.into_iter())
+    let (zc0, zd0) = z2.next().unwrap()
+    println("zipped2={zc0},{zd0}")
+    let (zc1, zd1) = z2.next().unwrap()
+    println("zipped2={zc1},{zd1}")
+    let (zc2, zd2) = z2.next().unwrap()
+    println("zipped2={zc2},{zd2}")
     return 0

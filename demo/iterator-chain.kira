@@ -17,7 +17,9 @@ def main() -> int32:
     println("done={c.next().is_none()}")
 
     # Chain same lists backwards
-    var c2 = b.into_iter().chain(a.into_iter())
+    let a2 = [1, 2]
+    let b2 = [3, 4]
+    var c2 = b2.into_iter().chain(a2.into_iter())
     println("reversed={c2.next().unwrap()}")
     println("reversed={c2.next().unwrap()}")
     println("reversed={c2.next().unwrap()}")

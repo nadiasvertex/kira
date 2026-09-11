@@ -10,5 +10,5 @@ def main() -> int32:
 
     # Number with the highest value
     let nums = [3, 7, 2, 9, 1]
-    println("max_val={nums.into_iter().max_by_key(x => *x).unwrap()}")
+    println("max_val={nums.into_iter().max_by_key(x => x).unwrap()}")
     return 0

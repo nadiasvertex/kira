@@ -14,10 +14,12 @@ def main() -> int32:
     println("skipped={remaining.next().unwrap()}")
 
     # Skip all (5 elements, skip 5)
-    var empty = nums.into_iter().skip(5)
+    let nums2 = [1, 2, 3, 4, 5]
+    var empty = nums2.into_iter().skip(5)
     println("empty={empty.next().is_none()}")
 
     # Skip more than available
-    var past = nums.into_iter().skip(10)
+    let nums3 = [1, 2, 3, 4, 5]
+    var past = nums3.into_iter().skip(10)
     println("past={past.next().is_none()}")
     return 0
