@@ -222,6 +222,26 @@ bump-major:
 run source_file: build
     bazel-bin/src/kira {{ source_file }}
 
+# Run every demo/*.kira program and fail if any of them error out
+demo: build
+    #!/usr/bin/env bash
+    set -uo pipefail
+
+    fail=0
+    for f in demo/*.kira; do
+      if ! out=$(bazel-bin/src/kira "$f" 2>&1); then
+        echo "=== FAIL: $f ==="
+        echo "$out"
+        fail=1
+      fi
+    done
+
+    if [ "$fail" -ne 0 ]; then
+      echo "One or more demo programs failed" >&2
+      exit 1
+    fi
+    echo "All demo programs ran successfully"
+
 # Generate compile_commands.json
 compile-commands:
     bazelisk run @wolfd_bazel_compile_commands//:generate_compile_commands -- //src:kira

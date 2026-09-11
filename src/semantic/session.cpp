@@ -6,6 +6,7 @@
 
 #include "src/semantic/binding_walk.h"
 #include "src/semantic/module_index.h"
+#include "src/semantic/symbols.h"
 
 namespace kira::semantic {
 namespace {
@@ -297,6 +298,21 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   switch (node.kind) {
   case ast::node_kind::func_decl: {
     const auto &decl = dynamic_cast<const ast::func_decl &>(node);
+    // A top-level item (module/trait/impl/type/concept scope) is already
+    // pre-registered by the binding walk's own item pass before bodies are
+    // walked at all; registering it again here would duplicate the symbol.
+    // Only a `def` nested inside a function/lambda body has no such pass and
+    // needs registering here instead.
+    const auto enclosing_kind = context.session.scopes[active_scope].kind;
+    if (enclosing_kind != semantic_scope_kind::module_scope &&
+        enclosing_kind != semantic_scope_kind::trait_scope &&
+        enclosing_kind != semantic_scope_kind::impl_scope &&
+        enclosing_kind != semantic_scope_kind::type_scope &&
+        enclosing_kind != semantic_scope_kind::concept_scope) {
+      if (auto spec = module_symbol_spec(node, context.file_id)) {
+        add_symbol(context.session, active_scope, *spec);
+      }
+    }
     walk_function_like_body(decl, active_scope, context,
                             semantic_scope_kind::function_signature_scope,
                             semantic_scope_kind::function_body_scope);

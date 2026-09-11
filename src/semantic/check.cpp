@@ -7938,8 +7938,16 @@ private:
   /// invented — a failed match simply binds nothing (argument checking has
   /// its own diagnostics). First binding wins; later occurrences are left to
   /// ordinary compatibility checking.
+  ///
+  /// `allow_override` is for the one caller (`solve_from_bounds`) whose
+  /// `concrete` is not a heuristic but ground truth: a `where I: iterator[T]`
+  /// bound names T's one true value (I's actual element type), not merely a
+  /// type some argument's shape happens to suggest. A prior argument-derived
+  /// guess for the same name is replaced rather than left to silently win —
+  /// see the `&int32`-vs-`int32` `max_by`/`min_by` bug this was added for.
   auto unify_rigid(type_id pattern, type_id concrete,
-                   std::unordered_map<std::string, type_id> &bindings) -> void {
+                   std::unordered_map<std::string, type_id> &bindings,
+                   bool allow_override = false) -> void {
     if (pattern == concrete || types_.is_unknown(concrete)) {
       return;
     }
@@ -7948,7 +7956,11 @@ private:
     const auto pattern_entry = types_.entry(pattern);
     if (pattern_entry.kind == type_kind::type_param_kind &&
         pattern_entry.ctor_arity == 0) {
-      bindings.try_emplace(pattern_entry.name, concrete);
+      if (allow_override) {
+        bindings.insert_or_assign(pattern_entry.name, concrete);
+      } else {
+        bindings.try_emplace(pattern_entry.name, concrete);
+      }
       return;
     }
     const auto concrete_entry = types_.entry(concrete);
@@ -7963,12 +7975,20 @@ private:
            concrete_entry.kind == type_kind::struct_kind ||
            concrete_entry.kind == type_kind::sum_kind ||
            concrete_entry.kind == type_kind::opaque_kind)) {
-        bindings.try_emplace(
-            head.name,
-            types_.ctor_ref(concrete_entry.name, concrete_entry.module_name,
-                            concrete_entry.decl, concrete_entry.args.size()));
+        if (allow_override) {
+          bindings.insert_or_assign(
+              head.name,
+              types_.ctor_ref(concrete_entry.name, concrete_entry.module_name,
+                              concrete_entry.decl, concrete_entry.args.size()));
+        } else {
+          bindings.try_emplace(
+              head.name,
+              types_.ctor_ref(concrete_entry.name, concrete_entry.module_name,
+                              concrete_entry.decl, concrete_entry.args.size()));
+        }
         for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
-          unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings);
+          unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings,
+                     allow_override);
         }
       }
       return;
@@ -7977,9 +7997,9 @@ private:
       // One structural allowance mirrors `compatible`: a reference pattern
       // meets its target, and vice versa.
       if (pattern_entry.kind == type_kind::ref_kind) {
-        unify_rigid(pattern_entry.result, concrete, bindings);
+        unify_rigid(pattern_entry.result, concrete, bindings, allow_override);
       } else if (concrete_entry.kind == type_kind::ref_kind) {
-        unify_rigid(pattern, concrete_entry.result, bindings);
+        unify_rigid(pattern, concrete_entry.result, bindings, allow_override);
       }
       return;
     }
@@ -7992,16 +8012,19 @@ private:
     case type_kind::fn_kind: {
       if (pattern_entry.args.size() == concrete_entry.args.size()) {
         for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
-          unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings);
+          unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings,
+                     allow_override);
         }
       }
-      unify_rigid(pattern_entry.result, concrete_entry.result, bindings);
+      unify_rigid(pattern_entry.result, concrete_entry.result, bindings,
+                 allow_override);
       return;
     }
     case type_kind::ref_kind:
     case type_kind::ptr_kind:
     case type_kind::array_kind:
-      unify_rigid(pattern_entry.result, concrete_entry.result, bindings);
+      unify_rigid(pattern_entry.result, concrete_entry.result, bindings,
+                 allow_override);
       return;
     default:
       return;
@@ -8290,7 +8313,8 @@ private:
             continue;
           }
           const auto resolved_arg = resolve_type(*arg_type, pattern_ctx);
-          unify_rigid(resolved_arg, (*concrete_args)[i], bindings);
+          unify_rigid(resolved_arg, (*concrete_args)[i], bindings,
+                     /*allow_override=*/true);
         }
       }
     };
@@ -14333,6 +14357,18 @@ private:
     in_const_generic_template_ = saved_template;
     in_type_generic_template_ = saved_type_template;
     pop_type_params();
+
+    // A `def` nested inside another function's body is invisible to
+    // `module_->functions` (only module-scope items are indexed there), so
+    // without this it can never be found by name — neither by sibling
+    // statements after it nor, via the borrow-checker's own walk, anywhere
+    // at all. Bind it into the enclosing scope, the same way `let`/`var`
+    // introduce a name, so `lookup_value` finds it exactly like any other
+    // local.
+    if (!at_module_scope && !decl.name.empty()) {
+      bind_value(decl.name, fn_type_of(decl, module_),
+                 binding_origin::let_binding, decl.span);
+    }
   }
 
   /// Checks a `type` declaration: validates its `deriving` clause against

@@ -1316,6 +1316,67 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
          "expected --show-compile-details to include the run's return value");
 }
 
+/// `std.algo.max_by[I, T](it: I, cmp: fn(T, T) -> ordering) -> option[T]
+/// where I: iterator[T]` has two sources for `T`: `cmp`'s own signature, and
+/// the `where I: iterator[T]` bound (`I`'s true element type). `nums.iter()`
+/// yields `&int32`, but `cmp_int` below takes plain `int32` —
+/// `types_.compatible` is deliberately lenient about a reference meeting its
+/// target, so this type-checks either way; which source *wins* the binding
+/// for `T` is not cosmetic, though, since it becomes the runtime
+/// representation the whole `max_by` instance is compiled against.
+///
+/// `unify_rigid`'s first-binding-wins policy used to let the
+/// argument-derived guess (`T := int32`, solved before the bound ever ran)
+/// permanently shadow the bound-derived ground truth (`T := &int32`) — a
+/// plain `try_emplace` no-op'd on the correct answer. The instance then
+/// compiled `cmp: fn(int32, int32) -> ordering` while the iterator it
+/// actually drove yielded `&int32`: every element `max_by` touched was a raw
+/// pointer reinterpreted as a 32-bit int, so the returned "maximum" was
+/// pointer-address garbage — with no diagnostic anywhere, because every step
+/// individually type-checked. Asserting the actual exit code (not just a
+/// clean compile) is what makes this able to fail: the corrupted run used to
+/// compile without error too.
+auto test_run_generic_bound_solves_t_over_conflicting_argument() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_max_by.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+            "module sample\n"
+            "def cmp_int(a: int32, b: int32) -> ordering:\n"
+            "    if a < b:\n"
+            "        return @less\n"
+            "    elif a > b:\n"
+            "        return @greater\n"
+            "    return @equal\n"
+            "def main() -> int32:\n"
+            "    let nums = [3, 1, 4, 1, 5]\n"
+            "    return *nums.iter().max_by(cmp_int).unwrap()\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `max_by` over a `&int32`-yielding iterator with an "
+         "`int32`-typed comparator to compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 5,
+         std::format("expected max([3, 1, 4, 1, 5]) == 5, got {}",
+                     report->run->exit_code));
+}
+
 /// A contract the compiler can neither prove nor refute is enforced where it
 /// always could be: at run time. `--no-contract-checks` is the one thing that
 /// takes that enforcement away — the spec's release elision, and the
@@ -1964,6 +2025,7 @@ auto main() -> int {
     test_build_at_o2_still_links_and_runs_correctly();
     test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();
+    test_run_generic_bound_solves_t_over_conflicting_argument();
     test_run_enforces_unproven_contract_unless_disabled();
     test_run_executes_spliced_quoted_expression();
     test_run_executes_spliced_builder_constructed_expression();

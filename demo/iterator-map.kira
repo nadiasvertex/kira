@@ -14,12 +14,12 @@ def main() -> int32:
     println("doubled={doubled.next().unwrap()}")
     println("doubled={doubled.next().unwrap()}")
 
-    // Uppercase strings
+    # Uppercase strings
     let words = ["hello", "world"]
     var upper = words.into_iter().map(x => x.to_uppercase())
     println("upper={upper.next().unwrap()}")
 
-    // Chained with filter
+    # Chained with filter
     var doubled_evens = nums.into_iter().filter(x => *x % 2 == 0).map(x => *x * 10)
     println("doubled_evens={doubled_evens.next().unwrap()}")
     return 0

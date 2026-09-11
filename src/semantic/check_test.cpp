@@ -2886,6 +2886,39 @@ auto test_ufcs_skips_private_functions_in_other_modules() -> void {
                     "expected the ordinary not-found diagnostic");
 }
 
+/// A `def` nested inside another function's body used to be invisible to
+/// name resolution entirely: the binding walk only pre-registers top-level
+/// items (`session.cpp`'s item pass), and nothing registered a nested
+/// `func_decl`'s own name into the enclosing block scope either before or
+/// after its declaration. Referencing it by name — even just to pass it as
+/// a value, not necessarily to call it — failed with "undefined name" no
+/// matter where the reference sat relative to the `def`.
+///
+/// Asserting the *return type* (not just `error_count == 0`) is what makes
+/// this able to fail: if either nested `def` resolved to `k_unknown_type`
+/// instead of a real `fn(int32) -> int32`, the annotated `let n: int32 = ...`
+/// would still silently accept it (`k_unknown_type` unifies with anything),
+/// masking the exact failure mode this regression guards.
+auto test_nested_def_resolves_as_a_value() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "nested_def.kira",
+      .text = "module main\n"
+              "\n"
+              "def compute() -> int32:\n"
+              "    def helper(x: int32) -> int32:\n"
+              "        return x * 2\n"
+              "    let f = helper\n"
+              "    let n: int32 = f(5)\n"
+              "    return n\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    return compute()\n",
+  }});
+  expect(analyzed.error_count == 0,
+         "expected a nested `def` to resolve when referenced by name in its "
+         "enclosing block");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -3077,6 +3110,7 @@ auto main() -> int {
     test_unknown_method_on_generic_receiver_reports_once();
     test_ufcs_reports_receiver_mismatch();
     test_ufcs_skips_private_functions_in_other_modules();
+    test_nested_def_resolves_as_a_value();
     test_impl_type_param_substituted_at_call_site();
     test_inline_submodule_paths_resolve();
     test_import_wins_over_inline_submodule();
