@@ -16,6 +16,7 @@
 /// 2-slot `find_result { found; pos }` struct.
 extern "C" {
 auto kira_rt_str_eq(uint64_t *a, uint64_t *b) -> uint64_t *;
+auto kira_rt_str_cmp(uint64_t *a, uint64_t *b) -> uint64_t *;
 auto kira_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t *from)
     -> uint64_t *;
 auto kira_rt_str_rfind(uint64_t *haystack, uint64_t *needle) -> uint64_t *;

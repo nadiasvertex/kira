@@ -55,6 +55,11 @@ auto kira_rt_str_eq(uint64_t *a, uint64_t *b) -> uint64_t * {
   return make_box(kira::runtime::str_equal(view_of(a), view_of(b)) ? 1U : 0U);
 }
 
+auto kira_rt_str_cmp(uint64_t *a, uint64_t *b) -> uint64_t * {
+  const auto cmp = kira::runtime::str_compare(view_of(a), view_of(b));
+  return make_box(static_cast<uint64_t>(static_cast<int64_t>(cmp)));
+}
+
 auto kira_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t *from)
     -> uint64_t * {
   return make_find_result(kira::runtime::str_find(

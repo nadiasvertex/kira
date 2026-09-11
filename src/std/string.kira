@@ -12,6 +12,8 @@ type box_usize = { v: usize }
 type box_u8 = { v: uint8 }
 #: Single-field wrapper for bool to pass across intrinsic boundaries.
 type box_bool = { v: bool }
+#: Single-field wrapper for int32 to pass across intrinsic boundaries.
+type box_i32 = { v: int32 }
 
 #: Result of a substring search. pos is meaningful only when found is true.
 type find_result = { found: bool, pos: usize }
@@ -21,6 +23,7 @@ type find_result = { found: bool, pos: usize }
 #: self-synchronization. Case mapping is Unicode simple (1:1). trim mode:
 #: 0 = both, 1 = start, 2 = end.
 intrinsic def rt_str_eq(a: str, b: str) -> box_bool
+intrinsic def rt_str_cmp(a: str, b: str) -> box_i32
 intrinsic def rt_str_find(haystack: str, needle: str, from: box_usize) -> find_result
 intrinsic def rt_str_rfind(haystack: str, needle: str) -> find_result
 intrinsic def rt_str_to_upper(s: str) -> str
@@ -46,6 +49,23 @@ extend str:
     #:   true if the strings are equal byte-for-byte, false otherwise.
     pub def eq(self, other: str) -> bool:
         return rt_str_eq(self, other).v
+
+    #: Compares two strings lexicographically by UTF-8 byte value. Backs
+    #: `ord for str`, which is what `<`/`<=`/`>`/`>=` and `min`/`max`/`sort`
+    #: dispatch to — `str` has no scalar bytecode/LLVM representation for
+    #: those to compare directly, the same reason `eq` exists alongside `==`.
+    #: Args:
+    #:   self: the string to compare.
+    #:   other: the other string to compare against.
+    #: Returns:
+    #:   how self orders relative to other.
+    pub def cmp(self, other: str) -> ordering:
+        let c = rt_str_cmp(self, other).v
+        if c < 0:
+            return @less
+        elif c > 0:
+            return @greater
+        return @equal
 
     #: Checks if the string begins with the given prefix.
     #: Args:

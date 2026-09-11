@@ -22,7 +22,7 @@ namespace kira {
 //  only tracks names, since the signature itself is written and typechecked
 //  as ordinary Kira source at the `intrinsic def` site.
 // ==========================================================================
-inline constexpr std::array<std::string_view, 32> known_intrinsic_names = {{
+inline constexpr std::array<std::string_view, 33> known_intrinsic_names = {{
     "rt_stdin",
     "rt_stdout",
     "rt_stderr",
@@ -54,6 +54,7 @@ inline constexpr std::array<std::string_view, 32> known_intrinsic_names = {{
     // mapping. The algorithms live in `src/runtime/string_ops.h` and are
     // shared verbatim with the bytecode VM's dispatch table.
     "rt_str_eq",
+    "rt_str_cmp",
     "rt_str_find",
     "rt_str_rfind",
     "rt_str_to_upper",
@@ -104,7 +105,7 @@ inline constexpr std::array<std::string_view, 32> known_intrinsic_names = {{
 /// declare each `kira_rt_*` function's LLVM signature — read from here
 /// rather than duplicated so the two backends' declared arities can't drift
 /// out of sync with each other or with `io.h`'s actual signatures.
-inline constexpr std::array<uint8_t, 32> known_intrinsic_arities = {{
+inline constexpr std::array<uint8_t, 33> known_intrinsic_arities = {{
     0, // rt_stdin
     0, // rt_stdout
     0, // rt_stderr
@@ -123,6 +124,7 @@ inline constexpr std::array<uint8_t, 32> known_intrinsic_arities = {{
     2, // rt_fmt_f64_general
     1, // rt_fmt_char_from_codepoint
     2, // rt_str_eq         (a, b)
+    2, // rt_str_cmp        (a, b)
     3, // rt_str_find       (haystack, needle, from)
     2, // rt_str_rfind      (haystack, needle)
     1, // rt_str_to_upper   (s)

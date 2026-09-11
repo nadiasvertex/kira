@@ -278,6 +278,10 @@ auto str_equal(std::string_view a, std::string_view b) -> bool {
   return a == b;
 }
 
+auto str_compare(std::string_view a, std::string_view b) -> int {
+  return a.compare(b);
+}
+
 auto str_find(std::string_view haystack, std::string_view needle, size_t from)
     -> std::optional<size_t> {
   if (needle.empty()) {

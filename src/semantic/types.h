@@ -677,6 +677,14 @@ struct checked_types {
   /// real method (e.g. a missing impl, already diagnosed separately).
   std::unordered_map<const ast::binary_expr *, resolved_callee>
       operator_dispatches;
+  /// For every `<`/`<=`/`>`/`>=` entry in `operator_dispatches` (`ord`'s
+  /// `cmp` method, not called through directly the way `eq`'s same-named
+  /// method is), the resolved return type (`ordering`) of that `cmp` call —
+  /// see `checker::wire_ord_dispatch`. `hir::lower_binary` needs this to
+  /// type the intermediate `cmp(...)` call it synthesizes before matching
+  /// the result down to `bool`.
+  std::unordered_map<const ast::binary_expr *, type_id>
+      ord_dispatch_result_types;
   /// Every interpolation segment's resolved rendering dispatch — see
   /// `interp_dispatch`'s doc comment. Keyed by the segment's `value`
   /// expression pointer (`ast::interp_segment::value.get()`).

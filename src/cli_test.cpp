@@ -1377,6 +1377,134 @@ auto test_run_generic_bound_solves_t_over_conflicting_argument() -> void {
                      report->run->exit_code));
 }
 
+/// `<`/`<=`/`>`/`>=` had no dispatch mechanism at all for a non-scalar
+/// operand — `check.cpp`'s own comment on `infer_comparison` said so
+/// (`wire_dispatch` was passed `false` for every comparison but `==`/`!=`):
+/// unlike arithmetic operators and equality, `ord` was type-checked (any
+/// `ord`-implementing type could sit on either side of `<`) but never wired
+/// to a real call, so lowering fell through to the scalar-only bytecode
+/// path and failed with "no scalar bytecode representation" for anything
+/// but a builtin number.
+///
+/// `wire_ord_dispatch` (`check.cpp`) now finds the operand's real `cmp`
+/// method (the trait's method is `cmp`, not `ord` — the one place the
+/// existing same-name-as-trait shortcut `require_operand_trait` uses
+/// doesn't hold) and `hir::lower_binary` translates its `ordering` result to
+/// `bool` via a synthesized match, mirroring how `lower_try` already
+/// synthesizes a match over `option`/`result`. Exercises all four operators
+/// against both an unequal and an equal pair, since `<=`/`>=` are the ones
+/// `is_equality`'s sibling path could get backwards (`@equal` has to read as
+/// true for `<=`/`>=` and false for `<`/`>`) — a computed `bool` per operator
+/// is what makes that distinction actually testable, not just "compiles".
+auto test_run_ord_dispatch_translates_ordering_to_bool() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_ord.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+            "module sample\n"
+            "type point = { mag: int32 } deriving eq\n"
+            "impl ord for point:\n"
+            "    def cmp(self, other: &point) -> ordering:\n"
+            "        if self.mag < other.mag:\n"
+            "            return @less\n"
+            "        elif self.mag > other.mag:\n"
+            "            return @greater\n"
+            "        return @equal\n"
+            "def main() -> int32:\n"
+            "    let a = point { mag: 3 }\n"
+            "    let b = point { mag: 7 }\n"
+            "    let c = point { mag: 3 }\n"
+            "    var score = 0\n"
+            "    if a < b:\n"
+            "        score = score + 1\n"
+            "    if a <= b:\n"
+            "        score = score + 10\n"
+            "    if b > a:\n"
+            "        score = score + 100\n"
+            "    if b >= a:\n"
+            "        score = score + 1000\n"
+            "    if a <= c:\n"
+            "        score = score + 10000\n"
+            "    if a >= c:\n"
+            "        score = score + 100000\n"
+            "    if a < c:\n"
+            "        score = score + 1000000\n"
+            "    if a > c:\n"
+            "        score = score + 10000000\n"
+            "    return score\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `<`/`<=`/`>`/`>=` against an `ord`-implementing struct to "
+         "compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 111111,
+         std::format("expected a<b, a<=b, b>a, b>=a, a<=c, a>=c true and "
+                     "a<c, a>c false (score 111111), got {}",
+                     report->run->exit_code));
+}
+
+/// `std.string`'s new `cmp` (backing `ord for str` via `wire_ord_dispatch`)
+/// is the one piece the general dispatch mechanism above can't exercise on
+/// its own: it needs a real `rt_str_cmp` intrinsic, wired through both the
+/// bytecode VM's dispatch table (`src/bytecode/vm.cpp`) and the LLVM tier's
+/// C-ABI wrapper (`src/runtime/string.cpp`), on top of the shared
+/// `kira::runtime::str_compare` algorithm (`string_ops.cpp`). Runs `max()`
+/// over `list[str]` — the exact construct `demo/algorithm-max.kira` needed
+/// and previously failed with "type `str` has no scalar bytecode
+/// representation yet" — end to end, checking the actual winning string
+/// rather than just a clean compile.
+auto test_run_str_ord_dispatch_supports_lexicographic_max() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_str_max.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+            "module sample\n"
+            "def main() -> int32:\n"
+            "    let words = [\"apple\", \"banana\", \"cherry\"]\n"
+            "    let winner = words.into_iter().max().unwrap()\n"
+            "    return if winner == \"cherry\": 1 else: 0\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `max()` over `list[str]` to compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 1,
+         std::format("expected max([\"apple\", \"banana\", \"cherry\"]) == "
+                     "\"cherry\", got exit code {}",
+                     report->run->exit_code));
+}
+
 /// A contract the compiler can neither prove nor refute is enforced where it
 /// always could be: at run time. `--no-contract-checks` is the one thing that
 /// takes that enforcement away — the spec's release elision, and the
@@ -2026,6 +2154,8 @@ auto main() -> int {
     test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();
     test_run_generic_bound_solves_t_over_conflicting_argument();
+    test_run_ord_dispatch_translates_ordering_to_bool();
+    test_run_str_ord_dispatch_supports_lexicographic_max();
     test_run_enforces_unproven_contract_unless_disabled();
     test_run_executes_spliced_quoted_expression();
     test_run_executes_spliced_builder_constructed_expression();

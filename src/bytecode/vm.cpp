@@ -1085,6 +1085,12 @@ auto intrinsic_rt_str_eq(std::span<const slot_value> args) -> slot_value {
   return make_box(slot_value{static_cast<uint64_t>(equal ? 1 : 0)});
 }
 
+auto intrinsic_rt_str_cmp(std::span<const slot_value> args) -> slot_value {
+  const auto cmp =
+      kira::runtime::str_compare(view_of(args[0]), view_of(args[1]));
+  return make_box(slot_value{static_cast<int64_t>(cmp)});
+}
+
 auto intrinsic_rt_str_find(std::span<const slot_value> args) -> slot_value {
   return make_find_result(
       kira::runtime::str_find(view_of(args[0]), view_of(args[1]),
@@ -1323,7 +1329,7 @@ using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 /// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 32> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, 33> k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
@@ -1342,6 +1348,7 @@ constexpr std::array<intrinsic_fn, 32> k_intrinsics = {{
     intrinsic_rt_fmt_f64_general,
     intrinsic_rt_fmt_char_from_codepoint,
     intrinsic_rt_str_eq,
+    intrinsic_rt_str_cmp,
     intrinsic_rt_str_find,
     intrinsic_rt_str_rfind,
     intrinsic_rt_str_to_upper,

@@ -918,6 +918,7 @@ public:
         .call_argument_mappings = std::move(call_argument_mappings_),
         .resolved_callees = std::move(resolved_callees_),
         .operator_dispatches = std::move(operator_dispatches_),
+        .ord_dispatch_result_types = std::move(ord_dispatch_result_types_),
         .interp_dispatches = std::move(interp_dispatches_),
         .for_iterator_dispatches = std::move(for_iterator_dispatches_),
         .fmt_types = fmt_types,
@@ -1075,6 +1076,13 @@ private:
   /// caller via `take_checked_types`.
   std::unordered_map<const ast::binary_expr *, resolved_callee>
       operator_dispatches_;
+  /// For every `<`/`<=`/`>`/`>=` entry `wire_ord_dispatch` adds to
+  /// `operator_dispatches_`, the `cmp` method's resolved return type
+  /// (`ordering`) — `hir::lower_binary` needs it to type the intermediate
+  /// `cmp(...)` call it synthesizes, and has no type-resolution machinery of
+  /// its own to derive it from `resolved_callee::decl->return_type`.
+  std::unordered_map<const ast::binary_expr *, type_id>
+      ord_dispatch_result_types_;
   /// Per-(target type, trait name) associated-type bindings captured while
   /// checking that trait's impl (`check_impl_decl`) — the only place
   /// `self_assoc_types_` is ever populated. A method resolved by
@@ -6925,8 +6933,54 @@ private:
                           /*wire_dispatch=*/is_equality);
     if (is_equality) {
       wire_str_equality_dispatch(binary, lhs);
+    } else {
+      wire_ord_dispatch(binary, lhs);
     }
     return bool_type;
+  }
+
+  /// Wires `<`/`<=`/`>`/`>=` between two operands implementing `ord` to a
+  /// real call of their `cmp` method — `require_operand_trait`'s dispatch
+  /// wiring assumes the operator's own name is the method to call (true for
+  /// `eq`/`add`/...), which doesn't hold for `ord`: the trait's one method
+  /// is `cmp`, returning `ordering`, not a same-named boolean method. Uses
+  /// the same `operator_dispatches_` map so `hir::lower_binary` needs no new
+  /// bookkeeping to *find* the dispatch, only new bookkeeping to *use* it —
+  /// translating the returned `ordering` into `bool` per `binary.op` is
+  /// lowering's job, so `cmp`'s resolved return type is stashed alongside it
+  /// in `ord_dispatch_result_types_` (lowering has no type-resolution
+  /// machinery of its own to derive it from `method->decl->return_type`).
+  auto wire_ord_dispatch(const ast::binary_expr &binary, type_id lhs) -> void {
+    if (binary.lhs == nullptr) {
+      return;
+    }
+    const auto target = strip_refs(lhs);
+    const auto &entry = types_.entry(target);
+    const auto is_self_method = [this](const method_entry *method) -> bool {
+      return method != nullptr && !method->decl->params.empty() &&
+             param_name_of(method->decl->params.front()) == "self";
+    };
+    const method_entry *method = nullptr;
+    if (entry.kind == type_kind::struct_kind ||
+        entry.kind == type_kind::sum_kind ||
+        entry.kind == type_kind::opaque_kind) {
+      method = find_method(entry, "cmp");
+    } else if (entry.kind == type_kind::builtin_kind) {
+      method = find_extend_method_for_builtin(entry, "cmp");
+      if (!is_self_method(method)) {
+        method = find_builtin_impl_method(entry.name, "cmp");
+      }
+    }
+    if (!is_self_method(method)) {
+      return;
+    }
+    operator_dispatches_[&binary] =
+        resolved_callee{.decl = method->decl,
+                        .owner_module = method->owner->module_name,
+                        .impl_target_type = entry.name,
+                        .receiver = binary.lhs.get()};
+    ord_dispatch_result_types_[&binary] =
+        resolve_operator_return_type(target, "ord", *method);
   }
 
   /// Wires `==`/`!=` between two `str` operands to a real call of

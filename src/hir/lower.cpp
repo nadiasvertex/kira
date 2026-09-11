@@ -328,6 +328,11 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_binary(const ast::binary_expr &bin)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_ordering_comparison(source_span span,
+                                               type_id bool_type,
+                                               ast::binary_op op,
+                                               ptr<hir_expr> ordering_value)
+      -> ptr<hir_expr>;
   [[nodiscard]] auto lower_unary(const ast::unary_expr &un)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_call(const ast::call_expr &call)
@@ -952,6 +957,15 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
       return std::unexpected(rhs.error());
     }
     const auto symbol = resolve_reference(local_name);
+    // `<`/`<=`/`>`/`>=` dispatch to `cmp`, which returns `ordering`, not the
+    // binary expression's own `bool` type — `check.cpp`'s
+    // `wire_ord_dispatch` stashes `cmp`'s real return type separately since
+    // this call's type has to be `ordering` for the match built below to
+    // make sense of it.
+    const auto ord_result = checked_.ord_dispatch_result_types.find(&bin);
+    const auto call_type = ord_result != checked_.ord_dispatch_result_types.end()
+                                ? ord_result->second
+                                : *type;
     auto callee = ptr<hir_expr>(make<hir_local_ref>(
         bin.span, k_unknown_type, symbol, local_name, resolved.owner_module));
     auto args = ptr_vec<hir_expr>{};
@@ -959,7 +973,7 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
     args.push_back(std::move(*lhs));
     args.push_back(std::move(*rhs));
     auto call = ptr<hir_expr>(hir::make<hir_call>(
-        bin.span, *type, std::move(callee), std::move(args)));
+        bin.span, call_type, std::move(callee), std::move(args)));
     // `!=` between two `str` operands dispatches to the same `str::eq`
     // method as `==` (`check.cpp`'s `wire_str_equality_dispatch` records
     // one entry for both) — negate its `bool` result here rather than
@@ -968,6 +982,10 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
     if (bin.op == ast::binary_op::bang_eq) {
       return ok_expr(hir::make<hir_unary>(
           bin.span, *type, ast::unary_op::logical_not, std::move(call)));
+    }
+    if (ord_result != checked_.ord_dispatch_result_types.end()) {
+      return ok_expr(
+          lower_ordering_comparison(bin.span, *type, bin.op, std::move(call)));
     }
     return ok_expr(std::move(call));
   }
@@ -981,6 +999,50 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
   }
   return ok_expr(hir::make<hir_binary>(bin.span, *type, bin.op, std::move(*lhs),
                                        std::move(*rhs)));
+}
+
+/// Translates `ordering_value` (a `cmp(...)` call's result) into the `bool`
+/// `op` actually asks for, via a synthesized 3-arm match against
+/// `@less`/`@equal`/`@greater` — mirrors `lower_try`'s synthesized matches
+/// over `option`/`result` above (same technique, a different sum type).
+/// `ordering` has no scalar bytecode/LLVM representation any more than
+/// `str` does (`check.cpp`'s `wire_ord_dispatch` is the only place `<`/
+/// `<=`/`>`/`>=` ever produces one), so this runs before either backend ever
+/// sees the comparison, and needs no backend-specific support of its own.
+auto lowerer::lower_ordering_comparison(source_span span, type_id bool_type,
+                                        ast::binary_op op,
+                                        ptr<hir_expr> ordering_value)
+    -> ptr<hir_expr> {
+  const auto subject_symbol = mint_symbol();
+  const auto bool_lit = [&](bool v) -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_literal>(
+        span, bool_type, v ? token_kind::kw_true : token_kind::kw_false,
+        std::string(v ? "true" : "false")));
+  };
+  const auto less_true = op == ast::binary_op::lt || op == ast::binary_op::lt_eq;
+  const auto equal_true =
+      op == ast::binary_op::lt_eq || op == ast::binary_op::gt_eq;
+  const auto greater_true =
+      op == ast::binary_op::gt || op == ast::binary_op::gt_eq;
+  const auto make_arm = [&](std::string variant_name,
+                           bool result) -> hir_match_arm {
+    auto pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
+        span, std::move(variant_name), ptr_vec<hir_pattern>{}));
+    auto stmts = ptr_vec<hir_node>{};
+    stmts.push_back(
+        ptr<hir_node>(make<hir_expr_stmt>(span, bool_lit(result))));
+    return hir_match_arm{.pattern = std::move(pattern),
+                         .guard = nullptr,
+                         .body = make<hir_block>(span, bool_type,
+                                                 std::move(stmts))};
+  };
+  auto arms = std::vector<hir_match_arm>{};
+  arms.push_back(make_arm("less", less_true));
+  arms.push_back(make_arm("equal", equal_true));
+  arms.push_back(make_arm("greater", greater_true));
+  return ptr<hir_expr>(make<hir_match>(span, bool_type,
+                                       std::move(ordering_value),
+                                       subject_symbol, std::move(arms)));
 }
 
 auto lowerer::lower_unary(const ast::unary_expr &un)

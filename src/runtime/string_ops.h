@@ -22,6 +22,11 @@ namespace kira::runtime {
 /// Byte-for-byte equality (length check + `memcmp`).
 [[nodiscard]] auto str_equal(std::string_view a, std::string_view b) -> bool;
 
+/// Lexicographic byte comparison: negative if `a` sorts before `b`, zero if
+/// equal, positive if `a` sorts after `b` — `std.string`'s `cmp` (backing
+/// `ord for str`) reads the sign only, same as `strcmp`/`memcmp`.
+[[nodiscard]] auto str_compare(std::string_view a, std::string_view b) -> int;
+
 /// First byte offset at or after `from` where `needle` occurs in `haystack`,
 /// or `nullopt` if it does not. Two-Way string matching (Crochemore–Perrin):
 /// O(n + m) worst case, O(1) extra space. An empty needle matches at
