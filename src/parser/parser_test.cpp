@@ -1669,6 +1669,50 @@ auto test_parser_splits_string_interpolation() -> void {
         interp_b->segments[0].value.get(), kira::ast::node_kind::struct_expr,
         "expected the embedded expression to be a struct literal");
   }
+
+  // `\u{...}` escapes are variable-width; the interpolation scanner must
+  // skip their whole `{...}` span rather than one character past the `\`,
+  // or the escape's own `{` gets mistaken for a real interpolation hole.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "def run():\n"
+                               "  let a = \"\\u{1F600}\"\n"
+                               "  let b = \"emoji \\u{1F600} and {name}\"\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *run_func = expect_node<kira::ast::func_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+        "expected run function declaration");
+    auto *let_a = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+        "expected let a statement");
+    expect_expr<kira::ast::literal_expr>(
+        let_a->initializer.get(), kira::ast::node_kind::literal_expr,
+        "expected a `\\u{...}`-only string to stay a literal_expr, not be "
+        "mistaken for an interpolation");
+
+    auto *let_b = expect_node<kira::ast::let_stmt>(
+        run_func->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+        "expected let b statement");
+    auto *interp_b = expect_expr<kira::ast::interpolated_string_expr>(
+        let_b->initializer.get(),
+        kira::ast::node_kind::interpolated_string_expr,
+        "expected the real `{name}` interpolation to still be recognized "
+        "past the `\\u{...}` escape");
+    expect(interp_b->segments.size() == 2,
+           "expected a leading literal segment and the `name` expr segment");
+    expect(!interp_b->has_error,
+           "expected the `\\u{1F600}` escape to decode cleanly rather than "
+           "being reported as an invalid escape sequence");
+    const std::string decoded_emoji = "\xF0\x9F\x98\x80"; // U+1F600
+    expect(interp_b->segments[0].is_literal &&
+               interp_b->segments[0].literal_text ==
+                   "emoji " + decoded_emoji + " and ",
+           "expected the `\\u{1F600}` escape to decode to its UTF-8 bytes "
+           "within the leading literal segment");
+    expect(!interp_b->segments[1].is_literal,
+           "expected the middle segment to be the embedded `name` "
+           "expression");
+  }
 }
 
 auto test_parser_classifies_quote_fragment_kind() -> void {

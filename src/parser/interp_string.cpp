@@ -1,11 +1,35 @@
 #include "src/parser/interp_string.h"
 
+#include <algorithm>
+
 namespace kira {
+
+namespace {
+
+/// Returns the number of characters the escape sequence starting at
+/// `content[i]` (the backslash) occupies. Every escape but `\u{...}` is
+/// exactly two characters wide; that one is variable-width, so callers who
+/// assume two and skip only one character past the backslash mistake its
+/// `{` for the start of a real interpolation hole.
+[[nodiscard]] auto escape_sequence_length(std::string_view content, size_t i)
+    -> size_t {
+  if (i + 2 >= content.size() || content[i + 1] != 'u' ||
+      content[i + 2] != '{') {
+    return std::min<size_t>(2, content.size() - i);
+  }
+  size_t j = i + 3;
+  while (j < content.size() && content[j] != '}') {
+    ++j;
+  }
+  return (j < content.size() ? j + 1 : j) - i;
+}
+
+} // namespace
 
 auto has_interpolation(std::string_view content) -> bool {
   for (size_t i = 0; i < content.size(); ++i) {
     if (content[i] == '\\') {
-      ++i; // Skip the escaped character; it can't itself start a run.
+      i += escape_sequence_length(content, i) - 1;
       continue;
     }
     if (content[i] == '{') {
@@ -30,7 +54,7 @@ namespace {
   ++i;
   while (i < content.size()) {
     if (content[i] == '\\') {
-      i += 2;
+      i += escape_sequence_length(content, i);
       continue;
     }
     if (content[i] == quote) {
@@ -53,11 +77,9 @@ auto scan_interpolated_content(std::string_view content)
     const char c = content[i];
 
     if (c == '\\') {
-      literal_buf.push_back(c);
-      if (i + 1 < content.size()) {
-        literal_buf.push_back(content[i + 1]);
-      }
-      i += 2;
+      const size_t len = escape_sequence_length(content, i);
+      literal_buf.append(content.substr(i, len));
+      i += len;
       continue;
     }
 
@@ -87,7 +109,7 @@ auto scan_interpolated_content(std::string_view content)
         const char ch = content[j];
 
         if (ch == '\\') {
-          j += 2;
+          j += escape_sequence_length(content, j);
           continue;
         }
         if (ch == '"' || ch == '\'') {
@@ -175,7 +197,7 @@ auto find_matching_brace(std::string_view text, size_t open_pos)
   while (j < text.size()) {
     const char ch = text[j];
     if (ch == '\\') {
-      j += 2;
+      j += escape_sequence_length(text, j);
       continue;
     }
     if (ch == '"' || ch == '\'') {
