@@ -1083,6 +1083,19 @@ auto lowerer::lower_call(const ast::call_expr &call)
                 "call expression is missing its callee");
   }
 
+  // `T.name()` where `T` is one of the enclosing (now-monomorphized)
+  // instance's own type parameters — see `type_param_reflection`'s doc
+  // comment in types.h. There is no runtime function to call here; the
+  // checker already resolved the answer once it knew which concrete type
+  // this instance was checked with, so lowering is just splicing that
+  // answer in as an ordinary string literal.
+  if (const auto reflected = checked_.type_param_reflections.find(&call);
+      reflected != checked_.type_param_reflections.end()) {
+    return ok_expr(make<hir_literal>(
+        call.span, *type, token_kind::string_lit,
+        quote_and_escape_for_literal(reflected->second.type_name)));
+  }
+
   // `x.len()`/`x.as_bytes()` on a builtin container/`str` — these have no
   // `func_decl` backing them at all (`semantic::check.cpp`'s
   // `builtin_method_result` is a hardcoded type-rule table, not a real

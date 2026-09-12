@@ -1,0 +1,38 @@
+module codegen_stress.type_param_reflection
+
+# `T.name()` compile-time reflection used from *ordinary* code inside a
+# generic function, over the function's own type parameter — previously
+# type-checked fine (the checker already knows the concrete type once
+# inside a monomorphized instance) but failed at lowering with "no concrete
+# checked type is available for this node", since only `static`-context
+# reflection (evaluated by `comptime::evaluator`) was ever wired to produce
+# a real value. `type_param_reflection` (types.h) records the checker's
+# already-known answer per instance so `hir::lower` can fold the call into
+# an ordinary string literal instead.
+#
+# Exercises multiple instantiations of the same generic function (two
+# builtin scalars and a user struct) so a bug that only reifies the first
+# instantiation's answer, or that leaks one instance's folded literal into
+# another's, would show up as a wrong classification rather than merely
+# "compiles."
+#
+# Reports each instantiation's `T.name()` by length rather than by `==`
+# comparison against a literal: this corpus is compiled standalone, without
+# the standard library's `str` `eq` impl injected, and `==` between two
+# `str`s needs that impl to dispatch through (`operator-overload-and-str-eq-
+# codegen`) — unrelated to what this test is actually checking, so it is
+# avoided here to keep the test isolated to the reflection fix.
+#
+# len("int32") = 5, len("str") = 3, len("point") = 5
+# 5 * 100 + 3 * 10 + 5 = 535
+
+# expect: 535
+
+type point = { x: int32, y: int32 }
+
+def name_len[T]() -> int32:
+    let name = T.name()
+    return name.len() as int32
+
+def main() -> int32:
+    return name_len[int32]() * 100 + name_len[str]() * 10 + name_len[point]()

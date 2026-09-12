@@ -624,6 +624,29 @@ struct functor_instance {
 /// only reads these when a `interp_dispatch` entry exists, and one can only
 /// exist if a source file had string interpolation, which the driver never
 /// allows without also injecting `std.fmt` (`inject_stdlib_prelude`).
+/// A compile-time type-reflection call (`T.name()`) whose subject is one of
+/// the enclosing function's own type parameters, resolved once that
+/// parameter is bound to a concrete type inside a monomorphized instance —
+/// see the `lookup_type_param` branch of `checker::infer_call` (`check.cpp`).
+///
+/// Reflection (`T.name()`/`T.fields()`/`T.field_count()`) otherwise only
+/// evaluates inside `static` constructs, via `comptime::evaluator` — that
+/// evaluator has no notion of "the type a generic instance's own parameter
+/// was monomorphized with," since it is a wholly separate subsystem from the
+/// checker's per-instance `type_param_slots_` binding. So a reflection call
+/// on a type parameter, written in *ordinary* (non-static) code, type-checks
+/// fine (the checker already knows the concrete type once inside a checked
+/// instance) but has nothing backing it at lowering time — this record is
+/// exactly that missing backing: `hir::lower` folds the call straight into
+/// the recorded name rather than trying to lower a call to something with no
+/// runtime existence. Absent for a reflection call on a real declared type
+/// (`point.name()`), which is unrelated (and unsupported outside `static`
+/// contexts, same as ever) — only a type *parameter*'s answer is knowable
+/// purely from which instance is being checked.
+struct type_param_reflection {
+  std::string type_name;
+};
+
 struct fmt_runtime_types {
   type_id format_spec = 0;
   type_id align_mode = 0;
@@ -690,6 +713,12 @@ struct checked_types {
   /// `interp_dispatch`'s doc comment. Keyed by the segment's `value`
   /// expression pointer (`ast::interp_segment::value.get()`).
   std::unordered_map<const ast::expr *, interp_dispatch> interp_dispatches;
+  /// Every `T.name()` reflection call resolved against a type *parameter* —
+  /// see `type_param_reflection`'s doc comment. Keyed by the `call_expr`
+  /// node itself. Absent for a reflection call over a real declared type,
+  /// which stays unsupported outside `static` contexts as before.
+  std::unordered_map<const ast::call_expr *, type_param_reflection>
+      type_param_reflections;
   /// Every `for` loop whose iterable is a user type implementing
   /// `std.iter.iterator[T]` — see `iterator_loop_dispatch`'s doc comment.
   /// Keyed by the `ast::for_stmt` node. Absent for range/option/generator/

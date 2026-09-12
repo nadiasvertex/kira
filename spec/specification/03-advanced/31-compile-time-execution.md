@@ -34,7 +34,7 @@ else:
 
 - The condition is evaluated at compile time; it must be closed.
 - The branch not taken is **not compiled or type-checked** — it is discarded before name resolution sees it (`static_decl_kind::conditional_compilation`, `check.cpp:15119`).
-- `static if` is valid at module scope (selecting between top-level items) and inside a function body (selecting between statements).
+- `static if` is valid at module scope, selecting between top-level items. Written inside a function body it parses (`parser::parse_static_decl` accepts `kw_static` at statement position), but each branch's body is still parsed as a list of *declarations* (`parse_top_level_item`), not statements — a branch containing `return`/an assignment/any ordinary statement fails to parse there today, contrary to an earlier version of this section's claim that statement bodies were supported.
 
 ## `static assert`
 
@@ -161,7 +161,7 @@ Quotes are hygienic by default: a plain (non-destructuring) `let`/`var` binding 
 Implemented end to end:
 
 - `static` bindings, `static if`, `static assert`, `static for` (both forms) — `static_decl` and its four `static_decl_kind` variants, handled in `check.cpp` (`check_static_decl`, `~15074`–`15230`) and by the evaluator (`src/comptime/eval.cpp`).
-- Compile-time reflection (`T.fields()`, `T.field_count()`, `T.name()`) — `src/comptime/reflect.cpp`.
+- Compile-time reflection (`T.fields()`, `T.field_count()`, `T.name()`) — `src/comptime/reflect.cpp` for `static` contexts. `T.name()` called on a generic function's own type parameter from *ordinary* (non-`static`) code also lowers, via `semantic::type_param_reflection`/`hir::lower_call` (`checker::infer_call` records the concrete name once inside a monomorphized instance; `comptime::evaluator` itself has no notion of that binding, being a wholly separate subsystem used only for `static if`/`static for`/`static assert`/`static let`). `T.field_count()`/`T.fields()` on a type parameter remain `static`-only.
 - `pure` verification for functions and lambdas — enforced in `check.cpp` and required inside contract conditions.
 - Quoting/splicing with all four fragment kinds (`expr`, `stmt`, `def_expr`, `type_expr`), reification at splice sites, and hygienic renaming of internal bindings — `src/comptime/hygiene.{h,cpp}`, `src/comptime/eval.cpp`, and the `quote_expr`/`splice_expr`/`splice_stmt`/`splice_type` node kinds in `check.cpp`.
 

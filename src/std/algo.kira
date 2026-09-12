@@ -1045,3 +1045,570 @@ pub def product[I, T](it: I) -> T where I: iterator[T], T: one:
 #:   an iterator yielding `x` for each `&x` of the source.
 pub def values[I, T](it: I) -> map_iter[I, &T, T] where I: iterator[&T]:
     return map_iter { inner: it, f: (x: &T) => *x }
+
+# ---------------------------------------------------------------------------
+# Sorting and searching (spec/specification/04-stdlib/algorithms/
+# 51-sorting-and-searching.md).
+#
+# Slice algorithms, not iterator adapters: in-place (where applicable) and
+# operating over a contiguous `slice[T]`/`slice_mut[T]` range rather than
+# draining a lazily-pulled `iterator[T]`. This chapter was blocked on two
+# compiler gaps found and fixed in the course of implementing it:
+#
+#   - Range-indexing (`arr[a..b]`) only scaled correctly for 1-byte-stride
+#     sources, so slicing an `array[int32, N]`/`list[int32]` into a mutable
+#     view silently addressed the wrong bytes — see
+#     [[general-stride-range-indexing-implemented]].
+#   - `T.name()` (compile-time reflection over a generic function's own type
+#     parameter) type-checked but never lowered outside `static` constructs —
+#     see [[type-param-reflection-in-generic-bodies]]. `sort[T]`'s integer
+#     fast path below is what that fix was for.
+#
+# `sort`/`stable_sort`/etc. take `s: &mut slice_mut[T]`/`s: &slice[T]`
+# explicitly (rather than being written as `extend[T] slice_mut[T]`/
+# `extend[T] slice[T]` methods) so they are reachable by UFCS
+# (`s.sort()`) on *both* mutability variants from one definition, and so a
+# `list[T]`/`array[T, N]` receiver can pass `&mut xs[0..xs.len()]` directly
+# without needing its own forwarding method.
+# ---------------------------------------------------------------------------
+
+def is_greater(o: ordering) -> bool:
+    return match o:
+        @less => false
+        @equal => false
+        @greater => true
+
+#: Three-way-compares two `T: ord` values using `<` (advisory bound; see this
+#: file's terminals section for why `<` rather than a real `cmp` call).
+def cmp_via_lt[T](a: T, b: T) -> ordering where T: ord:
+    if a < b:
+        return @less
+    if b < a:
+        return @greater
+    return @equal
+
+#: Swaps the elements at two indices of a mutable slice.
+def swap_elems[T](s: &mut slice_mut[T], i: usize, j: usize) -> unit:
+    let tmp = s[i]
+    s[i] = s[j]
+    s[j] = tmp
+
+#: Reverses the elements in `[lo, hi)` of a mutable slice, in place.
+def reverse_range[T](s: &mut slice_mut[T], lo: usize, hi: usize) -> unit:
+    var i = lo
+    var j = hi
+    while i + 1 < j:
+        j = j - 1
+        swap_elems(s, i, j)
+        i = i + 1
+
+#: Insertion-sorts `[lo, hi)` of a mutable slice, in place, under `cmp`.
+#:
+#: Stable (equal elements never cross), and the fallback every comparator-
+#: based sort below uses once a range is small enough that its own overhead
+#: dominates.
+def insertion_sort_by[T](s: &mut slice_mut[T], lo: usize, hi: usize,
+                        cmp: fn(T, T) -> ordering) -> unit:
+    var i = lo + 1
+    while i < hi:
+        let key = s[i]
+        var j = i
+        while j > lo and is_greater(cmp(s[j - 1], key)):
+            s[j] = s[j - 1]
+            j = j - 1
+        s[j] = key
+        i = i + 1
+
+#: Sifts `s[lo + start]` down into the heap `[lo, lo + n)`, under `cmp`.
+def sift_down[T](s: &mut slice_mut[T], lo: usize, start: usize, n: usize,
+                 cmp: fn(T, T) -> ordering) -> unit:
+    var root = start
+    var going = true
+    while going:
+        let left = root * 2 + 1
+        if left >= n:
+            going = false
+        else:
+            var largest = root
+            if is_greater(cmp(s[lo + left], s[lo + largest])):
+                largest = left
+            let right = left + 1
+            if right < n and is_greater(cmp(s[lo + right], s[lo + largest])):
+                largest = right
+            if largest == root:
+                going = false
+            else:
+                swap_elems(s, lo + root, lo + largest)
+                root = largest
+
+#: Heapsorts `[lo, hi)` of a mutable slice, in place, under `cmp`.
+#:
+#: `introsort_loop`'s worst-case fallback: heapsort has no quadratic case,
+#: which is what bounds introsort's own worst case to `O(n log n)`.
+def heapsort_by[T](s: &mut slice_mut[T], lo: usize, hi: usize,
+                   cmp: fn(T, T) -> ordering) -> unit:
+    let n = hi - lo
+    if n < 2:
+        return
+    var start = n / 2
+    while start > 0:
+        start = start - 1
+        sift_down(s, lo, start, n, cmp)
+    var end = n - 1
+    while end > 0:
+        swap_elems(s, lo, lo + end)
+        sift_down(s, lo, 0, end, cmp)
+        end = end - 1
+
+#: Partitions `[lo, hi)` around a median-of-three pivot (Lomuto scheme),
+#: returning the pivot's final index. `hi - lo` must be at least 3.
+def partition_by[T](s: &mut slice_mut[T], lo: usize, hi: usize,
+                    cmp: fn(T, T) -> ordering) -> usize:
+    let last = hi - 1
+    let mid = lo + (hi - lo) / 2
+    if is_greater(cmp(s[lo], s[mid])):
+        swap_elems(s, lo, mid)
+    if is_greater(cmp(s[lo], s[last])):
+        swap_elems(s, lo, last)
+    if is_greater(cmp(s[mid], s[last])):
+        swap_elems(s, mid, last)
+    swap_elems(s, mid, last)
+    let pivot = s[last]
+    var store = lo
+    var i = lo
+    while i < last:
+        if not is_greater(cmp(s[i], pivot)):
+            swap_elems(s, i, store)
+            store = store + 1
+        i = i + 1
+    swap_elems(s, store, last)
+    return store
+
+#: `floor(log2(n))`, for introsort's recursion-depth budget.
+def log2_floor(n: usize) -> usize:
+    var v = n
+    var log_val: usize = 0
+    while v > 1:
+        v = v / 2
+        log_val = log_val + 1
+    return log_val
+
+#: Introsort over `[lo, hi)`: quicksort (median-of-three, Lomuto partition)
+#: that falls back to heapsort once its recursion depth exceeds a
+#: `log2(n)`-derived budget, with insertion sort below a small-range cutoff.
+#: This is what bounds quicksort's usual `O(n^2)` worst case to `O(n log n)`.
+def introsort_loop[T](s: &mut slice_mut[T], lo0: usize, hi0: usize,
+                      depth0: usize, cmp: fn(T, T) -> ordering) -> unit:
+    var lo = lo0
+    var hi = hi0
+    var depth = depth0
+    while hi - lo > 16:
+        if depth == 0:
+            heapsort_by(s, lo, hi, cmp)
+            return
+        depth = depth - 1
+        let p = partition_by(s, lo, hi, cmp)
+        # Recurse into the smaller side and loop into the larger one, so the
+        # call stack never holds more than `O(log n)` frames.
+        if p - lo < hi - p:
+            introsort_loop(s, lo, p, depth, cmp)
+            lo = p + 1
+        else:
+            introsort_loop(s, p + 1, hi, depth, cmp)
+            hi = p
+    insertion_sort_by(s, lo, hi, cmp)
+
+#: Whether `T` names one of the builtin integer types small enough for a
+#: 64-bit radix key to represent losslessly — every integer type except
+#: `int128`/`uint128` (excluded: truncating a 128-bit value down to a 64-bit
+#: `usize` key could make two distinct values collide, corrupting relative
+#: order rather than merely being slower to sort).
+def is_radix_integer[T]() -> bool:
+    let n = T.name()
+    return (n == "byte" or n == "int8" or n == "int16" or n == "int32" or
+        n == "int64" or n == "isize" or n == "uint8" or n == "uint16" or
+        n == "uint32" or n == "uint64" or n == "usize")
+
+#: Whether `T` names one of the builtin *signed* integer types.
+def is_signed_integer[T]() -> bool:
+    let n = T.name()
+    return (n == "int8" or n == "int16" or n == "int32" or n == "int64" or
+        n == "isize")
+
+#: An order-preserving 64-bit radix key for an integer value.
+#:
+#: `x as usize` bit-reinterprets `x` at its own concrete width and then
+#: (for a signed source) sign-extends to fill the 64-bit result — so for a
+#: negative `x` every bit from its own sign bit up through bit 63 of the key
+#: is 1. Flipping bit 63 alone is therefore enough to reorder signed values
+#: correctly regardless of their original width: every negative value's key
+#: lands below the flipped zero point (`0x8000000000000000`) and every
+#: non-negative value's key lands at or above it, and *within* each half the
+#: sign-extension left the original ordering of the low bits untouched.
+#: Unsigned sources need no flip — `as usize` zero-extends them, which is
+#: already order-preserving.
+def radix_key[T](x: T, is_signed: bool) -> usize:
+    let bits = x as usize
+    if is_signed:
+        return bits ^ 0x8000000000000000
+    return bits
+
+#: Radix-sorts (LSD, 8 passes of one byte each over `radix_key`) a mutable
+#: slice of integers, in place. `O(n)`, and the reason `sort[T]` prefers it
+#: over the comparison-based `introsort_loop` whenever `T` qualifies
+#: (`is_radix_integer`) — this is Kira's `ska_sort`: named for Malte
+#: Skarupke's byte-radix integer sort, realized here as a classic
+#: double-buffered LSD pass rather than his fully in-place American-flag
+#: variant, which needs pointer-level bucket bookkeeping this module has no
+#: primitive for yet.
+def ska_sort[T](s: &mut slice_mut[T], is_signed: bool) -> unit:
+    let n = s.len()
+    if n < 2:
+        return
+    var src: list[T] = []
+    var i: usize = 0
+    while i < n:
+        src.push(s[i])
+        i = i + 1
+    var dst: list[T] = []
+    i = 0
+    while i < n:
+        dst.push(s[i])
+        i = i + 1
+
+    var pass: usize = 0
+    while pass < 8:
+        let shift = pass * 8
+        var counts: list[usize] = [0; 256]
+        i = 0
+        while i < n:
+            let bucket = (radix_key(src[i], is_signed) >> shift) & 0xFF
+            counts[bucket] = counts[bucket] + 1
+            i = i + 1
+        var total: usize = 0
+        var b: usize = 0
+        while b < 256:
+            let c = counts[b]
+            counts[b] = total
+            total = total + c
+            b = b + 1
+        i = 0
+        while i < n:
+            let bucket = (radix_key(src[i], is_signed) >> shift) & 0xFF
+            dst[counts[bucket]] = src[i]
+            counts[bucket] = counts[bucket] + 1
+            i = i + 1
+        let tmp = src
+        src = dst
+        dst = tmp
+        pass = pass + 1
+
+    i = 0
+    while i < n:
+        s[i] = src[i]
+        i = i + 1
+
+#: Sorts a mutable slice in place, ascending, not guaranteed stable.
+#:
+#: Uses `ska_sort` (a byte-radix integer sort) when `T` is one of the
+#: builtin integer types small enough for it, and introsort (quicksort with
+#: a heapsort worst-case fallback) otherwise.
+#: Args:
+#:   s: the slice to sort (mutated in place).
+pub def sort[T](s: &mut slice_mut[T]) -> unit where T: ord:
+    if is_radix_integer[T]():
+        ska_sort(s, is_signed_integer[T]())
+        return
+    let n = s.len()
+    if n < 2:
+        return
+    introsort_loop(s, 0, n, log2_floor(n) * 2, (a: T, b: T) => cmp_via_lt(a, b))
+
+#: Sorts a mutable slice in place, under a caller-supplied comparator, not
+#: guaranteed stable.
+#: Args:
+#:   s: the slice to sort (mutated in place).
+#:   cmp: compares two elements, answering how the first relates to the second.
+pub def sort_by[T](s: &mut slice_mut[T], cmp: fn(T, T) -> ordering) -> unit:
+    let n = s.len()
+    if n < 2:
+        return
+    introsort_loop(s, 0, n, log2_floor(n) * 2, cmp)
+
+#: Sorts a mutable slice in place by a derived key, not guaranteed stable.
+#:
+#: `key` is called twice per comparison rather than once per element: unlike
+#: `std.algo`'s `min_by_key`/`max_by_key`, a sort has no single running
+#: value to cache a key against. Prefer a cheap `key` function.
+#: Args:
+#:   s: the slice to sort (mutated in place).
+#:   key: maps an element to the value to compare on.
+pub def sort_by_key[T, K](s: &mut slice_mut[T], key: fn(T) -> K) -> unit where K: ord:
+    sort_by(s, (a: T, b: T) => cmp_via_lt(key(a), key(b)))
+
+#: Returns a new, ascending-sorted `list[T]` of a slice's elements, leaving
+#: the source slice unchanged.
+#: Args:
+#:   s: the slice to copy and sort.
+#: Returns:
+#:   a new list holding the same elements in ascending order.
+pub def sorted[T](s: &slice[T]) -> list[T] where T: ord:
+    var out: list[T] = []
+    var i: usize = 0
+    let n = s.len()
+    while i < n:
+        out.push(s[i])
+        i = i + 1
+    if n >= 2:
+        sort(&mut out[0..n])
+    return out
+
+#: Finds the natural run starting at `start` (a maximal non-decreasing
+#: prefix, or a strictly-decreasing one reversed in place to become
+#: non-decreasing) and returns its end (exclusive).
+def find_run_end[T](s: &mut slice_mut[T], start: usize, n: usize,
+                    cmp: fn(T, T) -> ordering) -> usize:
+    if start + 1 >= n:
+        return n
+    var end = start + 1
+    if is_greater(cmp(s[start], s[end])):
+        while end < n and is_greater(cmp(s[end - 1], s[end])):
+            end = end + 1
+        reverse_range(s, start, end)
+    else:
+        while end < n and not is_greater(cmp(s[end], s[end - 1])):
+            end = end + 1
+    return end
+
+#: Stably merges the two already-sorted runs `[lo, mid)` and `[mid, hi)` of
+#: a mutable slice into `[lo, hi)`, in ascending order.
+def merge_by[T](s: &mut slice_mut[T], lo: usize, mid: usize, hi: usize,
+                cmp: fn(T, T) -> ordering) -> unit:
+    var left: list[T] = []
+    var i = lo
+    while i < mid:
+        left.push(s[i])
+        i = i + 1
+    var right: list[T] = []
+    i = mid
+    while i < hi:
+        right.push(s[i])
+        i = i + 1
+    var li: usize = 0
+    var ri: usize = 0
+    var out = lo
+    while li < left.len() and ri < right.len():
+        # `not is_greater` (rather than `is_less`) picks the left run on a
+        # tie, which is what keeps the merge — and so the whole sort —
+        # stable.
+        if not is_greater(cmp(left[li], right[ri])):
+            s[out] = left[li]
+            li = li + 1
+        else:
+            s[out] = right[ri]
+            ri = ri + 1
+        out = out + 1
+    while li < left.len():
+        s[out] = left[li]
+        li = li + 1
+        out = out + 1
+    while ri < right.len():
+        s[out] = right[ri]
+        ri = ri + 1
+        out = out + 1
+
+#: Sorts a mutable slice in place, ascending, preserving the relative order
+#: of equal elements.
+#:
+#: A simplified timsort: natural ascending/descending runs are detected and
+#: extended to a fixed minimum length with insertion sort, then merged
+#: bottom-up in pairs until one run remains. Real timsort's exact stack-
+#: balancing merge order and galloping mode are not implemented — both are
+#: performance refinements over an already-`O(n log n)` merge, not
+#: correctness requirements.
+#: Args:
+#:   s: the slice to sort (mutated in place).
+pub def stable_sort[T](s: &mut slice_mut[T]) -> unit where T: ord:
+    let n = s.len()
+    if n < 2:
+        return
+    let cmp = (a: T, b: T) => cmp_via_lt(a, b)
+    let minrun: usize = 32
+    var runs: list[(usize, usize)] = []
+    var start: usize = 0
+    while start < n:
+        var end = find_run_end(s, start, n, cmp)
+        let target_end = if start + minrun < n: start + minrun else: n
+        if end < target_end:
+            insertion_sort_by(s, start, target_end, cmp)
+            end = target_end
+        runs.push((start, end))
+        start = end
+
+    while runs.len() > 1:
+        var next_runs: list[(usize, usize)] = []
+        var i: usize = 0
+        while i < runs.len():
+            if i + 1 < runs.len():
+                let (a_start, a_end) = runs[i]
+                let (_, b_end) = runs[i + 1]
+                merge_by(s, a_start, a_end, b_end, cmp)
+                next_runs.push((a_start, b_end))
+                i = i + 2
+            else:
+                next_runs.push(runs[i])
+                i = i + 1
+        runs = next_runs
+
+#: Reverses a mutable slice in place.
+#: Args:
+#:   s: the slice to reverse (mutated in place).
+pub def reverse[T](s: &mut slice_mut[T]) -> unit:
+    reverse_range(s, 0, s.len())
+
+#: Rotates a mutable slice left in place, so the element at `mid` becomes
+#: the first element.
+#: Args:
+#:   s: the slice to rotate (mutated in place).
+#:   mid: the index of the element that becomes first.
+pub def rotate[T](s: &mut slice_mut[T], mid: usize) -> unit:
+    let n = s.len()
+    if mid == 0 or mid == n:
+        return
+    reverse_range(s, 0, mid)
+    reverse_range(s, mid, n)
+    reverse_range(s, 0, n)
+
+#: Removes consecutive duplicate elements from a mutable slice, in place,
+#: moving the surviving elements to the front.
+#:
+#: A slice cannot shrink, so the caller re-slices to the returned length
+#: (`s[0..s.dedup()]`) to get a view of just the deduplicated elements —
+#: what's left past that length is unspecified, not zeroed.
+#: Args:
+#:   s: the slice to deduplicate (mutated in place).
+#: Returns:
+#:   the number of surviving elements, always at the front.
+pub def dedup[T](s: &mut slice_mut[T]) -> usize where T: eq:
+    let n = s.len()
+    if n == 0:
+        return 0
+    var write: usize = 1
+    var read: usize = 1
+    while read < n:
+        if not (s[read] == s[write - 1]):
+            if write != read:
+                s[write] = s[read]
+            write = write + 1
+        read = read + 1
+    return write
+
+#: The index of the first element for which `pred` is false, over a slice
+#: partitioned so every element satisfying `pred` precedes every element
+#: that doesn't.
+#: Args:
+#:   s: the partitioned slice to search.
+#:   pred: the partitioning predicate.
+#: Returns:
+#:   the boundary index; `s.len()` if every element satisfies `pred`.
+pub def partition_point[T](s: &slice[T], pred: fn(T) -> bool) -> usize:
+    var lo: usize = 0
+    var hi: usize = s.len()
+    while lo < hi:
+        let mid = lo + (hi - lo) / 2
+        if pred(s[mid]):
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+#: The index of the first element not less than `target`, over an
+#: ascending-sorted slice.
+#: Args:
+#:   s: the ascending-sorted slice to search.
+#:   target: the value to bound.
+#: Returns:
+#:   the boundary index; `s.len()` if every element is less than `target`.
+pub def lower_bound[T](s: &slice[T], target: T) -> usize where T: ord:
+    return partition_point(s, (x: T) => x < target)
+
+#: The index of the first element greater than `target`, over an
+#: ascending-sorted slice.
+#: Args:
+#:   s: the ascending-sorted slice to search.
+#:   target: the value to bound.
+#: Returns:
+#:   the boundary index; `s.len()` if no element is greater than `target`.
+pub def upper_bound[T](s: &slice[T], target: T) -> usize where T: ord:
+    return partition_point(s, (x: T) => not (target < x))
+
+#: `O(log n)` lookup of a value in an ascending-sorted slice.
+#: Args:
+#:   s: the ascending-sorted slice to search.
+#:   target: the value to look up.
+#: Returns:
+#:   the index of a matching element, or `@none` if none matches.
+pub def binary_search[T](s: &slice[T], target: T) -> option[usize] where T: ord:
+    let idx = lower_bound(s, target)
+    if idx < s.len() and not (s[idx] < target) and not (target < s[idx]):
+        return @some(idx)
+    return @none
+
+#: `O(log n)` lookup over an ascending-sorted slice, under a caller-supplied
+#: comparator.
+#: Args:
+#:   s: the ascending-sorted slice to search.
+#:   f: compares a candidate element to the (closed-over) search target,
+#:      answering how the candidate relates to it.
+#: Returns:
+#:   the index of a matching element, or `@none` if none matches.
+pub def binary_search_by[T](s: &slice[T], f: fn(T) -> ordering) -> option[usize]:
+    var lo: usize = 0
+    var hi: usize = s.len()
+    while lo < hi:
+        let mid = lo + (hi - lo) / 2
+        match f(s[mid]):
+            @less =>:
+                lo = mid + 1
+            @equal => return @some(mid)
+            @greater =>:
+                hi = mid
+    return @none
+
+#: Yields every overlapping, contiguous `size`-element view of a slice, in
+#: order.
+#: Args:
+#:   s: the slice to view.
+#:   size: the width of each window.
+#: Returns:
+#:   a list of overlapping windows; empty if `size` is `0` or exceeds the
+#:   slice's length.
+pub def windows[T](s: &slice[T], size: usize) -> list[slice[T]]:
+    var out: list[slice[T]] = []
+    let n = s.len()
+    if size == 0 or size > n:
+        return out
+    var i: usize = 0
+    while i + size <= n:
+        out.push(s[i..i + size])
+        i = i + 1
+    return out
+
+#: Splits a slice into consecutive, non-overlapping `size`-element views, in
+#: order. The final chunk holds the remainder and may be shorter than `size`.
+#: Args:
+#:   s: the slice to view.
+#:   size: the width of each chunk.
+#: Returns:
+#:   a list of consecutive chunks; empty if `size` is `0`.
+pub def chunks[T](s: &slice[T], size: usize) -> list[slice[T]]:
+    var out: list[slice[T]] = []
+    if size == 0:
+        return out
+    let n = s.len()
+    var i: usize = 0
+    while i < n:
+        let end = if i + size < n: i + size else: n
+        out.push(s[i..end])
+        i = end
+    return out

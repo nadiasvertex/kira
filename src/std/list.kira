@@ -16,10 +16,15 @@ module std.list
 # it with a different meaning for the same name. The rest arrive with the
 # terminals in that same module.
 #
-# `sort` is likewise absent: it belongs with the slice algorithms, over a
-# range rather than a whole list. `pop` and `clear` need to *shrink* a list,
-# which no primitive exposes; they return once Phase 7 rebuilds `list` over
-# `alloc`/pointer primitives.
+# `sort` is likewise absent here: it belongs with the slice algorithms
+# (`std.algo`'s `sort`/`stable_sort`/etc., spec/specification/04-stdlib/
+# algorithms/51-sorting-and-searching.md), over a `slice_mut[T]` range
+# rather than a whole list — `xs.sort()` on a `list[T]` reaches it via UFCS
+# once a caller forms the full-range view itself (`sort(&mut xs[0..xs.len()])`);
+# no forwarding method is added here to avoid re-deriving the same range on
+# every call. `pop` and `clear` need to *shrink* a list, which no primitive
+# exposes; they return once Phase 7 rebuilds `list` over `alloc`/pointer
+# primitives.
 #
 # All of them were removed from the builtin table regardless, since an entry
 # there with no lowering is worse than no entry at all: it type-checks and

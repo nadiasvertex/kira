@@ -920,6 +920,7 @@ public:
         .operator_dispatches = std::move(operator_dispatches_),
         .ord_dispatch_result_types = std::move(ord_dispatch_result_types_),
         .interp_dispatches = std::move(interp_dispatches_),
+        .type_param_reflections = std::move(type_param_reflections_),
         .for_iterator_dispatches = std::move(for_iterator_dispatches_),
         .fmt_types = fmt_types,
         .synthesized_decls = std::move(synthesized_decls_),
@@ -1104,6 +1105,12 @@ private:
   /// `check_interpolated_string`. Handed to the caller via
   /// `take_checked_types`.
   std::unordered_map<const ast::expr *, interp_dispatch> interp_dispatches_;
+  /// Every `T.name()` reflection call resolved against a type parameter of
+  /// the instance currently being checked — see `type_param_reflection` in
+  /// types.h. Populated by `infer_call`'s `lookup_type_param` branch, handed
+  /// to the caller via `take_checked_types`.
+  std::unordered_map<const ast::call_expr *, type_param_reflection>
+      type_param_reflections_;
   /// Every `for` loop over a user `std.iter.iterator[T]` — see
   /// `iterator_loop_dispatch` in types.h. Populated by `check_body_node`'s
   /// `for_stmt` case, handed to the caller via `take_checked_types`.
@@ -9501,9 +9508,23 @@ private:
          field.field_name == "name")) {
       const auto &type_name =
           dynamic_cast<const ast::ident_expr &>(*field.object).name;
-      if (lookup_type_param(type_name).has_value()) {
+      if (const auto bound = lookup_type_param(type_name);
+          bound.has_value()) {
         infer_call_args_loosely(call);
         if (field.field_name == "name") {
+          // Inside the *template* (not yet instantiated), `T` is bound to
+          // an abstract placeholder rather than a concrete type — nothing
+          // to fold yet, and the template itself is never lowered anyway
+          // (see `in_type_generic_template_`). Only a genuinely concrete
+          // instance's binding is foldable; that's what `hir::lower` needs
+          // in `type_param_reflections_` to give this call a runtime
+          // answer (`static` contexts aside, `T.name()` has no other way
+          // to produce one — see `type_param_reflection`'s doc comment).
+          const auto &bound_entry = types_.entry(*bound);
+          if (bound_entry.kind != type_kind::type_param_kind) {
+            type_param_reflections_[&call] =
+                type_param_reflection{.type_name = bound_entry.name};
+          }
           return types_.builtin("str");
         }
         if (field.field_name == "field_count") {

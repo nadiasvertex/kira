@@ -1,0 +1,149 @@
+module main
+
+# `std.algo`'s sorting-and-searching chapter
+# (spec/specification/04-stdlib/algorithms/51-sorting-and-searching.md):
+# `sort`/`sort_by`/`sort_by_key`/`sorted`/`stable_sort`/`binary_search`/
+# `binary_search_by`/`reverse`/`rotate`/`dedup`/`partition_point`/
+# `lower_bound`/`upper_bound`/`windows`/`chunks`.
+#
+# `sort` over `int32`/`uint8` exercises the `ska_sort` (byte-radix) fast
+# path — negative numbers exercise the signed sign-flip, `uint8` the
+# unsigned zero-extend path — and `sort` over `float64` exercises the
+# `introsort` fallback for a non-integer `T`, so both of `sort`'s two
+# strategies get a real check, not just whichever one a given `T` happens
+# to hit.
+
+def print_int32_array(label: str, s: &slice[int32]) -> unit:
+    var i: usize = 0
+    while i < s.len():
+        println("{label}[{i}]={s[i]}")
+        i = i + 1
+
+def main() -> int32:
+    # `sort`: signed-integer radix path, over an `array[int32, N]` view.
+    var signed_ints: array[int32, 6] = [5, -3, 8, -1, 0, 2]
+    sort(&mut signed_ints[0..6])
+    print_int32_array("signed_sorted", &signed_ints[0..6])
+
+    # `sort`: unsigned-integer radix path.
+    var unsigned_bytes: array[uint8, 5] = [200, 5, 100, 0, 255]
+    sort(&mut unsigned_bytes[0..5])
+    var i: usize = 0
+    while i < 5:
+        println("unsigned_sorted[{i}]={unsigned_bytes[i]}")
+        i = i + 1
+
+    # `sort`: introsort fallback for a non-integer `T`, over a `list[T]`
+    # range-index view (exercises the same general-stride range-indexing
+    # `sort` relies on for a `list`, not just an `array`).
+    var floats: list[float64] = [3.5, 1.2, 9.9, -2.5]
+    sort(&mut floats[0..4])
+    i = 0
+    while i < 4:
+        println("float_sorted[{i}]={floats[i]}")
+        i = i + 1
+
+    # `stable_sort`: a longer, already-*descending* input, so the natural-run
+    # detector's descending-run-reversal path is exercised, and the
+    # bottom-up run merge has more than one merge pass to get through.
+    var many: array[int32, 40] = [39, 38, 37, 36, 35, 34, 33, 32, 31, 30,
+        29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13,
+        12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+    stable_sort(&mut many[0..40])
+    var stable_ok = true
+    i = 0
+    while i < 40:
+        if many[i] != (i as int32):
+            stable_ok = false
+        i = i + 1
+    println("stable_sort_ok={stable_ok}")
+
+    # `stable_sort` stability itself: pairs sharing a key must keep their
+    # relative input order after sorting by that key alone.
+    let by_first = (p: (int32, int32), q: (int32, int32)) => (
+        if p.0 < q.0: @less elif q.0 < p.0: @greater else: @equal)
+    var pairs: list[(int32, int32)] = [(1, 10), (0, 20), (1, 30), (0, 40)]
+    sort_by(&mut pairs[0..4], by_first)
+    i = 0
+    while i < 4:
+        println("stable_by_key[{i}]=({pairs[i].0},{pairs[i].1})")
+        i = i + 1
+
+    # `sort_by_key`: descending order via a negated key.
+    var to_key: list[int32] = [5, 2, 8, 1]
+    sort_by_key(&mut to_key[0..4], (x: int32) => 0 - x)
+    i = 0
+    while i < 4:
+        println("by_key_desc[{i}]={to_key[i]}")
+        i = i + 1
+
+    # `sorted`: non-mutating — the source list must be unchanged afterward.
+    var source = [5, 2, 8, 1]
+    let copy = sorted(&source[0..4])
+    i = 0
+    while i < copy.len():
+        println("sorted_copy[{i}]={copy[i]}")
+        i = i + 1
+    i = 0
+    while i < 4:
+        println("sorted_source_unchanged[{i}]={source[i]}")
+        i = i + 1
+
+    # `binary_search`/`binary_search_by`: a hit, a miss, and the comparator
+    # form over the same sorted data.
+    let haystack = [1, 3, 5, 7, 9]
+    match binary_search(&haystack[0..5], 5):
+        @some(idx) => println("binary_search_hit={idx}")
+        @none => println("binary_search_hit=none")
+    match binary_search(&haystack[0..5], 4):
+        @some(idx) => println("binary_search_miss={idx}")
+        @none => println("binary_search_miss=none")
+    match binary_search_by(&haystack[0..5], (x: int32) =>
+            if x < 7: @less elif x > 7: @greater else: @equal):
+        @some(idx) => println("binary_search_by_hit={idx}")
+        @none => println("binary_search_by_hit=none")
+
+    # `lower_bound`/`upper_bound`/`partition_point` — a target present
+    # (`5`, occupying one slot) and a target between elements (`4`), so the
+    # three functions' differing conventions are all visible.
+    println("lower_bound_present={lower_bound(&haystack[0..5], 5)}")
+    println("upper_bound_present={upper_bound(&haystack[0..5], 5)}")
+    println("lower_bound_between={lower_bound(&haystack[0..5], 4)}")
+    println("upper_bound_between={upper_bound(&haystack[0..5], 4)}")
+    println("partition_point={partition_point(&haystack[0..5], (x: int32) => x < 5)}")
+
+    # `reverse`.
+    var to_reverse = [1, 2, 3, 4, 5]
+    reverse(&mut to_reverse[0..5])
+    print_int32_array("reversed", &to_reverse[0..5])
+
+    # `rotate`: left-rotating by `mid` brings `mid` to the front.
+    var to_rotate = [1, 2, 3, 4, 5]
+    rotate(&mut to_rotate[0..5], 2)
+    print_int32_array("rotated", &to_rotate[0..5])
+
+    # `dedup`: only *consecutive* duplicates collapse — the trailing `1`
+    # after the run of `3`s must survive.
+    var to_dedup: array[int32, 7] = [1, 1, 2, 2, 2, 3, 1]
+    let new_len = dedup(&mut to_dedup[0..7])
+    println("dedup_len={new_len}")
+    i = 0
+    while i < new_len:
+        println("dedup[{i}]={to_dedup[i]}")
+        i = i + 1
+
+    # `windows`/`chunks`: an exact-multiple length and a remainder length,
+    # so `chunks`'s shorter final chunk is exercised.
+    let view_src = [1, 2, 3, 4, 5]
+    let ws = windows(&view_src[0..5], 2)
+    i = 0
+    while i < ws.len():
+        println("window[{i}]=({ws[i][0]},{ws[i][1]})")
+        i = i + 1
+    let cs = chunks(&view_src[0..5], 2)
+    i = 0
+    while i < cs.len():
+        println("chunk[{i}]_len={cs[i].len()}")
+        i = i + 1
+
+    return 0
