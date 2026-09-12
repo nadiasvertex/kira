@@ -642,7 +642,7 @@ public:
       }
       emit_load_slot(*reg, *env_reg, static_cast<uint16_t>(i));
       locals_.emplace(plan[i].symbol, *reg);
-      if (plan[i].mode != ast::capture_mode::by_value) {
+      if (ast::is_reference_capture(plan[i].mode)) {
         // The slot held the enclosing frame's cell pointer, so `reg` now
         // carries that same cell: reads and writes here reach the original.
         cell_locals_.insert(plan[i].symbol);
@@ -1680,7 +1680,7 @@ private:
                          "function's locals — capture analysis and register "
                          "allocation have gotten out of sync"});
         }
-        if (plan[i].mode != ast::capture_mode::by_value &&
+        if (ast::is_reference_capture(plan[i].mode) &&
             !is_cell_local(plan[i].symbol)) {
           return std::unexpected(compile_error{
               .kind = compile_error_kind::unsupported_construct,

@@ -225,6 +225,30 @@ auto test_repeated_iter_values_chains_are_accepted() -> void {
          "demo bug");
 }
 
+// ==========================================================================
+//  `move [...]` forces every bare capture-list entry to move: reusing the
+//  original binding afterward is a use-after-move, same as any other move.
+//  A plain (non-`move`) bare entry stays a by-value copy, so reuse is fine.
+// ==========================================================================
+
+auto test_reuse_after_move_capture_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_reuse_after_move_capture.kira");
+  expect(analyzed.error_count > 0,
+         "expected reusing a name after `move [...]` captured it to be "
+         "rejected");
+  expect_diagnostic(analyzed, "use of moved value `name`",
+                    "expected a use-after-move diagnostic naming `name`");
+}
+
+auto test_reuse_after_plain_value_capture_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_reuse_after_plain_value_capture.kira");
+  expect(analyzed.error_count == 0,
+         "expected a bare capture-list entry without `move` to stay a "
+         "by-value copy, so reusing the original binding checks cleanly");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -234,6 +258,8 @@ auto main() -> int {
     test_repeated_self_method_calls_on_same_binding_are_accepted();
     test_repeated_borrowing_ufcs_calls_are_accepted();
     test_repeated_iter_values_chains_are_accepted();
+    test_reuse_after_move_capture_is_rejected();
+    test_reuse_after_plain_value_capture_is_accepted();
   } catch (const std::exception &ex) {
     std::cerr << "move_check_test failed: unhandled exception: " << ex.what()
               << '\n';

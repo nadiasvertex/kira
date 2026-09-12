@@ -46,6 +46,20 @@ public:
   }
 
   auto check_lambda(const ast::lambda_expr &lambda) -> void {
+    // A `move [...]` capture list forces every bare `name` entry to move
+    // rather than copy (`ast::capture_mode::by_move`): the enclosing
+    // binding transfers into the closure at the point the lambda is
+    // created, the same as any other move, so it happens here against the
+    // *enclosing* scope rather than inside the lambda's own scope pushed
+    // below. `&name`/`&mut name` entries state their own mode and never
+    // become `by_move` (the parser only promotes bare `by_value` entries).
+    if (lambda.captures.has_value()) {
+      for (const auto &capture : *lambda.captures) {
+        if (capture.mode == ast::capture_mode::by_move) {
+          consume_named(capture.name, capture.span);
+        }
+      }
+    }
     push_scope();
     for (const auto &param : lambda.params) {
       if (const auto *pat =
@@ -200,15 +214,14 @@ private:
     }
   }
 
-  auto report_use_after_move(const ast::ident_expr &ident,
+  auto report_use_after_move(std::string_view name, source_span span,
                              const binding_state &state) -> void {
     auto d = diagnostic(diagnostic_level::error,
-                        std::format("use of moved value `{}`", ident.name),
+                        std::format("use of moved value `{}`", name),
                         file_id_);
-    d.with_label(ident.span,
-                 std::format("`{}` used here after being moved", ident.name));
+    d.with_label(span, std::format("`{}` used here after being moved", name));
     d.with_secondary_label(state.moved_at,
-                           std::format("`{}` moved here", ident.name));
+                           std::format("`{}` moved here", name));
     d.with_note(
         "a value's owner may use it once more before it goes out of scope; "
         "moving it transfers that ownership away, and Kira does not "
@@ -217,7 +230,7 @@ private:
         "borrow it instead with `&{0}` (or `&mut {0}`) if the callee only "
         "needs to read or modify it, or restructure the code so `{0}` is "
         "only used once",
-        ident.name));
+        name));
     diag_.emit(d);
   }
 
@@ -226,22 +239,31 @@ private:
   auto touch(const ast::ident_expr &ident) -> void {
     if (const auto *state = find(ident.name);
         state != nullptr && state->trackable && state->moved) {
-      report_use_after_move(ident, *state);
+      report_use_after_move(ident.name, ident.span, *state);
     }
   }
 
   /// A use of `ident` that consumes it (moves it, if not already moved).
   auto consume(const ast::ident_expr &ident) -> void {
-    auto *state = find(ident.name);
+    consume_named(ident.name, ident.span);
+  }
+
+  /// A use of `name` at `span` that consumes it (moves it, if not already
+  /// moved) — the shared logic behind `consume`, usable without an
+  /// `ident_expr` node. A `move [...]` capture list entry is such a use: the
+  /// named outer variable moves at the point the lambda is created, not at
+  /// some later identifier reference.
+  auto consume_named(std::string_view name, source_span span) -> void {
+    auto *state = find(name);
     if (state == nullptr || !state->trackable) {
       return;
     }
     if (state->moved) {
-      report_use_after_move(ident, *state);
+      report_use_after_move(name, span, *state);
       return;
     }
     state->moved = true;
-    state->moved_at = ident.span;
+    state->moved_at = span;
   }
 
   /// Walks `expr` for identifier uses. `consume_top` is whether a bare

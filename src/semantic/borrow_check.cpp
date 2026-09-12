@@ -628,7 +628,7 @@ private:
       return out;
     }
     for (const auto &entry : *lambda.captures) {
-      if (entry.mode == ast::capture_mode::by_value) {
+      if (!ast::is_reference_capture(entry.mode)) {
         continue;
       }
       out.push_back(

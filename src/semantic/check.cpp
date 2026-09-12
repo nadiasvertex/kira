@@ -11789,7 +11789,7 @@ private:
       // same name *by value* would write into that intermediate copy, not
       // into the original. The by-value copy is where the chain breaks, so
       // point at it rather than letting the write silently go nowhere.
-      if (entry.mode != ast::capture_mode::by_value) {
+      if (ast::is_reference_capture(entry.mode)) {
         for (const auto &barrier : capture_barriers_) {
           if (barrier.scope_floor <= found.depth ||
               !barrier.allowed.has_value()) {
@@ -11797,7 +11797,7 @@ private:
           }
           const auto outer = barrier.allowed->find(entry.name);
           if (outer == barrier.allowed->end() ||
-              outer->second != ast::capture_mode::by_value) {
+              ast::is_reference_capture(outer->second)) {
             continue;
           }
           auto diag = diagnostic(

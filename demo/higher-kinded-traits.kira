@@ -7,7 +7,7 @@ module main
 #  one-argument constructor like `option` or `list`, not a complete type.
 #  An impl names the bare constructor (`impl monad for option`), and every
 #  generic method monomorphizes per call site, so the backends only ever
-#  see ordinary functions. See spec/kira-reference.md §Higher-Kinded Traits.
+#  see ordinary functions. See spec/specification/03-advanced/37-higher-kinded-traits.md.
 #
 #  Run it:      bazelisk run //src:kira -- demo/higher-kinded-traits.kira
 #  Compile it:  bazelisk run //src:kira -- --compile -o hkt demo/higher-kinded-traits.kira

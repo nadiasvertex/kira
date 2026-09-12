@@ -1025,7 +1025,22 @@ enum class capture_mode : uint8_t {
   by_value,   ///< `name` — a copy of the enclosing local.
   by_ref,     ///< `&name` — reads go through the enclosing local's storage.
   by_mut_ref, ///< `&mut name` — reads *and* writes go through it.
+  by_move,    ///< `name` inside a `move [...]` list — ownership transfers
+              ///< into the closure; the enclosing binding is moved from,
+              ///< same as any other move. Codegen-wise this is a value
+              ///< capture like `by_value`; only the move-checker and the
+              ///< enclosing binding's liveness distinguish the two.
 };
+
+/// Whether `mode` reaches its variable through the enclosing local's
+/// storage (`&name`/`&mut name`) rather than moving or copying a value into
+/// the closure's environment (`name`, or `name` forced to move by an
+/// enclosing `move [...]` list). Codegen and the borrow checker only care
+/// about this reference/value distinction; only the move-checker cares
+/// whether a value capture is a copy or a move.
+constexpr auto is_reference_capture(capture_mode mode) -> bool {
+  return mode == capture_mode::by_ref || mode == capture_mode::by_mut_ref;
+}
 
 /// One entry of a lambda's explicit capture list (`spec/kira-grammar.ebnf`'s
 /// `capture_item`).

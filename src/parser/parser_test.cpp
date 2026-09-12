@@ -2102,9 +2102,41 @@ auto test_parser_accepts_lambda_capture_lists() -> void {
          "expected the list after `pure move` to be recognized");
   expect(prefixed->return_type != nullptr,
          "expected the declared result to survive a capture list");
+  expect((*prefixed->captures)[0].mode == kira::ast::capture_mode::by_move,
+         "expected a bare entry under `move [...]` to promote to by_move");
 
   expect(lambda_at(4)->params.size() == 2,
          "expected `[n] (x, y) =>` to parse as two params, not a tuple");
+}
+
+auto test_parser_move_prefix_only_promotes_bare_capture_entries() -> void {
+  // `move` forces every *bare* `name` entry to move; `&name`/`&mut name`
+  // entries already state their own mode and must be left untouched.
+  auto parsed =
+      parse_source("module sample\n"
+                   "def run():\n"
+                   "  let a = move [&p, q, &mut r] x => x\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *run_func = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected run function declaration");
+  auto *let_stmt = expect_node<kira::ast::let_stmt>(
+      run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected a let statement");
+  auto *lambda = expect_node<kira::ast::lambda_expr>(
+      let_stmt->initializer.get(), kira::ast::node_kind::lambda_expr,
+      "expected the initializer to parse as a lambda");
+
+  expect(lambda->is_move, "expected `move` to be recorded on the lambda");
+  expect(lambda->captures.has_value() && lambda->captures->size() == 3,
+         "expected all three capture entries to be recognized");
+  expect((*lambda->captures)[0].mode == kira::ast::capture_mode::by_ref,
+         "expected `&p` to stay by-reference under `move`");
+  expect((*lambda->captures)[1].mode == kira::ast::capture_mode::by_move,
+         "expected bare `q` to promote to by_move under `move`");
+  expect((*lambda->captures)[2].mode == kira::ast::capture_mode::by_mut_ref,
+         "expected `&mut r` to stay by-mutable-reference under `move`");
 }
 
 auto test_parser_keeps_array_literals_out_of_the_capture_path() -> void {
@@ -2150,7 +2182,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 44> tests = {{
+  const std::array<named_test, 45> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "multiline_sum_type",
@@ -2227,6 +2259,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_lambda_result_and_paren_params},
       {.name = "lambda_capture_lists",
        .fn = test_parser_accepts_lambda_capture_lists},
+      {.name = "move_prefix_only_promotes_bare_capture_entries",
+       .fn = test_parser_move_prefix_only_promotes_bare_capture_entries},
       {.name = "array_literals_stay_arrays",
        .fn = test_parser_keeps_array_literals_out_of_the_capture_path},
       {.name = "static_def_in_member_blocks",

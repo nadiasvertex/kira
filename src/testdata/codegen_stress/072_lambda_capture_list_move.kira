@@ -1,0 +1,24 @@
+module codegen_stress.lambda_capture_list_move
+
+# `move [n]` forces the bare entry to move rather than copy. At codegen time
+# a move capture stores a value into the environment block exactly like a
+# plain by-value capture (see `ast::is_reference_capture`) — the two are
+# only distinguished by the move-checker, which is a semantic-layer concern
+# with no separate test here (see `src/semantic/move_check_test.cpp`). This
+# fixture exists to pin the *runtime* behavior: a `move`-captured value reads
+# back correctly and does not alias the (already-moved) outer binding.
+#
+# A stated `# expect:` is mandatory: if both backends silently treated
+# `by_move` as a no-op alias instead of a value capture, they would still
+# agree with each other while returning the wrong number.
+
+def main() -> int64:
+    var n = 7
+    let bump = move [n] (x: int32) -> int32 =>:
+        n = n + x
+        return n
+    let inside = bump(100)
+    # `inside` saw the closure's own moved-in copy: 7 + 100 == 107.
+    return inside as int64
+
+# expect: 107

@@ -1,6 +1,6 @@
 # 2. Built-in Types
 
-**Status:** Implemented, with discrepancies from the old tutorial noted below
+**Status:** Implemented
 
 Covers the built-in scalar type set, numeric literal defaulting, integer overflow behavior, and conversion between types via constructor-call syntax.
 
@@ -53,10 +53,6 @@ Three explicit, always-available alternatives to the panicking operators exist a
 let mixed = h *% 31 +% c     # wrapping — hashes, checksums, ring buffers
 let level = volume +| gain   # saturating — clamps at the type's min or max
 ```
-
-## Implementation status
-
-**Done.** Checked (panicking) arithmetic is the default behavior of `+`/`-`/`*` themselves, with wrapping (`+%`/`-%`/`*%`) and saturating (`+|`/`-|`/`*|`) operators as the two explicit alternatives — this covers the overflow-handling need.
 
 ## Converting between types
 

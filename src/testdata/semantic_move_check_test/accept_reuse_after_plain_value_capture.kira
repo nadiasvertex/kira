@@ -1,0 +1,12 @@
+module main
+
+# Guardrail against over-correcting: a bare capture-list entry *without* a
+# `move` prefix stays a by-value copy, exactly as before this feature landed.
+# Reusing the original binding afterward must still check cleanly.
+
+def main() -> int32:
+    let name = "kira"
+    let greet = [name] (x: int32) -> int32 => x
+    greet(1)
+    println(name)
+    return 0

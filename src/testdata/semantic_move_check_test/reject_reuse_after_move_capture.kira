@@ -1,0 +1,16 @@
+module main
+
+# `move [...]` forces every bare entry in the capture list to move rather
+# than copy: `name` transfers into the closure at the point `greet` is
+# created, so using it again afterward is a use-after-move, the same as any
+# other move. The lambda body deliberately never reads `name` itself, so the
+# only consuming use in play is the capture list — isolating that from the
+# unrelated, still-open gap around identifiers referenced *inside* a closure
+# body (see `move_check.h`).
+
+def main() -> int32:
+    let name = "kira"
+    let greet = move [name] (x: int32) -> int32 => x
+    greet(1)
+    println(name)
+    return 0

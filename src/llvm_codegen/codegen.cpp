@@ -775,9 +775,10 @@ public:
       bind_local(param.symbol, alloca);
     }
     for (size_t i = 0; i < plan.size(); ++i) {
-      if (plan[i].mode == ast::capture_mode::by_value) {
-        // A by-value capture owns its copy: read the value out of the
-        // environment once, into a local slot of this frame.
+      if (!ast::is_reference_capture(plan[i].mode)) {
+        // A by-value (or moved-by-value) capture owns its copy: read the
+        // value out of the environment once, into a local slot of this
+        // frame.
         auto *alloca = create_local_alloca(capture_types[i], "capture");
         auto *loaded = builder_.CreateLoad(capture_types[i],
                                            slot_address(env_arg, i), "capture");
@@ -1949,11 +1950,11 @@ private:
         // `capture_types[i]` is the *pointee* type either way; what differs
         // is whether the environment slot holds the value or its address.
         capture_types.push_back(slot.type);
-        if (plan[i].mode == ast::capture_mode::by_value) {
+        if (ast::is_reference_capture(plan[i].mode)) {
+          builder_.CreateStore(slot.addr, slot_address(env_block, i));
+        } else {
           auto *value = builder_.CreateLoad(slot.type, slot.addr, "capture");
           builder_.CreateStore(value, slot_address(env_block, i));
-        } else {
-          builder_.CreateStore(slot.addr, slot_address(env_block, i));
         }
       }
       env_ptr = env_block;

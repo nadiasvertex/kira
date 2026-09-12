@@ -1,6 +1,6 @@
 # 5. Lambdas
 
-**Status:** Partial
+**Status:** Implemented
 
 Covers anonymous inline function syntax (`lambda_expr` in `spec/kira-grammar.ebnf`), its multi-line form, explicit capture lists, and typical use.
 
@@ -60,12 +60,6 @@ let evens   = numbers.filter(x => x % 2 == 0)
 ```
 
 A parameter's type, when omitted, is inferred the same way an unannotated function parameter is — see [Functions](04-functions.md).
-
-## Implementation status
-
-- Lambda expressions, both single-expression and multi-line block form, are implemented and exercised throughout the semantic and codegen stress corpora.
-- Explicit capture lists are implemented end to end. All three entry forms parse (`parser.cpp`'s `parse_capture_list`, reached from a leading `[` via the `at_capture_list` lookahead), the restriction is enforced by the checker (a reference to an outer local not in the list is rejected with a diagnostic naming the list), and both modes lower on both backends — see [Closures and Capture](../02-intermediate/16-closures-and-capture.md) for the mode semantics and the remaining `move` gap.
-- One caveat on the multi-line form: `params =>:` requires the block to start on the *next* line, indented. The single-line spelling `x =>: total = total + x` used in an example above does not parse, and never did; write it as a `=>:` followed by an indented block.
 
 ## See also
 

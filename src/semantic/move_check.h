@@ -28,12 +28,18 @@ namespace kira::semantic {
 /// of `&`/`&mut`, the base of a field/index projection, or the target of an
 /// assignment does not (assignment to a `var` name instead un-moves it, a
 /// fresh value having replaced the old one). Builtin scalar/boolean/unit
-/// types never move. Not yet handled — left as follow-up work once this
-/// lands: `shared[T]` refcount semantics, closures' borrow-vs-move capture
-/// rule (every identifier reachable from inside a closure body is treated
-/// like any other use), partial (field-level) moves, and CFG-level exit
-/// tracking (panic unwinding, `?`, `break`/`continue`) beyond straight-line
-/// code and structured `if`/`while`/`for`/`match`.
+/// types never move. An explicit capture list entry forced to move by an
+/// enclosing `move [...]` (`ast::capture_mode::by_move`) consumes the named
+/// outer binding at the point the lambda is created, same as any other
+/// move. Not yet handled — left as follow-up work once this lands:
+/// `shared[T]` refcount semantics, the implicit-capture borrow-vs-move-on-
+/// escape rule (a closure that escapes its defining scope must move rather
+/// than borrow even without a `move [...]` list — every identifier
+/// reachable from inside a closure body is otherwise treated like any
+/// other use, regardless of its capture kind), partial (field-level)
+/// moves, and CFG-level exit tracking (panic unwinding, `?`,
+/// `break`/`continue`) beyond straight-line code and structured
+/// `if`/`while`/`for`/`match`.
 auto check_moves(const std::vector<parsed_module> &inputs,
                  const checked_types &checked, diagnostic_bag &diag,
                  std::vector<bool> &file_has_errors, unsigned skip_from_fileid)

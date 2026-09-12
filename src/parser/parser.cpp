@@ -4817,6 +4817,16 @@ auto parser::parse_lambda_expr() -> ast::ptr<ast::expr> {
     const auto list_start = peek().span;
     lambda->captures = parse_capture_list();
     lambda->captures_span = list_start.merge(previous_span());
+    if (lambda->is_move) {
+      // `move [...]` forces every bare `name` entry to move rather than
+      // copy; `&name`/`&mut name` entries already state their own mode and
+      // are left untouched.
+      for (auto &capture : *lambda->captures) {
+        if (capture.mode == ast::capture_mode::by_value) {
+          capture.mode = ast::capture_mode::by_move;
+        }
+      }
+    }
   }
 
   // Lambda params: either a single ident or `(param_list)`.
