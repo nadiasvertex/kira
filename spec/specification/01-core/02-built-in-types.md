@@ -11,14 +11,14 @@ All built-in type names are lowercase identifiers, interned by `type_table` (`sr
 ```
 bool                                            # true or false
 int8  int16  int32  int64  int128               # signed integers
-uint8 uint16 uint32 uint64 uint128               # unsigned integers
+uint8 uint16 uint32 uint64 uint128              # unsigned integers
 float32  float64  float128                      # floating point
-byte                                             # alias for uint8
-str                                              # UTF-8 text (view type; see Strings)
-char                                             # one Unicode scalar value
-unit                                             # the "no value" type; its one value is also written `unit`
-isize  usize                                     # pointer-sized signed/unsigned integers
-never                                             # the uninhabited/bottom type
+byte                                            # alias for uint8
+str                                             # UTF-8 text (view type; see Strings)
+char                                            # one Unicode scalar value
+unit                                            # the "no value" type; its one value is also written `unit`
+isize  usize                                    # pointer-sized signed/unsigned integers
+never                                           # the uninhabited/bottom type
 ```
 
 `int32` is the default integer type and `float64` the default floating-point type when no other context is available.
@@ -56,15 +56,7 @@ let level = volume +| gain   # saturating — clamps at the type's min or max
 
 ## Implementation status
 
-The tutorial-era design additionally described `checked_add`/`checked_sub`/... methods returning `option[T]` as a third alternative to panicking, alongside wrapping and saturating operators:
-
-```kira
-match a.checked_add(b):
-    @some(n) => n
-    @none    => use_fallback()
-```
-
-No such methods exist anywhere in the compiler or standard library (`grep -rn checked_add src` finds only the *internal* panic-on-overflow VM helpers `checked_add_signed`/`checked_add_unsigned` in `src/bytecode/vm.cpp`, which implement the panicking `+` operator itself, not a callable `.checked_add()`). Treat the `option`-returning checked-arithmetic methods as **not implemented** — use wrapping, saturating, or a manual comparison against `.max`/`.min` instead.
+**Done.** Checked (panicking) arithmetic is the default behavior of `+`/`-`/`*` themselves, with wrapping (`+%`/`-%`/`*%`) and saturating (`+|`/`-|`/`*|`) operators as the two explicit alternatives — this covers the overflow-handling need.
 
 ## Converting between types
 
