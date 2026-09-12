@@ -42,9 +42,7 @@ A parameter may declare a default value; a call may pass any argument by name (`
 
 ```kira
 def greet(name: str, loud: bool = false) -> str:
-    if loud:
-        return "{name}!".to_uppercase()
-    return "Hello, {name}"
+  return "{name}!".to_uppercase() if loud else "Hello, {name}"
 
 greet("Alice")                  # uses default: loud = false
 greet("Bob", loud: true)        # named argument

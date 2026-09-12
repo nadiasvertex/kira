@@ -3332,16 +3332,6 @@ auto parser::parse_expr() -> ast::ptr<ast::expr> {
   // as the next statement had its `if` stolen as a trailing conditional
   // modifier on the match expression, cascading into "expected `else`"
   // errors at the `if` statement's own `:`.
-  // A block-form construct (e.g. a multi-line `match ...:` or `if ...:`
-  // used as this expression) consumes its own closing DEDENT internally,
-  // which already marks the statement as finished — indentation just
-  // stepped back out to the enclosing block's level. An `if` immediately
-  // following that DEDENT starts a new statement there, not a trailing
-  // `expr if cond else expr` continuation of the value just parsed:
-  // without this check, `let m = match t: ...` followed by `if m == ...:`
-  // as the next statement had its `if` stolen as a trailing conditional
-  // modifier on the match expression, cascading into "expected `else`"
-  // errors at the `if` statement's own `:`.
   if (allow_trailing_if_expr_ && at(token_kind::kw_if) &&
       !previous().is(token_kind::dedent)) {
     inner = parse_trailing_if_expr(std::move(inner));

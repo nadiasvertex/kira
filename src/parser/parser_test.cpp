@@ -872,7 +872,7 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
          "expected for-expression iterable identifier name");
 }
 
-/// Regression test for spec/todo.md item 11: a `let x = match ...:` statement
+/// Regression test: a `let x = match ...:` statement
 /// whose arms span multiple indented lines consumes its own closing DEDENT
 /// internally (the match block's arms end back at the enclosing statement's
 /// indentation). The *following* statement's leading `if` was being stolen
