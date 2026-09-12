@@ -277,9 +277,19 @@ struct hir_local_ref : hir_expr {
 /// name a global reified from a `static let` declared in another.
 struct hir_global_ref : hir_expr {
   std::string name;
+  /// The module whose `static` declaration this global was reified from
+  /// (`semantic::checked_types::static_global_owners`) — `nullopt` only if
+  /// somehow unresolved, which should not happen in practice. Lets
+  /// `hir::find_reachable_modules`'s walker pull in a module reached only
+  /// through one of its globals (no function call into it), the same way
+  /// `hir_local_ref::owner_module` does for a cross-module function
+  /// reference — see that field's doc comment.
+  std::optional<std::string> owner_module;
 
-  hir_global_ref(source_span s, type_id t, std::string n)
-      : hir_expr(hir_node_kind::hir_global_ref, s, t), name(std::move(n)) {}
+  hir_global_ref(source_span s, type_id t, std::string n,
+                std::optional<std::string> owner = std::nullopt)
+      : hir_expr(hir_node_kind::hir_global_ref, s, t), name(std::move(n)),
+        owner_module(std::move(owner)) {}
 };
 
 /// Binary operator application; reuses `ast::binary_op` rather than

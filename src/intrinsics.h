@@ -22,7 +22,7 @@ namespace kira {
 //  only tracks names, since the signature itself is written and typechecked
 //  as ordinary Kira source at the `intrinsic def` site.
 // ==========================================================================
-inline constexpr std::array<std::string_view, 33> known_intrinsic_names = {{
+inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
     "rt_stdin",
     "rt_stdout",
     "rt_stderr",
@@ -49,16 +49,17 @@ inline constexpr std::array<std::string_view, 33> known_intrinsic_names = {{
     "rt_fmt_f64_general",
     "rt_fmt_char_from_codepoint",
     // `std.string` UTF-8 intrinsics (spec/std-reference.md). Substring search
-    // is Two-Way (linear worst case) over bytes, scalar-correct by UTF-8 self-
-    // synchronization; `to_upper`/`to_lower` apply Unicode simple (1:1) case
-    // mapping. The algorithms live in `src/runtime/string_ops.h` and are
-    // shared verbatim with the bytecode VM's dispatch table.
+    // is Two-Way (linear worst case) over bytes, scalar-correct by UTF-8
+    // self-synchronization. The algorithms live in `src/runtime/
+    // string_ops.h` and are shared verbatim with the bytecode VM's dispatch
+    // table. Case mapping/folding is *not* here: `to_uppercase`/
+    // `to_lowercase`/`fold_case` are pure Kira over generated UCD tables
+    // (`std.unicode`), not a native intrinsic — see 52-std-string.md's
+    // Architecture section.
     "rt_str_eq",
     "rt_str_cmp",
     "rt_str_find",
     "rt_str_rfind",
-    "rt_str_to_upper",
-    "rt_str_to_lower",
     "rt_str_reverse",
     "rt_str_trim",
     "rt_str_replace",
@@ -105,7 +106,7 @@ inline constexpr std::array<std::string_view, 33> known_intrinsic_names = {{
 /// declare each `kira_rt_*` function's LLVM signature — read from here
 /// rather than duplicated so the two backends' declared arities can't drift
 /// out of sync with each other or with `io.h`'s actual signatures.
-inline constexpr std::array<uint8_t, 33> known_intrinsic_arities = {{
+inline constexpr std::array<uint8_t, 31> known_intrinsic_arities = {{
     0, // rt_stdin
     0, // rt_stdout
     0, // rt_stderr
@@ -127,8 +128,6 @@ inline constexpr std::array<uint8_t, 33> known_intrinsic_arities = {{
     2, // rt_str_cmp        (a, b)
     3, // rt_str_find       (haystack, needle, from)
     2, // rt_str_rfind      (haystack, needle)
-    1, // rt_str_to_upper   (s)
-    1, // rt_str_to_lower   (s)
     1, // rt_str_reverse    (s)
     2, // rt_str_trim       (s, mode)
     3, // rt_str_replace    (s, from, to)

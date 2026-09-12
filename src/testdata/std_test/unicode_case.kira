@@ -1,0 +1,84 @@
+module main
+
+# `std.unicode`'s full Unicode case mapping/folding
+# (spec/specification/04-stdlib/strings-and-formatting/52-std-string.md),
+# reached through `str.to_uppercase`/`to_lowercase`/`fold_case`/
+# `eq_ignore_case`.
+#
+# Deliberately exercises a code point *outside* the old hand-rolled C++
+# `rt_str_to_upper`/`rt_str_to_lower` intrinsics' hardcoded ASCII/Latin-1/
+# Greek/Cyrillic ranges (Latin Extended-A "Ā"/"ā", U+0100/U+0101) -- that
+# case would have silently passed through unchanged before this module
+# replaced those intrinsics with pure-Kira lookups over generated,
+# full-coverage UCD tables. Also exercises the two genuinely new
+# capabilities those intrinsics never had at all: default full (not just
+# simple 1:1) case mapping -- multi-code-point expansions ("ß" -> "SS",
+# "İ" -> "i" + combining dot above) and the context-dependent Final_Sigma
+# rule -- and full case folding for caseless comparison.
+#
+# Literal non-ASCII characters are typed directly into this source file
+# (UTF-8) rather than via `\u{...}` escapes: that escape form mis-triggers
+# this compiler's string-interpolation scanner (`has_interpolation`/
+# `scan_interpolated_content`, src/parser/interp_string.cpp) into treating
+# the escape's own `{...}` as an interpolation hole, since those functions
+# only skip one character past a backslash rather than the escape's full
+# width -- a real, separate parser bug, not exercised by this file on
+# purpose.
+
+def main() -> int32:
+    # ASCII (regression: the simplest case must still work).
+    let ascii_upper = "hello".to_uppercase()
+    println("ascii_upper={ascii_upper}")
+    let ascii_lower = "HELLO".to_lowercase()
+    println("ascii_lower={ascii_lower}")
+
+    # Latin-1 (within the old intrinsics' hardcoded range: regression).
+    let e_acute_lower = "é"
+    let latin1_upper = e_acute_lower.to_uppercase()
+    println("latin1_upper={latin1_upper}")
+
+    # Latin Extended-A (outside the old intrinsics' hardcoded range --
+    # would previously pass through unchanged).
+    let a_macron_upper = "Ā"
+    let ext_a_lower = a_macron_upper.to_lowercase()
+    println("ext_a_lower={ext_a_lower}")
+
+    # Greek and Cyrillic (within the old intrinsics' hardcoded range: regression).
+    let greek_lower = "αβγ"
+    let greek_upper = greek_lower.to_uppercase()
+    println("greek_upper={greek_upper}")
+    let cyrillic_upper = "АБВ"
+    let cyrillic_lower = cyrillic_upper.to_lowercase()
+    println("cyrillic_lower={cyrillic_lower}")
+
+    # Full uppercase: sharp s -> "SS" (multi-code-point, unconditional default).
+    let sharp_s = "straße"
+    let sharp_s_upper = sharp_s.to_uppercase()
+    println("sharp_s_upper={sharp_s_upper}")
+
+    # Full lowercase: dotted capital I -> "i" + combining dot above
+    # (multi-code-point, unconditional default outside Turkish/Azeri).
+    let dotted_i = "İ"
+    let dotted_i_lower = dotted_i.to_lowercase()
+    println("dotted_i_lower_len={dotted_i_lower.len()}")
+
+    # Final_Sigma: a word-final capital sigma lowercases to "ς"; the same
+    # letter anywhere else lowercases to the ordinary "σ".
+    let word_final = "ΟΣ"
+    let word_final_lower = word_final.to_lowercase()
+    println("final_sigma={word_final_lower}")
+    let word_leading = "ΣΟ"
+    let word_leading_lower = word_leading.to_lowercase()
+    println("leading_sigma={word_leading_lower}")
+
+    # Full case folding + caseless comparison: "STRASSE" and "straße" are
+    # unequal byte-for-byte and unequal under simple lowercasing alone
+    # ("strasse" vs "straße"), but equal once full folding maps sharp s to
+    # "ss" on both sides.
+    let upper_ss = "STRASSE"
+    let fold_eq = upper_ss.eq_ignore_case("straße")
+    println("fold_eq={fold_eq}")
+    let plain_eq = upper_ss.to_lowercase().eq("straße")
+    println("plain_eq={plain_eq}")
+
+    return 0

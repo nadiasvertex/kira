@@ -5,6 +5,15 @@ module std.string
 # offset these methods report lands on a scalar boundary. The performance-
 # critical primitives are native `rt_str_*` intrinsics (src/runtime/string_ops.h);
 # this module is the thin `extend str` layer that composes them.
+#
+# Case mapping/folding (`to_uppercase`/`to_lowercase`/`fold_case`/
+# `eq_ignore_case`) is the one exception: it is pure Kira over generated
+# UCD tables (`std.unicode`/`std.unicode_tables`), not a Layer 1 intrinsic --
+# see `52-std-string.md`'s Architecture section for why.
+
+use std.unicode.to_uppercase
+use std.unicode.to_lowercase
+use std.unicode.fold_case
 
 #: Single-field wrapper for usize to pass across intrinsic boundaries.
 type box_usize = { v: usize }
@@ -20,14 +29,11 @@ type find_result = { found: bool, pos: usize }
 
 #: Layer 1: native intrinsics
 #: Search is Two-Way (linear worst case) over UTF-8 bytes, scalar-correct by
-#: self-synchronization. Case mapping is Unicode simple (1:1). trim mode:
-#: 0 = both, 1 = start, 2 = end.
+#: self-synchronization. trim mode: 0 = both, 1 = start, 2 = end.
 intrinsic def rt_str_eq(a: str, b: str) -> box_bool
 intrinsic def rt_str_cmp(a: str, b: str) -> box_i32
 intrinsic def rt_str_find(haystack: str, needle: str, from: box_usize) -> find_result
 intrinsic def rt_str_rfind(haystack: str, needle: str) -> find_result
-intrinsic def rt_str_to_upper(s: str) -> str
-intrinsic def rt_str_to_lower(s: str) -> str
 intrinsic def rt_str_reverse(s: str) -> str
 intrinsic def rt_str_trim(s: str, mode: box_u8) -> str
 intrinsic def rt_str_replace(s: str, from: str, to: str) -> str
@@ -151,17 +157,39 @@ extend str:
     pub def reversed(self) -> str:
         return rt_str_reverse(self)
 
-    #: Converts the string to uppercase using Unicode simple (1:1) mapping.
+    #: Converts the string to uppercase using the Unicode default full
+    #: case-mapping algorithm (`std.unicode.to_uppercase`), including the
+    #: default multi-code-point expansions (e.g. sharp s -> "SS").
     #: Returns:
     #:   a new string in uppercase.
     pub def to_uppercase(self) -> str:
-        return rt_str_to_upper(self)
+        return to_uppercase(self)
 
-    #: Converts the string to lowercase using Unicode simple (1:1) mapping.
+    #: Converts the string to lowercase using the Unicode default full
+    #: case-mapping algorithm (`std.unicode.to_lowercase`), including the
+    #: Final_Sigma context rule.
     #: Returns:
     #:   a new string in lowercase.
     pub def to_lowercase(self) -> str:
-        return rt_str_to_lower(self)
+        return to_lowercase(self)
+
+    #: Applies Unicode full case folding (`std.unicode.fold_case`), for
+    #: caseless comparison via `eq_ignore_case` -- not itself meant for
+    #: display the way `to_lowercase` is.
+    #: Returns:
+    #:   a new string with case differences normalized away.
+    pub def fold_case(self) -> str:
+        return fold_case(self)
+
+    #: Checks whether two strings are equal under Unicode caseless
+    #: comparison (full case folding both sides).
+    #: Args:
+    #:   self: the string to compare.
+    #:   other: the other string to compare against.
+    #: Returns:
+    #:   true if the strings are equal ignoring case, false otherwise.
+    pub def eq_ignore_case(self, other: str) -> bool:
+        return rt_str_eq(fold_case(self), fold_case(other)).v
 
     #: Replaces every non-overlapping occurrence of from with to.
     #: Args:

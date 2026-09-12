@@ -812,6 +812,15 @@ struct checked_types {
   /// to `hir_local_ref`, mirroring `static_const_values` but for the
   /// aggregate case that can't be inlined at each reference site.
   std::unordered_map<const ast::node *, std::string> static_global_refs;
+  /// Reified global name -> the module whose `static_decl` it was reified
+  /// from (`reify_static_global`'s `owner` parameter). `hir::lower_ident`/
+  /// `lower_module_path` consult this to fill in `hir_global_ref::
+  /// owner_module`, so `hir::find_reachable_modules`'s walker can tell that a
+  /// module referenced only through one of its globals (no function call
+  /// into it) still needs to be compiled — a cross-module `static` table
+  /// with no functions of its own, like `std.unicode_tables`, has no other
+  /// way to end up in the reachable set.
+  std::unordered_map<std::string, std::string> static_global_owners;
   /// Every `v[i]` the reasoning solver proved in bounds
   /// (`checker::check_index_in_bounds`) — an index whose safety is a
   /// *compile-time* fact, so lowering may omit the runtime bounds check

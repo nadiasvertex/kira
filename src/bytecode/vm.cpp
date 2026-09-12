@@ -1102,14 +1102,6 @@ auto intrinsic_rt_str_rfind(std::span<const slot_value> args) -> slot_value {
       kira::runtime::str_rfind(view_of(args[0]), view_of(args[1])));
 }
 
-auto intrinsic_rt_str_to_upper(std::span<const slot_value> args) -> slot_value {
-  return make_runtime_str(kira::runtime::str_to_upper(view_of(args[0])));
-}
-
-auto intrinsic_rt_str_to_lower(std::span<const slot_value> args) -> slot_value {
-  return make_runtime_str(kira::runtime::str_to_lower(view_of(args[0])));
-}
-
 auto intrinsic_rt_str_reverse(std::span<const slot_value> args) -> slot_value {
   return make_runtime_str(kira::runtime::str_reverse(view_of(args[0])));
 }
@@ -1329,7 +1321,7 @@ using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 /// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 33> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, 31> k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
@@ -1351,8 +1343,6 @@ constexpr std::array<intrinsic_fn, 33> k_intrinsics = {{
     intrinsic_rt_str_cmp,
     intrinsic_rt_str_find,
     intrinsic_rt_str_rfind,
-    intrinsic_rt_str_to_upper,
-    intrinsic_rt_str_to_lower,
     intrinsic_rt_str_reverse,
     intrinsic_rt_str_trim,
     intrinsic_rt_str_replace,

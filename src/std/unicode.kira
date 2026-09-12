@@ -1,0 +1,238 @@
+module std.unicode
+
+# Full Unicode case mapping and case folding, in pure Kira over generated
+# UCD lookup tables (`std.unicode_tables`, produced by
+# `tools/unicode/gen_case_tables.py` from the Unicode Character Database).
+# This is the algorithmic core behind `str.to_uppercase`/`to_lowercase`/
+# `fold_case`/`eq_ignore_case` (`src/std/string.kira`'s `extend str` layer),
+# split into its own module because it has no `str`-shaped surface of its
+# own -- everything here operates on individual scalars (`char`/`uint32`)
+# or lists of them.
+#
+# Scope, matching spec/specification/04-stdlib/strings-and-formatting/
+# 52-std-string.md's Limitations section:
+#   - Full (not just simple 1:1) uppercase/lowercase mapping, including the
+#     handful of default, locale-independent multi-code-point expansions
+#     (`ß` -> `SS`, ligature/dotted-I expansions, ...).
+#   - The one context-dependent default casing rule, Final_Sigma (a Greek
+#     capital sigma lowercases to `ς` at the end of a word, `σ` elsewhere),
+#     implemented directly below since it depends on neighboring scalars,
+#     not just the scalar itself.
+#   - Full case folding (`fold_case`), for caseless comparison
+#     (`eq_ignore_case`) -- also potentially multi-code-point per scalar.
+# Deliberately still out of scope: locale-tailored casing (Turkish/Azeri
+# dotless-i, Lithuanian dot-retention) -- these need a locale parameter
+# threaded through every casing call, a materially bigger feature than
+# "apply the default Unicode algorithm," and NFC/NFD normalization and
+# grapheme-cluster segmentation (both still permanent limits per the spec).
+
+use std.unicode_tables.*
+
+#: Single-field wrapper for uint32 to pass across the intrinsic boundary.
+type box_u32 = { v: uint32 }
+
+intrinsic def rt_fmt_char_from_codepoint(cp: box_u32) -> str
+
+#: Encodes one Unicode scalar value as its UTF-8 string. Reuses the same
+#: general codepoint-to-`str` primitive `std.fmt` already relies on for `{c}`
+#: interpolation of a `char` -- not something introduced for casing, so
+#: retiring it is out of scope the way `rt_str_to_upper`/`rt_str_to_lower`
+#: (this module's actual replacement target) are not.
+def encode_cp(cp: uint32) -> str:
+    return rt_fmt_char_from_codepoint(box_u32 { v: cp })
+
+#: Decodes `s`'s UTF-8 bytes into a list of Unicode scalar values.
+#:
+#: Written by hand over `str.as_bytes()` rather than `for c in s` -- the
+#: `for`-loop's builtin desugaring for `str` (`hir::lowerer::
+#: lower_indexed_loop`, since `str` has no `next(mut self)` method for the
+#: general user-iterator path to dispatch to) turns out to index *bytes*,
+#: not decoded scalars, despite 52-std-string.md's "Model" section
+#: documenting scalar iteration -- confirmed by probing `for c in "straße":
+#: println(c as uint32)`, which prints the raw continuation bytes of `ß`
+#: (195, 159) instead of its scalar value (223). That's a real compiler/doc
+#: mismatch (`for`-loop-over-`str` never actually got UTF-8 decoding wired
+#: up), tracked as a separate gap rather than fixed here, since it needs new
+#: HIR-lowering machinery, not a `std.unicode` change -- and it doesn't
+#: block this module, since going around it via `as_bytes()` is exactly the
+#: "pure-Kira UTF-8 decode" this module set out to write anyway.
+def decode_utf8(s: str) -> list[uint32]:
+    let bytes = s.as_bytes()
+    let n = bytes.len()
+    var out: list[uint32] = []
+    var i: usize = 0
+    while i < n:
+        let b0 = bytes[i] as uint32
+        if b0 < 0x80:
+            out.push(b0)
+            i = i + 1
+        elif b0 < 0xE0:
+            let b1 = bytes[i + 1] as uint32
+            out.push((b0 - 0xC0) * 0x40 + (b1 - 0x80))
+            i = i + 2
+        elif b0 < 0xF0:
+            let b1 = bytes[i + 1] as uint32
+            let b2 = bytes[i + 2] as uint32
+            out.push((b0 - 0xE0) * 0x1000 + (b1 - 0x80) * 0x40 + (b2 - 0x80))
+            i = i + 3
+        else:
+            let b1 = bytes[i + 1] as uint32
+            let b2 = bytes[i + 2] as uint32
+            let b3 = bytes[i + 3] as uint32
+            out.push((b0 - 0xF0) * 0x40000 + (b1 - 0x80) * 0x1000 +
+                (b2 - 0x80) * 0x40 + (b3 - 0x80))
+            i = i + 4
+    return out
+
+#: Looks up `cp` in a sorted (key, value) table pair via binary search.
+#: Returns @none when `cp` has no entry (i.e. maps to itself).
+def lookup_1to1(keys: &slice[uint32], vals: &slice[uint32], cp: uint32) -> option[uint32]:
+    match binary_search(keys, cp):
+        @some(i) => @some(vals[i])
+        @none => @none
+
+#: Looks up `cp` in a sorted 1:many table (up to 4 result scalars per entry,
+#: `count[i]` of them meaningful). Returns the encoded UTF-8 string of the
+#: mapping, or @none when `cp` has no entry.
+def lookup_1tomany(keys: &slice[uint32], counts: &slice[uint8],
+        cp0s: &slice[uint32], cp1s: &slice[uint32], cp2s: &slice[uint32],
+        cp3s: &slice[uint32], cp: uint32) -> option[str]:
+    match binary_search(keys, cp):
+        @none => @none
+        @some(i) =>:
+            let n = counts[i]
+            var out = encode_cp(cp0s[i])
+            if n > 1:
+                out = out + encode_cp(cp1s[i])
+            if n > 2:
+                out = out + encode_cp(cp2s[i])
+            if n > 3:
+                out = out + encode_cp(cp3s[i])
+            return @some(out)
+
+#: Whether `cp` is "cased" (General_Category Lu/Ll/Lt, or has a simple case
+#: mapping) -- used only to evaluate the Final_Sigma condition below.
+def is_cased(cp: uint32) -> bool:
+    return in_ranges(&CASED_LO[0..CASED_LEN], &CASED_HI[0..CASED_LEN], cp)
+
+#: Whether `cp` is case-ignorable (approximated as General_Category
+#: Mn/Me/Cf) -- used only to skip over combining marks etc. when evaluating
+#: the Final_Sigma condition below.
+def is_case_ignorable(cp: uint32) -> bool:
+    return in_ranges(&CASE_IGNORABLE_LO[0..CASE_IGNORABLE_LEN],
+        &CASE_IGNORABLE_HI[0..CASE_IGNORABLE_LEN], cp)
+
+#: `los`/`his` are sorted, non-overlapping `[lo, hi]` inclusive ranges.
+#: `partition_point` finds the first range whose low end exceeds `cp`; the
+#: range just before it (if any) is the only one that could contain `cp`.
+def in_ranges(los: &slice[uint32], his: &slice[uint32], cp: uint32) -> bool:
+    let idx = partition_point(los, (lo: uint32) => lo <= cp)
+    if idx == 0:
+        return false
+    return his[idx - 1] >= cp
+
+#: True iff a Greek capital sigma at `codepoints[i]` should lowercase to the
+#: word-final form `ς` rather than the ordinary `σ`: preceded by a cased
+#: scalar (skipping any case-ignorable scalars in between) and not followed
+#: by one.
+def is_final_sigma(codepoints: &slice[uint32], i: usize) -> bool:
+    var preceded_by_cased = false
+    var j = i
+    while j > 0:
+        j = j - 1
+        let cp = codepoints[j]
+        if is_case_ignorable(cp):
+            continue
+        preceded_by_cased = is_cased(cp)
+        break
+    if not preceded_by_cased:
+        return false
+
+    let n = codepoints.len()
+    var k = i + 1
+    while k < n:
+        let cp = codepoints[k]
+        if is_case_ignorable(cp):
+            k = k + 1
+            continue
+        return not is_cased(cp)
+    return true
+
+#: Full uppercase mapping of one scalar: the default multi-code-point
+#: expansion if one exists (e.g. sharp s -> "SS"), else the simple 1:1
+#: mapping, else the scalar unchanged.
+def map_upper(cp: uint32) -> str:
+    match lookup_1tomany(&UPPER_FULL_KEY[0..UPPER_FULL_LEN], &UPPER_FULL_COUNT[0..UPPER_FULL_LEN],
+            &UPPER_FULL_CP0[0..UPPER_FULL_LEN], &UPPER_FULL_CP1[0..UPPER_FULL_LEN],
+            &UPPER_FULL_CP2[0..UPPER_FULL_LEN], &UPPER_FULL_CP3[0..UPPER_FULL_LEN], cp):
+        @some(s) => return s
+        @none =>:
+            match lookup_1to1(&SIMPLE_UPPER_KEY[0..SIMPLE_UPPER_LEN], &SIMPLE_UPPER_VAL[0..SIMPLE_UPPER_LEN], cp):
+                @some(v) => return encode_cp(v)
+                @none => return encode_cp(cp)
+
+#: Full lowercase mapping of one scalar, *without* the Final_Sigma
+#: exception -- callers that might be lowercasing a Greek capital sigma
+#: (0x3A3) must check `is_final_sigma` first; see `to_lowercase` below.
+def map_lower_simple(cp: uint32) -> str:
+    match lookup_1tomany(&LOWER_FULL_KEY[0..LOWER_FULL_LEN], &LOWER_FULL_COUNT[0..LOWER_FULL_LEN],
+            &LOWER_FULL_CP0[0..LOWER_FULL_LEN], &LOWER_FULL_CP1[0..LOWER_FULL_LEN],
+            &LOWER_FULL_CP2[0..LOWER_FULL_LEN], &LOWER_FULL_CP3[0..LOWER_FULL_LEN], cp):
+        @some(s) => return s
+        @none =>:
+            match lookup_1to1(&SIMPLE_LOWER_KEY[0..SIMPLE_LOWER_LEN], &SIMPLE_LOWER_VAL[0..SIMPLE_LOWER_LEN], cp):
+                @some(v) => return encode_cp(v)
+                @none => return encode_cp(cp)
+
+static GREEK_CAPITAL_SIGMA: uint32 = 0x3A3
+static GREEK_SMALL_FINAL_SIGMA: uint32 = 0x3C2
+
+#: Converts `s` to full uppercase (Unicode default casing algorithm: full
+#: multi-code-point expansions where they exist, simple 1:1 mapping
+#: otherwise). See this module's doc comment for exact scope.
+pub def to_uppercase(s: str) -> str:
+    let codepoints = decode_utf8(s)
+    let n = codepoints.len()
+    var out = ""
+    var i: usize = 0
+    while i < n:
+        out = out + map_upper(codepoints[i])
+        i = i + 1
+    return out
+
+#: Converts `s` to full lowercase (Unicode default casing algorithm), with
+#: the one context-dependent default rule: a Greek capital sigma at the end
+#: of a word lowercases to `ς` (final sigma) rather than `σ`.
+pub def to_lowercase(s: str) -> str:
+    let codepoints = decode_utf8(s)
+    let n = codepoints.len()
+    var out = ""
+    var i: usize = 0
+    while i < n:
+        let cp = codepoints[i]
+        if cp == GREEK_CAPITAL_SIGMA and is_final_sigma(&codepoints[0..n], i):
+            out = out + encode_cp(GREEK_SMALL_FINAL_SIGMA)
+        else:
+            out = out + map_lower_simple(cp)
+        i = i + 1
+    return out
+
+#: Full case folding, for caseless comparison (`eq_ignore_case` in
+#: `std.string`) -- potentially multi-code-point per scalar (e.g. sharp s
+#: folds to "ss"), unlike `to_lowercase`.
+pub def fold_case(s: str) -> str:
+    let codepoints = decode_utf8(s)
+    let n = codepoints.len()
+    var out = ""
+    var i: usize = 0
+    while i < n:
+        let cp = codepoints[i]
+        match lookup_1tomany(&FOLD_KEY[0..FOLD_LEN], &FOLD_COUNT[0..FOLD_LEN],
+                &FOLD_CP0[0..FOLD_LEN], &FOLD_CP1[0..FOLD_LEN],
+                &FOLD_CP2[0..FOLD_LEN], &FOLD_CP3[0..FOLD_LEN], cp):
+            @some(folded) =>:
+                out = out + folded
+            @none =>:
+                out = out + encode_cp(cp)
+        i = i + 1
+    return out

@@ -71,14 +71,6 @@ auto kira_rt_str_rfind(uint64_t *haystack, uint64_t *needle) -> uint64_t * {
       kira::runtime::str_rfind(view_of(haystack), view_of(needle)));
 }
 
-auto kira_rt_str_to_upper(uint64_t *s) -> uint64_t * {
-  return make_str(kira::runtime::str_to_upper(view_of(s)));
-}
-
-auto kira_rt_str_to_lower(uint64_t *s) -> uint64_t * {
-  return make_str(kira::runtime::str_to_lower(view_of(s)));
-}
-
 auto kira_rt_str_reverse(uint64_t *s) -> uint64_t * {
   return make_str(kira::runtime::str_reverse(view_of(s)));
 }

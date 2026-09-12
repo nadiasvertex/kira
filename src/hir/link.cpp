@@ -32,6 +32,9 @@ struct collector {
     case hir_node_kind::hir_local_ref:
       note(dynamic_cast<const hir_local_ref &>(expr).owner_module);
       return;
+    case hir_node_kind::hir_global_ref:
+      note(dynamic_cast<const hir_global_ref &>(expr).owner_module);
+      return;
     case hir_node_kind::hir_binary: {
       const auto &node = dynamic_cast<const hir_binary &>(expr);
       walk_expr(*node.lhs);

@@ -40,12 +40,6 @@ namespace kira::runtime {
 [[nodiscard]] auto str_rfind(std::string_view haystack, std::string_view needle)
     -> std::optional<size_t>;
 
-/// Unicode *simple* (1:1) case mapping applied per scalar; unmapped scalars
-/// pass through. Covers ASCII, Latin-1, Greek, and Cyrillic; wider coverage
-/// and full/special/locale casing are tracked in `spec/todo.md`.
-[[nodiscard]] auto str_to_upper(std::string_view s) -> std::string;
-[[nodiscard]] auto str_to_lower(std::string_view s) -> std::string;
-
 /// Scalars emitted in reverse order (valid UTF-8 out). Reverses by scalar, not
 /// by grapheme cluster; combining marks are not kept adjacent to their base.
 [[nodiscard]] auto str_reverse(std::string_view s) -> std::string;

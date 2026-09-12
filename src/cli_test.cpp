@@ -831,8 +831,9 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // `prelude.kira` itself now `use`s `std.console`/`std.iter` — mirror what
   // `main.cpp` does for every real invocation (this alone now pulls in
   // `traits.kira`, `iter.kira`, `prelude.kira`, `io.kira`, `console.kira`,
-  // `fmt.kira`, `algo.kira`, `derive.kira`, `fs/path.kira`, and the assembled
-  // `std.platform`) rather than
+  // `fmt.kira`, `algo.kira`, `unicode_tables.kira`, `unicode.kira`,
+  // `derive.kira`, `fs/path.kira`, and the assembled `std.platform`) rather
+  // than
   // hand-listing sources, which would double-add `io.kira`/`console.kira`
   // under a different path string and trip a duplicate-module-path
   // diagnostic (`find_stdlib_source_file`'s resolved path doesn't lexically
@@ -844,11 +845,11 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 15,
+  expect(report->modules.size() == 17,
          "expected std.io, std.console, std.traits, std.iter, std.algo, "
-         "std.fmt, std.string, std.derive, std.fs.path, std.platform, "
-         "std.panic, std.option, std.result, std.list, and prelude to all "
-         "emit metadata");
+         "std.fmt, std.string, std.unicode_tables, std.unicode, std.derive, "
+         "std.fs.path, std.platform, std.panic, std.option, std.result, "
+         "std.list, and prelude to all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.

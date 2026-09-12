@@ -936,6 +936,7 @@ public:
         .static_const_values = std::move(static_const_values_),
         .static_global_defs = std::move(static_global_defs_),
         .static_global_refs = std::move(static_global_refs_),
+        .static_global_owners = std::move(static_global_owners_),
         .proven_in_bounds = std::move(proven_in_bounds_),
         .elided_contracts = std::move(elided_contracts_),
         .view_bearing_types = std::move(view_bearing)};
@@ -1211,6 +1212,9 @@ private:
   /// See `checked_types::static_global_refs`'s doc comment. Populated by
   /// `record_static_const_reference`.
   std::unordered_map<const ast::node *, std::string> static_global_refs_;
+  /// See `checked_types::static_global_owners`'s doc comment. Populated by
+  /// `reify_static_global`.
+  std::unordered_map<std::string, std::string> static_global_owners_;
   /// See `checked_types::proven_in_bounds`'s doc comment. Populated by
   /// `check_index_in_bounds`.
   std::unordered_set<const ast::index_expr *> proven_in_bounds_;
@@ -6396,7 +6400,8 @@ private:
       if (const auto it = module_->statics.find(name);
           it != module_->statics.end()) {
         const auto type = static_binding_type(*it->second.decl, module_);
-        record_static_const_reference(ident, *it->second.decl, type);
+        record_static_const_reference(ident, *it->second.decl, type,
+                                      module_->module_name);
         return type;
       }
     }
@@ -6411,7 +6416,8 @@ private:
         if (const auto it = source->statics.find(member);
             it != source->statics.end()) {
           const auto type = static_binding_type(*it->second.decl, source);
-          record_static_const_reference(ident, *it->second.decl, type);
+          record_static_const_reference(ident, *it->second.decl, type,
+                                        source->module_name);
           return type;
         }
       }
@@ -6427,7 +6433,8 @@ private:
       if (const auto it = source->statics.find(std::string(name));
           it != source->statics.end()) {
         const auto type = static_binding_type(*it->second.decl, source);
-        record_static_const_reference(ident, *it->second.decl, type);
+        record_static_const_reference(ident, *it->second.decl, type,
+                                      source->module_name);
         return type;
       }
     }
@@ -6561,7 +6568,8 @@ private:
   /// `hir::lower_module_path` looks the path form up the same way
   /// `hir::lower_ident` looks up the bare one.
   auto record_static_const_reference(const ast::expr &reference,
-                                     const ast::static_decl &decl, type_id type)
+                                     const ast::static_decl &decl, type_id type,
+                                     std::string_view owner_module)
       -> void {
     const auto *value = ensure_static_binding_evaluated(decl);
     if (value == nullptr) {
@@ -6572,7 +6580,8 @@ private:
       static_const_values_[&reference] = lit;
       return;
     }
-    if (const auto name = reify_static_global(decl, *value, type)) {
+    if (const auto name = reify_static_global(decl, *value, type,
+                                              owner_module)) {
       static_global_refs_[&reference] = *name;
     }
   }
@@ -6589,7 +6598,8 @@ private:
   /// string, ...) — those remain unresolvable at runtime today, exactly the
   /// pre-existing behavior.
   auto reify_static_global(const ast::static_decl &decl,
-                           const comptime::value &value, type_id type)
+                           const comptime::value &value, type_id type,
+                           std::string_view owner_module)
       -> std::optional<std::string> {
     if (const auto it = static_global_defs_.find(&decl);
         it != static_global_defs_.end()) {
@@ -6614,6 +6624,7 @@ private:
     static_global_defs_.emplace(
         &decl, checked_types::static_global_def{
                    .name = name, .type = type, .elements = value.elements});
+    static_global_owners_.emplace(name, std::string(owner_module));
     return name;
   }
 
@@ -10779,7 +10790,8 @@ private:
         if (const auto it = owner->statics.find(path.segments.back());
             it != owner->statics.end()) {
           const auto type = static_binding_type(*it->second.decl, owner);
-          record_static_const_reference(path, *it->second.decl, type);
+          record_static_const_reference(path, *it->second.decl, type,
+                                        owner->module_name);
           return type;
         }
       }

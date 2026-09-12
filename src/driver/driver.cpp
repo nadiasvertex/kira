@@ -243,7 +243,8 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   for (const auto *filename :
        {"traits.kira", "iter.kira", "prelude.kira", "panic.kira", "option.kira",
         "result.kira", "list.kira", "io.kira", "console.kira", "algo.kira",
-        "fmt.kira", "string.kira", "deriving.kira", "fs/path.kira"}) {
+        "fmt.kira", "unicode_tables.kira", "unicode.kira", "string.kira",
+        "deriving.kira", "fs/path.kira"}) {
     const auto found = find_stdlib_source_file(cfg.program_name, filename);
     if (found && !already_present(*found)) {
       cfg.sources.push_back(found->string());

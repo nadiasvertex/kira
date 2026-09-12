@@ -156,6 +156,38 @@ auto test_discovers_transitive_dependency() -> void {
          "expected `leaf` to be discovered transitively through `mid`");
 }
 
+/// A module reached *only* through a reified `static` global reference
+/// (`hir_global_ref`), never through a function call, must still be counted
+/// reachable — otherwise its own `static$name$counter` global never makes
+/// it into the compiled program's global table, and every reference to it
+/// fails at bytecode/AOT compile time even though the whole thing
+/// type-checked cleanly (`hir::hir_global_ref::owner_module`'s doc comment;
+/// found while wiring `std.unicode_tables`, a module with generated lookup
+/// tables and no functions of its own, into `std.unicode`).
+auto test_discovers_dependency_reached_only_through_a_global() -> void {
+  auto fixture = lower_fixture({
+      {"tables.kira", "module tables\n"
+                      "pub static VALUES: array[int32, 3] = [10, 20, 30]\n"},
+      {"app.kira", "module app\n"
+                   "use tables.*\n"
+                   "pub def run() -> int32:\n"
+                   "    return VALUES[1]\n"},
+  });
+  const auto &entry = find_module(fixture.modules, "app");
+
+  const auto reachable = hir::find_reachable_modules(entry, fixture.modules);
+  expect(reachable.size() == 2,
+         "expected the entry plus the module owning the global it reads");
+
+  auto has_tables = false;
+  for (const auto *module : reachable) {
+    has_tables = has_tables || module->module_name == "tables";
+  }
+  expect(has_tables,
+         "expected `tables` to be discovered through the global reference "
+         "alone, with no function call into it");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -163,6 +195,7 @@ auto main() -> int {
     test_finds_only_entry_when_nothing_qualified();
     test_discovers_direct_dependency();
     test_discovers_transitive_dependency();
+    test_discovers_dependency_reached_only_through_a_global();
   } catch (const std::exception &ex) {
     std::cerr << "link_test failed: unhandled exception: " << ex.what() << '\n';
     return 1;

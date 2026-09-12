@@ -1,0 +1,12 @@
+ascii_upper=HELLO
+ascii_lower=hello
+latin1_upper=É
+ext_a_lower=ā
+greek_upper=ΑΒΓ
+cyrillic_lower=абв
+sharp_s_upper=STRASSE
+dotted_i_lower_len=3
+final_sigma=ος
+leading_sigma=σο
+fold_eq=true
+plain_eq=false

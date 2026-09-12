@@ -73,7 +73,8 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
   for (const auto *filename :
        {"traits.kira", "iter.kira", "prelude.kira", "panic.kira", "option.kira",
         "result.kira", "list.kira", "io.kira", "console.kira", "algo.kira",
-        "fmt.kira", "string.kira", "deriving.kira"}) {
+        "fmt.kira", "unicode_tables.kira", "unicode.kira", "string.kira",
+        "deriving.kira"}) {
     fixtures.push_back(source_fixture{
         .path = std::string("std/") + filename,
         .text = kira::testing::load_test_data_file(std_dir.string(), filename),

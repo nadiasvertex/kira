@@ -304,6 +304,19 @@ private:
     return resolve_opaque(found->second);
   }
 
+  /// The module `reified_name` (a `static$name$counter` global) was reified
+  /// from, per `checked_types::static_global_owners` — see
+  /// `hir_global_ref::owner_module`'s doc comment for why this is recorded
+  /// at all.
+  [[nodiscard]] auto global_owner_of(const std::string &reified_name) const
+      -> std::optional<std::string> {
+    if (const auto it = checked_.static_global_owners.find(reified_name);
+        it != checked_.static_global_owners.end()) {
+      return it->second;
+    }
+    return std::nullopt;
+  }
+
   /// Unwraps an `existential_kind` type (`some Trait[Args]`) to its concrete
   /// backing type. Opacity is purely a checker-level view — `type_entry`'s
   /// doc comment (`semantic/types.h`) — enforced by restricting which
@@ -930,7 +943,8 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
   // not something to inline at every reference site.
   if (const auto it = checked_.static_global_refs.find(&ident);
       it != checked_.static_global_refs.end()) {
-    return ok_expr(make<hir_global_ref>(ident.span, *type, it->second));
+    return ok_expr(make<hir_global_ref>(ident.span, *type, it->second,
+                                        global_owner_of(it->second)));
   }
   const auto symbol = resolve_reference(ident.name);
   return ok_expr(make<hir_local_ref>(ident.span, *type, symbol, ident.name));
@@ -1410,7 +1424,8 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
     if (!type.has_value()) {
       return std::unexpected(type.error());
     }
-    return ok_expr(make<hir_global_ref>(path.span, *type, it->second));
+    return ok_expr(make<hir_global_ref>(path.span, *type, it->second,
+                                        global_owner_of(it->second)));
   }
   if (path.segments.size() != 2) {
     return fail(lowering_error_kind::unsupported_construct, path.span,

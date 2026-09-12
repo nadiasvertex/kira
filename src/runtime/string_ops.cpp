@@ -158,67 +158,11 @@ namespace {
 }
 
 // -------------------------------------------------------------------------
-//  Unicode simple (1:1) case mapping. Contiguous, exception-free ranges only
-//  (ASCII, Latin-1, Greek, Cyrillic); Latin Extended and beyond, plus
-//  full/special/locale casing, are deferred to the generated-table work in
-//  `spec/todo.md`.
+//  Case mapping/folding lives in `std.unicode` (pure Kira over generated UCD
+//  tables) now, not here — see 52-std-string.md's Architecture section. This
+//  runtime module keeps only the algorithms that have no Unicode-table
+//  dependency: search, equality, reversal, trimming, replacement.
 // -------------------------------------------------------------------------
-
-[[nodiscard]] auto simple_to_lower(uint32_t c) -> uint32_t {
-  if (c <= 0x7F) {
-    return (c >= 'A' && c <= 'Z') ? c + 0x20 : c;
-  }
-  if (c >= 0x00C0 && c <= 0x00DE && c != 0x00D7) { // Latin-1 uppercase
-    return c + 0x20;
-  }
-  if (c == 0x0178) { // Ÿ -> ÿ
-    return 0x00FF;
-  }
-  if (c >= 0x0391 && c <= 0x03A1) { // Greek Α..Ρ
-    return c + 0x20;
-  }
-  if (c >= 0x03A3 && c <= 0x03AB) { // Greek Σ..Ϋ
-    return c + 0x20;
-  }
-  if (c >= 0x0410 && c <= 0x042F) { // Cyrillic А..Я
-    return c + 0x20;
-  }
-  if (c >= 0x0400 && c <= 0x040F) { // Cyrillic Ѐ..Џ
-    return c + 0x50;
-  }
-  return c;
-}
-
-[[nodiscard]] auto simple_to_upper(uint32_t c) -> uint32_t {
-  if (c <= 0x7F) {
-    return (c >= 'a' && c <= 'z') ? c - 0x20 : c;
-  }
-  if (c == 0x00B5) { // µ (micro sign) -> Μ
-    return 0x039C;
-  }
-  if (c == 0x00FF) { // ÿ -> Ÿ
-    return 0x0178;
-  }
-  if (c >= 0x00E0 && c <= 0x00FE && c != 0x00F7) { // Latin-1 lowercase
-    return c - 0x20;
-  }
-  if (c >= 0x03B1 && c <= 0x03C1) { // Greek α..ρ
-    return c - 0x20;
-  }
-  if (c == 0x03C2) { // final sigma ς -> Σ
-    return 0x03A3;
-  }
-  if (c >= 0x03C3 && c <= 0x03CB) { // Greek σ..ϋ
-    return c - 0x20;
-  }
-  if (c >= 0x0430 && c <= 0x044F) { // Cyrillic а..я
-    return c - 0x20;
-  }
-  if (c >= 0x0450 && c <= 0x045F) { // Cyrillic ѐ..џ
-    return c - 0x50;
-  }
-  return c;
-}
 
 [[nodiscard]] auto is_white_space(uint32_t c) -> bool {
   switch (c) {
@@ -251,25 +195,6 @@ namespace {
   default:
     return false;
   }
-}
-
-[[nodiscard]] auto map_case(std::string_view s, uint32_t (*fold)(uint32_t))
-    -> std::string {
-  std::string out;
-  out.reserve(s.size());
-  size_t pos = 0;
-  while (pos < s.size()) {
-    size_t next = pos;
-    const auto scalar = decode_utf8_scalar(s, next);
-    if (!scalar.has_value()) { // invalid byte: pass through unchanged
-      out.push_back(s[pos]);
-      ++pos;
-      continue;
-    }
-    encode_utf8_scalar(fold(*scalar), out);
-    pos = next;
-  }
-  return out;
 }
 
 } // namespace
@@ -317,14 +242,6 @@ auto str_rfind(std::string_view haystack, std::string_view needle)
     return std::nullopt;
   }
   return haystack.size() - hit - needle.size();
-}
-
-auto str_to_upper(std::string_view s) -> std::string {
-  return map_case(s, simple_to_upper);
-}
-
-auto str_to_lower(std::string_view s) -> std::string {
-  return map_case(s, simple_to_lower);
 }
 
 auto str_reverse(std::string_view s) -> std::string {
