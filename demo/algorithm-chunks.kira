@@ -1,0 +1,25 @@
+module main
+
+# ==========================================================================
+#  `algorithm.chunks` — split a slice into consecutive, non-overlapping
+#  size-element views, in order. The final chunk holds the remainder and
+#  may be shorter than `size`.
+#
+#  Run it:      kira demo/algorithm-chunks.kira
+#  Compile it:  kira --compile -o algorithm-chunks demo/algorithm-chunks.kira
+# ==========================================================================
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+
+    let cs = chunks(&nums[0..5], 2)
+    var i: usize = 0
+    while i < cs.len():
+        println("chunk[{i}]_len={cs[i].len()}")
+        i = i + 1
+
+    # An exact-multiple length: every chunk is full-sized.
+    let exact = [1, 2, 3, 4]
+    let cs2 = chunks(&exact[0..4], 2)
+    println("exact_chunk_count={cs2.len()}")
+    return 0

@@ -1,0 +1,30 @@
+module main
+
+# ==========================================================================
+#  `algorithm.sort` — sort a mutable slice in place, ascending.
+#
+#  Not guaranteed stable. Uses a byte-radix sort for builtin integer types
+#  and introsort (quicksort with a heapsort fallback) otherwise.
+#
+#  Run it:      kira demo/algorithm-sort.kira
+#  Compile it:  kira --compile -o algorithm-sort demo/algorithm-sort.kira
+# ==========================================================================
+
+def print_ints(label: str, s: &slice[int32]) -> unit:
+    var i: usize = 0
+    while i < s.len():
+        println("{label}[{i}]={s[i]}")
+        i = i + 1
+
+def main() -> int32:
+    var ints: array[int32, 6] = [5, -3, 8, -1, 0, 2]
+    sort(&mut ints[0..6])
+    print_ints("sorted", &ints[0..6])
+
+    var floats: list[float64] = [3.5, 1.2, 9.9, -2.5]
+    sort(&mut floats[0..4])
+    var i: usize = 0
+    while i < 4:
+        println("float_sorted[{i}]={floats[i]}")
+        i = i + 1
+    return 0

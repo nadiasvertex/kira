@@ -1,0 +1,24 @@
+module main
+
+# ==========================================================================
+#  `algorithm.rotate` — rotate a mutable slice left in place, so the
+#  element at `mid` becomes the first element.
+#
+#  Run it:      kira demo/algorithm-rotate.kira
+#  Compile it:  kira --compile -o algorithm-rotate demo/algorithm-rotate.kira
+# ==========================================================================
+
+def main() -> int32:
+    var nums: array[int32, 5] = [1, 2, 3, 4, 5]
+    rotate(&mut nums[0..5], 2)
+
+    var i: usize = 0
+    while i < 5:
+        println("rotated[{i}]={nums[i]}")
+        i = i + 1
+
+    # Rotating by 0 or by the full length is a no-op.
+    var same: array[int32, 3] = [1, 2, 3]
+    rotate(&mut same[0..3], 0)
+    println("no_op={same[0]},{same[1]},{same[2]}")
+    return 0

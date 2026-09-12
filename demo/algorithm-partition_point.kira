@@ -1,0 +1,23 @@
+module main
+
+# ==========================================================================
+#  `algorithm.partition_point` — the index of the first element for which
+#  a predicate is false, over a slice partitioned so every element
+#  satisfying it precedes every element that doesn't.
+#
+#  Run it:      kira demo/algorithm-partition_point.kira
+#  Compile it:  kira --compile -o algorithm-partition_point demo/algorithm-partition_point.kira
+# ==========================================================================
+
+def main() -> int32:
+    let nums = [1, 3, 5, 7, 9]
+
+    # Boundary where "less than 5" stops holding.
+    println("boundary={partition_point(&nums[0..5], (x: int32) => x < 5)}")
+
+    # Every element satisfies the predicate.
+    println("all_match={partition_point(&nums[0..5], (x: int32) => x < 100)}")
+
+    # No element satisfies the predicate.
+    println("none_match={partition_point(&nums[0..5], (x: int32) => x < 0)}")
+    return 0

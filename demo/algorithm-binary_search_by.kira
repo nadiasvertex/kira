@@ -1,0 +1,26 @@
+module main
+
+# ==========================================================================
+#  `algorithm.binary_search_by` — O(log n) lookup over an ascending-sorted
+#  slice, under a caller-supplied comparator.
+#
+#  `f` compares a candidate element to the (closed-over) search target,
+#  answering how the candidate relates to it.
+#
+#  Run it:      kira demo/algorithm-binary_search_by.kira
+#  Compile it:  kira --compile -o algorithm-binary_search_by demo/algorithm-binary_search_by.kira
+# ==========================================================================
+
+def main() -> int32:
+    let haystack = [1, 3, 5, 7, 9]
+
+    match binary_search_by(&haystack[0..5], (x: int32) =>
+            if x < 7: @less elif x > 7: @greater else: @equal):
+        @some(idx) => println("hit={idx}")
+        @none      => println("hit=none")
+
+    match binary_search_by(&haystack[0..5], (x: int32) =>
+            if x < 4: @less elif x > 4: @greater else: @equal):
+        @some(idx) => println("miss={idx}")
+        @none      => println("miss=none")
+    return 0

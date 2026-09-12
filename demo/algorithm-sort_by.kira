@@ -1,0 +1,34 @@
+module main
+
+# ==========================================================================
+#  `algorithm.sort_by` — sort a mutable slice under a caller-supplied
+#  comparator.
+#
+#  `cmp` answers how its first argument relates to its second, letting the
+#  caller sort by any rule, not just `<`.
+#
+#  Run it:      kira demo/algorithm-sort_by.kira
+#  Compile it:  kira --compile -o algorithm-sort_by demo/algorithm-sort_by.kira
+# ==========================================================================
+
+def main() -> int32:
+    # Descending order.
+    var nums: array[int32, 5] = [3, 1, 4, 1, 5]
+    sort_by(&mut nums[0..5], (a: int32, b: int32) =>
+        if a > b: @less elif a < b: @greater else: @equal)
+    var i: usize = 0
+    while i < 5:
+        println("desc[{i}]={nums[i]}")
+        i = i + 1
+
+    # Sort pairs by their first element; equal keys keep their original
+    # relative order only if the caller compares just the first element.
+    let by_first = (p: (int32, int32), q: (int32, int32)) => (
+        if p.0 < q.0: @less elif q.0 < p.0: @greater else: @equal)
+    var pairs: list[(int32, int32)] = [(1, 10), (0, 20), (1, 30)]
+    sort_by(&mut pairs[0..3], by_first)
+    i = 0
+    while i < 3:
+        println("pair[{i}]=({pairs[i].0},{pairs[i].1})")
+        i = i + 1
+    return 0

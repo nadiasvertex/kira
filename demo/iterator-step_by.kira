@@ -1,0 +1,27 @@
+module main
+
+# ==========================================================================
+#  `iterator.step_by` — yield every nth element, starting with the first.
+#
+#  The first element is always yielded; after that, `step - 1` elements
+#  are skipped between each yield.
+#
+#  Run it:      kira demo/iterator-step_by.kira
+#  Compile it:  kira --compile -o iterator-step_by demo/iterator-step_by.kira
+# ==========================================================================
+
+def main() -> int32:
+    let nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+    # Every 3rd element, starting with the first
+    var by3 = nums.into_iter().step_by(3)
+    println("first={by3.next().unwrap()}")
+    println("second={by3.next().unwrap()}")
+    println("third={by3.next().unwrap()}")
+    println("fourth={by3.next().unwrap()}")
+    println("done={by3.next().is_none()}")
+
+    # Step of 1 yields every element
+    let nums2 = [1, 2, 3]
+    println("step1_count={nums2.into_iter().step_by(1).count()}")
+    return 0

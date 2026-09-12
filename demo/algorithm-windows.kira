@@ -1,0 +1,22 @@
+module main
+
+# ==========================================================================
+#  `algorithm.windows` — every overlapping, contiguous size-element view of
+#  a slice, in order.
+#
+#  Run it:      kira demo/algorithm-windows.kira
+#  Compile it:  kira --compile -o algorithm-windows demo/algorithm-windows.kira
+# ==========================================================================
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4, 5]
+
+    let ws = windows(&nums[0..5], 2)
+    var i: usize = 0
+    while i < ws.len():
+        println("window[{i}]=({ws[i][0]},{ws[i][1]})")
+        i = i + 1
+
+    # A size exceeding the slice's length yields no windows.
+    println("too_big={windows(&nums[0..5], 10).len()}")
+    return 0

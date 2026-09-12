@@ -1,0 +1,25 @@
+module main
+
+# ==========================================================================
+#  `iterator.values` — dereference a reference iterator into owned values.
+#
+#  Turns an iterator yielding `&T` (such as `.iter()` over a list) into one
+#  yielding `T`, so terminals like `sum` can be called directly.
+#
+#  Run it:      kira demo/iterator-values.kira
+#  Compile it:  kira --compile -o iterator-values demo/iterator-values.kira
+# ==========================================================================
+
+def main() -> int32:
+    let nums = [1, 2, 3, 4]
+
+    # Borrows `nums`; the list stays accessible afterward.
+    let total = nums.iter().values().sum()
+    println("sum={total}")
+    println("still_here={nums.len()}")
+
+    # Collect the dereferenced values one at a time.
+    var vs = nums.iter().values()
+    println("first={vs.next().unwrap()}")
+    println("second={vs.next().unwrap()}")
+    return 0

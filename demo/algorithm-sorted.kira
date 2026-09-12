@@ -1,0 +1,25 @@
+module main
+
+# ==========================================================================
+#  `algorithm.sorted` — a new, ascending-sorted list of a slice's elements.
+#
+#  Leaves the source slice unchanged, unlike `sort`.
+#
+#  Run it:      kira demo/algorithm-sorted.kira
+#  Compile it:  kira --compile -o algorithm-sorted demo/algorithm-sorted.kira
+# ==========================================================================
+
+def main() -> int32:
+    var source = [5, 2, 8, 1]
+    let copy = sorted(&source[0..4])
+
+    var i: usize = 0
+    while i < copy.len():
+        println("sorted_copy[{i}]={copy[i]}")
+        i = i + 1
+
+    i = 0
+    while i < 4:
+        println("source_unchanged[{i}]={source[i]}")
+        i = i + 1
+    return 0

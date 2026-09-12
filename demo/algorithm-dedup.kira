@@ -1,0 +1,23 @@
+module main
+
+# ==========================================================================
+#  `algorithm.dedup` — remove consecutive duplicate elements from a mutable
+#  slice, in place, moving the surviving elements to the front.
+#
+#  Only *consecutive* duplicates collapse; a value reappearing later, after
+#  a different value, is not removed.
+#
+#  Run it:      kira demo/algorithm-dedup.kira
+#  Compile it:  kira --compile -o algorithm-dedup demo/algorithm-dedup.kira
+# ==========================================================================
+
+def main() -> int32:
+    var nums: array[int32, 7] = [1, 1, 2, 2, 2, 3, 1]
+    let new_len = dedup(&mut nums[0..7])
+
+    println("new_len={new_len}")
+    var i: usize = 0
+    while i < new_len:
+        println("dedup[{i}]={nums[i]}")
+        i = i + 1
+    return 0
