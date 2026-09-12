@@ -471,6 +471,18 @@ private:
       const ast::binding_pattern &loop_var,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
           &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error>;
+  /// The `str` shape: `for c in s: ...` walks a byte cursor rather than an
+  /// element index, decoding one UTF-8 scalar per iteration
+  /// (`hir_str_decode_scalar`) and advancing the cursor by that scalar's
+  /// own byte width (`hir_str_scalar_width`) instead of a fixed stride of
+  /// 1 — unlike `array`/`list`/`slice`, `str`'s "elements" aren't
+  /// fixed-size, so it can't share `lower_indexed_loop`'s single counting
+  /// loop. `inner_stmts` is the same contract as `lower_range_loop`'s.
+  [[nodiscard]] auto lower_str_scalar_loop(
+      source_span span, const ast::expr &iterable, type_id iterable_type,
+      const ast::binding_pattern &loop_var,
+      const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
+          &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error>;
   /// The `option` shape: `for x in opt: ...` isn't a loop at all — it runs
   /// `inner_stmts` zero or one times, so it lowers to a plain two-arm
   /// `hir_match` (`@some(_) => { let x = <payload>; inner_stmts() }`,
@@ -2932,6 +2944,18 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
                                *iterable_type, loop_var, it->second,
                                inner_stmts);
   }
+  {
+    auto stripped = *iterable_type;
+    while (checked_.types.entry(stripped).kind == type_kind::ref_kind) {
+      stripped = checked_.types.entry(stripped).result;
+    }
+    const auto &stripped_entry = checked_.types.entry(stripped);
+    if (stripped_entry.kind == type_kind::builtin_kind &&
+        stripped_entry.name == "str") {
+      return lower_str_scalar_loop(for_stmt.span, *for_stmt.iterable,
+                                   *iterable_type, loop_var, inner_stmts);
+    }
+  }
   return lower_indexed_loop(for_stmt.span, *for_stmt.iterable, *iterable_type,
                             loop_var, inner_stmts);
 }
@@ -3118,8 +3142,6 @@ auto lowerer::lower_indexed_loop(
              (entry.name == "list" || entry.name == "slice" ||
               entry.name == "slice_mut")) {
     element_type = entry.args.empty() ? k_unknown_type : entry.args[0];
-  } else if (entry.kind == type_kind::builtin_kind && entry.name == "str") {
-    element_type = checked_.types.char_type();
   } else {
     return fail(lowering_error_kind::unsupported_construct, span,
                 "only range/array/list/slice/string/option iteration is "
@@ -3188,6 +3210,83 @@ auto lowerer::lower_indexed_loop(
   result.push_back(ptr<hir_node>(make<hir_while>(span, std::move(condition),
                                                  std::move(body_block->body),
                                                  std::move(body_block->step))));
+
+  return result;
+}
+
+auto lowerer::lower_str_scalar_loop(
+    source_span span, const ast::expr &iterable, type_id iterable_type,
+    const ast::binding_pattern &loop_var,
+    const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
+        &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error> {
+  auto container_value = lower_expr(iterable);
+  if (!container_value.has_value()) {
+    return std::unexpected(container_value.error());
+  }
+
+  auto result = ptr_vec<hir_node>{};
+  const auto container_symbol = mint_symbol();
+  result.push_back(ptr<hir_node>(make<hir_let>(iterable.span, container_symbol,
+                                               std::string("<for container>"),
+                                               std::move(*container_value))));
+
+  const auto usize_type = checked_.types.usize_type();
+  const auto char_type = checked_.types.char_type();
+  const auto cursor_symbol = mint_symbol();
+  result.push_back(ptr<hir_node>(make<hir_let>(
+      span, cursor_symbol, std::string("<for cursor>"),
+      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
+                                      std::string("0"))),
+      /*mut=*/true)));
+
+  const auto container_ref = [span, iterable_type, container_symbol]() {
+    return ptr<hir_expr>(make<hir_local_ref>(span, iterable_type,
+                                             container_symbol,
+                                             std::string("<for container>")));
+  };
+  const auto cursor_ref = [span, usize_type, cursor_symbol]() {
+    return ptr<hir_expr>(make<hir_local_ref>(span, usize_type, cursor_symbol,
+                                             std::string("<for cursor>")));
+  };
+
+  auto condition = ptr<hir_expr>(hir::make<hir_binary>(
+      span, checked_.types.bool_type(), ast::binary_op::lt, cursor_ref(),
+      ptr<hir_expr>(make<hir_container_len>(span, usize_type,
+                                            container_ref()))));
+
+  push_scope();
+  const auto loop_var_symbol = declare_local(loop_var.name, char_type);
+  auto body_stmts = ptr_vec<hir_node>{};
+  body_stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, loop_var_symbol, loop_var.name,
+      ptr<hir_expr>(make<hir_str_decode_scalar>(span, char_type,
+                                                container_ref(),
+                                                cursor_ref())))));
+
+  auto inner = inner_stmts();
+  if (!inner.has_value()) {
+    pop_scope();
+    return std::unexpected(inner.error());
+  }
+  for (auto &stmt_ptr : *inner) {
+    body_stmts.push_back(std::move(stmt_ptr));
+  }
+  pop_scope();
+
+  // Same reasoning as `build_for_loop_body`: the cursor advance lives in
+  // the loop's *step*, not the body, so `continue` still advances past the
+  // scalar it just decoded instead of looping forever on it.
+  auto step_stmts = ptr_vec<hir_node>{};
+  step_stmts.push_back(ptr<hir_node>(hir::make<hir_assign>(
+      span, ast::assign_op::add_assign, cursor_ref(),
+      ptr<hir_expr>(make<hir_str_scalar_width>(span, usize_type,
+                                               container_ref(),
+                                               cursor_ref())))));
+
+  result.push_back(ptr<hir_node>(make<hir_while>(
+      span, std::move(condition),
+      make<hir_block>(span, k_unknown_type, std::move(body_stmts)),
+      make<hir_block>(span, k_unknown_type, std::move(step_stmts)))));
 
   return result;
 }
@@ -3643,6 +3742,18 @@ auto lowerer::lower_comprehension_clause(
   if (entry.kind == type_kind::builtin_generic_kind && entry.name == "option") {
     return lower_option_loop(span, *clause.iterable, *iterable_type, loop_var,
                              nested);
+  }
+  {
+    auto stripped = *iterable_type;
+    while (checked_.types.entry(stripped).kind == type_kind::ref_kind) {
+      stripped = checked_.types.entry(stripped).result;
+    }
+    const auto &stripped_entry = checked_.types.entry(stripped);
+    if (stripped_entry.kind == type_kind::builtin_kind &&
+        stripped_entry.name == "str") {
+      return lower_str_scalar_loop(span, *clause.iterable, *iterable_type,
+                                   loop_var, nested);
+    }
   }
   return lower_indexed_loop(span, *clause.iterable, *iterable_type, loop_var,
                             nested);

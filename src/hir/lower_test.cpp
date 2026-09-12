@@ -1925,6 +1925,23 @@ auto test_lowers_str_for_loop_yields_char() -> void {
   expect(loop_var_let.name == "c", "expected the loop variable to be `c`");
   expect(loop_var_let.initializer->type == fixture.checked.types.char_type(),
          "expected iterating a str to yield char elements");
+  // Not just the right *type* — the right *node kind*. A `hir_index` here
+  // (the byte-indexed shape `array`/`list`/`slice` share) would still type
+  // as `char` while actually reading one raw byte per iteration; only
+  // `hir_str_decode_scalar` really decodes UTF-8 (see spec/todo.md item 9
+  // and `lowerer::lower_str_scalar_loop`).
+  expect(loop_var_let.initializer->kind ==
+             hir::hir_node_kind::hir_str_decode_scalar,
+         "expected a str for-loop's element to come from a real UTF-8 "
+         "decode (hir_str_decode_scalar), not a byte-indexed hir_index");
+  // The step must advance the cursor by the decoded scalar's own byte
+  // width (`hir_str_scalar_width`), not a fixed stride of 1 — a `str`'s
+  // multi-byte scalars would otherwise be split into their raw bytes.
+  const auto &step_assign =
+      dynamic_cast<const hir::hir_assign &>(*loop.step->stmts[0]);
+  expect(step_assign.value->kind == hir::hir_node_kind::hir_str_scalar_width,
+         "expected a str for-loop's cursor step to be the decoded scalar's "
+         "own byte width (hir_str_scalar_width), not a literal 1");
 }
 
 auto test_lowers_option_for_loop() -> void {

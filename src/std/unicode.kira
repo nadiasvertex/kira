@@ -43,19 +43,12 @@ def encode_cp(cp: uint32) -> str:
 
 #: Decodes `s`'s UTF-8 bytes into a list of Unicode scalar values.
 #:
-#: Written by hand over `str.as_bytes()` rather than `for c in s` -- the
-#: `for`-loop's builtin desugaring for `str` (`hir::lowerer::
-#: lower_indexed_loop`, since `str` has no `next(mut self)` method for the
-#: general user-iterator path to dispatch to) turns out to index *bytes*,
-#: not decoded scalars, despite 52-std-string.md's "Model" section
-#: documenting scalar iteration -- confirmed by probing `for c in "straße":
-#: println(c as uint32)`, which prints the raw continuation bytes of `ß`
-#: (195, 159) instead of its scalar value (223). That's a real compiler/doc
-#: mismatch (`for`-loop-over-`str` never actually got UTF-8 decoding wired
-#: up), tracked as a separate gap rather than fixed here, since it needs new
-#: HIR-lowering machinery, not a `std.unicode` change -- and it doesn't
-#: block this module, since going around it via `as_bytes()` is exactly the
-#: "pure-Kira UTF-8 decode" this module set out to write anyway.
+#: Written by hand over `str.as_bytes()` rather than `for c in s`: this
+#: predates `hir::lowerer::lower_str_scalar_loop` (spec/todo.md's former
+#: item 9), which now gives `for c in s` real UTF-8 scalar decoding. Left
+#: as `as_bytes()`-based rather than migrated, since it needs no compiler
+#: gap to work and this is exactly the "pure-Kira UTF-8 decode" this module
+#: set out to write anyway.
 def decode_utf8(s: str) -> list[uint32]:
     let bytes = s.as_bytes()
     let n = bytes.len()

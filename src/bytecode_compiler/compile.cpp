@@ -1318,6 +1318,12 @@ private:
     case hir_node_kind::hir_generator_next:
       return compile_generator_next(
           dynamic_cast<const hir::hir_generator_next &>(expr), dst);
+    case hir_node_kind::hir_str_decode_scalar:
+      return compile_str_decode_scalar(
+          dynamic_cast<const hir::hir_str_decode_scalar &>(expr), dst);
+    case hir_node_kind::hir_str_scalar_width:
+      return compile_str_scalar_width(
+          dynamic_cast<const hir::hir_str_scalar_width &>(expr), dst);
     case hir_node_kind::hir_block:
       // A block used in expression position (e.g. a comprehension's
       // desugared accumulator block, `hir::lower_comprehension`) — its
@@ -2143,6 +2149,46 @@ private:
       return std::unexpected(object_reg.error());
     }
     emit_load_slot(dst, *object_reg, 0);
+    return {};
+  }
+
+  /// Compiled form of `hir_str_decode_scalar` — see `op_str_decode_scalar`.
+  [[nodiscard]] auto
+  compile_str_decode_scalar(const hir::hir_str_decode_scalar &node,
+                            virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    auto offset_reg = compile_expr(*node.byte_offset);
+    if (!offset_reg.has_value()) {
+      return std::unexpected(offset_reg.error());
+    }
+    emit_op(opcode::op_str_decode_scalar);
+    emit_register(dst);
+    emit_register(*object_reg);
+    emit_register(*offset_reg);
+    return {};
+  }
+
+  /// Compiled form of `hir_str_scalar_width` — see `op_str_scalar_width`.
+  [[nodiscard]] auto
+  compile_str_scalar_width(const hir::hir_str_scalar_width &node,
+                           virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    auto offset_reg = compile_expr(*node.byte_offset);
+    if (!offset_reg.has_value()) {
+      return std::unexpected(offset_reg.error());
+    }
+    emit_op(opcode::op_str_scalar_width);
+    emit_register(dst);
+    emit_register(*object_reg);
+    emit_register(*offset_reg);
     return {};
   }
 

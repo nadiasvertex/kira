@@ -106,6 +106,12 @@ enum class hir_node_kind : uint8_t {
   hir_generator_next,  ///< `g.next()` on a `generator[T]` value — no
                        ///< backing `func_decl`, same rationale as
                        ///< `hir_container_len`.
+  hir_str_decode_scalar, ///< The decoded Unicode scalar at a byte offset
+                        ///< into a `str` (`for`-loop lowering only) — see
+                        ///< `hir_str_decode_scalar`'s doc comment.
+  hir_str_scalar_width,  ///< Bytes consumed decoding the scalar at a byte
+                        ///< offset into a `str` — companion to
+                        ///< `hir_str_decode_scalar`.
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,
@@ -483,6 +489,40 @@ struct hir_container_len : hir_expr {
   hir_container_len(source_span s, type_id t, ptr<hir_expr> obj)
       : hir_expr(hir_node_kind::hir_container_len, s, t),
         object(std::move(obj)) {}
+};
+
+/// The decoded Unicode scalar at byte offset `byte_offset` within `object`
+/// (a `str`) — U+FFFD if that offset doesn't start a valid UTF-8 sequence.
+/// `type` is always `char`. Used only by `for`-loop lowering over a `str`
+/// (`lowerer::lower_str_scalar_loop`): same rationale as
+/// `hir_container_len` — there's no surface syntax this lowers *from*, only
+/// a well-defined operation lowering *needs*. See
+/// `src/runtime/string_ops.h`'s `str_scalar_at` for the shared decode used
+/// by both backends.
+struct hir_str_decode_scalar : hir_expr {
+  ptr<hir_expr> object;
+  ptr<hir_expr> byte_offset;
+
+  hir_str_decode_scalar(source_span s, type_id t, ptr<hir_expr> obj,
+                        ptr<hir_expr> off)
+      : hir_expr(hir_node_kind::hir_str_decode_scalar, s, t),
+        object(std::move(obj)), byte_offset(std::move(off)) {}
+};
+
+/// Bytes consumed decoding the scalar at byte offset `byte_offset` within
+/// `object` (a `str`) — 1 if that offset doesn't start a valid UTF-8
+/// sequence, so a `for`-loop cursor advanced by this always makes forward
+/// progress. `type` is always `usize`. Companion to `hir_str_decode_scalar`
+/// for the same lowering; see `src/runtime/string_ops.h`'s
+/// `str_scalar_width`.
+struct hir_str_scalar_width : hir_expr {
+  ptr<hir_expr> object;
+  ptr<hir_expr> byte_offset;
+
+  hir_str_scalar_width(source_span s, type_id t, ptr<hir_expr> obj,
+                       ptr<hir_expr> off)
+      : hir_expr(hir_node_kind::hir_str_scalar_width, s, t),
+        object(std::move(obj)), byte_offset(std::move(off)) {}
 };
 
 /// `g.next()` on a `generator[T]` value. Same rationale as

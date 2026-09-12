@@ -1243,6 +1243,12 @@ private:
     case hir_node_kind::hir_generator_next:
       return compile_generator_next(
           dynamic_cast<const hir::hir_generator_next &>(expr));
+    case hir_node_kind::hir_str_decode_scalar:
+      return compile_str_decode_scalar(
+          dynamic_cast<const hir::hir_str_decode_scalar &>(expr));
+    case hir_node_kind::hir_str_scalar_width:
+      return compile_str_scalar_width(
+          dynamic_cast<const hir::hir_str_scalar_width &>(expr));
     case hir_node_kind::hir_block: {
       // A block used in expression position (e.g. a comprehension's
       // desugared accumulator block, `hir::lower_comprehension`) — mirrors
@@ -2742,6 +2748,66 @@ private:
     return builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
                                slot_address(*object, size_t{0}),
                                "container.len");
+  }
+
+  /// Compiled form of `hir_str_decode_scalar` — calls the shared
+  /// `kira::runtime::str_scalar_at` decode (`src/runtime/string_ops.h`)
+  /// through its raw-pointer `extern "C"` wrapper, `getOrInsertFunction`-
+  /// declared on first use rather than pre-declared alongside `panic_fn_`/
+  /// `alloc_fn_`/`list_reserve_slot_fn_`: this call site is the only one
+  /// that ever references it, so there's no forward-reference ordering
+  /// concern a shared member would otherwise solve.
+  [[nodiscard]] auto
+  compile_str_decode_scalar(const hir::hir_str_decode_scalar &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto view = resolve_container_view(node.object->type, *object, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
+    }
+    auto offset = compile_expr(*node.byte_offset);
+    if (!offset.has_value()) {
+      return std::unexpected(offset.error());
+    }
+    auto *i64_ty = llvm::Type::getInt64Ty(ctx_);
+    auto *fn_ty = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(ctx_),
+        {llvm::PointerType::get(ctx_, 0), i64_ty, i64_ty}, /*isVarArg=*/false);
+    auto callee = current_fn_->getParent()->getOrInsertFunction(
+        "kira_rt_str_scalar_at", fn_ty);
+    return builder_.CreateCall(callee, {view->data, view->len, *offset},
+                               "str.decode_scalar");
+  }
+
+  /// Compiled form of `hir_str_scalar_width` — companion to
+  /// `compile_str_decode_scalar`, same rationale for the on-demand
+  /// `getOrInsertFunction` declaration.
+  [[nodiscard]] auto
+  compile_str_scalar_width(const hir::hir_str_scalar_width &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto view = resolve_container_view(node.object->type, *object, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
+    }
+    auto offset = compile_expr(*node.byte_offset);
+    if (!offset.has_value()) {
+      return std::unexpected(offset.error());
+    }
+    auto *i64_ty = llvm::Type::getInt64Ty(ctx_);
+    auto *fn_ty = llvm::FunctionType::get(
+        i64_ty, {llvm::PointerType::get(ctx_, 0), i64_ty, i64_ty},
+        /*isVarArg=*/false);
+    auto callee = current_fn_->getParent()->getOrInsertFunction(
+        "kira_rt_str_scalar_width", fn_ty);
+    return builder_.CreateCall(callee, {view->data, view->len, *offset},
+                               "str.scalar_width");
   }
 
   /// Builds `option::some(payload)`/`option::none` as a 2-slot

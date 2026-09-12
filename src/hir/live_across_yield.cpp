@@ -218,6 +218,18 @@ struct walker {
     case hir_node_kind::hir_container_len:
       walk_expr(*dynamic_cast<const hir_container_len &>(expr).object);
       return;
+    case hir_node_kind::hir_str_decode_scalar: {
+      const auto &n = dynamic_cast<const hir_str_decode_scalar &>(expr);
+      walk_expr(*n.object);
+      walk_expr(*n.byte_offset);
+      return;
+    }
+    case hir_node_kind::hir_str_scalar_width: {
+      const auto &n = dynamic_cast<const hir_str_scalar_width &>(expr);
+      walk_expr(*n.object);
+      walk_expr(*n.byte_offset);
+      return;
+    }
     default:
       return;
     }

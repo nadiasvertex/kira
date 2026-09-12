@@ -194,6 +194,18 @@ auto collect_bound_symbols(const hir_node &node,
         *static_cast<const hir_container_len &>(node).object, bound);
     return;
   }
+  case hir_node_kind::hir_str_decode_scalar: {
+    const auto &n = static_cast<const hir_str_decode_scalar &>(node);
+    collect_bound_symbols(*n.object, bound);
+    collect_bound_symbols(*n.byte_offset, bound);
+    return;
+  }
+  case hir_node_kind::hir_str_scalar_width: {
+    const auto &n = static_cast<const hir_str_scalar_width &>(node);
+    collect_bound_symbols(*n.object, bound);
+    collect_bound_symbols(*n.byte_offset, bound);
+    return;
+  }
   case hir_node_kind::hir_generator_next: {
     collect_bound_symbols(
         *static_cast<const hir_generator_next &>(node).object, bound);

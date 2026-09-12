@@ -1,0 +1,32 @@
+module codegen_stress.str_scalar_iteration
+
+# `for c in s` over a `str` must decode UTF-8 into scalars rather than
+# yielding raw bytes cast to `char` (spec/todo.md item 9, fixed by
+# `hir::lowerer::lower_str_scalar_loop`). The old byte-indexed lowering
+# (`lower_indexed_loop`, shared with array/list/slice) walked a fixed
+# 1-byte stride and would split every multi-byte scalar into its raw
+# continuation bytes instead of one decoded codepoint per iteration — a
+# layout/addressing bug the differential VM/LLVM agreement check alone
+# would not catch if both backends shared the same wrong byte-stride
+# assumption, so this declares `# expect:` per that rule.
+#
+# The subject mixes a 1-byte scalar (`s`), a 2-byte scalar (`ß`), a 3-byte
+# scalar (`中`), and a 4-byte scalar (an emoji) so a fix that only handles
+# one encoded width would still fail here.
+#
+# Codepoints: s=115, ß=223, 中=20013, emoji=127881
+# Sum: 115 + 223 + 20013 + 127881 = 148232
+
+def main() -> int64:
+    let mut total: int64 = 0
+    let mut count: int64 = 0
+    for c in "sß中🎉":
+        total = total + (c as int64)
+        count = count + 1
+    # Also assert the scalar *count*, not just the sum: byte-indexed
+    # iteration over these 10 bytes would run 10 times instead of 4, and a
+    # fix that got the sum right by coincidence (e.g. summing raw bytes
+    # that happen to add up right) would still be caught here.
+    return total * 100 + count
+
+# expect: 14823204

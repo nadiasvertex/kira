@@ -56,4 +56,24 @@ enum class trim_mode : uint8_t { both = 0, start = 1, end = 2 };
 [[nodiscard]] auto str_replace(std::string_view s, std::string_view from,
                                std::string_view to) -> std::string;
 
+/// The decoded Unicode scalar at byte offset `pos` in `s`, or U+FFFD if
+/// `pos` doesn't start a valid UTF-8 sequence. Backs `for c in s` scalar
+/// iteration over a `str` (`hir::hir_str_decode_scalar`) — called directly
+/// by the bytecode VM; `kira_rt_str_scalar_at` below is the raw-pointer
+/// `extern "C"` wrapper generated IR calls instead (mirrors
+/// `kira_rt_list_reserve_slot`'s split in `layout.h`).
+[[nodiscard]] auto str_scalar_at(std::string_view s, size_t pos) -> uint32_t;
+
+/// Bytes consumed decoding the scalar at byte offset `pos` in `s` — 1 if
+/// `pos` doesn't start a valid UTF-8 sequence, so a `for`-loop cursor built
+/// from this always makes forward progress. Companion to `str_scalar_at`
+/// for the same lowering (`hir::hir_str_scalar_width`).
+[[nodiscard]] auto str_scalar_width(std::string_view s, size_t pos)
+    -> uint64_t;
+
+extern "C" auto kira_rt_str_scalar_at(const char *data, uint64_t len,
+                                      uint64_t offset) -> uint32_t;
+extern "C" auto kira_rt_str_scalar_width(const char *data, uint64_t len,
+                                         uint64_t offset) -> uint64_t;
+
 } // namespace kira::runtime

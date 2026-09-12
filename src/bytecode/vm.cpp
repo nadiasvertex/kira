@@ -1831,6 +1831,31 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
       }
+      case opcode::op_str_decode_scalar: {
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto str_reg = ops.reg();
+        const auto offset_reg = ops.reg();
+        f.pc = ops.pos();
+        const auto view = view_of(f.registers[str_reg]);
+        const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
+        f.registers[dst] =
+            slot_value{static_cast<uint64_t>(
+                kira::runtime::str_scalar_at(view, offset))};
+        break;
+      }
+      case opcode::op_str_scalar_width: {
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto str_reg = ops.reg();
+        const auto offset_reg = ops.reg();
+        f.pc = ops.pos();
+        const auto view = view_of(f.registers[str_reg]);
+        const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
+        f.registers[dst] =
+            slot_value{kira::runtime::str_scalar_width(view, offset)};
+        break;
+      }
       }
     }
   } catch (const panic_error &err) {

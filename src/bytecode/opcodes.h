@@ -478,6 +478,21 @@ enum class opcode : uint8_t {
                      ///< `return` (compiled to build `none`, set
                      ///< `finished=1` on the generator object, and
                      ///< `op_return_value` it).
+  op_str_decode_scalar, ///< u16 dst, u16 str_reg, u16 offset_reg — decodes
+                        ///< the UTF-8 scalar starting at byte offset
+                        ///< reg[offset_reg] within the `str` reg[str_reg],
+                        ///< writing it (or U+FFFD if that offset doesn't
+                        ///< start a valid sequence) into dst. Compiled form
+                        ///< of `hir_str_decode_scalar`; shares
+                        ///< `runtime::str_scalar_at`'s decode with the LLVM
+                        ///< tier's `kira_rt_str_scalar_at`.
+  op_str_scalar_width, ///< u16 dst, u16 str_reg, u16 offset_reg — bytes
+                       ///< consumed decoding the scalar at byte offset
+                       ///< reg[offset_reg] within the `str` reg[str_reg]
+                       ///< (1 if that offset doesn't start a valid
+                       ///< sequence). Compiled form of
+                       ///< `hir_str_scalar_width`; companion to
+                       ///< `op_str_decode_scalar`.
 };
 
 // ==========================================================================
@@ -650,6 +665,9 @@ struct operand_signature {
     return sig({reg, reg, imm8});
   case opcode::op_generator_next:
     return sig({reg, reg});
+  case opcode::op_str_decode_scalar:
+  case opcode::op_str_scalar_width:
+    return sig({reg, reg, reg});
   }
   return operand_signature{};
 }

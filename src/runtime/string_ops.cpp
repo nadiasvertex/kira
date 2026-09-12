@@ -323,4 +323,30 @@ auto str_replace(std::string_view s, std::string_view from, std::string_view to)
   return out;
 }
 
+auto str_scalar_at(std::string_view s, size_t pos) -> uint32_t {
+  auto next = pos;
+  const auto scalar = decode_utf8_scalar(s, next);
+  return scalar.value_or(0xFFFDU);
+}
+
+auto str_scalar_width(std::string_view s, size_t pos) -> uint64_t {
+  auto next = pos;
+  if (!decode_utf8_scalar(s, next).has_value()) {
+    return 1;
+  }
+  return static_cast<uint64_t>(next - pos);
+}
+
+extern "C" auto kira_rt_str_scalar_at(const char *data, uint64_t len,
+                                      uint64_t offset) -> uint32_t {
+  return str_scalar_at(std::string_view(data, len),
+                       static_cast<size_t>(offset));
+}
+
+extern "C" auto kira_rt_str_scalar_width(const char *data, uint64_t len,
+                                         uint64_t offset) -> uint64_t {
+  return str_scalar_width(std::string_view(data, len),
+                          static_cast<size_t>(offset));
+}
+
 } // namespace kira::runtime
