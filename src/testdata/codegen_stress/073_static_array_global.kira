@@ -1,0 +1,26 @@
+module codegen_stress.static_array_global
+
+# A reified `static let` array global (spec/typed-ir-design.md's deferred
+# "static reification" Non-Goal, now implemented): both backends synthesize
+# a one-time init routine that builds the array once into a persistent
+# module-wide slot (`bytecode::vm::globals_` / an `llvm.global_ctors`-run
+# `__kira_static_init`), then every `hir_global_ref` read — from any
+# function, at any call depth — must see that same backing data.
+#
+# This is exactly the kind of layout/addressing-sensitive case CLAUDE.md
+# calls out `# expect:` for: both tiers reading the *same wrong* global
+# slot (an off-by-one in indexing, or a global-index collision between two
+# reified statics) would still agree with each other. `# expect:` pins the
+# actual value, not just tier agreement.
+#
+# TABLE[3] + third(2) + TABLE[0] = 40 + 30 + 10 = 80.
+
+# expect: 80
+
+static TABLE: array[int32, 4] = [10, 20, 30, 40]
+
+def third(i: usize) -> int32:
+    return TABLE[i]
+
+def main() -> int32:
+    return TABLE[3] + third(2) + TABLE[0]

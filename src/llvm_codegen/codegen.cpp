@@ -984,31 +984,13 @@ private:
            entry.name == "list";
   }
 
-  /// Whether `id` is a fixed `array[byte, N]` — mirrors
-  /// `bytecode_compiler::compile.cpp`'s `is_byte_array_type` exactly (see
-  /// its doc comment): the one array element type given its own tightly
-  /// byte-packed (1 byte/element) representation instead of the generic
-  /// 8-bytes/element slot layout, so `buf[a..b]` can alias a real
-  /// `str`/`slice[byte]` view with no copy.
-  [[nodiscard]] auto is_byte_array_type(type_id id) const -> bool {
-    const auto &entry = types_.entry(strip_refs(types_, id));
-    if (entry.kind != semantic::type_kind::array_kind ||
-        !entry.array_size.has_value()) {
-      return false;
-    }
-    const auto &elem = types_.entry(entry.result);
-    return elem.kind == semantic::type_kind::builtin_kind &&
-           elem.name == "byte";
-  }
-
   /// An element type's byte stride within a fixed `array[T,N]` or a
   /// `list[T]`'s growable backing store — `runtime::layout_of`'s size,
   /// clamped/defaulted to one of 1/2/4/8. Mirrors
   /// `bytecode_compiler::compile.cpp`'s identically-named/-shaped helper
   /// exactly, so both backends agree on how many bytes a narrow element
   /// (e.g. `int16`, `bool`) costs in contiguous storage; `array[byte,N]`'s
-  /// old special-cased 1-byte stride (`is_byte_array_type`) is now just the
-  /// size==1 case of this general rule.
+  /// 1-byte stride is just the size==1 case of this general rule.
   [[nodiscard]] auto element_stride(type_id element_type) const -> uint8_t {
     const auto layout = runtime::layout_of(types_, element_type);
     if (!layout.has_value() || layout->size_bytes == 0 ||
@@ -1108,9 +1090,10 @@ private:
   }
 
   /// Byte-granular counterparts of the two `slot_address` overloads above —
-  /// used only for `array[byte, N]`'s tightly-packed representation
-  /// (`is_byte_array_type`): a raw byte offset/index, not scaled by 8, into
-  /// the block `compile_heap_alloc((N + 7) / 8)` reserved for it.
+  /// a raw byte offset/index, not scaled by 8, used wherever `element_stride`
+  /// puts an element at a natural (non-8-byte-slot) stride: struct fields,
+  /// and every `array`/`list`/`slice` element access via
+  /// `resolve_container_view`/`compile_element_address`.
   [[nodiscard]] auto byte_address(llvm::Value *block_ptr, size_t byte_offset)
       -> llvm::Value * {
     auto *offset =
@@ -2517,42 +2500,84 @@ private:
     return builder_.CreateLoad(*elem_ty, byte_address(*object, *offset));
   }
 
-  /// Whether `id` is `str`, `slice[T]`, `slice_mut[T]`, or `array[byte, N]`
-  /// — the kinds `compile_range_index` can slice by pure pointer arithmetic
-  /// without needing an element-size-aware copy. Mirrors
-  /// `bytecode_compiler::compile.cpp`'s identically-named function (see its
-  /// doc comment): the first three share a byte-addressed 2-slot
-  /// `{ len; data }` header (`src/runtime/io.h`); `array[byte, N]` has no
-  /// such header (a fixed array's "data pointer" is the object itself, its
-  /// length the statically-known `N`), but is *also* byte-addressed because
-  /// `is_byte_array_type` gives it its own tightly-packed representation
-  /// for exactly this reason. Every other `array[T,N]`/`list[T]` stores one
-  /// 8-byte slot per element regardless of `T` (`compile_array_init`) and
-  /// so cannot be range-indexed this way.
-  [[nodiscard]] auto is_byte_addressed_slice_type(type_id id) const -> bool {
-    const auto &entry = types_.entry(strip_refs(types_, id));
-    if (entry.kind == semantic::type_kind::builtin_kind) {
-      return entry.name == "str";
+  /// The `{ len; data-block; elem_size }` triple shared by single-element
+  /// access (`compile_element_address`) and range-indexing
+  /// (`compile_range_index`) for any of the four indexable container
+  /// shapes — a fixed `array[T, N]` (any `T`, not just `byte`: it is its
+  /// own data block, `len` the statically-known `N`), a `list[T]` (3-slot
+  /// `{ len; cap; data }` header), a `str` (2-slot `{ len; data }` header,
+  /// element type always `byte`), or a `slice`/`slice_mut[T]` (the same
+  /// 2-slot header, element type `T`). Mirrors
+  /// `bytecode_compiler::compile.cpp`'s identically-named/-shaped
+  /// `resolve_container_view` exactly, so the two backends can't drift on
+  /// where a given container's data pointer or element stride lives.
+  struct container_view {
+    llvm::Value *len;
+    llvm::Value *data;
+    uint8_t elem_size;
+  };
+
+  [[nodiscard]] auto resolve_container_view(type_id object_type,
+                                            llvm::Value *object,
+                                            source_span span)
+      -> std::expected<container_view, codegen_error> {
+    const auto &object_entry = types_.entry(strip_refs(types_, object_type));
+    const bool indexing_list = is_list_type(object_type);
+    const bool indexing_str =
+        object_entry.kind == semantic::type_kind::builtin_kind &&
+        object_entry.name == "str";
+    const bool indexing_slice =
+        object_entry.kind == semantic::type_kind::builtin_generic_kind &&
+        (object_entry.name == "slice" || object_entry.name == "slice_mut");
+    const bool indexing_view = indexing_str || indexing_slice;
+    if (!indexing_list && !indexing_view &&
+        (object_entry.kind != semantic::type_kind::array_kind ||
+         !object_entry.array_size.has_value())) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = span,
+          .message = "indexing is only supported for a fixed-size array "
+                     "with a statically known length, a list, a `str`, or a "
+                     "`slice`/`slice_mut` yet"});
     }
-    if (entry.kind == semantic::type_kind::builtin_generic_kind) {
-      return entry.name == "slice" || entry.name == "slice_mut";
+
+    const auto elem_size =
+        indexing_str
+            ? uint8_t{1}
+        : indexing_slice ? element_stride(object_entry.args.front())
+        : indexing_list  ? (object_entry.args.empty()
+                                ? uint8_t{8}
+                                : element_stride(object_entry.args.front()))
+                         : element_stride(object_entry.result);
+
+    if (!indexing_list && !indexing_view) {
+      auto *len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+                                         *object_entry.array_size);
+      return container_view{.len = len, .data = object, .elem_size = elem_size};
     }
-    return is_byte_array_type(id);
+
+    auto *len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                                    slot_address(object, size_t{0}),
+                                    indexing_list ? "list.len" : "view.len");
+    // The list header keeps its data pointer at slot 2; the 2-slot view
+    // header keeps it at slot 1.
+    auto *data = builder_.CreateLoad(
+        llvm::PointerType::get(ctx_, 0),
+        slot_address(object, indexing_list ? size_t{2} : size_t{1}),
+        indexing_list ? "list.data" : "view.data");
+    return container_view{.len = len, .data = data, .elem_size = elem_size};
   }
 
-  /// `buf[a..b]`/`buf[a..=b]` on a `str`/`slice`/`slice_mut`/
-  /// `array[byte, N]` source — builds a fresh 2-slot `{ len; data }` header
-  /// whose `data` points into the source's own backing bytes, no copy. For
-  /// the three header-based kinds, `len`/`data` are read from the source's
-  /// own heap header; for `array[byte, N]` (`is_byte_array_type`), there is
-  /// no header — `len` is the statically-known `N` and `data` is the
-  /// array's own pointer, mirroring `compile_index`'s non-range element
-  /// access. Returning a *view* rather than a copy matters for correctness,
-  /// not just performance: `std.io.reader::read_to_end`'s
-  /// `self.read(&mut buf[0..4096])` passes this as a `&mut` out-parameter
-  /// `rt_read` writes through, and `read_to_end` reads the result back out
-  /// of `buf` itself afterward — a copy-based view would silently drop
-  /// every byte `rt_read` wrote.
+  /// `buf[a..b]`/`buf[a..=b]` on any of `resolve_container_view`'s four
+  /// indexable container shapes — builds a fresh 2-slot `{ len; data }`
+  /// header whose `data` points into the source's own backing storage, no
+  /// copy, scaled by that source's own element stride so a non-byte
+  /// element type slices to the right address. Returning a *view* rather
+  /// than a copy matters for correctness, not just performance:
+  /// `std.io.reader::read_to_end`'s `self.read(&mut buf[0..4096])` passes
+  /// this as a `&mut` out-parameter `rt_read` writes through, and
+  /// `read_to_end` reads the result back out of `buf` itself afterward — a
+  /// copy-based view would silently drop every byte `rt_read` wrote.
   [[nodiscard]] auto compile_range_index(const hir::hir_index &node,
                                          const hir::hir_binary &range)
       -> std::expected<llvm::Value *, codegen_error> {
@@ -2599,21 +2624,13 @@ private:
           "range_end.inclusive_adjust");
     }
 
-    llvm::Value *len = nullptr;
-    llvm::Value *data = nullptr;
-    if (is_byte_array_type(node.object->type)) {
-      len = llvm::ConstantInt::get(
-          llvm::Type::getInt64Ty(ctx_),
-          types_.entry(strip_refs(types_, node.object->type))
-              .array_size.value());
-      data = *object;
-    } else {
-      len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                                slot_address(*object, size_t{0}), "slice.len");
-      data =
-          builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
-                              slot_address(*object, size_t{1}), "slice.data");
+    auto view = resolve_container_view(node.object->type, *object, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
     }
+    auto *len = view->len;
+    auto *data = view->data;
+
     // `end > len` and `start > end` are both out-of-bounds — checked as two
     // separate panics so an inverted range still reports as an inverted
     // range even when `start` also happens to exceed `len`.
@@ -2622,8 +2639,15 @@ private:
     guard_panic(builder_.CreateICmpUGT(start64, end64, "range_start.oob"),
                 panic_reason::index_out_of_bounds);
 
-    auto *new_data = builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), data,
-                                        start64, "range_slice.data");
+    // `data + start64 * elem_size` — scaled the same way
+    // `compile_element_address`'s `byte_offset` is, needed so a non-1-byte
+    // element type slices to the right address instead of `elem_size`-many
+    // bytes short.
+    auto *stride_const =
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), view->elem_size);
+    auto *byte_offset =
+        builder_.CreateMul(start64, stride_const, "range_start.byte_offset");
+    auto *new_data = byte_address(data, byte_offset);
     auto *new_len = builder_.CreateSub(end64, start64, "range_slice.len");
 
     auto *header = compile_heap_alloc(2);
@@ -2632,47 +2656,12 @@ private:
     return header;
   }
 
-  /// Fixed `array[T, N]` and growable `list[T]` element access —
-  /// `slice`/`str` indexing still needs a byte/view model this backend
-  /// doesn't have yet. A fixed array's elements live directly in its own
-  /// heap block (so its "data pointer" is the object itself, and its
-  /// length is the statically-known `N`); a list's elements live in a
-  /// separate block reached through its 3-slot header's `data` slot
-  /// (`src/runtime/layout.h`), with its length read from the header's
-  /// `len` slot at runtime — everything past that point (the bounds check,
-  /// the indexed load) is shared.
   /// The bounds-checked address of one element — see `compile_index`.
   /// A *range* index never reaches here: it produces a new slice header
   /// value rather than an element address, so `compile_index` handles it
   /// before delegating.
   [[nodiscard]] auto compile_element_address(const hir::hir_index &node)
       -> std::expected<llvm::Value *, codegen_error> {
-    const auto &object_entry =
-        types_.entry(strip_refs(types_, node.object->type));
-    const bool indexing_list = is_list_type(node.object->type);
-    // `str`/`slice`/`slice_mut` share a 2-slot `{ len; data }` header
-    // (`compile_range_index`); single-element access reads `len` from slot 0,
-    // the byte data pointer from slot 1, then loads one element at
-    // `data + index * stride` — the same tail the array/list paths use. An
-    // `array[byte, N]` is *not* a header view (it is the object itself) and
-    // stays on the fixed-array path below.
-    const bool indexing_view =
-        (object_entry.kind == semantic::type_kind::builtin_kind &&
-         object_entry.name == "str") ||
-        (object_entry.kind == semantic::type_kind::builtin_generic_kind &&
-         (object_entry.name == "slice" || object_entry.name == "slice_mut"));
-    if (!indexing_list && !indexing_view &&
-        (object_entry.kind != semantic::type_kind::array_kind ||
-         !object_entry.array_size.has_value())) {
-      return std::unexpected(codegen_error{
-          .kind = codegen_error_kind::unsupported_construct,
-          .span = node.span,
-          .message = "indexing is only supported for a fixed-size array "
-                     "with a statically known length, a list, a `str`, or a "
-                     "`slice`/`slice_mut` yet — any other source needs an "
-                     "element-size-aware view model this backend doesn't "
-                     "have yet"});
-    }
     auto object = compile_expr(*node.object);
     if (!object.has_value()) {
       return std::unexpected(object.error());
@@ -2689,33 +2678,12 @@ private:
         builder_.CreateIntCast(*index_value, llvm::Type::getInt64Ty(ctx_),
                                is_signed_integer(*index_kind), "index.i64");
 
-    llvm::Value *len = nullptr;
-    llvm::Value *data = nullptr;
-    uint8_t elem_size = 8;
-    if (indexing_list) {
-      len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                                slot_address(*object, size_t{0}), "list.len");
-      data = builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
-                                 slot_address(*object, size_t{2}), "list.data");
-      elem_size = object_entry.args.empty()
-                      ? uint8_t{8}
-                      : element_stride(object_entry.args.front());
-    } else if (indexing_view) {
-      len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                                slot_address(*object, size_t{0}), "view.len");
-      data = builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
-                                 slot_address(*object, size_t{1}), "view.data");
-      // `node.type` is the element type the checker resolved (`byte` for
-      // `str`/`slice[byte]`, `T` for `slice[T]`), so its stride is the right
-      // byte scale for the address computation below.
-      elem_size = element_stride(node.type);
-    } else {
-      len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
-                                   *object_entry.array_size);
-      data = *object;
-      elem_size = element_stride(object_entry.result);
+    auto view = resolve_container_view(node.object->type, *object, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
     }
-    auto *out_of_bounds = builder_.CreateICmpUGE(index64, len, "index.oob");
+    auto *out_of_bounds =
+        builder_.CreateICmpUGE(index64, view->len, "index.oob");
     guard_panic(out_of_bounds, panic_reason::index_out_of_bounds);
 
     // A plain `slot_address`-style 8x-scaled offset is only correct when
@@ -2724,10 +2692,10 @@ private:
     // byte offset instead — `array[byte,N]`'s old special case is just
     // `elem_size == 1` here.
     auto *stride_const =
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), elem_size);
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), view->elem_size);
     auto *byte_offset =
         builder_.CreateMul(index64, stride_const, "index.byte_offset");
-    return byte_address(data, byte_offset);
+    return byte_address(view->data, byte_offset);
   }
 
   /// Loads the element `compile_element_address` located. Split so that
@@ -2743,16 +2711,9 @@ private:
           dynamic_cast<const hir::hir_binary &>(*node.index);
       if (maybe_range.op == ast::binary_op::range ||
           maybe_range.op == ast::binary_op::range_inclusive) {
-        if (!is_byte_addressed_slice_type(node.object->type)) {
-          return std::unexpected(codegen_error{
-              .kind = codegen_error_kind::unsupported_construct,
-              .span = node.span,
-              .message =
-                  "range-indexing is only supported on `str`/`slice`/"
-                  "`slice_mut`/`array[byte, N]` yet — any other fixed array "
-                  "or list source needs an element-size-aware view model "
-                  "this backend doesn't have yet"});
-        }
+        // `compile_range_index` -> `resolve_container_view` already
+        // reports an `unsupported_construct` error for any source type
+        // that isn't one of the four indexable container shapes.
         return compile_range_index(node, maybe_range);
       }
     }

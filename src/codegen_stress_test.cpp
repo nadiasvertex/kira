@@ -202,6 +202,17 @@ auto run_bytecode(const fs::path &path,
          std::format("`{}`: expected a `main` function", path.string()));
 
   const auto vm = bc::vm{*compiled};
+  if (compiled->static_init_function.has_value()) {
+    // Mirrors `driver::run_hir_module` (interpret.cpp): a corpus file with a
+    // reified `static let` needs its one-time init routine run into this
+    // same `vm` instance's persistent `globals_` before `main` can safely
+    // read any of them — skipping this leaves every global a null pointer.
+    auto init_run = vm.run(*compiled->static_init_function,
+                           std::span<const bc::slot_value>{});
+    expect(init_run.has_value(),
+           std::format("`{}`: expected static initialization to succeed",
+                       path.string()));
+  }
   auto run =
       vm.run(static_cast<uint16_t>(index), std::array<bc::slot_value, 0>{});
   auto result = run.has_value()

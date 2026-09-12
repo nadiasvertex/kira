@@ -1056,26 +1056,6 @@ private:
     return id;
   }
 
-  /// Whether `id` is a fixed `array[byte, N]` — the one array element type
-  /// that is stored tightly byte-packed (1 byte/element via `op_store_byte`/
-  /// `op_load_byte_indexed`) rather than the generic 8-bytes/element slot
-  /// layout every other `array[T, N]` uses (`compile_array_init`'s doc
-  /// comment). Byte-packing is what lets `buf[a..b]` alias a real
-  /// `str`/`slice[byte]` view with no copy (`compile_range_index`) — needed
-  /// so a mutation through the view (e.g. `rt_read` filling it) is visible
-  /// back through `buf` itself, which a copy-based view would silently
-  /// break for `std.io.reader::read_to_end`'s `buf[0..4096]`.
-  [[nodiscard]] auto is_byte_array_type(type_id id) const -> bool {
-    const auto &entry = types_.entry(strip_refs(id));
-    if (entry.kind != semantic::type_kind::array_kind ||
-        !entry.array_size.has_value()) {
-      return false;
-    }
-    const auto &elem = types_.entry(entry.result);
-    return elem.kind == semantic::type_kind::builtin_kind &&
-           elem.name == "byte";
-  }
-
   // ------------------------------------------------------------------
   //  Byte-precise opcode emission helpers (`src/bytecode/opcodes.h`'s
   //  `op_alloc`/`op_load_slot`/`op_store_slot`/`op_load_indexed`/
@@ -2318,40 +2298,14 @@ private:
     return {};
   }
 
-  /// Whether `id` is `str`, `slice[T]`, `slice_mut[T]`, or `array[byte, N]`
-  /// — the kinds `compile_range_index` can slice by pure pointer arithmetic
-  /// without needing an element-size-aware copy. The first three share a
-  /// byte-addressed 2-slot `{ len; data }` header (`src/runtime/io.h`),
-  /// where `data` is a raw byte pointer (confirmed by `op_load_str_const`'s
-  /// own construction of a `str` value and `bytecode::vm.cpp`'s
-  /// `bytes_of`); `array[byte, N]` has no such header (a fixed array's
-  /// "data pointer" is the object itself, its length the statically-known
-  /// `N` — see `compile_index`), but is *also* byte-addressed, because
-  /// `is_byte_array_type` gives it its own tightly-packed (not slot-packed)
-  /// representation for exactly this reason. Every other `array[T,N]`/
-  /// `list[T]` stores one 8-byte slot per element regardless of `T`
-  /// (`compile_array_init`/`compile_list_init`) and so cannot be
-  /// range-indexed this way.
-  [[nodiscard]] auto is_byte_addressed_slice_type(type_id id) const -> bool {
-    const auto &entry = types_.entry(strip_refs(id));
-    if (entry.kind == semantic::type_kind::builtin_kind) {
-      return entry.name == "str";
-    }
-    if (entry.kind == semantic::type_kind::builtin_generic_kind) {
-      return entry.name == "slice" || entry.name == "slice_mut";
-    }
-    return is_byte_array_type(id);
-  }
-
-  /// `buf[a..b]`/`buf[a..=b]` on a `str`/`slice`/`slice_mut`/
-  /// `array[byte, N]` source — builds a fresh 2-slot `{ len; data }` header
-  /// pointing `data` into the source's own backing bytes, no copy. For the
-  /// three header-based kinds, `len`/`data` are read from the source's own
-  /// heap header; for `array[byte, N]` (`is_byte_array_type`), there is no
-  /// header to read — `len` is the statically-known `N` and `data` is the
-  /// array's own pointer, mirroring `compile_index`'s non-range element
-  /// access exactly. Returning a *view* rather than a copy matters for
-  /// correctness, not just performance: `std.io.reader::read_to_end`'s
+  /// `buf[a..b]`/`buf[a..=b]` on any of `resolve_container_view`'s four
+  /// indexable container shapes — builds a fresh 2-slot `{ len; data }`
+  /// header pointing `data` into the source's own backing storage, no copy,
+  /// scaled by that source's own element stride (`op_addr_indexed`, the
+  /// same address-computing primitive `compile_addr_of`'s `&mut xs[i]` case
+  /// uses) so a non-byte element type slices correctly too. Returning a
+  /// *view* rather than a copy matters for correctness, not just
+  /// performance: `std.io.reader::read_to_end`'s
   /// `self.read(&mut buf[0..4096])` passes this as a `&mut` out-parameter
   /// that `rt_read` writes through, and `read_to_end` reads the result back
   /// out of `buf` itself afterward — a copy-based view would silently drop
@@ -2405,36 +2359,14 @@ private:
       end_reg = inclusive_end_reg;
     }
 
-    virtual_reg len_reg;
-    virtual_reg data_reg;
-    if (is_byte_array_type(node.object->type)) {
-      const auto len_const =
-          writer_.add_constant(slot_value{static_cast<uint64_t>(
-              types_.entry(strip_refs(node.object->type)).array_size.value())});
-      auto len_reg_exp = alloc_register(node.span);
-      if (!len_reg_exp.has_value()) {
-        return std::unexpected(len_reg_exp.error());
-      }
-      emit_op(opcode::op_load_const);
-      emit_register(*len_reg_exp);
-      writer_.emit_u16(len_const);
-      len_reg = *len_reg_exp;
-      data_reg = *object_reg;
-    } else {
-      auto len_reg_exp = alloc_register(node.span);
-      if (!len_reg_exp.has_value()) {
-        return std::unexpected(len_reg_exp.error());
-      }
-      emit_load_slot(*len_reg_exp, *object_reg, 0);
-      len_reg = *len_reg_exp;
-
-      auto data_reg_exp = alloc_register(node.span);
-      if (!data_reg_exp.has_value()) {
-        return std::unexpected(data_reg_exp.error());
-      }
-      emit_load_slot(*data_reg_exp, *object_reg, 1);
-      data_reg = *data_reg_exp;
+    auto view =
+        resolve_container_view(node.object->type, *object_reg, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
     }
+    const auto len_reg = view->len_reg;
+    const auto data_reg = view->data_reg;
+    const auto elem_size = view->elem_size;
 
     // `end > len` and `start > end` are both out-of-bounds — checked as two
     // separate panics (rather than one combined condition) so an inverted
@@ -2471,11 +2403,15 @@ private:
     if (!new_data_reg_exp.has_value()) {
       return std::unexpected(new_data_reg_exp.error());
     }
-    emit_op(opcode::op_add);
+    // `data_reg + start_reg * elem_size` — the same scaled-address
+    // primitive `&mut xs[i]` uses (`compile_addr_of`'s `hir_index` case),
+    // needed so a non-1-byte element type slices to the right address
+    // instead of `elem_size`-many bytes short.
+    emit_op(opcode::op_addr_indexed);
     emit_register(*new_data_reg_exp);
     emit_register(data_reg);
     emit_register(*start_reg);
-    writer_.emit_numeric_kind(numeric_kind::u64);
+    writer_.emit_u8(elem_size);
 
     auto new_len_reg_exp = alloc_register(node.span);
     if (!new_len_reg_exp.has_value()) {
@@ -2525,16 +2461,9 @@ private:
           dynamic_cast<const hir::hir_binary &>(*node.index);
       if (maybe_range.op == ast::binary_op::range ||
           maybe_range.op == ast::binary_op::range_inclusive) {
-        if (!is_byte_addressed_slice_type(node.object->type)) {
-          return std::unexpected(compile_error{
-              .kind = compile_error_kind::unsupported_construct,
-              .span = node.span,
-              .message =
-                  "range-indexing is only supported on `str`/`slice`/"
-                  "`slice_mut`/`array[byte, N]` yet — any other fixed array "
-                  "or list source needs an element-size-aware view model "
-                  "this bytecode compiler doesn't have yet"});
-        }
+        // `compile_range_index` -> `resolve_container_view` already
+        // reports an `unsupported_construct` error for any source type
+        // that isn't one of the four indexable container shapes.
         return compile_range_index(node, maybe_range, dst);
       }
     }
@@ -2547,32 +2476,90 @@ private:
     return {};
   }
 
-  [[nodiscard]] auto compile_element_location(const hir::hir_index &node)
-      -> std::expected<element_location, compile_error> {
-    const auto &object_entry = types_.entry(strip_refs(node.object->type));
-    const bool indexing_list = is_list_type(node.object->type);
-    // `str`/`slice`/`slice_mut` share a 2-slot `{ len; data }` header
-    // (`compile_range_index`); single-element access reads `len` from slot 0,
-    // the byte data pointer from slot 1, then loads one element at
-    // `data + index * stride`. An `array[byte, N]` is not a header view (it
-    // is the object itself) and stays on the fixed-array path below.
-    const bool indexing_view =
-        (object_entry.kind == semantic::type_kind::builtin_kind &&
-         object_entry.name == "str") ||
-        (object_entry.kind == semantic::type_kind::builtin_generic_kind &&
-         (object_entry.name == "slice" || object_entry.name == "slice_mut"));
+  /// The `{ len; data-block; elem_size }` triple shared by single-element
+  /// access (`compile_element_location`) and range-indexing
+  /// (`compile_range_index`) for any of the four indexable container
+  /// shapes — a fixed `array[T, N]` (any `T`, not just `byte`: it is its
+  /// own data block, `len` the statically-known `N`), a `list[T]` (3-slot
+  /// `{ len; cap; data }` header), a `str` (2-slot `{ len; data }` header,
+  /// element type always `byte`), or a `slice`/`slice_mut[T]` (the same
+  /// 2-slot header, element type `T`). Factored out so the two call sites
+  /// can't independently drift on where a given container's data pointer
+  /// or element stride lives — the exact bug `compile_addr_of`'s own doc
+  /// comment on `list` warns about.
+  struct container_view {
+    virtual_reg len_reg;
+    virtual_reg data_reg;
+    uint8_t elem_size;
+  };
+
+  [[nodiscard]] auto resolve_container_view(type_id object_type,
+                                            virtual_reg object_reg,
+                                            source_span span)
+      -> std::expected<container_view, compile_error> {
+    const auto &object_entry = types_.entry(strip_refs(object_type));
+    const bool indexing_list = is_list_type(object_type);
+    const bool indexing_str =
+        object_entry.kind == semantic::type_kind::builtin_kind &&
+        object_entry.name == "str";
+    const bool indexing_slice =
+        object_entry.kind == semantic::type_kind::builtin_generic_kind &&
+        (object_entry.name == "slice" || object_entry.name == "slice_mut");
+    const bool indexing_view = indexing_str || indexing_slice;
     if (!indexing_list && !indexing_view &&
         (object_entry.kind != semantic::type_kind::array_kind ||
          !object_entry.array_size.has_value())) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
-          .span = node.span,
+          .span = span,
           .message = "indexing is only supported for a fixed-size array "
                      "with a statically known length, a list, a `str`, or a "
-                     "`slice`/`slice_mut` yet — any other source needs an "
-                     "element-size-aware view model this bytecode compiler "
-                     "doesn't have yet"});
+                     "`slice`/`slice_mut` yet"});
     }
+
+    const auto elem_size =
+        indexing_str
+            ? uint8_t{1}
+        : indexing_slice ? element_stride(object_entry.args.front())
+        : indexing_list  ? (object_entry.args.empty()
+                                ? uint8_t{8}
+                                : element_stride(object_entry.args.front()))
+                         : element_stride(object_entry.result);
+
+    if (!indexing_list && !indexing_view) {
+      const auto len_const = writer_.add_constant(
+          slot_value{static_cast<uint64_t>(*object_entry.array_size)});
+      auto len_reg_exp = alloc_register(span);
+      if (!len_reg_exp.has_value()) {
+        return std::unexpected(len_reg_exp.error());
+      }
+      emit_op(opcode::op_load_const);
+      emit_register(*len_reg_exp);
+      writer_.emit_u16(len_const);
+      return container_view{
+          .len_reg = *len_reg_exp, .data_reg = object_reg,
+          .elem_size = elem_size};
+    }
+
+    auto len_reg_exp = alloc_register(span);
+    if (!len_reg_exp.has_value()) {
+      return std::unexpected(len_reg_exp.error());
+    }
+    emit_load_slot(*len_reg_exp, object_reg, 0);
+
+    auto data_reg_exp = alloc_register(span);
+    if (!data_reg_exp.has_value()) {
+      return std::unexpected(data_reg_exp.error());
+    }
+    // The list header keeps its data pointer at slot 2; the 2-slot view
+    // header keeps it at slot 1.
+    emit_load_slot(*data_reg_exp, object_reg, indexing_view ? 1 : 2);
+    return container_view{.len_reg = *len_reg_exp, .data_reg = *data_reg_exp,
+                          .elem_size = elem_size};
+  }
+
+  [[nodiscard]] auto compile_element_location(const hir::hir_index &node)
+      -> std::expected<element_location, compile_error> {
     auto object_reg = compile_expr(*node.object);
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
@@ -2581,48 +2568,14 @@ private:
     if (!index_reg.has_value()) {
       return std::unexpected(index_reg.error());
     }
-
-    // For a header view, `node.type` is the element type the checker resolved
-    // (`byte` for `str`/`slice[byte]`, `T` for `slice[T]`).
-    const auto elem_size =
-        indexing_view
-            ? element_stride(node.type)
-            : (indexing_list ? (object_entry.args.empty()
-                                    ? uint8_t{8}
-                                    : element_stride(object_entry.args.front()))
-                             : element_stride(object_entry.result));
-
-    virtual_reg len_reg;
-    virtual_reg data_reg;
-    if (indexing_list || indexing_view) {
-      auto len_reg_exp = alloc_register(node.span);
-      if (!len_reg_exp.has_value()) {
-        return std::unexpected(len_reg_exp.error());
-      }
-      emit_load_slot(*len_reg_exp, *object_reg, 0);
-      len_reg = *len_reg_exp;
-
-      auto data_reg_exp = alloc_register(node.span);
-      if (!data_reg_exp.has_value()) {
-        return std::unexpected(data_reg_exp.error());
-      }
-      // The list header keeps its data pointer at slot 2; the 2-slot view
-      // header keeps it at slot 1.
-      emit_load_slot(*data_reg_exp, *object_reg, indexing_view ? 1 : 2);
-      data_reg = *data_reg_exp;
-    } else {
-      const auto len_const = writer_.add_constant(
-          slot_value{static_cast<uint64_t>(*object_entry.array_size)});
-      auto len_reg_exp = alloc_register(node.span);
-      if (!len_reg_exp.has_value()) {
-        return std::unexpected(len_reg_exp.error());
-      }
-      emit_op(opcode::op_load_const);
-      emit_register(*len_reg_exp);
-      writer_.emit_u16(len_const);
-      len_reg = *len_reg_exp;
-      data_reg = *object_reg;
+    auto view =
+        resolve_container_view(node.object->type, *object_reg, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
     }
+    const auto len_reg = view->len_reg;
+    const auto data_reg = view->data_reg;
+    const auto elem_size = view->elem_size;
 
     auto oob_reg = alloc_register(node.span);
     if (!oob_reg.has_value()) {
