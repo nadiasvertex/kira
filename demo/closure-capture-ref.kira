@@ -1,0 +1,21 @@
+module main
+
+# ==========================================================================
+#  Explicit by-reference capture — `&name` in a capture list.
+#
+#  Reads inside the closure go through the enclosing local's own storage
+#  rather than a copy, so a change made through one path is visible through
+#  the other.
+#
+#  Run it: bazelisk run //src:kira -- demo/closure-capture-ref.kira
+# ==========================================================================
+
+def main() -> unit:
+    var total = 42
+
+    # `peek` reads through `&total` rather than a snapshot copy.
+    let peek = [&total] () -> int32 => total
+
+    println("peek() = {peek()}")   # 42
+    total = 100
+    println("peek() after mutation = {peek()}")   # 100 — same storage

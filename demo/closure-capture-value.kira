@@ -1,0 +1,25 @@
+module main
+
+# ==========================================================================
+#  Explicit by-value capture — `[name]` in a capture list.
+#
+#  A bare name in an explicit list copies the outer binding into the
+#  closure's own environment, same as implicit capture, but as a *closed*
+#  set: only listed names are reachable from the enclosing scope, and
+#  referencing anything else there is an error, the same as referencing an
+#  undeclared name.
+#
+#  Run it: bazelisk run //src:kira -- demo/closure-capture-value.kira
+# ==========================================================================
+
+def main() -> unit:
+    var n = 7
+
+    # `bump` owns its own copy of `n`: writes inside the closure never
+    # reach the outer binding.
+    let bump = [n] (x: int32) -> int32 =>:
+        n = n + x
+        return n
+
+    println("bump(100) = {bump(100)}")   # closure's copy: 7 + 100 = 107
+    println("n outside = {n}")           # untouched: still 7

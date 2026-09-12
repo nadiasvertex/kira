@@ -1,0 +1,31 @@
+module main
+
+# ==========================================================================
+#  Explicit by-mutable-reference capture — `&mut name` in a capture list.
+#
+#  Both reads and writes inside the closure reach through to the original
+#  binding, so a running accumulator can live in the enclosing scope and be
+#  driven purely by calling the closure.
+#
+#  Run it: bazelisk run //src:kira -- demo/closure-capture-mut-ref.kira
+# ==========================================================================
+
+def call_twice(f: fn(int32) -> int32, a: int32, b: int32) -> int32:
+    let x = f(a)
+    let y = f(b)
+    return x + y
+
+def main() -> unit:
+    var total = 0
+
+    # Every call to `accumulate` writes straight through to `total`.
+    let accumulate = [&mut total] (x: int32) -> int32 =>:
+        total = total + x
+        return total
+
+    let first = accumulate(5)
+    let rest = call_twice(accumulate, 15, 22)
+
+    println("first = {first}")   # 5
+    println("rest = {rest}")     # 20 + 42 = 62
+    println("total = {total}")   # 42

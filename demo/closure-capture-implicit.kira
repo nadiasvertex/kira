@@ -1,0 +1,32 @@
+module main
+
+# ==========================================================================
+#  Implicit capture — the default when a lambda has no `[...]` list.
+#
+#  Every outer-scope name the lambda body uses is captured automatically,
+#  by value (see spec/specification/02-intermediate/16-closures-and-capture.md
+#  and spec/specification/01-core/05-lambdas.md). The lambda still reaches
+#  module-level functions directly, without capturing them — only local
+#  bindings are captured.
+#
+#  Run it: bazelisk run //src:kira -- demo/closure-capture-implicit.kira
+# ==========================================================================
+
+def bump(n: int32) -> int32:
+    return n + 1
+
+def main() -> unit:
+    let factor = 3
+    let offset = 10
+
+    # `scale` implicitly captures both `factor` and `offset`; `bump` is a
+    # module-level function, reached directly rather than captured.
+    let scale = (x: int32) => bump(x) * factor + offset
+    println("scale(2) = {scale(2)}")   # bump(2) * 3 + 10 = 3 * 3 + 10 = 19
+
+    # Implicit capture is by value, so later changes to the outer bindings
+    # (were `factor` a `var`) would not be seen by an already-created
+    # closure — there is nothing to demonstrate here since `let` bindings
+    # never change, which is exactly why implicit capture defaults to a
+    # safe copy rather than aliasing.
+    println("factor is still {factor}")

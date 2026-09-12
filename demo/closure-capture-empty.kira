@@ -1,0 +1,26 @@
+module main
+
+# ==========================================================================
+#  Empty capture list — `[]`.
+#
+#  Captures nothing at all: the body may reference only its own parameters
+#  and module-level globals, never an outer local. This is the opposite end
+#  of the capture spectrum from no list at all (implicit capture) — the two
+#  must stay distinguishable, and `[]` proves the closure carries no
+#  environment.
+#
+#  Run it: bazelisk run //src:kira -- demo/closure-capture-empty.kira
+# ==========================================================================
+
+def bump(n: int32) -> int32:
+    return n + 1
+
+def call_it(f: fn(int32) -> int32, x: int32) -> int32:
+    return f(x)
+
+def main() -> unit:
+    # `doubled` reaches `bump` directly (a module-level function, not a
+    # capture) but touches no local state from the enclosing scope.
+    let doubled = [] (x: int32) -> int32 => bump(x) * 2
+
+    println("doubled(20) = {call_it(doubled, 20)}")   # (20 + 1) * 2 = 42
