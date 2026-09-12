@@ -492,6 +492,14 @@ public:
   /// call site keeps treating every call as same-module — see
   /// `resolve_callee_key`, and its identical counterpart in
   /// `bytecode_compiler::function_compiler`.
+  ///
+  /// `globals` has no default: unlike the two module-name strings (copied by
+  /// value), it's bound by reference, and a temporary bound to a default
+  /// argument here would dangle past this constructor call — see
+  /// `bytecode_compiler::function_compiler`'s identical `globals_` field for
+  /// the same reasoning. Every call site passes a named map with its own
+  /// independent lifetime (`no_globals` where a compile has none of its
+  /// own).
   function_compiler(
       llvm::LLVMContext &ctx, const type_table &types,
       const std::unordered_map<std::string, llvm::Function *> &functions,
@@ -499,12 +507,14 @@ public:
       llvm::Function *list_reserve_slot_fn,
       const std::array<llvm::Function *, kira::known_intrinsic_names.size()>
           &intrinsic_fns,
-      std::string entry_module_name = {}, std::string current_module_name = {})
+      std::string entry_module_name, std::string current_module_name,
+      const std::unordered_map<std::string, llvm::GlobalVariable *> &globals)
       : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
         alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
         intrinsic_fns_(intrinsic_fns),
         entry_module_name_(std::move(entry_module_name)),
-        current_module_name_(std::move(current_module_name)), builder_(ctx) {}
+        current_module_name_(std::move(current_module_name)),
+        globals_(globals), builder_(ctx) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn,
                              llvm::Function *llvm_fn)
@@ -548,6 +558,32 @@ public:
     return compile_body_and_finish(*fn.body);
   }
 
+  /// Builds every reified `static let`'s backing heap value once, storing
+  /// each into its `llvm::GlobalVariable` (`globals_`) — the LLVM-tier
+  /// counterpart of `bytecode_compiler::function_compiler::
+  /// compile_static_init`, just registered as an `llvm.global_ctors` entry
+  /// (`compile_module`) instead of needing explicit driver wiring: a real
+  /// AOT-linked executable's C runtime startup runs `.init_array` before
+  /// `main` automatically, and `jit_module::create` calls `LLJIT::
+  /// initialize` for the same reason under the JIT.
+  [[nodiscard]] auto
+  compile_static_init(const std::vector<const hir::hir_static_global *> &globals,
+                      llvm::Function *llvm_fn)
+      -> std::expected<void, codegen_error> {
+    current_fn_ = llvm_fn;
+    auto *entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_fn);
+    builder_.SetInsertPoint(entry);
+    for (const auto *global : globals) {
+      auto value = compile_static_global_value(global->type, global->elements);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      builder_.CreateStore(*value, globals_.at(global->name));
+    }
+    builder_.CreateRetVoid();
+    return {};
+  }
+
   /// Compiles a `generator def`'s declared name into a small *constructor*:
   /// builds the generator's state block (populated with the current
   /// parameter values — every other state slot starts zeroed, courtesy of
@@ -587,7 +623,7 @@ public:
 
     auto nested = function_compiler(
         ctx_, types_, functions_, panic_fn_, alloc_fn_, list_reserve_slot_fn_,
-        intrinsic_fns_, entry_module_name_, current_module_name_);
+        intrinsic_fns_, entry_module_name_, current_module_name_, globals_);
     auto step_compiled =
         nested.compile_generator_step(fn, state_symbols, step_fn);
     if (!step_compiled.has_value()) {
@@ -1119,6 +1155,25 @@ private:
                 ref.name)});
       }
       return builder_.CreateLoad(slot.type, slot.addr, ref.name);
+    }
+    case hir_node_kind::hir_global_ref: {
+      const auto &ref = dynamic_cast<const hir::hir_global_ref &>(expr);
+      const auto found = globals_.find(ref.name);
+      if (found == globals_.end()) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = expr.span,
+            .message = std::format(
+                "reference to reified static global `{}` has no backing "
+                "llvm::GlobalVariable — this is a codegen bug, not a source "
+                "error",
+                ref.name)});
+      }
+      // Every reified global is a heap value (array/list), stored the same
+      // pointer-sized way `compile_array_init`/`compile_list_init` produce
+      // it — see `compile_static_global_value`.
+      return builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
+                                 found->second, ref.name);
     }
     case hir_node_kind::hir_binary:
       return compile_binary(dynamic_cast<const hir::hir_binary &>(expr));
@@ -1986,7 +2041,7 @@ private:
 
     auto nested = function_compiler(
         ctx_, types_, functions_, panic_fn_, alloc_fn_, list_reserve_slot_fn_,
-        intrinsic_fns_, entry_module_name_, current_module_name_);
+        intrinsic_fns_, entry_module_name_, current_module_name_, globals_);
     auto compiled =
         nested.compile_lambda_body(lambda, plan, capture_types, lambda_fn);
     if (!compiled.has_value()) {
@@ -2298,6 +2353,52 @@ private:
 
     builder_.SetInsertPoint(end_bb);
     return header;
+  }
+
+  /// Builds a reified `static let` array/list global's backing heap value —
+  /// the explicit-elements branch of `compile_array_init`/`compile_list_init`
+  /// duplicated for a *borrowed* `hir::ptr_vec<hir::hir_expr>` (owned by the
+  /// module's `hir_static_global`, not an owned `hir_array_init` those two
+  /// take by reference), exactly mirroring
+  /// `bytecode_compiler::function_compiler::compile_static_global_value`'s
+  /// own doc comment on why this is a deliberate duplicate rather than a
+  /// shared helper. `checker::reify_static_global` only ever reifies a
+  /// homogeneous-scalar literal-elements list (never a fill form), so unlike
+  /// the two originals this has just the one branch.
+  [[nodiscard]] auto
+  compile_static_global_value(type_id container_type,
+                              const hir::ptr_vec<hir::hir_expr> &elements)
+      -> std::expected<llvm::Value *, codegen_error> {
+    if (is_list_type(container_type)) {
+      auto *header = compile_heap_alloc(3);
+      const auto &list_entry = types_.entry(container_type);
+      const auto elem_size = list_entry.args.empty()
+                                 ? uint8_t{8}
+                                 : element_stride(list_entry.args.front());
+      auto *elem_size_const =
+          llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), elem_size);
+      for (const auto &elem : elements) {
+        auto value = compile_expr(*elem);
+        if (!value.has_value()) {
+          return std::unexpected(value.error());
+        }
+        auto *slot = builder_.CreateCall(list_reserve_slot_fn_,
+                                         {header, elem_size_const});
+        builder_.CreateStore(*value, slot);
+      }
+      return header;
+    }
+    const auto &array_entry = types_.entry(container_type);
+    const auto elem_size = element_stride(array_entry.result);
+    auto *block = compile_heap_alloc_bytes(elements.size() * elem_size);
+    for (size_t i = 0; i < elements.size(); ++i) {
+      auto value = compile_expr(*elements[i]);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      builder_.CreateStore(*value, byte_address(block, i * elem_size));
+    }
+    return block;
   }
 
   /// The address of a *scalar* place — the `&x`/`&mut x` cases that can't
@@ -4051,6 +4152,12 @@ private:
       intrinsic_fns_;
   std::string entry_module_name_;
   std::string current_module_name_;
+  /// Every reified `static let`'s backing `llvm::GlobalVariable*`, keyed by
+  /// its checker-assigned globally-unique name — see `hir_global_ref`'s
+  /// `compile_expr` case and `compile_module`'s doc comment on how this
+  /// table is built, mirroring `bytecode_compiler::function_compiler::
+  /// globals_` exactly.
+  const std::unordered_map<std::string, llvm::GlobalVariable *> &globals_;
   llvm::IRBuilder<> builder_;
   llvm::Function *current_fn_ = nullptr;
   llvm::AllocaInst *alloca_marker_ = nullptr;
@@ -4195,6 +4302,27 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
     }
   }
 
+  // Every reified static global across every module, declared as an
+  // internal-linkage `llvm::GlobalVariable` (a pointer-sized slot holding
+  // the heap value `compile_static_global_value` builds — see
+  // `hir_global_ref`'s `compile_expr` case), keyed by the checker's own
+  // already-program-wide-unique name (`checker::reify_static_global`'s
+  // `static$name$counter` scheme), no module-qualification needed — mirrors
+  // `bytecode_compiler::compile_module`'s `global_index` exactly.
+  auto global_vars =
+      std::unordered_map<std::string, llvm::GlobalVariable *>{};
+  auto ordered_globals = std::vector<const hir::hir_static_global *>{};
+  for (const auto *module : modules) {
+    for (const auto &global : module->statics) {
+      auto *var = new llvm::GlobalVariable(
+          llvm_module, ptr_ty, /*isConstant=*/false,
+          llvm::GlobalValue::InternalLinkage,
+          llvm::ConstantPointerNull::get(ptr_ty), global.name);
+      global_vars.emplace(global.name, var);
+      ordered_globals.push_back(&global);
+    }
+  }
+
   for (const auto &[module, fn] : ordered_functions) {
     const auto key = module->module_name == entry_name
                          ? fn->name
@@ -4202,11 +4330,52 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
     auto *llvm_fn = functions.at(key);
     auto compiler = function_compiler(ctx, types, functions, panic_fn, alloc_fn,
                                       list_reserve_slot_fn, intrinsic_fns,
-                                      entry_name, module->module_name);
+                                      entry_name, module->module_name,
+                                      global_vars);
     auto compiled = compiler.compile(*fn, llvm_fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
     }
+  }
+
+  if (!ordered_globals.empty()) {
+    // A private, zero-argument `void()` init function, run once before
+    // `main` via `llvm.global_ctors` — the same mechanism an ordinary C++
+    // translation unit's static initializers use, so a real AOT-linked
+    // executable's C runtime needs no bespoke driver wiring (unlike the
+    // bytecode VM, which has no such startup hook and so needs
+    // `interpret.cpp` to call it explicitly). `jit_module::create` calls
+    // `LLJIT::initialize` for the equivalent JIT-side hook.
+    auto *init_fn_type =
+        llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), /*isVarArg=*/false);
+    auto *init_fn = llvm::Function::Create(init_fn_type,
+                                           llvm::Function::InternalLinkage,
+                                           "__kira_static_init", llvm_module);
+    auto init_compiler = function_compiler(
+        ctx, types, functions, panic_fn, alloc_fn, list_reserve_slot_fn,
+        intrinsic_fns, entry_name, entry_name, global_vars);
+    auto compiled_init = init_compiler.compile_static_init(ordered_globals, init_fn);
+    if (!compiled_init.has_value()) {
+      return std::unexpected(compiled_init.error());
+    }
+
+    // `llvm.global_ctors`'s required shape: an appending array of
+    // `{ i32 priority, void()* fn, ptr data }` (opaque pointers make the
+    // `fn`/`data` fields both plain `ptr`). `data` is null (no
+    // associated-data COMDAT use here); priority `65535` is the lowest
+    // ("run last among ctors") since this has no ordering dependency on
+    // anything else.
+    auto *entry_ty = llvm::StructType::get(
+        ctx, {llvm::Type::getInt32Ty(ctx), ptr_ty, ptr_ty});
+    auto *ctors_array_ty = llvm::ArrayType::get(entry_ty, 1);
+    auto *ctor_entry = llvm::ConstantStruct::get(
+        entry_ty, {llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx), 65535),
+                   init_fn, llvm::ConstantPointerNull::get(ptr_ty)});
+    auto *ctors_array = llvm::ConstantArray::get(
+        ctors_array_ty, {ctor_entry});
+    new llvm::GlobalVariable(llvm_module, ctors_array_ty, /*isConstant=*/false,
+                             llvm::GlobalValue::AppendingLinkage, ctors_array,
+                             "llvm.global_ctors");
   }
 
   auto verify_message = std::string{};

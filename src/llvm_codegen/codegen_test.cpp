@@ -1163,6 +1163,28 @@ auto test_parse_optimization_level_accepts_0_through_3_only() -> void {
          "expected a non-numeric level to fail to parse");
 }
 
+auto test_static_array_global_backs_two_independent_reads() -> void {
+  // LLVM-tier counterpart of
+  // src/bytecode_compiler/compile_test.cpp's identically-named test: proves
+  // `hir_static_global`/`hir_global_ref` round-trip through real Kira source
+  // on this backend too — the `llvm.global_ctors`-registered
+  // `__kira_static_init` must actually run (via `jit_module::create`'s
+  // `LLJIT::initialize` call) before either call site reads `TABLE`.
+  auto jf = jit_fixture_for(R"kira(
+module sample
+static TABLE: array[int32, 4] = [10, 20, 30, 40]
+def third(i: usize) -> int32:
+    return TABLE[i]
+def main() -> int32:
+    return TABLE[3] + third(2)
+)kira");
+  auto result = jf.jit.run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected main() to succeed");
+  expect(result->value.i == 70,
+         "expected main()'s TABLE[3] + third(2) == 40 + 30 == 70 — both call "
+         "sites must see the same backing data the global ctor built");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1230,6 +1252,7 @@ auto main() -> int {
     test_generator_bare_return_exhausts_early();
     test_generator_next_after_exhaustion_stays_none();
     test_generator_nonzero_initial_locals_survive_resume();
+    test_static_array_global_backs_two_independent_reads();
     test_for_loop_over_generator_sums_values();
     test_recursive_call_computes_factorial_at_o2();
     test_checked_add_still_panics_on_overflow_at_o2();

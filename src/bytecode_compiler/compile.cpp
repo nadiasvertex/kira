@@ -368,18 +368,21 @@ auto count_yields(const hir::hir_block &block) -> size_t {
 
 class function_compiler {
 public:
-  /// `entry_module_name`/`current_module_name` default to matching (empty)
-  /// strings when omitted, so `compile_function`'s standalone single-function
-  /// API and every existing single-module `compile_module` call site keep
-  /// treating every call as same-module — see `resolve_callee_key`.
+  /// Every call site passes matching (often empty) strings for
+  /// `entry_module_name`/`current_module_name` to keep `compile_function`'s
+  /// standalone single-function API and every single-module `compile_module`
+  /// call site treating every call as same-module — see `resolve_callee_key`.
   function_compiler(const type_table &types,
                     const std::unordered_map<std::string, uint16_t> &functions,
                     std::vector<bytecode::bytecode_function> &lambda_functions,
                     size_t function_table_base,
-                    std::string entry_module_name = {},
-                    std::string current_module_name = {},
-                    const std::unordered_map<std::string, uint16_t> &globals =
-                        {})
+                    std::string entry_module_name,
+                    std::string current_module_name,
+                    // No default: a temporary bound here would dangle past
+                    // this constructor call (see `compile_function`'s
+                    // `no_globals` for why) — every call site must pass a
+                    // named map with its own independent lifetime.
+                    const std::unordered_map<std::string, uint16_t> &globals)
       : types_(types), functions_(functions),
         lambda_functions_(lambda_functions),
         function_table_base_(function_table_base),
@@ -3992,7 +3995,14 @@ auto compile_function(
     const std::unordered_map<std::string, uint16_t> &function_index)
     -> std::expected<bytecode::bytecode_function, compile_error> {
   auto lambda_functions = std::vector<bytecode::bytecode_function>{};
-  auto compiler = function_compiler(types, function_index, lambda_functions, 1);
+  // Named (not a defaulted temporary) so it outlives `compiler`: `globals_`
+  // is a reference member, and a temporary bound to a reference *parameter*
+  // is only lifetime-extended to the end of this constructor call, not
+  // through to `compiler.compile(fn)` below.
+  auto no_globals = std::unordered_map<std::string, uint16_t>{};
+  auto compiler =
+      function_compiler(types, function_index, lambda_functions, 1, {}, {},
+                        no_globals);
   return compiler.compile(fn);
 }
 
