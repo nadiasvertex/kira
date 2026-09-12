@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "src/comptime/value.h"
 #include "src/parser/ast.h"
 #include "src/parser/source_location.h"
 #include "src/semantic/analysis.h"
@@ -759,6 +760,29 @@ struct checked_types {
   /// (indirectly, via splicing) quoted fragments.
   std::unordered_map<const ast::node *, const ast::literal_expr *>
       static_const_values;
+  /// One top-level `static let` reified as real backing data — an
+  /// array/list/tuple whose elements are all scalar (integer/floating/
+  /// boolean), which `checker::materialize_const_literal` cannot inline the
+  /// way it does a single scalar (there's no one `ast::literal_expr` shape
+  /// for a whole array). `hir::lower_module_items` looks a module's own
+  /// `static_decl` items up here (by declaration pointer) and lowers a
+  /// matching entry into an `hir_static_global`; `name` is unique across the
+  /// whole program, so every backend can key one flat global table by it
+  /// regardless of which module a reference lives in — mirroring how the
+  /// existing cross-module function table already works.
+  struct static_global_def {
+    std::string name;
+    type_id type;
+    std::vector<comptime::value> elements;
+  };
+  std::unordered_map<const ast::static_decl *, static_global_def>
+      static_global_defs;
+  /// Every `ident_expr`/`module_path_expr` that resolved to a reified static
+  /// global (see `static_global_defs`), mapped to that global's `name` —
+  /// `hir::lower_ident`/`lower_module_path` look this up before falling back
+  /// to `hir_local_ref`, mirroring `static_const_values` but for the
+  /// aggregate case that can't be inlined at each reference site.
+  std::unordered_map<const ast::node *, std::string> static_global_refs;
   /// Every `v[i]` the reasoning solver proved in bounds
   /// (`checker::check_index_in_bounds`) — an index whose safety is a
   /// *compile-time* fact, so lowering may omit the runtime bounds check

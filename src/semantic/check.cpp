@@ -933,6 +933,8 @@ public:
         .synthesized_item_splices = std::move(synthesized_item_splices_),
         .synthesized_const_literals = std::move(synthesized_const_literals_),
         .static_const_values = std::move(static_const_values_),
+        .static_global_defs = std::move(static_global_defs_),
+        .static_global_refs = std::move(static_global_refs_),
         .proven_in_bounds = std::move(proven_in_bounds_),
         .elided_contracts = std::move(elided_contracts_),
         .view_bearing_types = std::move(view_bearing)};
@@ -1194,6 +1196,14 @@ private:
   /// `resolve_ident`.
   std::unordered_map<const ast::node *, const ast::literal_expr *>
       static_const_values_;
+  /// See `checked_types::static_global_defs`'s doc comment. Populated by
+  /// `reify_static_global`.
+  std::unordered_map<const ast::static_decl *,
+                     checked_types::static_global_def>
+      static_global_defs_;
+  /// See `checked_types::static_global_refs`'s doc comment. Populated by
+  /// `record_static_const_reference`.
+  std::unordered_map<const ast::node *, std::string> static_global_refs_;
   /// See `checked_types::proven_in_bounds`'s doc comment. Populated by
   /// `check_index_in_bounds`.
   std::unordered_set<const ast::index_expr *> proven_in_bounds_;
@@ -6553,7 +6563,51 @@ private:
     if (const auto *lit =
             materialize_const_literal(*value, reference.span, type)) {
       static_const_values_[&reference] = lit;
+      return;
     }
+    if (const auto name = reify_static_global(decl, *value, type)) {
+      static_global_refs_[&reference] = *name;
+    }
+  }
+
+  /// A `static let` whose value is an array/list/tuple of homogeneous scalar
+  /// (integer/floating/boolean) elements has no single-literal materialization
+  /// (`materialize_const_literal` returns `nullptr` for it), but it *can* be
+  /// reified as real backing data — one entry per element, all the same
+  /// scalar kind, is exactly what a lookup table needs. Memoized per
+  /// declaration in `static_global_defs_` (mirroring `static_binding_
+  /// values_`) so a declaration referenced many times is reified once;
+  /// returns the assigned global name on success, `nullopt` when `value`
+  /// isn't a homogeneous-scalar list (a struct, a mixed/nested list, a
+  /// string, ...) — those remain unresolvable at runtime today, exactly the
+  /// pre-existing behavior.
+  auto reify_static_global(const ast::static_decl &decl,
+                           const comptime::value &value, type_id type)
+      -> std::optional<std::string> {
+    if (const auto it = static_global_defs_.find(&decl);
+        it != static_global_defs_.end()) {
+      return it->second.name;
+    }
+    if (value.kind != comptime::value_kind::list || value.elements.empty()) {
+      return std::nullopt;
+    }
+    const auto elem_kind = value.elements.front().kind;
+    if (elem_kind != comptime::value_kind::integer &&
+        elem_kind != comptime::value_kind::floating &&
+        elem_kind != comptime::value_kind::boolean) {
+      return std::nullopt;
+    }
+    for (const auto &element : value.elements) {
+      if (element.kind != elem_kind) {
+        return std::nullopt;
+      }
+    }
+    auto name =
+        std::format("static${}${}", decl.name, static_global_defs_.size());
+    static_global_defs_.emplace(
+        &decl, checked_types::static_global_def{
+                   .name = name, .type = type, .elements = value.elements});
+    return name;
   }
 
   /// Records a *value* use of a value parameter (`return n`, `for i in 0..n`)

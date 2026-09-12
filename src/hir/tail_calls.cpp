@@ -205,6 +205,7 @@ auto collect_bound_symbols(const hir_node &node,
   // bound-symbol set.
   case hir_node_kind::hir_lambda:
   case hir_node_kind::hir_local_ref:
+  case hir_node_kind::hir_global_ref:
   case hir_node_kind::hir_literal:
   case hir_node_kind::hir_break:
   case hir_node_kind::hir_wildcard_pattern:

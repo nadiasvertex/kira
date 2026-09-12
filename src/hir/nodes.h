@@ -81,6 +81,8 @@ enum class hir_node_kind : uint8_t {
   // expressions
   hir_literal,
   hir_local_ref,
+  hir_global_ref, ///< Reference to a reified `static let` global — see
+                  ///< `hir_global_ref`'s doc comment.
   hir_binary,
   hir_unary,
   hir_call,
@@ -264,6 +266,20 @@ struct hir_local_ref : hir_expr {
                 std::optional<std::string> owner = std::nullopt)
       : hir_expr(hir_node_kind::hir_local_ref, s, t), symbol(sym),
         name(std::move(n)), owner_module(std::move(owner)) {}
+};
+
+/// Reference to a reified top-level `static let` global — see
+/// `hir_static_global`'s doc comment for what makes a `static let` eligible
+/// and how `name` is assigned. Unlike `hir_local_ref`, this never resolves
+/// against a function-local symbol table: both backends key one flat,
+/// program-wide global table by `name` (exactly as they already key one
+/// flat function table across modules), so a reference in one module can
+/// name a global reified from a `static let` declared in another.
+struct hir_global_ref : hir_expr {
+  std::string name;
+
+  hir_global_ref(source_span s, type_id t, std::string n)
+      : hir_expr(hir_node_kind::hir_global_ref, s, t), name(std::move(n)) {}
 };
 
 /// Binary operator application; reuses `ast::binary_op` rather than
@@ -912,12 +928,32 @@ struct hir_function : hir_item {
         is_generator(generator), item_type(item) {}
 };
 
+/// One top-level `static let` reified as real backing data — see
+/// `semantic::checked_types::static_global_defs`'s doc comment for
+/// eligibility (an array/list/tuple of homogeneous scalar elements) and how
+/// `name` is assigned. `elements` are the scalar values themselves, one
+/// `hir_literal` per element, in source order — a backend builds this
+/// module's global exactly once (VM: a slot filled by a synthesized
+/// init routine; LLVM: a constant/initialized global variable), keyed by
+/// `name` in one flat, program-wide table so `hir_global_ref` can resolve a
+/// reference from any module.
+struct hir_static_global {
+  std::string name;
+  type_id type = k_unknown_type;
+  ptr_vec<hir_expr> elements;
+};
+
 /// Lowered module: every function lowered from one module's contributing
 /// files (Decision 3 keeps HIR a separate tree rather than decorating the
 /// AST in place).
 struct hir_module : hir_item {
   std::string module_name;
   ptr_vec<hir_function> functions;
+  /// Reified `static let` globals declared directly in this module — see
+  /// `hir_static_global`'s doc comment. Populated by `lower_module_items`
+  /// alongside `functions`; empty for a module with no eligible statics
+  /// (the overwhelming common case).
+  std::vector<hir_static_global> statics;
 
   hir_module(source_span s, std::string name, ptr_vec<hir_function> funcs)
       : hir_item(hir_node_kind::hir_module, s), module_name(std::move(name)),

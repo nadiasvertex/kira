@@ -924,6 +924,14 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
       it != checked_.static_const_values.end()) {
     return lower_literal(*it->second);
   }
+  // A reference to a reified aggregate `static let` (see
+  // `checked_types::static_global_defs`) — same rationale as the scalar
+  // case above, but the value is real backing data a backend builds once,
+  // not something to inline at every reference site.
+  if (const auto it = checked_.static_global_refs.find(&ident);
+      it != checked_.static_global_refs.end()) {
+    return ok_expr(make<hir_global_ref>(ident.span, *type, it->second));
+  }
   const auto symbol = resolve_reference(ident.name);
   return ok_expr(make<hir_local_ref>(ident.span, *type, symbol, ident.name));
 }
@@ -1380,6 +1388,16 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
   if (const auto it = checked_.static_const_values.find(&path);
       it != checked_.static_const_values.end()) {
     return lower_literal(*it->second);
+  }
+  // Module-qualified reference to a reified aggregate `static let` — see
+  // the matching check in `lower_ident`.
+  if (const auto it = checked_.static_global_refs.find(&path);
+      it != checked_.static_global_refs.end()) {
+    auto type = checked_type_of(path);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    return ok_expr(make<hir_global_ref>(path.span, *type, it->second));
   }
   if (path.segments.size() != 2) {
     return fail(lowering_error_kind::unsupported_construct, path.span,
@@ -4446,13 +4464,73 @@ auto lower_function(const ast::func_decl &decl,
 /// `functions`. Shared by a file's own top-level items and by the body of an
 /// inline `module inner:` declared within it, so a submodule's functions are
 /// lowered by exactly the same rules (and exclusions) as a file's.
+/// Converts one homogeneous-scalar `comptime::value` element (integer/
+/// floating/boolean — see `checked_types::static_global_defs`'s eligibility)
+/// into an `hir_literal`, mirroring `semantic::checker::materialize_const_
+/// literal`'s own scalar switch exactly (that function's `default: return
+/// nullptr` case is precisely what routes an element here instead).
+auto lower_static_global_element(const comptime::value &value, source_span span,
+                                 type_id elem_type) -> ptr<hir_expr> {
+  switch (value.kind) {
+  case comptime::value_kind::integer:
+    return make<hir_literal>(span, elem_type, token_kind::int_lit,
+                             std::to_string(value.integer));
+  case comptime::value_kind::floating:
+    return make<hir_literal>(span, elem_type, token_kind::float_lit,
+                             std::to_string(value.floating));
+  case comptime::value_kind::boolean:
+    return make<hir_literal>(
+        span, elem_type,
+        value.boolean ? token_kind::kw_true : token_kind::kw_false,
+        value.boolean ? "true" : "false");
+  default:
+    // Unreachable: `reify_static_global` only ever admits these three kinds.
+    return make<hir_literal>(span, elem_type, token_kind::int_lit, "0");
+  }
+}
+
+/// The element type of an `array[T, n]` or `list[T]` type — the only two
+/// shapes `reify_static_global` currently admits (both single-argument, one
+/// via `result`, the other via `args.front()`).
+auto static_global_element_type(const semantic::type_table &types,
+                                type_id container_type) -> type_id {
+  const auto &entry = types.entry(container_type);
+  if (entry.kind == semantic::type_kind::array_kind) {
+    return entry.result;
+  }
+  if (!entry.args.empty()) {
+    return entry.args.front();
+  }
+  return semantic::k_unknown_type;
+}
+
 auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
                         const semantic::checked_types &checked,
                         const lowering_options &options,
-                        ptr_vec<hir_function> &functions)
+                        ptr_vec<hir_function> &functions,
+                        std::vector<hir_static_global> &statics)
     -> std::expected<void, lowering_error> {
   for (const auto &item : items) {
     if (item == nullptr) {
+      continue;
+    }
+    if (item->kind == ast::node_kind::static_decl) {
+      const auto &decl = dynamic_cast<const ast::static_decl &>(*item);
+      const auto found = checked.static_global_defs.find(&decl);
+      if (found == checked.static_global_defs.end()) {
+        continue;
+      }
+      const auto &def = found->second;
+      const auto elem_type =
+          static_global_element_type(checked.types, def.type);
+      auto elements = ptr_vec<hir_expr>{};
+      elements.reserve(def.elements.size());
+      for (const auto &element : def.elements) {
+        elements.push_back(
+            lower_static_global_element(element, item->span, elem_type));
+      }
+      statics.push_back(hir_static_global{
+          .name = def.name, .type = def.type, .elements = std::move(elements)});
       continue;
     }
     if (item->kind == ast::node_kind::impl_decl) {
@@ -4579,7 +4657,9 @@ auto lower_module(const ast::file &file, std::string module_name,
                   const lowering_options &options)
     -> std::expected<ptr<hir_module>, lowering_error> {
   auto functions = ptr_vec<hir_function>{};
-  if (auto result = lower_module_items(file.items, checked, options, functions);
+  auto statics = std::vector<hir_static_global>{};
+  if (auto result =
+          lower_module_items(file.items, checked, options, functions, statics);
       !result.has_value()) {
     return std::unexpected(result.error());
   }
@@ -4588,8 +4668,10 @@ auto lower_module(const ast::file &file, std::string module_name,
       !result.has_value()) {
     return std::unexpected(result.error());
   }
-  return make<hir_module>(file.span, std::move(module_name),
-                          std::move(functions));
+  auto module = make<hir_module>(file.span, std::move(module_name),
+                                 std::move(functions));
+  module->statics = std::move(statics);
+  return module;
 }
 
 namespace {
@@ -4629,8 +4711,9 @@ auto lower_inline_submodules_into(const std::vector<ast::ptr<ast::node>> &items,
                                  ? decl.name
                                  : parent_module_name + "." + decl.name;
     auto functions = ptr_vec<hir_function>{};
-    if (auto result =
-            lower_module_items(decl.items, checked, options, functions);
+    auto statics = std::vector<hir_static_global>{};
+    if (auto result = lower_module_items(decl.items, checked, options,
+                                         functions, statics);
         !result.has_value()) {
       return std::unexpected(result.error());
     }
@@ -4639,8 +4722,10 @@ auto lower_inline_submodules_into(const std::vector<ast::ptr<ast::node>> &items,
         !result.has_value()) {
       return std::unexpected(result.error());
     }
-    out.push_back(
-        make<hir_module>(decl.span, module_name, std::move(functions)));
+    auto sub_module =
+        make<hir_module>(decl.span, module_name, std::move(functions));
+    sub_module->statics = std::move(statics);
+    out.push_back(std::move(sub_module));
 
     if (auto result = lower_inline_submodules_into(decl.items, module_name,
                                                    checked, options, out);
