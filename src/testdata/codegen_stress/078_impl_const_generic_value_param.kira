@@ -1,0 +1,32 @@
+module codegen_stress.impl_const_generic_value_param
+
+# An `impl` block parameterized by a *value*, not a type — todo #8.
+# `impl[n: usize] show for buf[n]` used to report "cannot tell which `n`
+# this call to `show` means" even though the receiver's own type plainly
+# determines `n`: `buf[4]` and `buf[8]` each pin `n` down as surely as an
+# `impl[T] ... for holder[T]` pins `T` down. The bug was that `unify_rigid`
+# only knows how to bind a `type_param_kind` slot, and a value parameter
+# embedded in a target type interns as a `symbolic_value_kind` polynomial
+# variable instead, which `unify_rigid` silently skipped.
+#
+# Exercised at two distinct instantiations (`buf[4]`, `buf[8]`) so a
+# mangling collision between the two instances' compiled bodies would show
+# up as a wrong answer rather than a compile failure.
+#
+# 4 + 8 = 12.
+
+# expect: 12
+
+type buf[n: usize] = { len: usize }
+
+trait sized:
+    def capacity(self) -> int32
+
+impl[n: usize] sized for buf[n]:
+    def capacity(self) -> int32:
+        return n as int32
+
+def main() -> int32:
+    let b4: buf[4] = { len: 4 }
+    let b8: buf[8] = { len: 8 }
+    return b4.capacity() + b8.capacity()

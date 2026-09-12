@@ -1,0 +1,18 @@
+module sample
+
+# `n` appears nowhere in `holder`, the impl's own target type, so no receiver
+# can pin it down — the diagnostic todo #8 describes should still fire for
+# this genuinely unsolvable case even after `n` correctly resolves for a
+# target that *does* mention it (`buf[n]`, see
+# testdata/codegen_stress/078_impl_const_generic_value_param.kira).
+type holder = { value: int32 }
+
+trait sized:
+    def capacity(self) -> int32
+
+impl[n: usize] sized for holder:
+    def capacity(self) -> int32:
+        return n as int32
+
+def run(h: holder) -> int32:
+    h.capacity()

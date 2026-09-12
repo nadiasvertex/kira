@@ -1142,6 +1142,20 @@ private:
   /// name bound to the concrete type the call solved for it. The type
   /// analog of `const_param_slots_`, consulted by `push_type_params`.
   std::unordered_map<std::string, type_id> type_param_slots_;
+  /// The block-level type parameters of the `impl`/`extend` a method
+  /// currently being checked belongs to (`impl[n: usize] ... for buf[n]`'s
+  /// `n`), or `nullptr` outside of one. These never appear in the method's
+  /// own `decl.type_params`, so `bind_value_params(decl.type_params)` alone
+  /// never binds a value-kind one (`n`) as an ordinary value — only
+  /// `push_type_params` sees it, and only as a *type*. `check_function`
+  /// additionally runs `bind_value_params` over this list so a value-kind
+  /// block parameter reads as a value in the body (`n as int32`) exactly
+  /// like one of the method's own, in both the unresolved template check
+  /// (`check_impl_decl`/`check_extend_decl`, abstract) and a concrete
+  /// instance's check (`find_or_check_generic_instance`, resolved to
+  /// `usize` either way — the concrete value itself flows separately
+  /// through `const_param_values_`/`record_const_param_reference`).
+  const std::vector<ast::type_param> *enclosing_block_type_params_ = nullptr;
   /// One monomorphized instance per (declaration, solution) — so a call made
   /// a thousand times with `n == 3` compiles one `get$3` and not a thousand.
   /// Shared by every instantiation path (free function, method, higher-kinded
@@ -5066,7 +5080,9 @@ private:
       const module_members *owner, std::optional<file_id_type> decl_file,
       const generic_solution &solution, const std::string &name,
       const std::unordered_map<std::string, type_id> *fixed_type_params,
-      type_id self_type = k_unknown_type) -> const ast::func_decl * {
+      type_id self_type = k_unknown_type,
+      const std::vector<ast::type_param> *block_type_params = nullptr)
+      -> const ast::func_decl * {
     const auto key =
         std::format("{}#{}", static_cast<const void *>(&decl), name);
     if (const auto found = hk_instance_cache_.find(key);
@@ -5125,6 +5141,8 @@ private:
     const auto saved_contract = in_contract_;
     const auto saved_postcondition = in_postcondition_;
     const auto saved_self_type = self_type_;
+    const auto saved_block_type_params = enclosing_block_type_params_;
+    enclosing_block_type_params_ = block_type_params;
     module_ = owner;
     if (!types_.is_unknown(self_type)) {
       self_type_ = self_type;
@@ -5162,6 +5180,7 @@ private:
       pop_type_params();
     }
     self_type_ = saved_self_type;
+    enclosing_block_type_params_ = saved_block_type_params;
     in_postcondition_ = saved_postcondition;
     in_contract_ = saved_contract;
     type_param_slots_ = std::move(saved_type_slots);
@@ -7976,7 +7995,14 @@ private:
     const auto pattern_entry = types_.entry(pattern);
     if (pattern_entry.kind == type_kind::type_param_kind ||
         pattern_entry.kind == type_kind::param_app_kind ||
-        pattern_entry.kind == type_kind::ctor_ref_kind) {
+        pattern_entry.kind == type_kind::ctor_ref_kind ||
+        pattern_entry.kind == type_kind::symbolic_value_kind) {
+      // A value-kind impl parameter embedded in the target (`buf[n]`'s `n`)
+      // interns the same way `type_param_kind` does for a type parameter —
+      // as a placeholder the receiver is free to instantiate however it
+      // likes. This is only a candidate filter; whether the receiver's
+      // actual value is one `unify_rigid`/`solve_value_params` can pin down
+      // is decided afterward, by `check_impl_generic_method_call`.
       return true;
     }
     const auto concrete_entry = types_.entry(concrete);
@@ -8802,6 +8828,7 @@ private:
     }
     auto bindings = std::unordered_map<std::string, type_id>{};
     unify_rigid(method.impl_target_pattern, receiver_type, bindings);
+    solve_impl_value_params(method, receiver_type, bindings);
     for (const auto &type_param : *method.block_type_params) {
       if (!type_param.name.empty() && !bindings.contains(type_param.name)) {
         // An impl parameter the receiver doesn't pin. The call-shaped sibling
@@ -8813,13 +8840,14 @@ private:
     auto scoped_params = method.fixed_type_params;
     scoped_params.insert(bindings.begin(), bindings.end());
     auto solution = generic_solution{};
+    carry_impl_value_slots(method, bindings, solution);
     solution.suffix =
         std::format("${}", mangle_type_for_instance(receiver_type));
     const auto name = std::format("{}::{}{}", receiver_entry.name,
                                   method.decl->name, solution.suffix);
-    return find_or_check_generic_instance(site, *method.decl, method.owner,
-                                          method.file_id, solution, name,
-                                          &scoped_params, receiver_type);
+    return find_or_check_generic_instance(
+        site, *method.decl, method.owner, method.file_id, solution, name,
+        &scoped_params, receiver_type, method.block_type_params);
   }
 
   auto record_instance_method_callee(const ast::call_expr &call,
@@ -8917,6 +8945,67 @@ private:
            (!method.block_type_params->empty() || !receiver.args.empty());
   }
 
+  /// Fills in `bindings` for an impl-block *value* parameter that
+  /// `unify_rigid` cannot bind on its own. `unify_rigid` only knows how to
+  /// bind a `type_param_kind` slot, but a value parameter such as `n: usize`
+  /// embedded in a target like `buf[n]` interns as a `symbolic_value_kind`
+  /// polynomial variable instead (see `resolve_value_arg`/`name_poly`), which
+  /// `unify_rigid` silently skips over — leaving `n` looking unsolved even
+  /// though `buf[4]` plainly determines it. This runs the same
+  /// `value_bindings`/`linear_poly` channel `solve_generic_params` already
+  /// uses for free functions (`solve_value_params`), against the impl's
+  /// target pattern instead of a parameter list.
+  auto solve_impl_value_params(
+      const method_entry &method, type_id concrete,
+      std::unordered_map<std::string, type_id> &bindings) -> void {
+    auto solved = value_bindings{};
+    solve_value_params(method.impl_target_pattern, concrete, solved);
+    for (const auto &type_param : *method.block_type_params) {
+      if (type_param.name.empty() || !type_param.is_value_param ||
+          bindings.contains(type_param.name)) {
+        continue;
+      }
+      const auto found = solved.find(type_param.name);
+      if (found == solved.end() || !found->second.is_constant()) {
+        continue;
+      }
+      if (const auto underlying =
+              value_param_underlying(type_param, method.owner)) {
+        bindings.emplace(
+            type_param.name,
+            types_.const_value(*underlying,
+                               static_cast<uint64_t>(found->second.constant)));
+      }
+    }
+  }
+
+  /// Copies each value-kind impl-block parameter's binding from `bindings`
+  /// into `solution`'s const-slots, so `find_or_check_generic_instance`
+  /// also lands it in `const_param_values_` — what
+  /// `record_const_param_reference` reads to embed `n`'s concrete value as
+  /// a literal wherever the body reads it as a value — rather than only
+  /// substituting it into the checked signature's types.
+  auto carry_impl_value_slots(
+      const method_entry &method,
+      const std::unordered_map<std::string, type_id> &bindings,
+      generic_solution &solution) -> void {
+    for (const auto &type_param : *method.block_type_params) {
+      if (!type_param.is_value_param) {
+        continue;
+      }
+      const auto found = bindings.find(type_param.name);
+      if (found == bindings.end()) {
+        continue;
+      }
+      const auto &entry = types_.entry(found->second);
+      if (entry.kind != type_kind::const_value_kind) {
+        continue;
+      }
+      solution.const_slots.emplace(type_param.name, found->second);
+      solution.values.emplace(type_param.name, entry.value.constant);
+    }
+  }
+
   /// Types a call to a method whose *impl block* — not the method itself — is
   /// what carries generic content (`impl_needs_instance`), resolving it to an
   /// instance compiled for this one receiver type.
@@ -8965,6 +9054,7 @@ private:
 
     auto bindings = std::unordered_map<std::string, type_id>{};
     unify_rigid(method.impl_target_pattern, receiver_type, bindings);
+    solve_impl_value_params(method, receiver_type, bindings);
     for (const auto &type_param : *method.block_type_params) {
       if (type_param.name.empty() || bindings.contains(type_param.name)) {
         continue;
@@ -9000,6 +9090,7 @@ private:
     scoped_params.insert(bindings.begin(), bindings.end());
 
     auto solution = generic_solution{};
+    carry_impl_value_slots(method, bindings, solution);
     solution.suffix =
         std::format("${}", mangle_type_for_instance(receiver_type));
 
@@ -9018,7 +9109,7 @@ private:
                                   method.decl->name, solution.suffix);
     const auto *instance = find_or_check_generic_instance(
         call, *method.decl, method.owner, method.file_id, solution, name,
-        &scoped_params, receiver_type);
+        &scoped_params, receiver_type, method.block_type_params);
     if (instance == nullptr) {
       return std::nullopt;
     }
@@ -9059,6 +9150,7 @@ private:
       std::unordered_map<std::string, type_id> &bindings)
       -> const ast::func_decl * {
     unify_rigid(method.impl_target_pattern, target, bindings);
+    solve_impl_value_params(method, target, bindings);
     for (const auto &type_param : *method.block_type_params) {
       if (type_param.name.empty() || bindings.contains(type_param.name)) {
         continue;
@@ -9072,15 +9164,16 @@ private:
     scoped_params.insert(bindings.begin(), bindings.end());
 
     auto solution = generic_solution{};
+    carry_impl_value_slots(method, bindings, solution);
     solution.suffix = std::format("${}", mangle_type_for_instance(target));
     // Owned before `find_or_check_generic_instance` runs: checking the
     // instance body interns types, and this name is read after that.
     const auto target_name = std::string(types_.entry(target).name);
     const auto name = std::format("{}::{}{}", target_name, method.decl->name,
                                   solution.suffix);
-    return find_or_check_generic_instance(call, *method.decl, method.owner,
-                                          method.file_id, solution, name,
-                                          &scoped_params, target);
+    return find_or_check_generic_instance(
+        call, *method.decl, method.owner, method.file_id, solution, name,
+        &scoped_params, target, method.block_type_params);
   }
 
   /// Whether `method` is *receiver-style* for an `instance` of some
@@ -14406,6 +14499,9 @@ private:
     facts_.clear();
 
     bind_value_params(decl.type_params);
+    if (enclosing_block_type_params_ != nullptr) {
+      bind_value_params(*enclosing_block_type_params_);
+    }
 
     const auto &inferred_types = param_types_for(decl, module_);
     for (size_t i = 0; i < decl.params.size(); ++i) {
@@ -15026,6 +15122,8 @@ private:
       impl_assoc_types_[target][trait_name] = self_assoc_types_;
     }
 
+    const auto saved_block_type_params = enclosing_block_type_params_;
+    enclosing_block_type_params_ = &decl.type_params;
     for (const auto &item : decl.items) {
       if (item == nullptr || item->has_error) {
         continue;
@@ -15039,6 +15137,7 @@ private:
         check_item(*item, /*at_module_scope=*/false);
       }
     }
+    enclosing_block_type_params_ = saved_block_type_params;
     self_type_ = saved_self;
     self_assoc_types_ = saved_assoc;
     pop_type_params();
@@ -15087,6 +15186,8 @@ private:
 
     const auto saved_self = self_type_;
     self_type_ = target;
+    const auto saved_block_type_params = enclosing_block_type_params_;
+    enclosing_block_type_params_ = &decl.type_params;
     for (const auto &item : decl.items) {
       if (item == nullptr || item->has_error) {
         continue;
@@ -15096,6 +15197,7 @@ private:
                        /*at_module_scope=*/false);
       }
     }
+    enclosing_block_type_params_ = saved_block_type_params;
     self_type_ = saved_self;
     pop_type_params();
   }
@@ -15289,6 +15391,8 @@ private:
       self_assoc_types_.emplace(assoc.value.name, resolved);
     }
 
+    const auto saved_block_type_params = enclosing_block_type_params_;
+    enclosing_block_type_params_ = &decl.type_params;
     for (const auto &item : decl.items) {
       if (item == nullptr || item->has_error) {
         continue;
@@ -15298,6 +15402,7 @@ private:
                        /*at_module_scope=*/false);
       }
     }
+    enclosing_block_type_params_ = saved_block_type_params;
 
     self_type_ = saved_self;
     self_assoc_types_ = saved_assoc;

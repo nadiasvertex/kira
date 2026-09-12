@@ -1741,6 +1741,22 @@ auto test_reports_unsolved_const_generic_value_param() -> void {
                     "argument determines");
 }
 
+auto test_reports_unsolved_impl_const_generic_value_param() -> void {
+  // todo #8: an impl block parameterized by a value whose target type never
+  // mentions it (`impl[n: usize] sized for holder`) still has to be
+  // diagnosed — only a target that *does* mention its value parameter
+  // (`buf[n]`) is solvable, exercised end-to-end in
+  // testdata/codegen_stress/078_impl_const_generic_value_param.kira.
+  const auto analyzed = analyze_test_data_file(
+      "report_impl_const_generic_unsolved_value_param.kira");
+  expect(analyzed.error_count > 0,
+         "expected a call to a method whose impl's value parameter its "
+         "target never mentions to fail");
+  expect_diagnostic(analyzed, "cannot tell which `n` this call to `capacity` means",
+                    "expected the diagnostic to name the impl's unsolved "
+                    "value parameter");
+}
+
 auto test_accepts_explicit_generic_args() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_explicit_generic_args.kira");
@@ -3111,6 +3127,7 @@ auto main() -> int {
     test_accepts_const_generic_value_match();
     test_accepts_const_generic_try_from();
     test_reports_unsolved_const_generic_value_param();
+    test_reports_unsolved_impl_const_generic_value_param();
     test_accepts_explicit_generic_args();
     test_accepts_generic_methods();
     test_reports_bad_explicit_generic_args();
