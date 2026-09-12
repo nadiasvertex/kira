@@ -377,12 +377,42 @@ public:
                     std::vector<bytecode::bytecode_function> &lambda_functions,
                     size_t function_table_base,
                     std::string entry_module_name = {},
-                    std::string current_module_name = {})
+                    std::string current_module_name = {},
+                    const std::unordered_map<std::string, uint16_t> &globals =
+                        {})
       : types_(types), functions_(functions),
         lambda_functions_(lambda_functions),
         function_table_base_(function_table_base),
         entry_module_name_(std::move(entry_module_name)),
-        current_module_name_(std::move(current_module_name)) {}
+        current_module_name_(std::move(current_module_name)),
+        globals_(globals) {}
+
+  /// Compiles the synthesized `__kira_static_init` routine: builds every
+  /// reified `static let`'s backing value exactly the way an ordinary
+  /// array/list literal builds one (`compile_static_global_value`, sharing
+  /// `compile_array_init`/`compile_list_init`'s own alloc-and-store
+  /// strategy), then stores each result into its global-table slot via
+  /// `op_store_global`. Runs once, before the program's real entry point —
+  /// see `bytecode_module::static_init_function`.
+  [[nodiscard]] auto
+  compile_static_init(const std::vector<const hir::hir_static_global *> &globals)
+      -> std::expected<bytecode::bytecode_function, compile_error> {
+    for (const auto *global : globals) {
+      auto dst = alloc_register(source_span{});
+      if (!dst.has_value()) {
+        return std::unexpected(dst.error());
+      }
+      if (auto result = compile_static_global_value(global->type,
+                                                     global->elements, *dst);
+          !result.has_value()) {
+        return std::unexpected(result.error());
+      }
+      const auto index = globals_.at(global->name);
+      emit_store_global(index, *dst);
+    }
+    emit_op(opcode::op_return_unit);
+    return finish_with_allocation("__kira_static_init", 0, source_span{});
+  }
 
   [[nodiscard]] auto compile(const hir::hir_function &fn)
       -> std::expected<bytecode::bytecode_function, compile_error> {
@@ -444,7 +474,7 @@ public:
 
     auto step_compiler = function_compiler(
         types_, functions_, lambda_functions_, function_table_base_,
-        entry_module_name_, current_module_name_);
+        entry_module_name_, current_module_name_, globals_);
     auto step_compiled =
         step_compiler.compile_generator_step(fn, state_symbols);
     if (!step_compiled.has_value()) {
@@ -1121,6 +1151,20 @@ private:
     emit_store_field(ptr, static_cast<uint16_t>(slot_index * 8), src, 8);
   }
 
+  /// reg[dst] = globals[index] — see `bytecode_module::global_count`.
+  auto emit_load_global(virtual_reg dst, uint16_t index) -> void {
+    emit_op(opcode::op_load_global);
+    emit_register(dst);
+    writer_.emit_u16(index);
+  }
+
+  /// globals[index] = reg[src]. Emitted only by `compile_static_init`.
+  auto emit_store_global(uint16_t index, virtual_reg src) -> void {
+    emit_op(opcode::op_store_global);
+    writer_.emit_u16(index);
+    emit_register(src);
+  }
+
   /// reg[dst] = a `elem_size`-byte read at
   /// `*(reg[ptr] + reg[index_reg] * elem_size)`.
   auto emit_load_indexed(virtual_reg dst, virtual_reg ptr,
@@ -1230,6 +1274,21 @@ private:
         return {};
       }
       read_local_into(ref.symbol, *src, dst);
+      return {};
+    }
+    case hir_node_kind::hir_global_ref: {
+      const auto &ref = dynamic_cast<const hir::hir_global_ref &>(expr);
+      const auto found = globals_.find(ref.name);
+      if (found == globals_.end()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = expr.span,
+            .message = std::format("reference to reified static global `{}` "
+                                   "could not be resolved against this "
+                                   "program's global table",
+                                   ref.name)});
+      }
+      emit_load_global(dst, found->second);
       return {};
     }
     case hir_node_kind::hir_binary:
@@ -1699,7 +1758,7 @@ private:
 
     auto compiled = function_compiler(types_, functions_, lambda_functions_,
                                       function_table_base_, entry_module_name_,
-                                      current_module_name_)
+                                      current_module_name_, globals_)
                         .compile_lambda_body(lambda, plan);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
@@ -1867,6 +1926,59 @@ private:
       const auto field_size = element_stride(field.value->type);
       emit_store_field(dst, static_cast<uint16_t>(*offset), *value_reg,
                        field_size);
+    }
+    return {};
+  }
+
+  /// Builds a reified static global's backing value into `dst` — the same
+  /// alloc-and-store-each-element strategy `compile_array_init`/
+  /// `compile_list_init` use for an ordinary literal, duplicated in
+  /// miniature here rather than routed through those (which take an
+  /// `hir::hir_array_init` whose `elements` they own outright — `elements`
+  /// here is instead borrowed from a `const hir::hir_static_global` that
+  /// outlives this compile and is never mutated). Only ever called with an
+  /// explicit element list: `checker::reify_static_global`'s evaluator
+  /// already expanded any `[val; count]` fill form into `count` concrete
+  /// elements before this ever runs (comptime evaluation, not lowering,
+  /// does the expansion), so there is no fill form to handle here.
+  [[nodiscard]] auto
+  compile_static_global_value(type_id container_type,
+                              const hir::ptr_vec<hir::hir_expr> &elements,
+                              virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    if (is_list_type(container_type)) {
+      const auto &list_entry = types_.entry(container_type);
+      const auto elem_size = list_entry.args.empty()
+                                 ? uint8_t{8}
+                                 : element_stride(list_entry.args.front());
+      emit_alloc_slots(dst, 3);
+      for (const auto &elem : elements) {
+        auto value_reg = compile_expr(*elem);
+        if (!value_reg.has_value()) {
+          return std::unexpected(value_reg.error());
+        }
+        emit_list_push(dst, *value_reg, elem_size);
+      }
+      return {};
+    }
+    const auto &array_entry = types_.entry(container_type);
+    const auto elem_size = element_stride(array_entry.result);
+    const auto byte_size = elements.size() * elem_size;
+    if (byte_size > 0xFFFF) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::encoding_limit_exceeded,
+          .span = source_span{},
+          .message = "this static global's total size exceeds the "
+                     "bytecode format's u16 byte-size operand"});
+    }
+    emit_alloc(dst, static_cast<uint16_t>(byte_size));
+    for (size_t i = 0; i < elements.size(); ++i) {
+      auto value_reg = compile_expr(*elements[i]);
+      if (!value_reg.has_value()) {
+        return std::unexpected(value_reg.error());
+      }
+      emit_store_field(dst, static_cast<uint16_t>(i * elem_size), *value_reg,
+                       elem_size);
     }
     return {};
   }
@@ -3831,6 +3943,11 @@ private:
   size_t function_table_base_;
   std::string entry_module_name_;
   std::string current_module_name_;
+  /// Program-wide reified-static-global name → global-table index, mirroring
+  /// `functions_`'s cross-module flat table — see `hir_global_ref`/
+  /// `bytecode_module::global_count`. Empty for the overwhelming common case
+  /// (no eligible aggregate statics anywhere in the program).
+  const std::unordered_map<std::string, uint16_t> &globals_;
   chunk_writer writer_;
   std::unordered_map<hir::symbol_id, virtual_reg> locals_;
   /// Symbols whose `locals_` register holds a cell pointer rather than the
@@ -3902,6 +4019,20 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
     }
   }
 
+  // Every reified static global across every module, keyed by its own
+  // already-program-wide-unique name (`checker::reify_static_global`'s
+  // `static$name$counter` scheme) — no module-qualification needed, unlike
+  // `function_index` above.
+  auto global_index = std::unordered_map<std::string, uint16_t>{};
+  auto ordered_globals = std::vector<const hir::hir_static_global *>{};
+  for (const auto *module : modules) {
+    for (const auto &global : module->statics) {
+      global_index.emplace(global.name,
+                           static_cast<uint16_t>(ordered_globals.size()));
+      ordered_globals.push_back(&global);
+    }
+  }
+
   // Every lambda encountered while compiling any top-level function (or any
   // lambda nested within one) is appended here and given a stable
   // function-table index starting right after every module's named
@@ -3914,9 +4045,9 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
       bytecode::bytecode_module{.module_name = entry_name, .functions = {}};
   result.functions.reserve(ordered_functions.size());
   for (const auto &[module, fn] : ordered_functions) {
-    auto compiler =
-        function_compiler(types, function_index, lambda_functions,
-                          function_table_base, entry_name, module->module_name);
+    auto compiler = function_compiler(
+        types, function_index, lambda_functions, function_table_base,
+        entry_name, module->module_name, global_index);
     auto compiled = compiler.compile(*fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
@@ -3925,6 +4056,19 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   }
   for (auto &lambda_fn : lambda_functions) {
     result.functions.push_back(std::move(lambda_fn));
+  }
+  if (!ordered_globals.empty()) {
+    auto init_compiler =
+        function_compiler(types, function_index, lambda_functions,
+                          function_table_base, entry_name, entry_name,
+                          global_index);
+    auto compiled_init = init_compiler.compile_static_init(ordered_globals);
+    if (!compiled_init.has_value()) {
+      return std::unexpected(compiled_init.error());
+    }
+    result.static_init_function = static_cast<uint16_t>(result.functions.size());
+    result.functions.push_back(std::move(*compiled_init));
+    result.global_count = ordered_globals.size();
   }
   return result;
 }

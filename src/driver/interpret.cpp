@@ -130,6 +130,21 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
   }
 
   const auto vm = bytecode::vm{*compiled};
+  if (compiled->static_init_function.has_value()) {
+    // Builds every reified `static let`'s backing value once, into `vm`'s
+    // own `globals_` — which persists across this and the next `run` call on
+    // the same instance (see `vm::globals_`'s doc comment) — before the
+    // program's real entry point can read any of them.
+    auto init_result = vm.run(*compiled->static_init_function,
+                              std::span<const bytecode::slot_value>{});
+    if (!init_result) {
+      return run_outcome{
+          .succeeded = false,
+          .message = std::format(
+              "static initialization panicked: {}",
+              bytecode::panic_reason_message(init_result.error()))};
+    }
+  }
   auto result = vm.run(index, std::span<const bytecode::slot_value>{});
   if (!result) {
     return run_outcome{

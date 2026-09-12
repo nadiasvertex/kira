@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -56,6 +57,22 @@ struct bytecode_function {
 struct bytecode_module {
   std::string module_name;
   std::vector<bytecode_function> functions;
+  /// Size of the module-wide global-value table `op_load_global`/
+  /// `op_store_global` index into — one slot per reified `static let` across
+  /// every module compiled together (see `checked_types::static_global_defs`
+  /// and `hir_static_global`). `vm` sizes its `globals_` vector from this at
+  /// construction. Zero for a program with no eligible aggregate statics —
+  /// by far the common case today.
+  size_t global_count = 0;
+  /// Index into `functions` of the synthesized routine that builds every
+  /// global's backing value once (compiling each module's `hir_static_
+  /// global`s exactly the way an ordinary array/list literal compiles,
+  /// finishing with `op_store_global` per global). `nullopt` when
+  /// `global_count == 0` — nothing to initialize, so no such function was
+  /// synthesized. The driver must run this function once, before the
+  /// program's real entry point, using the same `vm` instance so the
+  /// globals it fills in stay visible to that later run.
+  std::optional<uint16_t> static_init_function;
 };
 
 /// Reads a little-endian-encoded operand back out of a `bytecode_function`'s

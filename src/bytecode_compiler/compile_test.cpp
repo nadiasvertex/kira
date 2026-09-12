@@ -1473,6 +1473,47 @@ auto test_for_loop_over_generator_evaluates_iterable_once() -> void {
   expect(result->value.i == 6, "expected 0+1+2+3 == 6");
 }
 
+// Exercises the reified-static-global path end to end: a module-scope
+// `static let` array is not inlineable per-reference the way a scalar
+// `static let` is (see `checker::reify_static_global`), so it must survive
+// as real backing data both `third`'s indexing and a second, independent
+// call site (`main`) can read. Deliberately reads two different elements
+// from the two call sites (`TABLE[i]` here, `TABLE[3]` in `main`, see the
+// fixture below) — proving the data survives is different from proving one
+// read of it works, and a bug that let the second reference silently
+// re-evaluate or shift the array would still pass a single-read test.
+auto test_static_array_global_backs_two_independent_reads() -> void {
+  auto module = compile_fixture(R"kira(
+module sample
+static TABLE: array[int32, 4] = [10, 20, 30, 40]
+def third(i: usize) -> int32:
+    return TABLE[i]
+def main() -> int32:
+    return TABLE[3] + third(2)
+)kira");
+  expect(module.static_init_function.has_value(),
+        "expected a static-init function to be synthesized for a reified "
+        "array global");
+  expect(module.global_count == 1, "expected exactly one reified global");
+
+  const auto vm = bc::vm{module};
+  auto init_result =
+      vm.run(*module.static_init_function, std::span<const bc::slot_value>{});
+  expect(init_result.has_value(), "expected static init to succeed");
+
+  auto third_result =
+      vm.run(function_index(module, "third"),
+             std::array{bc::slot_value{uint64_t{2}}});
+  expect(third_result.has_value(), "expected third(2) to succeed");
+  expect(third_result->value.i == 30, "expected TABLE[2] == 30");
+
+  auto main_result = vm.run(function_index(module, "main"), {});
+  expect(main_result.has_value(), "expected main() to succeed");
+  expect(main_result->value.i == 70,
+        "expected main()'s TABLE[3] + third(2) == 40 + 30 == 70 — both call "
+        "sites must see the same backing data the single init run built");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1541,6 +1582,7 @@ auto main() -> int {
     test_generator_nonzero_initial_locals_survive_resume();
     test_for_loop_over_generator_sums_values();
     test_for_loop_over_generator_evaluates_iterable_once();
+    test_static_array_global_backs_two_independent_reads();
   } catch (const std::exception &ex) {
     std::cerr << "compile_test failed: unhandled exception: " << ex.what()
               << '\n';

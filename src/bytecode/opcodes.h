@@ -132,6 +132,14 @@ enum class opcode : uint8_t {
   // --- Constants and register-to-register moves --------------------------
   op_load_const, ///< u16 dst, u16 const_index — reg[dst] = constants[idx].
   op_move,       ///< u16 dst, u16 src — reg[dst] = reg[src].
+  op_load_global,  ///< u16 dst, u16 global_index — reg[dst] = globals[idx].
+                   ///< The module-wide global table (`bytecode_module::
+                   ///< global_count`), not a per-function constant pool —
+                   ///< see `checked_types::static_global_defs`.
+  op_store_global, ///< u16 global_index, u16 src — globals[idx] = reg[src].
+                   ///< Emitted only by the synthesized static-init function
+                   ///< (`bytecode_module::static_init_function`), which runs
+                   ///< once before the program's real entry point.
 
   // --- Checked arithmetic (panics on overflow/div-by-zero for integer
   //     kinds, per spec/kira-reference.md's "Integer Overflow" section;
@@ -548,6 +556,10 @@ struct operand_signature {
     return sig({reg, imm16});
   case opcode::op_move:
     return sig({reg, reg});
+  case opcode::op_load_global:
+    return sig({reg, imm16});
+  case opcode::op_store_global:
+    return sig({imm16, reg});
 
   // Arithmetic, bitwise, and comparison all share one shape: a destination,
   // one or two sources, and a trailing `numeric_kind` tag.

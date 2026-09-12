@@ -1401,6 +1401,22 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         f.pc = ops.pos();
         break;
       }
+      case opcode::op_load_global: {
+        auto ops = operand_cursor{code, ip};
+        const auto dst = ops.reg();
+        const auto idx = ops.imm16();
+        f.registers[dst] = globals_[idx];
+        f.pc = ops.pos();
+        break;
+      }
+      case opcode::op_store_global: {
+        auto ops = operand_cursor{code, ip};
+        const auto idx = ops.imm16();
+        const auto src = ops.reg();
+        globals_[idx] = f.registers[src];
+        f.pc = ops.pos();
+        break;
+      }
 
       case opcode::op_add:
       case opcode::op_sub:

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <span>
+#include <vector>
 
 #include "src/bytecode/chunk.h"
 #include "src/bytecode/panic.h"
@@ -33,7 +34,8 @@ struct vm_result {
 /// dispatch loop as one flat `while` over whichever frame is current.
 class vm {
 public:
-  explicit vm(const bytecode_module &module) : module_(module) {}
+  explicit vm(const bytecode_module &module)
+      : module_(module), globals_(module.global_count) {}
 
   /// Runs `module.functions[function_index]` to completion, with `args`
   /// copied into its entry frame's registers `[0, args.size())` — mirroring
@@ -41,12 +43,24 @@ public:
   /// the outermost call is not a special case. Returns the panic reason on
   /// a checked-arithmetic violation, divide-by-zero, `op_panic`, or a
   /// call-depth limit violation.
+  ///
+  /// `globals_` (below) persists across separate `run` calls on the same
+  /// `vm` instance — the driver relies on this to run `module.
+  /// static_init_function` once, then call the program's real entry point
+  /// with the globals it filled in still populated (see `interpret.cpp`).
   [[nodiscard]] auto run(uint16_t function_index,
                          std::span<const slot_value> args) const
       -> std::expected<vm_result, panic_reason>;
 
 private:
   const bytecode_module &module_;
+  /// The module-wide global-value table `op_load_global`/`op_store_global`
+  /// index into — see `bytecode_module::global_count`'s doc comment.
+  /// `mutable` because `run` is `const` (mirroring every other call's
+  /// read-only view of `module_`) but a global write is, by construction,
+  /// the one piece of state a `run` call is allowed to mutate for a later
+  /// `run` call to observe.
+  mutable std::vector<slot_value> globals_;
 };
 
 } // namespace kira::bytecode
