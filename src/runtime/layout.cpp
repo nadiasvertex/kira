@@ -404,7 +404,17 @@ template <typename Visit>
 
 auto layout_of(const type_table &types, semantic::type_id id)
     -> std::optional<layout_info> {
-  id = strip_refs(types, id);
+  // Deliberately *not* `strip_refs` here: `&T`/`*T`'s runtime representation
+  // is a pointer regardless of what `T` is (`is_heap_kind`'s `ref_kind`/
+  // `ptr_kind` case), so a value that is genuinely reference-typed — a
+  // tuple element (`(usize, &int32)`, `enumerate`/`zip`'s pair type) or an
+  // array/list element/struct field of reference type — must cost 8 bytes
+  // as one, not its referent's own width. `strip_refs` on the *container*
+  // id passed to `struct_field_offset`/`struct_layout`/`tuple_layout` (a
+  // stray `&mut cell` argument to look straight through) is a separate,
+  // already-applied step at each of those functions' own entry points; it
+  // has nothing to do with what an individual field/element *type* costs.
+  //
   // A refinement is its base at runtime — the predicate is a compile-time fact
   // with no representation of its own (`spec/dependent-types-design.md` 3.1),
   // so a `positive` lays out exactly as the `int32` it refines. The checker
@@ -441,6 +451,66 @@ auto struct_field_offset(const type_table &types, semantic::type_id id,
       types, id, [&](size_t index, size_t offset, size_t) -> void {
         const auto *fields = struct_fields_of(types.entry(id));
         if (fields != nullptr && (*fields)[index].name == name) {
+          found = offset;
+        }
+      });
+  if (!result.has_value()) {
+    return std::nullopt;
+  }
+  return found;
+}
+
+namespace {
+
+/// Shared padded field walk driving both `tuple_layout` and
+/// `tuple_element_offset` — invokes `visit(index, offset, element_size)` for
+/// each element of tuple-kind `id` in declaration order, returning the
+/// whole tuple's final `layout_info`, or `nullopt` if `id` isn't a tuple or
+/// any element's own layout is unrepresentable. Unlike `walk_struct_layout`,
+/// a tuple has no `packed` modifier (an AST-only, struct-only concept) and
+/// its element types are already fully-resolved `type_id`s in `entry.args`
+/// — no `field_layout`/generic-substitution machinery needed.
+template <typename Visit>
+[[nodiscard]] auto walk_tuple_layout(const type_table &types,
+                                     semantic::type_id id, Visit &&visit)
+    -> std::optional<layout_info> {
+  const auto &instance = types.entry(id);
+  if (instance.kind != type_kind::tuple_kind) {
+    return std::nullopt;
+  }
+  auto offset = size_t{0};
+  auto max_align = size_t{1};
+  for (size_t i = 0; i < instance.args.size(); ++i) {
+    const auto elem_layout_info = layout_of(types, instance.args[i]);
+    if (!elem_layout_info.has_value()) {
+      return std::nullopt;
+    }
+    max_align = std::max(max_align, elem_layout_info->align_bytes);
+    offset = round_up(offset, elem_layout_info->align_bytes);
+    visit(i, offset, elem_layout_info->size_bytes);
+    offset += elem_layout_info->size_bytes;
+  }
+  return layout_info{.size_bytes = round_up(offset, max_align),
+                     .align_bytes = max_align};
+}
+
+} // namespace
+
+auto tuple_layout(const type_table &types, semantic::type_id id)
+    -> layout_info {
+  id = strip_refs(types, id);
+  const auto result =
+      walk_tuple_layout(types, id, [](size_t, size_t, size_t) -> void {});
+  return result.value_or(layout_info{});
+}
+
+auto tuple_element_offset(const type_table &types, semantic::type_id id,
+                          size_t index) -> std::optional<size_t> {
+  id = strip_refs(types, id);
+  auto found = std::optional<size_t>{};
+  const auto result = walk_tuple_layout(
+      types, id, [&](size_t i, size_t offset, size_t) -> void {
+        if (i == index) {
           found = offset;
         }
       });

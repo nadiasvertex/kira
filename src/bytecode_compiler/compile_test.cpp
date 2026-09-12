@@ -734,9 +734,12 @@ auto test_tuple_construction_and_projection() -> void {
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "make"), {});
   expect(result.has_value(), "expected make() to succeed");
-  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+  // `(int32, int32, int32)` packs tight at its own natural 4-byte width/
+  // alignment (`runtime::tuple_layout`), not one 8-byte slot per element —
+  // read the three elements back at their real 4-byte-strided offsets.
+  const auto *elements = reinterpret_cast<const int32_t *>(
       static_cast<uintptr_t>(result->value.u));
-  expect(slots[0].i + slots[1].i + slots[2].i == 42,
+  expect(elements[0] + elements[1] + elements[2] == 42,
          "expected the tuple's three elements to sum to 42");
 
   auto main_result = run_main(module);

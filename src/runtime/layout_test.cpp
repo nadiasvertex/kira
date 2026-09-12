@@ -317,6 +317,55 @@ auto test_list_reserve_slot_narrow_elements() -> void {
          "expected every 2-byte element to survive growth in order");
 }
 
+auto test_tuple_element_offset_packs_tight_by_natural_width() -> void {
+  // `(int8, int8, int64)`: the old uniform-8-byte-slot scheme would place
+  // these at 0/8/16 (size 24); packed-by-natural-width places them at
+  // 0/1/8 (size 16, the trailing `int64` rounding the whole tuple up to its
+  // own 8-byte alignment) — a case picked so the two schemes disagree, not
+  // just so packing "looks about right".
+  auto fixture = check_fixture("module sample\n"
+                               "def main() -> (int8, int8, int64):\n"
+                               "    return (1, 2, 3)\n");
+  const auto id = struct_or_sum_type_of_main_return(fixture);
+  auto &types = fixture.checked.types;
+  expect(runtime::tuple_element_offset(types, id, 0) == 0,
+         "expected the first int8 element at offset 0");
+  expect(runtime::tuple_element_offset(types, id, 1) == 1,
+         "expected the second int8 element packed tight at offset 1, not "
+         "the uniform-slot scheme's offset 8");
+  expect(runtime::tuple_element_offset(types, id, 2) == 8,
+         "expected the int64 element aligned up to offset 8");
+  expect(!runtime::tuple_element_offset(types, id, 3).has_value(),
+         "expected an out-of-range tuple index to resolve to nullopt");
+  const auto layout = runtime::tuple_layout(types, id);
+  expect(layout.size_bytes == 16 && layout.align_bytes == 8,
+         "expected the tuple's total size to round up to its widest "
+         "element's 8-byte alignment, not the uniform scheme's 24 bytes");
+}
+
+auto test_tuple_element_offset_sizes_a_reference_element_as_a_pointer()
+    -> void {
+  // `(usize, &int32)` — `enumerate`/`zip`'s pair shape (`std.algo`). A
+  // reference element's runtime representation is a pointer regardless of
+  // what it refers to, so it must cost 8 bytes as a tuple element even
+  // though its referent (`int32`) is only 4 — the bug this regression test
+  // guards against sized it as 4, corrupting every later element's offset.
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def main() -> (usize, &int32):\n"
+                    "    let x: int32 = 1\n"
+                    "    return (0, &x)\n");
+  const auto id = struct_or_sum_type_of_main_return(fixture);
+  auto &types = fixture.checked.types;
+  expect(runtime::tuple_element_offset(types, id, 0) == 0,
+         "expected the usize element at offset 0");
+  expect(runtime::tuple_element_offset(types, id, 1) == 8,
+         "expected the reference element right after usize, at offset 8 "
+         "(pointer-sized), not offset 4 (its referent int32's own width)");
+  const auto layout = runtime::tuple_layout(types, id);
+  expect(layout.size_bytes == 16, "expected the whole tuple to be 16 bytes");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -329,6 +378,8 @@ auto main() -> int {
     test_struct_field_offset_padded();
     test_struct_field_offset_packed();
     test_refinement_field_lays_out_as_its_base();
+    test_tuple_element_offset_packs_tight_by_natural_width();
+    test_tuple_element_offset_sizes_a_reference_element_as_a_pointer();
     test_list_reserve_slot_grows_and_preserves_existing_elements();
     test_list_reserve_slot_narrow_elements();
   } catch (const std::exception &ex) {

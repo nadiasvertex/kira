@@ -1,0 +1,102 @@
+module main
+
+# expect: 127
+
+# A tuple packs its elements at their own natural width/alignment
+# (`runtime::tuple_layout`), the same as a struct's fields -- not one
+# uniform 8-byte slot per element the way it used to (spec/todo.md item 6).
+# Every check below uses a mixed-width tuple where the old uniform-slot
+# scheme and the new packed scheme disagree on at least one element's byte
+# offset, so a regression back to uniform slots reads the wrong bytes and
+# this file's total moves off 127 rather than silently staying right.
+#
+# Two tiers deriving their layout from the same `src/runtime/layout.h`
+# agreeing with each other proves nothing here (CLAUDE.md) -- both would
+# agree on the same wrong uniform-slot answer just as readily. `# expect: 127`
+# pins down the actual computed value instead.
+#
+# Every helper below borrows its tuple argument (`&(...)`) rather than
+# taking it by value: a tuple has no implicit copy, and `t`/`flagged` are
+# each read more than once here. The `match t:`/`match flagged:` checks are
+# ordered last for each, since a `match` on the value itself does move it.
+
+def make() -> (int8, int8, int64):
+    return (1, 2, 300)
+
+# Projected via `.0`/`.1`/`.2` (`compile_tuple_index`), a narrow first
+# element, a narrow second element packed right after it (offset 1 under
+# packing, offset 8 under the old uniform scheme), and a wide element that
+# needs re-aligning up to offset 8.
+def dot0(t: &(int8, int8, int64)) -> int8:
+    return t.0
+
+def dot1(t: &(int8, int8, int64)) -> int8:
+    return t.1
+
+def dot2(t: &(int8, int8, int64)) -> int64:
+    return t.2
+
+# The `let (...)` destructure path (`hir_tuple_index` again, via lowering),
+# exercised separately from `.0`/`.1`/`.2` above. Kira does not widen `int8`
+# to `int64` implicitly, so each binding is checked on its own rather than
+# summed across widths.
+def destructure_matches(t: &(int8, int8, int64)) -> bool:
+    let (a, b, c) = *t
+    return a == 1 and b == 2 and c == 300
+
+# `bool` (1 byte) ahead of `int64` (8 bytes, 8-aligned): the old uniform
+# scheme and packing agree the `int64` starts at offset 8 here, but only
+# because 1 rounds up to 8 either way -- covered instead by the pattern-test
+# below, which also binds the `bool` itself.
+def make_flagged() -> (bool, int64):
+    return (true, 42)
+
+type holder = { pair: (int8, int8) }
+
+def main() -> int32:
+    let t = make()
+    let dot0_ok = dot0(&t) == 1
+    let dot1_ok = dot1(&t) == 2
+    let dot2_ok = dot2(&t) == 300
+    let destructure_ok = destructure_matches(&t)
+
+    let flagged = make_flagged()
+    let flag_field_ok = flagged.0 and flagged.1 == 42
+
+    # A tuple as a struct field's type, so struct-field layout (which reads
+    # a fixed 8-byte heap pointer for any nested aggregate) and the tuple's
+    # own internal packing are both exercised, one nested inside the other.
+    let holder_val = holder { pair: (7, 8) }
+    let holder_ok = holder_val.pair.0 + holder_val.pair.1 == 15
+
+    # `match` against a tuple pattern (`hir_tuple_pattern`), covering
+    # `compile_pattern_test`'s own byte-offset walk separately from the
+    # `.0`/`.1`/`.2` and `let (...)` paths above. Last use of `t`/`flagged`,
+    # since matching on the value moves it.
+    let matched: int64 = match t:
+        (1, 2, c) => c
+        _ => -1
+    let matched_ok = matched == 300
+
+    let flag_matched: int64 = match flagged:
+        (true, n) => n
+        (false, _) => -1
+    let flag_matched_ok = flag_matched == 42
+
+    var score = 0
+    if dot0_ok:
+        score = score + 1
+    if dot1_ok:
+        score = score + 2
+    if dot2_ok:
+        score = score + 4
+    if destructure_ok:
+        score = score + 8
+    if matched_ok:
+        score = score + 16
+    if flag_field_ok and flag_matched_ok:
+        score = score + 32
+    if holder_ok:
+        score = score + 64
+
+    return score

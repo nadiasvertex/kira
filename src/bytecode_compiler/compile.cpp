@@ -1237,7 +1237,7 @@ private:
       return compile_if(dynamic_cast<const hir::hir_if &>(expr), dst);
     case hir_node_kind::hir_tuple: {
       const auto &tup = dynamic_cast<const hir::hir_tuple &>(expr);
-      return compile_slots_init(tup.elements, dst, tup.span);
+      return compile_tuple_init(tup, dst);
     }
     case hir_node_kind::hir_struct_init:
       return compile_struct_init(
@@ -1732,30 +1732,40 @@ private:
 
   /// Allocates a `values.size()`-slot heap block into `dst` and stores each
   /// element's compiled value at its corresponding slot, in order — the
-  /// shape behind tuple construction, the only remaining uniform-8-byte-
-  /// slot construct that still uses this (struct construction moved to
-  /// `compile_struct_init`'s byte-precise path below, and fixed-array
-  /// construction to `compile_array_init`'s element-stride path — tuples
-  /// stay on the uniform scheme, out of scope for this pass, matching
-  /// sum-type payloads and closure envs).
-  [[nodiscard]] auto
-  compile_slots_init(const hir::ptr_vec<hir::hir_expr> &values, virtual_reg dst,
-                     source_span span) -> std::expected<void, compile_error> {
-    if (values.size() > 0xFFFF) {
+  /// Allocates a byte-precise tuple block (`runtime::tuple_layout`) and
+  /// stores each element at its own `runtime::tuple_element_offset`, at its
+  /// own natural width — mirrors `compile_struct_init` exactly (a tuple has
+  /// no `packed` modifier to thread through, and its element types are
+  /// already resolved `type_id`s, so no `field_layout` substitution is
+  /// needed either).
+  [[nodiscard]] auto compile_tuple_init(const hir::hir_tuple &tup,
+                                        virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    const auto layout = runtime::tuple_layout(types_, tup.type);
+    if (layout.size_bytes > 0xFFFF) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::encoding_limit_exceeded,
-          .span = span,
-          .message = "this literal has more than 65535 elements/fields, "
-                     "which this bytecode format's u16 slot-count operand "
-                     "cannot address"});
+          .span = tup.span,
+          .message = "this tuple literal's total size exceeds the "
+                     "bytecode format's u16 byte-size operand"});
     }
-    emit_alloc_slots(dst, static_cast<uint16_t>(values.size()));
-    for (size_t i = 0; i < values.size(); ++i) {
-      auto value_reg = compile_expr(*values[i]);
+    emit_alloc(dst, static_cast<uint16_t>(layout.size_bytes));
+    for (size_t i = 0; i < tup.elements.size(); ++i) {
+      const auto offset = runtime::tuple_element_offset(types_, tup.type, i);
+      if (!offset.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = tup.span,
+            .message = "this tuple literal's element type does not resolve "
+                       "to a representable layout"});
+      }
+      auto value_reg = compile_expr(*tup.elements[i]);
       if (!value_reg.has_value()) {
         return std::unexpected(value_reg.error());
       }
-      emit_store_slot(dst, static_cast<uint16_t>(i), *value_reg);
+      const auto elem_size = element_stride(tup.elements[i]->type);
+      emit_store_field(dst, static_cast<uint16_t>(*offset), *value_reg,
+                       elem_size);
     }
     return {};
   }
@@ -2095,6 +2105,13 @@ private:
     return {};
   }
 
+  /// `hir_tuple_index` doubles as an array's `index`-th element projection
+  /// when pattern lowering destructures a fixed array (`hir_tuple_index`'s
+  /// own doc comment: "codegen tells the two uses apart from `object`'s
+  /// type") — so this branches on the object's type kind the same way
+  /// `compile_array_init`/`hir_array_pattern` already do for array element
+  /// access, rather than assuming tuple's byte-precise offset scheme
+  /// unconditionally.
   [[nodiscard]] auto compile_tuple_index(const hir::hir_tuple_index &node,
                                          virtual_reg dst)
       -> std::expected<void, compile_error> {
@@ -2102,7 +2119,27 @@ private:
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
     }
-    emit_load_slot(dst, *object_reg, static_cast<uint16_t>(node.index));
+    const auto object_type = strip_refs(node.object->type);
+    const auto &object_entry = types_.entry(object_type);
+    if (object_entry.kind == semantic::type_kind::array_kind) {
+      const auto elem_size = element_stride(object_entry.result);
+      emit_load_field(
+          dst, *object_reg,
+          static_cast<uint16_t>(node.index * elem_size), elem_size);
+      return {};
+    }
+    const auto offset =
+        runtime::tuple_element_offset(types_, object_type, node.index);
+    if (!offset.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "this tuple projection's index does not resolve to a "
+                     "declared element — this should have been rejected by "
+                     "the type checker"});
+    }
+    emit_load_field(dst, *object_reg, static_cast<uint16_t>(*offset),
+                    element_stride(node.type));
     return {};
   }
 
@@ -2703,10 +2740,22 @@ private:
         if (!elem_reg.has_value()) {
           return std::unexpected(elem_reg.error());
         }
-        emit_load_slot(*elem_reg, value_reg, static_cast<uint16_t>(i));
         const auto elem_type = i < entry.args.size()
                                    ? std::optional<type_id>(entry.args[i])
                                    : std::nullopt;
+        const auto offset =
+            runtime::tuple_element_offset(types_, *value_type, i);
+        if (!offset.has_value()) {
+          return std::unexpected(compile_error{
+              .kind = compile_error_kind::unsupported_construct,
+              .span = pattern.span,
+              .message = "this tuple pattern's element does not resolve to "
+                         "a declared element — this should have been "
+                         "rejected by the type checker"});
+        }
+        emit_load_field(*elem_reg, value_reg, static_cast<uint16_t>(*offset),
+                        elem_type.has_value() ? element_stride(*elem_type)
+                                              : 8);
         auto sub = compile_pattern_test(*tup.elements[i], *elem_reg, elem_type);
         if (!sub.has_value()) {
           return std::unexpected(sub.error());

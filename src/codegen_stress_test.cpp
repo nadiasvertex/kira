@@ -389,9 +389,19 @@ auto run_llvm(const fs::path &path,
     return true;
   }
   case kira::semantic::type_kind::tuple_kind:
+    // A tuple packs its elements at their own natural width/offset
+    // (`runtime::tuple_layout`), not one 8-byte slot per element — read
+    // both tiers' tuples at the same computed offset/stride via `read_at`,
+    // mirroring the `array_kind` case just below.
     for (size_t i = 0; i < entry.args.size(); ++i) {
-      if (!values_equal(types, entry.args[i], read_slot(a_bits, i),
-                        read_slot(b_bits, i))) {
+      const auto offset = kira::runtime::tuple_element_offset(types, id, i);
+      if (!offset.has_value()) {
+        return false;
+      }
+      const auto stride = element_stride(types, entry.args[i]);
+      if (!values_equal(types, entry.args[i],
+                        read_at(a_bits, *offset, stride),
+                        read_at(b_bits, *offset, stride))) {
         return false;
       }
     }

@@ -1148,8 +1148,7 @@ private:
       return builder_.CreateLoad(*ty, result, "if.value");
     }
     case hir_node_kind::hir_tuple:
-      return compile_slots_init(
-          dynamic_cast<const hir::hir_tuple &>(expr).elements);
+      return compile_tuple_init(dynamic_cast<const hir::hir_tuple &>(expr));
     case hir_node_kind::hir_struct_init:
       return compile_struct_init(
           dynamic_cast<const hir::hir_struct_init &>(expr));
@@ -1999,21 +1998,31 @@ private:
     return header;
   }
 
-  /// Allocates a `values.size()`-slot heap block and stores each element's
-  /// compiled value at its corresponding slot, in order — the shared shape
-  /// behind tuple construction and the explicit-list form of an array
-  /// literal, mirroring `bytecode_compiler::compile_slots_init`.
-  [[nodiscard]] auto
-  compile_slots_init(const hir::ptr_vec<hir::hir_expr> &values)
+  /// Allocates a byte-precise tuple block (`runtime::tuple_layout`) and
+  /// stores each element at its own `runtime::tuple_element_offset` via
+  /// `byte_address` — mirrors `compile_struct_init` exactly (a tuple has no
+  /// `packed` modifier to thread through, and its element types are
+  /// already resolved `type_id`s, so no `field_layout` substitution is
+  /// needed either), and `bytecode_compiler::compile.cpp`'s
+  /// `compile_tuple_init`.
+  [[nodiscard]] auto compile_tuple_init(const hir::hir_tuple &tup)
       -> std::expected<llvm::Value *, codegen_error> {
-    auto *block = compile_heap_alloc(values.size());
-    for (std::size_t i = 0; i < values.size(); ++i) {
-      const auto &elem = values[i];
-      auto value = compile_expr(*elem);
+    const auto layout = runtime::tuple_layout(types_, tup.type);
+    auto *block = compile_heap_alloc_bytes(layout.size_bytes);
+    for (std::size_t i = 0; i < tup.elements.size(); ++i) {
+      const auto offset = runtime::tuple_element_offset(types_, tup.type, i);
+      if (!offset.has_value()) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = tup.span,
+            .message = "this tuple literal's element type does not resolve "
+                       "to a representable layout"});
+      }
+      auto value = compile_expr(*tup.elements[i]);
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      builder_.CreateStore(*value, slot_address(block, i));
+      builder_.CreateStore(*value, byte_address(block, *offset));
     }
     return block;
   }
@@ -2268,6 +2277,13 @@ private:
     return builder_.CreateLoad(*elem_ty, byte_address(*object, *offset));
   }
 
+  /// `hir_tuple_index` doubles as an array's `index`-th element projection
+  /// when pattern lowering destructures a fixed array (`hir_tuple_index`'s
+  /// own doc comment: "codegen tells the two uses apart from `object`'s
+  /// type") — so this branches on the object's type kind the same way
+  /// `compile_array_init`/`hir_array_pattern` already do for array element
+  /// access, rather than assuming tuple's byte-precise offset scheme
+  /// unconditionally.
   [[nodiscard]] auto compile_tuple_index(const hir::hir_tuple_index &node)
       -> std::expected<llvm::Value *, codegen_error> {
     auto object = compile_expr(*node.object);
@@ -2278,7 +2294,24 @@ private:
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
     }
-    return builder_.CreateLoad(*elem_ty, slot_address(*object, node.index));
+    const auto object_type = strip_refs(types_, node.object->type);
+    const auto &object_entry = types_.entry(object_type);
+    if (object_entry.kind == semantic::type_kind::array_kind) {
+      const auto elem_size = element_stride(object_entry.result);
+      return builder_.CreateLoad(
+          *elem_ty, byte_address(*object, node.index * elem_size));
+    }
+    const auto offset =
+        runtime::tuple_element_offset(types_, object_type, node.index);
+    if (!offset.has_value()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "this tuple projection's index does not resolve to a "
+                     "declared element — this should have been rejected by "
+                     "the type checker"});
+    }
+    return builder_.CreateLoad(*elem_ty, byte_address(*object, *offset));
   }
 
   /// Whether `id` is `str`, `slice[T]`, `slice_mut[T]`, or `array[byte, N]`
@@ -2868,7 +2901,18 @@ private:
         if (!elem_ty.has_value()) {
           return std::unexpected(elem_ty.error());
         }
-        auto *elem_val = builder_.CreateLoad(*elem_ty, slot_address(value, i));
+        const auto offset =
+            runtime::tuple_element_offset(types_, *value_type, i);
+        if (!offset.has_value()) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_construct,
+              .span = pattern.span,
+              .message = "this tuple pattern's element does not resolve to "
+                         "a declared element — this should have been "
+                         "rejected by the type checker"});
+        }
+        auto *elem_val =
+            builder_.CreateLoad(*elem_ty, byte_address(value, *offset));
         auto sub = compile_pattern_test(*tup.elements[i], elem_val, elem_type);
         if (!sub.has_value()) {
           return std::unexpected(sub.error());

@@ -82,12 +82,12 @@ namespace kira::runtime {
 //  Byte-precise layout — size/alignment/offset, as opposed to the ordinal
 //  slot-index API above. Added to generalize `array[byte,N]`'s pre-existing
 //  tight-packing special case into the general rule (every `array[T,N]` is
-//  N contiguous elements of T's own natural size) and to give struct field
+//  N contiguous elements of T's own natural size), to give struct field
 //  layout real alignment/padding (or, with the `packed` modifier, none at
-//  all) instead of the uniform "every field costs 8 bytes" scheme above.
-//  Tuples and sum-type payloads deliberately stay on the ordinal/uniform
-//  scheme (`struct_field_slot`/`sum_*` above) — not in scope for this pass;
-//  `array[T,N]`/struct are the only two constructs this API covers.
+//  all) instead of the uniform "every field costs 8 bytes" scheme above, and
+//  (below) the same treatment for tuples. Sum-type payloads deliberately
+//  stay on the ordinal/uniform scheme (`sum_*` above) — not in scope for
+//  this pass.
 // ==========================================================================
 
 /// A type's natural (or, for a `packed` struct, packed) size and alignment
@@ -132,6 +132,25 @@ struct layout_info {
 [[nodiscard]] auto struct_field_offset(const semantic::type_table &types,
                                        semantic::type_id id,
                                        std::string_view name)
+    -> std::optional<size_t>;
+
+/// The whole-tuple size/alignment of tuple-kind `id`: elements placed in
+/// declaration order, each rounded up to its own alignment before being
+/// placed, final size rounded up to the widest element's alignment — the
+/// same padded algorithm as `struct_layout`, just walking `type_entry.args`
+/// (a tuple's element types are already fully-resolved `type_id`s, unlike a
+/// struct field's declared `ast::type_expr`, so no `field_layout`/generic-
+/// substitution machinery is needed here). `{0, 1}` for a non-tuple or
+/// element-less `id`.
+[[nodiscard]] auto tuple_layout(const semantic::type_table &types,
+                                semantic::type_id id) -> layout_info;
+
+/// The byte offset of element `index` within tuple-kind `id`, computed by
+/// the same algorithm as `tuple_layout`. `nullopt` if `id` is not a tuple,
+/// `index` is out of range, or an element's own layout is unrepresentable
+/// (see `layout_of`).
+[[nodiscard]] auto tuple_element_offset(const semantic::type_table &types,
+                                        semantic::type_id id, size_t index)
     -> std::optional<size_t>;
 
 /// Grows (if necessary) the `list[T]` value whose 3-slot header
