@@ -1342,17 +1342,16 @@ auto test_run_generic_bound_solves_t_over_conflicting_argument() -> void {
   auto source_path = temp.path / "sample_max_by.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-            "module sample\n"
-            "def cmp_int(a: int32, b: int32) -> ordering:\n"
-            "    if a < b:\n"
-            "        return @less\n"
-            "    elif a > b:\n"
-            "        return @greater\n"
-            "    return @equal\n"
-            "def main() -> int32:\n"
-            "    let nums = [3, 1, 4, 1, 5]\n"
-            "    return *nums.iter().max_by(cmp_int).unwrap()\n");
+  write_file(source_path, "module sample\n"
+                          "def cmp_int(a: int32, b: int32) -> ordering:\n"
+                          "    if a < b:\n"
+                          "        return @less\n"
+                          "    elif a > b:\n"
+                          "        return @greater\n"
+                          "    return @equal\n"
+                          "def main() -> int32:\n"
+                          "    let nums = [3, 1, 4, 1, 5]\n"
+                          "    return *nums.iter().max_by(cmp_int).unwrap()\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
@@ -1402,38 +1401,37 @@ auto test_run_ord_dispatch_translates_ordering_to_bool() -> void {
   auto source_path = temp.path / "sample_ord.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-            "module sample\n"
-            "type point = { mag: int32 } deriving eq\n"
-            "impl ord for point:\n"
-            "    def cmp(self, other: &point) -> ordering:\n"
-            "        if self.mag < other.mag:\n"
-            "            return @less\n"
-            "        elif self.mag > other.mag:\n"
-            "            return @greater\n"
-            "        return @equal\n"
-            "def main() -> int32:\n"
-            "    let a = point { mag: 3 }\n"
-            "    let b = point { mag: 7 }\n"
-            "    let c = point { mag: 3 }\n"
-            "    var score = 0\n"
-            "    if a < b:\n"
-            "        score = score + 1\n"
-            "    if a <= b:\n"
-            "        score = score + 10\n"
-            "    if b > a:\n"
-            "        score = score + 100\n"
-            "    if b >= a:\n"
-            "        score = score + 1000\n"
-            "    if a <= c:\n"
-            "        score = score + 10000\n"
-            "    if a >= c:\n"
-            "        score = score + 100000\n"
-            "    if a < c:\n"
-            "        score = score + 1000000\n"
-            "    if a > c:\n"
-            "        score = score + 10000000\n"
-            "    return score\n");
+  write_file(source_path, "module sample\n"
+                          "type point = { mag: int32 } deriving eq\n"
+                          "impl ord for point:\n"
+                          "    def cmp(self, other: &point) -> ordering:\n"
+                          "        if self.mag < other.mag:\n"
+                          "            return @less\n"
+                          "        elif self.mag > other.mag:\n"
+                          "            return @greater\n"
+                          "        return @equal\n"
+                          "def main() -> int32:\n"
+                          "    let a = point { mag: 3 }\n"
+                          "    let b = point { mag: 7 }\n"
+                          "    let c = point { mag: 3 }\n"
+                          "    var score = 0\n"
+                          "    if a < b:\n"
+                          "        score = score + 1\n"
+                          "    if a <= b:\n"
+                          "        score = score + 10\n"
+                          "    if b > a:\n"
+                          "        score = score + 100\n"
+                          "    if b >= a:\n"
+                          "        score = score + 1000\n"
+                          "    if a <= c:\n"
+                          "        score = score + 10000\n"
+                          "    if a >= c:\n"
+                          "        score = score + 100000\n"
+                          "    if a < c:\n"
+                          "        score = score + 1000000\n"
+                          "    if a > c:\n"
+                          "        score = score + 10000000\n"
+                          "    return score\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
@@ -1476,11 +1474,11 @@ auto test_run_str_ord_dispatch_supports_lexicographic_max() -> void {
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path,
-            "module sample\n"
-            "def main() -> int32:\n"
-            "    let words = [\"apple\", \"banana\", \"cherry\"]\n"
-            "    let winner = words.into_iter().max().unwrap()\n"
-            "    return if winner == \"cherry\": 1 else: 0\n");
+             "module sample\n"
+             "def main() -> int32:\n"
+             "    let words = [\"apple\", \"banana\", \"cherry\"]\n"
+             "    let winner = words.into_iter().max().unwrap()\n"
+             "    return if winner == \"cherry\": 1 else: 0\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
@@ -2114,6 +2112,147 @@ auto test_build_derives_eq_and_debug_via_deriving_clause() -> void {
 #endif
 }
 
+/// spec/todo.md item 5: `deriving ord` used to type-check and then fail
+/// lowering — `a.cmp(&b)` on a `deriving ord` type reported "no concrete
+/// checked type is available for this node", because `ord` was excluded from
+/// `k_real_derive_traits` and stayed on the type-check-only
+/// `derived_method_result` path, which supplies a result *type* and no body.
+/// `derive_ord` (`src/std/deriving.kira`) now folds the type's fields into a
+/// lexicographic chain of `ord_cmp`/`ord_then` calls (`src/std/traits.kira`),
+/// spliced in by `resolve_deriving_traits` like `show`/`eq`/`debug`.
+///
+/// The derived `cmp` is checked against computed answers rather than "it
+/// compiles": a `cmp` that always returns `@equal` compiles perfectly, and so
+/// does one that folds the fields in the wrong order. So every case below is
+/// one a wrong-but-plausible derivation gets wrong —
+///
+///   * `a` vs `c` differ in the *first* field while the second points the
+///     other way (`c.y` is below `a.y`), which catches a fold that ignores
+///     `ord_then`'s short-circuit or runs the fields backwards;
+///   * a `str` field, whose `<` has no builtin codegen and must dispatch to
+///     `std.string`'s `str::cmp`;
+///   * a struct field that itself derives `ord`, so the generated body has to
+///     recurse through another generated body;
+///   * a field-less struct, the fold's identity;
+///   * `<`/`<=`/`>`/`>=` on the type, which route through `wire_ord_dispatch`
+///     and previously had no `cmp` to find on a `deriving`-only type.
+///
+/// Each contributes one bit of the exit code, so a failure says which case
+/// broke rather than only that something did. All eight is 255.
+auto test_run_derives_ord_via_deriving_clause() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_ord.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(
+      source_path,
+      "module sample\n"
+      "type inner = { a: int32 } deriving eq, ord\n"
+      "type point = { x: int32, y: int32 } deriving eq, ord\n"
+      "type named = { tag: str, n: int32 } deriving eq, ord\n"
+      "type nested = { i: inner, z: int32 } deriving eq, ord\n"
+      "type empty = { } deriving eq, ord\n"
+      "def rank(o: ordering) -> int32:\n"
+      "    match o:\n"
+      "        @less => return -1\n"
+      "        @equal => return 0\n"
+      "        @greater => return 1\n"
+      "def bit(actual: int32, expected: int32, weight: int32) -> int32:\n"
+      "    if actual == expected:\n"
+      "        return weight\n"
+      "    return 0\n"
+      "def main() -> int32:\n"
+      "    var total: int32 = 0\n"
+      "    let a: point = { x: 3, y: 4 }\n"
+      "    let b: point = { x: 3, y: 5 }\n"
+      "    let c: point = { x: 4, y: 0 }\n"
+      "    total = total + bit(rank(a.cmp(&b)), -1, 1)\n"
+      "    total = total + bit(rank(b.cmp(&a)), 1, 2)\n"
+      "    total = total + bit(rank(a.cmp(&a)), 0, 4)\n"
+      "    total = total + bit(rank(a.cmp(&c)), -1, 8)\n"
+      "    let s1: named = { tag: \"abc\", n: 1 }\n"
+      "    let s2: named = { tag: \"abd\", n: 0 }\n"
+      "    total = total + bit(rank(s1.cmp(&s2)), -1, 16)\n"
+      "    let n1: nested = { i: { a: 1 }, z: 9 }\n"
+      "    let n2: nested = { i: { a: 2 }, z: 0 }\n"
+      "    total = total + bit(rank(n1.cmp(&n2)), -1, 32)\n"
+      "    let e1: empty = { }\n"
+      "    let e2: empty = { }\n"
+      "    total = total + bit(rank(e1.cmp(&e2)), 0, 64)\n"
+      "    if a < b and b > a and a <= a and not (a >= b):\n"
+      "        total = total + 128\n"
+      "    return total\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `deriving ord` to compile cleanly: " + report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 255,
+         std::format("expected every derived-`ord` case to hold (255), got {}",
+                     report->run->exit_code));
+}
+
+/// `ord` is the first derived trait with a `requires` bound (`ord requires
+/// eq`), which makes `type ... deriving ord` alone the first way a user can
+/// get an impl-level diagnostic about an impl they never wrote. A derived
+/// impl's own span points into the quote it was built from in
+/// `src/std/deriving.kira`, so reporting at it against the user's file id
+/// lands on an arbitrary byte offset in the user's source — here, a column
+/// past the end of a two-line file. `impl_report_span` redirects it to the
+/// `deriving` clause instead, and the help names the fix in terms of what
+/// the user wrote (add `eq` to the clause) rather than the synthesized impl.
+auto test_deriving_ord_without_eq_points_at_the_deriving_clause() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_ord_no_eq.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module sample\n"
+                          "type point = { x: int32 } deriving ord\n"
+                          "def main() -> int32:\n"
+                          "    return 0\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 1,
+         "expected exactly one error for `deriving ord` without `eq`: " +
+             report->diagnostics);
+  expect(report->diagnostics.find(
+             "trait `ord` requires `eq`, but `point` does not implement it") !=
+             std::string::npos,
+         "expected the unsatisfied-requirement error: " + report->diagnostics);
+  expect(report->diagnostics.find("type point = { x: int32 } deriving ord") !=
+             std::string::npos,
+         "expected the diagnostic to quote the `deriving` clause's own line, "
+         "not an arbitrary offset from the quote in `std/deriving.kira`: " +
+             report->diagnostics);
+  expect(report->diagnostics.find("Add `eq` to this `deriving` clause") !=
+             std::string::npos,
+         "expected the help to name the fix in terms of the `deriving` clause "
+         "the user wrote: " +
+             report->diagnostics);
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -2169,6 +2308,8 @@ auto main() -> int {
     test_run_scalar_static_let_referenced_by_name();
     test_build_derives_show_via_deriving_clause();
     test_build_derives_eq_and_debug_via_deriving_clause();
+    test_run_derives_ord_via_deriving_clause();
+    test_deriving_ord_without_eq_points_at_the_deriving_clause();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;

@@ -1197,6 +1197,18 @@ private:
   /// is no literal splice AST node for `deriving` sugar to swap in for.
   std::unordered_map<const ast::node *, std::vector<const ast::impl_decl *>>
       derived_trait_impls_;
+  /// Derived `impl_decl` -> the span of the `type ... deriving ...` that
+  /// caused it. A derived impl's own `span` points into the quote it was
+  /// built from in `src/std/deriving.kira`, so rendering a diagnostic at it
+  /// against the *user's* file id lands on an arbitrary offset in the user's
+  /// source — unreadable, and exactly the kind of message this compiler's
+  /// stated philosophy forbids. `impl_report_span` consults this so an
+  /// impl-level diagnostic about a derived impl points at the `deriving`
+  /// clause the user actually wrote. Reachable in practice through `ord`,
+  /// the first derived trait with a `requires` bound (`ord requires eq`):
+  /// `type point = {...} deriving ord` alone is a real, reportable mistake.
+  std::unordered_map<const ast::impl_decl *, source_span>
+      derived_impl_origin_spans_;
   /// Owns every literal node synthesized by `materialize_const_literal` —
   /// see `checked_types::synthesized_const_literals`'s doc comment.
   ast::ptr_vec<ast::literal_expr> synthesized_const_literals_;
@@ -1206,8 +1218,7 @@ private:
       static_const_values_;
   /// See `checked_types::static_global_defs`'s doc comment. Populated by
   /// `reify_static_global`.
-  std::unordered_map<const ast::static_decl *,
-                     checked_types::static_global_def>
+  std::unordered_map<const ast::static_decl *, checked_types::static_global_def>
       static_global_defs_;
   /// See `checked_types::static_global_refs`'s doc comment. Populated by
   /// `record_static_const_reference`.
@@ -3720,7 +3731,8 @@ private:
                           decl.type_params.size()),
           decl.name, decl.type_params.size(), named.span, ctx);
     }
-    const auto args = resolve_type_args(named.type_args, ctx, &decl.type_params);
+    const auto args =
+        resolve_type_args(named.type_args, ctx, &decl.type_params);
 
     if (!ctx.quiet && !named.type_args.empty() &&
         named.type_args.size() != decl.type_params.size()) {
@@ -4002,7 +4014,8 @@ private:
       }
       return ctx.quiet ? k_unknown_type : k_error_type;
     }
-    return types_.param_app(head, resolve_type_args(named.type_args, argument_ctx(ctx)));
+    return types_.param_app(
+        head, resolve_type_args(named.type_args, argument_ctx(ctx)));
   }
 
   /// Resolves a named-type reference through, in order: a session-owned
@@ -6569,8 +6582,7 @@ private:
   /// `hir::lower_ident` looks up the bare one.
   auto record_static_const_reference(const ast::expr &reference,
                                      const ast::static_decl &decl, type_id type,
-                                     std::string_view owner_module)
-      -> void {
+                                     std::string_view owner_module) -> void {
     const auto *value = ensure_static_binding_evaluated(decl);
     if (value == nullptr) {
       return;
@@ -6580,8 +6592,8 @@ private:
       static_const_values_[&reference] = lit;
       return;
     }
-    if (const auto name = reify_static_global(decl, *value, type,
-                                              owner_module)) {
+    if (const auto name =
+            reify_static_global(decl, *value, type, owner_module)) {
       static_global_refs_[&reference] = *name;
     }
   }
@@ -7553,8 +7565,14 @@ private:
     // `std.algo` joins them for the same reason: the whole catalog is free
     // functions reached by UFCS, so `xs.iter().map(f).filter(p)` only reads
     // that way if `map` and `filter` resolve unqualified.
-    static constexpr std::array<std::string_view, 3>
-        k_prelude_function_modules = {"std.console", "std.iter", "std.algo"};
+    // `std.traits` joins them for a narrower reason: its `ord_cmp`/`ord_then`/
+    // `ord_equal` are the combinators a *generated* `deriving ord` body calls
+    // (`src/std/deriving.kira`), and that body is spliced into the user's own
+    // module, where those names have to resolve without an import the user
+    // never wrote.
+    static constexpr std::array<std::string_view, 4>
+        k_prelude_function_modules = {"std.console", "std.iter", "std.algo",
+                                      "std.traits"};
     for (const auto module_name : k_prelude_function_modules) {
       if (const auto *source = index_.find_module(module_name)) {
         if (const auto it = source->functions.find(std::string(name));
@@ -8115,7 +8133,7 @@ private:
         }
         for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
           unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings,
-                     allow_override);
+                      allow_override);
         }
       }
       return;
@@ -8140,18 +8158,18 @@ private:
       if (pattern_entry.args.size() == concrete_entry.args.size()) {
         for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
           unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings,
-                     allow_override);
+                      allow_override);
         }
       }
       unify_rigid(pattern_entry.result, concrete_entry.result, bindings,
-                 allow_override);
+                  allow_override);
       return;
     }
     case type_kind::ref_kind:
     case type_kind::ptr_kind:
     case type_kind::array_kind:
       unify_rigid(pattern_entry.result, concrete_entry.result, bindings,
-                 allow_override);
+                  allow_override);
       return;
     default:
       return;
@@ -8441,7 +8459,7 @@ private:
           }
           const auto resolved_arg = resolve_type(*arg_type, pattern_ctx);
           unify_rigid(resolved_arg, (*concrete_args)[i], bindings,
-                     /*allow_override=*/true);
+                      /*allow_override=*/true);
         }
       }
     };
@@ -9486,8 +9504,8 @@ private:
     if (field.object->kind == ast::node_kind::ident_expr &&
         dynamic_cast<const ast::ident_expr &>(*field.object).name == "expr") {
       infer_call_args_loosely(call);
-      static constexpr std::array<std::string_view, 6> k_expr_builder_names = {
-          "lit", "ident", "field", "interp_concat", "debug", "binary"};
+      static constexpr std::array<std::string_view, 7> k_expr_builder_names = {
+          "lit", "ident", "field", "interp_concat", "debug", "binary", "call"};
       if (std::ranges::find(k_expr_builder_names, field.field_name) ==
           k_expr_builder_names.end()) {
         error_with_help(
@@ -9498,8 +9516,9 @@ private:
             "unknown AST-builder call",
             "Only `expr.lit(value)`, `expr.ident(name)`, "
             "`expr.field(object, name)`, `expr.interp_concat(a, b)`, "
-            "`expr.debug(value)`, and `expr.binary(op, lhs, rhs)` construct "
-            "a new `expr` quote value programmatically.");
+            "`expr.debug(value)`, `expr.binary(op, lhs, rhs)`, and "
+            "`expr.call(callee, args...)` construct a new `expr` quote value "
+            "programmatically.");
         return k_error_type;
       }
       return types_.builtin("expr");
@@ -9519,8 +9538,7 @@ private:
          field.field_name == "name")) {
       const auto &type_name =
           dynamic_cast<const ast::ident_expr &>(*field.object).name;
-      if (const auto bound = lookup_type_param(type_name);
-          bound.has_value()) {
+      if (const auto bound = lookup_type_param(type_name); bound.has_value()) {
         infer_call_args_loosely(call);
         if (field.field_name == "name") {
           // Inside the *template* (not yet instantiated), `T` is bound to
@@ -11519,9 +11537,9 @@ private:
         const auto &ident =
             dynamic_cast<const ast::ident_expr &>(*expr.type_name);
         if (const auto found = find_type_decl_by_name(ident.name)) {
-          target = resolve_struct_literal_head(*found->first, found->second,
-                                               expr.type_args,
-                                               expr.type_name->span);
+          target =
+              resolve_struct_literal_head(*found->first, found->second,
+                                          expr.type_args, expr.type_name->span);
         } else if (!file_has_external_wildcard_ &&
                    !is_builtin_scalar_name(ident.name) &&
                    !builtin_generic_arity(ident.name).has_value() &&
@@ -11546,9 +11564,9 @@ private:
         const auto &path =
             dynamic_cast<const ast::module_path_expr &>(*expr.type_name);
         if (const auto found = find_type_decl_by_path(path.segments)) {
-          target = resolve_struct_literal_head(*found->first, found->second,
-                                               expr.type_args,
-                                               expr.type_name->span);
+          target =
+              resolve_struct_literal_head(*found->first, found->second,
+                                          expr.type_args, expr.type_name->span);
         } else {
           // Reported here rather than left to the qualified-path pass,
           // which does not cover struct-literal heads: without this the
@@ -13099,9 +13117,9 @@ private:
         if (tuple.elements[i] != nullptr) {
           const auto element =
               entry.kind == type_kind::tuple_kind && i < entry.args.size()
-              ? entry.args[i]
+                  ? entry.args[i]
               : entry.kind == type_kind::array_kind ? entry.result
-                                                     : k_unknown_type;
+                                                    : k_unknown_type;
           check_pattern(*tuple.elements[i], element);
         }
       }
@@ -15083,15 +15101,22 @@ private:
         if (type_has_trait(target, required)) {
           continue;
         }
+        const auto derived = derived_impl_origin_spans_.contains(&impl);
         error_with_help(
-            impl.span,
+            impl_report_span(impl),
             std::format("trait `{}` requires `{}`, but `{}` does not "
                         "implement it",
                         trait_name, required, target_name),
-            "unsatisfied trait requirement",
-            std::format("Add `impl {} for {}` (or derive it) before "
-                        "implementing `{}`.",
-                        required, target_name, trait_name));
+            derived ? "this `deriving` clause implements `" +
+                          std::string(trait_name) + "`"
+                    : "unsatisfied trait requirement",
+            derived ? std::format("Add `{}` to this `deriving` clause (`{}` "
+                                  "is derived from the same field list), or "
+                                  "write `impl {} for {}` by hand.",
+                                  required, required, required, target_name)
+                    : std::format("Add `impl {} for {}` (or derive it) before "
+                                  "implementing `{}`.",
+                                  required, target_name, trait_name));
       }
     }
   }
@@ -16525,15 +16550,14 @@ private:
   /// Every `deriving`-able trait with a real `static def derive_<name>[T]()`
   /// in `std.derive` (`src/std/deriving.kira`) — the traits M7 actually
   /// re-derives for real, as opposed to leaving on the old, type-only
-  /// `derived_method_result` path. `ord`/`hash` are deliberately not here:
-  /// `ord`'s `cmp` return type (`ordering`) has no real variants or runtime
-  /// representation anywhere in the language yet, and no builtin scalar
-  /// implements `.hash()` or has a hash-combining primitive to fold field
-  /// hashes with — both would need new language-level infrastructure, not
-  /// just new derive logic, so they stay on the type-check-only fallback
-  /// (`derived_method_result` still lists all five names for that purpose).
-  static constexpr std::array<std::string_view, 3> k_real_derive_traits = {
-      "show", "eq", "debug"};
+  /// `derived_method_result` path. `hash` is the one holdout: no builtin
+  /// scalar implements `.hash()`, and there is no hash-combining primitive
+  /// to fold field hashes with, so it would need new language-level
+  /// infrastructure rather than just new derive logic and stays on the
+  /// type-check-only fallback (`derived_method_result` still lists all five
+  /// names for that purpose).
+  static constexpr std::array<std::string_view, 4> k_real_derive_traits = {
+      "show", "eq", "debug", "ord"};
 
   /// Splices `~derive_<trait>[TypeName]()` in behind the scenes, once per
   /// entry in `k_real_derive_traits` present in `decl.deriving`, for a
@@ -16553,6 +16577,17 @@ private:
   /// — see `reflect.cpp`), and the point of this milestone is a real,
   /// working derivation, not a diagnostic regression for the shapes it
   /// doesn't cover yet.
+  /// The span to report an impl-level diagnostic at: the impl's own span for
+  /// a hand-written `impl`, and the originating `deriving` clause's span for
+  /// one `resolve_deriving_traits` synthesized — see
+  /// `derived_impl_origin_spans_` for why the synthesized impl's own span is
+  /// not usable.
+  [[nodiscard]] auto impl_report_span(const ast::impl_decl &impl) const
+      -> source_span {
+    const auto it = derived_impl_origin_spans_.find(&impl);
+    return it != derived_impl_origin_spans_.end() ? it->second : impl.span;
+  }
+
   auto resolve_deriving_traits(const ast::type_decl &decl,
                                file_id_type owner_file) -> void {
     if (decl.name.empty() || !decl.type_params.empty() ||
@@ -16594,6 +16629,7 @@ private:
       synthesized_item_splices_.push_back(
           synthesized_item_splice{.impl = impl, .owner_module = module_name_});
       derived_trait_impls_[&decl].push_back(impl);
+      derived_impl_origin_spans_[impl] = decl.span;
     }
   }
 

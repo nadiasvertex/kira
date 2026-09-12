@@ -60,6 +60,11 @@ type point = { x: float64, y: float64 }
 
 Trait declarations, `impl`, default methods, `requires` (checked as `trait_decl::requires_bound` in `src/semantic/check.cpp`, which both validates that an implementing type satisfies the required trait and lets bound code use the required trait's methods without a separate bound), and `deriving` (validated against unknown derive names, e.g. `test_reports_unknown_deriving` in `src/semantic/check_test.cpp`) are all implemented and exercised by the semantic test suite.
 
+`deriving` produces a real, runnable method body — not merely a type-check-only rule — for `show`, `eq`, `debug`, and `ord`, on a concrete (non-generic), struct-shaped type. `checker::resolve_deriving_traits` splices in the corresponding `derive_<trait>[T]()` from `std.derive` (`src/std/deriving.kira`), which reflects over the type's own field list at compile time; the derived `ord` is a lexicographic, declaration-order, field-by-field comparison. Two gaps remain:
+
+- `hash` still has no real derivation — no builtin scalar implements `.hash()` and there is no hash-combining primitive to fold field hashes with — so `deriving hash` types the call and does not lower.
+- A generic type or a sum-shaped type falls back to the same type-check-only path for *every* derived trait, because the derivation is written against `T.fields()`. `deriving` on such a type still records the conformance, but calling the derived method fails at lowering.
+
 ## See also
 
 - [Generics and Inference](19-generics-and-inference.md) — bounds (`[T: show]`) built on traits.

@@ -93,3 +93,37 @@ static def derive_eq[T]() -> def_expr:
     return `(impl eq for ~(expr.ident(T.name())):
         def eq(self, other: &self) -> bool:
             return ~body)`
+
+#: Generates an impl of ord for a struct type: a lexicographic, field-by-field
+#: three-way comparison in declaration order, so the first field that differs
+#: decides the result and a struct whose fields are all equal compares
+#: @equal. An empty struct derives to @equal unconditionally.
+#: Each field is compared with std.traits' ord_cmp, and the per-field results
+#: are joined with ord_then; both are prelude-visible free functions rather
+#: than method calls, because the AST builders can splice a call but neither a
+#: statement nor a match arm, and a lexicographic comparison is a fold that
+#: needs a combining function. See those two functions' own doc comments for
+#: why ord_cmp compares with < instead of recursing through .cmp().
+#: The fold is left-nested (ord_then(ord_then(a, b), c)) because that is the
+#: order static for produces; ord_then is associative, so this agrees with the
+#: right-nested reading field by field.
+#: Args:
+#:   T: the concrete struct type to generate ord for.
+#: Returns:
+#:   a def_expr representing the full impl block for the ord trait.
+static def derive_ord[T]() -> def_expr:
+    var body: expr = expr.call(expr.ident("ord_equal"))
+    var first: bool = true
+    static for f in T.fields():
+        let field_cmp: expr = expr.call(
+            expr.ident("ord_cmp"),
+            expr.field(expr.ident("self"), f.name),
+            expr.field(expr.ident("other"), f.name))
+        if first:
+            body = field_cmp
+            first = false
+        else:
+            body = expr.call(expr.ident("ord_then"), body, field_cmp)
+    return `(impl ord for ~(expr.ident(T.name())):
+        def cmp(self, other: &self) -> ordering:
+            return ~body)`

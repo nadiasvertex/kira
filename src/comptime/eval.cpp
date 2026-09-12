@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <format>
 #include <ranges>
+#include <span>
 #include <string>
 
 #include "src/comptime/hygiene.h"
@@ -1102,6 +1103,32 @@ auto evaluator::clone_expr_fragment(const ast::node &node)
     cloned->field_name = fld.field_name;
     return cloned;
   }
+  case ast::node_kind::call_expr: {
+    const auto &call = dynamic_cast<const ast::call_expr &>(node);
+    if (call.callee == nullptr) {
+      return nullptr;
+    }
+    auto cloned_callee = clone_expr_fragment(*call.callee);
+    if (cloned_callee == nullptr) {
+      return nullptr;
+    }
+    auto cloned = ast::make<ast::call_expr>();
+    cloned->span = call.span;
+    cloned->callee = std::move(cloned_callee);
+    for (const auto &arg : call.args) {
+      if (arg.value == nullptr) {
+        return nullptr;
+      }
+      auto cloned_value = clone_expr_fragment(*arg.value);
+      if (cloned_value == nullptr) {
+        return nullptr;
+      }
+      cloned->args.push_back(ast::call_arg{.span = arg.span,
+                                           .name = arg.name,
+                                           .value = std::move(cloned_value)});
+    }
+    return cloned;
+  }
   case ast::node_kind::interpolated_string_expr: {
     const auto &interp =
         dynamic_cast<const ast::interpolated_string_expr &>(node);
@@ -1476,11 +1503,69 @@ auto evaluator::try_eval_expr_builder_call(const ast::call_expr &call)
     return value::make_expr_fragment(raw);
   }
 
+  if (field.field_name == "call") {
+    // `expr.call(callee, arg...)` — the one builder that can express a
+    // *chain* of generated work rather than a single flat expression, which
+    // is what `derive_ord` needs: a lexicographic comparison is a fold over
+    // the fields, and folding needs a combining function to call. Positional
+    // arguments only; a generated call has no reason to name them, and
+    // `call_arg::name` would need a second value shape to carry the label.
+    if (call.args.empty() || call.args.front().value == nullptr) {
+      return report(call.span, "`expr.call` takes at least one argument: the "
+                               "`expr` being called, then its arguments");
+    }
+    auto callee_arg = evaluate(*call.args.front().value);
+    if (callee_arg.is_error()) {
+      return callee_arg;
+    }
+    if (callee_arg.kind != value_kind::expr_fragment ||
+        callee_arg.fragment == nullptr) {
+      return report(call.args.front().value->span,
+                    "`expr.call`'s first argument must be a quoted or "
+                    "constructed `expr` value naming what to call");
+    }
+    auto cloned_callee = clone_expr_fragment(*callee_arg.fragment);
+    if (cloned_callee == nullptr) {
+      return report(call.args.front().value->span,
+                    "this quoted `expr` value's syntax is too complex for "
+                    "`expr.call` to embed as a callee");
+    }
+    auto result = ast::make<ast::call_expr>();
+    result->span = call.span;
+    result->callee = std::move(cloned_callee);
+    for (const auto &arg : std::span{call.args}.subspan(1)) {
+      if (arg.value == nullptr) {
+        return value::make_error();
+      }
+      auto evaluated = evaluate(*arg.value);
+      if (evaluated.is_error()) {
+        return evaluated;
+      }
+      if (evaluated.kind != value_kind::expr_fragment ||
+          evaluated.fragment == nullptr) {
+        return report(arg.value->span,
+                      "`expr.call`'s arguments must be quoted or constructed "
+                      "`expr` values");
+      }
+      auto cloned_value = clone_expr_fragment(*evaluated.fragment);
+      if (cloned_value == nullptr) {
+        return report(arg.value->span,
+                      "this quoted `expr` value's syntax is too complex for "
+                      "`expr.call` to embed as an argument");
+      }
+      result->args.push_back(
+          ast::call_arg{.span = arg.span, .value = std::move(cloned_value)});
+    }
+    const auto *raw = result.get();
+    synthesized_fragments_.push_back(std::move(result));
+    return value::make_expr_fragment(raw);
+  }
+
   return report(call.span,
                 std::format("`expr.{}` is not a recognized AST-builder "
                             "intrinsic (only `expr.lit`/`expr.ident`/"
                             "`expr.field`/`expr.interp_concat`/`expr.debug`/"
-                            "`expr.binary` are supported)",
+                            "`expr.binary`/`expr.call` are supported)",
                             field.field_name));
 }
 
