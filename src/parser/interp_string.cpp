@@ -148,8 +148,14 @@ auto scan_interpolated_content(std::string_view content)
           break;
         }
         if (depth == 0 && ch == '=' && !spec_seen) {
-          const bool is_eq_eq = j + 1 < content.size() && content[j + 1] == '=';
-          if (!is_eq_eq && !self_doc_seen) {
+          // The self-documenting `expr=` form's `=` is only ever followed by
+          // the closing `}` or a format spec's `:` — anything else (another
+          // `=` for `==`, or a space for `!=`/`<=`/`>=`) means this `=` is
+          // part of an operator inside the expression, not the marker.
+          const bool is_self_doc_marker =
+              j + 1 < content.size() &&
+              (content[j + 1] == '}' || content[j + 1] == ':');
+          if (is_self_doc_marker && !self_doc_seen) {
             run.expr_end = j;
             self_doc_seen = true;
             ++j;

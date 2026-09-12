@@ -1670,6 +1670,44 @@ auto test_parser_splits_string_interpolation() -> void {
         "expected the embedded expression to be a struct literal");
   }
 
+  // Comparison operators ending in `=` (`==`, `!=`, `<=`, `>=`) must not be
+  // mistaken for the self-documenting `expr=` marker, which only applies
+  // when the `=` is immediately followed by `}` or `:`.
+  {
+    auto parsed = parse_source("module sample\n"
+                               "def run():\n"
+                               "  let a = \"{x == y}\"\n"
+                               "  let b = \"{x != y}\"\n"
+                               "  let c = \"{x <= y}\"\n"
+                               "  let d = \"{x >= y}\"\n");
+    expect(parsed.error_count == 0, parsed.diagnostics);
+    auto *run_func = expect_node<kira::ast::func_decl>(
+        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+        "expected run function declaration");
+    const std::array<size_t, 4> stmt_indices = {0, 1, 2, 3};
+    const std::array<std::string_view, 4> labels = {"==", "!=", "<=", ">="};
+    for (size_t i = 0; i < stmt_indices.size(); ++i) {
+      auto *let_stmt = expect_node<kira::ast::let_stmt>(
+          run_func->body_stmts.at(stmt_indices.at(i)).get(),
+          kira::ast::node_kind::let_stmt, "expected a let statement");
+      auto *interp = expect_expr<kira::ast::interpolated_string_expr>(
+          let_stmt->initializer.get(),
+          kira::ast::node_kind::interpolated_string_expr,
+          "expected an interpolated_string_expr");
+      expect(interp->segments.size() == 1, "expected a single segment");
+      expect(!interp->segments[0].self_doc,
+             std::string("expected no self-doc marker for `") +
+                 std::string(labels.at(i)) + "`");
+      expect(!interp->segments[0].has_spec,
+             std::string("expected no format spec for `") +
+                 std::string(labels.at(i)) + "`");
+      expect_expr<kira::ast::binary_expr>(
+          interp->segments[0].value.get(), kira::ast::node_kind::binary_expr,
+          std::string("expected the embedded expression to be a `") +
+              std::string(labels.at(i)) + "` comparison");
+    }
+  }
+
   // `\u{...}` escapes are variable-width; the interpolation scanner must
   // skip their whole `{...}` span rather than one character past the `\`,
   // or the escape's own `{` gets mistaken for a real interpolation hole.
