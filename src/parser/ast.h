@@ -1004,6 +1004,9 @@ struct struct_field_init {
 struct struct_expr : expr {
   ptr<expr> type_name; ///< Optional explicit type head, e.g. `Point` in `Point
                        ///< {...}`.
+  std::vector<type_arg>
+      type_args; ///< Explicit generic arguments on the head, e.g. `int32` in
+                 ///< `box[int32] {...}`; empty when omitted (inferred).
   std::vector<struct_field_init>
       fields; ///< Field initializers in source order.
 

@@ -1,0 +1,29 @@
+module main
+
+# A struct literal whose head carries explicit type arguments,
+# `holder[int32] { cur: @none }`.
+#
+# This used to not parse at all: `holder[int32]` on its own is ambiguous
+# with ordinary indexing/call-generic-args, so `parse_postfix` resolved it
+# to an `index_expr`/`call_expr` and then had no case for the `{` that
+# followed, reporting "expected end of line after this" pointing at the
+# `]`. That meant an explicitly-instantiated generic struct could only be
+# built where inference supplied the arguments (a `return` into a declared
+# type, an annotated `let`) -- this exercises the case where nothing else
+# in the statement tells the checker what `T` is, so the explicit argument
+# is the only source of truth.
+
+type holder[T] = { cur: option[T] }
+
+def main() -> int32:
+    let none_int = holder[int32] { cur: @none }
+    let some_int = holder[int32] { cur: @some(5) }
+
+    println("empty={none_int.cur.is_none()}")
+    println("filled={some_int.cur.is_some()}")
+
+    # A second instantiation, so this is a real per-call type argument and
+    # not just a special case for one already-seen type.
+    let some_bool = holder[bool] { cur: @some(true) }
+    println("bool_filled={some_bool.cur.is_some()}")
+    return 0

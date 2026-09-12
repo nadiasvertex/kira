@@ -2919,6 +2919,72 @@ auto test_nested_def_resolves_as_a_value() -> void {
          "enclosing block");
 }
 
+/// spec/todo.md item 7: `box[int32] { cur: @none }` — a struct literal whose
+/// head carries explicit generic arguments. The parser fix alone (accepting
+/// the syntax) would still leave the arguments unused if the checker fell
+/// through to field-driven inference the way a bare `holder { ... }` does;
+/// asserting a *rejection* here proves the explicit `str` argument, not the
+/// field's own `int32` value, is what `cur`'s expected type came from — a
+/// version that silently ignored the explicit argument and only inferred
+/// from fields would accept this program instead.
+auto test_generic_struct_literal_explicit_type_args_drive_field_types()
+    -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "explicit_struct_type_args.kira",
+      .text = "module main\n"
+              "\n"
+              "type holder[T] = { cur: T }\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let h = holder[str] { cur: 5 }\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected the explicit `str` argument to make the `int32` field "
+         "value a type error");
+  expect_diagnostic(analyzed, "expected `str`, found `int32`",
+                    "expected a field type mismatch against the explicit "
+                    "type argument");
+}
+
+/// The companion acceptance case: the same explicit argument, but the field
+/// value actually matches it.
+auto test_generic_struct_literal_explicit_type_args_accepted() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "explicit_struct_type_args_ok.kira",
+      .text = "module main\n"
+              "\n"
+              "type holder[T] = { cur: T }\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let h = holder[int32] { cur: 5 }\n"
+              "    return h.cur\n",
+  }});
+  expect(analyzed.error_count == 0, analyzed.diagnostics);
+}
+
+/// A wrong number of explicit type arguments on a struct-literal head must
+/// be diagnosed exactly like the same mismatch in type position (`holder[
+/// int32, int32]` as an annotation) rather than silently truncated or
+/// padded.
+auto test_generic_struct_literal_wrong_type_arg_count() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "explicit_struct_type_args_arity.kira",
+      .text = "module main\n"
+              "\n"
+              "type holder[T] = { cur: T }\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let h = holder[int32, int32] { cur: 5 }\n"
+              "    return 0\n",
+  }});
+  expect(analyzed.error_count > 0,
+         "expected a wrong-arity explicit struct-literal instantiation to "
+         "be rejected");
+  expect_diagnostic(analyzed, "expects 1 type argument, found 2",
+                    "expected the arity-mismatch diagnostic");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -3111,6 +3177,9 @@ auto main() -> int {
     test_ufcs_reports_receiver_mismatch();
     test_ufcs_skips_private_functions_in_other_modules();
     test_nested_def_resolves_as_a_value();
+    test_generic_struct_literal_explicit_type_args_drive_field_types();
+    test_generic_struct_literal_explicit_type_args_accepted();
+    test_generic_struct_literal_wrong_type_arg_count();
     test_impl_type_param_substituted_at_call_site();
     test_inline_submodule_paths_resolve();
     test_import_wins_over_inline_submodule();

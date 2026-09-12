@@ -1,0 +1,30 @@
+module main
+
+# ==========================================================================
+#  Struct literals with an explicit generic-argument head.
+#
+#  `holder[T] { cur: T }` can normally only be built where something else in
+#  the statement already tells the checker what `T` is -- an annotated
+#  `let`, or a `return` into a declared type. Writing the argument on the
+#  literal itself, `holder[int32] { cur: 5 }`, used to not parse at all: the
+#  brackets are also how ordinary indexing and explicit call-generics are
+#  spelled, so `holder[int32]` alone resolved as one of those, and the `{`
+#  that followed had nowhere to go. See spec/todo.md item 7.
+# ==========================================================================
+
+type holder[T] = { cur: option[T] }
+
+def main() -> int32:
+    # No inference context at all here -- the explicit `int32` is the only
+    # source of truth for what `T` is.
+    let none_int = holder[int32] { cur: @none }
+    let some_int = holder[int32] { cur: @some(5) }
+    println("empty:  {none_int.cur.is_none()}")
+    println("filled: {some_int.cur.is_some()}")
+
+    # A second, different instantiation of the same generic struct, proving
+    # this is a real per-literal argument and not a special case that only
+    # happens to work for one type.
+    let some_bool = holder[bool] { cur: @some(true) }
+    println("bool:   {some_bool.cur.is_some()}")
+    0

@@ -1198,6 +1198,61 @@ auto test_parser_disambiguates_index_from_generic_instantiation() -> void {
       "expected `identity[int32](5)` to parse as a call expression");
 }
 
+/// spec/todo.md item 7: a struct literal whose head carries explicit type
+/// arguments, `box[int32] { cur: 0 }`, used to not parse at all. `box[int32]`
+/// alone is the same ambiguous shape `test_parser_disambiguates_index_from_
+/// generic_instantiation` exercises (indexing vs. generic instantiation), and
+/// `parse_postfix` never considered a `{` following the resolved bracket
+/// suffix, so the `{` was left as a stray token. This must be settled before
+/// the postfix machinery sees the brackets at all — see
+/// `parse_ident_or_path_expr` in parser.cpp.
+auto test_parser_accepts_generic_struct_literal_type_args() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "def run() -> int32:\n"
+                             "  let a = box[int32] { cur: 0 }\n"
+                             "  let b = values[0]\n"
+                             "  return 0\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+
+  auto *run_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected run function");
+  expect(run_decl->body_stmts.size() == 3,
+         "expected three statements in run's body");
+
+  auto *literal_stmt = expect_node<kira::ast::let_stmt>(
+      run_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected generic struct literal let binding");
+  auto *literal = expect_expr<kira::ast::struct_expr>(
+      literal_stmt->initializer.get(), kira::ast::node_kind::struct_expr,
+      "expected `box[int32] { cur: 0 }` to parse as a struct literal");
+  expect(literal->type_name != nullptr,
+         "expected the generic struct literal to preserve its type name");
+  auto *type_name = expect_expr<kira::ast::ident_expr>(
+      literal->type_name.get(), kira::ast::node_kind::ident_expr,
+      "expected a bare identifier type name");
+  expect(type_name->name == "box", "expected type name `box`");
+  expect(literal->type_args.size() == 1,
+         "expected one explicit type argument");
+  expect(literal->type_args[0].value != nullptr &&
+             literal->type_args[0].value->kind ==
+                 kira::ast::node_kind::named_type,
+         "expected the explicit type argument to resolve as a named type");
+  expect(literal->fields.size() == 1,
+         "expected the one field initializer to survive");
+
+  // A single unnamed bracket argument on a bare identifier with no `{`
+  // following must still parse as ordinary indexing — the speculative
+  // type-argument-list parse must back out cleanly.
+  auto *index_stmt = expect_node<kira::ast::let_stmt>(
+      run_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+      "expected indexing let binding");
+  expect_expr<kira::ast::index_expr>(
+      index_stmt->initializer.get(), kira::ast::node_kind::index_expr,
+      "expected `values[0]` to still parse as an index expression");
+}
+
 auto test_parser_accepts_extend_block() -> void {
   auto parsed = parse_source("module sample\n"
                              "extend str:\n"
@@ -2047,7 +2102,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 42> tests = {{
+  const std::array<named_test, 43> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "multiline_sum_type",
@@ -2081,6 +2136,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_rejects_non_block_module_body},
       {.name = "index_vs_generic_instantiation",
        .fn = test_parser_disambiguates_index_from_generic_instantiation},
+      {.name = "generic_struct_literal_type_args",
+       .fn = test_parser_accepts_generic_struct_literal_type_args},
       {.name = "extend_block", .fn = test_parser_accepts_extend_block},
       {.name = "parameterized_extend_block",
        .fn = test_parser_accepts_parameterized_extend_block},

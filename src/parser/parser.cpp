@@ -4345,6 +4345,33 @@ auto parser::parse_ident_or_path_expr() -> ast::ptr<ast::expr> {
     return expr;
   }
 
+  if (at(token_kind::lbracket)) {
+    // `ident[...]` immediately followed by `{` is a struct literal whose
+    // head carries explicit generic arguments, `box[int32] { cur: @none }`.
+    // Without this, `[...]` is left to the postfix-suffix loop, which reads
+    // it as indexing/call-generic-args and then has no case for the `{`
+    // that follows — "expected end of line after this" pointing at the
+    // `]`. Since `[...]` is otherwise ambiguous (real indexing looks the
+    // same up to the `]`), speculatively parse it as a type-argument list
+    // and only commit to the struct-literal reading if a `{` actually
+    // follows; otherwise back out and let the postfix loop parse it as
+    // usual.
+    const auto saved_pos = pos_;
+    auto type_args = parse_type_arg_list();
+    if (at(token_kind::lbrace)) {
+      auto expr = parse_brace_expr();
+      if (expr && expr->kind == ast::node_kind::struct_expr) {
+        auto *struct_expr = dynamic_cast<ast::struct_expr *>(expr.get());
+        struct_expr->type_name = std::move(ident);
+        struct_expr->type_args = std::move(type_args);
+        struct_expr->span =
+            struct_expr->type_name->span.merge(struct_expr->span);
+      }
+      return expr;
+    }
+    pos_ = saved_pos;
+  }
+
   if (at(token_kind::dot) &&
       (peek_at(1).is(token_kind::ident) ||
        peek_at(1).is(token_kind::kw_super)) &&

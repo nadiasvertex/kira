@@ -2193,7 +2193,7 @@ private:
           named.type_args.size() != 1) {
         return k_unknown_type;
       }
-      auto args = resolve_type_args(named, ctx);
+      auto args = resolve_type_args(named.type_args, ctx);
       const auto item = args.empty() ? k_unknown_type : args.front();
       return types_.builtin_generic("generator", {item});
     }
@@ -2219,7 +2219,7 @@ private:
             "unknown trait in existential bound",
             "`some Trait` requires a real `trait` declaration in scope.");
       }
-      auto args = resolve_type_args(named, ctx);
+      auto args = resolve_type_args(named.type_args, ctx);
       if (!bound.empty()) {
         display_name += " + ";
       }
@@ -2555,13 +2555,14 @@ private:
   /// old positional heuristics still apply, so a bare integer literal or an
   /// in-scope value parameter still lands as a value.
   auto
-  resolve_type_args(const ast::named_type &named, const resolve_ctx &ctx,
+  resolve_type_args(const std::vector<ast::type_arg> &type_args,
+                    const resolve_ctx &ctx,
                     const std::vector<ast::type_param> *decl_params = nullptr)
       -> std::vector<type_id> {
     auto args = std::vector<type_id>{};
-    args.reserve(named.type_args.size());
-    for (size_t i = 0; i < named.type_args.size(); ++i) {
-      const auto &arg = named.type_args[i];
+    args.reserve(type_args.size());
+    for (size_t i = 0; i < type_args.size(); ++i) {
+      const auto &arg = type_args[i];
       if (arg.value == nullptr) {
         args.push_back(k_unknown_type);
         continue;
@@ -3698,7 +3699,7 @@ private:
                           decl.type_params.size()),
           decl.name, decl.type_params.size(), named.span, ctx);
     }
-    const auto args = resolve_type_args(named, ctx, &decl.type_params);
+    const auto args = resolve_type_args(named.type_args, ctx, &decl.type_params);
 
     if (!ctx.quiet && !named.type_args.empty() &&
         named.type_args.size() != decl.type_params.size()) {
@@ -3923,7 +3924,7 @@ private:
                                      argument_ctx(ctx));
       }
       return types_.builtin_generic(
-          entry.name, resolve_type_args(named, argument_ctx(ctx)));
+          entry.name, resolve_type_args(named.type_args, argument_ctx(ctx)));
     }
 
     if (entry.kind != type_kind::type_param_kind) {
@@ -3980,7 +3981,7 @@ private:
       }
       return ctx.quiet ? k_unknown_type : k_error_type;
     }
-    return types_.param_app(head, resolve_type_args(named, argument_ctx(ctx)));
+    return types_.param_app(head, resolve_type_args(named.type_args, argument_ctx(ctx)));
   }
 
   /// Resolves a named-type reference through, in order: a session-owned
@@ -4082,7 +4083,7 @@ private:
               types_.ctor_ref(name, "", nullptr, arity->first), name,
               arity->first, named.span, ctx);
         }
-        auto args = resolve_type_args(named, ctx);
+        auto args = resolve_type_args(named.type_args, ctx);
         if (!ctx.quiet && !named.type_args.empty() &&
             (named.type_args.size() < arity->first ||
              named.type_args.size() > arity->second)) {
@@ -4177,7 +4178,7 @@ private:
         (named->path.front() == "slice" || named->path.front() == "cell")) {
       const auto mut_name = named->path.front() + "_mut";
       const auto arity = builtin_generic_arity(mut_name);
-      auto args = resolve_type_args(*named, ctx);
+      auto args = resolve_type_args(named->type_args, ctx);
       if (!ctx.quiet && arity.has_value() && !named->type_args.empty() &&
           (named->type_args.size() < arity->first ||
            named->type_args.size() > arity->second)) {
@@ -11386,6 +11387,37 @@ private:
     return std::nullopt;
   }
 
+  /// Resolves a struct-literal head's target type once the declaration is
+  /// known: `type_args` empty means the head named no explicit generic
+  /// arguments (`box { ... }`), in which case instantiation is left to the
+  /// field-driven inference below; otherwise resolves the explicit
+  /// arguments (`box[int32] { ... }`) exactly the way the same `[...]`
+  /// resolves in type position, arity-checked against the declaration.
+  auto resolve_struct_literal_head(const ast::type_decl &decl,
+                                   std::string_view owner_module,
+                                   const std::vector<ast::type_arg> &type_args,
+                                   source_span head_span) -> type_id {
+    if (type_args.empty()) {
+      return make_user_type(decl, owner_module, {});
+    }
+    const auto args =
+        resolve_type_args(type_args, current_resolve_ctx(), &decl.type_params);
+    if (type_args.size() != decl.type_params.size()) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("type `{}` expects {} type argument{}, found {}",
+                      decl.name, decl.type_params.size(),
+                      decl.type_params.size() == 1 ? "" : "s",
+                      type_args.size()),
+          file_id_);
+      diag.with_label(head_span, "wrong number of type arguments");
+      emit_diag(diag);
+      mark_error();
+      return k_error_type;
+    }
+    return make_user_type(decl, owner_module, args);
+  }
+
   /// Types a struct literal `Type { field: value, ... }` (or bare `{ ... }`
   /// against an expected struct type). Reports duplicate/unknown/missing
   /// fields and checks each field value's type; when the target is a
@@ -11400,7 +11432,9 @@ private:
         const auto &ident =
             dynamic_cast<const ast::ident_expr &>(*expr.type_name);
         if (const auto found = find_type_decl_by_name(ident.name)) {
-          target = make_user_type(*found->first, found->second, {});
+          target = resolve_struct_literal_head(*found->first, found->second,
+                                               expr.type_args,
+                                               expr.type_name->span);
         } else if (!file_has_external_wildcard_ &&
                    !is_builtin_scalar_name(ident.name) &&
                    !builtin_generic_arity(ident.name).has_value() &&
@@ -11425,7 +11459,9 @@ private:
         const auto &path =
             dynamic_cast<const ast::module_path_expr &>(*expr.type_name);
         if (const auto found = find_type_decl_by_path(path.segments)) {
-          target = make_user_type(*found->first, found->second, {});
+          target = resolve_struct_literal_head(*found->first, found->second,
+                                               expr.type_args,
+                                               expr.type_name->span);
         } else {
           // Reported here rather than left to the qualified-path pass,
           // which does not cover struct-literal heads: without this the
