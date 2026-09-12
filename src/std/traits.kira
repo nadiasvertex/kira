@@ -213,10 +213,49 @@ pub def hash_tag(n: uint64) -> uint64:
 # impl here would make every program fail to compile. `spec/todo.md` item 6
 # records the same trap for `zero`/`one`; these arrive with it.
 #
-# `float32`/`float64` are absent for a different reason: hashing a float
-# correctly means hashing its bit pattern, and `as uint64` on a float is a
-# value conversion, not a reinterpret. That needs a bitcast primitive the
-# language does not have yet -- see `spec/todo.md`.
+#: Single-field wrapper for float64 to pass across intrinsic boundaries.
+type box_f64 = { v: float64 }
+#: Single-field wrapper for float32 to pass across intrinsic boundaries.
+type box_f32 = { v: float32 }
+#: Single-field wrapper for uint64 to pass across intrinsic boundaries.
+type box_u64 = { v: uint64 }
+#: Single-field wrapper for uint32 to pass across intrinsic boundaries.
+type box_u32 = { v: uint32 }
+
+#: Reinterprets a float64's bit pattern as a uint64 -- `as uint64` on a float
+#: is a value conversion (`compile_cast`), not the reinterpret `hash` needs.
+intrinsic def rt_bitcast_f64_to_u64(v: box_f64) -> box_u64
+#: Reinterprets a float32's bit pattern as a uint32; the `float32` counterpart
+#: of `rt_bitcast_f64_to_u64`.
+intrinsic def rt_bitcast_f32_to_u32(v: box_f32) -> box_u32
+
+#: `float64`'s bit pattern with `hash`'s two required canonicalizations
+#: applied: every zero (`+0.0`/`-0.0`, which compare equal) collapses to one
+#: bit pattern, and every NaN (which never compares equal to anything, not
+#: even itself, yet all `2^52` payloads must hash alike) collapses to
+#: another. Without this, `hash` would disagree with `==` on both.
+#: Args:
+#:   v: the value to canonicalize.
+#: Returns:
+#:   `v`'s bit pattern, with zero and NaN canonicalized.
+def canonical_f64_bits(v: float64) -> uint64:
+    if v == 0.0:
+        return 0
+    if v != v:
+        return 0x7ff8000000000000
+    return rt_bitcast_f64_to_u64(box_f64 { v: v }).v
+
+#: The `float32` counterpart of `canonical_f64_bits`.
+#: Args:
+#:   v: the value to canonicalize.
+#: Returns:
+#:   `v`'s bit pattern, with zero and NaN canonicalized.
+def canonical_f32_bits(v: float32) -> uint32:
+    if v == 0.0:
+        return 0
+    if v != v:
+        return 0x7fc00000
+    return rt_bitcast_f32_to_u32(box_f32 { v: v }).v
 
 impl hash for bool:
     def hash(self) -> uint64:
@@ -269,6 +308,14 @@ impl hash for uint64:
 impl hash for usize:
     def hash(self) -> uint64:
         return hash_combine(hash_seed(), self as uint64)
+
+impl hash for float64:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), canonical_f64_bits(self))
+
+impl hash for float32:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), canonical_f32_bits(self) as uint64)
 
 #: FNV-1a over the string's UTF-8 bytes. `len`/`[i]` on `str` are builtin
 #: (`builtin_method_result`, `src/semantic/check.cpp`), so this impl pulls in

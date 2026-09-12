@@ -2508,6 +2508,82 @@ auto test_run_derives_hash_via_deriving_clause() -> void {
                      report->run->exit_code));
 }
 
+/// spec/todo.md item 7: `hash` had no impls for `float32`/`float64` because
+/// `as uint64` on a float is a value conversion (`compile_cast` emits
+/// `FPToUI`), not the bit-pattern reinterpret hashing needs. `std.traits` now
+/// backs both scalars with a real bitcast intrinsic
+/// (`rt_bitcast_f64_to_u64`/`rt_bitcast_f32_to_u32`) plus explicit
+/// canonicalization of the two cases a raw bit-pattern hash would disagree
+/// with `==` on: `+0.0`/`-0.0` (equal, but different bits) and NaN (every
+/// payload compares unequal to itself, yet all must hash alike).
+///
+/// Every case is a computed answer against an independent FNV-1a
+/// implementation, not "it compiles":
+///
+///   * `+0.0` and `-0.0` hash equal (bit 1) — the canonicalization a bare
+///     `rt_bitcast_f64_to_u64`/`rt_bitcast_f32_to_u32` without it would fail,
+///     since their bit patterns differ;
+///   * two differently-signed NaN bit patterns hash equal (bit 2) — the same
+///     canonicalization on the NaN side;
+///   * a struct with non-zero, non-NaN float fields hashes apart from one
+///     with all-zero fields (bit 4);
+///   * `{x: 3.5, y: 4.5}` hashes to the value an independent FNV-1a
+///     implementation computes over the IEEE-754 bit patterns (bit 8) — the
+///     absolute anchor pinning both the bitcast and the fold, since a
+///     uniformly-wrong-but-self-consistent mixer would satisfy every other
+///     case here.
+auto test_run_derives_hash_for_floats() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_hash_float.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(
+      source_path,
+      "module sample\n"
+      "type pf = { x: float64, y: float32 } deriving hash\n"
+      "def bit(cond: bool, weight: int32) -> int32:\n"
+      "    if cond:\n"
+      "        return weight\n"
+      "    return 0\n"
+      "def main() -> int32:\n"
+      "    var total: int32 = 0\n"
+      "    let a: pf = { x: 0.0, y: 0.0 as float32 }\n"
+      "    let b: pf = { x: -0.0, y: -0.0 as float32 }\n"
+      "    total = total + bit(a.hash() == b.hash(), 1)\n"
+      "    let nan1: float64 = 0.0 / 0.0\n"
+      "    let nan2: float64 = -(0.0 / 0.0)\n"
+      "    let c: pf = { x: nan1, y: nan1 as float32 }\n"
+      "    let d: pf = { x: nan2, y: nan2 as float32 }\n"
+      "    total = total + bit(c.hash() == d.hash(), 2)\n"
+      "    let e: pf = { x: 1.5, y: 2.5 as float32 }\n"
+      "    total = total + bit(a.hash() != e.hash(), 4)\n"
+      "    let f: pf = { x: 3.5, y: 4.5 as float32 }\n"
+      "    total = total + bit(f.hash() == 2985586345925076451, 8)\n"
+      "    return total\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `deriving hash` on float fields to compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 15,
+         std::format("expected every float-`hash` case to hold (15), got {}",
+                     report->run->exit_code));
+}
+
 /// `ord` is the first derived trait with a `requires` bound (`ord requires
 /// eq`), which makes `type ... deriving ord` alone the first way a user can
 /// get an impl-level diagnostic about an impl they never wrote. A derived
@@ -2691,6 +2767,7 @@ auto main() -> int {
     test_build_derives_eq_and_debug_via_deriving_clause();
     test_run_derives_ord_via_deriving_clause();
     test_run_derives_hash_via_deriving_clause();
+    test_run_derives_hash_for_floats();
     test_run_derives_for_generic_types();
     test_build_derives_for_generic_types();
     test_deriving_ord_without_eq_points_at_the_deriving_clause();

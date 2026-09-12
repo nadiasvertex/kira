@@ -22,7 +22,7 @@ namespace kira {
 //  only tracks names, since the signature itself is written and typechecked
 //  as ordinary Kira source at the `intrinsic def` site.
 // ==========================================================================
-inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
+inline constexpr std::array<std::string_view, 33> known_intrinsic_names = {{
     "rt_stdin",
     "rt_stdout",
     "rt_stderr",
@@ -75,6 +75,14 @@ inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
     // that never returns: `option`/`result`'s `unwrap` need a failure path,
     // and terminating the process is inexpressible on the primitive set.
     "rt_panic",
+    // Reinterprets a float's bit pattern as an equal-width unsigned integer
+    // (`spec/todo.md` item 7). `as uint64`/`as uint32` on a float is a value
+    // conversion (`compile_cast` emits `FPToUI`), not a reinterpret, so
+    // `hash` on `float32`/`float64` needs a real bitcast primitive -- the
+    // rare case that passes the minimal-intrinsics justification test
+    // because it is genuinely inexpressible over the primitive set.
+    "rt_bitcast_f64_to_u64",
+    "rt_bitcast_f32_to_u32",
 }};
 
 /// @brief Returns whether `name` is a recognized intrinsic.
@@ -106,7 +114,7 @@ inline constexpr std::array<std::string_view, 31> known_intrinsic_names = {{
 /// declare each `kira_rt_*` function's LLVM signature — read from here
 /// rather than duplicated so the two backends' declared arities can't drift
 /// out of sync with each other or with `io.h`'s actual signatures.
-inline constexpr std::array<uint8_t, 31> known_intrinsic_arities = {{
+inline constexpr std::array<uint8_t, 33> known_intrinsic_arities = {{
     0, // rt_stdin
     0, // rt_stdout
     0, // rt_stderr
@@ -138,6 +146,8 @@ inline constexpr std::array<uint8_t, 31> known_intrinsic_arities = {{
     0, // rt_windows_version
     0, // rt_macos_version
     1, // rt_panic          (msg)
+    1, // rt_bitcast_f64_to_u64 (v)
+    1, // rt_bitcast_f32_to_u32 (v)
 }};
 
 } // namespace kira

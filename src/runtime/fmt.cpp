@@ -195,4 +195,19 @@ auto kira_rt_fmt_char_from_codepoint(uint64_t *codepoint) -> uint64_t * {
   return make_str(out);
 }
 
+// Reinterprets a float's bit pattern as an equal-width unsigned integer
+// (`spec/todo.md` item 7): `hash` on `float32`/`float64` needs the raw bits,
+// and `as uint64`/`as uint32` on a float is a value conversion, not a
+// reinterpret. Both a boxed `float32`/`float64` field and this function's
+// `uint64_t*` argument already hold the same in-memory bit pattern -- native
+// IEEE-754 layout, not the bytecode VM's tagged-slot representation -- so
+// there is nothing to convert, only to re-box.
+auto kira_rt_bitcast_f64_to_u64(uint64_t *value) -> uint64_t * {
+  return make_box(value[0]);
+}
+
+auto kira_rt_bitcast_f32_to_u32(uint64_t *value) -> uint64_t * {
+  return make_box(static_cast<uint32_t>(value[0]));
+}
+
 } // extern "C"

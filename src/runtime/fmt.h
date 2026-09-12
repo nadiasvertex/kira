@@ -31,4 +31,6 @@ auto kira_rt_fmt_f64_sci(uint64_t *value, uint64_t *precision,
 auto kira_rt_fmt_f64_general(uint64_t *value, uint64_t *precision)
     -> uint64_t *;
 auto kira_rt_fmt_char_from_codepoint(uint64_t *codepoint) -> uint64_t *;
+auto kira_rt_bitcast_f64_to_u64(uint64_t *value) -> uint64_t *;
+auto kira_rt_bitcast_f32_to_u32(uint64_t *value) -> uint64_t *;
 }

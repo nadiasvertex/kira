@@ -1213,6 +1213,27 @@ auto intrinsic_rt_fmt_f64_general(std::span<const slot_value> args)
       tidy_scientific_exponent(std::string_view(buf.data(), result.ptr)));
 }
 
+// Bitcast intrinsics (`spec/todo.md` item 7): reinterpret a float's bit
+// pattern as an equal-width unsigned integer, which `as uint64`/`as uint32`
+// cannot do (that's a value conversion, `exec_cast`). `slot_value::f` is the
+// active union member here, so the reinterpret goes through `std::bit_cast`
+// rather than reading `.u` directly off it.
+
+auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
+    -> slot_value {
+  const auto bits = std::bit_cast<uint64_t>(unbox(args[0]).f);
+  return make_box(slot_value{bits});
+}
+
+auto intrinsic_rt_bitcast_f32_to_u32(std::span<const slot_value> args)
+    -> slot_value {
+  // A boxed `float32` field's slot was written by `store_f32`, whose active
+  // union member is `.u` (the bit pattern, zero-extended) rather than `.f`
+  // -- unlike `float64`, which stores straight into `.f`.
+  const auto bits = static_cast<uint32_t>(unbox(args[0]).u);
+  return make_box(slot_value{static_cast<uint64_t>(bits)});
+}
+
 auto intrinsic_rt_fmt_char_from_codepoint(std::span<const slot_value> args)
     -> slot_value {
   const auto codepoint = static_cast<uint32_t>(unbox(args[0]).u);
@@ -1321,7 +1342,7 @@ using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 /// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 31> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, 33> k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
@@ -1353,6 +1374,8 @@ constexpr std::array<intrinsic_fn, 31> k_intrinsics = {{
     intrinsic_rt_windows_version,
     intrinsic_rt_macos_version,
     intrinsic_rt_panic,
+    intrinsic_rt_bitcast_f64_to_u64,
+    intrinsic_rt_bitcast_f32_to_u32,
 }};
 
 static_assert(k_intrinsics.size() == kira::known_intrinsic_names.size(),
