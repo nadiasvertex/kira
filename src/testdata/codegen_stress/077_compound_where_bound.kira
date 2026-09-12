@@ -1,0 +1,93 @@
+module codegen_stress.compound_where_bound
+
+# A bound that is a `+`-joined *list* of traits, which is the shape
+# `spec/specification/04-stdlib/algorithms/50-aggregation.md` writes `sum`
+# and `product` with:
+#
+#     def sum[I, T](it: I) -> T where I: iterator[T], T: add + zero
+#
+# The parser stores a single-term bound (`T: zero`) as a plain `named_type`,
+# but two or more terms become a `bound_type` — and the AST cloner that
+# monomorphization runs on had no case for that shape, so every compound
+# bound died with "cannot clone this construct for monomorphization" and
+# `std.algo` was written around it with single bounds.
+#
+# "It compiles" is not the check here. `total` is instantiated twice, over
+# two different element types, and each instance has to pick up *both*
+# halves of the bound — the static `identity()` from one term and the
+# `scaled()` method from the other — so the `# expect` below pins the
+# computed value.
+#
+# 1 + 2 + 3 == 6, doubled per element by `scaled` == 12 (int32 instance)
+# 10 + 20 == 30, tripled per element by `scaled` == 90 (int64 instance)
+# `doubled(7)` == 14, from the same compound bound written on the type
+# parameter itself rather than in a `where` clause.
+# 12 + 90 + 14 == 116.
+
+# expect: 116
+
+trait iterator[T]:
+    def next(mut self) -> option[T]
+
+# The two halves of the compound bound. Split across a static and an
+# instance method so a missing half cannot be silently covered by the other.
+trait identified:
+    static def identity() -> self
+
+trait scalable:
+    def scaled(self) -> self
+
+impl identified for int32:
+    static def identity() -> int32:
+        return 0
+
+impl scalable for int32:
+    def scaled(self) -> int32:
+        return self * 2
+
+impl identified for int64:
+    static def identity() -> int64:
+        return 0
+
+impl scalable for int64:
+    def scaled(self) -> int64:
+        return self * 3
+
+type counter = { at: int32, stop: int32 }
+
+impl iterator[int32] for counter:
+    def next(mut self) -> option[int32]:
+        if self.at >= self.stop:
+            return @none
+        let value = self.at
+        self.at = self.at + 1
+        return @some(value)
+
+type wide_counter = { at: int64, stop: int64 }
+
+impl iterator[int64] for wide_counter:
+    def next(mut self) -> option[int64]:
+        if self.at >= self.stop:
+            return @none
+        let value = self.at * 10
+        self.at = self.at + 1
+        return @some(value)
+
+# Both halves of `T: identified + scalable` are used: `T.identity()` comes
+# from the first term, `x.scaled()` from the second.
+def total[I, T](it: I) -> T where I: iterator[T], T: identified + scalable:
+    var cursor = it
+    var acc = T.identity()
+    while let @some(x) = cursor.next():
+        acc = acc + x.scaled()
+    return acc
+
+# A compound bound written on the type *parameter* rather than in a `where`
+# clause reaches the same cloner path, through `type_param::bound_or_type`.
+def doubled[T: identified + scalable](value: T) -> T:
+    return value + T.identity()
+
+def main() -> int32:
+    let narrow = total(counter { at: 1, stop: 4 })
+    let wide = total(wide_counter { at: 1, stop: 3 })
+    return narrow + int32(wide) + doubled(14)

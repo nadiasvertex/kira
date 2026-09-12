@@ -22,6 +22,8 @@ namespace {
     -> std::expected<ptr<pattern>, clone_error>;
 [[nodiscard]] auto clone_node(const node &n)
     -> std::expected<ptr<node>, clone_error>;
+[[nodiscard]] auto clone_bound(const bound &b)
+    -> std::expected<bound, clone_error>;
 
 template <typename T>
 [[nodiscard]] auto clone_optional(const ptr<T> &original)
@@ -173,6 +175,28 @@ template <typename T>
       return std::unexpected(return_type.error());
     }
     cloned->return_type = std::move(*return_type);
+    return ptr<type_expr>(std::move(cloned));
+  }
+  case node_kind::bound_type: {
+    const auto &bt = dynamic_cast<const bound_type &>(t);
+    auto value = clone_bound(bt.value);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto cloned = make<bound_type>();
+    cloned->span = bt.span;
+    cloned->value = std::move(*value);
+    return ptr<type_expr>(std::move(cloned));
+  }
+  case node_kind::existential_type: {
+    const auto &et = dynamic_cast<const existential_type &>(t);
+    auto value = clone_bound(et.value);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto cloned = make<existential_type>();
+    cloned->span = et.span;
+    cloned->value = std::move(*value);
     return ptr<type_expr>(std::move(cloned));
   }
   default:

@@ -23,8 +23,8 @@ The short-circuiting terminals — `any`, `all`, `find`, `find_map`, `position` 
 - **`max_by_key[I, T, K](it: I, key: fn(T) -> K) -> option[T] where I: iterator[T], K: ord`** — the element with the largest key. Ties keep the latest, matching `max`.
 - **`partition[I, T](it: I, pred: fn(T) -> bool) -> (list[T], list[T]) where I: iterator[T]`** — splits elements into those satisfying `pred` and the rest, as `(yes, no)`; both halves keep the source's relative order.
 - **`eq_by[I, J, T, U](it: I, other: J, pred: fn(T, U) -> bool) -> bool where I: iterator[T], J: iterator[U]`** — whether two iterators yield equal elements under `pred`, position by position. Length is part of equality — a prefix does not count as equal to the whole. `pred` is not called again once either source has ended.
-- **`sum[I, T](it: I) -> T where I: iterator[T], T: zero`** — adds up the elements; an empty iterator sums to `T.zero()`, which is why `sum` returns `T` where `reduce` must return `option[T]`.
-- **`product[I, T](it: I) -> T where I: iterator[T], T: one`** — multiplies the elements together; an empty iterator's product is `T.one()`.
+- **`sum[I, T](it: I) -> T where I: iterator[T], T: add + zero`** — adds up the elements; an empty iterator sums to `T.zero()`, which is why `sum` returns `T` where `reduce` must return `option[T]`.
+- **`product[I, T](it: I) -> T where I: iterator[T], T: mul + one`** — multiplies the elements together; an empty iterator's product is `T.one()`.
 
 ## The comparator-taking terminals
 
@@ -45,7 +45,6 @@ These take a three-way comparator `fn(T, T) -> ordering` rather than a `less` pr
 ## Notes
 
 - `min`/`max` and the `_by_key` pair compare with `<` rather than through `ord.cmp`, because `T: ord` bounds are currently advisory (unenforced at the call site) and `cmp`'s `ordering` return type had no runtime representation until recently. `min_by`/`max_by`/`cmp_by`, which need a genuine three-way comparator, arrived only once `ordering` became a real sum type (`@less`/`@equal`/`@greater`).
-- `sum`/`product` are bounded `T: zero` / `T: one` alone, not the `T: add + zero` / `T: mul + one` design §6.1 specifies — a compound `where` bound cannot currently be cloned for monomorphization, so only the half the body actually calls (`T.zero()`/`T.one()`) is written in the bound.
 
 ## See also
 

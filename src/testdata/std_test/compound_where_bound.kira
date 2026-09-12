@@ -1,0 +1,50 @@
+module main
+
+# Compound (`+`-joined) trait bounds, over the real `std.traits`.
+#
+# `std.algo`'s `sum` and `product` are declared with the bounds the design
+# calls for — `T: add + zero` and `T: mul + one` — rather than with only the
+# half the body happens to call. A two-term bound is stored by the parser as
+# a `bound_type` (a one-term bound is a plain `named_type`), a shape the AST
+# cloner used by monomorphization had no case for; every such bound used to
+# fail with "cannot clone this construct for monomorphization".
+#
+# The point of running it over a user type as well as over primitives is that
+# `add` and `zero` then resolve through user `impl`s: the `+` inside `sum`'s
+# body dispatches to `money.add`, and `T.zero()` to `money.zero`, so both
+# halves of the bound have to have survived the clone.
+
+use std.algo
+use std.traits
+
+type money = { cents: int32 }
+
+impl add for money:
+    type output = money
+    def add(self, other: money) -> money:
+        return money { cents: self.cents + other.cents }
+
+impl zero for money:
+    static def zero() -> money:
+        return money { cents: 0 }
+
+def main() -> int32:
+    let xs = [3, 1, 4, 1, 5]
+    println("sum={xs.iter().values().sum()}")
+    println("product={xs.iter().values().product()}")
+
+    # Empty sources land on the identity element supplied by `zero`/`one`,
+    # which is the half of each bound the body calls directly.
+    let empty: list[int32] = []
+    println("sum_empty={empty.iter().values().sum()}")
+    println("product_empty={empty.iter().values().product()}")
+
+    # A second instantiation of the same `sum`, over a user type whose `add`
+    # and `zero` are both user impls.
+    let wallet = [money { cents: 250 }, money { cents: 125 }, money { cents: 7 }]
+    println("wallet_sum={wallet.iter().values().sum().cents}")
+
+    let no_money: list[money] = []
+    println("wallet_empty={no_money.iter().values().sum().cents}")
+
+    return 0

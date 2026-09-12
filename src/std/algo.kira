@@ -1382,12 +1382,12 @@ pub def cmp_by[I, J, T, U](it: I, other: J, cmp: fn(T, U) -> ordering) -> orderi
 #: makes `sum` return `T` where `reduce` has to return `option[T]`.
 #: Type Params:
 #:   I: the iterator's type; must implement `iterator[T]`.
-#:   T: the iterator's element type; must implement `zero`, and support `+`.
+#:   T: the iterator's element type; must implement `add` and `zero`.
 #: Args:
 #:   it: the iterator to drain (moved).
 #: Returns:
 #:   the sum of every element, or the additive identity if there are none.
-pub def sum[I, T](it: I) -> T where I: iterator[T], T: zero:
+pub def sum[I, T](it: I) -> T where I: iterator[T], T: add + zero:
     var cursor = it
     var total = T.zero()
     while let @some(x) = cursor.next():
@@ -1400,12 +1400,12 @@ pub def sum[I, T](it: I) -> T where I: iterator[T], T: zero:
 #: empty iterator is `zero()`.
 #: Type Params:
 #:   I: the iterator's type; must implement `iterator[T]`.
-#:   T: the iterator's element type; must implement `one`, and support `*`.
+#:   T: the iterator's element type; must implement `mul` and `one`.
 #: Args:
 #:   it: the iterator to drain (moved).
 #: Returns:
 #:   the product of every element, or the multiplicative identity if none.
-pub def product[I, T](it: I) -> T where I: iterator[T], T: one:
+pub def product[I, T](it: I) -> T where I: iterator[T], T: mul + one:
     var cursor = it
     var total = T.one()
     while let @some(x) = cursor.next():
