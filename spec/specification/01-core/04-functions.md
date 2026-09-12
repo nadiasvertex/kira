@@ -36,6 +36,25 @@ Two rules bound inference:
 1. **`pub` functions must annotate every parameter and the return type.** Diagnosed at the declaration (`public function \`{name}\` must annotate its parameters ...`, `src/semantic/check.cpp`). An exported function's signature is a contract for external callers, so it is written down rather than inferred.
 2. **Inference never crosses a call.** A function's types are determined by its own body alone. When the body underdetermines a type, the compiler reports it and asks for an annotation rather than inferring from callers.
 
+## Expression-bodied functions
+
+When the whole body is a single expression, it can follow the `:` directly on the same line instead of an indented block. There is no separate syntax for this — `func_body` in `spec/kira-grammar.ebnf` allows either an inline expression or an indented block after the colon, and the two are interchangeable everywhere a function body is expected.
+
+```kira
+def add(a: int32, b: int32) -> int32: a + b
+
+def square(x: int32) -> int32: x * x
+```
+
+This is the same rule that makes `add` from the opening example equivalent to:
+
+```kira
+def add(a: int32, b: int32) -> int32:
+    return a + b
+```
+
+Both `return a + b` and the bare expression `a + b` produce the same value; the inline form just skips the `return` and the indented block when the body is one expression. If the expression needs more than one line, use the block form instead.
+
 ## Named arguments and defaults
 
 A parameter may declare a default value; a call may pass any argument by name (`name: value`) regardless of position.
