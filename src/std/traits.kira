@@ -110,6 +110,24 @@ pub def ord_then(first: ordering, next: ordering) -> ordering:
 pub def ord_equal() -> ordering:
     return @equal
 
+#: The result of an earlier-declared variant comparing below a later one —
+#: `derive_ord_sum`'s (`src/std/deriving.kira`) primary sort key, before it
+#: ever looks at payloads. A function for the same reason `ord_equal` is:
+#: the AST builders can construct a call but not a bare variant reference.
+#: Returns:
+#:   `@less`.
+pub def ord_less() -> ordering:
+    return @less
+
+#: The result of a later-declared variant comparing above an earlier one —
+#: `derive_ord_sum`'s (`src/std/deriving.kira`) primary sort key. See
+#: `ord_less`'s doc comment for why this is a function rather than a bare
+#: `@greater`.
+#: Returns:
+#:   `@greater`.
+pub def ord_greater() -> ordering:
+    return @greater
+
 #: Hashing a value to produce a hash code.
 pub trait hash:
     #: Computes a 64-bit hash value for this value.

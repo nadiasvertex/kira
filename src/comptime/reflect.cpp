@@ -50,6 +50,25 @@ namespace {
   return value::make_struct("", std::move(fields));
 }
 
+/// Builds a `struct_instance` value describing one sum-type variant:
+/// `{name: "some", payload_count: 1}` — the shape `static for v in
+/// T.variants():` code is expected to destructure. Payload *types* aren't
+/// exposed (unlike `make_field_descriptor`'s `type_name`): a sum-shaped
+/// deriving body binds each payload positionally to a synthesized name
+/// (`expr.ctor_pattern`, `eval.cpp`) and dispatches on it generically
+/// (`==`, `.show()`, `ord_cmp`, ...) the same duck-typed way struct field
+/// derivation already does, so nothing here needs to know the payload's
+/// declared spelling.
+[[nodiscard]] auto make_variant_descriptor(const ast::sum_variant &variant)
+    -> value {
+  auto fields = std::unordered_map<std::string, value>{};
+  fields.emplace("name", value::make_string(variant.name));
+  fields.emplace("payload_count",
+                 value::make_int(
+                     static_cast<int64_t>(variant.payload_types.size())));
+  return value::make_struct("", std::move(fields));
+}
+
 } // namespace
 
 auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
@@ -64,7 +83,8 @@ auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
     return std::nullopt;
   }
   if (field.field_name != "fields" && field.field_name != "field_count" &&
-      field.field_name != "name") {
+      field.field_name != "name" && field.field_name != "variants" &&
+      field.field_name != "variant_count") {
     return std::nullopt;
   }
   const auto &object_ident =
@@ -78,6 +98,31 @@ auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
 
   if (field.field_name == "name") {
     return value::make_string(decl.name);
+  }
+
+  if (field.field_name == "variants" || field.field_name == "variant_count") {
+    // Symmetric with the struct-only gate below: a struct type's "variants"
+    // would mean something different (it has none), out of scope here.
+    if (decl.definition == nullptr ||
+        decl.definition->kind != ast::node_kind::sum_type_def) {
+      return report(
+          call.span,
+          std::format("`{}.{}` is only supported for a sum-shaped type; `{}` "
+                      "isn't one",
+                      type_name, field.field_name, type_name));
+    }
+    const auto &sum_def =
+        dynamic_cast<const ast::sum_type_def &>(*decl.definition);
+    if (field.field_name == "variant_count") {
+      return value::make_int(
+          static_cast<int64_t>(sum_def.body.variants.size()));
+    }
+    auto elements = std::vector<value>{};
+    elements.reserve(sum_def.body.variants.size());
+    for (const auto &variant : sum_def.body.variants) {
+      elements.push_back(make_variant_descriptor(variant));
+    }
+    return value::make_list(std::move(elements));
   }
 
   // `fields()`/`field_count()` only make sense for a struct-shaped type —

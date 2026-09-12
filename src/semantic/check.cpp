@@ -9504,8 +9504,9 @@ private:
     if (field.object->kind == ast::node_kind::ident_expr &&
         dynamic_cast<const ast::ident_expr &>(*field.object).name == "expr") {
       infer_call_args_loosely(call);
-      static constexpr std::array<std::string_view, 7> k_expr_builder_names = {
-          "lit", "ident", "field", "interp_concat", "debug", "binary", "call"};
+      static constexpr std::array<std::string_view, 10> k_expr_builder_names =
+          {"lit",   "ident",        "field", "interp_concat", "debug",
+           "binary", "call", "ctor_pattern", "match_on", "arm"};
       if (std::ranges::find(k_expr_builder_names, field.field_name) ==
           k_expr_builder_names.end()) {
         error_with_help(
@@ -9516,9 +9517,11 @@ private:
             "unknown AST-builder call",
             "Only `expr.lit(value)`, `expr.ident(name)`, "
             "`expr.field(object, name)`, `expr.interp_concat(a, b)`, "
-            "`expr.debug(value)`, `expr.binary(op, lhs, rhs)`, and "
-            "`expr.call(callee, args...)` construct a new `expr` quote value "
-            "programmatically.");
+            "`expr.debug(value)`, `expr.binary(op, lhs, rhs)`, "
+            "`expr.call(callee, args...)`, "
+            "`expr.ctor_pattern(name, arity, prefix)`, `expr.match_on(subject)`, "
+            "and `expr.arm(match, pattern, body)` construct a new "
+            "`expr`/`pattern` quote value programmatically.");
         return k_error_type;
       }
       return types_.builtin("expr");
@@ -9535,11 +9538,18 @@ private:
     // through to the ordinary handling below untouched.
     if (field.object->kind == ast::node_kind::ident_expr &&
         (field.field_name == "fields" || field.field_name == "field_count" ||
-         field.field_name == "name")) {
+         field.field_name == "name" || field.field_name == "variants" ||
+         field.field_name == "variant_count")) {
       const auto &type_name =
           dynamic_cast<const ast::ident_expr &>(*field.object).name;
       if (const auto bound = lookup_type_param(type_name); bound.has_value()) {
         infer_call_args_loosely(call);
+        if (field.field_name == "variant_count") {
+          return types_.builtin("int32");
+        }
+        if (field.field_name == "variants") {
+          return k_unknown_type;
+        }
         if (field.field_name == "name") {
           // Inside the *template* (not yet instantiated), `T` is bound to
           // an abstract placeholder rather than a concrete type — nothing
@@ -9566,8 +9576,12 @@ private:
         if (field.field_name == "name") {
           return types_.builtin("str");
         }
-        if (field.field_name == "field_count") {
+        if (field.field_name == "field_count" ||
+            field.field_name == "variant_count") {
           return types_.builtin("int32");
+        }
+        if (field.field_name == "variants") {
+          return k_unknown_type;
         }
         // `fields()` returns a compile-time list of per-field descriptors
         // — no builtin "list of X" type exists to check this against yet,
@@ -16591,7 +16605,12 @@ private:
   auto resolve_deriving_traits(const ast::type_decl &decl,
                                file_id_type owner_file) -> void {
     if (decl.name.empty() || !decl.type_params.empty() ||
-        decl.definition == nullptr ||
+        decl.definition == nullptr) {
+      return;
+    }
+    const bool is_sum_shaped =
+        decl.definition->kind == ast::node_kind::sum_type_def;
+    if (!is_sum_shaped &&
         decl.definition->kind != ast::node_kind::struct_type_def) {
       return;
     }
@@ -16599,9 +16618,20 @@ private:
       if (!std::ranges::contains(decl.deriving, std::string(trait_name))) {
         continue;
       }
+      auto derive_fn_name = is_sum_shaped
+                               ? std::format("derive_{}_sum", trait_name)
+                               : std::format("derive_{}", trait_name);
+      if (!comptime_eval_.has_pending_function(derive_fn_name)) {
+        // `std.derive` wasn't part of this session (a narrow test fixture
+        // set, most likely) — fall back to the type-check-only path exactly
+        // as if this trait weren't in `k_real_derive_traits` at all, rather
+        // than attempting a call `evaluate` can only fail with a real,
+        // leaked diagnostic (not a quiet `nullopt`).
+        continue;
+      }
       auto callee_ident = ast::make<ast::ident_expr>();
       callee_ident->span = decl.span;
-      callee_ident->name = std::format("derive_{}", trait_name);
+      callee_ident->name = std::move(derive_fn_name);
       auto type_ident = ast::make<ast::ident_expr>();
       type_ident->span = decl.span;
       type_ident->name = decl.name;

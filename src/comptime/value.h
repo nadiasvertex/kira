@@ -51,6 +51,14 @@ enum class value_kind : uint8_t {
   def_expr_fragment,
   /// A quoted type fragment (Kira type `type_expr`).
   type_expr_fragment,
+  /// A synthesized pattern fragment (Kira type `pattern`) — a boxed
+  /// `const ast::pattern *` into `fragment`, built only by the
+  /// `expr.ctor_pattern(...)` AST-builder intrinsic (`eval.cpp`) and
+  /// consumed only by `expr.arm(...)`. Never produced by an ordinary
+  /// backtick quote (there is no `` `(pattern-syntax)` `` quote form), so
+  /// unlike the four kinds above it never needs `require_quote_value`
+  /// splice-position checking.
+  pattern_fragment,
   /// A bound generic type argument (e.g. `T` inside `static def
   /// derive_show[T]()`, bound by a compile-time generic call like
   /// `derive_show[point]()`) — a boxed `const ast::type_decl *`, resolved
@@ -164,6 +172,10 @@ struct value {
   [[nodiscard]] static auto make_type_expr_fragment(const ast::node *fragment)
       -> value {
     return value{.kind = value_kind::type_expr_fragment, .fragment = fragment};
+  }
+  [[nodiscard]] static auto make_pattern_fragment(const ast::node *fragment)
+      -> value {
+    return value{.kind = value_kind::pattern_fragment, .fragment = fragment};
   }
   [[nodiscard]] static auto make_type_value(std::string name,
                                             const ast::type_decl *decl)

@@ -2253,6 +2253,84 @@ auto test_deriving_ord_without_eq_points_at_the_deriving_clause() -> void {
              report->diagnostics);
 }
 
+/// spec/todo.md item 5 (sum-shaped half): `deriving` on a sum type used to
+/// type-check and then fail lowering with "no concrete checked type is
+/// available for this node", because `resolve_deriving_traits`
+/// (`src/semantic/check.cpp`) only spliced a real body for a struct-shaped
+/// type. `derive_show_sum`/`derive_eq_sum`/`derive_ord_sum`
+/// (`src/std/deriving.kira`) now build one over `T.variants()` (`src/
+/// comptime/reflect.cpp`) via the `expr.match_on`/`expr.arm`/
+/// `expr.ctor_pattern` AST builders (`src/comptime/eval.cpp`), for both a
+/// payload-less sum (`color`) and a sum with payloads (`shape`).
+///
+/// As with `test_run_derives_ord_via_deriving_clause`, every case is checked
+/// against a computed answer, not "it compiles": a `show` that always
+/// returns the type name compiles fine, and so does an `eq`/`cmp` that
+/// ignores the variant tag or the payloads entirely. Each contributes one
+/// bit of the exit code, so a failure says which case broke. All eight is
+/// 255.
+auto test_run_derives_sum_type_via_deriving_clause() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_sum.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(
+      source_path,
+      "module sample\n"
+      "type color = @red | @green | @blue deriving show, eq, ord\n"
+      "type shape = @circle(int32) | @rect(int32, int32) deriving show, eq, "
+      "ord\n"
+      "def rank(o: ordering) -> int32:\n"
+      "    match o:\n"
+      "        @less => return -1\n"
+      "        @equal => return 0\n"
+      "        @greater => return 1\n"
+      "def bit(actual: bool, weight: int32) -> int32:\n"
+      "    if actual:\n"
+      "        return weight\n"
+      "    return 0\n"
+      "def main() -> int32:\n"
+      "    var total: int32 = 0\n"
+      "    let red: color = @red\n"
+      "    let green: color = @green\n"
+      "    total = total + bit(red.show() == \"red\", 1)\n"
+      "    let c1: shape = @circle(3)\n"
+      "    total = total + bit(c1.show() == \"circle(3)\", 2)\n"
+      "    total = total + bit(red.eq(&red), 4)\n"
+      "    total = total + bit(not red.eq(&green), 8)\n"
+      "    let c2: shape = @circle(3)\n"
+      "    total = total + bit(c1.eq(&c2), 16)\n"
+      "    let r1: shape = @rect(2, 4)\n"
+      "    total = total + bit(not c1.eq(&r1), 32)\n"
+      "    total = total + bit(rank(red.cmp(&green)) == -1, 64)\n"
+      "    let c3: shape = @circle(5)\n"
+      "    total = total + bit(rank(c1.cmp(&c3)) == -1, 128)\n"
+      "    return total\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected sum-shaped `deriving` to compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 255,
+         std::format(
+             "expected every derived sum-type case to hold (255), got {}",
+             report->run->exit_code));
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -2310,6 +2388,7 @@ auto main() -> int {
     test_build_derives_eq_and_debug_via_deriving_clause();
     test_run_derives_ord_via_deriving_clause();
     test_deriving_ord_without_eq_points_at_the_deriving_clause();
+    test_run_derives_sum_type_via_deriving_clause();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;

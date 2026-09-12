@@ -127,3 +127,152 @@ static def derive_ord[T]() -> def_expr:
     return `(impl ord for ~(expr.ident(T.name())):
         def cmp(self, other: &self) -> ordering:
             return ~body)`
+
+#: Real, working deriving show/eq/debug/ord for a concrete, sum-shaped type
+#: (`type ... = @a | @b(...) deriving ...`) — the sum-type counterpart of the
+#: four struct derivations above, built the same functional-accumulator way
+#: over `static for v in T.variants():` instead of `T.fields()`, using the
+#: `expr.match_on`/`expr.arm`/`expr.ctor_pattern` AST builders (`match`/`arm`
+#: is exactly the statement/match-arm construction the struct derivations'
+#: own doc comments note the builders couldn't do yet). Each variant's
+#: payload positions are bound to synthesized names (`p0`, `p1`, ... for a
+#: `self`-side pattern; `q0`, `q1`, ... for an `other`-side one, so `eq`/
+#: `ord` can compare both sides of the same variant without one pattern's
+#: bindings shadowing the other's) and referenced generically — `==`,
+#: `.show()`, `ord_cmp`, ... dispatch on the payload's own type the same
+#: duck-typed way the struct derivations reference `self.<field>`.
+
+#: Generates an impl of show for a sum type, rendering each variant as its
+#: name, plus a parenthesized, comma-separated list of its payloads' own
+#: `show` output when it has any (`@some(1)` -> "some(1)"; `@none` ->
+#: "none").
+#: Args:
+#:   T: the concrete sum type to generate show for.
+#: Returns:
+#:   a def_expr representing the full impl block for the show trait.
+static def derive_show_sum[T]() -> def_expr:
+    var body: expr = expr.match_on(expr.ident("self"))
+    static for v in T.variants():
+        var arm_body: expr = expr.lit(v.name)
+        if v.payload_count > 0:
+            arm_body = expr.interp_concat(arm_body, expr.lit("("))
+            static for i in 0..v.payload_count:
+                if i > 0:
+                    arm_body = expr.interp_concat(arm_body, expr.lit(", "))
+                arm_body = expr.interp_concat(arm_body, expr.ident("p{i}"))
+            arm_body = expr.interp_concat(arm_body, expr.lit(")"))
+        body = expr.arm(
+            body, expr.ctor_pattern(v.name, v.payload_count, "p"), arm_body)
+    return `(impl show for ~(expr.ident(T.name())):
+        def show(self) -> str:
+            return ~body)`
+
+#: Generates an impl of debug for a sum type. Identical in shape to
+#: derive_show_sum, except each payload is rendered with debug formatting
+#: (`{:?}` semantics) rather than show, so string payloads render quoted.
+#: Args:
+#:   T: the concrete sum type to generate debug for.
+#: Returns:
+#:   a def_expr representing the full impl block for the debug trait.
+static def derive_debug_sum[T]() -> def_expr:
+    var body: expr = expr.match_on(expr.ident("self"))
+    static for v in T.variants():
+        var arm_body: expr = expr.lit(v.name)
+        if v.payload_count > 0:
+            arm_body = expr.interp_concat(arm_body, expr.lit("("))
+            static for i in 0..v.payload_count:
+                if i > 0:
+                    arm_body = expr.interp_concat(arm_body, expr.lit(", "))
+                arm_body = expr.interp_concat(
+                    arm_body, expr.debug(expr.ident("p{i}")))
+            arm_body = expr.interp_concat(arm_body, expr.lit(")"))
+        body = expr.arm(
+            body, expr.ctor_pattern(v.name, v.payload_count, "p"), arm_body)
+    return `(impl debug for ~(expr.ident(T.name())):
+        def debug(self) -> str:
+            return ~body)`
+
+#: Generates an impl of eq for a sum type: two values are equal exactly when
+#: they carry the same variant tag and every payload position compares
+#: equal pairwise (a payload-less variant is trivially equal to itself).
+#: Built as a match nested inside each outer arm — `self`'s variant selects
+#: the outer arm, and a fully exhaustive inner match over every variant
+#: (rather than a wildcard fallback) compares payloads when `other` carries
+#: the same tag and folds to `false` for every other tag, which is what
+#: keeps both matches exhaustive without needing a wildcard-pattern builder.
+#: Args:
+#:   T: the concrete sum type to generate eq for.
+#: Returns:
+#:   a def_expr representing the full impl block for the eq trait.
+static def derive_eq_sum[T]() -> def_expr:
+    var body: expr = expr.match_on(expr.ident("self"))
+    static for v in T.variants():
+        var inner: expr = expr.match_on(expr.ident("other"))
+        static for w in T.variants():
+            var arm_body: expr = expr.lit(false)
+            if v.name == w.name:
+                arm_body = expr.lit(true)
+                static for i in 0..v.payload_count:
+                    let field_eq: expr = expr.binary(
+                        "==", expr.ident("p{i}"), expr.ident("q{i}"))
+                    if i == 0:
+                        arm_body = field_eq
+                    else:
+                        arm_body = expr.binary("and", arm_body, field_eq)
+            inner = expr.arm(
+                inner, expr.ctor_pattern(w.name, w.payload_count, "q"),
+                arm_body)
+        body = expr.arm(
+            body, expr.ctor_pattern(v.name, v.payload_count, "p"), inner)
+    return `(impl eq for ~(expr.ident(T.name())):
+        def eq(self, other: &self) -> bool:
+            return ~body)`
+
+#: Generates an impl of ord for a sum type: variants compare by declaration
+#: order first (an earlier variant is `@less` than a later one, matching
+#: the same "declaration order is the natural order" rule structs already
+#: get for free from `deriving ord`'s field order), and same-variant values
+#: fall back to a lexicographic, field-by-field comparison of their
+#: payloads via `ord_cmp`/`ord_then` — the same combining functions
+#: `derive_ord` (the struct version, above) uses, for the same reason: no
+#: builtin scalar recurses through `.cmp()`. Built the same nested-match
+#: shape as derive_eq_sum, so the outer/inner matches stay exhaustive
+#: without a wildcard-pattern builder.
+#: Args:
+#:   T: the concrete sum type to generate ord for.
+#: Returns:
+#:   a def_expr representing the full impl block for the ord trait.
+static def derive_ord_sum[T]() -> def_expr:
+    var body: expr = expr.match_on(expr.ident("self"))
+    var self_index: int32 = 0
+    static for v in T.variants():
+        var inner: expr = expr.match_on(expr.ident("other"))
+        var other_index: int32 = 0
+        static for w in T.variants():
+            var arm_body: expr = expr.lit(false)
+            if v.name == w.name:
+                arm_body = expr.call(expr.ident("ord_equal"))
+                static for i in 0..v.payload_count:
+                    let field_cmp: expr = expr.call(
+                        expr.ident("ord_cmp"), expr.ident("p{i}"),
+                        expr.ident("q{i}"))
+                    if i == 0:
+                        arm_body = field_cmp
+                    else:
+                        arm_body = expr.call(
+                            expr.ident("ord_then"), arm_body, field_cmp)
+            else:
+                if self_index < other_index:
+                    arm_body = expr.call(expr.ident("ord_less"))
+                else:
+                    arm_body = expr.call(expr.ident("ord_greater"))
+            inner = expr.arm(
+                inner, expr.ctor_pattern(w.name, w.payload_count, "q"),
+                arm_body)
+            other_index = other_index + 1
+        body = expr.arm(
+            body, expr.ctor_pattern(v.name, v.payload_count, "p"), inner)
+        self_index = self_index + 1
+    return `(impl ord for ~(expr.ident(T.name())):
+        def cmp(self, other: &self) -> ordering:
+            return ~body)`

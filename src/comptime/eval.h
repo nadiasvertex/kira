@@ -94,6 +94,18 @@ public:
   /// elsewhere in compile-time code can find and invoke it.
   void register_pending_function(std::string name, const ast::func_decl &decl);
 
+  /// Whether `name` names a registered `static def` function — lets a
+  /// caller (`checker::resolve_deriving_traits`) check before attempting a
+  /// speculative compile-time call, rather than after: `evaluate` reports a
+  /// real diagnostic on a failed call (not just a quiet `nullopt`), so
+  /// probing via a would-be-error evaluate-and-discard is not an option in
+  /// a session that legitimately never registered `std.derive` (e.g. a
+  /// narrow test fixture set, or a future compile mode that omits it).
+  [[nodiscard]] auto has_pending_function(const std::string &name) const
+      -> bool {
+    return pending_functions_.contains(name);
+  }
+
   /// Registers a top-level `type` declaration so `T.fields()`/
   /// `.field_count()`/`.name()` (`reflect.cpp`) can resolve `name` to its
   /// declaration independently of `checker`'s own module-scoped lookup —
@@ -192,6 +204,9 @@ private:
   [[nodiscard]] auto eval_module_path(const ast::module_path_expr &path)
       -> value;
   [[nodiscard]] auto eval_quote(const ast::quote_expr &quote) -> value;
+  [[nodiscard]] auto
+  eval_interpolated_string(const ast::interpolated_string_expr &interp)
+      -> value;
 
   /// Recognizes `expr.lit(...)`/`expr.ident(...)` — the AST-builder
   /// intrinsics that construct a new `expr` quote-value programmatically
@@ -215,6 +230,17 @@ private:
   /// report a clear "too complex" diagnostic instead of guessing.
   [[nodiscard]] auto clone_expr_fragment(const ast::node &node)
       -> ast::ptr<ast::expr>;
+
+  /// Deep-clones a pattern reached through a boxed `pattern_fragment` value
+  /// (or nested inside a `match_expr` being re-cloned by `clone_expr_fragment`
+  /// — see its `match_expr` case) so it can become an owned child of a newly
+  /// synthesized node without aliasing another node's `unique_ptr`.
+  /// Deliberately narrow, mirroring `clone_expr_fragment`: only the shapes
+  /// `expr.ctor_pattern` itself ever builds (`wildcard_pattern`,
+  /// `binding_pattern`, `constructor_pattern`) are supported; anything else
+  /// returns `nullptr`.
+  [[nodiscard]] auto clone_pattern_fragment(const ast::node &node)
+      -> ast::ptr<ast::pattern>;
 
   /// Deep-clones one `interp_segment` (a literal-text run, or a value
   /// segment with its `expr` cloned via `clone_expr_fragment` and its

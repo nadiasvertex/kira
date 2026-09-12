@@ -1053,9 +1053,81 @@ auto evaluator::call_function(
   return result;
 }
 
+auto evaluator::clone_pattern_fragment(const ast::node &node)
+    -> ast::ptr<ast::pattern> {
+  switch (node.kind) {
+  case ast::node_kind::wildcard_pattern: {
+    auto cloned = ast::make<ast::wildcard_pattern>();
+    cloned->span = node.span;
+    return cloned;
+  }
+  case ast::node_kind::binding_pattern: {
+    const auto &binding = dynamic_cast<const ast::binding_pattern &>(node);
+    auto cloned = ast::make<ast::binding_pattern>();
+    cloned->span = binding.span;
+    cloned->name = binding.name;
+    cloned->is_mut = binding.is_mut;
+    return cloned;
+  }
+  case ast::node_kind::constructor_pattern: {
+    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(node);
+    auto cloned = ast::make<ast::constructor_pattern>();
+    cloned->span = ctor.span;
+    cloned->name = ctor.name;
+    for (const auto &arg : ctor.args) {
+      if (arg == nullptr) {
+        return nullptr;
+      }
+      auto cloned_arg = clone_pattern_fragment(*arg);
+      if (cloned_arg == nullptr) {
+        return nullptr;
+      }
+      cloned->args.push_back(std::move(cloned_arg));
+    }
+    return cloned;
+  }
+  default:
+    return nullptr;
+  }
+}
+
 auto evaluator::clone_expr_fragment(const ast::node &node)
     -> ast::ptr<ast::expr> {
   switch (node.kind) {
+  case ast::node_kind::match_expr: {
+    const auto &match = dynamic_cast<const ast::match_expr &>(node);
+    if (match.subject == nullptr) {
+      return nullptr;
+    }
+    auto cloned_subject = clone_expr_fragment(*match.subject);
+    if (cloned_subject == nullptr) {
+      return nullptr;
+    }
+    auto cloned = ast::make<ast::match_expr>();
+    cloned->span = match.span;
+    cloned->subject = std::move(cloned_subject);
+    for (const auto &arm : match.arms) {
+      if (arm.pattern == nullptr || arm.guard != nullptr ||
+          arm.body_expr == nullptr || !arm.body_stmts.empty()) {
+        // Only the shape `expr.arm` itself ever builds — a guard-less,
+        // block-less arm with an inline expression body — is supported for
+        // re-cloning; anything richer (a hand-written match this fragment
+        // could in principle embed) is out of scope.
+        return nullptr;
+      }
+      auto cloned_pattern = clone_pattern_fragment(*arm.pattern);
+      auto cloned_body = clone_expr_fragment(*arm.body_expr);
+      if (cloned_pattern == nullptr || cloned_body == nullptr) {
+        return nullptr;
+      }
+      ast::match_arm cloned_arm;
+      cloned_arm.span = arm.span;
+      cloned_arm.pattern = std::move(cloned_pattern);
+      cloned_arm.body_expr = std::move(cloned_body);
+      cloned->arms.push_back(std::move(cloned_arm));
+    }
+    return cloned;
+  }
   case ast::node_kind::binary_expr: {
     const auto &bin = dynamic_cast<const ast::binary_expr &>(node);
     if (bin.lhs == nullptr || bin.rhs == nullptr) {
@@ -1561,11 +1633,175 @@ auto evaluator::try_eval_expr_builder_call(const ast::call_expr &call)
     return value::make_expr_fragment(raw);
   }
 
+  if (field.field_name == "ctor_pattern") {
+    // `expr.ctor_pattern(name, arity, prefix)` — builds a variant-
+    // constructor pattern `@name(prefix0, prefix1, ..., prefix{arity-1})`
+    // (or the payload-less form `@name` when `arity` is 0). `prefix` lets a
+    // derive body bind the same variant's payloads to two different name
+    // sets (e.g. `"p"` for `self`'s match, `"q"` for `other`'s) so an `eq`/
+    // `ord` derivation can compare them pairwise without one match's
+    // bindings shadowing the other's.
+    if (call.args.size() != 3 || call.args[0].value == nullptr ||
+        call.args[1].value == nullptr || call.args[2].value == nullptr) {
+      return report(call.span, "`expr.ctor_pattern` takes exactly three "
+                               "arguments: a variant-name string, a "
+                               "payload-arity integer, and a bound-name "
+                               "prefix string");
+    }
+    auto name_arg = evaluate(*call.args[0].value);
+    if (name_arg.is_error()) {
+      return name_arg;
+    }
+    if (name_arg.kind != value_kind::string) {
+      return report(call.args[0].value->span,
+                    "`expr.ctor_pattern`'s first argument must be a string "
+                    "naming the variant");
+    }
+    auto arity_arg = evaluate(*call.args[1].value);
+    if (arity_arg.is_error()) {
+      return arity_arg;
+    }
+    if (arity_arg.kind != value_kind::integer || arity_arg.integer < 0) {
+      return report(call.args[1].value->span,
+                    "`expr.ctor_pattern`'s second argument must be a "
+                    "non-negative integer naming the payload arity");
+    }
+    auto prefix_arg = evaluate(*call.args[2].value);
+    if (prefix_arg.is_error()) {
+      return prefix_arg;
+    }
+    if (prefix_arg.kind != value_kind::string) {
+      return report(call.args[2].value->span,
+                    "`expr.ctor_pattern`'s third argument must be a string "
+                    "naming the bound-name prefix");
+    }
+    auto ctor = ast::make<ast::constructor_pattern>();
+    ctor->span = call.span;
+    ctor->name = name_arg.string;
+    for (int64_t i = 0; i < arity_arg.integer; ++i) {
+      auto binding = ast::make<ast::binding_pattern>();
+      binding->span = call.span;
+      binding->name = std::format("{}{}", prefix_arg.string, i);
+      ctor->args.push_back(std::move(binding));
+    }
+    const auto *raw = ctor.get();
+    synthesized_fragments_.push_back(std::move(ctor));
+    return value::make_pattern_fragment(raw);
+  }
+
+  if (field.field_name == "match_on") {
+    // `expr.match_on(subject)` — starts a new, arm-less `match subject: ...`;
+    // arms are folded in one at a time by `expr.arm` (below), mirroring the
+    // `body = expr.interp_concat(body, ...)` incremental-accumulator idiom
+    // every other derive body already uses.
+    if (call.args.size() != 1 || call.args.front().value == nullptr) {
+      return report(call.span,
+                    "`expr.match_on` takes exactly one `expr` argument: the "
+                    "subject being matched");
+    }
+    auto subject_arg = evaluate(*call.args.front().value);
+    if (subject_arg.is_error()) {
+      return subject_arg;
+    }
+    if (subject_arg.kind != value_kind::expr_fragment ||
+        subject_arg.fragment == nullptr) {
+      return report(call.args.front().value->span,
+                    "`expr.match_on`'s argument must be a quoted or "
+                    "constructed `expr` value");
+    }
+    auto cloned_subject = clone_expr_fragment(*subject_arg.fragment);
+    if (cloned_subject == nullptr) {
+      return report(call.args.front().value->span,
+                    "this quoted `expr` value's syntax is too complex for "
+                    "`expr.match_on` to embed as a subject");
+    }
+    auto result = ast::make<ast::match_expr>();
+    result->span = call.span;
+    result->subject = std::move(cloned_subject);
+    const auto *raw = result.get();
+    synthesized_fragments_.push_back(std::move(result));
+    return value::make_expr_fragment(raw);
+  }
+
+  if (field.field_name == "arm") {
+    // `expr.arm(match, pattern, body)` — returns a new `match` fragment
+    // with one more arm (`pattern => body`) appended after every arm the
+    // input `match` already had. Functional, like every other builder here:
+    // the input fragment is untouched, so `body = expr.arm(body, ...)`
+    // composes the same way `expr.interp_concat`'s accumulator does.
+    if (call.args.size() != 3 || call.args[0].value == nullptr ||
+        call.args[1].value == nullptr || call.args[2].value == nullptr) {
+      return report(call.span,
+                    "`expr.arm` takes exactly three arguments: the `match` "
+                    "expr being extended, a `pattern`, and the arm's body "
+                    "`expr`");
+    }
+    auto match_arg = evaluate(*call.args[0].value);
+    if (match_arg.is_error()) {
+      return match_arg;
+    }
+    if (match_arg.kind != value_kind::expr_fragment ||
+        match_arg.fragment == nullptr ||
+        match_arg.fragment->kind != ast::node_kind::match_expr) {
+      return report(call.args[0].value->span,
+                    "`expr.arm`'s first argument must be a `match` expr "
+                    "built by `expr.match_on`");
+    }
+    auto cloned_match_value = clone_expr_fragment(*match_arg.fragment);
+    if (cloned_match_value == nullptr) {
+      return report(call.args[0].value->span,
+                    "this `match` expr's syntax is too complex for "
+                    "`expr.arm` to extend");
+    }
+    auto pattern_arg = evaluate(*call.args[1].value);
+    if (pattern_arg.is_error()) {
+      return pattern_arg;
+    }
+    if (pattern_arg.kind != value_kind::pattern_fragment ||
+        pattern_arg.fragment == nullptr) {
+      return report(call.args[1].value->span,
+                    "`expr.arm`'s second argument must be a `pattern` built "
+                    "by `expr.ctor_pattern`");
+    }
+    auto cloned_pattern = clone_pattern_fragment(*pattern_arg.fragment);
+    if (cloned_pattern == nullptr) {
+      return report(call.args[1].value->span,
+                    "this `pattern`'s syntax is too complex for `expr.arm` "
+                    "to embed");
+    }
+    auto body_arg = evaluate(*call.args[2].value);
+    if (body_arg.is_error()) {
+      return body_arg;
+    }
+    if (body_arg.kind != value_kind::expr_fragment ||
+        body_arg.fragment == nullptr) {
+      return report(call.args[2].value->span,
+                    "`expr.arm`'s third argument must be a quoted or "
+                    "constructed `expr` value");
+    }
+    auto cloned_body = clone_expr_fragment(*body_arg.fragment);
+    if (cloned_body == nullptr) {
+      return report(call.args[2].value->span,
+                    "this quoted `expr` value's syntax is too complex for "
+                    "`expr.arm` to embed as an arm body");
+    }
+    auto *result = dynamic_cast<ast::match_expr *>(cloned_match_value.get());
+    ast::match_arm new_arm;
+    new_arm.span = call.span;
+    new_arm.pattern = std::move(cloned_pattern);
+    new_arm.body_expr = std::move(cloned_body);
+    result->arms.push_back(std::move(new_arm));
+    const auto *raw = result;
+    synthesized_fragments_.push_back(std::move(cloned_match_value));
+    return value::make_expr_fragment(raw);
+  }
+
   return report(call.span,
                 std::format("`expr.{}` is not a recognized AST-builder "
                             "intrinsic (only `expr.lit`/`expr.ident`/"
                             "`expr.field`/`expr.interp_concat`/`expr.debug`/"
-                            "`expr.binary`/`expr.call` are supported)",
+                            "`expr.binary`/`expr.call`/`expr.ctor_pattern`/"
+                            "`expr.match_on`/`expr.arm` are supported)",
                             field.field_name));
 }
 
@@ -2096,10 +2332,66 @@ auto evaluator::evaluate(const ast::expr &expr) -> value {
     return eval_module_path(dynamic_cast<const ast::module_path_expr &>(expr));
   case ast::node_kind::quote_expr:
     return eval_quote(dynamic_cast<const ast::quote_expr &>(expr));
+  case ast::node_kind::interpolated_string_expr:
+    return eval_interpolated_string(
+        dynamic_cast<const ast::interpolated_string_expr &>(expr));
   default:
     return report(expr.span, "this expression form is not yet supported in "
                              "compile-time evaluation");
   }
+}
+
+/// Compile-time evaluation of a `"...{expr}..."` interpolated string literal
+/// — needed so a derive body (e.g. `derive_show_sum`/`derive_eq_sum`,
+/// `src/std/deriving.kira`) can compute a name like `"p{i}"` at comptime to
+/// pass to `expr.ident(...)`; ordinary runtime string interpolation (e.g. a
+/// user's `println("{x}")`) never reaches here — it lowers straight to
+/// runtime formatting code instead. Deliberately narrow: no format-spec
+/// support (width/precision/alignment/type-char), since nothing a comptime
+/// derive body builds needs one — a segment with `has_spec` set reports
+/// rather than silently ignoring the spec.
+auto evaluator::eval_interpolated_string(
+    const ast::interpolated_string_expr &interp) -> value {
+  auto result = std::string{};
+  for (const auto &segment : interp.segments) {
+    if (segment.is_literal) {
+      result += segment.literal_text;
+      continue;
+    }
+    if (segment.has_spec) {
+      return report(interp.span,
+                    "a compile-time interpolated string cannot use a "
+                    "`:format_spec` — only plain `{expr}` segments are "
+                    "supported here");
+    }
+    if (segment.value == nullptr) {
+      return value::make_error();
+    }
+    auto evaluated = evaluate(*segment.value);
+    if (evaluated.is_error()) {
+      return evaluated;
+    }
+    switch (evaluated.kind) {
+    case value_kind::string:
+      result += evaluated.string;
+      break;
+    case value_kind::integer:
+      result += std::to_string(evaluated.integer);
+      break;
+    case value_kind::floating:
+      result += std::to_string(evaluated.floating);
+      break;
+    case value_kind::boolean:
+      result += evaluated.boolean ? "true" : "false";
+      break;
+    default:
+      return report(segment.value->span,
+                    "this value cannot be formatted inside a compile-time "
+                    "interpolated string (only strings, integers, floats, "
+                    "and booleans are supported here)");
+    }
+  }
+  return value::make_string(std::move(result));
 }
 
 } // namespace kira::comptime
