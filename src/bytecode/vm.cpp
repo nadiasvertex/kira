@@ -1529,6 +1529,30 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         continue;
       }
 
+      case opcode::op_tail_call: {
+        auto ops = operand_cursor{code, ip};
+        const auto fn_idx = ops.imm16();
+        const auto first_arg = ops.reg();
+        const auto argc = ops.imm8();
+        const std::vector<slot_value> call_args(f.registers.begin() + first_arg,
+                                                f.registers.begin() +
+                                                    first_arg + argc);
+        // Reuse the top frame in place — the whole of the VM's tail-call
+        // guarantee: `frames.size()` never grows, so an arbitrarily long
+        // tail-call chain runs in constant stack space. `has_caller`/
+        // `result_reg` are untouched: an eventual return still hands its
+        // result to whoever called into this frame originally, exactly as
+        // if the whole chain had been one call.
+        const auto &callee = module_.functions.at(fn_idx);
+        f.function = &callee;
+        f.registers.assign(callee.register_count, slot_value{});
+        for (size_t i = 0; i < call_args.size(); ++i) {
+          f.registers[i] = call_args[i];
+        }
+        f.pc = 0;
+        continue;
+      }
+
       case opcode::op_call_intrinsic: {
         auto ops = operand_cursor{code, ip};
         const auto dst = ops.reg();

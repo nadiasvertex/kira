@@ -6,6 +6,9 @@
 #include <string_view>
 #include <utility>
 
+#include <llvm/IR/Instructions.h>
+#include <llvm/Support/Casting.h>
+
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
 #include "src/hir/link.h"
@@ -163,6 +166,112 @@ auto jit_fixture_for_multi(
   auto jit = lc::jit_module::create(std::move(*compiled));
   expect(jit.has_value(), "expected the compiled module to JIT successfully");
   return jit_fixture{.fixture = std::move(fixture), .jit = std::move(*jit)};
+}
+
+// Counts every `llvm::CallInst` in `module` marked `musttail`
+// (`llvm::CallInst::TCK_MustTail`) whose callee is named `callee_name` — the
+// direct, observable signal that `function_compiler::compile_tail_call`
+// (src/llvm_codegen/codegen.cpp) actually emitted the guaranteed-tail-call
+// form rather than an ordinary call, per spec/specification/03-advanced/
+// 39-tail-call-optimization.md's "LLVM `musttail`" section.
+auto count_musttail_calls_to(llvm::Module &module, std::string_view callee_name)
+    -> size_t {
+  auto count = size_t{0};
+  for (auto &fn : module) {
+    for (auto &bb : fn) {
+      for (auto &inst : bb) {
+        const auto *call = llvm::dyn_cast<llvm::CallInst>(&inst);
+        if (call == nullptr ||
+            call->getTailCallKind() != llvm::CallInst::TCK_MustTail) {
+          continue;
+        }
+        const auto *callee = call->getCalledFunction();
+        if (callee != nullptr &&
+            callee->getName() == llvm::StringRef(callee_name)) {
+          ++count;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+auto test_self_recursive_tail_call_gets_musttail() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def count_down(n: int32, acc: int32) -> int32:\n"
+                               "    if n <= 0:\n"
+                               "        return acc\n"
+                               "    return count_down(n - 1, acc + 1)\n"
+                               "def main() -> int32:\n"
+                               "    return count_down(1000000, 0)\n");
+  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(module.has_value(), "expected fixture to lower to HIR");
+  auto compiled = lc::compile_module(**module, fixture.checked.types);
+  expect(compiled.has_value(),
+         "expected fixture to compile to an llvm::Module");
+
+  expect(count_musttail_calls_to(*compiled->module, "count_down") == 1,
+         "expected the self-recursive `return count_down(...)` to compile "
+         "to exactly one `musttail` call");
+
+  // Confirm it isn't merely present in the IR but actually correct at
+  // runtime, at real depth — the same proof the VM-side test gives, for
+  // the LLVM tier.
+  auto jit = lc::jit_module::create(std::move(*compiled));
+  expect(jit.has_value(), "expected the compiled module to JIT successfully");
+  auto result = jit->run("main", bc::numeric_kind::i32);
+  expect(result.has_value(), "expected a million-deep musttail chain not to "
+                             "overflow the native stack");
+  expect(result->value.i == 1'000'000,
+         "expected count_down(1000000, 0) == 1000000");
+}
+
+auto test_indirect_call_through_closure_never_gets_musttail() -> void {
+  // `f` is a `fn(int32) -> int32`-typed parameter — Decision 2 excludes
+  // every indirect/closure call, even one in tail position, from
+  // `is_tail_call` (see hir::mark_tail_calls), so codegen has no marked
+  // call here to ever emit `musttail` for.
+  auto fixture = check_fixture(
+      "module sample\n"
+      "def apply(f: fn(int32) -> int32, x: int32) -> int32:\n"
+      "    return f(x)\n");
+  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(module.has_value(), "expected fixture to lower to HIR");
+  auto compiled = lc::compile_module(**module, fixture.checked.types);
+  expect(compiled.has_value(),
+         "expected fixture to compile to an llvm::Module");
+
+  auto musttail_count = size_t{0};
+  for (auto &fn : *compiled->module) {
+    for (auto &bb : fn) {
+      for (auto &inst : bb) {
+        const auto *call = llvm::dyn_cast<llvm::CallInst>(&inst);
+        if (call != nullptr &&
+            call->getTailCallKind() == llvm::CallInst::TCK_MustTail) {
+          ++musttail_count;
+        }
+      }
+    }
+  }
+  expect(musttail_count == 0,
+         "expected a closure call through a parameter to never compile to "
+         "`musttail`, even in tail position");
+}
+
+auto test_intrinsic_call_never_gets_musttail() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "intrinsic def rt_panic(msg: str) -> never\n"
+                               "def boom(msg: str) -> never:\n"
+                               "    return rt_panic(msg)\n");
+  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(module.has_value(), "expected fixture to lower to HIR");
+  auto compiled = lc::compile_module(**module, fixture.checked.types);
+  expect(compiled.has_value(),
+         "expected fixture to compile to an llvm::Module");
+
+  expect(count_musttail_calls_to(*compiled->module, "kira_rt_panic") == 0,
+         "expected a call to an `intrinsic def` to never compile to "
+         "`musttail`, even in tail position");
 }
 
 auto test_add_compiles_and_runs() -> void {
@@ -1067,6 +1176,9 @@ auto main() -> int {
     test_unit_match_tail_call_stores_a_placeholder();
     test_while_loop_sums_one_to_n();
     test_recursive_call_computes_factorial();
+    test_self_recursive_tail_call_gets_musttail();
+    test_indirect_call_through_closure_never_gets_musttail();
+    test_intrinsic_call_never_gets_musttail();
     test_and_or_short_circuit_to_correct_value();
     test_cast_widens_int_to_float();
     test_checked_add_panics_on_overflow_end_to_end();

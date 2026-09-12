@@ -297,6 +297,13 @@ struct hir_unary : hir_expr {
 struct hir_call : hir_expr {
   ptr<hir_expr> callee;
   ptr_vec<hir_expr> args;
+  /// Set by `mark_tail_calls` (`src/hir/tail_calls.h`), once, right after
+  /// lowering — never re-derived by a backend. True iff this call is in
+  /// tail position, its callee resolves to a statically-known function
+  /// (never a closure/indirect call or an intrinsic), and it is not inside
+  /// a generator step. See spec/specification/03-advanced/
+  /// 39-tail-call-optimization.md for the exact eligibility rules.
+  bool is_tail_call = false;
 
   hir_call(source_span s, type_id t, ptr<hir_expr> c, ptr_vec<hir_expr> a)
       : hir_expr(hir_node_kind::hir_call, s, t), callee(std::move(c)),

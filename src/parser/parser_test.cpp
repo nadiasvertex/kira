@@ -872,6 +872,54 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
          "expected for-expression iterable identifier name");
 }
 
+/// Regression test for spec/todo.md item 11: a `let x = match ...:` statement
+/// whose arms span multiple indented lines consumes its own closing DEDENT
+/// internally (the match block's arms end back at the enclosing statement's
+/// indentation). The *following* statement's leading `if` was being stolen
+/// as a trailing `expr if cond else expr` continuation of the match
+/// expression instead of starting a new `if` statement, cascading into
+/// "expected `else` in conditional expression" errors. Exercises the
+/// preceding-`var`-statement shape from the bug report, since the fix must
+/// not depend on the match statement's position in the block.
+auto test_parser_disambiguates_if_stmt_after_multiline_match_let() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "def classify(t):\n"
+                             "  var score = 0\n"
+                             "  let m = match t:\n"
+                             "    0 => \"zero\"\n"
+                             "    _ => \"other\"\n"
+                             "  if m == \"zero\":\n"
+                             "    score = 1\n"
+                             "  else:\n"
+                             "    score = 2\n"
+                             "  return score\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1, "expected one function item");
+
+  auto *func_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected classify function declaration");
+  expect(func_decl->body_stmts.size() == 4,
+         "expected var, let, if, and return statements");
+
+  expect_node<kira::ast::let_stmt>(
+      func_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+      "expected multi-line match to still parse as a let binding");
+
+  auto *if_stmt = expect_node<kira::ast::if_stmt>(
+      func_decl->body_stmts[2].get(), kira::ast::node_kind::if_stmt,
+      "expected the following `if` to parse as its own if-statement, not "
+      "get consumed as a trailing conditional on the match expression");
+  expect(if_stmt->branches.size() == 1, "expected one if-branch");
+  expect(if_stmt->else_body.size() == 1, "expected an else body");
+
+  expect_node<kira::ast::return_stmt>(
+      func_decl->body_stmts[3].get(), kira::ast::node_kind::return_stmt,
+      "expected trailing return statement to still parse");
+}
+
 auto test_parser_accepts_remaining_phase1_constructs() -> void {
   auto parsed = parse_source(
       "module sample\n"
@@ -2102,7 +2150,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 43> tests = {{
+  const std::array<named_test, 44> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "multiline_sum_type",
@@ -2122,6 +2170,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_recovers_missing_colon_in_where_clause},
       {.name = "spec_valid_regressions",
        .fn = test_parser_accepts_spec_valid_regressions},
+      {.name = "if_stmt_after_multiline_match_let",
+       .fn = test_parser_disambiguates_if_stmt_after_multiline_match_let},
       {.name = "remaining_phase1_constructs",
        .fn = test_parser_accepts_remaining_phase1_constructs},
       {.name = "if_let_expression",

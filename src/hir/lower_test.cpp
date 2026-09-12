@@ -2433,6 +2433,159 @@ auto test_lowers_struct_invariant_at_construction_and_mutation() -> void {
 
 } // namespace
 
+// Regression tests for `hir::mark_tail_calls` (spec/specification/
+// 03-advanced/39-tail-call-optimization.md), run via `lower_function`
+// (which invokes the pass internally) rather than calling it directly,
+// matching how the rest of this file exercises lowering-adjacent behavior.
+
+auto test_marks_direct_call_in_return_position_as_tail() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def helper(x: int32) -> int32:\n"
+                               "    return x + 1\n"
+                               "def caller(x: int32) -> int32:\n"
+                               "    return helper(x)\n");
+  const auto &decl = find_func(*fixture.ast_file, "caller");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected the function to lower");
+
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*(*result)->body->stmts.front());
+  const auto &call = dynamic_cast<const hir::hir_call &>(*ret.value);
+  expect(call.is_tail_call,
+         "expected a direct call in `return` position to be marked tail");
+}
+
+auto test_does_not_mark_call_nested_as_an_argument() -> void {
+  // `helper(helper(x))`: the outer call is tail, but its argument — the
+  // inner `helper(x)` — feeds the outer call rather than being returned
+  // itself, so Decision 2's own example ("only the outermost call of
+  // `f(g(x))` could be tail, and it is not") says it must stay unmarked.
+  auto fixture = check_fixture("module sample\n"
+                               "def helper(x: int32) -> int32:\n"
+                               "    return x + 1\n"
+                               "def caller(x: int32) -> int32:\n"
+                               "    return helper(helper(x))\n");
+  const auto &decl = find_func(*fixture.ast_file, "caller");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected the function to lower");
+
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*(*result)->body->stmts.front());
+  const auto &outer_call = dynamic_cast<const hir::hir_call &>(*ret.value);
+  expect(outer_call.is_tail_call,
+         "expected the outer call to be marked tail");
+
+  const auto &inner_call =
+      dynamic_cast<const hir::hir_call &>(*outer_call.args[0]);
+  expect(!inner_call.is_tail_call,
+         "expected the nested argument call to stay unmarked — its result "
+         "feeds the outer call, it is not itself returned");
+}
+
+auto test_marks_calls_in_tail_position_of_if_branches() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def base(x: int32) -> int32:\n"
+                               "    return x\n"
+                               "def dispatch(x: int32) -> int32:\n"
+                               "    if x > 0:\n"
+                               "        return base(x)\n"
+                               "    else:\n"
+                               "        return base(0)\n");
+  const auto &decl = find_func(*fixture.ast_file, "dispatch");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected the function to lower");
+
+  // `hir::lowerer::lower_block` wraps a block's trailing `if`/`match` in
+  // `hir_expr_stmt` even when (as here) nothing reads its value.
+  const auto &if_stmt = dynamic_cast<const hir::hir_expr_stmt &>(
+      *(*result)->body->stmts.front());
+  const auto &iff = dynamic_cast<const hir::hir_if &>(*if_stmt.expr);
+  expect(iff.branches.size() == 1, "expected one `if` branch plus `else`");
+
+  const auto &then_ret = dynamic_cast<const hir::hir_return &>(
+      *iff.branches.front().body->stmts.front());
+  const auto &then_call = dynamic_cast<const hir::hir_call &>(*then_ret.value);
+  expect(then_call.is_tail_call,
+         "expected the `if` branch's `return base(x)` to be marked tail");
+
+  expect(iff.else_body != nullptr, "expected an `else` body");
+  const auto &else_ret = dynamic_cast<const hir::hir_return &>(
+      *iff.else_body->stmts.front());
+  const auto &else_call = dynamic_cast<const hir::hir_call &>(*else_ret.value);
+  expect(else_call.is_tail_call,
+         "expected the `else` branch's `return base(0)` to be marked tail");
+}
+
+auto test_does_not_mark_indirect_call_through_a_parameter() -> void {
+  // `f` is a `fn(int32) -> int32`-typed parameter, not a statically-known
+  // function — Decision 2 excludes every indirect/closure call outright.
+  auto fixture = check_fixture(
+      "module sample\n"
+      "def apply_twice(f: fn(int32) -> int32, x: int32) -> int32:\n"
+      "    return f(f(x))\n");
+  const auto &decl = find_func(*fixture.ast_file, "apply_twice");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected the function to lower");
+
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*(*result)->body->stmts.front());
+  const auto &outer_call = dynamic_cast<const hir::hir_call &>(*ret.value);
+  expect(!outer_call.is_tail_call,
+         "expected a call through a parameter-bound closure to stay "
+         "unmarked, even in tail position");
+}
+
+auto test_does_not_mark_intrinsic_call() -> void {
+  // An `intrinsic def` has no HIR body/frame of its own to reuse into.
+  auto fixture = check_fixture("module sample\n"
+                               "intrinsic def rt_panic(msg: str) -> never\n"
+                               "def boom(msg: str) -> never:\n"
+                               "    return rt_panic(msg)\n");
+  const auto &decl = find_func(*fixture.ast_file, "boom");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected the function to lower");
+
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*(*result)->body->stmts.front());
+  const auto &call = dynamic_cast<const hir::hir_call &>(*ret.value);
+  expect(!call.is_tail_call,
+         "expected a call to an `intrinsic def` to stay unmarked even in "
+         "tail position");
+}
+
+auto test_does_not_mark_calls_inside_a_generator_function() -> void {
+  // A `generator def`'s body doubles as its step function's body, which
+  // the spec excludes outright — the whole function is skipped, not just
+  // calls near a `yield`. (Semantic analysis rejects `return <value>`
+  // inside a generator body, so the tail position here is the block's
+  // trailing expression statement instead of an explicit `return`.)
+  auto fixture = check_fixture(
+      "module sample\n"
+      "def helper(x: int32) -> int32:\n"
+      "    return x + 1\n"
+      "generator def gen(x: int32) -> some iterator[int32]:\n"
+      "    yield x\n"
+      "    helper(x)\n");
+  const auto &decl = find_func(*fixture.ast_file, "gen");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected the generator function to lower");
+  expect((*result)->is_generator, "expected the function to lower as a generator");
+
+  const auto &stmts = (*result)->body->stmts;
+  const auto &expr_stmt =
+      dynamic_cast<const hir::hir_expr_stmt &>(*stmts.back());
+  const auto &call = dynamic_cast<const hir::hir_call &>(*expr_stmt.expr);
+  expect(!call.is_tail_call,
+         "expected a call inside a generator function's body to stay "
+         "unmarked, even in tail position");
+}
+
 auto main() -> int {
   try {
     test_lowers_fully_annotated_function();
@@ -2506,6 +2659,12 @@ auto main() -> int {
     test_omits_proved_precondition();
     test_contract_checks_can_be_disabled();
     test_lowers_struct_invariant_at_construction_and_mutation();
+    test_marks_direct_call_in_return_position_as_tail();
+    test_does_not_mark_call_nested_as_an_argument();
+    test_marks_calls_in_tail_position_of_if_branches();
+    test_does_not_mark_indirect_call_through_a_parameter();
+    test_does_not_mark_intrinsic_call();
+    test_does_not_mark_calls_inside_a_generator_function();
   } catch (const std::exception &ex) {
     std::cerr << "lower_test failed: unhandled exception: " << ex.what()
               << '\n';

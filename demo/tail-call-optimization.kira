@@ -1,0 +1,33 @@
+module main
+
+# Tail-call optimization: a call in tail position reuses its caller's frame
+# instead of pushing a new one, so tail recursion runs in constant stack
+# space. See spec/specification/03-advanced/39-tail-call-optimization.md.
+#
+# Demonstrates: self-recursion (an accumulator-style loop written as a
+# function) and mutual recursion, both run deep enough (a million calls)
+# that they would overflow the call stack without frame reuse.
+
+def sum_to(n: int64, acc: int64) -> int64:
+    if n == 0:
+        return acc
+    return sum_to(n - 1, acc + n)
+
+def is_even(n: int64) -> bool:
+    if n == 0:
+        return true
+    return is_odd(n - 1)
+
+def is_odd(n: int64) -> bool:
+    if n == 0:
+        return false
+    return is_even(n - 1)
+
+def main() -> int32:
+    # 1,000,000 self-recursive calls, each in tail position.
+    println("sum_to(1000000)={sum_to(1000000, 0)}")
+
+    # 1,000,000 mutually-recursive calls between two named functions.
+    println("is_even(1000000)={is_even(1000000)}")
+    println("is_odd(1000000)={is_odd(1000000)}")
+    return 0

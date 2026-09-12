@@ -219,6 +219,18 @@ enum class opcode : uint8_t {
   op_return_unit,  ///< (no operands) — pop the current frame with no value
                    ///< to hand back (the callee's return type is `unit`).
 
+  op_tail_call, ///< u16 function_index, u16 first_arg_reg, u8 argc — same
+                ///< operand layout as `op_call` minus the destination
+                ///< register, since a tail call's result flows to the
+                ///< *current* frame's caller, not to a register in the
+                ///< current frame. Reuses the top frame in place instead of
+                ///< pushing a new one (see `vm::run`): call depth
+                ///< (`frames.size()`) does not grow, which is the whole of
+                ///< the VM's tail-call guarantee (spec/specification/
+                ///< 03-advanced/39-tail-call-optimization.md). Emitted, with
+                ///< no following return opcode, exactly at HIR-marked tail
+                ///< positions in place of an ordinary call plus return.
+
   op_call_intrinsic, ///< u16 dst, u8 intrinsic_id, u16 first_arg_reg, u8 argc
                      ///< — calls the native implementation of the intrinsic
                      ///< at index `intrinsic_id` into
@@ -582,6 +594,8 @@ struct operand_signature {
     return sig({reg});
   case opcode::op_return_unit:
     return sig({});
+  case opcode::op_tail_call:
+    return sig({imm16, reg, imm8});
   case opcode::op_call_intrinsic:
     return sig({reg, imm8, reg, imm8});
 

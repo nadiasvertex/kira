@@ -675,6 +675,16 @@ private:
       const auto &last = *stmts.back();
       if (last.kind == hir_node_kind::hir_expr_stmt) {
         const auto &expr_stmt = dynamic_cast<const hir::hir_expr_stmt &>(last);
+        if (expr_stmt.expr->kind == hir_node_kind::hir_call) {
+          const auto &call =
+              dynamic_cast<const hir::hir_call &>(*expr_stmt.expr);
+          if (call.is_tail_call) {
+            if (auto result = compile_tail_call(call); !result.has_value()) {
+              return std::unexpected(result.error());
+            }
+            return finish_with_allocation(name, param_count, span);
+          }
+        }
         auto reg = compile_expr(*expr_stmt.expr);
         if (!reg.has_value()) {
           return std::unexpected(reg.error());
@@ -1547,6 +1557,8 @@ private:
     // literal, or any other computed callee expression. Compile the callee
     // generically and dispatch through `op_call_indirect`, which reads the
     // `{ function_index; env_ptr }` pair out of the resulting heap value.
+    // (`mark_tail_calls` never sets `is_tail_call` on this shape — Decision
+    // 2 excludes indirect/closure calls — so there's nothing to check here.)
     const auto closure_reg = compile_expr(*call.callee);
     if (!closure_reg.has_value()) {
       return std::unexpected(closure_reg.error());
@@ -1565,6 +1577,54 @@ private:
     emit_op(opcode::op_call_indirect);
     emit_register(dst);
     emit_register(*closure_reg);
+    emit_register(*first_arg);
+    writer_.emit_u8(static_cast<uint8_t>(argc));
+    return {};
+  }
+
+  /// Compiles `call` as `op_tail_call` instead of `op_call` + a return —
+  /// reuses the caller's own frame at runtime (`vm::run`) rather than
+  /// pushing a new one, so an arbitrarily long tail-call chain runs in
+  /// constant stack space. Only ever invoked at a site where the HIR pass
+  /// (`hir::mark_tail_calls`) has already set `call.is_tail_call`, which
+  /// guarantees every precondition `compile_call`'s direct-call branch
+  /// checks: `call.callee` is a `hir_local_ref` that is neither a locally-
+  /// bound variable (an indirect/closure call) nor an `intrinsic def` name.
+  [[nodiscard]] auto compile_tail_call(const hir::hir_call &call)
+      -> std::expected<void, compile_error> {
+    if (call.args.size() > 255) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = call.span,
+          .message =
+              "more than 255 call arguments is not supported by this bytecode "
+              "format's u8 argument-count operand"});
+    }
+    const auto argc = call.args.size();
+    const auto &ref = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
+    const auto found = functions_.find(resolve_callee_key(ref));
+    if (found == functions_.end()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unknown_callee,
+          .span = call.span,
+          .message = std::format(
+              "call to `{}` could not be resolved to a function in this "
+              "compiled module",
+              ref.name)});
+    }
+    const auto first_arg = argument_block(call.span, argc);
+    if (!first_arg.has_value()) {
+      return std::unexpected(first_arg.error());
+    }
+    for (size_t i = 0; i < call.args.size(); ++i) {
+      if (auto result =
+              compile_expr_into(*call.args[i], nth_argument(*first_arg, i));
+          !result.has_value()) {
+        return std::unexpected(result.error());
+      }
+    }
+    emit_op(opcode::op_tail_call);
+    writer_.emit_u16(found->second);
     emit_register(*first_arg);
     writer_.emit_u8(static_cast<uint8_t>(argc));
     return {};
@@ -3189,6 +3249,12 @@ private:
         }
         emit_op(opcode::op_return_unit);
         return {};
+      }
+      if (ret.value->kind == hir_node_kind::hir_call) {
+        const auto &call = dynamic_cast<const hir::hir_call &>(*ret.value);
+        if (call.is_tail_call) {
+          return compile_tail_call(call);
+        }
       }
       auto reg = compile_expr(*ret.value);
       if (!reg.has_value()) {

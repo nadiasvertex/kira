@@ -821,6 +821,17 @@ private:
         if (last.kind == hir_node_kind::hir_expr_stmt) {
           const auto &expr_stmt =
               dynamic_cast<const hir::hir_expr_stmt &>(last);
+          if (expr_stmt.expr->kind == hir_node_kind::hir_call) {
+            const auto &call =
+                dynamic_cast<const hir::hir_call &>(*expr_stmt.expr);
+            if (call.is_tail_call) {
+              if (auto result = compile_tail_call(call); !result.has_value()) {
+                return std::unexpected(result.error());
+              }
+              alloca_marker_->eraseFromParent();
+              return {};
+            }
+          }
           auto value = compile_expr(*expr_stmt.expr);
           if (!value.has_value()) {
             return std::unexpected(value.error());
@@ -1800,6 +1811,96 @@ private:
       args.push_back(*value);
     }
     return builder_.CreateCall(fn_type, fn_ptr, args);
+  }
+
+  /// Compiles `call` (which `hir::mark_tail_calls` has already marked
+  /// `is_tail_call`) as a tail call and immediately emits the matching
+  /// `ret`, with nothing in between — `musttail` requires the `ret` to
+  /// consume the call's result directly. Only reached at a site where the
+  /// HIR pass has already guaranteed `call.callee` is a `hir_local_ref`
+  /// resolving to a real function, never a locally-bound closure or an
+  /// intrinsic — the same preconditions `compile_call`'s direct-call branch
+  /// checks.
+  ///
+  /// `musttail` is verify-or-die, so it is only ever emitted once its own
+  /// preconditions provably hold here too: matching return type (covers
+  /// "both void" as well as "both the same scalar/pointer type") and same
+  /// calling convention. Kira has no by-value struct return, so there is no
+  /// `sret` case to guard against. When a precondition doesn't hold —
+  /// nothing in this compiler currently causes that, since a tail call's
+  /// callee always shares the enclosing function's own return type and
+  /// every declared function uses the same calling convention, but a
+  /// future change might — this falls back to an ordinary call with the
+  /// non-binding `Tail` hint and a normal return: correctness is
+  /// unaffected, only the stack-space guarantee weakens for that call.
+  [[nodiscard]] auto compile_tail_call(const hir::hir_call &call)
+      -> std::expected<void, codegen_error> {
+    const auto &ref = dynamic_cast<const hir::hir_local_ref &>(*call.callee);
+    const auto found = functions_.find(resolve_callee_key(ref));
+    if (found == functions_.end()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unknown_callee,
+          .span = call.span,
+          .message = std::format("call to `{}` could not be resolved to "
+                                 "a function in this compiled module",
+                                 ref.name)});
+    }
+    auto *callee_fn = found->second;
+
+    auto args = std::vector<llvm::Value *>{};
+    args.reserve(call.args.size());
+    for (const auto &arg : call.args) {
+      auto value = compile_expr(*arg);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      args.push_back(*value);
+    }
+
+    auto *call_inst = builder_.CreateCall(callee_fn, args);
+
+    // Beyond what spec/specification/03-advanced/39-tail-call-optimization.md
+    // enumerates (matching return type, matching calling convention, no
+    // sret), LLVM's own `musttail` verifier additionally requires the call's
+    // argument list to be positionally compatible with the *caller's* own
+    // parameter list — on targets that implement guaranteed tail calls by
+    // reusing the caller's incoming argument stack slots for the callee's
+    // outgoing arguments, a mismatched count or a same-position type
+    // mismatch can't be guaranteed tail-callable. Two real corpus cases hit
+    // this before these checks existed: `main() -> sum_to_n(100)`
+    // (src/testdata/codegen_stress/015_while_loop_accumulate.kira, 0 caller
+    // params vs. 1 call argument — "mismatched parameter counts"), and
+    // `std.fmt`'s internal helpers tail-calling each other with same-arity
+    // but differently-typed parameter lists ("mismatched parameter types").
+    // Both fall back to an ordinary `Tail`-hinted call below — correct
+    // either way, per Decision 3 ("AOT guarantees it where the ABI provably
+    // permits"); self- and matching-signature mutual recursion still get
+    // the real guarantee.
+    auto same_param_types = args.size() == current_fn_->arg_size();
+    if (same_param_types) {
+      size_t i = 0;
+      for (const auto &param : current_fn_->args()) {
+        if (param.getType() != args[i]->getType()) {
+          same_param_types = false;
+          break;
+        }
+        ++i;
+      }
+    }
+    const auto eligible_for_musttail =
+        callee_fn->getReturnType() == current_fn_->getReturnType() &&
+        callee_fn->getCallingConv() == current_fn_->getCallingConv() &&
+        same_param_types;
+    call_inst->setTailCallKind(eligible_for_musttail
+                                    ? llvm::CallInst::TCK_MustTail
+                                    : llvm::CallInst::TCK_Tail);
+
+    if (return_is_unit_) {
+      builder_.CreateRetVoid();
+    } else {
+      builder_.CreateRet(call_inst);
+    }
+    return {};
   }
 
   /// Compiles a lambda literal into a closure heap value `{ fn_ptr; env_ptr
@@ -3362,6 +3463,15 @@ private:
         }
         builder_.CreateRetVoid();
         return true;
+      }
+      if (ret.value->kind == hir_node_kind::hir_call) {
+        const auto &call = dynamic_cast<const hir::hir_call &>(*ret.value);
+        if (call.is_tail_call) {
+          if (auto result = compile_tail_call(call); !result.has_value()) {
+            return std::unexpected(result.error());
+          }
+          return true;
+        }
       }
       auto value = compile_expr(*ret.value);
       if (!value.has_value()) {

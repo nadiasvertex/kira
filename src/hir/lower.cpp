@@ -13,6 +13,7 @@
 
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
+#include "src/hir/tail_calls.h"
 #include "src/parser/ast.h"
 #include "src/semantic/types.h"
 
@@ -4300,7 +4301,17 @@ auto lower_function(const ast::func_decl &decl,
                     const lowering_options &options)
     -> std::expected<ptr<hir_function>, lowering_error> {
   auto walker = lowerer(checked, options);
-  return walker.lower_function(decl);
+  auto result = walker.lower_function(decl);
+  // Every `hir_function` this milestone produces passes through this one
+  // choke point (`lower_module`/`lower_inline_submodules`/
+  // `lower_functor_modules` all call it), so running tail-position
+  // analysis here — once, right after lowering — guarantees the bytecode
+  // and LLVM backends consume the same verdict instead of each re-deriving
+  // (and potentially disagreeing on) it.
+  if (result.has_value()) {
+    mark_tail_calls(**result);
+  }
+  return result;
 }
 
 /// The bare target-type name an `impl ... for <type>` block lowers its

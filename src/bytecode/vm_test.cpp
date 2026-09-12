@@ -384,6 +384,71 @@ auto test_unbounded_recursion_panics_with_stack_overflow() -> void {
          "expected the panic reason to be stack_overflow");
 }
 
+auto test_tail_call_reuses_frame_past_max_call_depth() -> void {
+  // fn count_down(n: i32, acc: i32) -> i32 {
+  //   if n <= 0 { return acc }
+  //   return op_tail_call count_down(n - 1, acc + 1)
+  // }
+  // Recurses far past `k_max_call_depth` (4096, vm.cpp) — this must not
+  // panic with `stack_overflow`, and must produce the exact expected
+  // result, proving real O(1) frame reuse rather than a coincidental pass.
+  auto writer = bc::chunk_writer{};
+  const auto c_zero = writer.add_constant(bc::slot_value{int64_t{0}});
+  const auto c_one = writer.add_constant(bc::slot_value{int64_t{1}});
+
+  writer.emit_opcode(bc::opcode::op_load_const);
+  writer.emit_register(2);
+  writer.emit_u16(c_zero);
+  writer.emit_opcode(bc::opcode::op_le);
+  writer.emit_register(3);
+  writer.emit_register(0);
+  writer.emit_register(2);
+  writer.emit_numeric_kind(bc::numeric_kind::i32);
+  writer.emit_opcode(bc::opcode::op_jump_if_false);
+  writer.emit_register(3);
+  const auto else_placeholder = writer.emit_jump_placeholder();
+
+  // then: return acc.
+  writer.emit_opcode(bc::opcode::op_return_value);
+  writer.emit_register(1);
+
+  // else: op_tail_call count_down(n - 1, acc + 1) — registers 4 and 5 are
+  // the contiguous argument block `op_tail_call` reads.
+  writer.patch_jump_to_here(else_placeholder);
+  writer.emit_opcode(bc::opcode::op_load_const);
+  writer.emit_register(6);
+  writer.emit_u16(c_one);
+  writer.emit_opcode(bc::opcode::op_sub);
+  writer.emit_register(4);
+  writer.emit_register(0);
+  writer.emit_register(6);
+  writer.emit_numeric_kind(bc::numeric_kind::i32);
+  writer.emit_opcode(bc::opcode::op_add);
+  writer.emit_register(5);
+  writer.emit_register(1);
+  writer.emit_register(6);
+  writer.emit_numeric_kind(bc::numeric_kind::i32);
+  writer.emit_opcode(bc::opcode::op_tail_call);
+  writer.emit_u16(0); // this function's own index — recursive tail call.
+  writer.emit_register(4);
+  writer.emit_u8(2);
+
+  auto function = std::move(writer).finish("count_down", 2, 7);
+
+  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
+  module.functions.push_back(std::move(function));
+
+  const auto args =
+      std::array{bc::slot_value{int64_t{1'000'000}}, bc::slot_value{int64_t{0}}};
+  auto result = bc::vm{module}.run(0, args);
+
+  expect(result.has_value(),
+         "expected a million-deep tail-recursive call chain not to panic — "
+         "op_tail_call must reuse the frame instead of pushing a new one");
+  expect(result->value.i == 1'000'000,
+         "expected count_down(1000000, 0) == 1000000");
+}
+
 auto test_explicit_panic_opcode() -> void {
   auto writer = bc::chunk_writer{};
   writer.emit_opcode(bc::opcode::op_panic);
@@ -943,6 +1008,7 @@ auto main() -> int {
     test_while_loop_sums_one_to_n();
     test_recursive_call_computes_factorial();
     test_unbounded_recursion_panics_with_stack_overflow();
+    test_tail_call_reuses_frame_past_max_call_depth();
     test_explicit_panic_opcode();
     test_alloc_and_slot_roundtrip_a_two_field_heap_block();
     test_packed_struct_fields_round_trip_without_clobbering_neighbors();

@@ -1,12 +1,12 @@
 # 39. Tail-Call Optimization
 
-**Status:** Planned
+**Status:** Implemented (v1 scope — see Implementation status)
 
-A call in tail position is planned to reuse its caller's frame — guaranteed constant-space on the bytecode VM, and on LLVM/AOT wherever the ABI provably permits — so recursion is a safe looping idiom rather than a latent stack overflow.
+A call in tail position reuses its caller's frame — guaranteed constant-space on the bytecode VM, and on LLVM/AOT wherever the ABI provably permits — so recursion is a safe looping idiom rather than a latent stack overflow.
 
 ## Design
 
-Today every call pushes a frame: the VM's `frames` vector is capped (`k_max_call_depth`), and deep or mutually recursive calls exhaust it or the native stack well before an equivalent `while` loop would. This chapter describes the target design; none of it is implemented.
+Before this landed, every call pushed a frame: the VM's `frames` vector is capped (`k_max_call_depth`), and deep or mutually recursive calls exhausted it or the native stack well before an equivalent `while` loop would. This chapter describes the design as built.
 
 ### Scope, fixed by four decisions
 
@@ -54,7 +54,12 @@ None planned for v1 — the optimization is silent, matching decision 1. If a fu
 
 ## Implementation status
 
-Not implemented. No tail-call opcode exists in the bytecode VM (calls unconditionally push a frame), no `musttail`/tail-call marking exists in the LLVM backend, and no HIR representation of tail-position eligibility exists. `spec/tail-call-optimization.md` is the design source this chapter is drawn from; nothing in it has landed.
+Implemented as designed above, with two scope limitations beyond what's listed under "Future extensions":
+
+- **Tail position inside an `if`/`match` used as a value-producing expression is marked but not lowered by either backend.** `hir::mark_tail_calls` (`src/hir/tail_calls.h`) correctly marks a call in this position eligible (e.g. `return if cond: a else: f(x)`, or the same shape as a block's trailing implicit-return expression) — but both backends only actually emit `op_tail_call`/`musttail` at the two sites where a compiled expression is immediately followed by a return: an explicit `return call(...)` statement (which already covers the common self-recursive accumulator style, since each `if`/`match` branch there is compiled as an ordinary statement list ending in its own `return`), and a function body's own implicit trailing-expression return. A tail-eligible call sitting inside an `if`/`match` *expression*'s branch (feeding a shared merge register rather than returning directly) still compiles to an ordinary call — correct, just without the O(1)-stack guarantee for that specific call.
+- **Lowering never descends into a nested `hir_lambda`'s body.** A lambda compiles to its own separate function, and a name it calls that resolves to a *captured* local is indistinguishable, from inside the lambda alone, from a genuine top-level function reference without tracking capture provenance — so lambda bodies are left entirely unmarked rather than risk mismarking that case. A named function's own body (the common case, including self- and mutual recursion) is unaffected.
+
+Otherwise: the HIR pass, `op_tail_call` (bytecode VM), and LLVM `musttail` all match the design above, including LLVM's own additional `musttail`-verifier preconditions beyond what this chapter originally anticipated (matching argument count/types against the *caller's* own parameter list, positionally — found via real corpus failures, see `function_compiler::compile_tail_call`'s comment in `src/llvm_codegen/codegen.cpp`).
 
 ## See also
 
