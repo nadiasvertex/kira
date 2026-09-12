@@ -1,9 +1,14 @@
 module main
 
-# `peekable` wraps an iterator, allowing you to inspect the next element
-# without consuming it via `peek()`.
+# ==========================================================================
+#  `iterator.peekable` — wrap an iterator to allow look-ahead.
 #
-# Demonstrates: peeking ahead, and peeking after consuming.
+#  `.peekable()` adds a `peek()` method that returns the next element
+#  without consuming it, alongside the normal `next()`.
+#
+#  Run it:      kira demo/iterator-peekable.kira
+#  Compile it:  kira --compile -o iterator-peekable demo/iterator-peekable.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3]

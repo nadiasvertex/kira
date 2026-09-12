@@ -1,5 +1,16 @@
 module main
 
+# ==========================================================================
+#  String interpolation format specifiers.
+#
+#  `{expr :spec}` inside an interpolated string applies a format spec to
+#  the interpolated value — width/alignment, zero-padding, float precision,
+#  and radix (hex/binary) with optional width.
+#
+#  Run it:      kira demo/string-format.kira
+#  Compile it:  kira --compile -o string-format demo/string-format.kira
+# ==========================================================================
+
 def main() -> int32:
   let name = "Alice"
   let age = 30

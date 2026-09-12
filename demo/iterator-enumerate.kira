@@ -1,8 +1,16 @@
 module main
 
-# `enumerate` yields (index, element) tuples for each element.
+# ==========================================================================
+#  `iterator.enumerate` — pair each element with its index.
 #
-# Demonstrates: enumerating a list, and enumerating after filtering.
+#  Yields `(index, element)` tuples; the index always starts at 0 *from
+#  wherever the adapter chain begins*, so chaining `filter` before
+#  `enumerate` renumbers the surviving elements rather than keeping their
+#  original positions.
+#
+#  Run it:      kira demo/iterator-enumerate.kira
+#  Compile it:  kira --compile -o iterator-enumerate demo/iterator-enumerate.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = ["a", "b", "c"]

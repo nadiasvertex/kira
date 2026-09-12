@@ -8,6 +8,9 @@ module main
 #
 #  (Kept free of generic functions only because HIR does not lower those yet
 #  — the checking below works identically for `safe_get[T, n: usize]`.)
+#
+#  Run it:      kira demo/dependent-types.kira
+#  Compile it:  kira --compile -o dependent-types demo/dependent-types.kira
 # ==========================================================================
 
 # A refinement constrains a type with a predicate over `self`.

@@ -1,8 +1,14 @@
 module main
 
-# `position` returns the index of the first element that satisfies the predicate.
+# ==========================================================================
+#  `algorithm.position` — index of the first element satisfying a predicate.
 #
-# Demonstrates: finding an element by predicate, and not finding one.
+#  Like `find`, but returns the index instead of the element; `@none` if no
+#  element matches.
+#
+#  Run it:      kira demo/algorithm-position.kira
+#  Compile it:  kira --compile -o algorithm-position demo/algorithm-position.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [10, 20, 30, 40]

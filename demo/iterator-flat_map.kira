@@ -1,9 +1,14 @@
 module main
 
-# `flat_map` maps each element to an iterator and flattens the result.
-# A combination of `map` + `flatten`.
+# ==========================================================================
+#  `iterator.flat_map` — map each element to a sub-iterator, then flatten.
 #
-# Demonstrates: expanding each number into a range, with empty expansions.
+#  Equivalent to `map` followed by `flatten`, but as a single adapter: each
+#  element expands into zero or more output elements.
+#
+#  Run it:      kira demo/iterator-flat_map.kira
+#  Compile it:  kira --compile -o iterator-flat_map demo/iterator-flat_map.kira
+# ==========================================================================
 
 # Expand each n into [n*10, n*10+1, ... n*10+(n-1)]
 # 1 -> [10], 2 -> [20, 21], 3 -> [30, 31, 32]

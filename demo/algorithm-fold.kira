@@ -1,9 +1,15 @@
 module main
 
-# `fold` accumulates values using an initial state and a combining function.
+# ==========================================================================
+#  `algorithm.fold` — accumulate a value across an iterator.
 #
-# Demonstrates: a basic fold, fold on an empty iterator,
-# and accumulating a list via fold.
+#  Threads an initial value through a combining function called once per
+#  element; unlike `reduce`, `fold` has a defined result on an empty
+#  iterator (the initial value, unchanged).
+#
+#  Run it:      kira demo/algorithm-fold.kira
+#  Compile it:  kira --compile -o algorithm-fold demo/algorithm-fold.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 4, 5]

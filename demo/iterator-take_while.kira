@@ -1,9 +1,15 @@
 module main
 
-# `take_while` yields elements while the predicate is true,
-# then stops (never resumes).
+# ==========================================================================
+#  `iterator.take_while` — yield elements while a predicate holds.
 #
-# Demonstrates: taking while less than 5, and the difference from filter.
+#  Stops the iterator permanently at the first element that fails the
+#  predicate — unlike `filter`, it never resumes for later matches beyond
+#  the stopping point.
+#
+#  Run it:      kira demo/iterator-take_while.kira
+#  Compile it:  kira --compile -o iterator-take_while demo/iterator-take_while.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 9, 4, 5]

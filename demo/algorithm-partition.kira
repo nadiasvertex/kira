@@ -1,8 +1,14 @@
 module main
 
-# `partition` splits the iterator into two lists based on a predicate.
+# ==========================================================================
+#  `algorithm.partition` — split an iterator by a predicate.
 #
-# Demonstrates: partitioning evens and odds, and the partitioning property.
+#  Consumes the whole iterator into two lists: elements that satisfy the
+#  predicate, and everything else, preserving relative order in each.
+#
+#  Run it:      kira demo/algorithm-partition.kira
+#  Compile it:  kira --compile -o algorithm-partition demo/algorithm-partition.kira
+# ==========================================================================
 
 def main() -> int32:
     let xs = [3, 1, 4, 1, 5, 9, 2, 6]

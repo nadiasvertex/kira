@@ -1,9 +1,15 @@
 module main
 
-# `filter_map` combines mapping and filtering in one pass.
-# The function returns option[U]; @some values are yielded, @none are dropped.
+# ==========================================================================
+#  `iterator.filter_map` — map and filter in a single pass.
 #
-# Demonstrates: converting strings to integers, and extracting even values as doubles.
+#  Applies a function returning `option[U]`; `@some` values are yielded
+#  (unwrapped), `@none` values are dropped — a combination of `map` and
+#  `filter` without materializing an intermediate sequence.
+#
+#  Run it:      kira demo/iterator-filter_map.kira
+#  Compile it:  kira --compile -o iterator-filter_map demo/iterator-filter_map.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 4]

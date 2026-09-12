@@ -1,5 +1,16 @@
 module main
 
+# ==========================================================================
+#  std.platform — target and host platform information.
+#
+#  Queries compile-time target facts (architecture, OS, pointer width) and
+#  runtime host facts (hostname, libc, `uname`), plus the compiler's own
+#  version/build info. See spec/specification for the stdlib platform module.
+#
+#  Run it:      kira demo/platform.kira
+#  Compile it:  kira --compile -o platform demo/platform.kira
+# ==========================================================================
+
 use std.platform
 
 def main() -> int32:

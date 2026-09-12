@@ -1,8 +1,15 @@
 module main
 
-# `max_by_key` returns the element with the largest key value.
+# ==========================================================================
+#  `algorithm.max_by_key` — maximum element by a derived key.
 #
-# Demonstrates: finding the longest string, and the number with most factors.
+#  Applies a key function to each element and compares the keys, rather
+#  than the elements themselves — here, string length instead of the
+#  strings.
+#
+#  Run it:      kira demo/algorithm-max_by_key.kira
+#  Compile it:  kira --compile -o algorithm-max_by_key demo/algorithm-max_by_key.kira
+# ==========================================================================
 
 def main() -> int32:
     let words = ["hi", "hello", "hey", "supercalifragilistic"]

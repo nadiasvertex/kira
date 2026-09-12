@@ -1,9 +1,14 @@
 module main
 
-# `last` returns the last element of the iterator.
+# ==========================================================================
+#  `algorithm.last` — the final element of an iterator.
 #
-# Demonstrates: getting the last element, last on single-element iterator,
-# and last on empty iterator.
+#  Drains the whole iterator to reach the end; `@none` on an empty
+#  iterator, since there is no last element to return.
+#
+#  Run it:      kira demo/algorithm-last.kira
+#  Compile it:  kira --compile -o algorithm-last demo/algorithm-last.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 4, 5]

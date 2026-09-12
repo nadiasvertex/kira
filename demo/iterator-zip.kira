@@ -1,9 +1,14 @@
 module main
 
-# `zip` pairs elements from two iterators, stopping at the shorter one.
-# Each yielded value is a tuple (left, right).
+# ==========================================================================
+#  `iterator.zip` — pair up elements from two iterators.
 #
-# Demonstrates: pairing two lists, and the shorter-source rule.
+#  Yields `(left, right)` tuples, advancing both iterators in lockstep;
+#  stops as soon as the shorter of the two runs out.
+#
+#  Run it:      kira demo/iterator-zip.kira
+#  Compile it:  kira --compile -o iterator-zip demo/iterator-zip.kira
+# ==========================================================================
 
 def main() -> int32:
     let a = [1, 2, 3]

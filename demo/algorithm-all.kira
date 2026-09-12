@@ -1,8 +1,14 @@
 module main
 
-# `all` returns true if every element satisfies the predicate.
+# ==========================================================================
+#  `algorithm.all` — does every element satisfy a predicate?
 #
-# Demonstrates: positive case, negative case, all on empty (vacuously true).
+#  Short-circuits on the first element that fails the predicate; an empty
+#  iterator is vacuously `true`.
+#
+#  Run it:      kira demo/algorithm-all.kira
+#  Compile it:  kira --compile -o algorithm-all demo/algorithm-all.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [2, 4, 6, 8]

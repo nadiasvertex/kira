@@ -1,10 +1,15 @@
 module main
 
-# `reduce` is like `fold` but without an initial value —
-# it uses the first element as the starting point.
+# ==========================================================================
+#  `algorithm.reduce` — fold without a separate initial value.
 #
-# Demonstrates: basic reduce, reduce on empty iterator,
-# and reduce where the combiner reverses order.
+#  Like `fold`, but uses the iterator's first element as the starting
+#  accumulator instead of a caller-supplied one; `@none` on an empty
+#  iterator, since there is nothing to seed the accumulator with.
+#
+#  Run it:      kira demo/algorithm-reduce.kira
+#  Compile it:  kira --compile -o algorithm-reduce demo/algorithm-reduce.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 4, 5]

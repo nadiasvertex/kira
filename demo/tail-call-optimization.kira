@@ -1,12 +1,19 @@
 module main
 
-# Tail-call optimization: a call in tail position reuses its caller's frame
-# instead of pushing a new one, so tail recursion runs in constant stack
-# space. See spec/specification/03-advanced/39-tail-call-optimization.md.
+# ==========================================================================
+#  Tail-call optimization.
 #
-# Demonstrates: self-recursion (an accumulator-style loop written as a
-# function) and mutual recursion, both run deep enough (a million calls)
-# that they would overflow the call stack without frame reuse.
+#  A call in tail position reuses its caller's frame instead of pushing a
+#  new one, so tail recursion runs in constant stack space. See
+#  spec/specification/03-advanced/39-tail-call-optimization.md.
+#
+#  Demonstrates: self-recursion (an accumulator-style loop written as a
+#  function) and mutual recursion, both run deep enough (a million calls)
+#  that they would overflow the call stack without frame reuse.
+#
+#  Run it:      kira demo/tail-call-optimization.kira
+#  Compile it:  kira --compile -o tail-call-optimization demo/tail-call-optimization.kira
+# ==========================================================================
 
 def sum_to(n: int64, acc: int64) -> int64:
     if n == 0:

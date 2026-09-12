@@ -1,8 +1,15 @@
 module main
 
-# `max_by` returns the maximum element using a custom comparator.
+# ==========================================================================
+#  `algorithm.max_by` — maximum element under a custom comparator.
 #
-# Demonstrates: finding maximum by normal order, and minimum via reversed order.
+#  Takes a comparator returning `ordering` instead of relying on the
+#  element type's own ordering; reversing the comparator's sense turns a
+#  "maximum" search into a minimum one.
+#
+#  Run it:      kira demo/algorithm-max_by.kira
+#  Compile it:  kira --compile -o algorithm-max_by demo/algorithm-max_by.kira
+# ==========================================================================
 
 def cmp_int(a: int32, b: int32) -> ordering:
     if a < b:

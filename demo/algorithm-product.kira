@@ -1,8 +1,14 @@
 module main
 
-# `product` returns the product of all elements. Uses the `one` trait for the identity.
+# ==========================================================================
+#  `algorithm.product` — the product of all elements.
 #
-# Demonstrates: product of integers and floats.
+#  Uses the element type's `one` trait for the identity, so an empty
+#  iterator returns 1 rather than 0.
+#
+#  Run it:      kira demo/algorithm-product.kira
+#  Compile it:  kira --compile -o algorithm-product demo/algorithm-product.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 4]

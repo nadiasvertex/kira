@@ -1,3 +1,14 @@
 module main
 
+# ==========================================================================
+#  Hello, world — as a bare top-level statement.
+#
+#  A module needs no `def main()` at all: top-level statements in the
+#  entry module run directly when the module is executed. See
+#  `hello-world-main.kira` for the equivalent written with an explicit
+#  `main` function.
+#
+#  Run it: kira demo/hello-world.kira
+# ==========================================================================
+
 println("hello world!")

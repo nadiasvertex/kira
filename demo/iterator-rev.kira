@@ -1,8 +1,14 @@
 module main
 
-# `rev` reverses a double-ended iterator.
+# ==========================================================================
+#  `iterator.rev` — reverse a double-ended iterator.
 #
-# Demonstrates: reversing a forward list.
+#  Yields elements back-to-front; requires the underlying iterator to be
+#  double-ended (know both endpoints), not just forward-only.
+#
+#  Run it:      kira demo/iterator-rev.kira
+#  Compile it:  kira --compile -o iterator-rev demo/iterator-rev.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3]

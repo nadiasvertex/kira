@@ -1,9 +1,14 @@
 module main
 
-# `flatten` takes an iterator of iterators and yields all inner elements
-# in sequence, skipping empty inner iterators.
+# ==========================================================================
+#  `iterator.flatten` — collapse an iterator of iterators into one.
 #
-# Demonstrates: flattening a list of lists, with empty sublists.
+#  Yields every inner element in sequence, across all outer elements;
+#  empty inner iterators simply contribute nothing.
+#
+#  Run it:      kira demo/iterator-flatten.kira
+#  Compile it:  kira --compile -o iterator-flatten demo/iterator-flatten.kira
+# ==========================================================================
 
 def main() -> int32:
     # Create [[1, 2], [], [3], []]

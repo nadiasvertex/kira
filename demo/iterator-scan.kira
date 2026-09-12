@@ -1,9 +1,15 @@
 module main
 
-# `scan` threads an accumulator through the iterator,
-# yielding a value for each element based on the accumulator state.
+# ==========================================================================
+#  `iterator.scan` — thread an accumulator through the iterator.
 #
-# Demonstrates: running sums, and cumulative string prefixes.
+#  Like `fold`, but yields a value at every step instead of only the final
+#  result — a running total or a cumulative combination, one output per
+#  input element.
+#
+#  Run it:      kira demo/iterator-scan.kira
+#  Compile it:  kira --compile -o iterator-scan demo/iterator-scan.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3]

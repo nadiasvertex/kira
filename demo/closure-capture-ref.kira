@@ -7,7 +7,8 @@ module main
 #  rather than a copy, so a change made through one path is visible through
 #  the other.
 #
-#  Run it: bazelisk run //src:kira -- demo/closure-capture-ref.kira
+#  Run it:      kira demo/closure-capture-ref.kira
+#  Compile it:  kira --compile -o closure-capture-ref demo/closure-capture-ref.kira
 # ==========================================================================
 
 def main() -> unit:

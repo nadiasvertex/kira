@@ -9,7 +9,8 @@ module main
 #  referencing anything else there is an error, the same as referencing an
 #  undeclared name.
 #
-#  Run it: bazelisk run //src:kira -- demo/closure-capture-value.kira
+#  Run it:      kira demo/closure-capture-value.kira
+#  Compile it:  kira --compile -o closure-capture-value demo/closure-capture-value.kira
 # ==========================================================================
 
 def main() -> unit:

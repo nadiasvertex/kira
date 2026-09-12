@@ -1,8 +1,14 @@
 module main
 
-# `filter` keeps only elements that satisfy a predicate.
+# ==========================================================================
+#  `iterator.filter` — keep only elements satisfying a predicate.
 #
-# Demonstrates: filtering even numbers, filtering by multiple conditions.
+#  Lazily skips elements that fail the predicate; chaining multiple
+#  `filter` calls composes the conditions with logical AND.
+#
+#  Run it:      kira demo/iterator-filter.kira
+#  Compile it:  kira --compile -o iterator-filter demo/iterator-filter.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 4, 5, 6]

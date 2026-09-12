@@ -9,7 +9,8 @@ module main
 #  other move. `&name`/`&mut name` entries already state their own mode and
 #  are left untouched by `move`.
 #
-#  Run it: bazelisk run //src:kira -- demo/closure-capture-move.kira
+#  Run it:      kira demo/closure-capture-move.kira
+#  Compile it:  kira --compile -o closure-capture-move demo/closure-capture-move.kira
 # ==========================================================================
 
 def main() -> unit:

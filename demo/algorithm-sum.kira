@@ -1,8 +1,14 @@
 module main
 
-# `sum` returns the sum of all elements. Uses the `zero` trait for the identity.
+# ==========================================================================
+#  `algorithm.sum` — the sum of all elements.
 #
-# Demonstrates: summing integers and floats, and summing an empty iterator.
+#  Uses the element type's `zero` trait for the identity, so an empty
+#  iterator returns 0.
+#
+#  Run it:      kira demo/algorithm-sum.kira
+#  Compile it:  kira --compile -o algorithm-sum demo/algorithm-sum.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 4]

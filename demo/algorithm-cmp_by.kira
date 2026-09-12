@@ -1,8 +1,15 @@
 module main
 
-# `cmp_by` returns an ordering comparing two iterators lexicographically.
+# ==========================================================================
+#  `algorithm.cmp_by` — lexicographic comparison of two iterators.
 #
-# Demonstrates: comparing equal, less, greater, and varying-length iterators.
+#  Walks both iterators in lockstep with a caller-supplied comparator; the
+#  first non-equal pair decides the result, and running out of elements
+#  first makes an iterator the lesser one (a prefix compares less).
+#
+#  Run it:      kira demo/algorithm-cmp_by.kira
+#  Compile it:  kira --compile -o algorithm-cmp_by demo/algorithm-cmp_by.kira
+# ==========================================================================
 
 def cmp_int(x: int32, y:int32) -> ordering:
   if x<y:

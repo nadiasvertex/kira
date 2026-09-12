@@ -1,9 +1,15 @@
 module main
 
-# `peek` on a peekable iterator returns the next element without consuming it.
-# Combined with a peekable adapter to show the peek-inspect-advance pattern.
+# ==========================================================================
+#  `iterator.peek` — look at the next element without consuming it.
 #
-# Demonstrates: looking ahead before deciding to consume.
+#  Available once an iterator is wrapped with `.peekable()`; repeated
+#  `peek()` calls return the same element until a `next()` actually
+#  advances the iterator.
+#
+#  Run it:      kira demo/iterator-peek.kira
+#  Compile it:  kira --compile -o iterator-peek demo/iterator-peek.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [10, 20, 30, 40]

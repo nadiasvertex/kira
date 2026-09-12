@@ -1,9 +1,14 @@
 module main
 
-# `take` yields at most n elements.
+# ==========================================================================
+#  `iterator.take` — yield at most n elements.
 #
-# Demonstrates: taking fewer than available, taking more than available,
-# and taking zero.
+#  Stops the iterator early after `n` elements; taking more than the
+#  iterator has just yields everything it has.
+#
+#  Run it:      kira demo/iterator-take.kira
+#  Compile it:  kira --compile -o iterator-take demo/iterator-take.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 4, 5]

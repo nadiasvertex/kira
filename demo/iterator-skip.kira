@@ -1,8 +1,14 @@
 module main
 
-# `skip` discards the first n elements.
+# ==========================================================================
+#  `iterator.skip` — discard the first n elements.
 #
-# Demonstrates: skipping some elements, skipping all, skipping more than available.
+#  Consumes and drops the first `n` elements before yielding anything;
+#  skipping more than the iterator has just drains it, without error.
+#
+#  Run it:      kira demo/iterator-skip.kira
+#  Compile it:  kira --compile -o iterator-skip demo/iterator-skip.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 4, 5]

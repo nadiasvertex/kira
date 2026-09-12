@@ -1,9 +1,15 @@
 module main
 
-# `skip_while` discards elements while the predicate is true,
-# then yields the rest.
+# ==========================================================================
+#  `iterator.skip_while` — discard elements while a predicate holds.
 #
-# Demonstrates: skipping while less than 5.
+#  Drops elements from the front while the predicate is `true`; once the
+#  predicate first fails, every remaining element is yielded, even if some
+#  of them would have satisfied the predicate too.
+#
+#  Run it:      kira demo/iterator-skip_while.kira
+#  Compile it:  kira --compile -o iterator-skip_while demo/iterator-skip_while.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3, 9, 4, 5]

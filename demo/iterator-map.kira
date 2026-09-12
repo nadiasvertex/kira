@@ -1,9 +1,14 @@
 module main
 
-# `map` transforms each element by applying a function.
+# ==========================================================================
+#  `iterator.map` — transform each element.
 #
-# Demonstrates: doubling values, converting to strings,
-# and composing with other adapters.
+#  Lazily applies a function to every yielded element; composes freely with
+#  other adapters like `filter`.
+#
+#  Run it:      kira demo/iterator-map.kira
+#  Compile it:  kira --compile -o iterator-map demo/iterator-map.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [1, 2, 3]

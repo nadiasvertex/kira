@@ -1,8 +1,14 @@
 module main
 
-# `chain` concatenates two iterators: yields all from the first, then all from the second.
+# ==========================================================================
+#  `iterator.chain` — concatenate two iterators.
 #
-# Demonstrates: chaining two lists, chaining three iterators.
+#  Yields every element of the first iterator, then every element of the
+#  second, as one continuous sequence.
+#
+#  Run it:      kira demo/iterator-chain.kira
+#  Compile it:  kira --compile -o iterator-chain demo/iterator-chain.kira
+# ==========================================================================
 
 def main() -> int32:
     let a = [1, 2]

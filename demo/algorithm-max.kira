@@ -1,7 +1,14 @@
 module main
 
-# `max` returns the largest element.
-# Demonstrates: max on a list of numbers, strings, and empty list.
+# ==========================================================================
+#  `algorithm.max` — the largest element of an iterator.
+#
+#  Uses the element type's own ordering (numeric comparison for numbers,
+#  lexicographic for strings); `@none` on an empty iterator.
+#
+#  Run it:      kira demo/algorithm-max.kira
+#  Compile it:  kira --compile -o algorithm-max demo/algorithm-max.kira
+# ==========================================================================
 
 def main() -> int32:
     let nums = [5, 2, 8, 1, 9, 3]
