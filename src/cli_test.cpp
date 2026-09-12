@@ -2205,6 +2205,309 @@ auto test_run_derives_ord_via_deriving_clause() -> void {
                      report->run->exit_code));
 }
 
+/// spec/todo.md item 5, generic half: `deriving` on a *generic* type produced
+/// no runnable method body for any of its traits. `resolve_deriving_traits`
+/// (`src/semantic/check.cpp`) bailed on `!decl.type_params.empty()`, because
+/// every `derive_<trait>[T]()` in `src/std/deriving.kira` needs a single
+/// concrete `T` to reflect over via `T.fields()`/`T.variants()` — so
+/// `type wrap[T] = { value: T } deriving show` stayed on the type-check-only
+/// `derived_method_result` path: `w.show()` type-checked and then failed
+/// lowering with "no concrete checked type is available for this node".
+///
+/// Each *instantiation* now derives its own impl, lazily, the first time a
+/// lookup on it needs one (`ensure_derived_instance_impls`). The cases below
+/// are chosen so that a plausible-but-wrong implementation fails at least
+/// one:
+///
+///   * `wrap[int32]` and `wrap[str]` in the same program (bits 1, 2). Two
+///     instantiations of one declaration, each rendering its own field — the
+///     single-impl-shared-by-every-`T` mistake renders one of them wrong or
+///     fails to compile the second;
+///   * `wrap[wrap[int32]]` (bit 4). The derived body reaches `show` on
+///     another instantiation of the same generic *through string
+///     interpolation*, which resolves through `interp_dispatch` rather than
+///     through a call — a separate path that recorded the uncompiled
+///     template and produced `wrap::show`, a name nothing was ever emitted
+///     under. It is also the case that makes derivation re-enter itself:
+///     deriving the outer instance checks a body that derives the inner one;
+///   * `eq` (bit 8) and `ord` (bit 16), where `ord` is exercised both as
+///     `.cmp()` and as `<`. The operator forms route through
+///     `require_operand_trait`/`wire_ord_dispatch`, two more dispatch sites
+///     that named the template rather than the instance;
+///   * `hash` (bit 32) on a generic, including that equal values hash equal
+///     and unequal ones don't;
+///   * a generic *sum* type (bit 64), which derives through
+///     `derive_show_sum`/`derive_hash_sum` over `T.variants()`;
+///   * a *const*-generic type (bit 128): `buf[4]` and `buf[8]` are two
+///     instantiations distinguished by a value, not a type. Paired with the
+///     check that a hand-written `impl show for over[int32]` still wins over
+///     the same type's `deriving show`, while `over[str]` keeps the derived
+///     one — user impls take priority per instantiation, not per
+///     declaration.
+///
+/// Each contributes one bit of the exit code, so a failure says which case
+/// broke. All eight is 255.
+/// The program both generic-`deriving` tests below run — one through the
+/// bytecode VM, one through the LLVM/AOT backend. Shared so the two backends
+/// are checked against the identical source rather than against two copies
+/// that can drift apart.
+[[nodiscard]] auto generic_deriving_source() -> std::string {
+  // `wrap`, not `box`: the prelude's own `box` silently shadows a user type
+  // of that name, which would turn every case here into a confusing
+  // diagnostic about a type the test never wrote (CLAUDE.md records this
+  // exact trap).
+  return "module sample\n"
+      "type wrap[T] = { value: T } deriving show, eq, ord, hash\n"
+      "type over[T] = { value: T } deriving show\n"
+      "type opt[T] = @none_of | @one_of(T) deriving show, hash\n"
+      "type buf[n: usize] = { len: usize } deriving show\n"
+      "impl show for over[int32]:\n"
+      "    def show(self) -> str:\n"
+      "        return \"hand-written\"\n"
+      "def rank(o: ordering) -> int32:\n"
+      "    match o:\n"
+      "        @less => return -1\n"
+      "        @equal => return 0\n"
+      "        @greater => return 1\n"
+      "def bit(cond: bool, weight: int32) -> int32:\n"
+      "    if cond:\n"
+      "        return weight\n"
+      "    return 0\n"
+      "def main() -> int32:\n"
+      "    var total: int32 = 0\n"
+      "    let a: wrap[int32] = { value: 5 }\n"
+      "    let b: wrap[int32] = { value: 5 }\n"
+      "    let c: wrap[int32] = { value: 6 }\n"
+      "    let s: wrap[str] = { value: \"hi\" }\n"
+      "    total = total + bit(a.show() == \"wrap \\{ value: 5 \\}\", 1)\n"
+      "    total = total + bit(s.show() == \"wrap \\{ value: hi \\}\", 2)\n"
+      "    let n: wrap[wrap[int32]] = { value: { value: 7 } }\n"
+      "    total = total + bit(\n"
+      "        n.show() == \"wrap \\{ value: wrap \\{ value: 7 \\} \\}\", 4)\n"
+      "    total = total + bit(a.eq(&b) and not a.eq(&c), 8)\n"
+      "    let lt: bool = a < c\n"
+      "    total = total + bit(rank(a.cmp(&c)) == -1 and\n"
+      "                        rank(c.cmp(&a)) == 1 and\n"
+      "                        rank(a.cmp(&b)) == 0 and lt, 16)\n"
+      "    let h_same: bool = a.hash() == b.hash()\n"
+      "    let h_diff: bool = a.hash() != c.hash()\n"
+      "    total = total + bit(h_same and h_diff, 32)\n"
+      "    let o1: opt[int32] = @one_of(3)\n"
+      "    let o2: opt[int32] = @none_of\n"
+      "    let oh: bool = o1.hash() != o2.hash()\n"
+      "    total = total + bit(o1.show() == \"one_of(3)\" and\n"
+      "                        o2.show() == \"none_of\" and oh, 64)\n"
+      "    let b4: buf[4] = { len: 4 }\n"
+      "    let b8: buf[8] = { len: 8 }\n"
+      "    let ov: over[int32] = { value: 9 }\n"
+      "    let os: over[str] = { value: \"z\" }\n"
+      "    total = total + bit(b4.show() == \"buf \\{ len: 4 \\}\" and\n"
+      "                        b8.show() == \"buf \\{ len: 8 \\}\" and\n"
+      "                        ov.show() == \"hand-written\" and\n"
+      "                        os.show() == \"over \\{ value: z \\}\", 128)\n"
+      "    return total\n";
+}
+
+auto test_run_derives_for_generic_types() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_generic.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, generic_deriving_source());
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `deriving` on a generic type to compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 255,
+         std::format(
+             "expected every generic-`deriving` case to hold (255), got {}",
+             report->run->exit_code));
+}
+
+/// The AOT half of `test_run_derives_for_generic_types`: the identical
+/// program, compiled through LLVM and linked, rather than run on the bytecode
+/// VM. Per-instantiation derivation reaches the backends only through what
+/// the checker records — the monomorphized instance in
+/// `const_generic_instances`, and a `resolved_callee`/`interp_dispatch`/
+/// `operator_dispatch` naming it — and each backend resolves those names with
+/// its own `resolve_callee_key`. A mistake that names the uncompiled template
+/// (`wrap::show` rather than `wrap::show$wrap_int32_`) can therefore surface
+/// in one tier and not the other, so both are checked against the same
+/// source.
+auto test_build_derives_for_generic_types() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_generic_aot.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_derive_generic_bin";
+
+  write_file(source_path, generic_deriving_source());
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `deriving` on a generic type to compile cleanly for AOT: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  std::array<char, 256> buffer{};
+  while (std::fread(buffer.data(), 1, buffer.size(), pipe) > 0) {
+  }
+  const auto close_status = pclose(pipe);
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(close_status) == 255,
+         std::format("expected every generic-`deriving` case to hold (255) "
+                     "under the LLVM backend too, got {}",
+                     WEXITSTATUS(close_status)));
+#else
+  (void)close_status;
+#endif
+}
+
+/// spec/todo.md item 5, final struct-trait holdout: `deriving hash` used to
+/// type-check and then fail lowering with "no concrete checked type is
+/// available for this node", on the stated grounds that no builtin scalar
+/// implemented `.hash()` and that there was no hash-combining primitive to
+/// fold field hashes with. The second half was wrong: `*%`/`+%` (wrapping
+/// arithmetic) are implemented in both backends, and they are what an FNV-1a
+/// fold needs — plain `*`/`+` are overflow-checked and would panic on the
+/// second field. So `std.traits` now carries real `impl hash` blocks for the
+/// scalars plus `hash_seed`/`hash_combine`/`hash_value`/`hash_tag`, and
+/// `derive_hash`/`derive_hash_sum` (`src/std/deriving.kira`) fold with them.
+///
+/// As with the `ord` tests, every case is a computed answer, not "it
+/// compiles" — and for hashing the weak-but-plausible derivation is the real
+/// hazard, since almost any of them produces a `uint64` that looks fine:
+///
+///   * equal values hash equal, unequal values hash apart (bits 1, 2) — the
+///     floor, which even a derivation that hashed nothing but the type name
+///     fails on the second half;
+///   * `{x: 1, y: 2}` and `{x: 2, y: 1}` hash *apart* (bit 4). This is the
+///     one that catches a commutative combiner — a fold written with `^` or
+///     `+%` alone passes every other case here and collides on every
+///     transposition;
+///   * a field-less struct hashes to exactly `hash_seed()` (bit 8), the
+///     fold's identity;
+///   * `point { x: 3, y: 4 }` hashes to the value an independent FNV-1a
+///     implementation computes (bit 16). Every other case is *relative*, so a
+///     uniformly-wrong-but-self-consistent mixer would satisfy them all; this
+///     bit is the absolute anchor that pins the algorithm. It is expected to
+///     change only if the mixing function is deliberately changed;
+///   * a `str` field (bit 32), which has no scalar representation and must
+///     dispatch to `std.traits`' own byte-loop `impl hash for str`;
+///   * a struct field that itself derives `hash` (bit 64), so a generated
+///     body recurses through another generated body;
+///   * a sum type (bit 128): two *payload-less* variants hash apart, which
+///     catches a `derive_hash_sum` that folds payloads but forgets
+///     `hash_tag`, and two same-shaped variants with different payloads hash
+///     apart, which catches one that folds the tag but forgets the payloads.
+///
+/// Each contributes one bit of the exit code, so a failure says which case
+/// broke rather than only that something did. All eight is 255.
+auto test_run_derives_hash_via_deriving_clause() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_hash.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(
+      source_path,
+      "module sample\n"
+      "type inner = { a: int32 } deriving hash\n"
+      "type point = { x: int32, y: int32 } deriving hash\n"
+      "type named = { tag: str, n: int32 } deriving hash\n"
+      "type nested = { i: inner, z: int32 } deriving hash\n"
+      "type empty = { } deriving hash\n"
+      "type shape = @dot | @spot | @line(int32) | @seg(int32) deriving hash\n"
+      "def bit(cond: bool, weight: int32) -> int32:\n"
+      "    if cond:\n"
+      "        return weight\n"
+      "    return 0\n"
+      "def main() -> int32:\n"
+      "    var total: int32 = 0\n"
+      "    let a: point = { x: 1, y: 2 }\n"
+      "    let b: point = { x: 1, y: 2 }\n"
+      "    let c: point = { x: 2, y: 1 }\n"
+      "    total = total + bit(a.hash() == b.hash(), 1)\n"
+      "    total = total + bit(a.hash() != c.hash(), 2)\n"
+      "    let d: point = { x: 2, y: 1 }\n"
+      "    total = total + bit(c.hash() == d.hash() and a.hash() != d.hash(),\n"
+      "                        4)\n"
+      "    let e: empty = { }\n"
+      "    total = total + bit(e.hash() == hash_seed(), 8)\n"
+      "    let p: point = { x: 3, y: 4 }\n"
+      "    total = total + bit(p.hash() == 4914197620444624338, 16)\n"
+      "    let s1: named = { tag: \"abc\", n: 1 }\n"
+      "    let s2: named = { tag: \"abd\", n: 1 }\n"
+      "    total = total + bit(s1.hash() != s2.hash() and\n"
+      "                        s1.hash() == 5766848232050225266, 32)\n"
+      "    let n1: nested = { i: { a: 1 }, z: 9 }\n"
+      "    let n2: nested = { i: { a: 2 }, z: 9 }\n"
+      "    total = total + bit(n1.hash() != n2.hash(), 64)\n"
+      "    let v1: shape = @dot\n"
+      "    let v2: shape = @spot\n"
+      "    let v3: shape = @line(1)\n"
+      "    let v4: shape = @line(2)\n"
+      "    let v5: shape = @seg(1)\n"
+      "    total = total + bit(v1.hash() != v2.hash() and\n"
+      "                        v3.hash() != v4.hash() and\n"
+      "                        v3.hash() != v5.hash(), 128)\n"
+      "    return total\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `deriving hash` to compile cleanly: " + report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking — an FNV-1a fold written "
+         "with checked `*`/`+` instead of `*%`/`+%` panics on overflow here: " +
+             report->run->message);
+  expect(report->run->exit_code == 255,
+         std::format("expected every derived-`hash` case to hold (255), got {}",
+                     report->run->exit_code));
+}
+
 /// `ord` is the first derived trait with a `requires` bound (`ord requires
 /// eq`), which makes `type ... deriving ord` alone the first way a user can
 /// get an impl-level diagnostic about an impl they never wrote. A derived
@@ -2387,6 +2690,9 @@ auto main() -> int {
     test_build_derives_show_via_deriving_clause();
     test_build_derives_eq_and_debug_via_deriving_clause();
     test_run_derives_ord_via_deriving_clause();
+    test_run_derives_hash_via_deriving_clause();
+    test_run_derives_for_generic_types();
+    test_build_derives_for_generic_types();
     test_deriving_ord_without_eq_points_at_the_deriving_clause();
     test_run_derives_sum_type_via_deriving_clause();
   } catch (const std::exception &ex) {

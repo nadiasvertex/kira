@@ -981,8 +981,17 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
   if (const auto found = checked_.operator_dispatches.find(&bin);
       found != checked_.operator_dispatches.end()) {
     const auto &resolved = found->second;
+    // An empty `impl_target_type` means `decl` is already a monomorphized
+    // instance carrying its own mangled name (`wrap::cmp$wrap_int32_`) — the
+    // same convention `lower_call`, `lower_generator_loop` and the
+    // interpolation dispatch above all follow. Composing `Type::method`
+    // unconditionally here produced a leading `::` and a key no compiled
+    // function ever had.
     const auto local_name =
-        std::format("{}::{}", resolved.impl_target_type, resolved.decl->name);
+        resolved.impl_target_type.empty()
+            ? resolved.decl->name
+            : std::format("{}::{}", resolved.impl_target_type,
+                          resolved.decl->name);
     auto lhs = lower_expr(*bin.lhs);
     if (!lhs.has_value()) {
       return std::unexpected(lhs.error());

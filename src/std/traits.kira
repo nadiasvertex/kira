@@ -135,6 +135,154 @@ pub trait hash:
     #:   a hash value of type uint64.
     def hash(self) -> uint64
 
+# The combinators `deriving hash` is built from, and the `impl hash` blocks
+# for the builtin scalars they bottom out in. A derived `hash` is a fold over
+# the type's fields, and a fold needs a seed, a per-field hash, and a way to
+# join two results -- none of which can be written as the single flat
+# expression the AST builders in `src/std/deriving.kira` can splice into a
+# quoted method body. They live here for the same reason `ord_cmp`/`ord_then`
+# do: `find_prelude_function` (`src/semantic/check.cpp`) lists `std.traits`,
+# so a body spliced into the user's own module resolves them without an
+# import the user never wrote.
+#
+# Unlike `ord`, `hash` has no operator backing it -- nothing in the language
+# dispatches to `hash` the way `<` dispatches to `cmp` -- so an `impl hash for
+# int32` cannot recurse into itself the way `impl ord for int32` would (see
+# `ord_cmp`'s doc comment). That is why the scalars get real impls here while
+# `ord` deliberately gets none.
+#
+# The mixing function is FNV-1a, written throughout with the *wrapping*
+# operators: plain `*`/`+` are overflow-checked and panic, so a hash built
+# from them would abort on its second field rather than wrap.
+
+#: The FNV-1a 64-bit offset basis: the starting accumulator of every derived
+#: `hash`, and the entire hash of a field-less struct (two values carrying no
+#: information hash alike). A function rather than a bare literal for the same
+#: reason `ord_equal` is one: the AST builders can splice a call, but not a
+#: literal of a particular integer width.
+#: Returns:
+#:   the FNV-1a offset basis.
+pub def hash_seed() -> uint64:
+    return 0xcbf29ce484222325
+
+#: Folds one more hash into an accumulator, FNV-1a style: exclusive-or the new
+#: value in, then multiply by the FNV prime. Deliberately not associative, so
+#: the left-nested fold `static for` produces is an order the result depends
+#: on -- which is exactly what makes `{a: 1, b: 2}` and `{a: 2, b: 1}` hash
+#: differently.
+#: Args:
+#:   acc: the accumulator so far.
+#:   next: the next value's hash.
+#: Returns:
+#:   the two combined.
+pub def hash_combine(acc: uint64, next: uint64) -> uint64:
+    return (acc ^ next) *% 0x100000001b3
+
+#: Hashes one `hash` value. The counterpart of `ord_cmp`, present for the same
+#: reason: a derived body folds over its fields with a call, and the AST
+#: builders splice a call to a free function more readily than a method.
+#: Type Params:
+#:   T: the value type; must implement `hash`.
+#: Args:
+#:   x: the value to hash.
+#: Returns:
+#:   `x`'s hash.
+pub def hash_value[T](x: T) -> uint64 where T: hash:
+    return x.hash()
+
+#: The contribution a sum type's variant tag makes to its hash --
+#: `derive_hash_sum`'s (`src/std/deriving.kira`) primary input, folded in
+#: before any payload so that two distinct payload-less variants do not hash
+#: alike. A function for the same reason `ord_less`/`ord_greater` are: the
+#: builders splice a call, and the index has to arrive already widened to
+#: `uint64`.
+#: Args:
+#:   n: the variant's declaration index.
+#: Returns:
+#:   that tag's hash contribution.
+pub def hash_tag(n: uint64) -> uint64:
+    return hash_combine(hash_seed(), n)
+
+# The builtin scalars' own `hash`. `as uint64` is a total, non-trapping
+# sign-extend-or-truncate (`compile_cast` in `src/llvm_codegen/codegen.cpp`
+# and `exec_cast` in the VM agree on this), so a negative value hashes by its
+# two's-complement bit pattern instead of panicking.
+#
+# `int128`/`uint128`/`float128` are deliberately absent: a reachable module is
+# compiled in full and the bytecode VM has no representation for them, so an
+# impl here would make every program fail to compile. `spec/todo.md` item 6
+# records the same trap for `zero`/`one`; these arrive with it.
+#
+# `float32`/`float64` are absent for a different reason: hashing a float
+# correctly means hashing its bit pattern, and `as uint64` on a float is a
+# value conversion, not a reinterpret. That needs a bitcast primitive the
+# language does not have yet -- see `spec/todo.md`.
+
+impl hash for bool:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for char:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for byte:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for int8:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for int16:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for int32:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for int64:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for isize:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for uint8:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for uint16:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for uint32:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+impl hash for uint64:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self)
+
+impl hash for usize:
+    def hash(self) -> uint64:
+        return hash_combine(hash_seed(), self as uint64)
+
+#: FNV-1a over the string's UTF-8 bytes. `len`/`[i]` on `str` are builtin
+#: (`builtin_method_result`, `src/semantic/check.cpp`), so this impl pulls in
+#: no other module -- which matters, since every program that names `ordering`
+#: already compiles `std.traits` in full.
+impl hash for str:
+    def hash(self) -> uint64:
+        var h: uint64 = hash_seed()
+        var i: usize = 0
+        while i < self.len():
+            h = hash_combine(h, self[i] as uint64)
+            i = i + 1
+        return h
+
 #: Converting a value to its string representation (user-friendly formatting).
 pub trait show:
     #: Converts the value to a user-friendly string representation.

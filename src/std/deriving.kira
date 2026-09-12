@@ -276,3 +276,58 @@ static def derive_ord_sum[T]() -> def_expr:
     return `(impl ord for ~(expr.ident(T.name())):
         def cmp(self, other: &self) -> ordering:
             return ~body)`
+
+#: Generates an impl of hash for a struct type: an FNV-1a fold over the
+#: fields in declaration order, seeded with `hash_seed()` and combined with
+#: `hash_combine`, hashing each field through `hash_value`. All three live in
+#: `std.traits` next to `ord_cmp`/`ord_then`, and for the same reasons -- see
+#: `derive_ord`'s doc comment.
+#: An empty struct hashes to the bare seed, matching the way an empty struct
+#: derives `@equal` for `ord` and `true` for `eq`: values carrying no
+#: information are indistinguishable to every derived trait alike.
+#: `hash_combine` is deliberately non-associative, so the left-nested fold
+#: `static for` produces makes field *order* part of the hash -- two structs
+#: with the same field values in a different declaration order hash apart.
+#: Args:
+#:   T: the concrete struct type to generate hash for.
+#: Returns:
+#:   a def_expr representing the full impl block for the hash trait.
+static def derive_hash[T]() -> def_expr:
+    var body: expr = expr.call(expr.ident("hash_seed"))
+    static for f in T.fields():
+        body = expr.call(
+            expr.ident("hash_combine"), body,
+            expr.call(
+                expr.ident("hash_value"),
+                expr.field(expr.ident("self"), f.name)))
+    return `(impl hash for ~(expr.ident(T.name())):
+        def hash(self) -> uint64:
+            return ~body)`
+
+#: Generates an impl of hash for a sum type: the variant's declaration index
+#: goes in first via `hash_tag`, so two payload-less variants never hash
+#: alike, and each payload is then folded in with `hash_combine`/`hash_value`
+#: exactly as a struct's fields are.
+#: A single `match` on `self` suffices here, unlike `derive_eq_sum`/
+#: `derive_ord_sum`'s nested pair of them: hashing reads one value, so there
+#: is no `other` whose tag has to be matched against this one's.
+#: Args:
+#:   T: the concrete sum type to generate hash for.
+#: Returns:
+#:   a def_expr representing the full impl block for the hash trait.
+static def derive_hash_sum[T]() -> def_expr:
+    var body: expr = expr.match_on(expr.ident("self"))
+    var index: int32 = 0
+    static for v in T.variants():
+        var arm_body: expr = expr.call(
+            expr.ident("hash_tag"), expr.lit(index))
+        static for i in 0..v.payload_count:
+            arm_body = expr.call(
+                expr.ident("hash_combine"), arm_body,
+                expr.call(expr.ident("hash_value"), expr.ident("p{i}")))
+        body = expr.arm(
+            body, expr.ctor_pattern(v.name, v.payload_count, "p"), arm_body)
+        index = index + 1
+    return `(impl hash for ~(expr.ident(T.name())):
+        def hash(self) -> uint64:
+            return ~body)`

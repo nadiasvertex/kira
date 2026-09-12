@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <deque>
 #include <format>
 #include <optional>
 #include <ranges>
@@ -1181,6 +1182,11 @@ private:
   /// `resolve_item_splices`, moved out via `take_checked_types` for
   /// `hir::lower_module`.
   std::vector<synthesized_item_splice> synthesized_item_splices_;
+  /// Which `(instantiation, trait)` pairs `ensure_derived_instance_impls`
+  /// has already derived, as `"<type_id>#<trait>"`. Keyed by the *applied*
+  /// type id rather than the declaration, so `box[int32]` and `box[str]`
+  /// each derive their own impl instead of the first one seen serving both.
+  std::unordered_set<std::string> derived_instances_;
   /// Top-level (item-position) `splice_stmt` node -> the `impl_decl` it
   /// resolved to, so `check_file`'s item loop knows to `check_item` the
   /// resolved impl instead of routing the splice node itself through
@@ -1374,12 +1380,21 @@ private:
       inferred_param_types_;
   std::unordered_set<const ast::func_decl *> param_inference_in_progress_;
   bool methods_built_ = false;
-  std::unordered_map<const ast::type_decl *, std::vector<method_entry>>
+  /// A `std::deque`, not a `std::vector`, and it has to stay one. Most of
+  /// this table is built once in `build_method_table`, but a `deriving` type
+  /// that is *generic* derives lazily, per concrete instantiation, from
+  /// inside `find_method` itself (`ensure_derived_instance_impls`) — so a
+  /// lookup can append here while a caller still holds the `const
+  /// method_entry *` an earlier lookup returned. A vector would reallocate
+  /// and leave that pointer dangling; a deque never invalidates references
+  /// to existing elements on `push_back`. Same reasoning, and the same bug
+  /// class, as `type_table::entries_`.
+  std::unordered_map<const ast::type_decl *, std::deque<method_entry>>
       methods_;
   /// Extend-block methods on a builtin type (e.g. `str`), keyed by the
   /// builtin's type-entry name since builtins have no `type_decl` to key
   /// `methods_` by.
-  std::unordered_map<std::string, std::vector<method_entry>>
+  std::unordered_map<std::string, std::deque<method_entry>>
       extend_methods_by_builtin_;
   /// Impl-block methods whose target is a *prelude constructor* (`impl
   /// monad for option`), keyed by the constructor's name — the prelude
@@ -1387,7 +1402,7 @@ private:
   /// `extend_methods_by_builtin_` above. Consulted for method calls on any
   /// instantiation of the constructor (`option[int32].bind(...)`) and for
   /// type-qualified associated calls (`option.pure(...)`).
-  std::unordered_map<std::string, std::vector<method_entry>>
+  std::unordered_map<std::string, std::deque<method_entry>>
       impl_methods_by_builtin_;
   /// Memoizes `resolve_existential_type`'s minted `existential_kind` id per
   /// AST node, so the many independent `resolve_type` calls that can all
@@ -6858,14 +6873,22 @@ private:
         entry.kind == type_kind::opaque_kind) {
       if (type_has_trait(entry, trait_name)) {
         if (wire_dispatch && binary.lhs != nullptr) {
-          if (const auto *method = find_method(entry, trait_name);
+          if (const auto *method = find_method(entry, trait_name, target);
               method != nullptr && !method->decl->params.empty() &&
               param_name_of(method->decl->params.front()) == "self") {
-            operator_dispatches_[&binary] =
-                resolved_callee{.decl = method->decl,
-                                .owner_module = method->owner->module_name,
-                                .impl_target_type = entry.name,
-                                .receiver = binary.lhs.get()};
+            // An operator whose overload comes from an impl over a generic
+            // target needs that impl compiled for *this* operand type before
+            // the dispatch can name anything real — see
+            // `instantiate_impl_method_for`. Without the instance,
+            // `hir::lower_binary` composes `wrap::eq`, which is the
+            // uncompiled template.
+            const auto *callee = instantiate_impl_method_for(binary, *method,
+                                                             entry, target);
+            operator_dispatches_[&binary] = resolved_callee{
+                .decl = callee != nullptr ? callee : method->decl,
+                .owner_module = method->owner->module_name,
+                .impl_target_type = callee != nullptr ? "" : entry.name,
+                .receiver = binary.lhs.get()};
             return resolve_operator_return_type(target, trait_name, *method);
           }
         }
@@ -7049,7 +7072,7 @@ private:
     if (entry.kind == type_kind::struct_kind ||
         entry.kind == type_kind::sum_kind ||
         entry.kind == type_kind::opaque_kind) {
-      method = find_method(entry, "cmp");
+      method = find_method(entry, "cmp", target);
     } else if (entry.kind == type_kind::builtin_kind) {
       method = find_extend_method_for_builtin(entry, "cmp");
       if (!is_self_method(method)) {
@@ -7059,11 +7082,15 @@ private:
     if (!is_self_method(method)) {
       return;
     }
-    operator_dispatches_[&binary] =
-        resolved_callee{.decl = method->decl,
-                        .owner_module = method->owner->module_name,
-                        .impl_target_type = entry.name,
-                        .receiver = binary.lhs.get()};
+    // As in `require_operand_trait`: a `cmp` reached through an impl over a
+    // generic target only exists once compiled for this operand type.
+    const auto *callee =
+        instantiate_impl_method_for(binary, *method, entry, target);
+    operator_dispatches_[&binary] = resolved_callee{
+        .decl = callee != nullptr ? callee : method->decl,
+        .owner_module = method->owner->module_name,
+        .impl_target_type = callee != nullptr ? "" : entry.name,
+        .receiver = binary.lhs.get()};
     ord_dispatch_result_types_[&binary] =
         resolve_operator_return_type(target, "ord", *method);
   }
@@ -7566,7 +7593,8 @@ private:
     // functions reached by UFCS, so `xs.iter().map(f).filter(p)` only reads
     // that way if `map` and `filter` resolve unqualified.
     // `std.traits` joins them for a narrower reason: its `ord_cmp`/`ord_then`/
-    // `ord_equal` are the combinators a *generated* `deriving ord` body calls
+    // `ord_equal` (and, for `deriving hash`, `hash_seed`/`hash_combine`/
+    // `hash_value`/`hash_tag`) are the combinators a *generated* body calls
     // (`src/std/deriving.kira`), and that body is spliced into the user's own
     // module, where those names have to resolve without an import the user
     // never wrote.
@@ -7689,7 +7717,7 @@ private:
       for (const auto &ext : members.extends) {
         const auto target = strip_refs(resolve_extend_target(ext));
         const auto &target_entry = types_.entry(target);
-        auto extend_methods = std::vector<method_entry>{};
+        auto extend_methods = std::deque<method_entry>{};
         for (const auto &item : ext.decl->items) {
           if (item == nullptr || item->has_error ||
               item->kind != ast::node_kind::func_decl) {
@@ -7867,7 +7895,7 @@ private:
                                   const ast::trait_decl *trait_decl,
                                   const module_members *trait_module,
                                   file_id_type trait_file_id,
-                                  std::vector<method_entry> &methods) -> void {
+                                  std::deque<method_entry> &methods) -> void {
     auto cloned = ast::clone_func_decl(decl);
     if (!cloned.has_value()) {
       auto diag = diagnostic(
@@ -7977,6 +8005,27 @@ private:
   /// behavior for callers that have only a `type_entry` in hand.
   auto find_method(const type_entry &instance, std::string_view name,
                    type_id instance_id = k_unknown_type)
+      -> const method_entry * {
+    if (const auto *found = find_declared_method(instance, name, instance_id)) {
+      return found;
+    }
+    // Nothing declared provides `name` for this receiver. If the receiver is
+    // a concrete instantiation of a generic `deriving` type, this is the
+    // point at which that instantiation's methods get derived — lazily,
+    // because no earlier phase can know which instantiations exist. Ordering
+    // the two this way is what gives a hand-written `impl` priority over a
+    // derived one for free: a type that already had the method never reaches
+    // the derivation at all.
+    if (!ensure_derived_instance_impls(instance_id, name)) {
+      return nullptr;
+    }
+    return find_declared_method(types_.entry(instance_id), name, instance_id);
+  }
+
+  /// `find_method`'s search proper, over what is already in `methods_`.
+  /// Separated so `find_method` can run it a second time after deriving.
+  auto find_declared_method(const type_entry &instance, std::string_view name,
+                            type_id instance_id = k_unknown_type)
       -> const method_entry * {
     build_method_table();
     if (instance.decl == nullptr) {
@@ -8720,6 +8769,59 @@ private:
   /// `find_method`, e.g. a type-constant lookup) has no receiver to record
   /// and is left alone; `infer_qualified_call` is what actually resolves
   /// those call shapes.
+  /// `check_impl_generic_method_call`'s instantiation step, reachable from a
+  /// site that is not a call at all.
+  ///
+  /// A method reached through an `impl` over a generic target has no compiled
+  /// form until some receiver pins the target down — that is what the
+  /// per-receiver instance discipline exists for. String interpolation
+  /// reaches such a method without an `ast::call_expr` anywhere: `"{v}"`
+  /// dispatches to `v`'s `show` through `interp_dispatch`, which recorded the
+  /// *template* and let `hir::lower` name it `wrap::show`. No function ever
+  /// bore that name, so the call type-checked and then failed to compile —
+  /// the same split `check_impl_generic_method_call` exists to prevent, just
+  /// arrived at from the other direction.
+  ///
+  /// Everything the call-shaped sibling does with the call itself (argument
+  /// checking, preconditions, recording a `resolved_callee`) is absent here,
+  /// because an interpolated segment supplies no arguments: `show`/`debug`/
+  /// `hex`/`octal`/`binary` all take `self` alone. `site` is used only as the
+  /// node instantiation diagnostics point at.
+  ///
+  /// `nullptr` means "no instance is needed or possible", and the caller
+  /// should keep the declaration it already had.
+  auto instantiate_impl_method_for(const ast::node &site,
+                                   const method_entry &method,
+                                   const type_entry &receiver_entry,
+                                   type_id receiver_type)
+      -> const ast::func_decl * {
+    if (!impl_needs_instance(method, receiver_entry) ||
+        in_const_generic_template_ || in_type_generic_template_ ||
+        mentions_type_param(receiver_type)) {
+      return nullptr;
+    }
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    unify_rigid(method.impl_target_pattern, receiver_type, bindings);
+    for (const auto &type_param : *method.block_type_params) {
+      if (!type_param.name.empty() && !bindings.contains(type_param.name)) {
+        // An impl parameter the receiver doesn't pin. The call-shaped sibling
+        // reports here; this path stays silent and falls back, since an
+        // interpolation is not where a user would act on that diagnostic.
+        return nullptr;
+      }
+    }
+    auto scoped_params = method.fixed_type_params;
+    scoped_params.insert(bindings.begin(), bindings.end());
+    auto solution = generic_solution{};
+    solution.suffix =
+        std::format("${}", mangle_type_for_instance(receiver_type));
+    const auto name = std::format("{}::{}{}", receiver_entry.name,
+                                  method.decl->name, solution.suffix);
+    return find_or_check_generic_instance(site, *method.decl, method.owner,
+                                          method.file_id, solution, name,
+                                          &scoped_params, receiver_type);
+  }
+
   auto record_instance_method_callee(const ast::call_expr &call,
                                      const method_entry &method,
                                      std::string_view target_type_name,
@@ -9939,7 +10041,7 @@ private:
                                  const std::string &fn_name)
       -> std::optional<type_id> {
     const auto &entry = types_.entry(target);
-    const auto *method = find_method(entry, fn_name);
+    const auto *method = find_method(entry, fn_name, target);
     if (method == nullptr && entry.decl == nullptr && !entry.name.empty()) {
       // A builtin target (`list[int32]`) has no `type_decl` for `find_method`
       // to key on; its impl members live in the constructor-name-keyed table.
@@ -10682,7 +10784,7 @@ private:
       if (const auto field_type = struct_field_type(entry, name)) {
         return *field_type;
       }
-      if (const auto *method = find_method(entry, name)) {
+      if (const auto *method = find_method(entry, name, stripped)) {
         return fn_type_of(*method->decl, method->owner);
       }
       auto diag = diagnostic(
@@ -10699,7 +10801,7 @@ private:
       return k_error_type;
     }
     case type_kind::sum_kind: {
-      if (const auto *method = find_method(entry, name)) {
+      if (const auto *method = find_method(entry, name, stripped)) {
         return fn_type_of(*method->decl, method->owner);
       }
       if (derived_method_result(entry, name)) {
@@ -12764,10 +12866,26 @@ private:
         }
         dispatch.kind = interp_dispatch::kind_t::trait_method;
         dispatch.impl_target_type = value_entry.name;
-        if (const auto *method = find_method(value_entry, trait_name);
+        // `value_type` is passed, not left to default: it is what lets a
+        // lookup on a concrete instantiation of a generic `deriving` type
+        // derive that instantiation's method (`ensure_derived_instance_
+        // impls`), and what lets `find_method` tell `wrap[int32]`'s impl
+        // from `wrap[str]`'s.
+        if (const auto *method = find_method(value_entry, trait_name,
+                                             value_type);
             method != nullptr) {
           dispatch.decl = method->decl;
           dispatch.owner_module = method->owner->module_name;
+          // A method reached through an impl over a generic target only
+          // exists once compiled for this receiver. Record the instance, and
+          // clear `impl_target_type` so `hir::lower` uses the instance's own
+          // mangled name rather than composing `wrap::show`, which is the
+          // template and is never emitted.
+          if (const auto *instance = instantiate_impl_method_for(
+                  *seg.value, *method, value_entry, value_type)) {
+            dispatch.decl = instance;
+            dispatch.impl_target_type.clear();
+          }
         }
         return true;
       };
@@ -16562,16 +16680,26 @@ private:
   /// `check_file`'s item loop never falls through to re-evaluating it via
   /// `check_body_node`.
   /// Every `deriving`-able trait with a real `static def derive_<name>[T]()`
-  /// in `std.derive` (`src/std/deriving.kira`) — the traits M7 actually
-  /// re-derives for real, as opposed to leaving on the old, type-only
-  /// `derived_method_result` path. `hash` is the one holdout: no builtin
-  /// scalar implements `.hash()`, and there is no hash-combining primitive
-  /// to fold field hashes with, so it would need new language-level
-  /// infrastructure rather than just new derive logic and stays on the
-  /// type-check-only fallback (`derived_method_result` still lists all five
-  /// names for that purpose).
-  static constexpr std::array<std::string_view, 4> k_real_derive_traits = {
-      "show", "eq", "debug", "ord"};
+  /// in `std.derive` (`src/std/deriving.kira`) — the traits that are
+  /// re-derived for real, as opposed to left on the old, type-only
+  /// `derived_method_result` path. That list is now all five: `hash` was the
+  /// last holdout, on the theory that no builtin scalar implemented
+  /// `.hash()` and that there was no hash-combining primitive to fold field
+  /// hashes with. The second half was simply untrue — `*%`/`+%` (wrapping
+  /// arithmetic, `ast::binary_op::mul_wrap`) are implemented in both
+  /// backends, and they are exactly what an FNV-1a fold needs, since plain
+  /// `*`/`+` are overflow-checked and would panic on the second field. With
+  /// those, `std.traits` can carry real `impl hash` blocks for the scalars
+  /// and the `hash_seed`/`hash_combine`/`hash_value`/`hash_tag` combinators,
+  /// all in ordinary Kira. Unlike `ord`, `hash` has no operator dispatching
+  /// to it, so those scalar impls carry none of the infinite recursion that
+  /// keeps `impl ord for int32` from existing (see `ord_cmp`).
+  ///
+  /// `derived_method_result` still lists all five names, for the
+  /// `type_has_trait` bookkeeping every `deriving`d trait needs and as the
+  /// fallback for shapes this path declines.
+  static constexpr std::array<std::string_view, 5> k_real_derive_traits = {
+      "show", "eq", "debug", "ord", "hash"};
 
   /// Splices `~derive_<trait>[TypeName]()` in behind the scenes, once per
   /// entry in `k_real_derive_traits` present in `decl.deriving`, for a
@@ -16602,55 +16730,193 @@ private:
     return it != derived_impl_origin_spans_.end() ? it->second : impl.span;
   }
 
-  auto resolve_deriving_traits(const ast::type_decl &decl,
-                               file_id_type owner_file) -> void {
-    if (decl.name.empty() || !decl.type_params.empty() ||
-        decl.definition == nullptr) {
-      return;
+  /// Synthesizes and evaluates `derive_<trait>[<decl.name>]()`, handing back
+  /// the `impl` block it produced — the one piece shared by the two paths
+  /// that derive: `resolve_deriving_traits` (concrete types, in a pre-pass)
+  /// and `ensure_derived_instance_impls` (generic types, once per concrete
+  /// instantiation).
+  ///
+  /// `nullptr` means "no derivation available here", never "an error was
+  /// reported": the caller is expected to fall back to the type-check-only
+  /// `derived_method_result` path. In particular, a session that didn't
+  /// inject `std.derive` at all (several narrow test fixture sets don't) hits
+  /// the `has_pending_function` guard and degrades quietly, rather than
+  /// attempting a call `evaluate` can only fail with a leaked diagnostic.
+  ///
+  /// Every call materializes a *fresh* fragment (`comptime::evaluator::
+  /// materialize_quote`), which is what makes per-instantiation derivation
+  /// work at all: `box[int32]` and `box[str]` each get their own `impl`
+  /// node, identical in spelling and distinct in identity, so each can be
+  /// registered against its own target type.
+  [[nodiscard]] auto evaluate_derive_call(const ast::type_decl &decl,
+                                          std::string_view trait_name)
+      -> const ast::impl_decl * {
+    if (decl.definition == nullptr) {
+      return nullptr;
     }
     const bool is_sum_shaped =
         decl.definition->kind == ast::node_kind::sum_type_def;
-    if (!is_sum_shaped &&
-        decl.definition->kind != ast::node_kind::struct_type_def) {
+    auto derive_fn_name = is_sum_shaped
+                              ? std::format("derive_{}_sum", trait_name)
+                              : std::format("derive_{}", trait_name);
+    if (!comptime_eval_.has_pending_function(derive_fn_name)) {
+      return nullptr;
+    }
+    auto callee_ident = ast::make<ast::ident_expr>();
+    callee_ident->span = decl.span;
+    callee_ident->name = std::move(derive_fn_name);
+    auto type_ident = ast::make<ast::ident_expr>();
+    type_ident->span = decl.span;
+    type_ident->name = decl.name;
+    auto index = ast::make<ast::index_expr>();
+    index->span = decl.span;
+    index->object = std::move(callee_ident);
+    index->index = std::move(type_ident);
+    auto call = ast::make<ast::call_expr>();
+    call->span = decl.span;
+    call->callee = std::move(index);
+
+    const auto fragment_value = comptime_eval_.evaluate(*call);
+    if (fragment_value.is_error() ||
+        fragment_value.kind != comptime::value_kind::def_expr_fragment ||
+        fragment_value.fragment == nullptr) {
+      return nullptr;
+    }
+    return dynamic_cast<const ast::impl_decl *>(fragment_value.fragment);
+  }
+
+  /// Whether a `type_decl` is one `derive_<trait>`/`derive_<trait>_sum` knows
+  /// how to reflect over: a struct or a sum, never a refinement or an alias.
+  [[nodiscard]] static auto derivable_shape(const ast::type_decl &decl)
+      -> bool {
+    return decl.definition != nullptr &&
+           (decl.definition->kind == ast::node_kind::struct_type_def ||
+            decl.definition->kind == ast::node_kind::sum_type_def);
+  }
+
+  /// The `deriving`-able trait a method name belongs to, or empty for a name
+  /// no derivation provides. The inverse of the mapping
+  /// `derived_method_result` applies in the other direction; `cmp` is the one
+  /// entry whose method name and trait name differ.
+  [[nodiscard]] static auto derive_trait_for_method(std::string_view name)
+      -> std::string_view {
+    if (name == "cmp") {
+      return "ord";
+    }
+    if (name == "show" || name == "debug" || name == "eq" || name == "hash") {
+      return name;
+    }
+    return {};
+  }
+
+  /// `deriving` on a *generic* type, resolved once per concrete
+  /// instantiation (`spec/todo.md` item 5).
+  ///
+  /// A generic `type box[T] = { value: T } deriving show` cannot be derived
+  /// where a concrete one is — `resolve_deriving_traits` runs as a pre-pass,
+  /// before any instantiation is known, and every `derive_<trait>[T]()` body
+  /// reflects over a single `T` via `T.fields()`/`T.variants()`. So `box`
+  /// used to stay on the type-check-only `derived_method_result` path:
+  /// `b.show()` type-checked and then failed lowering with "no concrete
+  /// checked type is available for this node".
+  ///
+  /// Instead, each *instantiation* derives its own impl, the first time a
+  /// lookup on it needs one. `box[int32]` and `box[str]` get separate
+  /// fragments from separate `evaluate_derive_call`s, registered against
+  /// separate target types. Everything downstream is then the ordinary
+  /// concrete path: a method whose `impl_target_pattern` is an applied type
+  /// satisfies `impl_needs_instance`, so `check_impl_generic_method_call`
+  /// monomorphizes it through `find_or_check_generic_instance` — which
+  /// checks the body with `self_type_` bound to the instantiation, names it
+  /// per instance, and records it in `const_generic_instances_` for
+  /// `hir::lower_module` to emit. Nothing here has to name the applied type
+  /// syntactically, which is the reason the derived `impl`'s own `for_type`
+  /// is left exactly as the derivation wrote it (a bare `box`) and
+  /// `impl_target_pattern` carries the real target instead.
+  ///
+  /// Returns whether anything was registered, so `find_method` knows whether
+  /// a second lookup is worth attempting.
+  auto ensure_derived_instance_impls(type_id instance_id,
+                                     std::string_view method_name) -> bool {
+    const auto trait_name = derive_trait_for_method(method_name);
+    if (trait_name.empty() || types_.is_unknown(instance_id)) {
+      return false;
+    }
+    const auto &entry = types_.entry(instance_id);
+    const auto *decl = entry.decl;
+    // An *applied* generic: a `deriving` type with parameters, instantiated.
+    // The bare template (`args` empty) has nothing concrete to reflect over,
+    // and a non-generic type was already handled by the pre-pass.
+    if (decl == nullptr || decl->type_params.empty() || entry.args.empty() ||
+        !derivable_shape(*decl) ||
+        !std::ranges::contains(decl->deriving, std::string(trait_name)) ||
+        !std::ranges::contains(k_real_derive_traits, trait_name)) {
+      return false;
+    }
+    if (!derived_instances_.insert(std::format("{}#{}", instance_id, trait_name))
+             .second) {
+      // Already derived for this exact (instantiation, trait) pair. The
+      // key is the *instantiation*, not the declaration: deriving once per
+      // `box` rather than once per `box[int32]` is the bug this whole path
+      // exists to avoid.
+      return false;
+    }
+    const auto *owner = index_.find_module(entry.module_name);
+    if (owner == nullptr) {
+      return false;
+    }
+    const auto type_it = owner->types.find(decl->name);
+    if (type_it == owner->types.end()) {
+      return false;
+    }
+    const auto *impl = evaluate_derive_call(*decl, trait_name);
+    if (impl == nullptr) {
+      return false;
+    }
+    derived_impl_origin_spans_[impl] = decl->span;
+    auto &methods = methods_[decl];
+    auto registered = false;
+    for (const auto &item : impl->items) {
+      if (item == nullptr || item->has_error ||
+          item->kind != ast::node_kind::func_decl) {
+        continue;
+      }
+      methods.push_back(method_entry{
+          .decl = dynamic_cast<const ast::func_decl *>(item.get()),
+          .owner = owner,
+          .from_trait = nullptr,
+          .file_id = type_it->second.file_id,
+          // Non-null and empty, exactly as a hand-written non-generic `impl`
+          // over an applied target registers: that combination is what marks
+          // a method as needing a per-receiver instance (`impl_needs_
+          // instance`), which is how the body ever gets compiled.
+          .block_type_params = &impl->type_params,
+          // The concrete instantiation, not the declaration's pattern, so
+          // `find_method`'s `target_pattern_matches` admits this method for
+          // `box[int32]` and not for `box[str]` — even though both share one
+          // `methods_` bucket, keyed by the `type_decl`.
+          .impl_target_pattern = instance_id,
+      });
+      registered = true;
+    }
+    return registered;
+  }
+
+  auto resolve_deriving_traits(const ast::type_decl &decl,
+                               file_id_type owner_file) -> void {
+    if (decl.name.empty() || !decl.type_params.empty() ||
+        !derivable_shape(decl)) {
+      // A *generic* type derives lazily instead, once per concrete
+      // instantiation — see `ensure_derived_instance_impls`. It cannot derive
+      // here: this pre-pass runs before any instantiation is known, and a
+      // single impl over `box[T]` is not what these derivations produce.
       return;
     }
     for (const auto trait_name : k_real_derive_traits) {
       if (!std::ranges::contains(decl.deriving, std::string(trait_name))) {
         continue;
       }
-      auto derive_fn_name = is_sum_shaped
-                               ? std::format("derive_{}_sum", trait_name)
-                               : std::format("derive_{}", trait_name);
-      if (!comptime_eval_.has_pending_function(derive_fn_name)) {
-        // `std.derive` wasn't part of this session (a narrow test fixture
-        // set, most likely) — fall back to the type-check-only path exactly
-        // as if this trait weren't in `k_real_derive_traits` at all, rather
-        // than attempting a call `evaluate` can only fail with a real,
-        // leaked diagnostic (not a quiet `nullopt`).
-        continue;
-      }
-      auto callee_ident = ast::make<ast::ident_expr>();
-      callee_ident->span = decl.span;
-      callee_ident->name = std::move(derive_fn_name);
-      auto type_ident = ast::make<ast::ident_expr>();
-      type_ident->span = decl.span;
-      type_ident->name = decl.name;
-      auto index = ast::make<ast::index_expr>();
-      index->span = decl.span;
-      index->object = std::move(callee_ident);
-      index->index = std::move(type_ident);
-      auto call = ast::make<ast::call_expr>();
-      call->span = decl.span;
-      call->callee = std::move(index);
-
-      const auto fragment_value = comptime_eval_.evaluate(*call);
-      if (fragment_value.is_error() ||
-          fragment_value.kind != comptime::value_kind::def_expr_fragment ||
-          fragment_value.fragment == nullptr) {
-        continue;
-      }
-      const auto *impl =
-          dynamic_cast<const ast::impl_decl *>(fragment_value.fragment);
+      const auto *impl = evaluate_derive_call(decl, trait_name);
       if (impl == nullptr) {
         continue;
       }
