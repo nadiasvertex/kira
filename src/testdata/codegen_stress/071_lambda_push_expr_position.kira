@@ -1,0 +1,22 @@
+module codegen_stress.lambda_push_expr_position
+
+# `list.push` used in *value* position rather than as a bare statement — an
+# expression-bodied lambda whose entire body is a push. `push` has no
+# `func_decl` backing it (`builtin_method_result` in `semantic/check.cpp` is
+# a hardcoded type-rule table), and the ordinary bare-statement form
+# (`lower_stmt`'s `expr_stmt` case) lowers it directly to a standalone
+# `hir_list_push`, which has no expression form of its own. An
+# expression-bodied lambda's tail, though, always lowers through `lower_expr`
+# (`hir::lowerer::lower_lambda` wraps it in a `hir_return`), so it needs a
+# push that can stand in for a value too (`hir::lowerer::lower_call`'s
+# `push`-in-value-position case, spec/todo.md item 7).
+
+def main() -> int64:
+    var seen: list[int32] = []
+    let push_doubled = (x: int32) => seen.push(x * 2)
+    push_doubled(1)
+    push_doubled(2)
+    push_doubled(3)
+    return seen.len() as int64
+
+# expect: 3

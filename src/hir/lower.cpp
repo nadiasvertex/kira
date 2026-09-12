@@ -1116,6 +1116,33 @@ auto lowerer::lower_call(const ast::call_expr &call)
         }
       }
     }
+    // `list.push(x)` used as a *value*, not a bare statement — a lambda
+    // whose one-expression body is a push (`(x) => seen.push(x)`), or any
+    // other position that wants its (always-`unit`) result. The
+    // `expr_stmt` case in `lower_stmt` below intercepts the bare-statement
+    // form directly into a standalone `hir_list_push`, which has no
+    // expression form of its own; here the same push is wrapped in a block
+    // that tails with an explicit `unit` literal, so it can stand in for a
+    // value like any other expression.
+    if (field.object != nullptr && field.field_name == "push" &&
+        call.args.size() == 1 && call.args.front().value != nullptr) {
+      auto target = lower_expr(*field.object);
+      if (!target.has_value()) {
+        return std::unexpected(target.error());
+      }
+      auto value = lower_expr(*call.args.front().value);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      auto stmts = ptr_vec<hir_node>{};
+      stmts.push_back(ptr<hir_node>(make<hir_list_push>(
+          call.span, std::move(*target), std::move(*value))));
+      stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+          call.span,
+          ptr<hir_expr>(make<hir_literal>(call.span, *type,
+                                          token_kind::kw_unit, "")))));
+      return ok_expr(make<hir_block>(call.span, *type, std::move(stmts)));
+    }
   }
 
   // `@variant(args...)` parses as a call whose callee is the variant's
