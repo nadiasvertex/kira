@@ -2908,28 +2908,44 @@ private:
                        "subject type, which this position doesn't have yet"});
       }
       const auto &entry = types_.entry(*value_type);
+      // A parenthesized pattern `(a, b, ...)` always lowers to
+      // hir_tuple_pattern regardless of whether the subject is a tuple or a
+      // fixed array (only bracket syntax lowers to hir_array_pattern) — see
+      // the doc comment on hir_tuple_index for the analogous projection
+      // case. Branch on the subject's type kind the same way that case
+      // does.
+      const auto is_array = entry.kind == semantic::type_kind::array_kind;
+      const uint8_t array_elem_size =
+          is_array ? element_stride(entry.result) : uint8_t{0};
       auto result_reg = std::optional<virtual_reg>{};
       for (size_t i = 0; i < tup.elements.size(); ++i) {
         auto elem_reg = alloc_register(pattern.span);
         if (!elem_reg.has_value()) {
           return std::unexpected(elem_reg.error());
         }
-        const auto elem_type = i < entry.args.size()
-                                   ? std::optional<type_id>(entry.args[i])
-                                   : std::nullopt;
-        const auto offset =
-            runtime::tuple_element_offset(types_, *value_type, i);
-        if (!offset.has_value()) {
-          return std::unexpected(compile_error{
-              .kind = compile_error_kind::unsupported_construct,
-              .span = pattern.span,
-              .message = "this tuple pattern's element does not resolve to "
-                         "a declared element — this should have been "
-                         "rejected by the type checker"});
+        const auto elem_type =
+            is_array ? std::optional<type_id>(entry.result)
+            : i < entry.args.size() ? std::optional<type_id>(entry.args[i])
+                                    : std::nullopt;
+        if (is_array) {
+          emit_load_field(*elem_reg, value_reg,
+                          static_cast<uint16_t>(i * array_elem_size),
+                          array_elem_size);
+        } else {
+          const auto offset =
+              runtime::tuple_element_offset(types_, *value_type, i);
+          if (!offset.has_value()) {
+            return std::unexpected(compile_error{
+                .kind = compile_error_kind::unsupported_construct,
+                .span = pattern.span,
+                .message = "this tuple pattern's element does not resolve to "
+                           "a declared element — this should have been "
+                           "rejected by the type checker"});
+          }
+          emit_load_field(*elem_reg, value_reg, static_cast<uint16_t>(*offset),
+                          elem_type.has_value() ? element_stride(*elem_type)
+                                                : 8);
         }
-        emit_load_field(*elem_reg, value_reg, static_cast<uint16_t>(*offset),
-                        elem_type.has_value() ? element_stride(*elem_type)
-                                              : 8);
         auto sub = compile_pattern_test(*tup.elements[i], *elem_reg, elem_type);
         if (!sub.has_value()) {
           return std::unexpected(sub.error());

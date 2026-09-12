@@ -1,0 +1,54 @@
+module main
+
+# expect: 127
+
+# spec/todo.md item 8: `let (a, b) = x` / `match x: (a, b) => ...` against a
+# plain fixed `array[T, N]` (not a tuple) reuses `hir_tuple_index` for
+# element projection exactly as the tuple side does (see the doc comment on
+# `hir_tuple_index` in src/hir/nodes.h), and both backends'
+# `compile_tuple_index` branch on `object`'s type kind to pick the array
+# path (`node.index * elem_size`) instead of the tuple path (packed
+# per-field offsets). That array branch had no codegen-level test coverage
+# before this file -- 070_tuple_mixed_width_layout.kira exercises only the
+# tuple side.
+#
+# `int8` is used as the narrow element type `T`: any regression that widens
+# the per-element stride back to a uniform 8 bytes (the layout bug this
+# repo has hit before for tuples, per 070) reads the wrong byte for every
+# element after the first and this file's total moves off 127.
+#
+# Per CLAUDE.md, cross-checking the bytecode VM against the LLVM tier proves
+# nothing here: both derive array element strides from the same
+# src/runtime/layout.h and would agree on the same wrong answer just as
+# readily as the right one. `# expect: 127` pins down the actual computed
+# value instead of trusting tier agreement.
+
+def make() -> array[int8, 4]:
+    return [10, 20, 30, 40]
+
+# The `let (...)` destructure path against a fixed array, exercised
+# separately from element-index access. Each binding is checked on its own
+# so a stride bug on any one element is independently visible.
+def destructure_matches(arr: &array[int8, 4]) -> bool:
+    let (a, b, c, d) = *arr
+    return a == 10 and b == 20 and c == 30 and d == 40
+
+def main() -> int32:
+    let arr = make()
+    let destructure_ok = destructure_matches(&arr)
+
+    # `match` against an array pattern (`array_pattern` lowering,
+    # src/hir/lower.cpp), covering the array side of pattern-projection
+    # separately from the `let (...)` path above.
+    let matched: int8 = match arr:
+        (10, b, c, 40) => b + c
+        _ => -1
+    let matched_ok = matched == 50
+
+    var score = 0
+    if destructure_ok:
+        score = score + 63
+    if matched_ok:
+        score = score + 64
+
+    return score

@@ -13085,13 +13085,23 @@ private:
                           tuple.elements.size() == 1 ? "" : "s",
                           types_.display(stripped), entry.args.size()),
               "pattern shape does not match the value");
+      } else if (entry.kind == type_kind::array_kind &&
+                 entry.array_size.has_value() &&
+                 *entry.array_size != tuple.elements.size()) {
+        error(tuple.span,
+              std::format("tuple pattern has {} element{}, but `{}` has {}",
+                          tuple.elements.size(),
+                          tuple.elements.size() == 1 ? "" : "s",
+                          types_.display(stripped), *entry.array_size),
+              "pattern shape does not match the value");
       }
       for (size_t i = 0; i < tuple.elements.size(); ++i) {
         if (tuple.elements[i] != nullptr) {
           const auto element =
               entry.kind == type_kind::tuple_kind && i < entry.args.size()
-                  ? entry.args[i]
-                  : k_unknown_type;
+              ? entry.args[i]
+              : entry.kind == type_kind::array_kind ? entry.result
+                                                     : k_unknown_type;
           check_pattern(*tuple.elements[i], element);
         }
       }

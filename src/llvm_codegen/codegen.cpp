@@ -3115,7 +3115,31 @@ private:
                        "subject type, which this position doesn't have yet"});
       }
       const auto &entry = types_.entry(*value_type);
+      // A parenthesized pattern `(a, b, ...)` always lowers to
+      // hir_tuple_pattern regardless of whether the subject is a tuple or a
+      // fixed array (only bracket syntax lowers to hir_array_pattern) — see
+      // the doc comment on hir_tuple_index for the analogous projection
+      // case. Branch on the subject's type kind the same way that case
+      // does.
       llvm::Value *acc = nullptr;
+      if (entry.kind == semantic::type_kind::array_kind) {
+        auto elem_ty = storage_type_for(entry.result, pattern.span);
+        if (!elem_ty.has_value()) {
+          return std::unexpected(elem_ty.error());
+        }
+        const auto elem_size = element_stride(entry.result);
+        for (size_t i = 0; i < tup.elements.size(); ++i) {
+          auto *elem_val = builder_.CreateLoad(*elem_ty,
+                                               byte_address(value, i * elem_size));
+          auto sub = compile_pattern_test(*tup.elements[i], elem_val,
+                                          std::optional<type_id>(entry.result));
+          if (!sub.has_value()) {
+            return std::unexpected(sub.error());
+          }
+          acc = acc == nullptr ? *sub : builder_.CreateAnd(acc, *sub, "pat.and");
+        }
+        return acc == nullptr ? llvm::ConstantInt::getTrue(ctx_) : acc;
+      }
       for (size_t i = 0; i < tup.elements.size(); ++i) {
         const auto elem_type = i < entry.args.size()
                                    ? std::optional<type_id>(entry.args[i])
