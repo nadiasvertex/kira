@@ -1,5 +1,9 @@
 module std.intrinsics
 
+####################
+# Cast intrinsics
+####################
+
 #: Reinterprets a float64's bit pattern as a uint64 -- `as uint64` on a float
 #: is a value conversion (`compile_cast`), not the reinterpret `hash` needs.
 intrinsic def rt_bitcast_f64_to_u64(v: box_f64) -> box_u64
@@ -7,3 +11,106 @@ intrinsic def rt_bitcast_f64_to_u64(v: box_f64) -> box_u64
 #: Reinterprets a float32's bit pattern as a uint32; the `float32` counterpart
 #: of `rt_bitcast_f64_to_u64`.
 intrinsic def rt_bitcast_f32_to_u32(v: box_f32) -> box_u32
+
+####################
+# String intrinsics
+####################
+
+intrinsic def rt_str_concat(a: str, b: str) -> str
+intrinsic def rt_str_len_scalars(s: str) -> box_usize
+intrinsic def rt_str_repeat_char(c: box_u32, n: box_usize) -> str
+intrinsic def rt_str_truncate_scalars(s: str, n: box_usize) -> str
+intrinsic def rt_str_eq(a: str, b: str) -> box_bool
+intrinsic def rt_str_cmp(a: str, b: str) -> box_i32
+intrinsic def rt_str_find(haystack: str, needle: str, from: box_usize) -> find_result
+intrinsic def rt_str_rfind(haystack: str, needle: str) -> find_result
+intrinsic def rt_str_reverse(s: str) -> str
+intrinsic def rt_str_trim(s: str, mode: box_u8) -> str
+intrinsic def rt_str_replace(s: str, from: str, to: str) -> str
+
+intrinsic def rt_fmt_radix_digits(value: box_u64, radix: box_u8, uppercase: box_bool) -> str
+intrinsic def rt_fmt_f64_fixed(value: box_f64, precision: box_usize) -> str
+intrinsic def rt_fmt_f64_sci(value: box_f64, precision: box_usize, uppercase: box_bool) -> str
+intrinsic def rt_fmt_f64_general(value: box_f64, precision: box_usize) -> str
+intrinsic def rt_fmt_char_from_codepoint(cp: box_u32) -> str
+
+####################
+# I/O intrinsics
+####################
+
+intrinsic def rt_stdin() -> raw_fd
+intrinsic def rt_stdout() -> raw_fd
+intrinsic def rt_stderr() -> raw_fd
+
+intrinsic def rt_open(path: str, opts: open_options) -> result[raw_fd, io_errno]
+intrinsic def rt_close(fd: raw_fd) -> result[unit, io_errno]
+intrinsic def rt_read(fd: raw_fd, buf: &mut slice_mut[byte]) -> result[usize, io_errno]
+intrinsic def rt_write(fd: raw_fd, buf: &slice[byte]) -> result[usize, io_errno]
+intrinsic def rt_flush(fd: raw_fd) -> result[unit, io_errno]
+
+####################
+# Panic intrinsics
+####################
+
+intrinsic def rt_panic(msg: str) -> never
+
+####################
+# Platform intrinsics
+####################
+
+#: Raw Unix uname() structure.
+type uname_raw = {
+    sysname: str,
+    nodename: str,
+    release: str,
+    version: str,
+    machine_arch: str,
+}
+
+#: Raw Windows version information structure.
+type winver_raw = {
+    major: uint32,
+    minor: uint32,
+    build: uint32,
+    platform_id: uint32,
+    csd_version: str,
+}
+
+#: Raw macOS version information structure.
+type macver_raw = {
+    release: str,
+    version: str,
+    dev_stage: str,
+    non_release_version: str,
+    machine_arch: str,
+}
+
+#: Gets the Unix uname information.
+#: Returns:
+#:   a uname_raw structure on success, or an io_errno on failure.
+intrinsic def rt_uname() -> result[uname_raw, io_errno]
+
+#: Gets the C library version (Unix only).
+#: Returns:
+#:   a libc_version structure on success, or an io_errno on failure.
+intrinsic def rt_libc_version() -> result[libc_version, io_errno]
+
+#: Gets the Windows version information (Windows only).
+#: Returns:
+#:   a winver_raw structure on success, or an io_errno on failure.
+intrinsic def rt_windows_version() -> result[winver_raw, io_errno]
+
+#: Gets the macOS version information (macOS only).
+#: Returns:
+#:   a macver_raw structure on success, or an io_errno on failure.
+intrinsic def rt_macos_version() -> result[macver_raw, io_errno]
+
+#: Gets the hostname of the machine.
+#: Returns:
+#:   the hostname string on success, or an io_errno on failure.
+intrinsic def rt_gethostname() -> result[str, io_errno]
+
+#: Gets the processor name.
+#: Returns:
+#:   the processor name string on success, or an io_errno on failure.
+intrinsic def rt_processor_name() -> result[str, io_errno]

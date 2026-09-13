@@ -81,23 +81,6 @@ pub type macos_version = {
     machine_arch: str,
 }
 
-# ---------------------------------------------------------------------------
-# Intrinsics. All six raw structs and intrinsics are declared unconditionally
-# rather than gated per platform — every native implementation
-# (`src/runtime/platform.cpp`, `src/bytecode/vm.cpp`) already reports
-# `io_errno { code: ENOSYS }` gracefully when called on a host it doesn't
-# describe, so the only cost of always declaring them is code size. This
-# also sidesteps two otherwise-tempting `static if` designs that don't
-# actually work today: `intrinsic def` can only be a module-level
-# declaration (the checker rejects one nested inside a `static if` body as
-# if it were a trait/impl member), and even an ordinary `def` selected by
-# item-level `static if`/`else` only affects that file's own compile-time
-# checking — it isn't spliced into the module's ordinary scope for code
-# elsewhere to call (see `release()`/`version()` below, which branch on the
-# *runtime* value `target_os_family()` returns instead, for the same
-# reason).
-# ---------------------------------------------------------------------------
-
 #: Raw Unix uname() structure.
 type uname_raw = {
     sysname: str,
