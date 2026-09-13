@@ -4974,7 +4974,16 @@ private:
         return *result;
       }
     }
-    return signature_return_type(decl, owner);
+    // Under the *declaring* file, not the caller's — see the identical swap
+    // in `instantiate_generic_function`: a return type naming something the
+    // callee's module imported (`def make() -> option[foo]` over a
+    // `use other.foo`) resolves to nothing when read through the caller's
+    // own imports, and the call then reaches lowering with no concrete type.
+    const auto saved_signature_file = file_id_;
+    file_id_ = decl_file;
+    const auto result = signature_return_type(decl, owner);
+    file_id_ = saved_signature_file;
+    return result;
   }
 
   // ==========================================================================

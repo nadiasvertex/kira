@@ -1328,6 +1328,64 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
          "expected --show-compile-details to include the run's return value");
 }
 
+/// A function's declared return type is resolved once, in the file where
+/// the function itself is written, but every external call site used to
+/// re-resolve that same return-type AST node from scratch under its *own*
+/// module's imports (`signature_return_type` inside
+/// `check_call_against_decl`'s non-generic path never swapped `file_id_` to
+/// the callee's declaring file). A return type naming a type the callee's
+/// module only reached via `use` (`def make() -> option[foo]` over `use
+/// other.foo`) then resolved to `option[_]` for every caller outside that
+/// module, and reached lowering with no concrete type at all
+/// ("could not lower module ... no concrete checked type is available").
+/// The call still type-checked cleanly, so only an executed run — not a
+/// clean-compile assertion — can catch a regression here.
+auto test_run_resolves_call_return_type_naming_a_transitively_used_type()
+    -> void {
+  auto temp = make_temp_dir();
+  auto shape_source = temp.path / "shapes.kira";
+  auto factory_source = temp.path / "factory.kira";
+  auto main_source = temp.path / "sample_main.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(shape_source, "module shapes\n"
+                           "pub type point = {\n"
+                           "  x: int32,\n"
+                           "  y: int32,\n"
+                           "}\n");
+  write_file(factory_source, "module factory\n"
+                             "use shapes.point\n"
+                             "pub def make() -> option[point]:\n"
+                             "  return @some({ x: 19, y: 23 })\n");
+  write_file(main_source, "module main\n"
+                          "use factory\n"
+                          "def main() -> int32:\n"
+                          "  if let @some(p) = factory.make():\n"
+                          "    return p.x + p.y\n"
+                          "  return -1\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {shape_source.string(), factory_source.string(),
+                  main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected cross-module option-returning call to check cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded, "expected `main` to run without panicking");
+  expect(report->run->exit_code == 42,
+         "expected the call's inferred return type to carry through "
+         "lowering as `option[point]`, not `option[_]`");
+}
+
 /// `std.algo.max_by[I, T](it: I, cmp: fn(T, T) -> ordering) -> option[T]
 /// where I: iterator[T]` has two sources for `T`: `cmp`'s own signature, and
 /// the `where I: iterator[T]` bound (`I`'s true element type). `nums.iter()`
@@ -2881,6 +2939,7 @@ auto main() -> int {
     test_build_at_o2_still_links_and_runs_correctly();
     test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();
+    test_run_resolves_call_return_type_naming_a_transitively_used_type();
     test_run_generic_bound_solves_t_over_conflicting_argument();
     test_run_ord_dispatch_translates_ordering_to_bool();
     test_run_str_ord_dispatch_supports_lexicographic_max();
