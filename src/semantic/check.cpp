@@ -4303,6 +4303,42 @@ private:
     return id;
   }
 
+  /// Builds the `comptime::value::type_value` bindings for `decl`'s own
+  /// type parameters, so a `static if`/`static assert` in `decl`'s body, or
+  /// a nested comptime-only call reached from it, can reflect on them via
+  /// `T.name()`/`T.kind()`. Shared by `check_function` (binding a generic
+  /// function's own type parameters before checking its body) and
+  /// `try_fold_comptime_only_call` (rebinding a caller's type parameters
+  /// into a nested call's evaluator locals) — both used to build this by
+  /// hand with a stray `strip_refs(it->second)` that silently discarded a
+  /// bound view (`is_view[T]()` could never observe `T.name() == "ref"`
+  /// through either path). Binds the argument type as-is instead: a bare
+  /// generic parameter inferred from a `&U` argument at the call site
+  /// (`is_view`'s own doc comment in std.traits.category) needs
+  /// `entry.name == "ref"` to survive, not collapse to `U`'s name.
+  /// `entry.decl` is already null for a `ref_kind` (and every other
+  /// non-declared) entry regardless, matching `type_value`'s nullable
+  /// `decl` field, so nothing downstream needs the strip.
+  auto type_param_comptime_values(
+      const std::vector<ast::type_param> &type_params,
+      const std::unordered_map<std::string, type_id> &slots)
+      -> std::vector<std::pair<std::string, comptime::value>> {
+    auto values = std::vector<std::pair<std::string, comptime::value>>{};
+    for (const auto &param : type_params) {
+      if (param.is_value_param || param.name.empty()) {
+        continue;
+      }
+      const auto it = slots.find(param.name);
+      if (it == slots.end()) {
+        continue;
+      }
+      const auto &entry = types_.entry(it->second);
+      values.emplace_back(
+          param.name, comptime::value::make_type_value(entry.name, entry.decl));
+    }
+    return values;
+  }
+
   // ==========================================================================
   //  Struct / sum member queries with generic substitution
   // ==========================================================================
@@ -6808,22 +6844,10 @@ private:
       -> const ast::literal_expr * {
     // Rebind `decl`'s own type parameters into the evaluator's locals the
     // same way `check_function` did while `instance` was being checked
-    // (`type_param_locals`, above) — that binding is long gone by now, and
-    // without it every `T.name()`/`T.kind()` in `instance`'s body has
+    // (`type_param_comptime_values`) — that binding is long gone by now,
+    // and without it every `T.name()`/`T.kind()` in `instance`'s body has
     // nothing to resolve against.
-    auto type_args = std::vector<std::pair<std::string, comptime::value>>{};
-    for (const auto &param : decl.type_params) {
-      if (param.is_value_param || param.name.empty()) {
-        continue;
-      }
-      const auto it = type_slots.find(param.name);
-      if (it == type_slots.end()) {
-        continue;
-      }
-      const auto &entry = types_.entry(strip_refs(it->second));
-      type_args.emplace_back(
-          param.name, comptime::value::make_type_value(entry.name, entry.decl));
-    }
+    auto type_args = type_param_comptime_values(decl.type_params, type_slots);
     const auto result = comptime_eval_.try_eval_ordinary_call(
         instance, call, std::move(type_args));
     if (!result.has_value()) {
@@ -14735,29 +14759,13 @@ private:
     // so a `static if`/`static assert` condition *inside this function's own
     // body* can reflect on its own type parameter (e.g. `T.name()`,
     // `is_integer[T]()`) the same way ordinary body statements already can
-    // via `type_param_reflections_`. Reads straight off `types_.entry`,
-    // which already normalizes a builtin scalar, a compound builtin
-    // generic (`array[int32, 4]`), and a user declaration into one
-    // `{name, decl}` shape — `decl` is null for the first two, matching
-    // `comptime::value::type_value`'s existing (already-nullable) `decl`
-    // field. Pushed/popped unconditionally (empty when this is the
-    // template pass or none of the type params are types) to keep the
-    // evaluator's locals stack symmetric with `scopes_`/`capture_barriers_`
-    // above.
-    auto type_param_locals = std::unordered_map<std::string, comptime::value>{};
-    for (const auto &param : decl.type_params) {
-      if (param.is_value_param || param.name.empty()) {
-        continue;
-      }
-      const auto it = type_param_slots_.find(param.name);
-      if (it == type_param_slots_.end()) {
-        continue;
-      }
-      const auto &entry = types_.entry(strip_refs(it->second));
-      type_param_locals.emplace(
-          param.name, comptime::value::make_type_value(entry.name, entry.decl));
-    }
-    comptime_eval_.push_locals(std::move(type_param_locals));
+    // via `type_param_reflections_` (`type_param_comptime_values`, above).
+    // Pushed/popped unconditionally (empty when this is the template pass or
+    // none of the type params are types) to keep the evaluator's locals
+    // stack symmetric with `scopes_`/`capture_barriers_` above.
+    auto type_param_values =
+        type_param_comptime_values(decl.type_params, type_param_slots_);
+    comptime_eval_.push_locals({type_param_values.begin(), type_param_values.end()});
     auto saved_scopes = std::move(scopes_);
     scopes_.clear();
     // Barriers index into `scopes_`, so they have to travel with it: a stale

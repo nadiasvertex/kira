@@ -1,0 +1,26 @@
+module main
+
+# `is_view[T]()` (std.traits.category) is only meaningful when a bare
+# generic parameter is itself bound to a view type by the call site's own
+# argument — see its doc comment. `describe_view` here is exactly that
+# case: `T` is inferred from `&n`, and the nested `is_view[T]()` call has
+# to see that inference, not the referent's own type, to answer `true`.
+#
+# `try_fold_comptime_only_call` (src/semantic/check.cpp) used to rebind
+# the caller's type parameter through `strip_refs` before handing it to
+# the nested call, which silently discarded the view and made this always
+# print `false`. Asserting a computed value here (not just "compiles
+# cleanly") is the point: a stale `strip_refs` reintroduced later would
+# make `first` wrong without producing any diagnostic at all.
+
+use std.traits.is_view
+
+def describe_view[T](x: T) -> bool:
+    return is_view[T]()
+
+def main() -> int32:
+    let n: int32 = 42
+    let first = describe_view(&n)
+    let second = describe_view(n)
+    println("view={first} value={second}")
+    return 0

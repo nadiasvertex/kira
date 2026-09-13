@@ -5,23 +5,18 @@ module main
 #
 #  A view can't be spelled directly as a bracketed type argument
 #  (`is_view[&int32]()` isn't valid syntax — a view isn't a plain type
-#  name), so per its doc comment this is only meant to fire when a bare
-#  generic parameter is itself inferred from a `&`-argument at the call
-#  site, as `describe_view` below does.
+#  name), so this only fires when a bare generic parameter is itself
+#  inferred from a `&`-argument at the call site, as `describe_view` below
+#  does.
 #
-#  KNOWN BUG: as of this writing that case still prints `false` for
-#  `describe_view(&n)`, not the documented `true`. `T.name()` itself
-#  correctly reports `"ref"` when inlined directly in `describe_view`'s own
-#  body (confirmed by hand), so the type information survives that far.
-#  The break is one level further in: `try_fold_comptime_only_call`
-#  (src/semantic/check.cpp) rebinds a caller's type parameter into a
-#  *nested* static call's evaluator locals via
-#  `types_.entry(strip_refs(it->second))` — the `strip_refs` there drops
-#  the view wrapper before `is_view`'s own body ever sees it, so
-#  `is_view[T]()` observes the referent's name instead of `"ref"`. Every
-#  other predicate in std.traits.category is unaffected, since none of
-#  them care about `ref_kind` — `is_view` is the only one this specific
-#  bug can be observed through.
+#  This used to always print `false` for `describe_view(&n)`, because
+#  `try_fold_comptime_only_call` (src/semantic/check.cpp) rebound the
+#  caller's type parameter into the nested `is_view[T]()` call's evaluator
+#  locals via `types_.entry(strip_refs(it->second))` — the `strip_refs`
+#  dropped the view wrapper before `is_view`'s own body ever saw it, so it
+#  observed the referent's name instead of `"ref"`. Fixed by binding the
+#  argument type as-is, matching what `T.name()` already reported when
+#  called directly in `describe_view`'s own body.
 #
 #  Run it:      kira demo/traits-is_view.kira
 #  Compile it:  kira --compile -o traits-is_view demo/traits-is_view.kira
