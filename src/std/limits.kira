@@ -1,5 +1,7 @@
 module std.limits
 
+use std.traits.type_category
+
 #: `T`'s bit width: 8, 16, 32, or 64.
 #:
 #: `int128`/`uint128`/`float128` are deliberately absent, matching
@@ -22,9 +24,10 @@ pub static pure def bits[T]() -> usize:
 #: no unsigned counterpart, so this is unconditionally `true` for them, per
 #: `std.traits.is_signed_integer` "extended to floats".
 pub static pure def is_signed[T]() -> bool:
-    let n = T.name()
-    return (n == "int8" or n == "int16" or n == "int32" or n == "int64" or
-        n == "isize" or n == "float32" or n == "float64")
+    return match type_category[T]():
+        @signed_integer => true
+        @floating_point => true
+        _               => false
 
 #: The most negative representable value of `T`.
 #:
