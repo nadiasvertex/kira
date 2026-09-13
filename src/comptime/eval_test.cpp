@@ -92,8 +92,8 @@ auto test_eval_match_expr_literal_pattern_selects_true_arm() -> void {
   // `match true: true => 1 / _ => 2` used to evaluate to 2, not 1, with no
   // diagnostic anywhere in the chain.
   const auto result = eval_source("match true:\n"
-                                   "    true => 1\n"
-                                   "    _ => 2\n");
+                                  "    true => 1\n"
+                                  "    _ => 2\n");
   expect(result.kind == kira::comptime::value_kind::integer,
          "expected an integer result");
   expect(result.integer == 1,
@@ -108,10 +108,10 @@ auto test_eval_match_expr_block_arm_tail_value() -> void {
   // mirroring `checker::node_provides_function_value`'s "a tail expression
   // implicitly provides the block's value" rule.
   const auto result = eval_source("match 1:\n"
-                                   "    1 => :\n"
-                                   "        2\n"
-                                   "    _ => :\n"
-                                   "        3\n");
+                                  "    1 => :\n"
+                                  "        2\n"
+                                  "    _ => :\n"
+                                  "        3\n");
   expect(result.kind == kira::comptime::value_kind::integer,
          "expected an integer result");
   expect(result.integer == 2,

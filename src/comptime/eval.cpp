@@ -2750,7 +2750,7 @@ auto evaluator::evaluate_tail(const ast::node &node) -> exec_result {
         return exec_result{.errored = true};
       }
       return evaluate_block_value(condition.boolean ? decl.if_body
-                                                     : decl.else_body);
+                                                    : decl.else_body);
     }
     return evaluate_stmt(node);
   }
@@ -2759,8 +2759,8 @@ auto evaluator::evaluate_tail(const ast::node &node) -> exec_result {
   }
 }
 
-auto evaluator::evaluate_block_value(const std::vector<ast::ptr<ast::node>> &body)
-    -> exec_result {
+auto evaluator::evaluate_block_value(
+    const std::vector<ast::ptr<ast::node>> &body) -> exec_result {
   auto last_index = std::optional<size_t>{};
   for (size_t i = 0; i < body.size(); ++i) {
     if (body[i] != nullptr && !body[i]->has_error) {

@@ -5087,8 +5087,7 @@ auto parser::parse_if_expr() -> ast::ptr<ast::if_expr> {
   // (inline) applies -- consuming the colon here too would make
   // `parse_body` see NEWLINE where it expects `:` and fail outright.
   auto at_block_form = [this]() -> bool {
-    return at(token_kind::colon) &&
-           peek_at(1).kind == token_kind::newline;
+    return at(token_kind::colon) && peek_at(1).kind == token_kind::newline;
   };
 
   expect(token_kind::kw_if);

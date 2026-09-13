@@ -1111,17 +1111,16 @@ auto test_parser_accepts_if_let_expression() -> void {
 }
 
 auto test_parser_accepts_multiline_if_expression() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "def run(v: int) -> int:\n"
-      "  let n = if v > 0:\n"
-      "    1\n"
-      "  elif v < 0:\n"
-      "    -1\n"
-      "  else:\n"
-      "    0\n"
-      "  return n\n");
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "def run(v: int) -> int:\n"
+                             "  let n = if v > 0:\n"
+                             "    1\n"
+                             "  elif v < 0:\n"
+                             "    -1\n"
+                             "  else:\n"
+                             "    0\n"
+                             "  return n\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1,
