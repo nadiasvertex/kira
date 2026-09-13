@@ -1,0 +1,16 @@
+module sample
+
+static pure def clamp_low[T]() -> T:
+    let n = T.name()
+    var v: int64 = 0
+    if n == "int8":
+        v = -128
+    if n == "int32":
+        v = -2147483647 - 1
+    return v as T
+
+static assert clamp_low[int8]() == -127 - 1, "clamp_low[int8]() should cast the accumulated int64 down to int8"
+static assert clamp_low[int32]() == -2147483647 - 1, "clamp_low[int32]() should cast the accumulated int64 to int32 unchanged"
+
+def run() -> unit:
+  return unit
