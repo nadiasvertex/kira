@@ -79,7 +79,7 @@ pub trait zero:
     #: The value that leaves any value unchanged when added to it.
     #: Returns:
     #:   the additive identity for this type.
-    static def zero() -> self
+    pure static def zero() -> self
 
 #: The multiplicative identity: the value `x * one() == x` holds for.
 #:
@@ -88,7 +88,7 @@ pub trait one:
     #: The value that leaves any value unchanged when multiplied by it.
     #: Returns:
     #:   the multiplicative identity for this type.
-    static def one() -> self
+    pure pure static def one() -> self
 
 # The numeric primitives. Written out one impl per type rather than generated,
 # because there is no way to be generic over "the numeric types" -- and the
@@ -104,97 +104,97 @@ pub trait one:
 # make every program fail with "type `int128` has no scalar bytecode
 # representation yet". They arrive with codegen increment 6.
 impl zero for int8:
-    static def zero() -> int8:
+    pure static def zero() -> int8:
         return 0
 
 impl one for int8:
-    static def one() -> int8:
+    pure static def one() -> int8:
         return 1
 
 impl zero for int16:
-    static def zero() -> int16:
+    pure static def zero() -> int16:
         return 0
 
 impl one for int16:
-    static def one() -> int16:
+    pure static def one() -> int16:
         return 1
 
 impl zero for int32:
-    static def zero() -> int32:
+    pure static def zero() -> int32:
         return 0
 
 impl one for int32:
-    static def one() -> int32:
+    pure static def one() -> int32:
         return 1
 
 impl zero for int64:
-    static def zero() -> int64:
+    pure static def zero() -> int64:
         return 0
 
 impl one for int64:
-    static def one() -> int64:
+    pure static def one() -> int64:
         return 1
 
 impl zero for uint8:
-    static def zero() -> uint8:
+    pure static def zero() -> uint8:
         return 0
 
 impl one for uint8:
-    static def one() -> uint8:
+    pure static def one() -> uint8:
         return 1
 
 impl zero for uint16:
-    static def zero() -> uint16:
+    pure static def zero() -> uint16:
         return 0
 
 impl one for uint16:
-    static def one() -> uint16:
+    pure static def one() -> uint16:
         return 1
 
 impl zero for uint32:
-    static def zero() -> uint32:
+    pure static def zero() -> uint32:
         return 0
 
 impl one for uint32:
-    static def one() -> uint32:
+    pure static def one() -> uint32:
         return 1
 
 impl zero for uint64:
-    static def zero() -> uint64:
+    pure static def zero() -> uint64:
         return 0
 
 impl one for uint64:
-    static def one() -> uint64:
+    pure static def one() -> uint64:
         return 1
 
 impl zero for isize:
-    static def zero() -> isize:
+    pure static def zero() -> isize:
         return 0
 
 impl one for isize:
-    static def one() -> isize:
+    pure static def one() -> isize:
         return 1
 
 impl zero for usize:
-    static def zero() -> usize:
+    pure static def zero() -> usize:
         return 0
 
 impl one for usize:
-    static def one() -> usize:
+    pure static def one() -> usize:
         return 1
 
 impl zero for float32:
-    static def zero() -> float32:
+    pure static def zero() -> float32:
         return 0.0
 
 impl one for float32:
-    static def one() -> float32:
+    pure static def one() -> float32:
         return 1.0
 
 impl zero for float64:
-    static def zero() -> float64:
+    pure static def zero() -> float64:
         return 0.0
 
 impl one for float64:
-    static def one() -> float64:
+    pure static def one() -> float64:
         return 1.0
