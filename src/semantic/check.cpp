@@ -14550,6 +14550,48 @@ private:
     case ast::node_kind::dep_decl:
       return unit;
 
+    case ast::node_kind::static_decl: {
+      const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+      if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
+        check_item(node, /*at_module_scope=*/false);
+        return unit;
+      }
+      // Mirrors `if_stmt` above: a `static if` used as a block's tail
+      // statement is exactly as value-producing as `if`/`match` — only
+      // which branch(es) get checked differs (real compile-time branch
+      // selection when a condition value is available, versus joining
+      // both like an ordinary `if`).
+      const auto taken_branch = resolve_static_if_branch(decl);
+      if (taken_branch.has_value()) {
+        const auto branch_type = check_body_nodes(
+            *taken_branch ? decl.if_body : decl.else_body, expected_tail);
+        return branch_type != k_unknown_type ? branch_type : unit;
+      }
+      auto result = expected_tail;
+      const auto if_type = check_body_nodes(decl.if_body, expected_tail);
+      result = join_branch_type(
+          result, if_type,
+          decl.if_body.empty() || decl.if_body.back() == nullptr
+              ? decl.span
+              : decl.if_body.back()->span,
+          "`static if`");
+      if (!decl.else_body.empty()) {
+        const auto else_type = check_body_nodes(decl.else_body, expected_tail);
+        result = join_branch_type(result, else_type,
+                                  decl.else_body.back() != nullptr
+                                      ? decl.else_body.back()->span
+                                      : decl.span,
+                                  "`static if`");
+      } else if (types_.entry(result).name == "never") {
+        // See the identical `if_stmt` comment above: a branch-only `static
+        // if` with no `else` must not make the whole construct register as
+        // `never` when its one branch purely diverges, or later statements
+        // in the same block would wrongly become unreachable.
+        result = unit;
+      }
+      return result != k_unknown_type ? result : unit;
+    }
+
     default:
       // Nested declarations and bare expressions in statement position.
       if (const auto *expr = dynamic_cast<const ast::expr *>(&node)) {
@@ -14688,6 +14730,15 @@ private:
             return arm.body_expr != nullptr || arm.has_error ||
                    block_provides_function_value(arm.body_stmts);
           });
+    }
+    case ast::node_kind::static_decl: {
+      const auto &stmt = dynamic_cast<const ast::static_decl &>(node);
+      if (stmt.decl_kind != ast::static_decl_kind::conditional_compilation) {
+        return true;
+      }
+      return !stmt.else_body.empty() &&
+             block_provides_function_value(stmt.if_body) &&
+             block_provides_function_value(stmt.else_body);
     }
     default:
       return true;
@@ -16550,6 +16601,40 @@ private:
     return std::nullopt;
   }
 
+  /// Resolves a `static if`'s condition to a real branch selection when
+  /// possible: `std::nullopt` means "couldn't decide, check both branches",
+  /// `true`/`false` means "only this branch is real, check just that one".
+  ///
+  /// Deliberately skips evaluation entirely while inside a generic `static
+  /// def`'s template body (`T` not yet bound to a concrete type): a
+  /// condition like `T.name() == "int64"` reaches the evaluator's general
+  /// call path (rather than the checker's own `T.name()` fold, which only
+  /// fires for a fully-concrete `T`) and would otherwise report a spurious
+  /// "only direct calls to a named `static def` function" error. The real
+  /// branch selection for that case happens per call, when
+  /// `evaluator::evaluate_stmt` runs this same `static_decl` with `T`
+  /// concretely bound.
+  auto resolve_static_if_branch(const ast::static_decl &decl)
+      -> std::optional<bool> {
+    if (decl.if_condition == nullptr || decl.if_condition->has_error) {
+      return std::nullopt;
+    }
+    require_bool(*decl.if_condition, "a `static if` condition");
+    const auto inside_generic_scope =
+        std::ranges::any_of(type_params_, [](const auto &scope) -> bool {
+          return !scope.empty();
+        });
+    if (inside_generic_scope) {
+      return std::nullopt;
+    }
+    auto evaluated = comptime_eval_.evaluate(*decl.if_condition);
+    if (!evaluated.is_error() &&
+        evaluated.kind == comptime::value_kind::boolean) {
+      return evaluated.is_true();
+    }
+    return std::nullopt;
+  }
+
   auto check_static_decl(const ast::static_decl &decl) -> void {
     comptime_eval_.set_file(file_id_);
     switch (decl.decl_kind) {
@@ -16596,24 +16681,15 @@ private:
       }
       return;
     case ast::static_decl_kind::conditional_compilation: {
-      auto condition_value = std::optional<comptime::value>{};
-      if (decl.if_condition != nullptr && !decl.if_condition->has_error) {
-        require_bool(*decl.if_condition, "a `static if` condition");
-        auto evaluated = comptime_eval_.evaluate(*decl.if_condition);
-        if (!evaluated.is_error() &&
-            evaluated.kind == comptime::value_kind::boolean) {
-          condition_value = std::move(evaluated);
-        }
-      }
+      const auto taken_branch = resolve_static_if_branch(decl);
       // When the condition evaluated to a real boolean, only the taken
       // branch is checked — this is real branch selection, not just
       // type-checking both sides. When evaluation couldn't determine a
-      // value (unsupported construct, forward reference, ...), fall back
-      // to checking both branches so users still get diagnostics for
-      // whichever branch has real problems.
-      if (condition_value.has_value()) {
-        check_body_nodes(condition_value->is_true() ? decl.if_body
-                                                    : decl.else_body,
+      // value (unsupported construct, forward reference, inside a generic
+      // template, ...), fall back to checking both branches so users still
+      // get diagnostics for whichever branch has real problems.
+      if (taken_branch.has_value()) {
+        check_body_nodes(*taken_branch ? decl.if_body : decl.else_body,
                          k_unknown_type);
       } else {
         check_body_nodes(decl.if_body, k_unknown_type);

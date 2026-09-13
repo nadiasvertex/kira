@@ -601,6 +601,51 @@ auto test_parser_still_reads_static_bindings_as_bindings() -> void {
       "`static def` beside a binding is still a function");
 }
 
+/// Regression test for todo item 9: a `static if`/`static else` branch body
+/// used to accept only declarations (`parse_top_level_item`); it must also
+/// accept ordinary statements like `return`, so a generic `static def` can
+/// select per-instantiation behavior with a real statement rather than being
+/// limited to declarations.
+auto test_parser_accepts_statements_in_static_if_branches() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "static pure def pick[T]() -> bool:\n"
+                             "  static if T.name() == \"int32\":\n"
+                             "    let result = true\n"
+                             "    return result\n"
+                             "  else:\n"
+                             "    return false\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+
+  auto *func_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected a static function declaration");
+  expect(func_decl->body_stmts.size() == 1,
+         "expected the `static if` to be the function's only statement");
+
+  auto *static_decl = expect_node<kira::ast::static_decl>(
+      func_decl->body_stmts[0].get(), kira::ast::node_kind::static_decl,
+      "expected a static declaration");
+  expect(static_decl->decl_kind ==
+             kira::ast::static_decl_kind::conditional_compilation,
+         "expected a `static if` declaration kind");
+  expect(static_decl->if_body.size() == 2,
+         "expected the `if` branch to keep both statements (`let` and "
+         "`return`), not just a declaration");
+  expect_node<kira::ast::let_stmt>(
+      static_decl->if_body[0].get(), kira::ast::node_kind::let_stmt,
+      "expected a `let` statement inside the `static if` branch");
+  expect_node<kira::ast::return_stmt>(
+      static_decl->if_body[1].get(), kira::ast::node_kind::return_stmt,
+      "expected a `return` statement inside the `static if` branch");
+  expect(static_decl->else_body.size() == 1,
+         "expected the `else` branch to keep its `return` statement");
+  expect_node<kira::ast::return_stmt>(
+      static_decl->else_body[0].get(), kira::ast::node_kind::return_stmt,
+      "expected a `return` statement inside the `static else` branch");
+}
+
 auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
   auto parsed = parse_source("module sample\n"
                              "\n"
@@ -2262,7 +2307,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 45> tests = {{
+  const std::array<named_test, 46> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "multiline_sum_type",
@@ -2347,6 +2392,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_static_def_in_member_blocks},
       {.name = "static_bindings_stay_bindings",
        .fn = test_parser_still_reads_static_bindings_as_bindings},
+      {.name = "static_if_branches_accept_statements",
+       .fn = test_parser_accepts_statements_in_static_if_branches},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

@@ -1202,6 +1202,18 @@ auto test_accepts_static_if_variant_equality_selects_else_branch() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_static_if_statement_body_in_generic_static_def() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_static_if_statement_body_in_generic_static_def.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected a `static if`/`else` branch inside a generic "
+                     "`static def` to accept `return` statements (not just "
+                     "declarations), select the `if` branch once `T` is "
+                     "concretely bound to `int32` by `zero_or_one[int32]()`, "
+                     "and pass the `static assert` on the result:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_accepts_static_assert_compares_variant_payloads() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_assert_compares_variant_payloads.kira");
@@ -3088,6 +3100,7 @@ auto main() -> int {
     test_accepts_static_if_selects_taken_branch();
     test_accepts_static_if_selects_branch_by_sum_type_equality();
     test_accepts_static_if_variant_equality_selects_else_branch();
+    test_accepts_static_if_statement_body_in_generic_static_def();
     test_accepts_static_assert_compares_variant_payloads();
     test_accepts_quote_expr_typed_by_fragment_kind();
     test_accepts_static_def_call_evaluates();

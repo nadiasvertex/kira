@@ -33,8 +33,8 @@ else:
 ```
 
 - The condition is evaluated at compile time; it must be closed.
-- The branch not taken is **not compiled or type-checked** — it is discarded before name resolution sees it (`static_decl_kind::conditional_compilation`, `check.cpp:15119`).
-- `static if` is valid at module scope, selecting between top-level items. Written inside a function body it parses (`parser::parse_static_decl` accepts `kw_static` at statement position), but each branch's body is still parsed as a list of *declarations* (`parse_top_level_item`), not statements — a branch containing `return`/an assignment/any ordinary statement fails to parse there today, contrary to an earlier version of this section's claim that statement bodies were supported.
+- The branch not taken is **not compiled or type-checked** — it is discarded before name resolution sees it (`static_decl_kind::conditional_compilation`, `check.cpp`'s `check_static_decl`).
+- `static if` is valid at module scope, selecting between top-level items, and inside a function body, where each branch's body may hold ordinary statements (`return`, `let`, an assignment, ...) as well as declarations — `parser::parse_static_branch_node` dispatches each line to whichever parses. Inside a generic `static def[T]`, a condition that depends on `T` (e.g. `T.name() == "int64"`) cannot be evaluated while the template itself is being checked (`T` is not yet bound to a concrete type); the checker falls back to type-checking both branches in that case, and real branch selection happens per call, once `T` is concretely bound, via the same evaluator that runs the rest of the `static def`'s body.
 
 ## `static assert`
 

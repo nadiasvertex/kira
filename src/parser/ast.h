@@ -1919,10 +1919,15 @@ struct static_decl : node {
       assert_message; ///< Optional user-facing assertion message.
 
   // For ConditionalCompilation:
-  ptr<expr> if_condition;         ///< Compile-time condition for `static if`.
-  std::vector<ptr<node>> if_body; ///< Body chosen when the condition is true.
+  ptr<expr> if_condition; ///< Compile-time condition for `static if`.
   std::vector<ptr<node>>
-      else_body; ///< Optional body chosen when the condition is false.
+      if_body; ///< Body chosen when the condition is true — declarations
+               ///< (`trait`/`impl`/`extend`/`concept`/`signature`/`module`/
+               ///< `dep`) or ordinary statements (`return`/`let`/`var`/an
+               ///< assignment/...), never a mix required.
+  std::vector<ptr<node>>
+      else_body; ///< Optional body chosen when the condition is false; same
+                 ///< declaration-or-statement contents as `if_body`.
 
   // For ForInline / ForBlock:
   std::vector<ptr<pattern>>

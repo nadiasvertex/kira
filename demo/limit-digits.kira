@@ -11,8 +11,7 @@ module main
 use std.limits.digits
 
 def main() -> int32:
-    println("digits[bool]={digits[bool]()}")
-    println("digits[char]={digits[char]()}")
+    println("digits[int8]={digits[int8]()}")
     println("digits[int32]={digits[int32]()}")
     println("digits[float64]={digits[float64]()}")
     return 0

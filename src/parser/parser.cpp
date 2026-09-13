@@ -2795,7 +2795,7 @@ auto parser::parse_static_decl(ast::visibility vis)
         if (at_any(token_kind::dedent, token_kind::eof)) {
           break;
         }
-        auto item = parse_top_level_item();
+        auto item = parse_static_branch_node();
         if (item) {
           decl->if_body.push_back(std::move(item));
         } else {
@@ -2816,7 +2816,7 @@ auto parser::parse_static_decl(ast::visibility vis)
           if (at_any(token_kind::dedent, token_kind::eof)) {
             break;
           }
-          auto item = parse_top_level_item();
+          auto item = parse_static_branch_node();
           if (item) {
             decl->else_body.push_back(std::move(item));
           } else {
