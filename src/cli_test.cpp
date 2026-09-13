@@ -1997,18 +1997,17 @@ auto test_run_static_def_call_from_ordinary_generic_body() -> void {
   auto source_path = temp.path / "sample_static_def_call.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample\n"
-             "static def is_int32[T]() -> bool:\n"
-             "  return T.name() == \"int32\"\n"
-             "def classify[T](x: T) -> int32:\n"
-             "  if is_int32[T]():\n"
-             "    return 1\n"
-             "  return 0\n"
-             "def main() -> int32:\n"
-             "  if classify(5) == 1 and classify(2.5) == 0:\n"
-             "    return 42\n"
-             "  return 7\n");
+  write_file(source_path, "module sample\n"
+                          "static def is_int32[T]() -> bool:\n"
+                          "  return T.name() == \"int32\"\n"
+                          "def classify[T](x: T) -> int32:\n"
+                          "  if is_int32[T]():\n"
+                          "    return 1\n"
+                          "  return 0\n"
+                          "def main() -> int32:\n"
+                          "  if classify(5) == 1 and classify(2.5) == 0:\n"
+                          "    return 42\n"
+                          "  return 7\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
@@ -2033,6 +2032,68 @@ auto test_run_static_def_call_from_ordinary_generic_body() -> void {
          "`classify(2.5)` to fold `is_int32[float64]()` to `false`, proving "
          "the fold reflects the real concrete type argument rather than a "
          "fixed answer");
+}
+
+/// Todo item 13 end-to-end check: `ast::clone_func_decl` (used by
+/// `find_or_check_generic_instance` to compile a fresh copy of a generic
+/// function's body per instantiation) had no case for `node_kind::
+/// static_decl` in `clone_node`'s statement switch at all, and no case for
+/// `node_kind::static_expr` in `clone_expr_impl` — so a `static` binding, a
+/// `static assert`, or a bare `static expr` inside a *generic* function's
+/// body made every instantiation fail to type-check with "cannot clone this
+/// construct for monomorphization", even though the exact same constructs
+/// were already legal (and already exercised by `check_static_decl`) inside
+/// an ordinary, non-generic function body. Exercises all three constructs
+/// together, and forces two distinct instantiations (`T = int32`, `T =
+/// str`) so `clone_func_decl` actually runs twice, not just once — a fix
+/// that only patched the cache-hit path, or only the first instantiation,
+/// would still pass a single-call version of this test.
+///
+/// This is a compile-only check (no `.run`), not because a stronger,
+/// value-asserting test wasn't wanted, but because it isn't available yet:
+/// lowering a `static` statement or a bare `static expr` inside an ordinary
+/// function body — generic or not — has no case in `hir::lowerer::
+/// lower_stmt`/`lower_expr` at all ("statement kind 15 is not lowered
+/// yet"), a separate, pre-existing gap unrelated to cloning. `compile_sources`
+/// only turns a lowering failure into a counted error when `cfg.run`/
+/// `cfg.build` is set (`report_lowering_failure`), so leaving `.run` unset
+/// isolates this test to the type-checking phase where `find_or_check_
+/// generic_instance` actually calls the cloner, without that unrelated gap
+/// masking a real regression here (or being incorrectly "fixed" by this
+/// change).
+auto test_type_checks_clones_static_constructs_in_generic_function_body()
+    -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_static_in_generic.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+             "module sample\n"
+             "static width: int32 = 20\n"
+             "def scale[T](x: T) -> int32:\n"
+             "    static factor: int32 = 2\n"
+             "    static assert width == 20, \"width must be 20\"\n"
+             "    return static width * 2 + 2\n"
+             "def main() -> int32:\n"
+             "    return scale(0) + scale(\"ignored\")\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = false,
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected a generic function body with a `static` binding, a "
+         "`static assert`, and a `static expr` to clone cleanly for both "
+         "`scale[int32]` and `scale[str]`: " +
+             report->diagnostics);
+  expect(report->modules.size() == 1,
+         "expected the module to compile through to metadata emission");
 }
 
 /// M7 end-to-end check: `type ... deriving show` on a concrete struct now
@@ -2834,6 +2895,7 @@ auto main() -> int {
     test_run_reflects_struct_field_count_into_runtime_constant();
     test_run_scalar_static_let_referenced_by_name();
     test_run_static_def_call_from_ordinary_generic_body();
+    test_type_checks_clones_static_constructs_in_generic_function_body();
     test_build_derives_show_via_deriving_clause();
     test_build_derives_eq_and_debug_via_deriving_clause();
     test_run_derives_ord_via_deriving_clause();

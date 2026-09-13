@@ -9,6 +9,8 @@ Kira is an early-stage language and compiler project written in C++26 (Clang 22.
 - Language and standard library specification: spec/specification/ (start at spec/specification/00-overview.md)
 - Language grammar: spec/kira-grammar.ebnf
 
+When writing kira code that doesn't compile but should according to the spec, don't try to work around compiler limitations. Stop and identify the limitations so that we can build a better compiler.
+
 ## Commands
 
 ```sh

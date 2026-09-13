@@ -826,6 +826,17 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->segments = path.segments;
     return ptr<expr>(std::move(cloned));
   }
+  case node_kind::static_expr: {
+    const auto &static_e = dynamic_cast<const static_expr &>(e);
+    auto operand = clone_optional(static_e.operand);
+    if (!operand.has_value()) {
+      return std::unexpected(operand.error());
+    }
+    auto cloned = make<static_expr>();
+    cloned->span = static_e.span;
+    cloned->operand = std::move(*operand);
+    return ptr<expr>(std::move(cloned));
+  }
   default:
     return unsupported(e, "this expression shape");
   }
@@ -1016,6 +1027,13 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->subject = std::move(*subject);
     cloned->arms = std::move(*arms);
     return ptr<node>(std::move(cloned));
+  }
+  case node_kind::static_decl: {
+    auto cloned = clone_static_decl(dynamic_cast<const static_decl &>(n));
+    if (!cloned.has_value()) {
+      return std::unexpected(cloned.error());
+    }
+    return ptr<node>(std::move(*cloned));
   }
   default:
     // Not a statement — a pattern or an expression reached through a generic
@@ -1281,28 +1299,102 @@ auto clone_type_decl(const type_decl &decl)
 
 auto clone_static_decl(const static_decl &decl)
     -> std::expected<ptr<static_decl>, clone_error> {
-  if (decl.decl_kind != static_decl_kind::binding) {
-    return unsupported(decl, "a non-binding `static` form");
-  }
-
-  auto type_annotation = clone_optional(decl.type_annotation);
-  if (!type_annotation.has_value()) {
-    return std::unexpected(type_annotation.error());
-  }
-  auto initializer = clone_optional(decl.initializer);
-  if (!initializer.has_value()) {
-    return std::unexpected(initializer.error());
-  }
-
   auto cloned = make<static_decl>();
   cloned->span = decl.span;
   cloned->documentation = decl.documentation;
   cloned->visibility = decl.visibility;
-  cloned->decl_kind = static_decl_kind::binding;
-  cloned->name = decl.name;
-  cloned->type_annotation = std::move(*type_annotation);
-  cloned->initializer = std::move(*initializer);
-  return cloned;
+  cloned->decl_kind = decl.decl_kind;
+
+  switch (decl.decl_kind) {
+  case static_decl_kind::binding: {
+    auto type_annotation = clone_optional(decl.type_annotation);
+    if (!type_annotation.has_value()) {
+      return std::unexpected(type_annotation.error());
+    }
+    auto initializer = clone_optional(decl.initializer);
+    if (!initializer.has_value()) {
+      return std::unexpected(initializer.error());
+    }
+    cloned->name = decl.name;
+    cloned->type_annotation = std::move(*type_annotation);
+    cloned->initializer = std::move(*initializer);
+    return cloned;
+  }
+  case static_decl_kind::assertion: {
+    auto assert_condition = clone_optional(decl.assert_condition);
+    if (!assert_condition.has_value()) {
+      return std::unexpected(assert_condition.error());
+    }
+    cloned->assert_condition = std::move(*assert_condition);
+    cloned->assert_message = decl.assert_message;
+    return cloned;
+  }
+  case static_decl_kind::conditional_compilation: {
+    auto if_condition = clone_optional(decl.if_condition);
+    if (!if_condition.has_value()) {
+      return std::unexpected(if_condition.error());
+    }
+    auto if_body = clone_node_list(decl.if_body);
+    if (!if_body.has_value()) {
+      return std::unexpected(if_body.error());
+    }
+    auto else_body = clone_node_list(decl.else_body);
+    if (!else_body.has_value()) {
+      return std::unexpected(else_body.error());
+    }
+    cloned->if_condition = std::move(*if_condition);
+    cloned->if_body = std::move(*if_body);
+    cloned->else_body = std::move(*else_body);
+    return cloned;
+  }
+  case static_decl_kind::for_inline: {
+    auto for_patterns = clone_pattern_list(decl.for_patterns);
+    if (!for_patterns.has_value()) {
+      return std::unexpected(for_patterns.error());
+    }
+    auto for_iterable = clone_optional(decl.for_iterable);
+    if (!for_iterable.has_value()) {
+      return std::unexpected(for_iterable.error());
+    }
+    auto for_guard = clone_optional(decl.for_guard);
+    if (!for_guard.has_value()) {
+      return std::unexpected(for_guard.error());
+    }
+    auto for_yield = clone_optional(decl.for_yield);
+    if (!for_yield.has_value()) {
+      return std::unexpected(for_yield.error());
+    }
+    cloned->for_patterns = std::move(*for_patterns);
+    cloned->for_iterable = std::move(*for_iterable);
+    cloned->for_guard = std::move(*for_guard);
+    cloned->for_yield = std::move(*for_yield);
+    return cloned;
+  }
+  case static_decl_kind::for_block: {
+    auto for_patterns = clone_pattern_list(decl.for_patterns);
+    if (!for_patterns.has_value()) {
+      return std::unexpected(for_patterns.error());
+    }
+    auto for_iterable = clone_optional(decl.for_iterable);
+    if (!for_iterable.has_value()) {
+      return std::unexpected(for_iterable.error());
+    }
+    auto for_guard = clone_optional(decl.for_guard);
+    if (!for_guard.has_value()) {
+      return std::unexpected(for_guard.error());
+    }
+    auto for_body = clone_node_list(decl.for_body);
+    if (!for_body.has_value()) {
+      return std::unexpected(for_body.error());
+    }
+    cloned->for_patterns = std::move(*for_patterns);
+    cloned->for_iterable = std::move(*for_iterable);
+    cloned->for_guard = std::move(*for_guard);
+    cloned->for_body = std::move(*for_body);
+    return cloned;
+  }
+  }
+  return unsupported(decl, "this `static` form");
 }
 
 namespace {
