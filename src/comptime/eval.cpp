@@ -240,9 +240,41 @@ auto evaluator::resolve_pending_static(const std::string &name,
 }
 
 auto evaluator::report(source_span span, std::string message) -> value {
-  diag_.emit(diagnostic(diagnostic_level::error, std::move(message), file_id_)
-                 .with_label(span, "here"));
+  if (!diagnostics_suppressed_) {
+    diag_.emit(
+        diagnostic(diagnostic_level::error, std::move(message), file_id_)
+            .with_label(span, "here"));
+  }
   return value::make_error();
+}
+
+auto evaluator::try_eval_ordinary_call(const ast::func_decl &fn,
+                                       const ast::call_expr &call)
+    -> std::optional<value> {
+  const auto saved_suppressed = diagnostics_suppressed_;
+  diagnostics_suppressed_ = true;
+  auto args = std::vector<value>{};
+  args.reserve(call.args.size());
+  auto ok = true;
+  for (const auto &arg : call.args) {
+    if (arg.name.has_value() || arg.value == nullptr) {
+      ok = false;
+      break;
+    }
+    auto evaluated = evaluate(*arg.value);
+    if (evaluated.is_error()) {
+      ok = false;
+      break;
+    }
+    args.push_back(std::move(evaluated));
+  }
+  auto result = ok ? call_function(fn, fn.name, std::move(args), call.span)
+                   : value::make_error();
+  diagnostics_suppressed_ = saved_suppressed;
+  if (!ok || result.is_error()) {
+    return std::nullopt;
+  }
+  return result;
 }
 
 auto evaluator::eval_literal(const ast::literal_expr &lit) -> value {

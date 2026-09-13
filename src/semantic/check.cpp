@@ -936,6 +936,7 @@ public:
         .synthesized_item_splices = std::move(synthesized_item_splices_),
         .synthesized_const_literals = std::move(synthesized_const_literals_),
         .static_const_values = std::move(static_const_values_),
+        .folded_comptime_calls = std::move(folded_comptime_calls_),
         .static_global_defs = std::move(static_global_defs_),
         .static_global_refs = std::move(static_global_refs_),
         .static_global_owners = std::move(static_global_owners_),
@@ -1251,6 +1252,10 @@ private:
   /// See `checked_types::static_global_refs`'s doc comment. Populated by
   /// `record_static_const_reference`.
   std::unordered_map<const ast::node *, std::string> static_global_refs_;
+  /// See `checked_types::folded_comptime_calls`'s doc comment. Populated by
+  /// `try_fold_comptime_only_call`, from `instantiate_generic_function`.
+  std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
+      folded_comptime_calls_;
   /// See `checked_types::static_global_owners`'s doc comment. Populated by
   /// `reify_static_global`.
   std::unordered_map<std::string, std::string> static_global_owners_;
@@ -1350,6 +1355,14 @@ private:
   /// `generator def`; when true, `yield` is legal and its operand must
   /// match `generator_item_type_` (see `infer_yield`/`check_function`).
   bool in_generator_ = false;
+  /// Whether the function body currently being checked is a comptime-only
+  /// `static def` (template or instantiated clone alike) — see
+  /// `comptime_only_functions_`'s doc comment and `check_function`, which
+  /// sets/restores this. Consulted by `try_fold_comptime_only_call` to avoid
+  /// folding a nested call from *inside* such a body: that call is already
+  /// handled by direct evaluator execution whenever this function itself is
+  /// invoked at compile time, and its own body is never lowered.
+  bool in_comptime_only_function_ = false;
 
   /// Enclosing `while`/`for` loops in the body currently being checked, used
   /// to reject `break`/`continue` that have no loop to act on. Saved and
@@ -5767,6 +5780,21 @@ private:
       record_expr_type(*call.callee,
                        types_.fn_of(std::move(param_types), result));
     }
+    // A comptime-only instance (todo item 8) has no compiled function for an
+    // ordinary call site to reach — `hir::lower_module` deliberately never
+    // lowers one (`comptime_only_functions_`'s doc comment) — so, unless
+    // this call is itself reached from inside another comptime-only
+    // function's own body (already handled directly by the evaluator when
+    // *that* function runs), fold the whole call to a literal now instead of
+    // recording it as an ordinary callee.
+    if (!in_comptime_only_function_ &&
+        comptime_only_functions_.contains(instance)) {
+      if (const auto *lit =
+              try_fold_comptime_only_call(call, *instance, result)) {
+        folded_comptime_calls_[&call] = lit;
+        return record_expr_type(call, result);
+      }
+    }
     // Deliberately last: a module-qualified call (`app.lib.at(v, i)`) already
     // recorded the *template* as its callee on the way in
     // (`infer_qualified_call`), and lowering must emit a call to the instance,
@@ -6756,6 +6784,32 @@ private:
     synthesized_const_literals_.push_back(std::move(lit));
     record_expr_type(*raw, type);
     return raw;
+  }
+
+  /// Attempts to fold a call to a comptime-only `static def` instance
+  /// (`comptime_only_functions_`) reached from ordinary, non-comptime code —
+  /// see todo item 8. `instance` has already been fully, concretely type-
+  /// checked by `find_or_check_generic_instance`, but `hir::lower_module`
+  /// deliberately never lowers it (nor any comptime-only instance) to a real
+  /// function, so an ordinary `hir_call` naming it would fail to resolve at
+  /// the bytecode-compile stage. `comptime::evaluator` already knows how to
+  /// execute a `static def`'s body directly (the same machinery `static
+  /// assert`/`static if` use); this just runs that here, at the call site,
+  /// and turns the result into a literal for lowering to splice in instead
+  /// of a call. Returns `nullptr` (leaving the call to fall back to the
+  /// pre-existing, unresolvable-function behavior) when the call's arguments
+  /// aren't themselves compile-time constant, or the result isn't a scalar
+  /// `materialize_const_literal` can represent — a struct/list/variant
+  /// result has no route to a literal today.
+  auto try_fold_comptime_only_call(const ast::call_expr &call,
+                                   const ast::func_decl &instance,
+                                   type_id result_type)
+      -> const ast::literal_expr * {
+    const auto result = comptime_eval_.try_eval_ordinary_call(instance, call);
+    if (!result.has_value()) {
+      return nullptr;
+    }
+    return materialize_const_literal(*result, call.span, result_type);
   }
 
   // ==========================================================================
@@ -14627,6 +14681,19 @@ private:
     }
 
     push_type_params(decl.type_params);
+    // Every call inside a comptime-only `static def`'s own body (template or
+    // instantiated clone alike — see `comptime_only_functions_`'s doc
+    // comment) is already reachable through direct evaluator execution
+    // (`comptime::evaluator::eval_call`/`call_function`) whenever this
+    // function is actually invoked at compile time; it is never lowered
+    // itself. Constant-folding a nested call here too would be redundant at
+    // best, and at worst would hand `comptime_eval_.evaluate` an argument
+    // expression that only makes sense against this function's own abstract
+    // template parameters or runtime locals — not something compile-time
+    // evaluable on its own — and spuriously report an error. See
+    // `try_fold_comptime_only_call`.
+    const auto saved_in_comptime_only_function = in_comptime_only_function_;
+    in_comptime_only_function_ = comptime_only_functions_.contains(&decl);
     // A value parameter this function has no constant for is still a symbol
     // here, which makes this the *template* — see the member's doc comment.
     const auto saved_template = in_const_generic_template_;
@@ -14977,6 +15044,7 @@ private:
     capture_barriers_ = std::move(saved_barriers);
     in_const_generic_template_ = saved_template;
     in_type_generic_template_ = saved_type_template;
+    in_comptime_only_function_ = saved_in_comptime_only_function;
     comptime_eval_.pop_locals();
     pop_type_params();
 

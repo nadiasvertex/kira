@@ -212,6 +212,23 @@ public:
     return std::move(synthesized_fragments_);
   }
 
+  /// Attempts to evaluate a whole call to `fn` (a registered `static def`)
+  /// on behalf of an *ordinary*, non-`static` call site — see todo item 8
+  /// (a call to a `static def` from ordinary code never lowers). This runs
+  /// exactly the same interpretation `eval_call` already gives a call
+  /// reached from `static assert`/`static if`/another `static def`'s body,
+  /// but silently: `checker` calls this speculatively, once per ordinary
+  /// call site of a comptime-only generic instance, and most such call
+  /// sites are not actually compile-time evaluable (an argument may be an
+  /// ordinary runtime value). Unlike `evaluate`, which always reports a
+  /// diagnostic on failure, this suppresses every diagnostic `evaluate`/
+  /// `call_function` would have emitted along the way and returns
+  /// `std::nullopt` instead, leaving the call site free to fall back to an
+  /// ordinary (unfolded) function call with no visible side effect.
+  [[nodiscard]] auto try_eval_ordinary_call(const ast::func_decl &fn,
+                                            const ast::call_expr &call)
+      -> std::optional<value>;
+
 private:
   [[nodiscard]] auto eval_binary(const ast::binary_expr &bin) -> value;
   [[nodiscard]] auto eval_unary(const ast::unary_expr &un) -> value;
@@ -501,6 +518,10 @@ private:
   /// `static for` loop body, rather than behind a memoized `static let`)
   /// doesn't rename its bindings again on top of already-renamed ones.
   std::unordered_set<const ast::node *> hygiene_renamed_;
+
+  /// While set, `report` returns the error sentinel without emitting into
+  /// `diag_` — see `try_eval_ordinary_call`, the only setter.
+  bool diagnostics_suppressed_ = false;
 };
 
 } // namespace kira::comptime

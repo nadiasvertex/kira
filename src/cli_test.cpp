@@ -1966,6 +1966,64 @@ auto test_run_scalar_static_let_referenced_by_name() -> void {
          "value (3) directly, with no splice syntax required");
 }
 
+/// Todo item 8 end-to-end check: a call to a `static def` from *ordinary*
+/// (non-`static`) runtime code used to fail at bytecode compilation, not at
+/// type-checking — `checker::register_comptime_globals` marks every free
+/// top-level `static def` compile-time-only, and `hir::lower_module`'s
+/// const-generic-instance loop correctly skips lowering it, but nothing
+/// took its place: an ordinary call site still lowered to a plain
+/// `hir_call` naming an instance no compiled function backed, failing with
+/// "call to `is_int32$T` could not be resolved to a function in this
+/// compiled module". `checker::try_fold_comptime_only_call` now evaluates
+/// such a call outright (the same way `static assert`/`static if` already
+/// could) and splices the result in as a literal. Proven with two different
+/// concrete instantiations from the same generic call site so a fold that
+/// always returned `true` (or otherwise ignored the actual argument type)
+/// would still be caught: only `classify(5)` should see `is_int32[int32]`
+/// answer `true`.
+auto test_run_static_def_call_from_ordinary_generic_body() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_static_def_call.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+             "module sample\n"
+             "static def is_int32[T]() -> bool:\n"
+             "  return T.name() == \"int32\"\n"
+             "def classify[T](x: T) -> int32:\n"
+             "  if is_int32[T]():\n"
+             "    return 1\n"
+             "  return 0\n"
+             "def main() -> int32:\n"
+             "  if classify(5) == 1 and classify(2.5) == 0:\n"
+             "    return 42\n"
+             "  return 7\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected an ordinary generic function's body to call a "
+         "comptime-only `static def` (`is_int32[T]()`) cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 42,
+         "expected `classify(5)` to fold `is_int32[int32]()` to `true` and "
+         "`classify(2.5)` to fold `is_int32[float64]()` to `false`, proving "
+         "the fold reflects the real concrete type argument rather than a "
+         "fixed answer");
+}
+
 /// M7 end-to-end check: `type ... deriving show` on a concrete struct now
 /// gets a *real*, dynamically-derived `show()` method — not just a type
 /// that happens to check `p.show(): str` with no runtime body, which is all
@@ -2764,6 +2822,7 @@ auto main() -> int {
     test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site();
     test_run_reflects_struct_field_count_into_runtime_constant();
     test_run_scalar_static_let_referenced_by_name();
+    test_run_static_def_call_from_ordinary_generic_body();
     test_build_derives_show_via_deriving_clause();
     test_build_derives_eq_and_debug_via_deriving_clause();
     test_run_derives_ord_via_deriving_clause();

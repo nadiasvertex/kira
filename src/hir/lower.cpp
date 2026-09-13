@@ -1131,6 +1131,17 @@ auto lowerer::lower_call(const ast::call_expr &call)
         quote_and_escape_for_literal(reflected->second.type_name)));
   }
 
+  // A call to a comptime-only `static def` instance, reached from ordinary
+  // code — `checker::try_fold_comptime_only_call` already ran it and
+  // recorded its result here (todo item 8), because `lower_module`
+  // deliberately never lowers such an instance to a real function. Splicing
+  // the folded literal in is the only route this call has to a runtime
+  // representation.
+  if (const auto folded = checked_.folded_comptime_calls.find(&call);
+      folded != checked_.folded_comptime_calls.end()) {
+    return lower_literal(*folded->second);
+  }
+
   // `x.len()`/`x.as_bytes()` on a builtin container/`str` — these have no
   // `func_decl` backing them at all (`semantic::check.cpp`'s
   // `builtin_method_result` is a hardcoded type-rule table, not a real

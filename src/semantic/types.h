@@ -799,6 +799,14 @@ struct checked_types {
   /// (indirectly, via splicing) quoted fragments.
   std::unordered_map<const ast::node *, const ast::literal_expr *>
       static_const_values;
+  /// Every ordinary-code call to a comptime-only `static def` instance
+  /// (`comptime_only_functions`) that `checker::try_fold_comptime_only_call`
+  /// evaluated outright, mapped to the literal node embedding its result —
+  /// see todo item 8. `hir::lower_call` looks a call up here first and, when
+  /// present, lowers the literal in its place instead of emitting a call to
+  /// a function `hir::lower_module` deliberately never lowers.
+  std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
+      folded_comptime_calls;
   /// One top-level `static let` reified as real backing data — an
   /// array/list/tuple whose elements are all scalar (integer/floating/
   /// boolean), which `checker::materialize_const_literal` cannot inline the
