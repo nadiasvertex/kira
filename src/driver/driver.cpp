@@ -63,7 +63,7 @@ struct target_os_info {
 #if defined(_WIN32)
   return {"windows", "windows", "pc", "msvc"};
 #elif defined(__APPLE__)
-  return {"macos", "macos", "apple", "none"};
+  return {.os="macos", .family="macos", .vendor="apple", .env="none"};
 #elif defined(__linux__)
 #if defined(__GLIBC__)
   return {"linux", "unix", "unknown", "gnu"};

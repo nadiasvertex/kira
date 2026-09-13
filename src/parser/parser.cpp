@@ -2744,6 +2744,34 @@ auto parser::parse_contract_clause() -> ast::contract_clause {
 //  Static declarations
 // ==========================================================================
 
+// `static if`/`static else` branch bodies accept either declarations (as at
+// module scope) or ordinary statements (`return`, `let`, an assignment, ...),
+// so a `static def` can select per-instantiation behavior with a real
+// statement rather than being limited to declarations. `trait`/`signature`/
+// `impl`/`extend`/`concept`/`module`/`dep` (optionally `pub`/`file`-visible)
+// only ever appear as items, never as statements, so they're routed to
+// `parse_top_level_item`; everything else (including `use`/`type`/`static`/
+// `def`, which both dispatchers already parse identically) goes through
+// `parse_stmt`.
+auto parser::parse_static_branch_node() -> ast::ptr<ast::node> {
+  auto kind = current();
+  if (kind == token_kind::kw_pub || kind == token_kind::kw_file) {
+    kind = peek_at(1).kind;
+  }
+  switch (kind) {
+  case token_kind::kw_trait:
+  case token_kind::kw_signature:
+  case token_kind::kw_impl:
+  case token_kind::kw_extend:
+  case token_kind::kw_concept:
+  case token_kind::kw_module:
+  case token_kind::kw_dep:
+    return parse_top_level_item();
+  default:
+    return parse_stmt();
+  }
+}
+
 auto parser::parse_static_decl(ast::visibility vis)
     -> ast::ptr<ast::static_decl> {
   auto decl = ast::make<ast::static_decl>();

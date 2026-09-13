@@ -20,49 +20,49 @@ auto collect_bound_symbols(const hir_node &node,
                            std::unordered_set<symbol_id> &bound) -> void {
   switch (node.kind) {
   case hir_node_kind::hir_block: {
-    const auto &block = static_cast<const hir_block &>(node);
+    const auto &block = dynamic_cast<const hir_block &>(node);
     for (const auto &stmt : block.stmts) {
       collect_bound_symbols(*stmt, bound);
     }
     return;
   }
   case hir_node_kind::hir_let: {
-    const auto &let = static_cast<const hir_let &>(node);
+    const auto &let = dynamic_cast<const hir_let &>(node);
     bound.insert(let.symbol);
     collect_bound_symbols(*let.initializer, bound);
     return;
   }
   case hir_node_kind::hir_let_else: {
-    const auto &let_else = static_cast<const hir_let_else &>(node);
+    const auto &let_else = dynamic_cast<const hir_let_else &>(node);
     bound.insert(let_else.subject_symbol);
     collect_bound_symbols(*let_else.initializer, bound);
     collect_bound_symbols(*let_else.else_body, bound);
     return;
   }
   case hir_node_kind::hir_assign: {
-    const auto &assign = static_cast<const hir_assign &>(node);
+    const auto &assign = dynamic_cast<const hir_assign &>(node);
     collect_bound_symbols(*assign.target, bound);
     collect_bound_symbols(*assign.value, bound);
     return;
   }
   case hir_node_kind::hir_expr_stmt: {
-    collect_bound_symbols(*static_cast<const hir_expr_stmt &>(node).expr,
+    collect_bound_symbols(*dynamic_cast<const hir_expr_stmt &>(node).expr,
                           bound);
     return;
   }
   case hir_node_kind::hir_return: {
-    const auto &ret = static_cast<const hir_return &>(node);
+    const auto &ret = dynamic_cast<const hir_return &>(node);
     if (ret.value != nullptr) {
       collect_bound_symbols(*ret.value, bound);
     }
     return;
   }
   case hir_node_kind::hir_yield: {
-    collect_bound_symbols(*static_cast<const hir_yield &>(node).value, bound);
+    collect_bound_symbols(*dynamic_cast<const hir_yield &>(node).value, bound);
     return;
   }
   case hir_node_kind::hir_while: {
-    const auto &loop = static_cast<const hir_while &>(node);
+    const auto &loop = dynamic_cast<const hir_while &>(node);
     collect_bound_symbols(*loop.condition, bound);
     collect_bound_symbols(*loop.body, bound);
     if (loop.step != nullptr) {
@@ -71,25 +71,25 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_while_let: {
-    const auto &loop = static_cast<const hir_while_let &>(node);
+    const auto &loop = dynamic_cast<const hir_while_let &>(node);
     bound.insert(loop.subject_symbol);
     collect_bound_symbols(*loop.subject, bound);
     collect_bound_symbols(*loop.body, bound);
     return;
   }
   case hir_node_kind::hir_list_push: {
-    const auto &push = static_cast<const hir_list_push &>(node);
+    const auto &push = dynamic_cast<const hir_list_push &>(node);
     collect_bound_symbols(*push.target, bound);
     collect_bound_symbols(*push.value, bound);
     return;
   }
   case hir_node_kind::hir_contract_check: {
     collect_bound_symbols(
-        *static_cast<const hir_contract_check &>(node).condition, bound);
+        *dynamic_cast<const hir_contract_check &>(node).condition, bound);
     return;
   }
   case hir_node_kind::hir_if: {
-    const auto &iff = static_cast<const hir_if &>(node);
+    const auto &iff = dynamic_cast<const hir_if &>(node);
     for (const auto &branch : iff.branches) {
       collect_bound_symbols(*branch.condition, bound);
       collect_bound_symbols(*branch.body, bound);
@@ -100,7 +100,7 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_match: {
-    const auto &match = static_cast<const hir_match &>(node);
+    const auto &match = dynamic_cast<const hir_match &>(node);
     bound.insert(match.subject_symbol);
     collect_bound_symbols(*match.subject, bound);
     for (const auto &arm : match.arms) {
@@ -112,7 +112,7 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_call: {
-    const auto &call = static_cast<const hir_call &>(node);
+    const auto &call = dynamic_cast<const hir_call &>(node);
     collect_bound_symbols(*call.callee, bound);
     for (const auto &arg : call.args) {
       collect_bound_symbols(*arg, bound);
@@ -120,44 +120,44 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_binary: {
-    const auto &bin = static_cast<const hir_binary &>(node);
+    const auto &bin = dynamic_cast<const hir_binary &>(node);
     collect_bound_symbols(*bin.lhs, bound);
     collect_bound_symbols(*bin.rhs, bound);
     return;
   }
   case hir_node_kind::hir_unary: {
-    collect_bound_symbols(*static_cast<const hir_unary &>(node).operand, bound);
+    collect_bound_symbols(*dynamic_cast<const hir_unary &>(node).operand, bound);
     return;
   }
   case hir_node_kind::hir_cast: {
-    collect_bound_symbols(*static_cast<const hir_cast &>(node).operand, bound);
+    collect_bound_symbols(*dynamic_cast<const hir_cast &>(node).operand, bound);
     return;
   }
   case hir_node_kind::hir_field: {
-    collect_bound_symbols(*static_cast<const hir_field &>(node).object, bound);
+    collect_bound_symbols(*dynamic_cast<const hir_field &>(node).object, bound);
     return;
   }
   case hir_node_kind::hir_index: {
-    const auto &idx = static_cast<const hir_index &>(node);
+    const auto &idx = dynamic_cast<const hir_index &>(node);
     collect_bound_symbols(*idx.object, bound);
     collect_bound_symbols(*idx.index, bound);
     return;
   }
   case hir_node_kind::hir_tuple: {
-    for (const auto &elem : static_cast<const hir_tuple &>(node).elements) {
+    for (const auto &elem : dynamic_cast<const hir_tuple &>(node).elements) {
       collect_bound_symbols(*elem, bound);
     }
     return;
   }
   case hir_node_kind::hir_struct_init: {
     for (const auto &field :
-         static_cast<const hir_struct_init &>(node).fields) {
+         dynamic_cast<const hir_struct_init &>(node).fields) {
       collect_bound_symbols(*field.value, bound);
     }
     return;
   }
   case hir_node_kind::hir_array_init: {
-    const auto &arr = static_cast<const hir_array_init &>(node);
+    const auto &arr = dynamic_cast<const hir_array_init &>(node);
     for (const auto &elem : arr.elements) {
       collect_bound_symbols(*elem, bound);
     }
@@ -170,40 +170,40 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_tuple_index: {
-    collect_bound_symbols(*static_cast<const hir_tuple_index &>(node).object,
+    collect_bound_symbols(*dynamic_cast<const hir_tuple_index &>(node).object,
                           bound);
     return;
   }
   case hir_node_kind::hir_variant_payload: {
     collect_bound_symbols(
-        *static_cast<const hir_variant_payload &>(node).object, bound);
+        *dynamic_cast<const hir_variant_payload &>(node).object, bound);
     return;
   }
   case hir_node_kind::hir_variant_init: {
-    for (const auto &arg : static_cast<const hir_variant_init &>(node).args) {
+    for (const auto &arg : dynamic_cast<const hir_variant_init &>(node).args) {
       collect_bound_symbols(*arg, bound);
     }
     return;
   }
   case hir_node_kind::hir_container_len: {
-    collect_bound_symbols(*static_cast<const hir_container_len &>(node).object,
+    collect_bound_symbols(*dynamic_cast<const hir_container_len &>(node).object,
                           bound);
     return;
   }
   case hir_node_kind::hir_str_decode_scalar: {
-    const auto &n = static_cast<const hir_str_decode_scalar &>(node);
+    const auto &n = dynamic_cast<const hir_str_decode_scalar &>(node);
     collect_bound_symbols(*n.object, bound);
     collect_bound_symbols(*n.byte_offset, bound);
     return;
   }
   case hir_node_kind::hir_str_scalar_width: {
-    const auto &n = static_cast<const hir_str_scalar_width &>(node);
+    const auto &n = dynamic_cast<const hir_str_scalar_width &>(node);
     collect_bound_symbols(*n.object, bound);
     collect_bound_symbols(*n.byte_offset, bound);
     return;
   }
   case hir_node_kind::hir_generator_next: {
-    collect_bound_symbols(*static_cast<const hir_generator_next &>(node).object,
+    collect_bound_symbols(*dynamic_cast<const hir_generator_next &>(node).object,
                           bound);
     return;
   }
@@ -240,7 +240,7 @@ is_eligible_tail_callee(const hir_expr &callee,
     // every shape but a direct, statically-resolved call.
     return false;
   }
-  const auto &ref = static_cast<const hir_local_ref &>(callee);
+  const auto &ref = dynamic_cast<const hir_local_ref &>(callee);
   if (bound.contains(ref.symbol)) {
     // Bound as a parameter or `let` within this function — a local
     // variable (possibly holding a closure), never a direct function call.
@@ -261,12 +261,12 @@ auto mark_tail_expr(hir_expr &expr, const std::unordered_set<symbol_id> &bound)
     -> void {
   switch (expr.kind) {
   case hir_node_kind::hir_call: {
-    auto &call = static_cast<hir_call &>(expr);
+    auto &call = dynamic_cast<hir_call &>(expr);
     call.is_tail_call = is_eligible_tail_callee(*call.callee, bound);
     return;
   }
   case hir_node_kind::hir_if: {
-    auto &iff = static_cast<hir_if &>(expr);
+    auto &iff = dynamic_cast<hir_if &>(expr);
     for (auto &branch : iff.branches) {
       mark_tail_block(*branch.body, bound);
     }
@@ -276,14 +276,14 @@ auto mark_tail_expr(hir_expr &expr, const std::unordered_set<symbol_id> &bound)
     return;
   }
   case hir_node_kind::hir_match: {
-    auto &match = static_cast<hir_match &>(expr);
+    auto &match = dynamic_cast<hir_match &>(expr);
     for (auto &arm : match.arms) {
       mark_tail_block(*arm.body, bound);
     }
     return;
   }
   case hir_node_kind::hir_block: {
-    mark_tail_block(static_cast<hir_block &>(expr), bound);
+    mark_tail_block(dynamic_cast<hir_block &>(expr), bound);
     return;
   }
   default:
@@ -304,18 +304,18 @@ auto mark_tail_block(hir_block &block,
   auto &last = *block.stmts.back();
   switch (last.kind) {
   case hir_node_kind::hir_return: {
-    auto &ret = static_cast<hir_return &>(last);
+    auto &ret = dynamic_cast<hir_return &>(last);
     if (ret.value != nullptr) {
       mark_tail_expr(*ret.value, bound);
     }
     return;
   }
   case hir_node_kind::hir_expr_stmt: {
-    mark_tail_expr(*static_cast<hir_expr_stmt &>(last).expr, bound);
+    mark_tail_expr(*dynamic_cast<hir_expr_stmt &>(last).expr, bound);
     return;
   }
   case hir_node_kind::hir_if: {
-    auto &iff = static_cast<hir_if &>(last);
+    auto &iff = dynamic_cast<hir_if &>(last);
     for (auto &branch : iff.branches) {
       mark_tail_block(*branch.body, bound);
     }
@@ -325,14 +325,14 @@ auto mark_tail_block(hir_block &block,
     return;
   }
   case hir_node_kind::hir_match: {
-    auto &match = static_cast<hir_match &>(last);
+    auto &match = dynamic_cast<hir_match &>(last);
     for (auto &arm : match.arms) {
       mark_tail_block(*arm.body, bound);
     }
     return;
   }
   case hir_node_kind::hir_block: {
-    mark_tail_block(static_cast<hir_block &>(last), bound);
+    mark_tail_block(dynamic_cast<hir_block &>(last), bound);
     return;
   }
   default:

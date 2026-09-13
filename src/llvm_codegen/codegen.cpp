@@ -3976,8 +3976,8 @@ private:
       -> std::expected<bool, codegen_error> {
     if (loop_stack_.empty()) {
       return std::unexpected(
-          codegen_error{codegen_error_kind::unsupported_construct, node.span,
-                        "`break` outside of any loop reached code generation"});
+          codegen_error{.kind=codegen_error_kind::unsupported_construct, .span=node.span,
+                        .message="`break` outside of any loop reached code generation"});
     }
     loop_stack_.back().saw_break = true;
     builder_.CreateBr(loop_stack_.back().break_bb);
@@ -3988,8 +3988,8 @@ private:
       -> std::expected<bool, codegen_error> {
     if (loop_stack_.empty()) {
       return std::unexpected(codegen_error{
-          codegen_error_kind::unsupported_construct, node.span,
-          "`continue` outside of any loop reached code generation"});
+          .kind=codegen_error_kind::unsupported_construct, .span=node.span,
+          .message="`continue` outside of any loop reached code generation"});
     }
     builder_.CreateBr(loop_stack_.back().continue_bb);
     return true;

@@ -1064,7 +1064,7 @@ auto test_match_string_literal_pattern() -> void {
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() to succeed");
   expect(main_result->value.i == 102,
-         "expected kind(\"yes\")*100 + kind(\"\")*10 + kind(\"no\") == 102");
+         R"(expected kind("yes")*100 + kind("")*10 + kind("no") == 102)");
 }
 
 auto test_match_range_pattern() -> void {

@@ -1,0 +1,18 @@
+module main
+
+# ==========================================================================
+#  `limits.digits` — The number of digits in the base radix that can be
+#  represented by some type.
+#
+#  Run it:      kira demo/limits-digits.kira
+#  Compile it:  kira --compile -o limits-digits.kira demo/limits-digits.kira
+# ==========================================================================
+
+use std.limits.digits
+
+def main() -> int32:
+    println("digits[bool]={digits[bool]()}")
+    println("digits[char]={digits[char]()}")
+    println("digits[int32]={digits[int32]()}")
+    println("digits[float64]={digits[float64]()}")
+    return 0

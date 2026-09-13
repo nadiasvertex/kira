@@ -715,6 +715,12 @@ private:
   [[nodiscard]] auto parse_static_decl(ast::visibility vis)
       -> ast::ptr<ast::static_decl>;
 
+  /// Parses one node of a `static if`/`static else` branch body: either a
+  /// declaration-only item (`trait`/`impl`/`extend`/`concept`/`signature`/
+  /// `module`/`dep`) or an ordinary statement (everything else, including
+  /// `return`/`let`/`var`/an assignment).
+  [[nodiscard]] auto parse_static_branch_node() -> ast::ptr<ast::node>;
+
   // ========================================================================
   //  Statements
   // ========================================================================

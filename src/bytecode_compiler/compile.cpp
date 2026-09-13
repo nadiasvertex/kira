@@ -3721,8 +3721,8 @@ private:
       -> std::expected<void, compile_error> {
     if (loop_stack_.empty()) {
       return std::unexpected(
-          compile_error{compile_error_kind::unsupported_construct, node.span,
-                        "`break` outside of any loop reached code generation"});
+          compile_error{.kind=compile_error_kind::unsupported_construct, .span=node.span,
+                        .message="`break` outside of any loop reached code generation"});
     }
     emit_op(opcode::op_jump);
     loop_stack_.back().break_placeholders.push_back(
@@ -3734,8 +3734,8 @@ private:
       -> std::expected<void, compile_error> {
     if (loop_stack_.empty()) {
       return std::unexpected(compile_error{
-          compile_error_kind::unsupported_construct, node.span,
-          "`continue` outside of any loop reached code generation"});
+          .kind=compile_error_kind::unsupported_construct, .span=node.span,
+          .message="`continue` outside of any loop reached code generation"});
     }
     if (const auto target = loop_stack_.back().continue_target) {
       emit_jump_back_to(*target);

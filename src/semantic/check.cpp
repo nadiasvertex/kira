@@ -196,18 +196,18 @@ struct builtin_method_signature {
 /// `hir::lower_call` (spec/collections-algorithms-design.md).
 inline constexpr auto k_builtin_methods =
     std::to_array<builtin_method_signature>({
-        {"list", "len", builtin_result_shape::usize_result},
-        {"list", "push", builtin_result_shape::unit_result},
-        {"list", "cell", builtin_result_shape::cell_of_element},
-        {"list", "mutable_cell",
-         builtin_result_shape::option_of_mut_cell_of_element},
-        {"slice", "len", builtin_result_shape::usize_result},
-        {"str", "len", builtin_result_shape::usize_result},
-        {"str", "as_bytes", builtin_result_shape::byte_slice},
-        {"generator", "next", builtin_result_shape::option_of_element},
-        {"cell", "get", builtin_result_shape::element},
-        {"cell_mut", "get", builtin_result_shape::element},
-        {"cell_mut", "set", builtin_result_shape::unit_result},
+        {.owner="list", .name="len", .result=builtin_result_shape::usize_result},
+        {.owner="list", .name="push", .result=builtin_result_shape::unit_result},
+        {.owner="list", .name="cell", .result=builtin_result_shape::cell_of_element},
+        {.owner="list", .name="mutable_cell",
+         .result=builtin_result_shape::option_of_mut_cell_of_element},
+        {.owner="slice", .name="len", .result=builtin_result_shape::usize_result},
+        {.owner="str", .name="len", .result=builtin_result_shape::usize_result},
+        {.owner="str", .name="as_bytes", .result=builtin_result_shape::byte_slice},
+        {.owner="generator", .name="next", .result=builtin_result_shape::option_of_element},
+        {.owner="cell", .name="get", .result=builtin_result_shape::element},
+        {.owner="cell_mut", .name="get", .result=builtin_result_shape::element},
+        {.owner="cell_mut", .name="set", .result=builtin_result_shape::unit_result},
     });
 
 /// The key `k_builtin_methods` files a receiver under, or empty when the
@@ -864,7 +864,7 @@ public:
       : index_(index), diag_(diag), file_has_errors_(file_has_errors),
         comptime_eval_(diag, 0) {
     comptime_eval_.set_variant_resolver(
-        [this](const ast::node &node) { return resolve_variant_tag(node); });
+        [this](const ast::node &node) -> std::optional<std::pair<std::string, std::string>> { return resolve_variant_tag(node); });
   }
 
   /// Entry point: validates impl coherence session-wide, then checks every
@@ -1504,8 +1504,7 @@ private:
                      frame.call_file)
               .with_label(frame.call_span, "this call needs that copy"));
       for (const auto &solution : frame.context_solutions) {
-        annotated.children.push_back(
-            diagnostic(diagnostic_level::note, solution, frame.call_file));
+        annotated.children.emplace_back(diagnostic_level::note, solution, frame.call_file);
       }
     }
     return annotated;
@@ -4145,7 +4144,7 @@ private:
     // names were never legal user type names in practice, a user's own
     // `cell` declaration has to keep winning over the builtin so those
     // programs don't silently start resolving to a different type.
-    const auto shadowed_by_user_cell = [&] {
+    const auto shadowed_by_user_cell = [&] -> bool {
       if (name != "cell") {
         return false;
       }
@@ -16099,8 +16098,7 @@ private:
             file_id_);
         diag.with_label(arg.span, "used here");
         for (const auto &failure : failures) {
-          diag.children.push_back(
-              diagnostic(diagnostic_level::note, failure, file_id_));
+          diag.children.emplace_back(diagnostic_level::note, failure, file_id_);
         }
         diag.with_help(std::format(
             "A module satisfies `{}` structurally: it must provide each "
@@ -16221,7 +16219,7 @@ private:
     // diagnostics stay per-instantiation, while projections through a module
     // parameter (`DB.conn`, `DB.query(...)`) resolve via the import aliases
     // bound at check time.
-    const auto reject_member = [&](source_span span, std::string_view what) {
+    const auto reject_member = [&](source_span span, std::string_view what) -> void {
       auto diag =
           diagnostic(diagnostic_level::error,
                      std::format("instantiating `{}` is not supported yet: {}",
@@ -17025,7 +17023,7 @@ private:
   /// compile-time evaluation instead of rejecting `M` as an undefined value.
   [[nodiscard]] auto names_reflectable_module(std::string_view name) const
       -> bool {
-    return std::ranges::any_of(index_.modules, [&](const auto &entry) {
+    return std::ranges::any_of(index_.modules, [&](const auto &entry) -> auto {
       return entry.first == name ||
              split_module_name(entry.first).back() == name;
     });

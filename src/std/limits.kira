@@ -74,9 +74,10 @@ pub static pure def max[T]() -> T:
         v = 4294967295
     return v as T
 
-#: The number of value bits `T` carries — for an integer, `bits[T]()` minus
-#: one if `T` is signed (the sign bit carries no magnitude); for a float,
-#: the mantissa's precision in bits (`24`/`53` for `float32`/`float64`).
+#: The value of digits[T] is the number of digits in base-radix that can be represented by the type T without change. For
+#: integer types, this is the number of bits not counting the sign bit and the padding bits (if any). For floating-point
+#: types, this is the digits of the mantissa (for IEC 559/IEEE 754 implementations, this is the number of digits stored
+#: for the mantissa plus one, because the mantissa has an implicit leading 1 and binary point).
 pub static pure def digits[T]() -> usize:
     let n = T.name()
     if n == "float32":
