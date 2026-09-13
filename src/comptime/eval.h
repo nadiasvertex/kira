@@ -129,6 +129,27 @@ public:
   /// `M` to it. Called once per module by `checker::register_comptime_modules`.
   void register_pending_module(std::string name, module_reflection_info info);
 
+  /// Session-wide trait/impl coherence facts, mirrored out of `checker`'s own
+  /// `impl_trait_index_`/`validate_impl_coherence` (`check.cpp`) so
+  /// `implements[T, Trait]()`/`T.traits()`/`Trait.requires()` (`reflect.cpp`)
+  /// can answer without the evaluator ever reaching back into the checker.
+  struct impl_coherence_info {
+    /// `type_key_of`-keyed (declaration pointer for a user type, name for a
+    /// builtin/compound-builtin type — see `check.cpp`'s `type_key_of`) ->
+    /// every trait name that type has an impl for. Backs `T.traits()` and
+    /// `implements[T, Trait]()`.
+    std::unordered_map<std::string, std::vector<std::string>> traits_by_type_key;
+    /// Trait name -> the supertrait names its own `requires` clause lists,
+    /// in source order (`requires a + b` is legal — see `ast::trait_decl::
+    /// requires_bound`'s `bound::terms`). Backs `Trait.requires()`.
+    std::unordered_map<std::string, std::vector<std::string>> trait_requires;
+  };
+  /// Registers the coherence facts above. Called once, after
+  /// `checker::validate_impl_coherence` has finished building its own
+  /// tables and before any file's body (and therefore any `static`/comptime
+  /// call) is checked — see `checker::register_comptime_coherence_info`.
+  void register_impl_coherence_info(impl_coherence_info info);
+
   /// A node -> (sum type name, variant name) lookup, backed by `checker`'s
   /// own already-resolved `node_types_` (see `checker::resolve_variant_tag`,
   /// the only real implementation). The evaluator needs this because the
@@ -308,15 +329,44 @@ private:
   [[nodiscard]] auto try_eval_module_reflection_call(const ast::call_expr &call)
       -> std::optional<value>;
 
-  /// Recognizes `name[T](...)` — a compile-time generic call to a `static
-  /// def` function with one type parameter (e.g. `derive_show[point]()`).
-  /// `name` must be in `pending_functions_` with a non-empty `type_params`;
-  /// `T` must resolve via `resolve_type_reference` (a real declared type, or
-  /// — for a nested generic call forwarding its own type parameter — an
-  /// already-bound `type_value` local). Returns `nullopt` if the shape
-  /// doesn't match at all, so `eval_call` can fall through to its ordinary
-  /// direct-call dispatch (which itself will reject an `index_expr` callee).
+  /// Recognizes `name[A]`/`name[A, B]`/...`(...)` — a compile-time generic
+  /// call to a `static def` function with one or more type parameters (e.g.
+  /// `derive_show[point]()`, `is_same[A, B]()`). `name` must be in
+  /// `pending_functions_` with at least as many type parameters as type
+  /// arguments given; each type argument must resolve via
+  /// `resolve_generic_type_arg` (a real declared type, a known builtin
+  /// scalar name, or — for a nested generic call forwarding its own type
+  /// parameter — an already-bound `type_value` local). Returns `nullopt` if
+  /// the shape doesn't match at all, so `eval_call` can fall through to its
+  /// ordinary direct-call dispatch (which itself will reject an
+  /// `index_expr`/nested-`call_expr` callee).
   [[nodiscard]] auto try_eval_comptime_generic_call(const ast::call_expr &call)
+      -> std::optional<value>;
+
+  /// Recognizes `implements[T, Trait]()` — whether `T` has an impl of the
+  /// kind-`*` trait named by `Trait` (a query against the coherence facts
+  /// `register_impl_coherence_info` installed). Both arguments must be
+  /// plain type-name identifiers, resolved the same way
+  /// `try_eval_comptime_generic_call`'s type arguments are; `Trait` is
+  /// looked up by name only (traits aren't registered the way types are, so
+  /// there is no declaration to resolve it against — the coherence table is
+  /// itself keyed by trait *name*, which is all a kind-`*` trait check
+  /// needs). Returns `nullopt` if the shape doesn't match `implements[..](
+  /// )` at all.
+  [[nodiscard]] auto try_eval_implements_call(const ast::call_expr &call)
+      -> std::optional<value>;
+
+  /// Recognizes `T.traits()` (every trait name `T` has an impl for) and
+  /// `Trait.requires()` (the trait's own `requires`-supertrait name, if
+  /// any, as a 0-or-1-element list) — the two coherence-table-backed
+  /// meta-queries (`spec/specification/04-stdlib/type-traits/60-meta-
+  /// queries.md`). `object` must be a plain identifier; `T.traits()` first
+  /// tries `resolve_generic_type_arg`'s type-key (so it works for both a
+  /// user type and a builtin/bound type parameter), falling back to
+  /// treating the identifier itself as a trait name for `.requires()`
+  /// (traits have no separate registration table to check membership
+  /// against first). Returns `nullopt` if the shape doesn't match at all.
+  [[nodiscard]] auto try_eval_trait_reflection_call(const ast::call_expr &call)
       -> std::optional<value>;
 
   /// Resolves `ident` to a registered `type` declaration for reflection/
@@ -324,9 +374,42 @@ private:
   /// bound to a `type_value` (a generic parameter received by the enclosing
   /// `static def`, e.g. `T`), then falls back to `pending_types_`-by-
   /// literal-name (an ordinary top-level type name, e.g. `point`). Returns
-  /// `nullptr` if neither resolves.
+  /// `nullptr` if neither resolves — in particular, for a `type_value` local
+  /// bound to a builtin/compound type (no declaration), and for a plain
+  /// builtin type name written literally; callers that only need the
+  /// *name* (`T.name()`, `T.kind()`'s scalar case, generic-call type-
+  /// argument binding) should use `resolve_generic_type_arg` instead, which
+  /// covers those cases too.
   [[nodiscard]] auto resolve_type_reference(const ast::ident_expr &ident)
       -> const ast::type_decl *;
+
+  /// Resolves a type argument written as a plain identifier — `T` forwarded
+  /// from an enclosing generic parameter, a real declared type's name, or a
+  /// literal builtin scalar name (`int32`, `bool`, ...) — to a `type_value`
+  /// (`comptime::value`) carrying its name and, when there is one, its
+  /// declaration. This is the one place that closes the gap `resolve_type_
+  /// reference` deliberately leaves open: a builtin scalar has no `type_
+  /// decl`, but still has a name every predicate (`T.name()`, `T.kind()`'s
+  /// scalar classification, `is_integer[T]`'s own `T.name()` dispatch)
+  /// needs to see. Returns `nullopt` if `ident` names none of the above.
+  [[nodiscard]] auto resolve_generic_type_arg(const ast::ident_expr &ident)
+      -> std::optional<value>;
+
+  /// Unwraps the two AST shapes an explicit multi-type-argument call can
+  /// take — `name[A]` (an `index_expr` callee, one argument) and
+  /// `name[A, B, ...]` (a `call_expr` callee whose own `args` are the type
+  /// arguments — see the parser's `parse_postfix`, which can't yet tell
+  /// `values[0]` from `zeros[8]` and produces a plain `call_expr` for any
+  /// bracket group that isn't exactly one unnamed argument) — mirroring
+  /// `checker::explicit_generic_callee` (`check.cpp`) on the evaluator
+  /// side. Appends each type-argument expression (in order) to `args_out`
+  /// and returns the real base callee expression, or `nullptr` if `callee`
+  /// is neither shape (a named bracket argument counts as neither, since
+  /// that spells something else entirely at this position).
+  [[nodiscard]] auto
+  unwrap_explicit_generic_callee(const ast::expr &callee,
+                                std::vector<const ast::expr *> &args_out)
+      -> const ast::expr *;
 
   /// Asks `variant_resolver_` (if installed) whether `node` is a resolved
   /// variant constructor, then finds the matching `sum_variant` inside
@@ -383,6 +466,10 @@ private:
   /// Every registered module's reflectable surface, by name — see
   /// `register_pending_module` and `try_eval_module_reflection_call`.
   std::unordered_map<std::string, module_reflection_info> pending_modules_;
+  /// See `register_impl_coherence_info`; empty (both maps) until `checker`
+  /// installs it, in which case `implements[..]()`/`T.traits()`/`Trait.
+  /// requires()` simply find nothing rather than crashing.
+  impl_coherence_info coherence_info_;
 
   /// See `set_variant_resolver`; unset (empty `std::function`) until
   /// `checker` installs it.

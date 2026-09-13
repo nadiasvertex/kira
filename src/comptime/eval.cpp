@@ -1,5 +1,7 @@
 #include "src/comptime/eval.h"
 
+#include <algorithm>
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
@@ -7,6 +9,7 @@
 #include <ranges>
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "src/comptime/hygiene.h"
 #include "src/parser/text_escape.h"
@@ -1815,6 +1818,89 @@ auto evaluator::resolve_type_reference(const ast::ident_expr &ident)
   return it != pending_types_.end() ? it->second : nullptr;
 }
 
+namespace {
+
+/// Every builtin scalar type name a literal type argument can spell —
+/// mirrors the set `checker::type_key_of`/`types_.entry` would classify as
+/// `builtin_kind` with no declaration. Kept narrow and explicit (rather than
+/// reused from `semantic::types_`, which the evaluator has no dependency
+/// on) since this is the one place the evaluator ever needs to recognize a
+/// builtin name written directly as a type argument, rather than reached
+/// through an already-resolved `type_param_slots_` binding (see
+/// `checker::check_function`'s `type_param_locals`, which covers the more
+/// common "T inside a generic body" case via `types_.entry` directly and
+/// therefore also handles compound builtins like `array[int32, 4]` that
+/// this list deliberately doesn't).
+constexpr std::array<std::string_view, 21> k_builtin_scalar_type_names = {{
+    "bool",
+    "char",
+    "byte",
+    "str",
+    "unit",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "int128",
+    "isize",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "uint128",
+    "usize",
+    "float32",
+    "float64",
+    "float128",
+    "fn",
+}};
+
+} // namespace
+
+auto evaluator::resolve_generic_type_arg(const ast::ident_expr &ident)
+    -> std::optional<value> {
+  if (const auto *local = lookup_local(ident.name);
+      local != nullptr && local->kind == value_kind::type_value) {
+    return *local;
+  }
+  if (const auto it = pending_types_.find(ident.name);
+      it != pending_types_.end()) {
+    return value::make_type_value(it->second->name, it->second);
+  }
+  if (std::ranges::contains(k_builtin_scalar_type_names,
+                            std::string_view(ident.name))) {
+    return value::make_type_value(ident.name, nullptr);
+  }
+  return std::nullopt;
+}
+
+auto evaluator::unwrap_explicit_generic_callee(
+    const ast::expr &callee, std::vector<const ast::expr *> &args_out)
+    -> const ast::expr * {
+  if (callee.kind == ast::node_kind::index_expr) {
+    const auto &index = dynamic_cast<const ast::index_expr &>(callee);
+    if (index.object == nullptr || index.index == nullptr) {
+      return nullptr;
+    }
+    args_out.push_back(index.index.get());
+    return index.object.get();
+  }
+  if (callee.kind == ast::node_kind::call_expr) {
+    const auto &applied = dynamic_cast<const ast::call_expr &>(callee);
+    if (applied.callee == nullptr) {
+      return nullptr;
+    }
+    for (const auto &arg : applied.args) {
+      if (arg.value == nullptr || arg.name.has_value()) {
+        return nullptr; // a named bracket argument isn't this shape
+      }
+      args_out.push_back(arg.value.get());
+    }
+    return applied.callee.get();
+  }
+  return nullptr;
+}
+
 auto evaluator::resolve_variant(const ast::node &node) -> std::optional<
     std::pair<const ast::type_decl *, const ast::sum_variant *>> {
   if (!variant_resolver_) {
@@ -1844,36 +1930,43 @@ auto evaluator::resolve_variant(const ast::node &node) -> std::optional<
 
 auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
     -> std::optional<value> {
-  if (call.callee == nullptr ||
-      call.callee->kind != ast::node_kind::index_expr) {
+  if (call.callee == nullptr) {
     return std::nullopt;
   }
-  const auto &index = dynamic_cast<const ast::index_expr &>(*call.callee);
-  if (index.object == nullptr || index.index == nullptr ||
-      index.object->kind != ast::node_kind::ident_expr) {
+  auto type_arg_exprs = std::vector<const ast::expr *>{};
+  const auto *base =
+      unwrap_explicit_generic_callee(*call.callee, type_arg_exprs);
+  if (base == nullptr || type_arg_exprs.empty() ||
+      base->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  const auto &callee_ident =
-      dynamic_cast<const ast::ident_expr &>(*index.object);
+  const auto &callee_ident = dynamic_cast<const ast::ident_expr &>(*base);
   const ast::func_decl *fn = nullptr;
   if (const auto it = pending_functions_.find(callee_ident.name);
       it != pending_functions_.end()) {
     fn = it->second;
   }
-  if (fn == nullptr || fn->type_params.empty()) {
+  if (fn == nullptr || fn->type_params.empty() ||
+      type_arg_exprs.size() > fn->type_params.size()) {
     return std::nullopt;
   }
-  if (index.index->kind != ast::node_kind::ident_expr) {
-    return report(call.span, "a compile-time generic call's type argument "
-                             "must be a plain type name");
-  }
-  const auto &type_arg_ident =
-      dynamic_cast<const ast::ident_expr &>(*index.index);
-  const auto *type_decl = resolve_type_reference(type_arg_ident);
-  if (type_decl == nullptr) {
-    return report(type_arg_ident.span,
-                  std::format("`{}` does not name a known type here",
-                              type_arg_ident.name));
+  auto type_args = std::vector<std::pair<std::string, value>>{};
+  type_args.reserve(type_arg_exprs.size());
+  for (size_t i = 0; i < type_arg_exprs.size(); ++i) {
+    const auto *type_arg_expr = type_arg_exprs[i];
+    if (type_arg_expr->kind != ast::node_kind::ident_expr) {
+      return report(call.span, "a compile-time generic call's type argument "
+                               "must be a plain type name");
+    }
+    const auto &type_arg_ident =
+        dynamic_cast<const ast::ident_expr &>(*type_arg_expr);
+    auto resolved = resolve_generic_type_arg(type_arg_ident);
+    if (!resolved.has_value()) {
+      return report(type_arg_ident.span,
+                    std::format("`{}` does not name a known type here",
+                                type_arg_ident.name));
+    }
+    type_args.emplace_back(fn->type_params[i].name, std::move(*resolved));
   }
   auto args = std::vector<value>{};
   args.reserve(call.args.size());
@@ -1891,9 +1984,8 @@ auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
     }
     args.push_back(std::move(evaluated));
   }
-  auto type_arg = value::make_type_value(type_arg_ident.name, type_decl);
   return call_function(*fn, callee_ident.name, std::move(args), call.span,
-                       {{fn->type_params.front().name, std::move(type_arg)}});
+                       std::move(type_args));
 }
 
 auto evaluator::eval_call(const ast::call_expr &call) -> value {
@@ -1928,6 +2020,19 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
   }
   if (auto reflected = try_eval_module_reflection_call(call)) {
     return *reflected;
+  }
+  if (auto reflected = try_eval_trait_reflection_call(call)) {
+    return *reflected;
+  }
+  // Tried before the general comptime-generic-call dispatch below: both
+  // recognize the same `name[A, B](...)` bracket shape, but `implements`
+  // is never a registered `pending_functions_` entry (it's evaluator-
+  // built-in, like `T.fields()`), so trying it first costs nothing on
+  // every call that isn't `implements[..](...)` and avoids relying on
+  // "falls through because `pending_functions_` doesn't have it" as the
+  // only thing keeping the two apart.
+  if (auto implemented = try_eval_implements_call(call)) {
+    return *implemented;
   }
   if (auto generic_call = try_eval_comptime_generic_call(call)) {
     return *generic_call;
@@ -2039,6 +2144,47 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
       }
     }
     return true;
+  }
+  case ast::node_kind::constructor_pattern: {
+    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
+    if (v.kind != value_kind::variant_instance || v.variant_tag != ctor.name) {
+      return false;
+    }
+    if (ctor.args.size() != v.elements.size()) {
+      report(pattern.span,
+             std::format("compile-time variant pattern `@{}` expects {} "
+                        "payload value{}, found {}",
+                        ctor.name, v.elements.size(),
+                        v.elements.size() == 1 ? "" : "s", ctor.args.size()));
+      return false;
+    }
+    for (size_t i = 0; i < ctor.args.size(); ++i) {
+      if (ctor.args[i] == nullptr ||
+          !bind_pattern(*ctor.args[i], v.elements[i], scope)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  case ast::node_kind::or_pattern: {
+    const auto &alt = dynamic_cast<const ast::or_pattern &>(pattern);
+    for (const auto &alternative : alt.alternatives) {
+      if (alternative == nullptr) {
+        continue;
+      }
+      // Each alternative gets its own trial scope: an alternative that
+      // fails to match may have partially populated bindings on the way
+      // to discovering the mismatch (e.g. a nested constructor pattern
+      // whose own sub-pattern didn't match), and those must not leak into
+      // the next alternative's attempt or into the caller's scope on
+      // overall failure.
+      auto trial = scope;
+      if (bind_pattern(*alternative, v, trial)) {
+        scope = std::move(trial);
+        return true;
+      }
+    }
+    return false;
   }
   default:
     report(pattern.span, "this pattern form is not yet supported in "
@@ -2159,6 +2305,56 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
       return exec_result{.errored = true};
     }
     return exec_result{.returned = true, .result = std::move(evaluated)};
+  }
+  case ast::node_kind::match_stmt: {
+    const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
+    if (stmt.subject == nullptr) {
+      return exec_result{.errored = true};
+    }
+    auto subject = evaluate(*stmt.subject);
+    if (subject.is_error()) {
+      return exec_result{.errored = true};
+    }
+    for (const auto &arm : stmt.arms) {
+      if (arm.pattern == nullptr || arm.has_error) {
+        continue;
+      }
+      const auto &pattern = dynamic_cast<const ast::pattern &>(*arm.pattern);
+      auto trial_scope = locals_.back();
+      if (!bind_pattern(pattern, subject, trial_scope)) {
+        continue;
+      }
+      locals_.back() = std::move(trial_scope);
+      if (arm.guard != nullptr) {
+        auto guard = evaluate(*arm.guard);
+        if (guard.is_error()) {
+          return exec_result{.errored = true};
+        }
+        if (guard.kind != value_kind::boolean || !guard.boolean) {
+          continue;
+        }
+      }
+      // A compact `=> expr` arm provides the enclosing block's value the
+      // same way a bare tail expression would (`checker::node_provides_
+      // function_value`'s `match_stmt` case, `check.cpp`) — treated here as
+      // an implicit return, since that is the only role a `match`
+      // statement's *value* can play in the statement sequences this
+      // evaluator executes (there is no separate "match as a value-
+      // producing expression, used non-tail" form in `static def` bodies
+      // today). A block-form arm (`body_stmts`) runs as an ordinary
+      // statement sequence and only returns if it explicitly does.
+      if (arm.body_expr != nullptr) {
+        auto result = evaluate(*arm.body_expr);
+        if (result.is_error()) {
+          return exec_result{.errored = true};
+        }
+        return exec_result{.returned = true, .result = std::move(result)};
+      }
+      return evaluate_stmts(arm.body_stmts);
+    }
+    report(node.span, "no arm of this compile-time `match` matched its "
+                      "subject");
+    return exec_result{.errored = true};
   }
   case ast::node_kind::if_stmt: {
     const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);

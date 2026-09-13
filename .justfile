@@ -250,6 +250,11 @@ format: compile-commands
     find ./src -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
       | xargs -0 -P1 {{ CLANG_FORMAT }} -i
 
+# Build the specification (spec/specification/) as an epub, a pdf, and a
+# static website, via pandoc. Output lands under dist/docs/.
+docs:
+    python3 tools/docs/build_docs.py all
+
 lint: compile-commands
     # Run clang-tidy
     # Auto-detect macOS SDK, then run clang-tidy with extra args.

@@ -739,6 +739,16 @@ struct checked_types {
   /// does a trait default, and skips the templates they came from (a template
   /// has no runtime form of its own).
   std::vector<const_generic_instance> const_generic_instances;
+  /// Every free, module-level `static def` registered with `comptime::
+  /// evaluator` for compile-time calling (`checker::register_comptime_
+  /// globals`'s `register_pending_function` call) — as opposed to an
+  /// ordinary `static def` *method* declared inside an `impl`/`extend`/
+  /// `trait` block (`zero`, `one`, `from_iter`, ...), which shares the same
+  /// `func_decl::modifiers.is_static` flag but has a real runtime body and
+  /// must still be lowered normally. `hir::lower_module` uses this set,
+  /// not the bare flag, to decide which `const_generic_instance`s to skip
+  /// lowering for — see its doc comment there.
+  std::unordered_set<const ast::func_decl *> comptime_only_functions;
   /// Owns every `def` cloned into a materialized functor instantiation — see
   /// `functor_instance`'s doc comment. Kept alive here (moved out of the
   /// checker) so the clones outlive type-checking, exactly like

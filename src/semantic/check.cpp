@@ -927,6 +927,7 @@ public:
         .synthesized_decls = std::move(synthesized_decls_),
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
         .const_generic_instances = std::move(const_generic_instances_),
+        .comptime_only_functions = std::move(comptime_only_functions_),
         .synthesized_functor_nodes = std::move(synthetic_nodes_),
         .functor_instances = std::move(functor_instance_decls_),
         .synthesized_types = std::move(synthesized_types_),
@@ -1113,6 +1114,13 @@ private:
   /// to the caller via `take_checked_types`.
   std::unordered_map<const ast::call_expr *, type_param_reflection>
       type_param_reflections_;
+  /// Every free, module-level `static def` registered for compile-time
+  /// calling — see `checked_types::comptime_only_functions`'s doc comment,
+  /// the reason this exists (a plain `is_static` check can't tell such a
+  /// function apart from an ordinary static *method*). Populated
+  /// alongside `comptime_eval_.register_pending_function` in `register_
+  /// comptime_globals`, handed to the caller via `take_checked_types`.
+  std::unordered_set<const ast::func_decl *> comptime_only_functions_;
   /// Every `for` loop over a user `std.iter.iterator[T]` — see
   /// `iterator_loop_dispatch` in types.h. Populated by `check_body_node`'s
   /// `for_stmt` case, handed to the caller via `take_checked_types`.
@@ -5191,6 +5199,15 @@ private:
 
     const_generic_instances_.push_back(const_generic_instance{
         .decl = instance, .owner_module = owner->module_name});
+    // The clone is a distinct `func_decl` from the template it came from
+    // (`decl`), so membership has to be propagated explicitly — see
+    // `comptime_only_functions_`'s doc comment; without this, `hir::lower`
+    // would try to lower every instantiation of a compile-time-only
+    // `static def` (e.g. `is_integer[int32]`) as if it were ordinary
+    // runtime code, exactly the failure this set exists to prevent.
+    if (comptime_only_functions_.contains(&decl)) {
+      comptime_only_functions_.insert(instance);
+    }
     return instance;
   }
 
@@ -7411,6 +7428,16 @@ private:
     type_id target = k_unknown_type;
   };
   std::unordered_map<std::string, recorded_impl> impl_trait_index_;
+
+  /// Reverse of `impl_trait_index_`, keyed by `type_key_of` alone (not
+  /// `"{trait_name}:{type_key}"`): every trait name a type has a kind-`*`
+  /// impl for. Built alongside `impl_trait_index_` in `validate_impl_
+  /// coherence` and mirrored into the comptime evaluator (`register_
+  /// comptime_coherence_info`) so `implements[T, Trait]()`/`T.traits()`
+  /// (`spec/specification/04-stdlib/type-traits/{58,60}-*.md`) can answer
+  /// without the evaluator reaching back into `checker`.
+  std::unordered_map<std::string, std::vector<std::string>>
+      traits_by_type_key_;
 
   /// Extracts the trailing name of an impl's trait-type path (e.g. `show`
   /// from `impl show for point:`), or empty for an inherent impl with no
@@ -9734,7 +9761,7 @@ private:
     if (field.object->kind == ast::node_kind::ident_expr &&
         (field.field_name == "fields" || field.field_name == "field_count" ||
          field.field_name == "name" || field.field_name == "variants" ||
-         field.field_name == "variant_count")) {
+         field.field_name == "variant_count" || field.field_name == "kind")) {
       const auto &type_name =
           dynamic_cast<const ast::ident_expr &>(*field.object).name;
       if (const auto bound = lookup_type_param(type_name); bound.has_value()) {
@@ -9743,6 +9770,15 @@ private:
           return types_.builtin("int32");
         }
         if (field.field_name == "variants") {
+          return k_unknown_type;
+        }
+        if (field.field_name == "kind") {
+          // Same non-cascading `k_unknown_type` role as `variants()` above:
+          // `T.kind()` is compile-time-only here too (no `type_param_
+          // reflections_` fold the way `name()` gets below), consumed via
+          // `static if`/`static assert`/an ordinary generic body's `if`
+          // whose *taken* branch alone gets lowered — not a `match`
+          // consumed at runtime for an as-yet-abstract `T`.
           return k_unknown_type;
         }
         if (field.field_name == "name") {
@@ -10586,8 +10622,20 @@ private:
         !find_type_decl_by_name(type_arg_name).has_value()) {
       return std::nullopt;
     }
+    // Thread `T` through as an explicit argument, exactly the way `infer_
+    // explicit_generic_call` does for the general `pair[int32, str](...)`
+    // shape below. Without this, `check_call_against_decl` has no solution
+    // for `T` at all and reports "cannot tell what `T` is" even though the
+    // bracket spelled it out outright — a real gap, not a deliberate
+    // choice: a `static def` whose signature never mentions its own type
+    // parameter (every predicate in `std.traits`, and `derive_show` itself)
+    // still needs `T` *solved* so the body-check phase can bind it
+    // (`checker::check_function`'s `type_param_locals`), even though
+    // nothing in the *signature* substitutes it.
+    const auto explicit_args = explicit_generic_args{explicit_generic_arg{
+        .value = index.index.get(), .span = index.index->span}};
     return check_call_against_decl(call, *decl, owner, decl_file,
-                                   /*skip_self=*/false);
+                                   /*skip_self=*/false, explicit_args);
   }
 
   auto infer_call(const ast::call_expr &call, type_id expected) -> type_id {
@@ -14483,6 +14531,34 @@ private:
           return !param.is_value_param && !param.name.empty() &&
                  !type_param_slots_.contains(param.name);
         });
+    // Bind each of this instantiation's own type parameters into the
+    // compile-time evaluator's locals as a `type_value` (`comptime::value`),
+    // so a `static if`/`static assert` condition *inside this function's own
+    // body* can reflect on its own type parameter (e.g. `T.name()`,
+    // `is_integer[T]()`) the same way ordinary body statements already can
+    // via `type_param_reflections_`. Reads straight off `types_.entry`,
+    // which already normalizes a builtin scalar, a compound builtin
+    // generic (`array[int32, 4]`), and a user declaration into one
+    // `{name, decl}` shape — `decl` is null for the first two, matching
+    // `comptime::value::type_value`'s existing (already-nullable) `decl`
+    // field. Pushed/popped unconditionally (empty when this is the
+    // template pass or none of the type params are types) to keep the
+    // evaluator's locals stack symmetric with `scopes_`/`capture_barriers_`
+    // above.
+    auto type_param_locals = std::unordered_map<std::string, comptime::value>{};
+    for (const auto &param : decl.type_params) {
+      if (param.is_value_param || param.name.empty()) {
+        continue;
+      }
+      const auto it = type_param_slots_.find(param.name);
+      if (it == type_param_slots_.end()) {
+        continue;
+      }
+      const auto &entry = types_.entry(strip_refs(it->second));
+      type_param_locals.emplace(
+          param.name, comptime::value::make_type_value(entry.name, entry.decl));
+    }
+    comptime_eval_.push_locals(std::move(type_param_locals));
     auto saved_scopes = std::move(scopes_);
     scopes_.clear();
     // Barriers index into `scopes_`, so they have to travel with it: a stale
@@ -14789,6 +14865,7 @@ private:
     capture_barriers_ = std::move(saved_barriers);
     in_const_generic_template_ = saved_template;
     in_type_generic_template_ = saved_type_template;
+    comptime_eval_.pop_locals();
     pop_type_params();
 
     // A `def` nested inside another function's body is invisible to
@@ -16537,8 +16614,12 @@ private:
         if (types_.is_unknown(target)) {
           continue;
         }
-        const auto key =
-            std::format("{}:{}", trait_name, type_key_of(target_entry));
+        const auto type_key = type_key_of(target_entry);
+        auto &recorded_traits = traits_by_type_key_[type_key];
+        if (!std::ranges::contains(recorded_traits, trait_name)) {
+          recorded_traits.push_back(trait_name);
+        }
+        const auto key = std::format("{}:{}", trait_name, type_key);
         const auto location =
             source_location{.file_id = impl.file_id, .span = impl.decl->span};
         const auto [it, inserted] = impl_trait_index_.emplace(
@@ -16699,6 +16780,7 @@ private:
         const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
         if (fn.modifiers.is_static && !fn.name.empty()) {
           comptime_eval_.register_pending_function(fn.name, fn);
+          comptime_only_functions_.insert(&fn);
         }
       } else if (item->kind == ast::node_kind::type_decl) {
         // Every `type` declaration is registered, unconditionally (Kira
@@ -16764,6 +16846,38 @@ private:
       }
       comptime_eval_.register_pending_module(module_name, std::move(info));
     }
+  }
+
+  /// Registers the session-wide coherence facts `implements[T, Trait]()`/
+  /// `T.traits()`/`Trait.requires()` (`reflect.cpp`) answer from: `traits_
+  /// by_type_key_` (already built by `validate_impl_coherence`, which must
+  /// therefore run before this) mirrored as-is, plus each trait's own
+  /// `requires`-clause supertrait names extracted from its declaration.
+  /// Called once, alongside `register_comptime_modules`, before any file's
+  /// body is checked.
+  auto register_comptime_coherence_info() -> void {
+    auto info = comptime::evaluator::impl_coherence_info{
+        .traits_by_type_key = traits_by_type_key_};
+    for (const auto &[module_name, members] : index_.modules) {
+      for (const auto &[trait_name, ref] : members.traits) {
+        if (ref.decl == nullptr || !ref.decl->requires_bound.has_value()) {
+          continue;
+        }
+        auto &supertraits = info.trait_requires[trait_name];
+        for (const auto &term : ref.decl->requires_bound->terms) {
+          if (term.type == nullptr ||
+              term.type->kind != ast::node_kind::named_type) {
+            continue;
+          }
+          const auto &named =
+              dynamic_cast<const ast::named_type &>(*term.type);
+          if (!named.path.empty()) {
+            supertraits.push_back(named.path.back());
+          }
+        }
+      }
+    }
+    comptime_eval_.register_impl_coherence_info(std::move(info));
   }
 
   /// Recursively resolves every item-level splice (`~expr` used directly
@@ -17230,6 +17344,10 @@ public:
 
     build_method_table();
     validate_impl_coherence();
+    // Reads `traits_by_type_key_`, so must run after `validate_impl_
+    // coherence` above and, like `register_comptime_modules`, before any
+    // file's body (and therefore any `static`/comptime call) is checked.
+    register_comptime_coherence_info();
     check_pending_functor_bodies();
 
     for (const auto &input : inputs) {

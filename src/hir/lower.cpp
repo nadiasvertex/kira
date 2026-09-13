@@ -4776,6 +4776,24 @@ auto lower_module_synthesized(const std::string &module_name,
     if (instance.owner_module != module_name || instance.decl == nullptr) {
       continue;
     }
+    if (checked.comptime_only_functions.contains(instance.decl)) {
+      // Mirrors the template-level skip above (`decl.modifiers.is_static`
+      // in the item walk) for a *concrete instantiation* of a free,
+      // module-level `static def` — still only ever run by `comptime::
+      // evaluator` (e.g. from a `static assert`/`static let`/another
+      // `static def`'s explicit `name[T]()` call), never from ordinary
+      // runtime code, and its body may use constructs (a `match` over a
+      // compile-time-only reflection result, a quote expression) ordinary
+      // lowering can't handle at all. Deliberately not a bare `instance.
+      // decl->modifiers.is_static` check (as the item walk above can get
+      // away with): `is_static` also marks an ordinary static *method*
+      // declared inside an `impl`/`extend`/`trait` block (`zero`, `one`,
+      // `from_iter`, ...) — those share this same flat instance list when
+      // generic, have real runtime bodies, and must still be lowered.
+      // `comptime_only_functions` (`checker::register_comptime_globals`)
+      // contains only the free-function case.
+      continue;
+    }
     auto lowered = lower_function(*instance.decl, checked, options);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
