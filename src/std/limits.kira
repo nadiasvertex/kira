@@ -34,12 +34,18 @@ pub static pure def is_signed[T]() -> bool:
 #: The most negative representable value of `T`.
 pub static pure def min[T]() -> T:
     let n = T.name()
-    static if n == "int8":  return -128 as T
-    static if n == "int16": return -32768 as T
-    static if n == "int32": return -2147483648 as T
-    static if n == "int64" or n == "isize": return -9223372036854775808 as T
-    static if n == "float32": return -3.40282347e38 as T
-    static if n == "float64": return -1.7976931348623157e308 as T
+    static if n == "int8":
+        return -128 as T
+    static if n == "int16":
+        return -32768 as T
+    static if n == "int32":
+        return -2147483648 as T
+    static if n == "int64" or n == "isize":
+        return -9223372036854775808 as T
+    static if n == "float32":
+        return -3.40282347e38 as T
+    static if n == "float64":
+        return -1.7976931348623157e308 as T
 
     return 0
 

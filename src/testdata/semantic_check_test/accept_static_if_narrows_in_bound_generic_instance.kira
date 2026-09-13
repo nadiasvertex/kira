@@ -1,0 +1,18 @@
+module sample
+
+# Regression test for `resolve_static_if_branch`'s generic-scope guard: once
+# a call (`min_of[int32]()` below) instantiates this template with `T` bound
+# concretely, the recheck of that instance must actually narrow the `static
+# if` to the `else` branch rather than falling back to checking both. Before
+# the fix, the guard only asked "is any generic scope active" (true for both
+# the unbound template pass and every bound instance recheck) instead of "is
+# `T` still unbound here", so the `if` branch's int64-only literal was
+# spuriously bounds-checked against the bound `T = int32`.
+def min_of[T]() -> T:
+    static if T.name() == "int64":
+        return -9223372036854775807 - 1
+    else:
+        return 0
+
+def run() -> int32:
+    return min_of[int32]()

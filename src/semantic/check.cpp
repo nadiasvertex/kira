@@ -14394,6 +14394,21 @@ private:
           // invalidate what assignment breaks.)
           if (!binding.is_mut) {
             assume_binding(binding.name, binding_type);
+            // Also make the binding available to `resolve_static_if_branch`
+            // for any `static if` later in this same function body: a
+            // pattern like `std.limits.min`'s `let n = T.name()` followed
+            // by `static if n == "int8": ...` only narrows correctly once
+            // `n` itself is a known compile-time value, not just `T`. Tried
+            // unconditionally (not gated on being inside a generic
+            // instance) since `try_evaluate` is silent and cheap on
+            // failure — an ordinary runtime-dependent `let` simply fails to
+            // resolve a name and returns `std::nullopt`, same as today.
+            if (stmt.initializer != nullptr) {
+              if (auto value = comptime_eval_.try_evaluate(*stmt.initializer);
+                  value.has_value()) {
+                comptime_eval_.bind_local(binding.name, std::move(*value));
+              }
+            }
           }
         } else {
           check_pattern(*stmt.pattern, strip_refs(binding_type));
@@ -16755,30 +16770,50 @@ private:
   /// possible: `std::nullopt` means "couldn't decide, check both branches",
   /// `true`/`false` means "only this branch is real, check just that one".
   ///
-  /// Deliberately skips evaluation entirely while inside a generic `static
-  /// def`'s template body (`T` not yet bound to a concrete type): a
-  /// condition like `T.name() == "int64"` reaches the evaluator's general
-  /// call path (rather than the checker's own `T.name()` fold, which only
-  /// fires for a fully-concrete `T`) and would otherwise report a spurious
-  /// "only direct calls to a named `static def` function" error. The real
-  /// branch selection for that case happens per call, when
-  /// `evaluator::evaluate_stmt` runs this same `static_decl` with `T`
-  /// concretely bound.
+  /// Deliberately skips evaluation entirely while any type parameter still
+  /// in scope is unbound (an abstract `type_param_kind`, as opposed to one
+  /// `push_type_params` bound to a concrete type from a monomorphization
+  /// instance): a condition like `T.name() == "int64"` reaches the
+  /// evaluator's general call path (rather than the checker's own
+  /// `T.name()` fold, which only fires for a fully-concrete `T`) and would
+  /// otherwise report a spurious "only direct calls to a named `static def`
+  /// function" error. The real branch selection for that case happens per
+  /// call, when `evaluator::evaluate_stmt` runs this same `static_decl` with
+  /// `T` concretely bound. A generic scope whose parameters are *all*
+  /// already bound (e.g. this `static if` sits inside a locally-defined
+  /// generic function currently being checked for one concrete
+  /// instantiation) must still narrow, so the check looks at each in-scope
+  /// parameter's actual type rather than just whether any generic scope is
+  /// active.
   auto resolve_static_if_branch(const ast::static_decl &decl)
       -> std::optional<bool> {
     if (decl.if_condition == nullptr || decl.if_condition->has_error) {
       return std::nullopt;
     }
     require_bool(*decl.if_condition, "a `static if` condition");
-    const auto inside_generic_scope = std::ranges::any_of(
-        type_params_, [](const auto &scope) -> bool { return !scope.empty(); });
-    if (inside_generic_scope) {
+    const auto inside_unbound_generic_scope = std::ranges::any_of(
+        type_params_, [this](const auto &scope) -> bool {
+          return std::ranges::any_of(
+              scope, [this](const auto &param) -> bool {
+                return types_.entry(param.second).kind ==
+                       type_kind::type_param_kind;
+              });
+        });
+    if (inside_unbound_generic_scope) {
       return std::nullopt;
     }
-    auto evaluated = comptime_eval_.evaluate(*decl.if_condition);
-    if (!evaluated.is_error() &&
-        evaluated.kind == comptime::value_kind::boolean) {
-      return evaluated.is_true();
+    // `try_evaluate`, not `evaluate`: a condition can easily depend on
+    // something the evaluator has no value for at this point in an ordinary
+    // (non-comptime) check pass — an ordinary function-local `let` such as
+    // `std.limits.min`'s `let n = T.name()`, rather than a `static let`
+    // global or a direct `T.name()` call — and that is an expected "couldn't
+    // decide yet", not a diagnosable error. `evaluate` would report one
+    // anyway (its contract is to diagnose every failure), which would turn
+    // every such ordinary fallback into a spurious compiler error.
+    const auto evaluated = comptime_eval_.try_evaluate(*decl.if_condition);
+    if (evaluated.has_value() &&
+        evaluated->kind == comptime::value_kind::boolean) {
+      return evaluated->is_true();
     }
     return std::nullopt;
   }

@@ -1,3 +1,5 @@
+#include <cstdint>
+#include <limits>
 #include <string>
 
 #include "src/comptime/eval.h"
@@ -72,15 +74,53 @@ auto test_eval_unary_negation() -> void {
   expect(result.integer == -5, "expected `-(2 + 3)` to evaluate to -5");
 }
 
-auto test_eval_negate_int64_min_reports_error() -> void {
+auto test_eval_negate_int64_min_literal_succeeds() -> void {
+  // `-9223372036854775808` is the *only* way to spell `int64::MIN` as a
+  // literal (its positive magnitude, `9223372036854775808`, is one past
+  // `int64::max`): `parse_integer_literal` reinterprets that magnitude's
+  // bit pattern directly as `int64::min`, and negating that bit pattern in
+  // two's complement is a no-op, not overflow — this is exactly how
+  // `std.limits.min`'s own `int64`/`isize` branch writes its return value.
+  // Regression test for a real bug: the evaluator used to reject this by
+  // conflating "operand bit-pattern equals int64::min" with "this must be a
+  // double-negation overflow", which is only true for a *computed* operand
+  // (see `test_eval_negate_computed_int64_min_reports_error` below), not a
+  // direct literal.
+  const auto result = eval_source("-9223372036854775808");
+  expect(result.kind == kira::comptime::value_kind::integer,
+         "expected negating the `int64::MIN` literal to produce an integer");
+  expect(result.integer == std::numeric_limits<std::int64_t>::min(),
+         "expected `-9223372036854775808` to evaluate to `int64::MIN`");
+}
+
+auto test_eval_negate_int64_min_literal_through_cast_succeeds() -> void {
+  // Same boundary as above, but through the `<lit> as T` shape `as` forces
+  // `-<lit> as T` to actually parse as (`-(<lit> as T)`, `as` binding
+  // tighter than unary `-`) — the exact shape `std.limits.min` writes
+  // (`-9223372036854775808 as T`). Regression test for
+  // `is_int_literal_operand`'s cast-unwrapping case.
+  const auto result = eval_source("-9223372036854775808 as int64");
+  expect(result.kind == kira::comptime::value_kind::integer,
+         "expected negating the cast `int64::MIN` literal to produce an "
+         "integer");
+  expect(result.integer == std::numeric_limits<std::int64_t>::min(),
+         "expected `-9223372036854775808 as int64` to evaluate to "
+         "`int64::MIN`");
+}
+
+auto test_eval_negate_computed_int64_min_reports_error() -> void {
   // `-x` is signed-integer-overflow UB in C++ when `x` is exactly
   // `int64::MIN` (there is no positive int64 to negate to), so the
   // evaluator must reject this explicitly rather than execute `-x` and
-  // invoke that UB. This is the comptime-evaluator half of todo #10 (the
-  // checker's own literal-range fix lives in check_test.cpp).
-  const auto result = eval_source("-9223372036854775808");
+  // invoke that UB — but only when `x` is a genuinely *computed* value
+  // landing on that boundary, not a direct literal (see the literal tests
+  // above): `-9223372036854775807 - 1` computes `int64::MIN` through
+  // subtraction, then negates that computed result, which is a real
+  // double-negation overflow with no literal to except it.
+  const auto result = eval_source("-(-9223372036854775807 - 1)");
   expect(result.is_error(),
-         "expected negating `int64::MIN` to produce the error sentinel");
+         "expected negating a computed `int64::MIN` to produce the error "
+         "sentinel");
 }
 
 auto test_eval_division_by_zero_reports_error() -> void {
@@ -264,7 +304,9 @@ auto main() -> int {
   test_eval_float_arithmetic();
   test_eval_comparison_and_logical();
   test_eval_unary_negation();
-  test_eval_negate_int64_min_reports_error();
+  test_eval_negate_int64_min_literal_succeeds();
+  test_eval_negate_int64_min_literal_through_cast_succeeds();
+  test_eval_negate_computed_int64_min_reports_error();
   test_eval_division_by_zero_reports_error();
   test_eval_string_equality();
   test_eval_match_expr_literal_pattern_selects_true_arm();

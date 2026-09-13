@@ -1,0 +1,21 @@
+module sample
+
+# Regression test for `check_body_node`'s `let_stmt` case: `resolve_static_
+# if_branch` can only narrow a `static if` condition that names a plain
+# runtime local (not `T` directly) once that local's own comptime value is
+# known. Mirrors `std.limits.min`'s real shape (`let n = T.name()` followed
+# by several `static if n == "..."` checks) — without threading `n`'s value
+# into the evaluator's locals, every branch after the template's own
+# unbound-generic pass falls back to "couldn't decide", and `min_of[int8]`'s
+# recheck would spuriously bounds-check the `int16`-sized literal below
+# against the bound `T = int8`.
+def min_of[T]() -> T:
+    let n = T.name()
+    static if n == "int8":
+        return -128 as T
+    static if n == "int16":
+        return -32768 as T
+    return 0
+
+def run() -> int8:
+    return min_of[int8]()

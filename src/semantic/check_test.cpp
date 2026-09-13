@@ -1228,6 +1228,30 @@ auto test_accepts_static_if_statement_body_in_generic_static_def() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_static_if_narrows_in_bound_generic_instance() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_static_if_narrows_in_bound_generic_instance.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `min_of[int32]()`'s recheck (with `T` bound "
+                     "to `int32`) to narrow `static if T.name() == "
+                     "\"int64\"` to its `else` branch, not spuriously "
+                     "bounds-check the `if` branch's int64-only literal "
+                     "against the bound `int32`:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_accepts_static_if_narrows_through_let_bound_name() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_static_if_narrows_through_let_bound_name.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `min_of[int8]()`'s recheck to narrow `static "
+                     "if n == \"int16\"` (where `n` is a plain `let n = "
+                     "T.name()` local, not `T` itself) to its implicit "
+                     "`else`, not spuriously bounds-check the `int16`-sized "
+                     "literal against the bound `int8`:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_accepts_static_assert_compares_variant_payloads() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_assert_compares_variant_payloads.kira");
@@ -3181,6 +3205,8 @@ auto main() -> int {
     test_accepts_static_if_selects_branch_by_sum_type_equality();
     test_accepts_static_if_variant_equality_selects_else_branch();
     test_accepts_static_if_statement_body_in_generic_static_def();
+    test_accepts_static_if_narrows_in_bound_generic_instance();
+    test_accepts_static_if_narrows_through_let_bound_name();
     test_accepts_static_assert_compares_variant_payloads();
     test_accepts_quote_expr_typed_by_fragment_kind();
     test_accepts_static_def_call_evaluates();

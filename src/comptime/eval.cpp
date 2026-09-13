@@ -87,6 +87,29 @@ auto parse_float_literal(std::string_view text) -> std::optional<double> {
   return result;
 }
 
+/// Whether `e` is a direct integer literal, or one wrapped in a single
+/// cast (`<lit> as T`, since `as` binds tighter than unary `-` — see
+/// `checker::infer_unary`'s matching structural check). Used by
+/// `evaluator::eval_unary`'s `neg` case to tell a literal whose *positive*
+/// magnitude is exactly one past `int64::max` (and therefore reinterprets
+/// to `int64::min`'s bit pattern in `parse_integer_literal` above) apart
+/// from an ordinary computed value that happens to equal `int64::min` —
+/// only the latter is a genuine double-negation overflow.
+auto is_int_literal_operand(const ast::expr &e) -> bool {
+  if (e.kind == ast::node_kind::literal_expr) {
+    return dynamic_cast<const ast::literal_expr &>(e).lit_kind ==
+          token_kind::int_lit;
+  }
+  if (e.kind == ast::node_kind::cast_expr) {
+    const auto &cast = dynamic_cast<const ast::cast_expr &>(e);
+    return cast.operand != nullptr &&
+          cast.operand->kind == ast::node_kind::literal_expr &&
+          dynamic_cast<const ast::literal_expr &>(*cast.operand).lit_kind ==
+              token_kind::int_lit;
+  }
+  return false;
+}
+
 /// Re-encodes a decoded string value back into a double-quoted source
 /// spelling suitable for `ast::literal_expr::value` (later re-decoded by
 /// `decode_string_literal` in `eval_literal`, exactly like any ordinary
@@ -398,8 +421,19 @@ auto evaluator::eval_unary(const ast::unary_expr &un) -> value {
       // `-x` is signed-integer-overflow UB in C++ when `x` is exactly the
       // 64-bit minimum (no positive counterpart exists to negate to), so
       // this boundary must be rejected explicitly rather than evaluated —
-      // mirrors the VM's/LLVM backend's own checked negation.
+      // mirrors the VM's/LLVM backend's own checked negation. Except: a
+      // direct integer literal (or one cast, `<lit> as T`) whose *positive*
+      // magnitude is exactly one past `int64::max` (`9223372036854775808`)
+      // already reinterprets to this same bit pattern in `parse_integer_
+      // literal` above — negating that bit pattern in two's complement is a
+      // no-op, not UB, and is exactly how `int64::min` (`-9223372036854775808`)
+      // gets written at all (see `std.limits.min`). Only a genuinely
+      // *computed* value landing on `int64::min` (not a fresh literal) is a
+      // real double-negation overflow.
       if (operand.integer == std::numeric_limits<int64_t>::min()) {
+        if (is_int_literal_operand(*un.operand)) {
+          return value::make_int(operand.integer);
+        }
         return report(un.span,
                       "this negation overflows in compile-time evaluation");
       }

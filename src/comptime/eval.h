@@ -61,6 +61,30 @@ public:
   /// by zero, unbounded compile-time recursion).
   [[nodiscard]] auto evaluate(const ast::expr &expr) -> value;
 
+  /// Evaluates `expr` exactly like `evaluate`, except a failure (an
+  /// unresolved name, an unsupported construct, ...) is reported as
+  /// `std::nullopt` instead of a diagnosed `value::make_error()` —
+  /// diagnostics are suppressed for the duration of this call, the same way
+  /// `try_eval_ordinary_call` suppresses them while speculatively folding a
+  /// callee body. For a caller like `checker::resolve_static_if_branch`
+  /// that only wants a real decision when the evaluator can actually reach
+  /// one, and must otherwise fall back silently (not diagnose) to checking
+  /// both branches — evaluating with plain `evaluate` would announce every
+  /// such fallback as a spurious error even though "couldn't decide yet" is
+  /// the ordinary, expected outcome for a condition that depends on
+  /// something the evaluator has no value for at this point (an ordinary
+  /// function-local `let`, say, as opposed to a `static let` global).
+  [[nodiscard]] auto try_evaluate(const ast::expr &expr) -> std::optional<value> {
+    const auto saved_suppressed = diagnostics_suppressed_;
+    diagnostics_suppressed_ = true;
+    auto result = evaluate(expr);
+    diagnostics_suppressed_ = saved_suppressed;
+    if (result.is_error()) {
+      return std::nullopt;
+    }
+    return result;
+  }
+
   /// Registers a `static let` binding's already-evaluated value so later
   /// `static` expressions in the same session can reference it by name.
   /// Re-binding the same name overwrites the previous value — callers are
@@ -193,6 +217,17 @@ public:
   /// sequence of statements evaluated through `evaluate_stmts`.
   void push_locals(std::unordered_map<std::string, value> scope);
   void pop_locals();
+
+  /// Adds one binding into the current (innermost) locals frame, for a
+  /// caller (`checker::check_stmt`'s `let_stmt` case) that discovers a
+  /// comptime-evaluable value one statement at a time — e.g. `let n =
+  /// T.name()` inside a bound generic instance — rather than having every
+  /// binding for a scope ready up front the way `push_locals` expects.
+  /// Overwrites any existing binding for `name` in that frame, matching
+  /// `push_locals`' own "re-binding overwrites" behavior.
+  void bind_local(const std::string &name, value v) {
+    locals_.back().insert_or_assign(name, std::move(v));
+  }
 
   /// Outcome of executing a statement sequence: whether a `return` was hit
   /// and, if so, its value.
