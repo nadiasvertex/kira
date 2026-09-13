@@ -16,6 +16,24 @@ intrinsic def rt_bitcast_f32_to_u32(v: box_f32) -> box_u32
 # String intrinsics
 ####################
 
+#: Single-field wrapper for uint64 to pass across intrinsic boundaries.
+type box_u64 = { v: uint64 }
+#: Single-field wrapper for uint32 to pass across intrinsic boundaries.
+type box_u32 = { v: uint32 }
+#: Single-field wrapper for uint8 to pass across intrinsic boundaries.
+type box_u8 = { v: uint8 }
+#: Single-field wrapper for usize to pass across intrinsic boundaries.
+type box_usize = { v: usize }
+#: Single-field wrapper for bool to pass across intrinsic boundaries.
+type box_bool = { v: bool }
+#: Single-field wrapper for float64 to pass across intrinsic boundaries.
+type box_f64 = { v: float64 }
+#: Single-field wrapper for int32 to pass across intrinsic boundaries.
+type box_i32 = { v: int32 }
+
+#: Result of a substring search. pos is meaningful only when found is true.
+type find_result = { found: bool, pos: usize }
+
 intrinsic def rt_str_concat(a: str, b: str) -> str
 intrinsic def rt_str_len_scalars(s: str) -> box_usize
 intrinsic def rt_str_repeat_char(c: box_u32, n: box_usize) -> str
@@ -38,6 +56,20 @@ intrinsic def rt_fmt_char_from_codepoint(cp: box_u32) -> str
 # I/O intrinsics
 ####################
 
+#: Opaque file descriptor wrapper for internal use.
+pub type raw_fd = { value: int64 }
+
+#: System error code from a failed I/O operation.
+pub type io_errno = { code: int32 }
+
+  #: Options for opening a file.
+pub type open_options = {
+    read: bool,
+    write: bool,
+    append: bool,
+    create: bool,
+    truncate: bool
+}
 intrinsic def rt_stdin() -> raw_fd
 intrinsic def rt_stdout() -> raw_fd
 intrinsic def rt_stderr() -> raw_fd
@@ -83,6 +115,12 @@ type macver_raw = {
     dev_stage: str,
     non_release_version: str,
     machine_arch: str,
+}
+
+#: Information about the C standard library implementation.
+pub type libc_version = {
+    name: str,
+    version: str,
 }
 
 #: Gets the Unix uname information.

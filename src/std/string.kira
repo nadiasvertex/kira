@@ -15,13 +15,9 @@ use std.unicode.to_uppercase
 use std.unicode.to_lowercase
 use std.unicode.fold_case
 
-#: Single-field wrapper for usize to pass across intrinsic boundaries.
 type box_usize = { v: usize }
-#: Single-field wrapper for uint8 to pass across intrinsic boundaries.
 type box_u8 = { v: uint8 }
-#: Single-field wrapper for bool to pass across intrinsic boundaries.
 type box_bool = { v: bool }
-#: Single-field wrapper for int32 to pass across intrinsic boundaries.
 type box_i32 = { v: int32 }
 
 #: Result of a substring search. pos is meaningful only when found is true.

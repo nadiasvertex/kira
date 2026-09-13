@@ -13,14 +13,21 @@ module std.platform
 # functions then read by name — see `generate_platform_target_accessors`'s
 # doc comment for the bytecode-lowering bug that rules that out.
 
-# `io_error`/`io_errno` are declared in the genuinely separate `std.io`
-# module; a struct literal's type name must be a single identifier (the
-# parser doesn't accept a qualified path directly before `{`, e.g.
-# `std.io.io_errno { code: 0 }`), so this module-scope alias — otherwise
-# transparent to name/impl resolution — gives `io_errno { ... }` construction
-# below somewhere to bind to.
+use std.intrinsics.uname_raw
+use std.intrinsics.winver_raw
+use std.intrinsics.macver_raw
+use std.intrinsics.libc_version
+use std.intrinsics.io_errno
+
+use std.intrinsics.rt_uname
+use std.intrinsics.rt_libc_version
+use std.intrinsics.rt_windows_version
+use std.intrinsics.rt_macos_version
+use std.intrinsics.rt_gethostname
+use std.intrinsics.rt_processor_name
+
+# `io_error` is declared in the `std.io` module
 type io_error = std.io.io_error
-type io_errno = std.io.io_errno
 
 #: CPU architectures supported by the compiler.
 #:
@@ -58,12 +65,6 @@ pub type kira_build = {
     build_date: str,
 }
 
-#: Information about the C standard library implementation.
-pub type libc_version = {
-    name: str,
-    version: str,
-}
-
 #: Windows version information.
 pub type windows_version = {
     release: str,
@@ -81,57 +82,6 @@ pub type macos_version = {
     machine_arch: str,
 }
 
-#: Raw Unix uname() structure.
-type uname_raw = {
-    sysname: str,
-    nodename: str,
-    release: str,
-    version: str,
-    machine_arch: str,
-}
-
-#: Raw Windows version information structure.
-type winver_raw = {
-    major: uint32,
-    minor: uint32,
-    build: uint32,
-    platform_id: uint32,
-    csd_version: str,
-}
-
-#: Raw macOS version information structure.
-type macver_raw = {
-    release: str,
-    version: str,
-    dev_stage: str,
-    non_release_version: str,
-    machine_arch: str,
-}
-
-#: Gets the Unix uname information.
-#: Returns:
-#:   a uname_raw structure on success, or an io_errno on failure.
-intrinsic def rt_uname() -> result[uname_raw, io_errno]
-#: Gets the C library version (Unix only).
-#: Returns:
-#:   a libc_version structure on success, or an io_errno on failure.
-intrinsic def rt_libc_version() -> result[libc_version, io_errno]
-#: Gets the Windows version information (Windows only).
-#: Returns:
-#:   a winver_raw structure on success, or an io_errno on failure.
-intrinsic def rt_windows_version() -> result[winver_raw, io_errno]
-#: Gets the macOS version information (macOS only).
-#: Returns:
-#:   a macver_raw structure on success, or an io_errno on failure.
-intrinsic def rt_macos_version() -> result[macver_raw, io_errno]
-#: Gets the hostname of the machine.
-#: Returns:
-#:   the hostname string on success, or an io_errno on failure.
-intrinsic def rt_gethostname() -> result[str, io_errno]
-#: Gets the processor name.
-#: Returns:
-#:   the processor name string on success, or an io_errno on failure.
-intrinsic def rt_processor_name() -> result[str, io_errno]
 
 # ---------------------------------------------------------------------------
 # Target queries (compile-time) — `pure` because the target never changes at

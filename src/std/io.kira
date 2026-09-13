@@ -1,10 +1,18 @@
 module std.io
 
-#: Opaque file descriptor wrapper for internal use.
-pub type raw_fd = { value: int64 }
+use std.intrinsics.raw_fd
+use std.intrinsics.io_errno
+use std.intrinsics.open_options
 
-#: System error code from a failed I/O operation.
-pub type io_errno = { code: int32 }
+use std.intrinsics.rt_stdin
+use std.intrinsics.rt_stdout
+use std.intrinsics.rt_stderr
+
+use std.intrinsics.rt_open
+use std.intrinsics.rt_close
+use std.intrinsics.rt_read
+use std.intrinsics.rt_write
+use std.intrinsics.rt_flush
 
 #: Error types that can occur during I/O operations.
 pub type io_error = @not_found(str) | @permission_denied(str) | @already_exists(str) | @interrupted | @would_block | @broken_pipe | @unexpected_eof | @other(io_errno)
@@ -20,14 +28,6 @@ impl from[io_errno] for io_error:
             32 => @broken_pipe
             _ => @other(e)
 
-  #: Options for opening a file.
-pub type open_options = {
-    read: bool,
-    write: bool,
-    append: bool,
-    create: bool,
-    truncate: bool
-}
 
 #: A type that can read bytes from a source.
 pub trait reader:
@@ -107,16 +107,6 @@ pub trait writer:
                 return @err(@broken_pipe)
             written = written + n
         return @ok(unit)
-
-intrinsic def rt_stdin() -> raw_fd
-intrinsic def rt_stdout() -> raw_fd
-intrinsic def rt_stderr() -> raw_fd
-
-intrinsic def rt_open(path: str, opts: open_options) -> result[raw_fd, io_errno]
-intrinsic def rt_close(fd: raw_fd) -> result[unit, io_errno]
-intrinsic def rt_read(fd: raw_fd, buf: &mut slice_mut[byte]) -> result[usize, io_errno]
-intrinsic def rt_write(fd: raw_fd, buf: &slice[byte]) -> result[usize, io_errno]
-intrinsic def rt_flush(fd: raw_fd) -> result[unit, io_errno]
 
 #: A file handle that can be used for reading and writing operations.
 pub type file_handle = { fd: raw_fd }

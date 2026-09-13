@@ -1,5 +1,22 @@
 module std.fmt
 
+use std.intrinsics.box_u64
+use std.intrinsics.box_u32
+use std.intrinsics.box_u8
+use std.intrinsics.box_usize
+use std.intrinsics.box_bool
+use std.intrinsics.box_f64
+
+use std.intrinsics.rt_str_concat
+use std.intrinsics.rt_str_len_scalars
+use std.intrinsics.rt_str_repeat_char
+use std.intrinsics.rt_str_truncate_scalars
+use std.intrinsics.rt_fmt_radix_digits
+use std.intrinsics.rt_fmt_f64_fixed
+use std.intrinsics.rt_fmt_f64_sci
+use std.intrinsics.rt_fmt_f64_general
+use std.intrinsics.rt_fmt_char_from_codepoint
+
 #: Text alignment modes for formatting.
 pub type align_mode = @left | @right | @center
 
@@ -17,28 +34,6 @@ pub type format_spec = {
     precision: option[usize]
 }
 
-#: Single-field wrapper for uint64 to pass across intrinsic boundaries.
-type box_u64 = { v: uint64 }
-#: Single-field wrapper for uint32 to pass across intrinsic boundaries.
-type box_u32 = { v: uint32 }
-#: Single-field wrapper for uint8 to pass across intrinsic boundaries.
-type box_u8 = { v: uint8 }
-#: Single-field wrapper for usize to pass across intrinsic boundaries.
-type box_usize = { v: usize }
-#: Single-field wrapper for bool to pass across intrinsic boundaries.
-type box_bool = { v: bool }
-#: Single-field wrapper for float64 to pass across intrinsic boundaries.
-type box_f64 = { v: float64 }
-
-intrinsic def rt_str_concat(a: str, b: str) -> str
-intrinsic def rt_str_len_scalars(s: str) -> box_usize
-intrinsic def rt_str_repeat_char(c: box_u32, n: box_usize) -> str
-intrinsic def rt_str_truncate_scalars(s: str, n: box_usize) -> str
-intrinsic def rt_fmt_radix_digits(value: box_u64, radix: box_u8, uppercase: box_bool) -> str
-intrinsic def rt_fmt_f64_fixed(value: box_f64, precision: box_usize) -> str
-intrinsic def rt_fmt_f64_sci(value: box_f64, precision: box_usize, uppercase: box_bool) -> str
-intrinsic def rt_fmt_f64_general(value: box_f64, precision: box_usize) -> str
-intrinsic def rt_fmt_char_from_codepoint(cp: box_u32) -> str
 
 def scalar_len(s: str) -> usize:
     return rt_str_len_scalars(s).v
