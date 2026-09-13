@@ -1,0 +1,17 @@
+module main
+
+# ==========================================================================
+#  `traits.is_signed_integer` — is this type one of `int8`..`int128`, `isize`?
+#
+#  Run it:      kira demo/traits-is_signed_integer.kira
+#  Compile it:  kira --compile -o traits-is_signed_integer demo/traits-is_signed_integer.kira
+# ==========================================================================
+
+use std.traits.is_signed_integer
+
+def main() -> int32:
+    println("is_signed_integer[int32]={is_signed_integer[int32]()}")
+    println("is_signed_integer[isize]={is_signed_integer[isize]()}")
+    println("is_signed_integer[uint32]={is_signed_integer[uint32]()}")
+    println("is_signed_integer[float64]={is_signed_integer[float64]()}")
+    return 0

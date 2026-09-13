@@ -1,0 +1,16 @@
+module main
+
+# ==========================================================================
+#  `traits.is_float` — is this type `float32`, `float64`, or `float128`?
+#
+#  Run it:      kira demo/traits-is_float.kira
+#  Compile it:  kira --compile -o traits-is_float demo/traits-is_float.kira
+# ==========================================================================
+
+use std.traits.is_float
+
+def main() -> int32:
+    println("is_float[float64]={is_float[float64]()}")
+    println("is_float[float32]={is_float[float32]()}")
+    println("is_float[int32]={is_float[int32]()}")
+    return 0

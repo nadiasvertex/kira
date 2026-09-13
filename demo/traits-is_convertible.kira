@@ -1,0 +1,27 @@
+module main
+
+# ==========================================================================
+#  `traits.is_convertible` — does `From` convert to `To`? True when they're
+#  the same type, or `From` implements `into` for *some* target (this can't
+#  ask specifically for `into[To]`, only whether `From` implements `into`
+#  at all — see the doc comment on `is_convertible` in
+#  src/std/traits.category.kira for the resulting over-approximation).
+#
+#  Run it:      kira demo/traits-is_convertible.kira
+#  Compile it:  kira --compile -o traits-is_convertible demo/traits-is_convertible.kira
+# ==========================================================================
+
+use std.traits.is_convertible
+use std.traits.into
+
+type celsius = { degrees: float64 }
+
+impl into[float64] for celsius:
+    def into(self) -> float64:
+        return self.degrees
+
+def main() -> int32:
+    println("is_convertible[celsius, float64]={is_convertible[celsius, float64]()}")
+    println("is_convertible[int32, int32]={is_convertible[int32, int32]()}")
+    println("is_convertible[int32, str]={is_convertible[int32, str]()}")
+    return 0

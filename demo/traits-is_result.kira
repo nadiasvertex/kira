@@ -1,0 +1,15 @@
+module main
+
+# ==========================================================================
+#  `traits.is_result` — is this type `result[_, _]`?
+#
+#  Run it:      kira demo/traits-is_result.kira
+#  Compile it:  kira --compile -o traits-is_result demo/traits-is_result.kira
+# ==========================================================================
+
+use std.traits.is_result
+
+def main() -> int32:
+    println("is_result[result[int32, str]]={is_result[result[int32, str]]()}")
+    println("is_result[int32]={is_result[int32]()}")
+    return 0

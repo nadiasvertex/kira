@@ -1,0 +1,19 @@
+module main
+
+# ==========================================================================
+#  `traits.is_struct` — is this a user `type ... = { ... }` declaration?
+#
+#  Unlike the name-based predicates above it, this reads `T.kind()`.
+#
+#  Run it:      kira demo/traits-is_struct.kira
+#  Compile it:  kira --compile -o traits-is_struct demo/traits-is_struct.kira
+# ==========================================================================
+
+use std.traits.is_struct
+
+type point = { x: int32, y: int32 }
+
+def main() -> int32:
+    println("is_struct[point]={is_struct[point]()}")
+    println("is_struct[int32]={is_struct[int32]()}")
+    return 0

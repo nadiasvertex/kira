@@ -1,0 +1,39 @@
+module main
+
+# ==========================================================================
+#  `traits.is_view` — is this type `&T'` or `&mut T'`, for some `T'`?
+#
+#  A view can't be spelled directly as a bracketed type argument
+#  (`is_view[&int32]()` isn't valid syntax — a view isn't a plain type
+#  name), so per its doc comment this is only meant to fire when a bare
+#  generic parameter is itself inferred from a `&`-argument at the call
+#  site, as `describe_view` below does.
+#
+#  KNOWN BUG: as of this writing that case still prints `false` for
+#  `describe_view(&n)`, not the documented `true`. `T.name()` itself
+#  correctly reports `"ref"` when inlined directly in `describe_view`'s own
+#  body (confirmed by hand), so the type information survives that far.
+#  The break is one level further in: `try_fold_comptime_only_call`
+#  (src/semantic/check.cpp) rebinds a caller's type parameter into a
+#  *nested* static call's evaluator locals via
+#  `types_.entry(strip_refs(it->second))` — the `strip_refs` there drops
+#  the view wrapper before `is_view`'s own body ever sees it, so
+#  `is_view[T]()` observes the referent's name instead of `"ref"`. Every
+#  other predicate in std.traits.category is unaffected, since none of
+#  them care about `ref_kind` — `is_view` is the only one this specific
+#  bug can be observed through.
+#
+#  Run it:      kira demo/traits-is_view.kira
+#  Compile it:  kira --compile -o traits-is_view demo/traits-is_view.kira
+# ==========================================================================
+
+use std.traits.is_view
+
+def describe_view[T](x: T) -> bool:
+    return is_view[T]()
+
+def main() -> int32:
+    let n: int32 = 42
+    println("is_view(&n)={describe_view(&n)}")
+    println("is_view(n)={describe_view(n)}")
+    return 0

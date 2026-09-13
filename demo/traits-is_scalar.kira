@@ -1,0 +1,18 @@
+module main
+
+# ==========================================================================
+#  `traits.is_scalar` — is this type any builtin numeric type, `bool`, or
+#  `char`? `is_numeric[T]() or is_bool[T]() or is_char[T]()`.
+#
+#  Run it:      kira demo/traits-is_scalar.kira
+#  Compile it:  kira --compile -o traits-is_scalar demo/traits-is_scalar.kira
+# ==========================================================================
+
+use std.traits.is_scalar
+
+def main() -> int32:
+    println("is_scalar[bool]={is_scalar[bool]()}")
+    println("is_scalar[char]={is_scalar[char]()}")
+    println("is_scalar[int32]={is_scalar[int32]()}")
+    println("is_scalar[str]={is_scalar[str]()}")
+    return 0

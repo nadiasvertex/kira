@@ -1,0 +1,20 @@
+module main
+
+# ==========================================================================
+#  `traits.is_bool` — is this type `bool`?
+#
+#  A `static pure def` from std.traits.category: `T.name() == "bool"`. Since
+#  the call takes no value arguments, it folds to a literal at the call
+#  site even from ordinary code, not just `static if`/`static assert`.
+#
+#  Run it:      kira demo/traits-is_bool.kira
+#  Compile it:  kira --compile -o traits-is_bool demo/traits-is_bool.kira
+# ==========================================================================
+
+use std.traits.is_bool
+
+def main() -> int32:
+    println("is_bool[bool]={is_bool[bool]()}")
+    println("is_bool[int32]={is_bool[int32]()}")
+    println("is_bool[str]={is_bool[str]()}")
+    return 0

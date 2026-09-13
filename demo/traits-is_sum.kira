@@ -1,0 +1,20 @@
+module main
+
+# ==========================================================================
+#  `traits.is_sum` — is this a user `type ... = @a | @b(...) | ...`
+#  declaration?
+#
+#  Reads `T.kind()`, same as `is_struct`.
+#
+#  Run it:      kira demo/traits-is_sum.kira
+#  Compile it:  kira --compile -o traits-is_sum demo/traits-is_sum.kira
+# ==========================================================================
+
+use std.traits.is_sum
+
+type direction = @north | @south | @east | @west
+
+def main() -> int32:
+    println("is_sum[direction]={is_sum[direction]()}")
+    println("is_sum[int32]={is_sum[int32]()}")
+    return 0

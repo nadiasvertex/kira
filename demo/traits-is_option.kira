@@ -1,0 +1,15 @@
+module main
+
+# ==========================================================================
+#  `traits.is_option` — is this type `option[_]`?
+#
+#  Run it:      kira demo/traits-is_option.kira
+#  Compile it:  kira --compile -o traits-is_option demo/traits-is_option.kira
+# ==========================================================================
+
+use std.traits.is_option
+
+def main() -> int32:
+    println("is_option[option[int32]]={is_option[option[int32]]()}")
+    println("is_option[int32]={is_option[int32]()}")
+    return 0

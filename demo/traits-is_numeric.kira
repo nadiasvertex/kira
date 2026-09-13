@@ -1,0 +1,17 @@
+module main
+
+# ==========================================================================
+#  `traits.is_numeric` — is this type any builtin integer or floating-point
+#  type? `is_integer[T]() or is_float[T]()`.
+#
+#  Run it:      kira demo/traits-is_numeric.kira
+#  Compile it:  kira --compile -o traits-is_numeric demo/traits-is_numeric.kira
+# ==========================================================================
+
+use std.traits.is_numeric
+
+def main() -> int32:
+    println("is_numeric[int32]={is_numeric[int32]()}")
+    println("is_numeric[float64]={is_numeric[float64]()}")
+    println("is_numeric[bool]={is_numeric[bool]()}")
+    return 0

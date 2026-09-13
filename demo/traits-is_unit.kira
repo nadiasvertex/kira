@@ -1,0 +1,21 @@
+module main
+
+# ==========================================================================
+#  `traits.is_unit` — is this type `unit`?
+#
+#  `unit` can't be spelled directly as a bracketed type argument here (the
+#  parser doesn't accept the `unit` keyword in that position) — a local
+#  alias sidesteps it.
+#
+#  Run it:      kira demo/traits-is_unit.kira
+#  Compile it:  kira --compile -o traits-is_unit demo/traits-is_unit.kira
+# ==========================================================================
+
+use std.traits.is_unit
+
+type nothing = unit
+
+def main() -> int32:
+    println("is_unit[unit]={is_unit[nothing]()}")
+    println("is_unit[int32]={is_unit[int32]()}")
+    return 0

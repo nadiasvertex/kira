@@ -1,0 +1,16 @@
+module main
+
+# ==========================================================================
+#  `traits.is_char` — is this type `char`?
+#
+#  Run it:      kira demo/traits-is_char.kira
+#  Compile it:  kira --compile -o traits-is_char demo/traits-is_char.kira
+# ==========================================================================
+
+use std.traits.is_char
+
+def main() -> int32:
+    println("is_char[char]={is_char[char]()}")
+    println("is_char[str]={is_char[str]()}")
+    println("is_char[int32]={is_char[int32]()}")
+    return 0

@@ -1,0 +1,19 @@
+module main
+
+# ==========================================================================
+#  `traits.is_box` — is this type `box[_]`?
+#
+#  `box[trait]` (an open-world trait object) is a real spelling of `box[_]`
+#  too, but it's unimplemented in the compiler right now — this demo sticks
+#  to the plain heap-box form, `box[T]`.
+#
+#  Run it:      kira demo/traits-is_box.kira
+#  Compile it:  kira --compile -o traits-is_box demo/traits-is_box.kira
+# ==========================================================================
+
+use std.traits.is_box
+
+def main() -> int32:
+    println("is_box[box[int32]]={is_box[box[int32]]()}")
+    println("is_box[int32]={is_box[int32]()}")
+    return 0

@@ -1,0 +1,18 @@
+module main
+
+# ==========================================================================
+#  `traits.is_unsigned_integer` — is this type one of `uint8`..`uint128`,
+#  `usize`, `byte`?
+#
+#  Run it:      kira demo/traits-is_unsigned_integer.kira
+#  Compile it:  kira --compile -o traits-is_unsigned_integer demo/traits-is_unsigned_integer.kira
+# ==========================================================================
+
+use std.traits.is_unsigned_integer
+
+def main() -> int32:
+    println("is_unsigned_integer[uint32]={is_unsigned_integer[uint32]()}")
+    println("is_unsigned_integer[byte]={is_unsigned_integer[byte]()}")
+    println("is_unsigned_integer[usize]={is_unsigned_integer[usize]()}")
+    println("is_unsigned_integer[int32]={is_unsigned_integer[int32]()}")
+    return 0

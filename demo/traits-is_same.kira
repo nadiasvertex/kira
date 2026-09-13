@@ -1,0 +1,19 @@
+module main
+
+# ==========================================================================
+#  `traits.is_same` — do `A` and `B` intern to the same type?
+#
+#  Reflexive and symmetric, no bound required on either side. Compares by
+#  rendered name only, like every predicate in this file.
+#
+#  Run it:      kira demo/traits-is_same.kira
+#  Compile it:  kira --compile -o traits-is_same demo/traits-is_same.kira
+# ==========================================================================
+
+use std.traits.is_same
+
+def main() -> int32:
+    println("is_same[int32, int32]={is_same[int32, int32]()}")
+    println("is_same[int32, str]={is_same[int32, str]()}")
+    println("is_same[str, str]={is_same[str, str]()}")
+    return 0

@@ -1,0 +1,21 @@
+module main
+
+# ==========================================================================
+#  `traits.is_fn` — is this type a function type `fn(...) -> _`?
+#
+#  `fn(int32) -> int32` can't be spelled directly as a bracketed type
+#  argument here (the parser doesn't accept `fn(...)` syntax inside a
+#  nested type-argument position) — a local alias sidesteps it.
+#
+#  Run it:      kira demo/traits-is_fn.kira
+#  Compile it:  kira --compile -o traits-is_fn demo/traits-is_fn.kira
+# ==========================================================================
+
+use std.traits.is_fn
+
+type int_to_int = fn(int32) -> int32
+
+def main() -> int32:
+    println("is_fn[fn(int32) -> int32]={is_fn[int_to_int]()}")
+    println("is_fn[int32]={is_fn[int32]()}")
+    return 0

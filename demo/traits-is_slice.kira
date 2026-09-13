@@ -1,0 +1,24 @@
+module main
+
+# ==========================================================================
+#  `traits.is_slice` — is this type `slice[_]` or `mut slice[_]`?
+#
+#  `mut slice[T]` can't be named as a bracketed type argument at all (a
+#  view, like `mut slice`, isn't a plain type name — same restriction
+#  `is_view`'s own doc comment describes), so this demo sticks to the
+#  immutable form for its true case. `array[int32, 3]` needs a local alias
+#  for the same nested-type-argument parsing reason `traits-is_array.kira`
+#  documents.
+#
+#  Run it:      kira demo/traits-is_slice.kira
+#  Compile it:  kira --compile -o traits-is_slice demo/traits-is_slice.kira
+# ==========================================================================
+
+use std.traits.is_slice
+
+type three_ints = array[int32, 3]
+
+def main() -> int32:
+    println("is_slice[slice[int32]]={is_slice[slice[int32]]()}")
+    println("is_slice[array[int32, 3]]={is_slice[three_ints]()}")
+    return 0
