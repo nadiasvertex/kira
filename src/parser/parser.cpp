@@ -5081,6 +5081,16 @@ auto parser::parse_if_expr() -> ast::ptr<ast::if_expr> {
     return body;
   };
 
+  // `parse_body` owns consuming the `:` itself (for both the inline and
+  // block forms), so peek past it without consuming to decide which of
+  // `parse_body` (block) or `expect(colon)` + `parse_if_inline_body`
+  // (inline) applies -- consuming the colon here too would make
+  // `parse_body` see NEWLINE where it expects `:` and fail outright.
+  auto at_block_form = [this]() -> bool {
+    return at(token_kind::colon) &&
+           peek_at(1).kind == token_kind::newline;
+  };
+
   expect(token_kind::kw_if);
 
   // First branch.
@@ -5088,8 +5098,7 @@ auto parser::parse_if_expr() -> ast::ptr<ast::if_expr> {
     ast::if_branch branch;
     branch.span = start;
     parse_if_expr_condition(branch);
-    expect(token_kind::colon);
-    if (at(token_kind::newline)) {
+    if (at_block_form()) {
       auto body = parse_body("if");
       if (body.inline_expr) {
         branch.body = wrap_inline_body(std::move(body.inline_expr));
@@ -5097,6 +5106,7 @@ auto parser::parse_if_expr() -> ast::ptr<ast::if_expr> {
         branch.body = std::move(body.stmts);
       }
     } else {
+      expect(token_kind::colon);
       branch.body = wrap_inline_body(parse_if_inline_body("if"));
     }
     branch.span.extend_to(previous_span());
@@ -5109,8 +5119,7 @@ auto parser::parse_if_expr() -> ast::ptr<ast::if_expr> {
     ast::if_branch branch;
     branch.span = previous_span();
     parse_if_expr_condition(branch);
-    expect(token_kind::colon);
-    if (at(token_kind::newline)) {
+    if (at_block_form()) {
       auto body = parse_body("elif");
       if (body.inline_expr) {
         branch.body = wrap_inline_body(std::move(body.inline_expr));
@@ -5118,6 +5127,7 @@ auto parser::parse_if_expr() -> ast::ptr<ast::if_expr> {
         branch.body = std::move(body.stmts);
       }
     } else {
+      expect(token_kind::colon);
       branch.body = wrap_inline_body(parse_if_inline_body("elif"));
     }
     branch.span.extend_to(previous_span());
@@ -5127,8 +5137,7 @@ auto parser::parse_if_expr() -> ast::ptr<ast::if_expr> {
   // `else` is required for if-expressions (they must produce a value).
   if (at(token_kind::kw_else)) {
     advance();
-    expect(token_kind::colon);
-    if (at(token_kind::newline)) {
+    if (at_block_form()) {
       auto body = parse_body("else");
       if (body.inline_expr) {
         iexpr->else_body = wrap_inline_body(std::move(body.inline_expr));
@@ -5136,6 +5145,7 @@ auto parser::parse_if_expr() -> ast::ptr<ast::if_expr> {
         iexpr->else_body = std::move(body.stmts);
       }
     } else {
+      expect(token_kind::colon);
       iexpr->else_body = wrap_inline_body(parse_if_inline_body("else"));
     }
   } else {

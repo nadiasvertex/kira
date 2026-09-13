@@ -1110,6 +1110,46 @@ auto test_parser_accepts_if_let_expression() -> void {
          "expected `elif let` scrutinee to be preserved");
 }
 
+auto test_parser_accepts_multiline_if_expression() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "\n"
+      "def run(v: int) -> int:\n"
+      "  let n = if v > 0:\n"
+      "    1\n"
+      "  elif v < 0:\n"
+      "    -1\n"
+      "  else:\n"
+      "    0\n"
+      "  return n\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1,
+         "expected a single top-level function declaration");
+
+  auto *run_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected run function declaration");
+  expect(run_decl->body_stmts.size() == 2,
+         "expected two statements in function body");
+
+  auto *let_stmt = expect_node<kira::ast::let_stmt>(
+      run_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+      "expected let-binding statement");
+  auto *if_expr = expect_expr<kira::ast::if_expr>(
+      let_stmt->initializer.get(), kira::ast::node_kind::if_expr,
+      "expected multi-line `if` initializer to parse as an if-expression");
+
+  expect(if_expr->branches.size() == 2,
+         "expected the `if` and `elif` branches");
+  expect(if_expr->else_body.size() == 1,
+         "expected the block-form `else` body to be populated");
+  expect(if_expr->branches[0].body.size() == 1,
+         "expected the block-form `if` body to be populated");
+  expect(if_expr->branches[1].body.size() == 1,
+         "expected the block-form `elif` body to be populated");
+}
+
 auto test_parser_accepts_multi_arity_higher_kinded_params() -> void {
   auto parsed =
       parse_source("module sample\n"
@@ -2307,7 +2347,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 46> tests = {{
+  const std::array<named_test, 47> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "multiline_sum_type",
@@ -2333,6 +2373,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_remaining_phase1_constructs},
       {.name = "if_let_expression",
        .fn = test_parser_accepts_if_let_expression},
+      {.name = "multiline_if_expression",
+       .fn = test_parser_accepts_multiline_if_expression},
       {.name = "multi_arity_higher_kinded_params",
        .fn = test_parser_accepts_multi_arity_higher_kinded_params},
       {.name = "phase1_audit_regressions",
