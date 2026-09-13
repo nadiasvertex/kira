@@ -1,14 +1,12 @@
 # 59. `std.limits` — Numeric Limits
 
-**Status:** Planned
+**Status:** Implemented
 
 Per-type compile-time numeric bounds and properties (`min[T]()`, `max[T]()`, `bits[T]()`, `epsilon[T]()`, ...), reinterpreting `std::numeric_limits` as a set of `static pure` queries over Kira's builtin numeric types.
 
 ## Rationale
 
-C++'s `numeric_limits<T>` is a class template specialized once per type; Kira has no template specialization, so the equivalent is a `static pure def` per query, each dispatching on the concrete `T` via `static if T.name() == "..."` — the same dispatch-on-name idiom [`std.traits`](58-std-traits.md) already builds on. A `def limits[n: usize]` const-generic pattern is not used here because the quantity varies by type identity, not by a value parameter — see [Const-Generic Monomorphization](../../03-advanced/33-dependent-and-refinement-types.md) for the case where a value parameter does drive per-instance compilation.
-
-Every query below is defined only for `T` such that `is_numeric[T]()` holds ([`std.traits`](58-std-traits.md)); calling one with `T = point`, say, is a compile error at the call site — `static assert is_numeric[T](), "..."` — not a diagnostic buried inside the query's own dispatch chain.
+Every query below is defined only for `T` such that `is_numeric[T]()` holds ([`std.traits`](58-std-traits.md)); calling one with `T = point`, say, is a compile error at the call site — `static assert is_numeric[T](), "..."`. 
 
 ## Queries common to integers and floats
 
@@ -41,7 +39,7 @@ nan[T]() -> T              # a quiet NaN
 digits[T]() -> usize       # mantissa precision in bits (24 for float32, 53 for float64, 113 for float128)
 ```
 
-`epsilon`/`infinity`/`neg_infinity`/`nan` are diagnosed at the call site when `T` is an integer type — unlike C++, where `numeric_limits<int>::epsilon()` silently returns `0`, Kira's version does not define a value for a query that has no meaning for the type, per [Diagnostics](../../00-overview.md#diagnostics)'s "state what was expected, and why."
+`epsilon`/`infinity`/`neg_infinity`/`nan` are diagnosed at the call site when `T` is an integer type. It does not define a value for a query that has no meaning for the type, per [Diagnostics](../../00-overview.md#diagnostics)'s "state what was expected, and why."
 
 ## Example
 
@@ -57,10 +55,6 @@ def saturating_cast[From, To](x: From) -> To:
     if x as float64 < min[To]() as float64: return min[To]()
     return x as To
 ```
-
-## Implementation status
-
-Nothing in this chapter exists yet; it depends on [`std.traits`](58-std-traits.md)'s `is_numeric`/`is_signed_integer`/`is_float` predicates landing first. `bits[T]`/`min[T]`/`max[T]` for the integer types can be written today in pure Kira using only existing `static if`/`T.name()` reflection and literal values (the widest integer types, `int128`/`uint128`, need their extreme values written as literals the lexer already accepts per [Built-in Types](../../01-core/02-built-in-types.md)); the float queries need `infinity`/`nan` bit patterns, which requires either a `bitcast[T, U]` intrinsic or literal float NaN/infinity syntax — neither exists today, so those four queries are blocked pending that primitive.
 
 ## See also
 

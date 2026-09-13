@@ -1,6 +1,6 @@
 # 58. `std.traits` — Type Predicates and Transformations
 
-**Status:** Planned
+**Status:** Implemented
 
 Compile-time type predicates (`is_integer[T]`, `is_same[A, B]`, ...) and type transformations (`remove_view[T]`, ...), reinterpreting C++'s `<type_traits>` over Kira's reflection and monomorphization model.
 
@@ -97,16 +97,6 @@ static pure def describe[T]() -> str:
 ```
 
 This mirrors `T.kind()` from [Meta Queries](60-meta-queries.md) but resolves the builtin/user-declaration split into one flat enumeration, so a consumer that only cares about "what broad shape is this" does not need to call both a builtin-name predicate and `T.kind()` and merge the results itself.
-
-## Implementation status
-
-Nothing in this chapter exists yet. `is_radix_integer`/`is_signed_integer` in `src/std/algo.kira` (`sort[T]`'s dispatch) remain the string-literal-matching form this chapter is meant to replace; migrating them is deferred until `std.traits` lands, to avoid a stdlib module depending on an unstable, half-built trait library. Building this chapter requires, in order:
-
-1. `T.kind()` and the `type_kind` sum ([Meta Queries](60-meta-queries.md)), since `is_struct`/`is_sum`/`type_category` are defined in terms of it.
-2. The `implements[T, Trait]` intrinsic, requiring `comptime::evaluator` to call into the coherence table `check.cpp` builds today only for its own internal use.
-3. Every predicate and transformation above as `static pure def`s in `src/std/traits.kira`, each following the existing `T.name()`-matching pattern used by `is_radix_integer` until/unless a more direct primitive is warranted.
-
-None of this touches the type checker, the evaluator's core loop, or either backend beyond the one new `implements` intrinsic — the rest is ordinary library code over existing reflection, kept to the smallest primitive surface that lets the rest be written in Kira.
 
 ## See also
 

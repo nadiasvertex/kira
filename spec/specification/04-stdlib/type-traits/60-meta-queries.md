@@ -1,17 +1,12 @@
 # 60. Meta Queries
 
-**Status:** Planned
+**Status:** Implemented
 
-A single `type_kind` classification primitive and a small set of member-enumeration queries, reinterpreting the core, non-splicing subset of C++26's `<meta>` (P2996) over Kira's existing reflection surface.
+A single `type_kind` classification primitive and a small set of member-enumeration queries over Kira's existing reflection surface.
 
 ## Scope
 
-C++'s `<meta>` is large: `std::meta::info` handles, splicers (`[: r :]`), `define_aggregate`, annotations, and reflection over a much larger source-language surface (namespaces, templates, access specifiers, linkage). Most of it has no Kira analogue, and the parts that do are already covered by other chapters under a different name:
-
-- Code generation from reflected data is already `static for` + quoting/splicing ([Compile-Time Execution](../../03-advanced/31-compile-time-execution.md)), not a `<meta>`-style splicer — Kira's quote/splice system *is* its splicer, and predates this chapter.
-- Enumerating a type's own fields/variants is already `T.fields()`/`T.variants()` (same chapter). Enumerating a module's members is already `M.functions()`/`M.types()` ([Modules as Compile-Time Values](../../03-advanced/36-modules-as-compile-time-values.md)).
-
-What is genuinely missing is a way to ask *what kind of thing* a reflected type or member *is* before deciding which of those existing queries even applies — today, calling `T.fields()` on a sum type is simply diagnosed as an error (`reflect.cpp`'s struct-only gate), which means a generic function that wants to handle both shapes has no way to ask first. This chapter adds exactly that, plus the small number of predicate-shaped `<meta>` queries (`is_data_member`, `type_of`, ...) that read naturally once `type_kind` exists.
+A way to ask *what kind of thing* a reflected type or member *is* before deciding which of those existing queries applies. A generic function both structs and enums, for example, has to ask first. This chapter adds utilities that make it easy to see what the intent of the user query is, without having to write the same code over and over again.
 
 ## `type_kind`
 
