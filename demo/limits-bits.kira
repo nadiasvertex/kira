@@ -1,0 +1,16 @@
+module main
+
+# ==========================================================================
+#  `limits.bits` — The number of bits in the numeric type.
+#
+#  Run it:      kira demo/limits-bits.kira
+#  Compile it:  kira --compile -o limits-bits.kira demo/limits-bits.kira
+# ==========================================================================
+
+use std.limits.bits
+
+def main() -> int32:
+    println("bits[int8]={bits[int8]()}")
+    println("bits[int32]={bits[int32]()}")
+    println("bits[float64]={bits[float64]()}")
+    return 0

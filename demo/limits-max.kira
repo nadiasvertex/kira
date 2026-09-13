@@ -1,0 +1,16 @@
+module main
+
+# ==========================================================================
+#  `limits.max` — The number of max in the numeric type.
+#
+#  Run it:      kira demo/limits-max.kira
+#  Compile it:  kira --compile -o limits-max.kira demo/limits-max.kira
+# ==========================================================================
+
+use std.limits.max
+
+def main() -> int32:
+    println("max[int8]={max[int8]()}")
+    println("max[int32]={max[int32]()}")
+    println("max[float64]={max[float64]()}")
+    return 0

@@ -1,0 +1,16 @@
+module main
+
+# ==========================================================================
+#  `limits.min` — The number of min in the numeric type.
+#
+#  Run it:      kira demo/limits-min.kira
+#  Compile it:  kira --compile -o limits-min.kira demo/limits-min.kira
+# ==========================================================================
+
+use std.limits.min
+
+def main() -> int32:
+    println("min[int8]={min[int8]()}")
+    println("min[int32]={min[int32]()}")
+    println("min[float64]={min[float64]()}")
+    return 0
