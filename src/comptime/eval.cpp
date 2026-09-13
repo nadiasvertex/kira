@@ -358,6 +358,20 @@ auto evaluator::eval_ident(const ast::ident_expr &ident) -> value {
   if (const auto variant = resolve_variant(ident)) {
     return value::make_variant(variant->first->name, variant->second->name, {});
   }
+  // `resolve_variant`'s checker-backed answer came back empty. Before
+  // falling through to `resolve_name` (locals/globals/pending statics/
+  // pending functions, erroring if none match), try the name-only variant
+  // fallback — but only when nothing else already explains this identifier,
+  // so a local variable that happens to share a spelling with some
+  // unrelated sum type's variant is never misread as a variant constructor.
+  // See `resolve_variant_by_name`'s doc comment for why this path exists.
+  if (lookup_local(ident.name) == nullptr && !globals_.contains(ident.name) &&
+      !pending_statics_.contains(ident.name) &&
+      !pending_functions_.contains(ident.name)) {
+    if (const auto fallback = resolve_variant_by_name(ident.name)) {
+      return value::make_variant(fallback->first, fallback->second, {});
+    }
+  }
   return resolve_name(ident.name, ident.span);
 }
 
@@ -1077,7 +1091,7 @@ auto evaluator::call_function(
   if (fn.body_expr != nullptr) {
     result = evaluate(*fn.body_expr);
   } else {
-    const auto exec = evaluate_stmts(fn.body_stmts);
+    const auto exec = evaluate_block_value(fn.body_stmts);
     if (exec.errored) {
       result = value::make_error();
     } else if (exec.returned) {
@@ -1943,6 +1957,26 @@ auto evaluator::resolve_variant(const ast::node &node) -> std::optional<
   return std::nullopt;
 }
 
+auto evaluator::resolve_variant_by_name(const std::string &name)
+    -> std::optional<std::pair<std::string, std::string>> {
+  for (const auto &[type_name, decl] : pending_types_) {
+    if (decl == nullptr) {
+      continue;
+    }
+    const auto *sum_def =
+        dynamic_cast<const ast::sum_type_def *>(decl->definition.get());
+    if (sum_def == nullptr) {
+      continue;
+    }
+    for (const auto &variant : sum_def->body.variants) {
+      if (variant.name == name) {
+        return std::make_pair(type_name, name);
+      }
+    }
+  }
+  return std::nullopt;
+}
+
 auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
     -> std::optional<value> {
   if (call.callee == nullptr) {
@@ -2101,6 +2135,39 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
   switch (pattern.kind) {
   case ast::node_kind::wildcard_pattern:
     return true;
+  case ast::node_kind::literal_pattern: {
+    const auto &lit = dynamic_cast<const ast::literal_pattern &>(pattern);
+    switch (lit.lit_kind) {
+    case token_kind::kw_true:
+      return v.kind == value_kind::boolean && v.boolean;
+    case token_kind::kw_false:
+      return v.kind == value_kind::boolean && !v.boolean;
+    case token_kind::int_lit: {
+      const auto parsed = parse_integer_literal(lit.value);
+      return parsed.has_value() && v.kind == value_kind::integer &&
+             v.integer == *parsed;
+    }
+    case token_kind::float_lit: {
+      const auto parsed = parse_float_literal(lit.value);
+      return parsed.has_value() && v.kind == value_kind::floating &&
+             v.floating == *parsed;
+    }
+    case token_kind::string_lit: {
+      auto decoded = decode_string_literal(lit.value);
+      return decoded.has_value() && v.kind == value_kind::string &&
+             v.string == *decoded;
+    }
+    case token_kind::char_lit: {
+      const auto decoded = decode_char_literal(lit.value);
+      return decoded.has_value() && v.kind == value_kind::integer &&
+             v.integer == static_cast<int64_t>(*decoded);
+    }
+    default:
+      report(pattern.span, "this literal pattern form is not yet supported "
+                           "in compile-time evaluation");
+      return false;
+    }
+  }
   case ast::node_kind::binding_pattern: {
     const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
     scope.insert_or_assign(binding.name, v);
@@ -2244,6 +2311,91 @@ auto evaluator::evaluate_iterable(const ast::expr &iterable) -> value {
                                  "or range value to iterate over");
   }
   return evaluated;
+}
+
+auto evaluator::eval_match(const ast::match_expr &match) -> value {
+  if (match.subject == nullptr) {
+    return value::make_error();
+  }
+  auto subject = evaluate(*match.subject);
+  if (subject.is_error()) {
+    return subject;
+  }
+  for (const auto &arm : match.arms) {
+    if (arm.pattern == nullptr || arm.has_error) {
+      continue;
+    }
+    const auto &pattern = dynamic_cast<const ast::pattern &>(*arm.pattern);
+    auto trial_scope = locals_.back();
+    if (!bind_pattern(pattern, subject, trial_scope)) {
+      continue;
+    }
+    locals_.back() = std::move(trial_scope);
+    if (arm.guard != nullptr) {
+      auto guard = evaluate(*arm.guard);
+      if (guard.is_error()) {
+        return value::make_error();
+      }
+      if (guard.kind != value_kind::boolean || !guard.boolean) {
+        continue;
+      }
+    }
+    if (arm.body_expr != nullptr) {
+      return evaluate(*arm.body_expr);
+    }
+    auto result = evaluate_block_value(arm.body_stmts);
+    if (result.errored) {
+      return value::make_error();
+    }
+    if (!result.returned) {
+      return report(arm.span, "this compile-time `match` arm must produce a "
+                              "value (end with `return` or a tail "
+                              "expression)");
+    }
+    return result.result;
+  }
+  return report(match.span, "no arm of this compile-time `match` matched its "
+                            "subject");
+}
+
+auto evaluator::eval_if(const ast::if_expr &if_expr_node) -> value {
+  for (const auto &branch : if_expr_node.branches) {
+    if (branch.condition == nullptr) {
+      continue;
+    }
+    auto condition = evaluate(*branch.condition);
+    if (condition.is_error()) {
+      return value::make_error();
+    }
+    if (condition.kind != value_kind::boolean) {
+      return report(branch.span, "a compile-time `if` condition must be a "
+                                 "`bool`");
+    }
+    if (!condition.boolean) {
+      continue;
+    }
+    auto result = evaluate_block_value(branch.body);
+    if (result.errored) {
+      return value::make_error();
+    }
+    if (!result.returned) {
+      return report(branch.span, "this compile-time `if` branch must "
+                                 "produce a value (end with `return` or a "
+                                 "tail expression)");
+    }
+    return result.result;
+  }
+  auto result = evaluate_block_value(if_expr_node.else_body);
+  if (result.errored) {
+    return value::make_error();
+  }
+  if (!result.returned) {
+    return report(if_expr_node.span, "this compile-time `if` expression's "
+                                     "`else` branch must produce a value "
+                                     "(end with `return` or a tail "
+                                     "expression)");
+  }
+  return result.result;
 }
 
 auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
@@ -2509,6 +2661,128 @@ auto evaluator::evaluate_stmts(const std::vector<ast::ptr<ast::node>> &body)
   return exec_result{};
 }
 
+auto evaluator::evaluate_tail(const ast::node &node) -> exec_result {
+  switch (node.kind) {
+  case ast::node_kind::expr_stmt: {
+    const auto &wrapper = dynamic_cast<const ast::expr_stmt &>(node);
+    if (wrapper.expr == nullptr) {
+      return exec_result{.errored = true};
+    }
+    auto evaluated = evaluate(*wrapper.expr);
+    if (evaluated.is_error()) {
+      return exec_result{.errored = true};
+    }
+    return exec_result{.returned = true, .result = std::move(evaluated)};
+  }
+  case ast::node_kind::if_stmt: {
+    const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
+    for (const auto &branch : stmt.branches) {
+      if (branch.condition == nullptr) {
+        continue;
+      }
+      auto condition = evaluate(*branch.condition);
+      if (condition.is_error()) {
+        return exec_result{.errored = true};
+      }
+      if (condition.kind != value_kind::boolean) {
+        report(branch.span, "a compile-time `if` condition must be a "
+                            "`bool`");
+        return exec_result{.errored = true};
+      }
+      if (condition.boolean) {
+        return evaluate_block_value(branch.body);
+      }
+    }
+    return evaluate_block_value(stmt.else_body);
+  }
+  case ast::node_kind::match_stmt: {
+    const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
+    if (stmt.subject == nullptr) {
+      return exec_result{.errored = true};
+    }
+    auto subject = evaluate(*stmt.subject);
+    if (subject.is_error()) {
+      return exec_result{.errored = true};
+    }
+    for (const auto &arm : stmt.arms) {
+      if (arm.pattern == nullptr || arm.has_error) {
+        continue;
+      }
+      const auto &pattern = dynamic_cast<const ast::pattern &>(*arm.pattern);
+      auto trial_scope = locals_.back();
+      if (!bind_pattern(pattern, subject, trial_scope)) {
+        continue;
+      }
+      locals_.back() = std::move(trial_scope);
+      if (arm.guard != nullptr) {
+        auto guard = evaluate(*arm.guard);
+        if (guard.is_error()) {
+          return exec_result{.errored = true};
+        }
+        if (guard.kind != value_kind::boolean || !guard.boolean) {
+          continue;
+        }
+      }
+      if (arm.body_expr != nullptr) {
+        auto result = evaluate(*arm.body_expr);
+        if (result.is_error()) {
+          return exec_result{.errored = true};
+        }
+        return exec_result{.returned = true, .result = std::move(result)};
+      }
+      return evaluate_block_value(arm.body_stmts);
+    }
+    report(node.span, "no arm of this compile-time `match` matched its "
+                      "subject");
+    return exec_result{.errored = true};
+  }
+  case ast::node_kind::static_decl: {
+    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+    if (decl.decl_kind == ast::static_decl_kind::conditional_compilation &&
+        decl.if_condition != nullptr) {
+      auto condition = evaluate(*decl.if_condition);
+      if (condition.is_error()) {
+        return exec_result{.errored = true};
+      }
+      if (condition.kind != value_kind::boolean) {
+        report(decl.if_condition->span, "a compile-time `static if` "
+                                        "condition must be a `bool`");
+        return exec_result{.errored = true};
+      }
+      return evaluate_block_value(condition.boolean ? decl.if_body
+                                                     : decl.else_body);
+    }
+    return evaluate_stmt(node);
+  }
+  default:
+    return evaluate_stmt(node);
+  }
+}
+
+auto evaluator::evaluate_block_value(const std::vector<ast::ptr<ast::node>> &body)
+    -> exec_result {
+  auto last_index = std::optional<size_t>{};
+  for (size_t i = 0; i < body.size(); ++i) {
+    if (body[i] != nullptr && !body[i]->has_error) {
+      last_index = i;
+    }
+  }
+  for (size_t i = 0; i < body.size(); ++i) {
+    const auto &item = body[i];
+    if (item == nullptr || item->has_error) {
+      continue;
+    }
+    if (last_index.has_value() && i == *last_index) {
+      return evaluate_tail(*item);
+    }
+    auto result = evaluate_stmt(*item);
+    if (result.errored || result.returned) {
+      return result;
+    }
+  }
+  return exec_result{};
+}
+
 auto evaluator::evaluate(const ast::expr &expr) -> value {
   if (expr.has_error) {
     return value::make_error();
@@ -2546,6 +2820,10 @@ auto evaluator::evaluate(const ast::expr &expr) -> value {
   case ast::node_kind::interpolated_string_expr:
     return eval_interpolated_string(
         dynamic_cast<const ast::interpolated_string_expr &>(expr));
+  case ast::node_kind::match_expr:
+    return eval_match(dynamic_cast<const ast::match_expr &>(expr));
+  case ast::node_kind::if_expr:
+    return eval_if(dynamic_cast<const ast::if_expr &>(expr));
   default:
     return report(expr.span, "this expression form is not yet supported in "
                              "compile-time evaluation");

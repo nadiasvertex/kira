@@ -85,6 +85,59 @@ auto test_eval_string_equality() -> void {
   expect(result.boolean, "expected equal string literals to compare equal");
 }
 
+auto test_eval_match_expr_literal_pattern_selects_true_arm() -> void {
+  // Regression check: `bind_pattern` had no case for `literal_pattern` at
+  // all, so a compact `true => ...` / `false => ...` arm never matched its
+  // subject and silently fell through to whatever `_` arm followed —
+  // `match true: true => 1 / _ => 2` used to evaluate to 2, not 1, with no
+  // diagnostic anywhere in the chain.
+  const auto result = eval_source("match true:\n"
+                                   "    true => 1\n"
+                                   "    _ => 2\n");
+  expect(result.kind == kira::comptime::value_kind::integer,
+         "expected an integer result");
+  expect(result.integer == 1,
+         "expected `match true: true => 1 / _ => 2` to select the `true` "
+         "arm and evaluate to 1");
+}
+
+auto test_eval_match_expr_block_arm_tail_value() -> void {
+  // A block-form arm (`pattern => :` followed by an indented body — see
+  // `parser::parse_match_arm`) that ends in a bare tail expression rather
+  // than an explicit `return` must still produce the match's value —
+  // mirroring `checker::node_provides_function_value`'s "a tail expression
+  // implicitly provides the block's value" rule.
+  const auto result = eval_source("match 1:\n"
+                                   "    1 => :\n"
+                                   "        2\n"
+                                   "    _ => :\n"
+                                   "        3\n");
+  expect(result.kind == kira::comptime::value_kind::integer,
+         "expected an integer result");
+  expect(result.integer == 2,
+         "expected the `1 => :` block arm's tail expression `2` to become "
+         "the match's value");
+}
+
+auto test_eval_if_expr_tail_value_without_return() -> void {
+  // Same tail-value rule for `if`/`else` branches used in expression
+  // position (e.g. `return if cond: a else: b`). Deliberately the
+  // single-line inline form (`if cond: expr else: expr`) rather than a
+  // multi-line indented block: `parser::parse_if_expr`'s multi-line block
+  // body for an if-*expression* (as opposed to an `if` statement) does not
+  // currently parse at all (a separate, pre-existing parser gap, not
+  // something this evaluator change should paper over) — but the inline
+  // form still desugars to a one-statement block (`wrap_inline_body`) whose
+  // single statement is a bare tail expression, so it already exercises
+  // the same `evaluate_tail` path.
+  const auto result = eval_source("if false: 1 else: 2");
+  expect(result.kind == kira::comptime::value_kind::integer,
+         "expected an integer result");
+  expect(result.integer == 2,
+         "expected the `else` branch's tail expression `2` to become the "
+         "`if` expression's value");
+}
+
 auto test_eval_global_binding_reference() -> void {
   kira::diagnostic_bag diag;
   auto eval = kira::comptime::evaluator(diag, 0);
@@ -131,6 +184,9 @@ auto main() -> int {
   test_eval_unary_negation();
   test_eval_division_by_zero_reports_error();
   test_eval_string_equality();
+  test_eval_match_expr_literal_pattern_selects_true_arm();
+  test_eval_match_expr_block_arm_tail_value();
+  test_eval_if_expr_tail_value_without_return();
   test_eval_global_binding_reference();
   test_eval_quote_boxes_matching_fragment_kind();
   return 0;

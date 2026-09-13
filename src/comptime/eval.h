@@ -36,8 +36,14 @@ namespace kira::comptime {
 /// milestone; see the compile-time evaluation design plan.
 class evaluator {
 public:
+  // Seeds `locals_` with one root scope so a top-level `static assert`/
+  // `static if` condition (or any other call into `evaluate`/`evaluate_
+  // stmt` outside `call_function`, which otherwise always brackets its own
+  // work in a `push_locals`/`pop_locals` pair) can safely reach a `match`/
+  // `if` expression, `let`, or assignment — every one of those touches
+  // `locals_.back()`, which is undefined behavior on an empty stack.
   evaluator(diagnostic_bag &diag, file_id_type file_id)
-      : diag_(diag), file_id_(file_id) {}
+      : diag_(diag), file_id_(file_id), locals_(1) {}
 
   /// Updates which file newly reported diagnostics are attributed to. A
   /// single `evaluator` accumulates `static let` globals across an entire
@@ -257,6 +263,20 @@ private:
   [[nodiscard]] auto
   eval_interpolated_string(const ast::interpolated_string_expr &interp)
       -> value;
+  /// `match subject: ...` used in expression position (e.g. `return match
+  /// ...:`), as opposed to `evaluate_stmt`'s `match_stmt` case for one used
+  /// as a bare statement. Shares that case's arm-selection logic but always
+  /// produces a `value` — a compact `=> expr` arm evaluates directly, a
+  /// block-form arm runs via `evaluate_block_value` (so a `return` or a
+  /// bare tail expression both work) and reports an error only if the
+  /// block falls through with neither, since an expression position always
+  /// needs a value.
+  [[nodiscard]] auto eval_match(const ast::match_expr &match) -> value;
+  /// `if cond: ... elif ...: ... else: ...` used in expression position
+  /// (e.g. `return if ...: ... else: ...`) — the expression-position
+  /// counterpart of `evaluate_stmt`'s `if_stmt` case, mirroring
+  /// `eval_match`'s block-body handling.
+  [[nodiscard]] auto eval_if(const ast::if_expr &if_expr_node) -> value;
 
   /// Recognizes `expr.lit(...)`/`expr.ident(...)` — the AST-builder
   /// intrinsics that construct a new `expr` quote-value programmatically
@@ -451,6 +471,34 @@ private:
   [[nodiscard]] auto resolve_variant(const ast::node &node) -> std::optional<
       std::pair<const ast::type_decl *, const ast::sum_variant *>>;
 
+  /// Last-resort fallback for `eval_ident` when `resolve_variant` comes back
+  /// empty *and* `name` isn't bound as a local/global/pending static/pending
+  /// function either: searches every `pending_types_` entry for a sum type
+  /// declaring a variant named `name` and, if exactly one type has one,
+  /// treats the identifier as that variant constructor.
+  ///
+  /// `resolve_variant`'s checker-backed path answers precisely from
+  /// `node_types_`, but that table is only populated once the checker has
+  /// actually type-checked the expression's enclosing function body — and a
+  /// type-generic `static def`'s *template* is checked exactly once, on
+  /// whatever turn the whole-session file loop reaches its declaring file.
+  /// A call folded from an *earlier-processed* file (e.g. a user's own
+  /// source, checked before the injected stdlib prelude that follows it —
+  /// see `driver::inject_stdlib_prelude`) into a not-yet-checked template
+  /// whose body constructs a bare `@variant` (`return @signed_integer`,
+  /// `std.traits.category`'s `type_category`) finds no entry there at all.
+  /// Every `type` declaration, in contrast, is registered into
+  /// `pending_types_` order-independently, in a pre-pass over every input
+  /// file before any body is checked (`checker::register_comptime_globals`),
+  /// so resolving straight from the sum type's own variant list sidesteps
+  /// the ordering dependency entirely. Ambiguous only in principle (two
+  /// unrelated sum types sharing a variant spelling): whichever match is
+  /// found first wins, which is harmless here since every consumer of the
+  /// resulting `value` (`bind_pattern`'s `constructor_pattern` case) matches
+  /// by variant tag alone, never by owning type identity.
+  [[nodiscard]] auto resolve_variant_by_name(const std::string &name)
+      -> std::optional<std::pair<std::string, std::string>>;
+
   [[nodiscard]] auto
   call_function(const ast::func_decl &fn, const std::string &name,
                 std::vector<value> args, source_span span,
@@ -458,6 +506,31 @@ private:
       -> value;
 
   [[nodiscard]] auto evaluate_stmt(const ast::node &node) -> exec_result;
+
+  /// Executes one statement/body-node known to sit in *tail position* of a
+  /// block being evaluated for its value (`evaluate_block_value`'s last
+  /// non-error item), producing that block's value even when it never
+  /// explicitly `return`s — mirroring `checker::node_provides_function_
+  /// value`'s "a tail expression/nested if/nested match implicitly provides
+  /// the enclosing block's value" rule on the evaluator side. An
+  /// `expr_stmt` becomes the value directly; a tail `if_stmt`/`match_stmt`/
+  /// `static if` recurses into whichever branch or arm was taken via
+  /// `evaluate_block_value`; anything else (in particular `return_stmt`)
+  /// fall through to the ordinary `evaluate_stmt`.
+  [[nodiscard]] auto evaluate_tail(const ast::node &node) -> exec_result;
+
+  /// Executes `body` as a value-producing block: every statement but the
+  /// last runs through `evaluate_stmt` exactly like `evaluate_stmts`, and
+  /// the last (skipping trailing `nullptr`/already-errored items) runs
+  /// through `evaluate_tail` so a bare tail expression — or a nested `if`/
+  /// `match`/`static if` whose own arms end in one — becomes the block's
+  /// value without requiring an explicit `return`. Used wherever a block is
+  /// reached in expression position: `eval_if`/`eval_match`'s block-form
+  /// arms, `evaluate_tail`'s own recursive cases, and (via `call_function`)
+  /// a `static def` body itself.
+  [[nodiscard]] auto
+  evaluate_block_value(const std::vector<ast::ptr<ast::node>> &body)
+      -> exec_result;
 
   /// Looks up `name` in the local-scope stack (innermost first).
   [[nodiscard]] auto lookup_local(const std::string &name) -> const value *;
