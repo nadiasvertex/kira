@@ -32,35 +32,18 @@ pub static pure def is_signed[T]() -> bool:
         _               => false
 
 #: The most negative representable value of `T`.
-#:
-#: Floats return directly (`-float::max`, since IEEE 754 is symmetric around
-#: zero) since they don't share the integer branches' accumulator. Integers
-#: are built up in a fixed-type `int64` local and cast to `T` only in the
-#: final `return`, rather than `return <literal> as T` per branch, so every
-#: branch's literal only has to fit `int64` rather than the (possibly
-#: narrower) `T`. `-9223372036854775807 - 1` avoids writing the literal
-#: `-9223372036854775808` directly: the lexer/checker parses a literal's
-#: magnitude before applying unary `-`, so `9223372036854775808` (one past
-#: `int64::max`) is rejected as "too large for `int64`" even though the
-#: negated value is in range.
 pub static pure def min[T]() -> T:
     let n = T.name()
-    if n == "float32":
-        return -3.40282347e38 as T
-    if n == "float64":
-        return -1.7976931348623157e308 as T
-    let v: int64 = match n:
-      "int8"            => -128
-      "int16"           => -32768
-      "int32"           => -2147483648
-      "int64" | "isize" => -9223372036854775807 - 1
-      _                 => 0
-    return v as T
+    static if n == "int8":  return -128 as T
+    static if n == "int16": return -32768 as T
+    static if n == "int32": return -2147483648 as T
+    static if n == "int64" or n == "isize": return -9223372036854775808 as T
+    static if n == "float32": return -3.40282347e38 as T
+    static if n == "float64": return -1.7976931348623157e308 as T
 
-#: The most positive representable value of `T`. See `min`'s doc comment for
-#: the float early-return and why the integer path accumulates into a
-#: fixed-type local (`uint64` here, since `uint64`/`usize`'s own max doesn't
-#: fit `int64`) rather than casting a literal straight to `T` in each branch.
+    return 0
+
+#: The most positive representable value of `T`.
 pub static pure def max[T]() -> T:
     let n = T.name()
     if n == "float32":

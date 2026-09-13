@@ -1,0 +1,5 @@
+module sample
+
+def run() -> unit:
+    let a: int32 = -2147483648 as int32
+    let b: int64 = -9223372036854775808 as int64

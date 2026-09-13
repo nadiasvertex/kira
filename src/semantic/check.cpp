@@ -6963,6 +6963,27 @@ private:
       if (types_.is_float(stripped)) {
         return stripped;
       }
+      // An unresolved generic type parameter *of the function currently
+      // being checked as its own template* (e.g. `-> T` checked before any
+      // call site has bound `T` — see `in_type_generic_template_`) is not
+      // evidence the literal should default to `int32`; it just means the
+      // real target isn't known yet. Bounds-checking against `int32` here
+      // would reject e.g. `return -9223372036854775807 - 1` inside a `def
+      // f[T]() -> T` even when every concrete instantiation of `T` that can
+      // reach this statement is wide enough; the real check runs again,
+      // with `T` bound, when `find_or_check_generic_instance` rechecks the
+      // body per instantiation.
+      //
+      // Gated on `in_type_generic_template_` (not merely "is a type
+      // param"): at an ordinary call site like `identity(7)`, `expected` is
+      // also a type param — `identity`'s own unbound `T` — but there this
+      // literal's *concrete* type (`int32`) is exactly what the call solves
+      // `T` from. Deferring there instead of defaulting would make
+      // unification see `T` against itself and leave `T` unsolved.
+      if (in_type_generic_template_ &&
+          types_.entry(stripped).kind == type_kind::type_param_kind) {
+        return stripped;
+      }
       const auto fallback = types_.builtin("int32");
       check_integer_fit(lit, fallback, negated);
       return fallback;
@@ -7140,9 +7161,25 @@ private:
     // not carry a predicate through it, and pretending otherwise would be
     // unsound (`p + 1` overflows to a negative). Widening is free; this is
     // where it is free (`spec/dependent-types-design.md` §3.1).
-    const auto numeric_expected = types_.is_numeric(strip_refs(expected))
-                                      ? base_shape(expected)
-                                      : k_unknown_type;
+    // An unresolved type parameter of the function being checked as its own
+    // template (`-> T` checked before any call site has bound `T` — see
+    // `in_type_generic_template_`) isn't `is_numeric` — nothing says yet
+    // that it will be — but it still has to reach `infer_literal` as the
+    // expected type, not collapse to `k_unknown_type`: only there does an
+    // integer literal know to defer its own bounds-check instead of
+    // defaulting to `int32`. Gated on `in_type_generic_template_`, not
+    // merely "is a type param": at an ordinary call site the expected type
+    // can also be an unbound type param (the callee's own `T`), and there a
+    // literal operand's *concrete* type is exactly what solves it — see the
+    // matching guard in `infer_literal`.
+    const auto stripped_expected = strip_refs(expected);
+    const auto numeric_expected =
+        types_.is_numeric(stripped_expected) ||
+                (in_type_generic_template_ &&
+                 types_.entry(stripped_expected).kind ==
+                     type_kind::type_param_kind)
+            ? base_shape(expected)
+            : k_unknown_type;
     const auto lhs = binary.lhs != nullptr
                          ? base_shape(infer_expr(*binary.lhs, numeric_expected))
                          : k_unknown_type;
@@ -7152,10 +7189,22 @@ private:
                          : k_unknown_type;
     const auto op_name = ast::binary_op_name(binary.op);
 
-    if (types_.is_unknown(lhs) || types_.is_unknown(rhs)) {
-      return types_.is_numeric(lhs)   ? lhs
-             : types_.is_numeric(rhs) ? rhs
-                                      : k_unknown_type;
+    const auto is_deferred_type_param = [this](type_id id) -> bool {
+      return in_type_generic_template_ &&
+             types_.entry(id).kind == type_kind::type_param_kind;
+    };
+    if (types_.is_unknown(lhs) || types_.is_unknown(rhs) ||
+        is_deferred_type_param(lhs) || is_deferred_type_param(rhs)) {
+      // Same deferral as `infer_literal`'s type-param guard: an operand
+      // still an unresolved type parameter (the generic template pass, `T`
+      // unbound) isn't proven non-numeric — checking whether it implements
+      // an operator-overload trait has to wait for a concrete instantiation
+      // the same way the literal bounds-check does.
+      return types_.is_numeric(lhs)          ? lhs
+             : types_.is_numeric(rhs)        ? rhs
+             : is_deferred_type_param(lhs)   ? lhs
+             : is_deferred_type_param(rhs)   ? rhs
+                                              : k_unknown_type;
     }
 
     const auto trait_name = operator_trait_for(binary.op);
@@ -7500,6 +7549,29 @@ private:
             infer_literal(*lit, expected, /*negated=*/true);
         record_expr_type(*lit, result_type);
         return result_type;
+      }
+      // `-<int literal> as <Type>` parses as `-(<int literal> as <Type>)`
+      // (`as` binds tighter than unary `-`), so the literal's immediate
+      // parent is the cast, not this unary node. Without this, the cast's
+      // own operand check (which never sees `negated`) rejects e.g.
+      // `-2147483648 as int32` as a positive-value overflow even though
+      // `-2147483648` is exactly `int32::min`.
+      if (const auto *cast =
+              dynamic_cast<const ast::cast_expr *>(unary.operand.get());
+          cast != nullptr && cast->operand != nullptr) {
+        if (const auto *lit =
+                dynamic_cast<const ast::literal_expr *>(cast->operand.get());
+            lit != nullptr && lit->lit_kind == token_kind::int_lit) {
+          const auto target = cast->target_type != nullptr
+                                   ? resolve_type(*cast->target_type,
+                                                  current_resolve_ctx())
+                                   : expected;
+          const auto result_type = infer_literal(*lit, target,
+                                                  /*negated=*/true);
+          record_expr_type(*lit, result_type);
+          record_expr_type(*cast, result_type);
+          return result_type;
+        }
       }
     }
     const auto operand =
@@ -12993,12 +13065,23 @@ private:
       return infer_field(dynamic_cast<const ast::field_expr &>(expr));
     case ast::node_kind::cast_expr: {
       const auto &cast = dynamic_cast<const ast::cast_expr &>(expr);
+      const auto target = cast.target_type != nullptr
+                               ? resolve_type(*cast.target_type,
+                                              current_resolve_ctx())
+                               : k_unknown_type;
       if (cast.operand != nullptr) {
-        infer_expr(*cast.operand, k_unknown_type);
+        // A literal operand adopts the cast's own target as its expected
+        // type (e.g. `300000000000 as int64` should size the literal
+        // against `int64`, not silently default it to `int32` first and
+        // reject it before the cast ever runs). Non-literal operands keep
+        // `k_unknown_type`: the cast is an explicit conversion, not a
+        // narrowing obligation on an already-typed expression.
+        const auto *operand_lit =
+            dynamic_cast<const ast::literal_expr *>(cast.operand.get());
+        infer_expr(*cast.operand, operand_lit != nullptr ? target
+                                                          : k_unknown_type);
       }
-      return cast.target_type != nullptr
-                 ? resolve_type(*cast.target_type, current_resolve_ctx())
-                 : k_unknown_type;
+      return target;
     }
     case ast::node_kind::try_expr:
       return infer_try(dynamic_cast<const ast::try_expr &>(expr));

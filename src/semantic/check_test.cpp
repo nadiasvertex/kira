@@ -1277,6 +1277,41 @@ auto test_reports_int64_positive_literal_still_too_large() -> void {
                     "boundary value");
 }
 
+auto test_accepts_negative_min_literal_through_cast() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_negative_min_literal_through_cast.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `-2147483648 as int32` and "
+                     "`-9223372036854775808 as int64` to type-check: `as` "
+                     "binds tighter than unary `-`, so the cast's operand "
+                     "must see its target width, not default to `int32`:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_accepts_wide_literal_in_generic_return() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_wide_literal_in_generic_return.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected a wide literal return (`int64::min`) inside a "
+                     "`def f[T]() -> T` to type-check: the template pass "
+                     "checks the body with `T` still unbound and must not "
+                     "bounds-check the literal against a hardcoded `int32` "
+                     "fallback:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_reports_generic_return_literal_overflow() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_generic_return_literal_overflow.kira");
+  expect(analyzed.error_count > 0,
+         "expected `-9223372036854775808 as T` instantiated at `T=int32` to "
+         "still fail");
+  expect_diagnostic(
+      analyzed, "integer literal `-9223372036854775808` does not fit in",
+      "expected the per-instantiation recheck to still catch a genuine "
+      "overflow once `T` is bound to a concrete, too-narrow type");
+}
+
 auto test_reports_mixed_numeric_types() -> void {
   const auto analyzed =
       analyze_test_data_file("report_mixed_numeric_types.kira");
@@ -3179,6 +3214,9 @@ auto main() -> int {
     test_accepts_negative_min_integer_literals();
     test_reports_negated_integer_literal_still_too_large();
     test_reports_int64_positive_literal_still_too_large();
+    test_accepts_negative_min_literal_through_cast();
+    test_accepts_wide_literal_in_generic_return();
+    test_reports_generic_return_literal_overflow();
     test_reports_mixed_numeric_types();
     test_reports_non_bool_condition();
     test_reports_assignment_to_immutable();

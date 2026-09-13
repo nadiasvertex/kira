@@ -1,0 +1,7 @@
+module sample
+
+def bad[T]() -> T:
+    return -9223372036854775808 as T
+
+def run() -> unit:
+    let a: int32 = bad[int32]()
