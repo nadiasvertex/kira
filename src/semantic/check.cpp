@@ -6834,8 +6834,18 @@ private:
     lit->span = span;
     switch (value.kind) {
     case comptime::value_kind::integer:
+      // `int_lit` token text is always an unsigned digit string — negative
+      // values are ordinarily spelled as a `unary_expr(neg, ...)` wrapping
+      // one (see `std.limits.min`'s own doc comment on this). A synthesized
+      // literal has no such wrapper, so a negative `value.integer` is
+      // written out as its 64-bit two's-complement bit pattern instead of a
+      // signed decimal string — `encode_literal`/`compile_literal_value`
+      // parse it back as raw bits and truncate to the target width exactly
+      // as they would for any other literal, so the resulting value is
+      // identical either way.
       lit->lit_kind = token_kind::int_lit;
-      lit->value = std::to_string(value.integer);
+      lit->value =
+          std::to_string(static_cast<std::uint64_t>(value.integer));
       break;
     case comptime::value_kind::floating:
       lit->lit_kind = token_kind::float_lit;

@@ -45,7 +45,15 @@ auto parse_integer_literal(std::string_view text) -> std::optional<int64_t> {
       digits.remove_prefix(2);
     }
   }
-  auto result_value = int64_t{0};
+  // Parsed as the unsigned bit pattern rather than a signed `int64_t`
+  // directly: a literal like `18446744073709551615` (`uint64::max`) doesn't
+  // fit `int64_t`'s range even though its 64-bit representation is exactly
+  // the all-ones pattern `eval_cast`'s masking/sign-extension expects to
+  // find in `value::integer`. Reinterpreting those bits as `int64_t` (rather
+  // than rejecting the literal as out of range) keeps this consistent with
+  // how every other 64-bit-wide value already flows through `value::integer`
+  // here.
+  auto result_value = std::uint64_t{0};
   // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
   const char *digits_end = digits.data() + digits.size();
   const auto result =
@@ -54,7 +62,7 @@ auto parse_integer_literal(std::string_view text) -> std::optional<int64_t> {
     return std::nullopt;
   }
   // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-  return result_value;
+  return static_cast<int64_t>(result_value);
 }
 
 /// Parses a float literal spelling (handles `_`); `std::from_chars` for
