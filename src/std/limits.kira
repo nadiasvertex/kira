@@ -11,14 +11,16 @@ use std.traits.type_category
 #: program that reaches this file, not just ones that call it with a
 #: 128-bit type.
 pub static pure def bits[T]() -> usize:
-    let n = T.name()
-    if n == "int8" or n == "uint8" or n == "byte":
-        return 8
-    if n == "int16" or n == "uint16":
-        return 16
-    if n == "int32" or n == "uint32" or n == "float32":
-        return 32
-    return 64
+    return match T.name():
+      "int8"    => 8
+      "uint8"   => 8
+      "byte"    => 8
+      "int16"   => 16
+      "uint16"  => 16
+      "int32"   => 32
+      "uint32"  => 32
+      "float32" => 32
+      _         => 64
 
 #: True for a signed integer type or any (floating-point) type — floats have
 #: no unsigned counterpart, so this is unconditionally `true` for them, per

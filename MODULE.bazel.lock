@@ -261,7 +261,7 @@
     "//third_party/llvm:repo.bzl%llvm_extension": {
       "general": {
         "bzlTransitiveDigest": "VzUL2AZxvJm3LRpEMLCnyaGnORQXUz6+Z16VHqiDdmw=",
-        "usagesDigest": "KFauQ1Q/hlTfs7tqJBj4eG5ac2TlAGZvCW9u1lARkf0=",
+        "usagesDigest": "2AHFjkPRuxlp5uealm3Ms8W893LcAn5sushe/EanG9c=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "llvm": {
