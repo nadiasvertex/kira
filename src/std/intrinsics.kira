@@ -4,6 +4,23 @@ module std.intrinsics
 # Cast intrinsics
 ####################
 
+#: Single-field wrapper for uint64 to pass across intrinsic boundaries.
+type box_u64 = { v: uint64 }
+#: Single-field wrapper for uint32 to pass across intrinsic boundaries.
+type box_u32 = { v: uint32 }
+#: Single-field wrapper for int32 to pass across intrinsic boundaries.
+type box_i32 = { v: int32 }
+#: Single-field wrapper for uint8 to pass across intrinsic boundaries.
+type box_u8 = { v: uint8 }
+#: Single-field wrapper for usize to pass across intrinsic boundaries.
+type box_usize = { v: usize }
+#: Single-field wrapper for bool to pass across intrinsic boundaries.
+type box_bool = { v: bool }
+#: Single-field wrapper for float64 to pass across intrinsic boundaries.
+type box_f64 = { v: float64 }
+#: Single-field wrapper for float32 to pass across intrinsic boundaries.
+type box_f32 = { v: float32 }
+
 #: Reinterprets a float64's bit pattern as a uint64 -- `as uint64` on a float
 #: is a value conversion (`compile_cast`), not the reinterpret `hash` needs.
 intrinsic def rt_bitcast_f64_to_u64(v: box_f64) -> box_u64
@@ -16,20 +33,6 @@ intrinsic def rt_bitcast_f32_to_u32(v: box_f32) -> box_u32
 # String intrinsics
 ####################
 
-#: Single-field wrapper for uint64 to pass across intrinsic boundaries.
-type box_u64 = { v: uint64 }
-#: Single-field wrapper for uint32 to pass across intrinsic boundaries.
-type box_u32 = { v: uint32 }
-#: Single-field wrapper for uint8 to pass across intrinsic boundaries.
-type box_u8 = { v: uint8 }
-#: Single-field wrapper for usize to pass across intrinsic boundaries.
-type box_usize = { v: usize }
-#: Single-field wrapper for bool to pass across intrinsic boundaries.
-type box_bool = { v: bool }
-#: Single-field wrapper for float64 to pass across intrinsic boundaries.
-type box_f64 = { v: float64 }
-#: Single-field wrapper for int32 to pass across intrinsic boundaries.
-type box_i32 = { v: int32 }
 
 #: Result of a substring search. pos is meaningful only when found is true.
 type find_result = { found: bool, pos: usize }

@@ -1,5 +1,7 @@
 module std.traits
 
+use std.intrinsics.box_f64
+use std.intrinsics.box_f32
 use std.intrinsics.rt_bitcast_f64_to_u64
 use std.intrinsics.rt_bitcast_f32_to_u32
 
@@ -87,15 +89,6 @@ pub def hash_tag(n: uint64) -> uint64:
 # compiled in full and the bytecode VM has no representation for them, so an
 # impl here would make every program fail to compile. `spec/todo.md` item 6
 # records the same trap for `zero`/`one`; these arrive with it.
-#
-#: Single-field wrapper for float64 to pass across intrinsic boundaries.
-type box_f64 = { v: float64 }
-#: Single-field wrapper for float32 to pass across intrinsic boundaries.
-type box_f32 = { v: float32 }
-#: Single-field wrapper for uint64 to pass across intrinsic boundaries.
-type box_u64 = { v: uint64 }
-#: Single-field wrapper for uint32 to pass across intrinsic boundaries.
-type box_u32 = { v: uint32 }
 
 #: `float64`'s bit pattern with `hash`'s two required canonicalizations
 #: applied: every zero (`+0.0`/`-0.0`, which compare equal) collapses to one
