@@ -248,8 +248,9 @@ auto evaluator::report(source_span span, std::string message) -> value {
   return value::make_error();
 }
 
-auto evaluator::try_eval_ordinary_call(const ast::func_decl &fn,
-                                       const ast::call_expr &call)
+auto evaluator::try_eval_ordinary_call(
+    const ast::func_decl &fn, const ast::call_expr &call,
+    std::vector<std::pair<std::string, value>> type_args)
     -> std::optional<value> {
   const auto saved_suppressed = diagnostics_suppressed_;
   diagnostics_suppressed_ = true;
@@ -268,7 +269,8 @@ auto evaluator::try_eval_ordinary_call(const ast::func_decl &fn,
     }
     args.push_back(std::move(evaluated));
   }
-  auto result = ok ? call_function(fn, fn.name, std::move(args), call.span)
+  auto result = ok ? call_function(fn, fn.name, std::move(args), call.span,
+                                   std::move(type_args))
                    : value::make_error();
   diagnostics_suppressed_ = saved_suppressed;
   if (!ok || result.is_error()) {

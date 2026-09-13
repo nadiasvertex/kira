@@ -24,9 +24,11 @@ pub type type_kind =
 #: and the builtin-name predicates below into one enum for a `match`-based
 #: dispatch, rather than testing every predicate in turn.
 #:
-#: Only usable where `T.kind()` itself is usable — see `is_struct`'s doc
-#: comment for the current scope of that (a `static`/comptime context, not
-#: yet an ordinary generic function body).
+#: Every predicate in this file is `static`: usable from a `static if`/
+#: `static assert`/another `static def`'s own body, and — for a call with no
+#: non-constant arguments — from ordinary code too, where the whole call
+#: folds to a literal at the call site rather than lowering
+#: (`try_fold_comptime_only_call`, `check.cpp`).
 pub type type_category =
     | @boolean
     | @character
@@ -42,56 +44,56 @@ pub type type_category =
     | @other
 
 #: True for `bool`.
-pub def is_bool[T]() -> bool:
+pub static pure def is_bool[T]() -> bool:
     return T.name() == "bool"
 
 #: True for `char`.
-pub def is_char[T]() -> bool:
+pub static pure def is_char[T]() -> bool:
     return T.name() == "char"
 
 #: True for `int8`..`int128`, `isize`.
-pub def is_signed_integer[T]() -> bool:
+pub static pure def is_signed_integer[T]() -> bool:
     let n = T.name()
     return (n == "int8" or n == "int16" or n == "int32" or n == "int64" or
         n == "int128" or n == "isize")
 
 #: True for `uint8`..`uint128`, `usize`, `byte`.
-pub def is_unsigned_integer[T]() -> bool:
+pub static pure def is_unsigned_integer[T]() -> bool:
     let n = T.name()
     return (n == "uint8" or n == "uint16" or n == "uint32" or n == "uint64" or
         n == "uint128" or n == "usize" or n == "byte")
 
 #: True for any builtin integer type, signed or unsigned.
-pub def is_integer[T]() -> bool:
+pub static pure def is_integer[T]() -> bool:
     return is_signed_integer[T]() or is_unsigned_integer[T]()
 
 #: True for `float32`, `float64`, `float128`.
-pub def is_float[T]() -> bool:
+pub static pure def is_float[T]() -> bool:
     let n = T.name()
     return n == "float32" or n == "float64" or n == "float128"
 
 #: True for any builtin integer or floating-point type.
-pub def is_numeric[T]() -> bool:
+pub static pure def is_numeric[T]() -> bool:
     return is_integer[T]() or is_float[T]()
 
 #: True for any builtin numeric type, `bool`, or `char`.
-pub def is_scalar[T]() -> bool:
+pub static pure def is_scalar[T]() -> bool:
     return is_numeric[T]() or is_bool[T]() or is_char[T]()
 
 #: True for `str`.
-pub def is_str[T]() -> bool:
+pub static pure def is_str[T]() -> bool:
     return T.name() == "str"
 
 #: True for `unit`.
-pub def is_unit[T]() -> bool:
+pub static pure def is_unit[T]() -> bool:
     return T.name() == "unit"
 
 #: True for `array[_, _]`.
-pub def is_array[T]() -> bool:
+pub static pure def is_array[T]() -> bool:
     return T.name() == "array"
 
 #: True for `slice[_]` or `mut slice[_]`.
-pub def is_slice[T]() -> bool:
+pub static pure def is_slice[T]() -> bool:
     let n = T.name()
     return n == "slice" or n == "slice_mut"
 
@@ -101,39 +103,31 @@ pub def is_slice[T]() -> bool:
 #: own argument (e.g. a generic parameter inferred from a `&U` argument) —
 #: a view named directly in brackets (`is_view[&int32]()`) can't be written
 #: at all, since a view isn't a plain type name.
-pub def is_view[T]() -> bool:
+pub static pure def is_view[T]() -> bool:
     return T.name() == "ref"
 
 #: True for `box[_]` or `box[trait]`.
-pub def is_box[T]() -> bool:
+pub static pure def is_box[T]() -> bool:
     return T.name() == "box"
 
 #: True for `option[_]`.
-pub def is_option[T]() -> bool:
+pub static pure def is_option[T]() -> bool:
     return T.name() == "option"
 
 #: True for `result[_, _]`.
-pub def is_result[T]() -> bool:
+pub static pure def is_result[T]() -> bool:
     return T.name() == "result"
 
 #: True for a function type `fn(...) -> _`.
-pub def is_fn[T]() -> bool:
+pub static pure def is_fn[T]() -> bool:
     return T.name() == "fn"
 
 #: True for a user `type ... = { ... }` declaration.
 #:
 #: Unlike every predicate above, this reads `T`'s declaration shape via
-#: `T.kind()` rather than matching a builtin name, so it inherits `T.kind()`'s
-#: current scope: it works from `static if`/`static assert`/another `static
-#: def`'s body, but a call from an ordinary (non-`static`) generic function
-#: body is not yet constant-folded away the way a `T.name()`-based predicate
-#: above is — a call site there fails at HIR lowering (`is_struct` has no
-#: runtime body to link against) rather than silently answering wrong. This
-#: is a real, known compiler gap, not a design choice: `T.name()`-based
-#: predicates fold per-call inside an ordinary function's own body
-#: (`checker`'s `type_param_reflections_`); a `static def`'s *entire call*
-#: folding away when used from ordinary code has no equivalent mechanism
-#: yet.
+#: `T.kind()` rather than matching a builtin name — otherwise the same
+#: `static` scope as the rest of this file (see `type_category`'s doc
+#: comment above).
 pub static pure def is_struct[T]() -> bool:
     match T.kind():
         @struct_kind => return true
@@ -152,7 +146,7 @@ pub static pure def is_sum[T]() -> bool:
 #: are not distinguished, mirroring `T.name()`'s own existing collapse of
 #: generic arguments (`spec/todo.md` item 5's "list[int32]" and "list[str]"
 #: both name themselves "list").
-pub def is_same[A, B]() -> bool:
+pub static pure def is_same[A, B]() -> bool:
     return A.name() == B.name()
 
 #: `From` converts to `To` — either they're the same type, or `From`
@@ -166,30 +160,19 @@ pub def is_same[A, B]() -> bool:
 #: `From` with no `into` impl at all correctly answers `false` unless
 #: `From == To`).
 #:
-#: `static`, like `is_struct`/`is_sum`/`type_category`: `implements[..]()`
-#: is recognized purely by call shape inside the compile-time evaluator (see
-#: `infer_implements_call`, `check.cpp`) and, like every other coherence-
-#: table query, has no HIR-lowering support for being called from ordinary
-#: (non-`static`) runtime code — only from `static assert`/`static if`/
-#: another `static def`'s own body, where the whole expression is folded by
-#: the evaluator directly rather than lowered.
-#:
-#: Written with `From.name() == To.name()` inline rather than calling
-#: `is_same` — the compile-time evaluator only calls *other* `static def`s
-#: from within a `static def`'s own body ("only direct calls to a named
-#: `static def` function are supported in compile-time evaluation"); `is_same`
-#: is deliberately an ordinary `def` (so it stays usable from ordinary
-#: generic bodies too), which makes it uncallable from here.
+#: `static`, like every predicate in this file: `implements[..]()` is
+#: recognized purely by call shape inside the compile-time evaluator (see
+#: `infer_implements_call`, `check.cpp`); a `static def`'s body is executed
+#: directly by that evaluator rather than lowered, both when reached from
+#: another `static def`/`static assert`/`static if` and, for a comptime-only
+#: call with no non-constant arguments, when reached from ordinary code (the
+#: call is folded to a literal at the call site — `try_fold_comptime_only_call`,
+#: `check.cpp`).
 pub static pure def is_convertible[From, To]() -> bool:
-    return From.name() == To.name() or implements[From, into]()
+    return is_same[From, To]() or implements[From, into]()
 
 #: `T`'s broad shape, as one flat enum value. See `is_struct`'s doc comment
 #: for this predicate's current scope (a `static`/comptime context).
-#:
-#: Every check below is written directly against `T.name()`/`T.kind()`
-#: rather than calling `is_bool`/`is_signed_integer`/etc. — see
-#: `is_convertible`'s doc comment for why a `static def` can't call those
-#: (ordinary, non-`static`) predicates.
 pub static pure def type_category[T]() -> type_category:
     let n = T.name()
     if n == "bool":

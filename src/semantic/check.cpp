@@ -5789,8 +5789,8 @@ private:
     // recording it as an ordinary callee.
     if (!in_comptime_only_function_ &&
         comptime_only_functions_.contains(instance)) {
-      if (const auto *lit =
-              try_fold_comptime_only_call(call, *instance, result)) {
+      if (const auto *lit = try_fold_comptime_only_call(
+              call, decl, *instance, result, solution->type_slots)) {
         folded_comptime_calls_[&call] = lit;
         return record_expr_type(call, result);
       }
@@ -6801,11 +6801,31 @@ private:
   /// aren't themselves compile-time constant, or the result isn't a scalar
   /// `materialize_const_literal` can represent — a struct/list/variant
   /// result has no route to a literal today.
-  auto try_fold_comptime_only_call(const ast::call_expr &call,
-                                   const ast::func_decl &instance,
-                                   type_id result_type)
+  auto try_fold_comptime_only_call(
+      const ast::call_expr &call, const ast::func_decl &decl,
+      const ast::func_decl &instance, type_id result_type,
+      const std::unordered_map<std::string, type_id> &type_slots)
       -> const ast::literal_expr * {
-    const auto result = comptime_eval_.try_eval_ordinary_call(instance, call);
+    // Rebind `decl`'s own type parameters into the evaluator's locals the
+    // same way `check_function` did while `instance` was being checked
+    // (`type_param_locals`, above) — that binding is long gone by now, and
+    // without it every `T.name()`/`T.kind()` in `instance`'s body has
+    // nothing to resolve against.
+    auto type_args = std::vector<std::pair<std::string, comptime::value>>{};
+    for (const auto &param : decl.type_params) {
+      if (param.is_value_param || param.name.empty()) {
+        continue;
+      }
+      const auto it = type_slots.find(param.name);
+      if (it == type_slots.end()) {
+        continue;
+      }
+      const auto &entry = types_.entry(strip_refs(it->second));
+      type_args.emplace_back(
+          param.name, comptime::value::make_type_value(entry.name, entry.decl));
+    }
+    const auto result = comptime_eval_.try_eval_ordinary_call(
+        instance, call, std::move(type_args));
     if (!result.has_value()) {
       return nullptr;
     }

@@ -225,8 +225,19 @@ public:
   /// `call_function` would have emitted along the way and returns
   /// `std::nullopt` instead, leaving the call site free to fall back to an
   /// ordinary (unfolded) function call with no visible side effect.
-  [[nodiscard]] auto try_eval_ordinary_call(const ast::func_decl &fn,
-                                            const ast::call_expr &call)
+  /// `type_args` binds `fn`'s own type parameters (`T` in `is_bool[T]()`) to
+  /// the concrete types this call's monomorphization solved them to — the
+  /// same `{name, type_value}` shape `checker::check_function` pushes for a
+  /// comptime-only instance while it is being *checked* (see that function's
+  /// `type_param_locals`). That binding lives only for the duration of the
+  /// check and is gone by the time an unrelated, later ordinary call site
+  /// asks to fold the same instance, so this call has to re-supply it:
+  /// without `type_args`, `T.name()`/`T.kind()` inside `fn`'s body have
+  /// nothing to resolve against and every such call reports "`T` does not
+  /// name a known type here" rather than folding.
+  [[nodiscard]] auto try_eval_ordinary_call(
+      const ast::func_decl &fn, const ast::call_expr &call,
+      std::vector<std::pair<std::string, value>> type_args = {})
       -> std::optional<value>;
 
 private:
