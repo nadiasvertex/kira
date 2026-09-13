@@ -142,6 +142,34 @@ public:
   /// see `checker::register_comptime_globals`, the only caller.
   void register_pending_type(std::string name, const ast::type_decl &decl);
 
+  /// Pushes the per-field concrete-type-name context for one
+  /// `evaluate_derive_call` (`check.cpp`), so a `T.fields()` reflection
+  /// evaluated inside that call's `derive_<trait>[...]()` body can report
+  /// each field's *instantiated* type (`spec/todo.md` item 5) instead of the
+  /// declaration's raw, un-substituted syntax. Keyed by the field's own
+  /// `ast::struct_field*` (shared across every instantiation of a generic
+  /// struct, since generic structs are never AST-cloned per instantiation)
+  /// rather than stored globally, so it must be scoped to exactly the one
+  /// `evaluate()` call it was computed for — see `pop_field_type_context`.
+  /// A stack (not a single slot) because derivation can recurse: reflecting
+  /// on a field may itself need to `ensure_derived_instance_impls` a nested
+  /// type's own derived method while the outer context is still active.
+  void push_field_type_context(
+      std::unordered_map<const ast::struct_field *, std::string> names);
+
+  /// Pops the context pushed by the matching `push_field_type_context` call.
+  void pop_field_type_context();
+
+  /// The concrete, instantiation-resolved type name for `field`, if the
+  /// innermost active context (pushed by `push_field_type_context`) has one
+  /// — `nullptr` when no context is active (e.g. `T.fields()` reflected
+  /// outside a derive call) or `field` has no entry (its type failed to
+  /// resolve). `try_eval_type_reflection_call` (`reflect.cpp`) falls back to
+  /// syntactic rendering when this returns `nullptr`.
+  [[nodiscard]] auto
+  current_field_type_name(const ast::struct_field &field) const
+      -> const std::string *;
+
   /// One `def`/`type` member a module exposes, for module reflection.
   struct module_member_info {
     std::string name;
@@ -651,6 +679,10 @@ private:
   /// While set, `report` returns the error sentinel without emitting into
   /// `diag_` — see `try_eval_ordinary_call`, the only setter.
   bool diagnostics_suppressed_ = false;
+
+  /// See `push_field_type_context`/`current_field_type_name`.
+  std::vector<std::unordered_map<const ast::struct_field *, std::string>>
+      field_type_contexts_;
 };
 
 } // namespace kira::comptime

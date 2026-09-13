@@ -2585,6 +2585,75 @@ auto test_build_derives_for_generic_types() -> void {
 #endif
 }
 
+/// spec/todo.md item 5: `f.type_name` inside a `deriving`-triggered
+/// `derive_<trait>[T]()` call must report a field's *concrete, instantiated*
+/// type, not the declaration's raw syntax — `checker::evaluate_derive_call`
+/// now precomputes each field's substituted type (`struct_field_type` +
+/// `type_table::display`) and hands it to the evaluator for the duration of
+/// that one call (`comptime::evaluator::push_field_type_context`).
+///
+/// None of the five real derivations (`src/std/deriving.kira`) read
+/// `type_name` today, so this test supplies its own minimal `derive_show`
+/// (in place of the real one — `deriving.kira` is dropped from the injected
+/// prelude below to avoid a duplicate top-level `static def derive_show`
+/// registration, since `comptime::evaluator`'s `pending_functions_` table is
+/// keyed by bare name, session-wide, independent of module) whose generated
+/// `show` body returns the field's `type_name` directly. For a generic
+/// `type wrap[T] = { value: T } deriving show` instantiated as
+/// `wrap[int32]` (`wrap`, not `box`: the prelude's own `box` would silently
+/// shadow a user type of that name — CLAUDE.md records this exact trap),
+/// the field `value`'s declared type is the literal `T` — before this fix
+/// `f.type_name` inside the derive call would report `"T"` regardless of
+/// instantiation; this test's `wrap[int32]{...}.show()` must instead report
+/// the resolved `"int32"`.
+auto test_deriving_reflects_field_concrete_type() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_field_type_name.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+            "module sample\n"
+            "static def derive_show[T]() -> def_expr:\n"
+            "    var body: expr = expr.lit(\"\")\n"
+            "    static for f in T.fields():\n"
+            "        body = expr.interp_concat(body, expr.lit(f.type_name))\n"
+            "    return `(impl show for ~(expr.ident(T.name())):\n"
+            "        def show(self) -> str:\n"
+            "            return ~body)`\n"
+            "type wrap[T] = { value: T } deriving show\n"
+            "def main() -> int32:\n"
+            "    let w: wrap[int32] = { value: 42 }\n"
+            "    if w.show() == \"int32\":\n"
+            "        return 255\n"
+            "    return 0\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+  std::erase_if(cfg.sources, [](const std::string &source) -> bool {
+    return std::filesystem::path(source).filename() == "deriving.kira";
+  });
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the test's own `derive_show[T]()` to compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value(), "expected a run outcome to be recorded");
+  expect(report->run->succeeded,
+         "expected `main` to run without panicking: " + report->run->message);
+  expect(report->run->exit_code == 255,
+         std::format("expected `wrap[int32]`'s field `value` to report "
+                     "type_name \"int32\" (not \"T\"), got exit code {}",
+                     report->run->exit_code));
+}
+
 /// spec/todo.md item 5, final struct-trait holdout: `deriving hash` used to
 /// type-check and then fail lowering with "no concrete checked type is
 /// available for this node", on the stated grounds that no builtin scalar
@@ -2962,6 +3031,7 @@ auto main() -> int {
     test_run_derives_hash_for_floats();
     test_run_derives_for_generic_types();
     test_build_derives_for_generic_types();
+    test_deriving_reflects_field_concrete_type();
     test_deriving_ord_without_eq_points_at_the_deriving_clause();
     test_run_derives_sum_type_via_deriving_clause();
   } catch (const std::exception &ex) {

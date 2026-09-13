@@ -43,18 +43,34 @@ namespace {
 /// Named `type_name`, not `type`: `type` is a reserved keyword in Kira, so a
 /// quoted `field.type` access could never parse. `type_of` carries the
 /// field's declared `type_expr` fragment directly (splice-ready with `~`),
-/// resolving `spec/todo.md` item 5's precision loss in `type_name` (generic
-/// arguments collapse to `"[..]"`, non-`named_type` shapes to `"<type>"`);
+/// which sidesteps `type_name`'s string-rendering precision loss for code
+/// that only needs to re-spell the type in newly generated syntax; it does
+/// *not* help a derivation that needs to make a concrete decision right now
+/// (`spec/todo.md` item 5) — inside a generic declaration, splicing `T`
+/// still splices the literal parameter name, not the instantiation's type.
+///
+/// `concrete_type_name`, when non-null, is `checker::evaluate_derive_call`'s
+/// pre-resolved, fully-substituted, canonically-formatted type for this
+/// exact field in the instantiation currently being derived for
+/// (`evaluator::current_field_type_name`) — this is what actually closes
+/// item 5's gap, since it is the one path that runs the checker's real
+/// generic substitution (`struct_field_type`) before rendering
+/// (`type_table::display`). Falls back to the purely syntactic
+/// `render_type_expr` when null (reflection outside a derive call, or a
+/// field whose type failed to resolve).
+///
 /// `type_name` stays for existing consumers (`src/std/deriving.kira`) that
-/// only ever read it for display, never for type-dependent dispatch.
-/// `is_data_member` is always `true` here — see `make_module_member_
-/// descriptor`'s doc comment for the `false` case.
-[[nodiscard]] auto make_field_descriptor(const ast::struct_field &field)
+/// only ever read it for display. `is_data_member` is always `true` here —
+/// see `make_module_member_descriptor`'s doc comment for the `false` case.
+[[nodiscard]] auto make_field_descriptor(const ast::struct_field &field,
+                                         const std::string *concrete_type_name)
     -> value {
   auto fields = std::unordered_map<std::string, value>{};
   fields.emplace("name", value::make_string(field.name));
   fields.emplace("type_name",
-                 value::make_string(render_type_expr(field.type.get())));
+                 value::make_string(concrete_type_name != nullptr
+                                        ? *concrete_type_name
+                                        : render_type_expr(field.type.get())));
   fields.emplace("type_of", value::make_type_expr_fragment(field.type.get()));
   fields.emplace("is_data_member", value::make_bool(true));
   return value::make_struct("", std::move(fields));
@@ -217,7 +233,8 @@ auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
   auto elements = std::vector<value>{};
   elements.reserve(struct_def.body.fields.size());
   for (const auto &field_decl : struct_def.body.fields) {
-    elements.push_back(make_field_descriptor(field_decl));
+    elements.push_back(
+        make_field_descriptor(field_decl, current_field_type_name(field_decl)));
   }
   return value::make_list(std::move(elements));
 }
@@ -225,6 +242,23 @@ auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
 void evaluator::register_pending_type(std::string name,
                                       const ast::type_decl &decl) {
   pending_types_.emplace(std::move(name), &decl);
+}
+
+void evaluator::push_field_type_context(
+    std::unordered_map<const ast::struct_field *, std::string> names) {
+  field_type_contexts_.push_back(std::move(names));
+}
+
+void evaluator::pop_field_type_context() { field_type_contexts_.pop_back(); }
+
+auto evaluator::current_field_type_name(const ast::struct_field &field) const
+    -> const std::string * {
+  if (field_type_contexts_.empty()) {
+    return nullptr;
+  }
+  const auto &context = field_type_contexts_.back();
+  const auto it = context.find(&field);
+  return it != context.end() ? &it->second : nullptr;
 }
 
 void evaluator::register_pending_module(std::string name,

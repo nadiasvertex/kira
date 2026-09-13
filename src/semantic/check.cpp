@@ -17440,8 +17440,18 @@ private:
   /// work at all: `box[int32]` and `box[str]` each get their own `impl`
   /// node, identical in spelling and distinct in identity, so each can be
   /// registered against its own target type.
+  ///
+  /// `instance_id` is the *concrete* type being derived for (`box[int32]`,
+  /// or the type's own id for a non-generic type) — used to precompute each
+  /// field's fully-substituted, canonically-rendered type name
+  /// (`struct_field_type` + `type_table::display`) and hand it to the
+  /// evaluator (`push_field_type_context`) for the duration of this call, so
+  /// `f.type_name` inside the derive body reports the instantiation's real
+  /// field types instead of the declaration's raw, un-substituted syntax
+  /// (`spec/todo.md` item 5).
   [[nodiscard]] auto evaluate_derive_call(const ast::type_decl &decl,
-                                          std::string_view trait_name)
+                                          std::string_view trait_name,
+                                          type_id instance_id)
       -> const ast::impl_decl * {
     if (decl.definition == nullptr) {
       return nullptr;
@@ -17468,7 +17478,22 @@ private:
     call->span = decl.span;
     call->callee = std::move(index);
 
+    auto field_type_names =
+        std::unordered_map<const ast::struct_field *, std::string>{};
+    if (!is_sum_shaped) {
+      const auto &struct_def =
+          dynamic_cast<const ast::struct_type_def &>(*decl.definition);
+      const auto &instance = types_.entry(instance_id);
+      for (const auto &field : struct_def.body.fields) {
+        if (const auto field_type_id = struct_field_type(instance, field.name);
+            field_type_id.has_value()) {
+          field_type_names.emplace(&field, types_.display(*field_type_id));
+        }
+      }
+    }
+    comptime_eval_.push_field_type_context(std::move(field_type_names));
     const auto fragment_value = comptime_eval_.evaluate(*call);
+    comptime_eval_.pop_field_type_context();
     if (fragment_value.is_error() ||
         fragment_value.kind != comptime::value_kind::def_expr_fragment ||
         fragment_value.fragment == nullptr) {
@@ -17562,7 +17587,7 @@ private:
     if (type_it == owner->types.end()) {
       return false;
     }
-    const auto *impl = evaluate_derive_call(*decl, trait_name);
+    const auto *impl = evaluate_derive_call(*decl, trait_name, instance_id);
     if (impl == nullptr) {
       return false;
     }
@@ -17605,11 +17630,12 @@ private:
       // single impl over `box[T]` is not what these derivations produce.
       return;
     }
+    const auto instance_id = make_user_type(decl, module_name_, {});
     for (const auto trait_name : k_real_derive_traits) {
       if (!std::ranges::contains(decl.deriving, std::string(trait_name))) {
         continue;
       }
-      const auto *impl = evaluate_derive_call(decl, trait_name);
+      const auto *impl = evaluate_derive_call(decl, trait_name, instance_id);
       if (impl == nullptr) {
         continue;
       }
