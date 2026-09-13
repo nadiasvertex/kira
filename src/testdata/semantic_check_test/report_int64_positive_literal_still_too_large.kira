@@ -1,0 +1,4 @@
+module sample
+
+def run() -> unit:
+    let a: int64 = 9223372036854775808

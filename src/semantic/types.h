@@ -902,6 +902,10 @@ struct checked_types {
 [[nodiscard]] auto integer_max_value(std::string_view name)
     -> std::optional<uint64_t>;
 
+/// True for the signed builtin integer type names (`int8`..`int64`,
+/// `isize`); false for unsigned integer names and non-integer names.
+[[nodiscard]] auto is_signed_integer_name(std::string_view name) -> bool;
+
 // ==========================================================================
 //  Program index — session-wide declaration lookup tables.
 // ==========================================================================

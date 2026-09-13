@@ -1,0 +1,8 @@
+module sample
+
+def run() -> unit:
+    let a: int8 = -128
+    let b: int16 = -32768
+    let c: int32 = -2147483648
+    let d: int64 = -9223372036854775808
+    let e: isize = -9223372036854775808

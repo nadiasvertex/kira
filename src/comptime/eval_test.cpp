@@ -72,6 +72,17 @@ auto test_eval_unary_negation() -> void {
   expect(result.integer == -5, "expected `-(2 + 3)` to evaluate to -5");
 }
 
+auto test_eval_negate_int64_min_reports_error() -> void {
+  // `-x` is signed-integer-overflow UB in C++ when `x` is exactly
+  // `int64::MIN` (there is no positive int64 to negate to), so the
+  // evaluator must reject this explicitly rather than execute `-x` and
+  // invoke that UB. This is the comptime-evaluator half of todo #10 (the
+  // checker's own literal-range fix lives in check_test.cpp).
+  const auto result = eval_source("-9223372036854775808");
+  expect(result.is_error(),
+         "expected negating `int64::MIN` to produce the error sentinel");
+}
+
 auto test_eval_division_by_zero_reports_error() -> void {
   const auto result = eval_source("1 / 0");
   expect(result.is_error(),
@@ -253,6 +264,7 @@ auto main() -> int {
   test_eval_float_arithmetic();
   test_eval_comparison_and_logical();
   test_eval_unary_negation();
+  test_eval_negate_int64_min_reports_error();
   test_eval_division_by_zero_reports_error();
   test_eval_string_equality();
   test_eval_match_expr_literal_pattern_selects_true_arm();

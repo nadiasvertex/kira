@@ -758,6 +758,11 @@ auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
   return std::nullopt;
 }
 
+auto is_signed_integer_name(std::string_view name) -> bool {
+  return name == "int8" || name == "int16" || name == "int32" ||
+         name == "int64" || name == "isize";
+}
+
 // ==========================================================================
 //  Program index construction
 // ==========================================================================

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <format>
+#include <limits>
 #include <ranges>
 #include <span>
 #include <string>
@@ -394,6 +395,14 @@ auto evaluator::eval_unary(const ast::unary_expr &un) -> value {
   switch (un.op) {
   case ast::unary_op::neg:
     if (operand.kind == value_kind::integer) {
+      // `-x` is signed-integer-overflow UB in C++ when `x` is exactly the
+      // 64-bit minimum (no positive counterpart exists to negate to), so
+      // this boundary must be rejected explicitly rather than evaluated —
+      // mirrors the VM's/LLVM backend's own checked negation.
+      if (operand.integer == std::numeric_limits<int64_t>::min()) {
+        return report(un.span,
+                      "this negation overflows in compile-time evaluation");
+      }
       return value::make_int(-operand.integer);
     }
     if (operand.kind == value_kind::floating) {
@@ -2519,10 +2528,9 @@ auto evaluator::eval_cast(const ast::cast_expr &cast) -> value {
 
   const auto kind = scalar_cast_kind_of(resolved_name);
   if (!kind.has_value()) {
-    return report(cast.span,
-                  std::format("cast to `{}` is not supported in "
-                              "compile-time evaluation",
-                              resolved_name));
+    return report(cast.span, std::format("cast to `{}` is not supported in "
+                                         "compile-time evaluation",
+                                         resolved_name));
   }
 
   if (kind->is_float) {
@@ -2532,8 +2540,7 @@ auto evaluator::eval_cast(const ast::cast_expr &cast) -> value {
     } else if (operand.kind == value_kind::floating) {
       as_double = operand.floating;
     } else {
-      return report(cast.span,
-                    "`as` requires a compile-time numeric operand");
+      return report(cast.span, "`as` requires a compile-time numeric operand");
     }
     if (kind->bits == 32) {
       as_double = static_cast<double>(static_cast<float>(as_double));

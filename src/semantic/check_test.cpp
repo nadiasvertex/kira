@@ -1246,6 +1246,37 @@ auto test_reports_integer_literal_overflow() -> void {
                     "expected literal-fit diagnostic");
 }
 
+auto test_accepts_negative_min_integer_literals() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_negative_min_integer_literals.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `-128`/`-32768`/`-2147483648`/"
+                     "`-9223372036854775808` to type-check directly as "
+                     "each width's minimum value:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_reports_negated_integer_literal_still_too_large() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "report_negated_integer_literal_still_too_large.kira");
+  expect(analyzed.error_count > 0, "expected `-129` as `int8` to still fail");
+  expect_diagnostic(analyzed, "integer literal `-129` does not fit in `int8`",
+                    "expected literal-fit diagnostic for a negated literal");
+}
+
+auto test_reports_int64_positive_literal_still_too_large() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "report_int64_positive_literal_still_too_large.kira");
+  expect(analyzed.error_count > 0,
+         "expected `9223372036854775808` as `int64` (no leading `-`) to "
+         "still fail");
+  expect_diagnostic(analyzed,
+                    "integer literal `9223372036854775808` does not fit in "
+                    "`int64`",
+                    "expected literal-fit diagnostic for the un-negated "
+                    "boundary value");
+}
+
 auto test_reports_mixed_numeric_types() -> void {
   const auto analyzed =
       analyze_test_data_file("report_mixed_numeric_types.kira");
@@ -3145,6 +3176,9 @@ auto main() -> int {
     test_reports_hygiene_prevents_spliced_binding_leak();
     test_reports_splice_requires_quote_value();
     test_reports_integer_literal_overflow();
+    test_accepts_negative_min_integer_literals();
+    test_reports_negated_integer_literal_still_too_large();
+    test_reports_int64_positive_literal_still_too_large();
     test_reports_mixed_numeric_types();
     test_reports_non_bool_condition();
     test_reports_assignment_to_immutable();

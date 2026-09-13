@@ -6844,8 +6844,7 @@ private:
       // as they would for any other literal, so the resulting value is
       // identical either way.
       lit->lit_kind = token_kind::int_lit;
-      lit->value =
-          std::to_string(static_cast<std::uint64_t>(value.integer));
+      lit->value = std::to_string(static_cast<std::uint64_t>(value.integer));
       break;
     case comptime::value_kind::floating:
       lit->lit_kind = token_kind::float_lit;
@@ -6905,15 +6904,24 @@ private:
 
   /// Reports an error when an integer literal's value does not fit in its
   /// target builtin type's range (a no-op for non-integer or non-builtin
-  /// targets, or when the literal's value could not be parsed).
-  auto check_integer_fit(const ast::literal_expr &lit, type_id target) -> void {
+  /// targets, or when the literal's value could not be parsed). When
+  /// `negated` is set, the literal is the operand of a unary `-` that will
+  /// be applied to it, so a signed target's range extends one further (a
+  /// signed type's magnitude of its minimum value is one more than its
+  /// maximum, e.g. `int8` allows magnitude 128 here for `-128`).
+  auto check_integer_fit(const ast::literal_expr &lit, type_id target,
+                         bool negated = false) -> void {
     const auto &entry = types_.entry(target);
     if (entry.kind != type_kind::builtin_kind) {
       return;
     }
-    const auto max_value = integer_max_value(entry.name);
+    auto max_value = integer_max_value(entry.name);
     if (!max_value.has_value()) {
       return;
+    }
+    const auto is_negative_min = negated && is_signed_integer_name(entry.name);
+    if (is_negative_min) {
+      *max_value += 1;
     }
     const auto value = parse_integer_literal(lit.value);
     if (value.has_value() && *value <= *max_value) {
@@ -6921,12 +6929,17 @@ private:
     }
     auto diag =
         diagnostic(diagnostic_level::error,
-                   std::format("integer literal `{}` does not fit in `{}`",
-                               lit.value, entry.name),
+                   std::format("integer literal `{}{}` does not fit in `{}`",
+                               negated ? "-" : "", lit.value, entry.name),
                    file_id_);
     diag.with_label(lit.span, std::format("too large for `{}`", entry.name));
-    diag.with_note(
-        std::format("the largest `{}` value is {}", entry.name, *max_value));
+    if (is_negative_min) {
+      diag.with_note(std::format("the most negative `{}` value is -{}",
+                                 entry.name, *max_value));
+    } else {
+      diag.with_note(
+          std::format("the largest `{}` value is {}", entry.name, *max_value));
+    }
     diag.with_help("Use a wider integer type, or reduce the value.");
     emit_diag(diag);
     mark_error();
@@ -6935,21 +6948,23 @@ private:
   /// Types a literal expression. An integer or float literal adopts the
   /// expected numeric type when one is given (checking integer fit),
   /// otherwise defaults to `int32`/`float64` per the language's literal
-  /// defaulting rule.
-  auto infer_literal(const ast::literal_expr &lit, type_id expected)
-      -> type_id {
+  /// defaulting rule. `negated` is set when this literal is the immediate
+  /// operand of a unary `-`, widening the accepted range for a signed
+  /// target's minimum value (see `check_integer_fit`).
+  auto infer_literal(const ast::literal_expr &lit, type_id expected,
+                     bool negated = false) -> type_id {
     switch (lit.lit_kind) {
     case token_kind::int_lit: {
       const auto stripped = strip_refs(expected);
       if (types_.is_integer(stripped)) {
-        check_integer_fit(lit, stripped);
+        check_integer_fit(lit, stripped, negated);
         return stripped;
       }
       if (types_.is_float(stripped)) {
         return stripped;
       }
       const auto fallback = types_.builtin("int32");
-      check_integer_fit(lit, fallback);
+      check_integer_fit(lit, fallback, negated);
       return fallback;
     }
     case token_kind::float_lit: {
@@ -7472,6 +7487,21 @@ private:
   /// an integer operand, `*` (deref) unwraps a pointer/reference, and
   /// `&`/`&mut` wrap the operand in a reference type.
   auto infer_unary(const ast::unary_expr &unary, type_id expected) -> type_id {
+    // `-<int literal>` is checked as a unit rather than inferring the
+    // literal generically first: the literal's *magnitude* (e.g. `128`) is
+    // one more than its type's positive max when it names that type's
+    // minimum value (e.g. `-128` as `int8`), so the fit check must know a
+    // negation is about to apply before it runs, not after.
+    if (unary.op == ast::unary_op::neg && unary.operand != nullptr) {
+      if (const auto *lit =
+              dynamic_cast<const ast::literal_expr *>(unary.operand.get());
+          lit != nullptr && lit->lit_kind == token_kind::int_lit) {
+        const auto result_type =
+            infer_literal(*lit, expected, /*negated=*/true);
+        record_expr_type(*lit, result_type);
+        return result_type;
+      }
+    }
     const auto operand =
         unary.operand != nullptr
             ? infer_expr(*unary.operand, unary.op == ast::unary_op::neg
