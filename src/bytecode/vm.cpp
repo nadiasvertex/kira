@@ -1862,9 +1862,8 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         f.pc = ops.pos();
         const auto view = view_of(f.registers[str_reg]);
         const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
-        f.registers[dst] =
-            slot_value{static_cast<uint64_t>(
-                kira::runtime::str_scalar_at(view, offset))};
+        f.registers[dst] = slot_value{
+            static_cast<uint64_t>(kira::runtime::str_scalar_at(view, offset))};
         break;
       }
       case opcode::op_str_scalar_width: {

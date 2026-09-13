@@ -197,13 +197,14 @@ auto count_musttail_calls_to(llvm::Module &module, std::string_view callee_name)
 }
 
 auto test_self_recursive_tail_call_gets_musttail() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def count_down(n: int32, acc: int32) -> int32:\n"
-                               "    if n <= 0:\n"
-                               "        return acc\n"
-                               "    return count_down(n - 1, acc + 1)\n"
-                               "def main() -> int32:\n"
-                               "    return count_down(1000000, 0)\n");
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def count_down(n: int32, acc: int32) -> int32:\n"
+                    "    if n <= 0:\n"
+                    "        return acc\n"
+                    "    return count_down(n - 1, acc + 1)\n"
+                    "def main() -> int32:\n"
+                    "    return count_down(1000000, 0)\n");
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected fixture to lower to HIR");
   auto compiled = lc::compile_module(**module, fixture.checked.types);
@@ -231,10 +232,10 @@ auto test_indirect_call_through_closure_never_gets_musttail() -> void {
   // every indirect/closure call, even one in tail position, from
   // `is_tail_call` (see hir::mark_tail_calls), so codegen has no marked
   // call here to ever emit `musttail` for.
-  auto fixture = check_fixture(
-      "module sample\n"
-      "def apply(f: fn(int32) -> int32, x: int32) -> int32:\n"
-      "    return f(x)\n");
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def apply(f: fn(int32) -> int32, x: int32) -> int32:\n"
+                    "    return f(x)\n");
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected fixture to lower to HIR");
   auto compiled = lc::compile_module(**module, fixture.checked.types);

@@ -830,10 +830,10 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // `from`/`drop` traits the auto-injected prelude provides, and
   // `prelude.kira` itself now `use`s `std.console`/`std.iter` — mirror what
   // `main.cpp` does for every real invocation (this alone now pulls in
-  // `traits.kira`, `iter.kira`, `prelude.kira`, `io.kira`, `console.kira`,
-  // `fmt.kira`, `algo.kira`, `unicode_tables.kira`, `unicode.kira`,
-  // `derive.kira`, `fs/path.kira`, and the assembled `std.platform`) rather
-  // than
+  // `traits.kira`, `limits.kira`, `iter.kira`, `prelude.kira`, `io.kira`,
+  // `console.kira`, `fmt.kira`, `algo.kira`, `unicode_tables.kira`,
+  // `unicode.kira`, `derive.kira`, `fs/path.kira`, and the assembled
+  // `std.platform`) rather than
   // hand-listing sources, which would double-add `io.kira`/`console.kira`
   // under a different path string and trip a duplicate-module-path
   // diagnostic (`find_stdlib_source_file`'s resolved path doesn't lexically
@@ -845,11 +845,11 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 17,
-         "expected std.io, std.console, std.traits, std.iter, std.algo, "
-         "std.fmt, std.string, std.unicode_tables, std.unicode, std.derive, "
-         "std.fs.path, std.platform, std.panic, std.option, std.result, "
-         "std.list, and prelude to all emit metadata");
+  expect(report->modules.size() == 18,
+         "expected std.io, std.console, std.traits, std.limits, std.iter, "
+         "std.algo, std.fmt, std.string, std.unicode_tables, std.unicode, "
+         "std.derive, std.fs.path, std.platform, std.panic, std.option, "
+         "std.result, std.list, and prelude to all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.
@@ -2257,55 +2257,57 @@ auto test_run_derives_ord_via_deriving_clause() -> void {
   // diagnostic about a type the test never wrote (CLAUDE.md records this
   // exact trap).
   return "module sample\n"
-      "type wrap[T] = { value: T } deriving show, eq, ord, hash\n"
-      "type over[T] = { value: T } deriving show\n"
-      "type opt[T] = @none_of | @one_of(T) deriving show, hash\n"
-      "type buf[n: usize] = { len: usize } deriving show\n"
-      "impl show for over[int32]:\n"
-      "    def show(self) -> str:\n"
-      "        return \"hand-written\"\n"
-      "def rank(o: ordering) -> int32:\n"
-      "    match o:\n"
-      "        @less => return -1\n"
-      "        @equal => return 0\n"
-      "        @greater => return 1\n"
-      "def bit(cond: bool, weight: int32) -> int32:\n"
-      "    if cond:\n"
-      "        return weight\n"
-      "    return 0\n"
-      "def main() -> int32:\n"
-      "    var total: int32 = 0\n"
-      "    let a: wrap[int32] = { value: 5 }\n"
-      "    let b: wrap[int32] = { value: 5 }\n"
-      "    let c: wrap[int32] = { value: 6 }\n"
-      "    let s: wrap[str] = { value: \"hi\" }\n"
-      "    total = total + bit(a.show() == \"wrap \\{ value: 5 \\}\", 1)\n"
-      "    total = total + bit(s.show() == \"wrap \\{ value: hi \\}\", 2)\n"
-      "    let n: wrap[wrap[int32]] = { value: { value: 7 } }\n"
-      "    total = total + bit(\n"
-      "        n.show() == \"wrap \\{ value: wrap \\{ value: 7 \\} \\}\", 4)\n"
-      "    total = total + bit(a.eq(&b) and not a.eq(&c), 8)\n"
-      "    let lt: bool = a < c\n"
-      "    total = total + bit(rank(a.cmp(&c)) == -1 and\n"
-      "                        rank(c.cmp(&a)) == 1 and\n"
-      "                        rank(a.cmp(&b)) == 0 and lt, 16)\n"
-      "    let h_same: bool = a.hash() == b.hash()\n"
-      "    let h_diff: bool = a.hash() != c.hash()\n"
-      "    total = total + bit(h_same and h_diff, 32)\n"
-      "    let o1: opt[int32] = @one_of(3)\n"
-      "    let o2: opt[int32] = @none_of\n"
-      "    let oh: bool = o1.hash() != o2.hash()\n"
-      "    total = total + bit(o1.show() == \"one_of(3)\" and\n"
-      "                        o2.show() == \"none_of\" and oh, 64)\n"
-      "    let b4: buf[4] = { len: 4 }\n"
-      "    let b8: buf[8] = { len: 8 }\n"
-      "    let ov: over[int32] = { value: 9 }\n"
-      "    let os: over[str] = { value: \"z\" }\n"
-      "    total = total + bit(b4.show() == \"buf \\{ len: 4 \\}\" and\n"
-      "                        b8.show() == \"buf \\{ len: 8 \\}\" and\n"
-      "                        ov.show() == \"hand-written\" and\n"
-      "                        os.show() == \"over \\{ value: z \\}\", 128)\n"
-      "    return total\n";
+         "type wrap[T] = { value: T } deriving show, eq, ord, hash\n"
+         "type over[T] = { value: T } deriving show\n"
+         "type opt[T] = @none_of | @one_of(T) deriving show, hash\n"
+         "type buf[n: usize] = { len: usize } deriving show\n"
+         "impl show for over[int32]:\n"
+         "    def show(self) -> str:\n"
+         "        return \"hand-written\"\n"
+         "def rank(o: ordering) -> int32:\n"
+         "    match o:\n"
+         "        @less => return -1\n"
+         "        @equal => return 0\n"
+         "        @greater => return 1\n"
+         "def bit(cond: bool, weight: int32) -> int32:\n"
+         "    if cond:\n"
+         "        return weight\n"
+         "    return 0\n"
+         "def main() -> int32:\n"
+         "    var total: int32 = 0\n"
+         "    let a: wrap[int32] = { value: 5 }\n"
+         "    let b: wrap[int32] = { value: 5 }\n"
+         "    let c: wrap[int32] = { value: 6 }\n"
+         "    let s: wrap[str] = { value: \"hi\" }\n"
+         "    total = total + bit(a.show() == \"wrap \\{ value: 5 \\}\", 1)\n"
+         "    total = total + bit(s.show() == \"wrap \\{ value: hi \\}\", 2)\n"
+         "    let n: wrap[wrap[int32]] = { value: { value: 7 } }\n"
+         "    total = total + bit(\n"
+         "        n.show() == \"wrap \\{ value: wrap \\{ value: 7 \\} \\}\", "
+         "4)\n"
+         "    total = total + bit(a.eq(&b) and not a.eq(&c), 8)\n"
+         "    let lt: bool = a < c\n"
+         "    total = total + bit(rank(a.cmp(&c)) == -1 and\n"
+         "                        rank(c.cmp(&a)) == 1 and\n"
+         "                        rank(a.cmp(&b)) == 0 and lt, 16)\n"
+         "    let h_same: bool = a.hash() == b.hash()\n"
+         "    let h_diff: bool = a.hash() != c.hash()\n"
+         "    total = total + bit(h_same and h_diff, 32)\n"
+         "    let o1: opt[int32] = @one_of(3)\n"
+         "    let o2: opt[int32] = @none_of\n"
+         "    let oh: bool = o1.hash() != o2.hash()\n"
+         "    total = total + bit(o1.show() == \"one_of(3)\" and\n"
+         "                        o2.show() == \"none_of\" and oh, 64)\n"
+         "    let b4: buf[4] = { len: 4 }\n"
+         "    let b8: buf[8] = { len: 8 }\n"
+         "    let ov: over[int32] = { value: 9 }\n"
+         "    let os: over[str] = { value: \"z\" }\n"
+         "    total = total + bit(b4.show() == \"buf \\{ len: 4 \\}\" and\n"
+         "                        b8.show() == \"buf \\{ len: 8 \\}\" and\n"
+         "                        ov.show() == \"hand-written\" and\n"
+         "                        os.show() == \"over \\{ value: z \\}\", "
+         "128)\n"
+         "    return total\n";
 }
 
 auto test_run_derives_for_generic_types() -> void {
@@ -2537,29 +2539,28 @@ auto test_run_derives_hash_for_floats() -> void {
   auto source_path = temp.path / "sample_derive_hash_float.kira";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(
-      source_path,
-      "module sample\n"
-      "type pf = { x: float64, y: float32 } deriving hash\n"
-      "def bit(cond: bool, weight: int32) -> int32:\n"
-      "    if cond:\n"
-      "        return weight\n"
-      "    return 0\n"
-      "def main() -> int32:\n"
-      "    var total: int32 = 0\n"
-      "    let a: pf = { x: 0.0, y: 0.0 as float32 }\n"
-      "    let b: pf = { x: -0.0, y: -0.0 as float32 }\n"
-      "    total = total + bit(a.hash() == b.hash(), 1)\n"
-      "    let nan1: float64 = 0.0 / 0.0\n"
-      "    let nan2: float64 = -(0.0 / 0.0)\n"
-      "    let c: pf = { x: nan1, y: nan1 as float32 }\n"
-      "    let d: pf = { x: nan2, y: nan2 as float32 }\n"
-      "    total = total + bit(c.hash() == d.hash(), 2)\n"
-      "    let e: pf = { x: 1.5, y: 2.5 as float32 }\n"
-      "    total = total + bit(a.hash() != e.hash(), 4)\n"
-      "    let f: pf = { x: 3.5, y: 4.5 as float32 }\n"
-      "    total = total + bit(f.hash() == 2985586345925076451, 8)\n"
-      "    return total\n");
+  write_file(source_path,
+             "module sample\n"
+             "type pf = { x: float64, y: float32 } deriving hash\n"
+             "def bit(cond: bool, weight: int32) -> int32:\n"
+             "    if cond:\n"
+             "        return weight\n"
+             "    return 0\n"
+             "def main() -> int32:\n"
+             "    var total: int32 = 0\n"
+             "    let a: pf = { x: 0.0, y: 0.0 as float32 }\n"
+             "    let b: pf = { x: -0.0, y: -0.0 as float32 }\n"
+             "    total = total + bit(a.hash() == b.hash(), 1)\n"
+             "    let nan1: float64 = 0.0 / 0.0\n"
+             "    let nan2: float64 = -(0.0 / 0.0)\n"
+             "    let c: pf = { x: nan1, y: nan1 as float32 }\n"
+             "    let d: pf = { x: nan2, y: nan2 as float32 }\n"
+             "    total = total + bit(c.hash() == d.hash(), 2)\n"
+             "    let e: pf = { x: 1.5, y: 2.5 as float32 }\n"
+             "    total = total + bit(a.hash() != e.hash(), 4)\n"
+             "    let f: pf = { x: 3.5, y: 4.5 as float32 }\n"
+             "    total = total + bit(f.hash() == 2985586345925076451, 8)\n"
+             "    return total\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
@@ -2704,10 +2705,10 @@ auto test_run_derives_sum_type_via_deriving_clause() -> void {
   expect(report->run.has_value(), "expected a run outcome to be recorded");
   expect(report->run->succeeded,
          "expected `main` to run without panicking: " + report->run->message);
-  expect(report->run->exit_code == 255,
-         std::format(
-             "expected every derived sum-type case to hold (255), got {}",
-             report->run->exit_code));
+  expect(
+      report->run->exit_code == 255,
+      std::format("expected every derived sum-type case to hold (255), got {}",
+                  report->run->exit_code));
 }
 
 } // namespace

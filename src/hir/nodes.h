@@ -107,11 +107,11 @@ enum class hir_node_kind : uint8_t {
                        ///< backing `func_decl`, same rationale as
                        ///< `hir_container_len`.
   hir_str_decode_scalar, ///< The decoded Unicode scalar at a byte offset
-                        ///< into a `str` (`for`-loop lowering only) — see
-                        ///< `hir_str_decode_scalar`'s doc comment.
+                         ///< into a `str` (`for`-loop lowering only) — see
+                         ///< `hir_str_decode_scalar`'s doc comment.
   hir_str_scalar_width,  ///< Bytes consumed decoding the scalar at a byte
-                        ///< offset into a `str` — companion to
-                        ///< `hir_str_decode_scalar`.
+                         ///< offset into a `str` — companion to
+                         ///< `hir_str_decode_scalar`.
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,
@@ -293,7 +293,7 @@ struct hir_global_ref : hir_expr {
   std::optional<std::string> owner_module;
 
   hir_global_ref(source_span s, type_id t, std::string n,
-                std::optional<std::string> owner = std::nullopt)
+                 std::optional<std::string> owner = std::nullopt)
       : hir_expr(hir_node_kind::hir_global_ref, s, t), name(std::move(n)),
         owner_module(std::move(owner)) {}
 };

@@ -2491,8 +2491,7 @@ auto test_does_not_mark_call_nested_as_an_argument() -> void {
   const auto &ret =
       dynamic_cast<const hir::hir_return &>(*(*result)->body->stmts.front());
   const auto &outer_call = dynamic_cast<const hir::hir_call &>(*ret.value);
-  expect(outer_call.is_tail_call,
-         "expected the outer call to be marked tail");
+  expect(outer_call.is_tail_call, "expected the outer call to be marked tail");
 
   const auto &inner_call =
       dynamic_cast<const hir::hir_call &>(*outer_call.args[0]);
@@ -2517,8 +2516,8 @@ auto test_marks_calls_in_tail_position_of_if_branches() -> void {
 
   // `hir::lowerer::lower_block` wraps a block's trailing `if`/`match` in
   // `hir_expr_stmt` even when (as here) nothing reads its value.
-  const auto &if_stmt = dynamic_cast<const hir::hir_expr_stmt &>(
-      *(*result)->body->stmts.front());
+  const auto &if_stmt =
+      dynamic_cast<const hir::hir_expr_stmt &>(*(*result)->body->stmts.front());
   const auto &iff = dynamic_cast<const hir::hir_if &>(*if_stmt.expr);
   expect(iff.branches.size() == 1, "expected one `if` branch plus `else`");
 
@@ -2529,8 +2528,8 @@ auto test_marks_calls_in_tail_position_of_if_branches() -> void {
          "expected the `if` branch's `return base(x)` to be marked tail");
 
   expect(iff.else_body != nullptr, "expected an `else` body");
-  const auto &else_ret = dynamic_cast<const hir::hir_return &>(
-      *iff.else_body->stmts.front());
+  const auto &else_ret =
+      dynamic_cast<const hir::hir_return &>(*iff.else_body->stmts.front());
   const auto &else_call = dynamic_cast<const hir::hir_call &>(*else_ret.value);
   expect(else_call.is_tail_call,
          "expected the `else` branch's `return base(0)` to be marked tail");
@@ -2581,18 +2580,19 @@ auto test_does_not_mark_calls_inside_a_generator_function() -> void {
   // calls near a `yield`. (Semantic analysis rejects `return <value>`
   // inside a generator body, so the tail position here is the block's
   // trailing expression statement instead of an explicit `return`.)
-  auto fixture = check_fixture(
-      "module sample\n"
-      "def helper(x: int32) -> int32:\n"
-      "    return x + 1\n"
-      "generator def gen(x: int32) -> some iterator[int32]:\n"
-      "    yield x\n"
-      "    helper(x)\n");
+  auto fixture =
+      check_fixture("module sample\n"
+                    "def helper(x: int32) -> int32:\n"
+                    "    return x + 1\n"
+                    "generator def gen(x: int32) -> some iterator[int32]:\n"
+                    "    yield x\n"
+                    "    helper(x)\n");
   const auto &decl = find_func(*fixture.ast_file, "gen");
 
   auto result = hir::lower_function(decl, fixture.checked);
   expect(result.has_value(), "expected the generator function to lower");
-  expect((*result)->is_generator, "expected the function to lower as a generator");
+  expect((*result)->is_generator,
+         "expected the function to lower as a generator");
 
   const auto &stmts = (*result)->body->stmts;
   const auto &expr_stmt =

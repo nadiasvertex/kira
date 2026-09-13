@@ -17,7 +17,7 @@ namespace {
 /// real function reference's symbol id can never coincide with one this
 /// pass hands out for a `let`/parameter binding.
 auto collect_bound_symbols(const hir_node &node,
-                          std::unordered_set<symbol_id> &bound) -> void {
+                           std::unordered_set<symbol_id> &bound) -> void {
   switch (node.kind) {
   case hir_node_kind::hir_block: {
     const auto &block = static_cast<const hir_block &>(node);
@@ -126,18 +126,15 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_unary: {
-    collect_bound_symbols(*static_cast<const hir_unary &>(node).operand,
-                          bound);
+    collect_bound_symbols(*static_cast<const hir_unary &>(node).operand, bound);
     return;
   }
   case hir_node_kind::hir_cast: {
-    collect_bound_symbols(*static_cast<const hir_cast &>(node).operand,
-                          bound);
+    collect_bound_symbols(*static_cast<const hir_cast &>(node).operand, bound);
     return;
   }
   case hir_node_kind::hir_field: {
-    collect_bound_symbols(*static_cast<const hir_field &>(node).object,
-                          bound);
+    collect_bound_symbols(*static_cast<const hir_field &>(node).object, bound);
     return;
   }
   case hir_node_kind::hir_index: {
@@ -154,7 +151,7 @@ auto collect_bound_symbols(const hir_node &node,
   }
   case hir_node_kind::hir_struct_init: {
     for (const auto &field :
-        static_cast<const hir_struct_init &>(node).fields) {
+         static_cast<const hir_struct_init &>(node).fields) {
       collect_bound_symbols(*field.value, bound);
     }
     return;
@@ -183,15 +180,14 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_variant_init: {
-    for (const auto &arg :
-        static_cast<const hir_variant_init &>(node).args) {
+    for (const auto &arg : static_cast<const hir_variant_init &>(node).args) {
       collect_bound_symbols(*arg, bound);
     }
     return;
   }
   case hir_node_kind::hir_container_len: {
-    collect_bound_symbols(
-        *static_cast<const hir_container_len &>(node).object, bound);
+    collect_bound_symbols(*static_cast<const hir_container_len &>(node).object,
+                          bound);
     return;
   }
   case hir_node_kind::hir_str_decode_scalar: {
@@ -207,8 +203,8 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_generator_next: {
-    collect_bound_symbols(
-        *static_cast<const hir_generator_next &>(node).object, bound);
+    collect_bound_symbols(*static_cast<const hir_generator_next &>(node).object,
+                          bound);
     return;
   }
   // A lambda is a separate scope compiled as its own function — see
@@ -259,10 +255,10 @@ is_eligible_tail_callee(const hir_expr &callee,
 }
 
 auto mark_tail_block(hir_block &block,
-                    const std::unordered_set<symbol_id> &bound) -> void;
+                     const std::unordered_set<symbol_id> &bound) -> void;
 
-auto mark_tail_expr(hir_expr &expr,
-                    const std::unordered_set<symbol_id> &bound) -> void {
+auto mark_tail_expr(hir_expr &expr, const std::unordered_set<symbol_id> &bound)
+    -> void {
   switch (expr.kind) {
   case hir_node_kind::hir_call: {
     auto &call = static_cast<hir_call &>(expr);
@@ -301,7 +297,7 @@ auto mark_tail_expr(hir_expr &expr,
 }
 
 auto mark_tail_block(hir_block &block,
-                    const std::unordered_set<symbol_id> &bound) -> void {
+                     const std::unordered_set<symbol_id> &bound) -> void {
   if (block.stmts.empty()) {
     return;
   }

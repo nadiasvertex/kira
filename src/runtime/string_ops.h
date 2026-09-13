@@ -68,8 +68,7 @@ enum class trim_mode : uint8_t { both = 0, start = 1, end = 2 };
 /// `pos` doesn't start a valid UTF-8 sequence, so a `for`-loop cursor built
 /// from this always makes forward progress. Companion to `str_scalar_at`
 /// for the same lowering (`hir::hir_str_scalar_width`).
-[[nodiscard]] auto str_scalar_width(std::string_view s, size_t pos)
-    -> uint64_t;
+[[nodiscard]] auto str_scalar_width(std::string_view s, size_t pos) -> uint64_t;
 
 extern "C" auto kira_rt_str_scalar_at(const char *data, uint64_t len,
                                       uint64_t offset) -> uint32_t;

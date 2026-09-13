@@ -375,8 +375,7 @@ public:
   function_compiler(const type_table &types,
                     const std::unordered_map<std::string, uint16_t> &functions,
                     std::vector<bytecode::bytecode_function> &lambda_functions,
-                    size_t function_table_base,
-                    std::string entry_module_name,
+                    size_t function_table_base, std::string entry_module_name,
                     std::string current_module_name,
                     // No default: a temporary bound here would dangle past
                     // this constructor call (see `compile_function`'s
@@ -397,16 +396,16 @@ public:
   /// strategy), then stores each result into its global-table slot via
   /// `op_store_global`. Runs once, before the program's real entry point —
   /// see `bytecode_module::static_init_function`.
-  [[nodiscard]] auto
-  compile_static_init(const std::vector<const hir::hir_static_global *> &globals)
+  [[nodiscard]] auto compile_static_init(
+      const std::vector<const hir::hir_static_global *> &globals)
       -> std::expected<bytecode::bytecode_function, compile_error> {
     for (const auto *global : globals) {
       auto dst = alloc_register(source_span{});
       if (!dst.has_value()) {
         return std::unexpected(dst.error());
       }
-      if (auto result = compile_static_global_value(global->type,
-                                                     global->elements, *dst);
+      if (auto result =
+              compile_static_global_value(global->type, global->elements, *dst);
           !result.has_value()) {
         return std::unexpected(result.error());
       }
@@ -1930,11 +1929,9 @@ private:
   /// already expanded any `[val; count]` fill form into `count` concrete
   /// elements before this ever runs (comptime evaluation, not lowering,
   /// does the expansion), so there is no fill form to handle here.
-  [[nodiscard]] auto
-  compile_static_global_value(type_id container_type,
-                              const hir::ptr_vec<hir::hir_expr> &elements,
-                              virtual_reg dst)
-      -> std::expected<void, compile_error> {
+  [[nodiscard]] auto compile_static_global_value(
+      type_id container_type, const hir::ptr_vec<hir::hir_expr> &elements,
+      virtual_reg dst) -> std::expected<void, compile_error> {
     if (is_list_type(container_type)) {
       const auto &list_entry = types_.entry(container_type);
       const auto elem_size = list_entry.args.empty()
@@ -2324,9 +2321,8 @@ private:
     const auto &object_entry = types_.entry(object_type);
     if (object_entry.kind == semantic::type_kind::array_kind) {
       const auto elem_size = element_stride(object_entry.result);
-      emit_load_field(
-          dst, *object_reg,
-          static_cast<uint16_t>(node.index * elem_size), elem_size);
+      emit_load_field(dst, *object_reg,
+                      static_cast<uint16_t>(node.index * elem_size), elem_size);
       return {};
     }
     const auto offset =
@@ -2564,8 +2560,7 @@ private:
     }
 
     const auto elem_size =
-        indexing_str
-            ? uint8_t{1}
+        indexing_str     ? uint8_t{1}
         : indexing_slice ? element_stride(object_entry.args.front())
         : indexing_list  ? (object_entry.args.empty()
                                 ? uint8_t{8}
@@ -2582,9 +2577,9 @@ private:
       emit_op(opcode::op_load_const);
       emit_register(*len_reg_exp);
       writer_.emit_u16(len_const);
-      return container_view{
-          .len_reg = *len_reg_exp, .data_reg = object_reg,
-          .elem_size = elem_size};
+      return container_view{.len_reg = *len_reg_exp,
+                            .data_reg = object_reg,
+                            .elem_size = elem_size};
     }
 
     auto len_reg_exp = alloc_register(span);
@@ -2600,7 +2595,8 @@ private:
     // The list header keeps its data pointer at slot 2; the 2-slot view
     // header keeps it at slot 1.
     emit_load_slot(*data_reg_exp, object_reg, indexing_view ? 1 : 2);
-    return container_view{.len_reg = *len_reg_exp, .data_reg = *data_reg_exp,
+    return container_view{.len_reg = *len_reg_exp,
+                          .data_reg = *data_reg_exp,
                           .elem_size = elem_size};
   }
 
@@ -2923,10 +2919,10 @@ private:
         if (!elem_reg.has_value()) {
           return std::unexpected(elem_reg.error());
         }
-        const auto elem_type =
-            is_array ? std::optional<type_id>(entry.result)
-            : i < entry.args.size() ? std::optional<type_id>(entry.args[i])
-                                    : std::nullopt;
+        const auto elem_type = is_array ? std::optional<type_id>(entry.result)
+                               : i < entry.args.size()
+                                   ? std::optional<type_id>(entry.args[i])
+                                   : std::nullopt;
         if (is_array) {
           emit_load_field(*elem_reg, value_reg,
                           static_cast<uint16_t>(i * array_elem_size),
@@ -4015,9 +4011,8 @@ auto compile_function(
   // is only lifetime-extended to the end of this constructor call, not
   // through to `compiler.compile(fn)` below.
   auto no_globals = std::unordered_map<std::string, uint16_t>{};
-  auto compiler =
-      function_compiler(types, function_index, lambda_functions, 1, {}, {},
-                        no_globals);
+  auto compiler = function_compiler(types, function_index, lambda_functions, 1,
+                                    {}, {}, no_globals);
   return compiler.compile(fn);
 }
 
@@ -4070,9 +4065,9 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
       bytecode::bytecode_module{.module_name = entry_name, .functions = {}};
   result.functions.reserve(ordered_functions.size());
   for (const auto &[module, fn] : ordered_functions) {
-    auto compiler = function_compiler(
-        types, function_index, lambda_functions, function_table_base,
-        entry_name, module->module_name, global_index);
+    auto compiler = function_compiler(types, function_index, lambda_functions,
+                                      function_table_base, entry_name,
+                                      module->module_name, global_index);
     auto compiled = compiler.compile(*fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
@@ -4083,15 +4078,15 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
     result.functions.push_back(std::move(lambda_fn));
   }
   if (!ordered_globals.empty()) {
-    auto init_compiler =
-        function_compiler(types, function_index, lambda_functions,
-                          function_table_base, entry_name, entry_name,
-                          global_index);
+    auto init_compiler = function_compiler(
+        types, function_index, lambda_functions, function_table_base,
+        entry_name, entry_name, global_index);
     auto compiled_init = init_compiler.compile_static_init(ordered_globals);
     if (!compiled_init.has_value()) {
       return std::unexpected(compiled_init.error());
     }
-    result.static_init_function = static_cast<uint16_t>(result.functions.size());
+    result.static_init_function =
+        static_cast<uint16_t>(result.functions.size());
     result.functions.push_back(std::move(*compiled_init));
     result.global_count = ordered_globals.size();
   }

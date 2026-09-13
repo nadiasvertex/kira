@@ -350,11 +350,10 @@ auto test_tuple_element_offset_sizes_a_reference_element_as_a_pointer()
   // what it refers to, so it must cost 8 bytes as a tuple element even
   // though its referent (`int32`) is only 4 — the bug this regression test
   // guards against sized it as 4, corrupting every later element's offset.
-  auto fixture =
-      check_fixture("module sample\n"
-                    "def main() -> (usize, &int32):\n"
-                    "    let x: int32 = 1\n"
-                    "    return (0, &x)\n");
+  auto fixture = check_fixture("module sample\n"
+                               "def main() -> (usize, &int32):\n"
+                               "    let x: int32 = 1\n"
+                               "    return (0, &x)\n");
   const auto id = struct_or_sum_type_of_main_return(fixture);
   auto &types = fixture.checked.types;
   expect(runtime::tuple_element_offset(types, id, 0) == 0,

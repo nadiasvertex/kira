@@ -220,8 +220,8 @@ auto test_parser_reports_missing_sum_variant_pipe() -> void {
 
   expect(parsed.error_count == 1,
          "expected exactly one diagnostic for the missing `|`");
-  expect(parsed.diagnostics.find(
-             "expected `|` before this sum-type variant") != std::string::npos,
+  expect(parsed.diagnostics.find("expected `|` before this sum-type variant") !=
+             std::string::npos,
          parsed.diagnostics);
 
   auto *shape_decl = expect_node<kira::ast::type_decl>(
@@ -1281,8 +1281,7 @@ auto test_parser_accepts_generic_struct_literal_type_args() -> void {
       literal->type_name.get(), kira::ast::node_kind::ident_expr,
       "expected a bare identifier type name");
   expect(type_name->name == "box", "expected type name `box`");
-  expect(literal->type_args.size() == 1,
-         "expected one explicit type argument");
+  expect(literal->type_args.size() == 1, "expected one explicit type argument");
   expect(literal->type_args[0].value != nullptr &&
              literal->type_args[0].value->kind ==
                  kira::ast::node_kind::named_type,
@@ -2194,10 +2193,9 @@ auto test_parser_accepts_lambda_capture_lists() -> void {
 auto test_parser_move_prefix_only_promotes_bare_capture_entries() -> void {
   // `move` forces every *bare* `name` entry to move; `&name`/`&mut name`
   // entries already state their own mode and must be left untouched.
-  auto parsed =
-      parse_source("module sample\n"
-                   "def run():\n"
-                   "  let a = move [&p, q, &mut r] x => x\n");
+  auto parsed = parse_source("module sample\n"
+                             "def run():\n"
+                             "  let a = move [&p, q, &mut r] x => x\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *run_func = expect_node<kira::ast::func_decl>(

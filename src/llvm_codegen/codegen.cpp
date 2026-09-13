@@ -513,8 +513,8 @@ public:
         alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
         intrinsic_fns_(intrinsic_fns),
         entry_module_name_(std::move(entry_module_name)),
-        current_module_name_(std::move(current_module_name)),
-        globals_(globals), builder_(ctx) {}
+        current_module_name_(std::move(current_module_name)), globals_(globals),
+        builder_(ctx) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn,
                              llvm::Function *llvm_fn)
@@ -566,10 +566,9 @@ public:
   /// AOT-linked executable's C runtime startup runs `.init_array` before
   /// `main` automatically, and `jit_module::create` calls `LLJIT::
   /// initialize` for the same reason under the JIT.
-  [[nodiscard]] auto
-  compile_static_init(const std::vector<const hir::hir_static_global *> &globals,
-                      llvm::Function *llvm_fn)
-      -> std::expected<void, codegen_error> {
+  [[nodiscard]] auto compile_static_init(
+      const std::vector<const hir::hir_static_global *> &globals,
+      llvm::Function *llvm_fn) -> std::expected<void, codegen_error> {
     current_fn_ = llvm_fn;
     auto *entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_fn);
     builder_.SetInsertPoint(entry);
@@ -1155,8 +1154,8 @@ private:
       // Every reified global is a heap value (array/list), stored the same
       // pointer-sized way `compile_array_init`/`compile_list_init` produce
       // it — see `compile_static_global_value`.
-      return builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
-                                 found->second, ref.name);
+      return builder_.CreateLoad(llvm::PointerType::get(ctx_, 0), found->second,
+                                 ref.name);
     }
     case hir_node_kind::hir_binary:
       return compile_binary(dynamic_cast<const hir::hir_binary &>(expr));
@@ -1937,8 +1936,8 @@ private:
         callee_fn->getCallingConv() == current_fn_->getCallingConv() &&
         same_param_types;
     call_inst->setTailCallKind(eligible_for_musttail
-                                    ? llvm::CallInst::TCK_MustTail
-                                    : llvm::CallInst::TCK_Tail);
+                                   ? llvm::CallInst::TCK_MustTail
+                                   : llvm::CallInst::TCK_Tail);
 
     if (return_is_unit_) {
       builder_.CreateRetVoid();
@@ -2490,8 +2489,8 @@ private:
     const auto &object_entry = types_.entry(object_type);
     if (object_entry.kind == semantic::type_kind::array_kind) {
       const auto elem_size = element_stride(object_entry.result);
-      return builder_.CreateLoad(
-          *elem_ty, byte_address(*object, node.index * elem_size));
+      return builder_.CreateLoad(*elem_ty,
+                                 byte_address(*object, node.index * elem_size));
     }
     const auto offset =
         runtime::tuple_element_offset(types_, object_type, node.index);
@@ -2548,8 +2547,7 @@ private:
     }
 
     const auto elem_size =
-        indexing_str
-            ? uint8_t{1}
+        indexing_str     ? uint8_t{1}
         : indexing_slice ? element_stride(object_entry.args.front())
         : indexing_list  ? (object_entry.args.empty()
                                 ? uint8_t{8}
@@ -3129,14 +3127,15 @@ private:
         }
         const auto elem_size = element_stride(entry.result);
         for (size_t i = 0; i < tup.elements.size(); ++i) {
-          auto *elem_val = builder_.CreateLoad(*elem_ty,
-                                               byte_address(value, i * elem_size));
+          auto *elem_val =
+              builder_.CreateLoad(*elem_ty, byte_address(value, i * elem_size));
           auto sub = compile_pattern_test(*tup.elements[i], elem_val,
                                           std::optional<type_id>(entry.result));
           if (!sub.has_value()) {
             return std::unexpected(sub.error());
           }
-          acc = acc == nullptr ? *sub : builder_.CreateAnd(acc, *sub, "pat.and");
+          acc =
+              acc == nullptr ? *sub : builder_.CreateAnd(acc, *sub, "pat.and");
         }
         return acc == nullptr ? llvm::ConstantInt::getTrue(ctx_) : acc;
       }
@@ -4360,8 +4359,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   // already-program-wide-unique name (`checker::reify_static_global`'s
   // `static$name$counter` scheme), no module-qualification needed — mirrors
   // `bytecode_compiler::compile_module`'s `global_index` exactly.
-  auto global_vars =
-      std::unordered_map<std::string, llvm::GlobalVariable *>{};
+  auto global_vars = std::unordered_map<std::string, llvm::GlobalVariable *>{};
   auto ordered_globals = std::vector<const hir::hir_static_global *>{};
   for (const auto *module : modules) {
     for (const auto &global : module->statics) {
@@ -4379,10 +4377,9 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
                          ? fn->name
                          : module->module_name + "::" + fn->name;
     auto *llvm_fn = functions.at(key);
-    auto compiler = function_compiler(ctx, types, functions, panic_fn, alloc_fn,
-                                      list_reserve_slot_fn, intrinsic_fns,
-                                      entry_name, module->module_name,
-                                      global_vars);
+    auto compiler = function_compiler(
+        ctx, types, functions, panic_fn, alloc_fn, list_reserve_slot_fn,
+        intrinsic_fns, entry_name, module->module_name, global_vars);
     auto compiled = compiler.compile(*fn, llvm_fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
@@ -4399,13 +4396,14 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
     // `LLJIT::initialize` for the equivalent JIT-side hook.
     auto *init_fn_type =
         llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), /*isVarArg=*/false);
-    auto *init_fn = llvm::Function::Create(init_fn_type,
-                                           llvm::Function::InternalLinkage,
-                                           "__kira_static_init", llvm_module);
+    auto *init_fn =
+        llvm::Function::Create(init_fn_type, llvm::Function::InternalLinkage,
+                               "__kira_static_init", llvm_module);
     auto init_compiler = function_compiler(
         ctx, types, functions, panic_fn, alloc_fn, list_reserve_slot_fn,
         intrinsic_fns, entry_name, entry_name, global_vars);
-    auto compiled_init = init_compiler.compile_static_init(ordered_globals, init_fn);
+    auto compiled_init =
+        init_compiler.compile_static_init(ordered_globals, init_fn);
     if (!compiled_init.has_value()) {
       return std::unexpected(compiled_init.error());
     }
@@ -4422,8 +4420,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
     auto *ctor_entry = llvm::ConstantStruct::get(
         entry_ty, {llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx), 65535),
                    init_fn, llvm::ConstantPointerNull::get(ptr_ty)});
-    auto *ctors_array = llvm::ConstantArray::get(
-        ctors_array_ty, {ctor_entry});
+    auto *ctors_array = llvm::ConstantArray::get(ctors_array_ty, {ctor_entry});
     new llvm::GlobalVariable(llvm_module, ctors_array_ty, /*isConstant=*/false,
                              llvm::GlobalValue::AppendingLinkage, ctors_array,
                              "llvm.global_ctors");

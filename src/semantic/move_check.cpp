@@ -217,8 +217,7 @@ private:
   auto report_use_after_move(std::string_view name, source_span span,
                              const binding_state &state) -> void {
     auto d = diagnostic(diagnostic_level::error,
-                        std::format("use of moved value `{}`", name),
-                        file_id_);
+                        std::format("use of moved value `{}`", name), file_id_);
     d.with_label(span, std::format("`{}` used here after being moved", name));
     d.with_secondary_label(state.moved_at,
                            std::format("`{}` moved here", name));

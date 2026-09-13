@@ -4,6 +4,9 @@ module std.algo
 # binds only the module: `use std.iter` makes `iter` name the module, and its
 # members are then reached by path, not unqualified.
 use std.iter.iterator
+use std.traits.is_integer
+use std.traits.is_signed_integer
+use std.limits.bits
 
 # ---------------------------------------------------------------------------
 # Lazy adapters.
@@ -1669,25 +1672,20 @@ def introsort_loop[T](s: &mut slice_mut[T], lo0: usize, hi0: usize,
 #: `int128`/`uint128` (excluded: truncating a 128-bit value down to a 64-bit
 #: `usize` key could make two distinct values collide, corrupting relative
 #: order rather than merely being slower to sort).
+#:
+#: Built from `std.traits.is_integer`/`std.limits.bits` (both auto-visible
+#: here via the prelude, `check.cpp`'s `k_prelude_reexport_modules`) rather
+#: than `T.name()`-matching a literal list by hand — the motivating use
+#: case named in `spec/specification/04-stdlib/type-traits/58-std-traits.md`.
+#: `is_signed_integer` needed no equivalent rewrite: `std.traits` already
+#: declares a predicate of that exact name, so `sort`'s own call to it below
+#: resolves there directly once this file's local shadow is gone.
 #: Type Params:
 #:   T: the type to test.
 #: Returns:
 #:   true if `T` is one of the radix-sortable builtin integer types.
 def is_radix_integer[T]() -> bool:
-    let n = T.name()
-    return (n == "byte" or n == "int8" or n == "int16" or n == "int32" or
-        n == "int64" or n == "isize" or n == "uint8" or n == "uint16" or
-        n == "uint32" or n == "uint64" or n == "usize")
-
-#: Whether `T` names one of the builtin *signed* integer types.
-#: Type Params:
-#:   T: the type to test.
-#: Returns:
-#:   true if `T` is a builtin signed integer type.
-def is_signed_integer[T]() -> bool:
-    let n = T.name()
-    return (n == "int8" or n == "int16" or n == "int32" or n == "int64" or
-        n == "isize")
+    return is_integer[T]() and bits[T]() <= 64
 
 #: An order-preserving 64-bit radix key for an integer value.
 #:

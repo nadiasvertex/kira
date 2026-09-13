@@ -1832,27 +1832,9 @@ namespace {
 /// therefore also handles compound builtins like `array[int32, 4]` that
 /// this list deliberately doesn't).
 constexpr std::array<std::string_view, 21> k_builtin_scalar_type_names = {{
-    "bool",
-    "char",
-    "byte",
-    "str",
-    "unit",
-    "int8",
-    "int16",
-    "int32",
-    "int64",
-    "int128",
-    "isize",
-    "uint8",
-    "uint16",
-    "uint32",
-    "uint64",
-    "uint128",
-    "usize",
-    "float32",
-    "float64",
-    "float128",
-    "fn",
+    "bool",   "char",    "byte",   "str",     "unit",    "int8",     "int16",
+    "int32",  "int64",   "int128", "isize",   "uint8",   "uint16",   "uint32",
+    "uint64", "uint128", "usize",  "float32", "float64", "float128", "fn",
 }};
 
 } // namespace
@@ -2153,9 +2135,9 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
     if (ctor.args.size() != v.elements.size()) {
       report(pattern.span,
              std::format("compile-time variant pattern `@{}` expects {} "
-                        "payload value{}, found {}",
-                        ctor.name, v.elements.size(),
-                        v.elements.size() == 1 ? "" : "s", ctor.args.size()));
+                         "payload value{}, found {}",
+                         ctor.name, v.elements.size(),
+                         v.elements.size() == 1 ? "" : "s", ctor.args.size()));
       return false;
     }
     for (size_t i = 0; i < ctor.args.size(); ++i) {

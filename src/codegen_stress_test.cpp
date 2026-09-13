@@ -410,8 +410,7 @@ auto run_llvm(const fs::path &path,
         return false;
       }
       const auto stride = element_stride(types, entry.args[i]);
-      if (!values_equal(types, entry.args[i],
-                        read_at(a_bits, *offset, stride),
+      if (!values_equal(types, entry.args[i], read_at(a_bits, *offset, stride),
                         read_at(b_bits, *offset, stride))) {
         return false;
       }

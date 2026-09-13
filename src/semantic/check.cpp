@@ -1411,8 +1411,7 @@ private:
   /// and leave that pointer dangling; a deque never invalidates references
   /// to existing elements on `push_back`. Same reasoning, and the same bug
   /// class, as `type_table::entries_`.
-  std::unordered_map<const ast::type_decl *, std::deque<method_entry>>
-      methods_;
+  std::unordered_map<const ast::type_decl *, std::deque<method_entry>> methods_;
   /// Extend-block methods on a builtin type (e.g. `str`), keyed by the
   /// builtin's type-entry name since builtins have no `type_decl` to key
   /// `methods_` by.
@@ -6918,8 +6917,8 @@ private:
             // `instantiate_impl_method_for`. Without the instance,
             // `hir::lower_binary` composes `wrap::eq`, which is the
             // uncompiled template.
-            const auto *callee = instantiate_impl_method_for(binary, *method,
-                                                             entry, target);
+            const auto *callee =
+                instantiate_impl_method_for(binary, *method, entry, target);
             operator_dispatches_[&binary] = resolved_callee{
                 .decl = callee != nullptr ? callee : method->decl,
                 .owner_module = method->owner->module_name,
@@ -7122,11 +7121,11 @@ private:
     // generic target only exists once compiled for this operand type.
     const auto *callee =
         instantiate_impl_method_for(binary, *method, entry, target);
-    operator_dispatches_[&binary] = resolved_callee{
-        .decl = callee != nullptr ? callee : method->decl,
-        .owner_module = method->owner->module_name,
-        .impl_target_type = callee != nullptr ? "" : entry.name,
-        .receiver = binary.lhs.get()};
+    operator_dispatches_[&binary] =
+        resolved_callee{.decl = callee != nullptr ? callee : method->decl,
+                        .owner_module = method->owner->module_name,
+                        .impl_target_type = callee != nullptr ? "" : entry.name,
+                        .receiver = binary.lhs.get()};
     ord_dispatch_result_types_[&binary] =
         resolve_operator_return_type(target, "ord", *method);
   }
@@ -7436,8 +7435,7 @@ private:
   /// comptime_coherence_info`) so `implements[T, Trait]()`/`T.traits()`
   /// (`spec/specification/04-stdlib/type-traits/{58,60}-*.md`) can answer
   /// without the evaluator reaching back into `checker`.
-  std::unordered_map<std::string, std::vector<std::string>>
-      traits_by_type_key_;
+  std::unordered_map<std::string, std::vector<std::string>> traits_by_type_key_;
 
   /// Extracts the trailing name of an impl's trait-type path (e.g. `show`
   /// from `impl show for point:`), or empty for an inherent impl with no
@@ -8982,9 +8980,10 @@ private:
   /// `value_bindings`/`linear_poly` channel `solve_generic_params` already
   /// uses for free functions (`solve_value_params`), against the impl's
   /// target pattern instead of a parameter list.
-  auto solve_impl_value_params(
-      const method_entry &method, type_id concrete,
-      std::unordered_map<std::string, type_id> &bindings) -> void {
+  auto
+  solve_impl_value_params(const method_entry &method, type_id concrete,
+                          std::unordered_map<std::string, type_id> &bindings)
+      -> void {
     auto solved = value_bindings{};
     solve_value_params(method.impl_target_pattern, concrete, solved);
     for (const auto &type_param : *method.block_type_params) {
@@ -9726,9 +9725,9 @@ private:
     if (field.object->kind == ast::node_kind::ident_expr &&
         dynamic_cast<const ast::ident_expr &>(*field.object).name == "expr") {
       infer_call_args_loosely(call);
-      static constexpr std::array<std::string_view, 10> k_expr_builder_names =
-          {"lit",   "ident",        "field", "interp_concat", "debug",
-           "binary", "call", "ctor_pattern", "match_on", "arm"};
+      static constexpr std::array<std::string_view, 10> k_expr_builder_names = {
+          "lit",    "ident", "field",        "interp_concat", "debug",
+          "binary", "call",  "ctor_pattern", "match_on",      "arm"};
       if (std::ranges::find(k_expr_builder_names, field.field_name) ==
           k_expr_builder_names.end()) {
         error_with_help(
@@ -9741,7 +9740,8 @@ private:
             "`expr.field(object, name)`, `expr.interp_concat(a, b)`, "
             "`expr.debug(value)`, `expr.binary(op, lhs, rhs)`, "
             "`expr.call(callee, args...)`, "
-            "`expr.ctor_pattern(name, arity, prefix)`, `expr.match_on(subject)`, "
+            "`expr.ctor_pattern(name, arity, prefix)`, "
+            "`expr.match_on(subject)`, "
             "and `expr.arm(match, pattern, body)` construct a new "
             "`expr`/`pattern` quote value programmatically.");
         return k_error_type;
@@ -10638,6 +10638,75 @@ private:
                                    /*skip_self=*/false, explicit_args);
   }
 
+  /// Recognizes `implements[T, Trait]()` — a compile-time coherence-table
+  /// query, not an ordinary generic call. `Trait` names a *trait*, not a
+  /// type, so it cannot go through `solve_generic_params`/`explicit_type_
+  /// argument` the way every other bracketed type argument does (that path
+  /// rejects a trait name outright — "is not a type this call can name").
+  /// `implements` has no declared `func_decl` anywhere in the stdlib; the
+  /// whole call is recognized here purely by shape (base name `implements`,
+  /// exactly two bracketed arguments, no parens arguments), the same way
+  /// `T.kind()` is recognized purely by field-call shape rather than
+  /// resolving to a declared method. Always types as `bool`; the actual
+  /// coherence lookup happens at evaluation time
+  /// (`evaluator::try_eval_implements_call`, which mirrors this same
+  /// shape-recognition independently since the evaluator has no view into
+  /// `checker`'s scope-resolution machinery).
+  auto infer_implements_call(const ast::call_expr &call)
+      -> std::optional<type_id> {
+    auto explicit_args = explicit_generic_args{};
+    const auto *base = explicit_generic_callee(*call.callee, explicit_args);
+    if (base == nullptr || base->kind != ast::node_kind::ident_expr ||
+        explicit_args.size() != 2 || !call.args.empty()) {
+      return std::nullopt;
+    }
+    if (dynamic_cast<const ast::ident_expr &>(*base).name != "implements") {
+      return std::nullopt;
+    }
+    const auto &t_arg = explicit_args[0];
+    const auto &trait_arg = explicit_args[1];
+    if (t_arg.value == nullptr ||
+        t_arg.value->kind != ast::node_kind::ident_expr ||
+        trait_arg.value == nullptr ||
+        trait_arg.value->kind != ast::node_kind::ident_expr) {
+      error_with_help(
+          call.span,
+          "`implements[T, Trait]`'s arguments must be plain type/trait names",
+          "expected two plain names here",
+          "`implements` takes a type and a trait name, each written as a "
+          "bare identifier in brackets — not an expression, a qualified "
+          "path, or a parameterized type.");
+      return k_error_type;
+    }
+    const auto &t_name =
+        dynamic_cast<const ast::ident_expr &>(*t_arg.value).name;
+    if (!lookup_type_param(t_name).has_value() &&
+        !find_type_decl_by_name(t_name).has_value() &&
+        !is_builtin_scalar_name(t_name)) {
+      error_with_help(
+          t_arg.span,
+          std::format("`{}` does not name a known type here", t_name),
+          "expected a type here",
+          "`implements[T, Trait]`'s `T` has to name a type that is in "
+          "scope — a builtin, a user type, or an in-scope generic type "
+          "parameter.");
+      return k_error_type;
+    }
+    const auto &trait_name =
+        dynamic_cast<const ast::ident_expr &>(*trait_arg.value).name;
+    if (!find_trait_decl_by_name(trait_name).has_value()) {
+      error_with_help(
+          trait_arg.span,
+          std::format("`{}` does not name a known trait here", trait_name),
+          "expected a trait here",
+          "`implements[T, Trait]`'s `Trait` has to name a trait that is in "
+          "scope.");
+      return k_error_type;
+    }
+    record_expr_type(*base, k_unknown_type);
+    return types_.builtin("bool");
+  }
+
   auto infer_call(const ast::call_expr &call, type_id expected) -> type_id {
     // Before anything else, including argument checking: every
     // instantiation path below reaches back for this by call node.
@@ -10661,6 +10730,17 @@ private:
     if (call.callee->kind == ast::node_kind::index_expr) {
       if (const auto result = infer_comptime_generic_call(
               call, dynamic_cast<const ast::index_expr &>(*call.callee))) {
+        return *result;
+      }
+    }
+
+    // `implements[T, Trait]()`: tried before the general explicit-generic-
+    // call form below, which would otherwise try to resolve `implements` as
+    // a declared function (it isn't one — see `infer_implements_call`'s
+    // doc comment) and fail with "cannot find `implements`".
+    if (call.callee->kind == ast::node_kind::index_expr ||
+        call.callee->kind == ast::node_kind::call_expr) {
+      if (const auto result = infer_implements_call(call)) {
         return *result;
       }
     }
@@ -11745,6 +11825,38 @@ private:
           it != source->types.end()) {
         return std::pair{it->second.decl, source->module_name};
       }
+    }
+    return std::nullopt;
+  }
+
+  /// Mirrors `find_type_decl_by_name` exactly, one map over (`.traits`
+  /// instead of `.types`) — used only by `infer_implements_call`'s `Trait`
+  /// argument, which names a trait rather than a type and so cannot go
+  /// through `explicit_type_argument`'s ordinary type resolution.
+  auto find_trait_decl_by_name(std::string_view name)
+      -> std::optional<const ast::trait_decl *> {
+    if (module_ != nullptr) {
+      if (const auto it = module_->traits.find(std::string(name));
+          it != module_->traits.end()) {
+        return it->second.decl;
+      }
+    }
+    if (const auto *binding = find_import(name)) {
+      if (const auto *source = import_source_module(*binding)) {
+        if (const auto it = source->traits.find(imported_member_name(*binding));
+            it != source->traits.end()) {
+          return it->second.decl;
+        }
+      }
+    }
+    for (const auto *source : wildcard_import_sources()) {
+      if (const auto it = source->traits.find(std::string(name));
+          it != source->traits.end()) {
+        return it->second.decl;
+      }
+    }
+    if (const auto found = find_prelude_trait(name)) {
+      return found->decl;
     }
     return std::nullopt;
   }
@@ -13012,8 +13124,8 @@ private:
         // derive that instantiation's method (`ensure_derived_instance_
         // impls`), and what lets `find_method` tell `wrap[int32]`'s impl
         // from `wrap[str]`'s.
-        if (const auto *method = find_method(value_entry, trait_name,
-                                             value_type);
+        if (const auto *method =
+                find_method(value_entry, trait_name, value_type);
             method != nullptr) {
           dispatch.decl = method->decl;
           dispatch.owner_module = method->owner->module_name;
@@ -16869,8 +16981,7 @@ private:
               term.type->kind != ast::node_kind::named_type) {
             continue;
           }
-          const auto &named =
-              dynamic_cast<const ast::named_type &>(*term.type);
+          const auto &named = dynamic_cast<const ast::named_type &>(*term.type);
           if (!named.path.empty()) {
             supertraits.push_back(named.path.back());
           }
@@ -17072,7 +17183,8 @@ private:
         !std::ranges::contains(k_real_derive_traits, trait_name)) {
       return false;
     }
-    if (!derived_instances_.insert(std::format("{}#{}", instance_id, trait_name))
+    if (!derived_instances_
+             .insert(std::format("{}#{}", instance_id, trait_name))
              .second) {
       // Already derived for this exact (instantiation, trait) pair. The
       // key is the *instantiation*, not the declaration: deriving once per

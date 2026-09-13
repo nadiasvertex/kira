@@ -1492,8 +1492,8 @@ def main() -> int32:
     return TABLE[3] + third(2)
 )kira");
   expect(module.static_init_function.has_value(),
-        "expected a static-init function to be synthesized for a reified "
-        "array global");
+         "expected a static-init function to be synthesized for a reified "
+         "array global");
   expect(module.global_count == 1, "expected exactly one reified global");
 
   const auto vm = bc::vm{module};
@@ -1501,17 +1501,16 @@ def main() -> int32:
       vm.run(*module.static_init_function, std::span<const bc::slot_value>{});
   expect(init_result.has_value(), "expected static init to succeed");
 
-  auto third_result =
-      vm.run(function_index(module, "third"),
-             std::array{bc::slot_value{uint64_t{2}}});
+  auto third_result = vm.run(function_index(module, "third"),
+                             std::array{bc::slot_value{uint64_t{2}}});
   expect(third_result.has_value(), "expected third(2) to succeed");
   expect(third_result->value.i == 30, "expected TABLE[2] == 30");
 
   auto main_result = vm.run(function_index(module, "main"), {});
   expect(main_result.has_value(), "expected main() to succeed");
   expect(main_result->value.i == 70,
-        "expected main()'s TABLE[3] + third(2) == 40 + 30 == 70 — both call "
-        "sites must see the same backing data the single init run built");
+         "expected main()'s TABLE[3] + third(2) == 40 + 30 == 70 — both call "
+         "sites must see the same backing data the single init run built");
 }
 
 } // namespace

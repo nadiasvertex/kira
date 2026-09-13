@@ -130,8 +130,8 @@ namespace kira::bytecode {
 // ==========================================================================
 enum class opcode : uint8_t {
   // --- Constants and register-to-register moves --------------------------
-  op_load_const, ///< u16 dst, u16 const_index — reg[dst] = constants[idx].
-  op_move,       ///< u16 dst, u16 src — reg[dst] = reg[src].
+  op_load_const,   ///< u16 dst, u16 const_index — reg[dst] = constants[idx].
+  op_move,         ///< u16 dst, u16 src — reg[dst] = reg[src].
   op_load_global,  ///< u16 dst, u16 global_index — reg[dst] = globals[idx].
                    ///< The module-wide global table (`bytecode_module::
                    ///< global_count`), not a per-function constant pool —
@@ -464,20 +464,20 @@ enum class opcode : uint8_t {
             ///< suspension is synced into `state_ptr` via ordinary
             ///< `op_store_slot`s immediately before this opcode,
             ///< not by this opcode itself.
-  op_generator_next, ///< u16 dst, u16 generator_reg — the compiled form of
-                     ///< `.next()`. If reg[generator_reg]'s `finished` slot
-                     ///< is set, writes `none` into dst directly (no frame
-                     ///< push). Otherwise pushes a frame for the
-                     ///< generator's `step_function_index`, with register 0
-                     ///< = `state_ptr`, register 1 = `resume_index`,
-                     ///< register 2 = reg[generator_reg] itself (so a
-                     ///< nested `op_yield`/fall-through-return can address
-                     ///< it), and transfers control — the step function
-                     ///< either hits an `op_yield` (writes `some(...)` into
-                     ///< dst per above) or falls off the end / hits a bare
-                     ///< `return` (compiled to build `none`, set
-                     ///< `finished=1` on the generator object, and
-                     ///< `op_return_value` it).
+  op_generator_next,    ///< u16 dst, u16 generator_reg — the compiled form of
+                        ///< `.next()`. If reg[generator_reg]'s `finished` slot
+                        ///< is set, writes `none` into dst directly (no frame
+                        ///< push). Otherwise pushes a frame for the
+                        ///< generator's `step_function_index`, with register 0
+                        ///< = `state_ptr`, register 1 = `resume_index`,
+                        ///< register 2 = reg[generator_reg] itself (so a
+                        ///< nested `op_yield`/fall-through-return can address
+                        ///< it), and transfers control — the step function
+                        ///< either hits an `op_yield` (writes `some(...)` into
+                        ///< dst per above) or falls off the end / hits a bare
+                        ///< `return` (compiled to build `none`, set
+                        ///< `finished=1` on the generator object, and
+                        ///< `op_return_value` it).
   op_str_decode_scalar, ///< u16 dst, u16 str_reg, u16 offset_reg — decodes
                         ///< the UTF-8 scalar starting at byte offset
                         ///< reg[offset_reg] within the `str` reg[str_reg],
@@ -486,13 +486,13 @@ enum class opcode : uint8_t {
                         ///< of `hir_str_decode_scalar`; shares
                         ///< `runtime::str_scalar_at`'s decode with the LLVM
                         ///< tier's `kira_rt_str_scalar_at`.
-  op_str_scalar_width, ///< u16 dst, u16 str_reg, u16 offset_reg — bytes
-                       ///< consumed decoding the scalar at byte offset
-                       ///< reg[offset_reg] within the `str` reg[str_reg]
-                       ///< (1 if that offset doesn't start a valid
-                       ///< sequence). Compiled form of
-                       ///< `hir_str_scalar_width`; companion to
-                       ///< `op_str_decode_scalar`.
+  op_str_scalar_width,  ///< u16 dst, u16 str_reg, u16 offset_reg — bytes
+                        ///< consumed decoding the scalar at byte offset
+                        ///< reg[offset_reg] within the `str` reg[str_reg]
+                        ///< (1 if that offset doesn't start a valid
+                        ///< sequence). Compiled form of
+                        ///< `hir_str_scalar_width`; companion to
+                        ///< `op_str_decode_scalar`.
 };
 
 // ==========================================================================

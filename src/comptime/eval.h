@@ -138,7 +138,8 @@ public:
     /// builtin/compound-builtin type — see `check.cpp`'s `type_key_of`) ->
     /// every trait name that type has an impl for. Backs `T.traits()` and
     /// `implements[T, Trait]()`.
-    std::unordered_map<std::string, std::vector<std::string>> traits_by_type_key;
+    std::unordered_map<std::string, std::vector<std::string>>
+        traits_by_type_key;
     /// Trait name -> the supertrait names its own `requires` clause lists,
     /// in source order (`requires a + b` is legal — see `ast::trait_decl::
     /// requires_bound`'s `bound::terms`). Backs `Trait.requires()`.
@@ -408,7 +409,7 @@ private:
   /// that spells something else entirely at this position).
   [[nodiscard]] auto
   unwrap_explicit_generic_callee(const ast::expr &callee,
-                                std::vector<const ast::expr *> &args_out)
+                                 std::vector<const ast::expr *> &args_out)
       -> const ast::expr *;
 
   /// Asks `variant_resolver_` (if installed) whether `node` is a resolved

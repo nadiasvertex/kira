@@ -342,10 +342,9 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_binary(const ast::binary_expr &bin)
       -> std::expected<ptr<hir_expr>, lowering_error>;
-  [[nodiscard]] auto lower_ordering_comparison(source_span span,
-                                               type_id bool_type,
-                                               ast::binary_op op,
-                                               ptr<hir_expr> ordering_value)
+  [[nodiscard]] auto
+  lower_ordering_comparison(source_span span, type_id bool_type,
+                            ast::binary_op op, ptr<hir_expr> ordering_value)
       -> ptr<hir_expr>;
   [[nodiscard]] auto lower_unary(const ast::unary_expr &un)
       -> std::expected<ptr<hir_expr>, lowering_error>;
@@ -1007,9 +1006,10 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
     // this call's type has to be `ordering` for the match built below to
     // make sense of it.
     const auto ord_result = checked_.ord_dispatch_result_types.find(&bin);
-    const auto call_type = ord_result != checked_.ord_dispatch_result_types.end()
-                                ? ord_result->second
-                                : *type;
+    const auto call_type =
+        ord_result != checked_.ord_dispatch_result_types.end()
+            ? ord_result->second
+            : *type;
     auto callee = ptr<hir_expr>(make<hir_local_ref>(
         bin.span, k_unknown_type, symbol, local_name, resolved.owner_module));
     auto args = ptr_vec<hir_expr>{};
@@ -1063,22 +1063,22 @@ auto lowerer::lower_ordering_comparison(source_span span, type_id bool_type,
         span, bool_type, v ? token_kind::kw_true : token_kind::kw_false,
         std::string(v ? "true" : "false")));
   };
-  const auto less_true = op == ast::binary_op::lt || op == ast::binary_op::lt_eq;
+  const auto less_true =
+      op == ast::binary_op::lt || op == ast::binary_op::lt_eq;
   const auto equal_true =
       op == ast::binary_op::lt_eq || op == ast::binary_op::gt_eq;
   const auto greater_true =
       op == ast::binary_op::gt || op == ast::binary_op::gt_eq;
   const auto make_arm = [&](std::string variant_name,
-                           bool result) -> hir_match_arm {
+                            bool result) -> hir_match_arm {
     auto pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
         span, std::move(variant_name), ptr_vec<hir_pattern>{}));
     auto stmts = ptr_vec<hir_node>{};
-    stmts.push_back(
-        ptr<hir_node>(make<hir_expr_stmt>(span, bool_lit(result))));
-    return hir_match_arm{.pattern = std::move(pattern),
-                         .guard = nullptr,
-                         .body = make<hir_block>(span, bool_type,
-                                                 std::move(stmts))};
+    stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(span, bool_lit(result))));
+    return hir_match_arm{
+        .pattern = std::move(pattern),
+        .guard = nullptr,
+        .body = make<hir_block>(span, bool_type, std::move(stmts))};
   };
   auto arms = std::vector<hir_match_arm>{};
   arms.push_back(make_arm("less", less_true));
@@ -1194,9 +1194,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
       stmts.push_back(ptr<hir_node>(make<hir_list_push>(
           call.span, std::move(*target), std::move(*value))));
       stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-          call.span,
-          ptr<hir_expr>(make<hir_literal>(call.span, *type,
-                                          token_kind::kw_unit, "")))));
+          call.span, ptr<hir_expr>(make<hir_literal>(
+                         call.span, *type, token_kind::kw_unit, "")))));
       return ok_expr(make<hir_block>(call.span, *type, std::move(stmts)));
     }
   }
@@ -3249,9 +3248,8 @@ auto lowerer::lower_str_scalar_loop(
       /*mut=*/true)));
 
   const auto container_ref = [span, iterable_type, container_symbol]() {
-    return ptr<hir_expr>(make<hir_local_ref>(span, iterable_type,
-                                             container_symbol,
-                                             std::string("<for container>")));
+    return ptr<hir_expr>(make<hir_local_ref>(
+        span, iterable_type, container_symbol, std::string("<for container>")));
   };
   const auto cursor_ref = [span, usize_type, cursor_symbol]() {
     return ptr<hir_expr>(make<hir_local_ref>(span, usize_type, cursor_symbol,
@@ -3260,17 +3258,16 @@ auto lowerer::lower_str_scalar_loop(
 
   auto condition = ptr<hir_expr>(hir::make<hir_binary>(
       span, checked_.types.bool_type(), ast::binary_op::lt, cursor_ref(),
-      ptr<hir_expr>(make<hir_container_len>(span, usize_type,
-                                            container_ref()))));
+      ptr<hir_expr>(
+          make<hir_container_len>(span, usize_type, container_ref()))));
 
   push_scope();
   const auto loop_var_symbol = declare_local(loop_var.name, char_type);
   auto body_stmts = ptr_vec<hir_node>{};
-  body_stmts.push_back(ptr<hir_node>(make<hir_let>(
-      span, loop_var_symbol, loop_var.name,
-      ptr<hir_expr>(make<hir_str_decode_scalar>(span, char_type,
-                                                container_ref(),
-                                                cursor_ref())))));
+  body_stmts.push_back(ptr<hir_node>(
+      make<hir_let>(span, loop_var_symbol, loop_var.name,
+                    ptr<hir_expr>(make<hir_str_decode_scalar>(
+                        span, char_type, container_ref(), cursor_ref())))));
 
   auto inner = inner_stmts();
   if (!inner.has_value()) {
@@ -3288,9 +3285,8 @@ auto lowerer::lower_str_scalar_loop(
   auto step_stmts = ptr_vec<hir_node>{};
   step_stmts.push_back(ptr<hir_node>(hir::make<hir_assign>(
       span, ast::assign_op::add_assign, cursor_ref(),
-      ptr<hir_expr>(make<hir_str_scalar_width>(span, usize_type,
-                                               container_ref(),
-                                               cursor_ref())))));
+      ptr<hir_expr>(make<hir_str_scalar_width>(
+          span, usize_type, container_ref(), cursor_ref())))));
 
   result.push_back(ptr<hir_node>(make<hir_while>(
       span, std::move(condition),
@@ -4627,10 +4623,10 @@ auto lower_static_global_element(const comptime::value &value, source_span span,
     return make<hir_literal>(span, elem_type, token_kind::float_lit,
                              std::to_string(value.floating));
   case comptime::value_kind::boolean:
-    return make<hir_literal>(
-        span, elem_type,
-        value.boolean ? token_kind::kw_true : token_kind::kw_false,
-        value.boolean ? "true" : "false");
+    return make<hir_literal>(span, elem_type,
+                             value.boolean ? token_kind::kw_true
+                                           : token_kind::kw_false,
+                             value.boolean ? "true" : "false");
   default:
     // Unreachable: `reify_static_global` only ever admits these three kinds.
     return make<hir_literal>(span, elem_type, token_kind::int_lit, "0");
@@ -4834,8 +4830,8 @@ auto lower_module(const ast::file &file, std::string module_name,
       !result.has_value()) {
     return std::unexpected(result.error());
   }
-  auto module = make<hir_module>(file.span, std::move(module_name),
-                                 std::move(functions));
+  auto module =
+      make<hir_module>(file.span, std::move(module_name), std::move(functions));
   module->statics = std::move(statics);
   return module;
 }

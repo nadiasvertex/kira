@@ -73,9 +73,8 @@ namespace {
     -> value {
   auto fields = std::unordered_map<std::string, value>{};
   fields.emplace("name", value::make_string(variant.name));
-  fields.emplace("payload_count",
-                 value::make_int(
-                     static_cast<int64_t>(variant.payload_types.size())));
+  fields.emplace("payload_count", value::make_int(static_cast<int64_t>(
+                                      variant.payload_types.size())));
   return value::make_struct("", std::move(fields));
 }
 
@@ -399,9 +398,9 @@ auto evaluator::try_eval_implements_call(const ast::call_expr &call)
       dynamic_cast<const ast::ident_expr &>(*type_arg_exprs[1]);
   const auto resolved_t = resolve_generic_type_arg(t_ident);
   if (!resolved_t.has_value()) {
-    return report(t_ident.span,
-                  std::format("`{}` does not name a known type here",
-                              t_ident.name));
+    return report(
+        t_ident.span,
+        std::format("`{}` does not name a known type here", t_ident.name));
   }
   // Deliberately not diagnosed here when `trait_ident` names a higher-
   // kinded trait or a `concept` (the spec's stated error case): neither is
@@ -409,11 +408,10 @@ auto evaluator::try_eval_implements_call(const ast::call_expr &call)
   // `impl_trait_index_`'s own scope), so both simply answer `false` rather
   // than reporting — a real, narrower-than-spec answer rather than a wrong
   // one, but not the clear diagnostic the spec asks for.
-  const auto it = coherence_info_.traits_by_type_key.find(
-      type_key_of_value(*resolved_t));
-  const auto has_trait =
-      it != coherence_info_.traits_by_type_key.end() &&
-      std::ranges::contains(it->second, trait_ident.name);
+  const auto it =
+      coherence_info_.traits_by_type_key.find(type_key_of_value(*resolved_t));
+  const auto has_trait = it != coherence_info_.traits_by_type_key.end() &&
+                         std::ranges::contains(it->second, trait_ident.name);
   return value::make_bool(has_trait);
 }
 

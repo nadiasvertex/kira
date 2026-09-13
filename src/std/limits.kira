@@ -1,0 +1,104 @@
+module std.limits
+
+#: `T`'s bit width: 8, 16, 32, or 64.
+#:
+#: `int128`/`uint128`/`float128` are deliberately absent, matching
+#: `std.traits.hash`'s own scalar impls (`src/std/traits.kira`): the
+#: bytecode VM has no representation for them, and a reachable module
+#: compiles in full, so a query that mentioned them would fail every
+#: program that reaches this file, not just ones that call it with a
+#: 128-bit type.
+#:
+#: An ordinary (non-`static`) `pure def`, not `static pure def`: dispatching
+#: on `T.name()` this way is exactly `is_radix_integer`/`is_signed_integer`'s
+#: existing pattern (`src/std/algo.kira`), which is proven to fold correctly
+#: from an ordinary generic function's own body — the compile-time
+#: evaluator does not yet constant-fold a whole call to a `static def` used
+#: from ordinary code (see `std.traits.is_struct`'s doc comment), so every
+#: query in this file is written the same way to stay usable from both a
+#: `static` context and an ordinary generic body like `saturating_cast`'s in
+#: the spec chapter's own example.
+pub def bits[T]() -> usize:
+    let n = T.name()
+    if n == "int8" or n == "uint8" or n == "byte":
+        return 8
+    if n == "int16" or n == "uint16":
+        return 16
+    if n == "int32" or n == "uint32" or n == "float32":
+        return 32
+    return 64
+
+#: True for a signed integer type or any (floating-point) type — floats have
+#: no unsigned counterpart, so this is unconditionally `true` for them, per
+#: `std.traits.is_signed_integer` "extended to floats".
+pub def is_signed[T]() -> bool:
+    let n = T.name()
+    return (n == "int8" or n == "int16" or n == "int32" or n == "int64" or
+        n == "isize" or n == "float32" or n == "float64")
+
+#: The most negative representable value of `T`.
+#:
+#: Built up in a fixed-type `int64` local and cast to `T` only in the final
+#: `return`, rather than `return <literal> as T` per branch: every branch of
+#: an ordinary `if`-chain type-checks against the same concrete `T` this
+#: instantiation was monomorphized for (unlike a genuine `static if`, whose
+#: untaken branches never type-check at all — but whose own bodies can't
+#: contain a `return`, per `31-compile-time-execution.md`'s documented
+#: "contrary to an earlier version of this section's claim" gap), so a
+#: branch whose literal doesn't fit `T` fails even when `T.name()` guarantees
+#: that branch is never reached for this `T`. Widening every branch's target
+#: to one fixed `int64` sidesteps that: assigning into an `int64` local
+#: always type-checks (every value here fits `int64`), and the single
+#: unconditional `as T` cast at the end is the only place `T` appears.
+#: `-9223372036854775807 - 1` avoids writing the literal `-9223372036854775808`
+#: directly: the lexer/checker parses a literal's magnitude before applying
+#: unary `-`, so `9223372036854775808` (one past `int64::max`) is rejected
+#: as "too large for `int64`" even though the negated value is in range.
+pub def min[T]() -> T:
+    let n = T.name()
+    var v: int64 = 0
+    if n == "int8":
+        v = -128
+    if n == "int16":
+        v = -32768
+    if n == "int32":
+        v = -2147483648
+    if n == "int64" or n == "isize":
+        v = -9223372036854775807 - 1
+    return v as T
+
+#: The most positive representable value of `T`. See `min`'s doc comment for
+#: why this accumulates into a fixed-type local (`uint64` here, since
+#: `uint64`/`usize`'s own max doesn't fit `int64`) rather than casting a
+#: literal straight to `T` in each branch.
+pub def max[T]() -> T:
+    let n = T.name()
+    var v: uint64 = 18446744073709551615
+    if n == "int8":
+        v = 127
+    if n == "int16":
+        v = 32767
+    if n == "int32":
+        v = 2147483647
+    if n == "int64" or n == "isize":
+        v = 9223372036854775807
+    if n == "uint8" or n == "byte":
+        v = 255
+    if n == "uint16":
+        v = 65535
+    if n == "uint32":
+        v = 4294967295
+    return v as T
+
+#: The number of value bits `T` carries — for an integer, `bits[T]()` minus
+#: one if `T` is signed (the sign bit carries no magnitude); for a float,
+#: the mantissa's precision in bits (`24`/`53` for `float32`/`float64`).
+pub def digits[T]() -> usize:
+    let n = T.name()
+    if n == "float32":
+        return 24
+    if n == "float64":
+        return 53
+    if is_signed[T]():
+        return bits[T]() - 1
+    return bits[T]()

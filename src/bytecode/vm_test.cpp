@@ -438,8 +438,8 @@ auto test_tail_call_reuses_frame_past_max_call_depth() -> void {
   auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
   module.functions.push_back(std::move(function));
 
-  const auto args =
-      std::array{bc::slot_value{int64_t{1'000'000}}, bc::slot_value{int64_t{0}}};
+  const auto args = std::array{bc::slot_value{int64_t{1'000'000}},
+                               bc::slot_value{int64_t{0}}};
   auto result = bc::vm{module}.run(0, args);
 
   expect(result.has_value(),

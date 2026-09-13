@@ -1752,7 +1752,8 @@ auto test_reports_unsolved_impl_const_generic_value_param() -> void {
   expect(analyzed.error_count > 0,
          "expected a call to a method whose impl's value parameter its "
          "target never mentions to fail");
-  expect_diagnostic(analyzed, "cannot tell which `n` this call to `capacity` means",
+  expect_diagnostic(analyzed,
+                    "cannot tell which `n` this call to `capacity` means",
                     "expected the diagnostic to name the impl's unsolved "
                     "value parameter");
 }

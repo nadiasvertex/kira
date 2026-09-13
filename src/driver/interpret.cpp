@@ -140,9 +140,9 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
     if (!init_result) {
       return run_outcome{
           .succeeded = false,
-          .message = std::format(
-              "static initialization panicked: {}",
-              bytecode::panic_reason_message(init_result.error()))};
+          .message =
+              std::format("static initialization panicked: {}",
+                          bytecode::panic_reason_message(init_result.error()))};
     }
   }
   auto result = vm.run(index, std::span<const bytecode::slot_value>{});
