@@ -1,0 +1,14 @@
+module sample
+
+static pure def is_named_int32[T]() -> bool:
+    static if T.name() == "int32":
+        return true
+    else:
+        return false
+
+static let picked: bool = is_named_int32[int32]()
+
+static assert picked, "is_named_int32[int32]() should select the `if` branch"
+
+def run() -> unit:
+  return unit
