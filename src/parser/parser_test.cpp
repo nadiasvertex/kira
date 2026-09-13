@@ -1067,6 +1067,72 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
          "expected top-level derive splice statement");
 }
 
+auto test_parser_disambiguates_tilde_splice_from_bitwise_not() -> void {
+  auto parsed = parse_source(
+      "module sample\n"
+      "\n"
+      "def run(x: i32) -> i32:\n"
+      "  let a = ~5\n"
+      "  let b = ~true\n"
+      "  let c = ~\"str\"\n"
+      "  let d = ~-x\n"
+      "  let e = ~foo\n"
+      "  let f = ~foo[i32]()\n"
+      "  return a\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(parsed.file->items.size() == 1, "expected single function item");
+
+  auto *run_decl = expect_node<kira::ast::func_decl>(
+      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+      "expected run function declaration");
+  expect(run_decl->body_stmts.size() == 7,
+         "expected six let bindings plus a return statement");
+
+  auto initializer_of = [](kira::ast::node *stmt_node) -> kira::ast::expr * {
+    auto *let = expect_node<kira::ast::let_stmt>(
+        stmt_node, kira::ast::node_kind::let_stmt,
+        "expected let statement");
+    return let->initializer.get();
+  };
+
+  auto *not_five = expect_expr<kira::ast::unary_expr>(
+      initializer_of(run_decl->body_stmts[0].get()),
+      kira::ast::node_kind::unary_expr,
+      "expected `~5` to parse as bitwise complement, not a splice");
+  expect(not_five->op == kira::ast::unary_op::bit_not,
+         "expected `~5` unary op to be bit_not");
+
+  expect_expr<kira::ast::unary_expr>(
+      initializer_of(run_decl->body_stmts[1].get()),
+      kira::ast::node_kind::unary_expr,
+      "expected `~true` to parse as bitwise complement, not a splice");
+
+  expect_expr<kira::ast::unary_expr>(
+      initializer_of(run_decl->body_stmts[2].get()),
+      kira::ast::node_kind::unary_expr,
+      "expected `~\"str\"` to parse as bitwise complement, not a splice");
+
+  auto *neg_operand_owner = expect_expr<kira::ast::unary_expr>(
+      initializer_of(run_decl->body_stmts[3].get()),
+      kira::ast::node_kind::unary_expr,
+      "expected `~-x` to parse as bitwise complement, not a splice");
+  expect(neg_operand_owner->op == kira::ast::unary_op::bit_not,
+         "expected `~-x` outer op to be bit_not");
+  expect(neg_operand_owner->operand->kind == kira::ast::node_kind::unary_expr,
+         "expected `~-x` operand to itself be a negation");
+
+  expect_expr<kira::ast::splice_expr>(
+      initializer_of(run_decl->body_stmts[4].get()),
+      kira::ast::node_kind::splice_expr,
+      "expected `~foo` to still parse as a splice expression");
+
+  expect_expr<kira::ast::splice_expr>(
+      initializer_of(run_decl->body_stmts[5].get()),
+      kira::ast::node_kind::splice_expr,
+      "expected `~foo[i32]()` to still parse as a splice expression");
+}
+
 auto test_parser_accepts_if_let_expression() -> void {
   auto parsed = parse_source(
       "module sample\n"
@@ -2346,7 +2412,7 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 47> tests = {{
+  const std::array<named_test, 48> tests = {{
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "multiline_sum_type",
@@ -2370,6 +2436,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_disambiguates_if_stmt_after_multiline_match_let},
       {.name = "remaining_phase1_constructs",
        .fn = test_parser_accepts_remaining_phase1_constructs},
+      {.name = "tilde_splice_vs_bitwise_not",
+       .fn = test_parser_disambiguates_tilde_splice_from_bitwise_not},
       {.name = "if_let_expression",
        .fn = test_parser_accepts_if_let_expression},
       {.name = "multiline_if_expression",

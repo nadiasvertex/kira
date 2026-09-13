@@ -3669,13 +3669,13 @@ auto parser::parse_unary_expr() -> ast::ptr<ast::expr> {
   }
 
   case token_kind::tilde: {
-    // At expression depth 0, `~(expr)` is a splice, `~anything_else`
-    // is bitwise complement. We check for `(` to disambiguate.
+    // At expression depth 0, `~(expr)` and `~IDENT` are splices;
+    // `~anything_else` is bitwise complement (kira-grammar.ebnf's
+    // `splice_expr = "~" "(" expr ")" | "~" IDENT`).
     if (peek_at(1).is(token_kind::lparen)) {
       return parse_splice_expr_inner();
     }
-    if (peek_at(1).can_start_expr()) {
-      // Could also be a splice: `~name`
+    if (peek_at(1).is(token_kind::ident)) {
       return parse_splice_expr_inner();
     }
     auto op_tok = advance();
@@ -5631,7 +5631,7 @@ auto parser::parse_splice_expr_inner() -> ast::ptr<ast::splice_expr> {
     advance(); // consume `(`
     sexpr->operand = parse_expr();
     expect(token_kind::rparen);
-  } else if (peek().can_start_expr()) {
+  } else if (at(token_kind::ident)) {
     sexpr->operand = parse_postfix_expr();
   } else {
     emit_unexpected("an expression or identifier after `~`");
