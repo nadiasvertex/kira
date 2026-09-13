@@ -2398,6 +2398,159 @@ auto evaluator::eval_if(const ast::if_expr &if_expr_node) -> value {
   return result.result;
 }
 
+namespace {
+
+/// Bit width + signedness for a builtin scalar `as`-cast target. Mirrors
+/// `bytecode::numeric_kind`/`bit_width` (`src/bytecode/value.h`) in spirit
+/// without pulling in a dependency from `comptime` on `bytecode` — kept
+/// narrow and self-contained, the same tradeoff `k_builtin_scalar_type_
+/// names` above already makes. `int128`/`uint128`/`float128` are
+/// deliberately absent: `comptime::value` stores every integer as a 64-bit
+/// `int64_t` and every float as a `double` (`value.h`), so a cast result
+/// wider than that has nowhere to live, and the runtime has no
+/// representation for them yet either (todo item 6) — a cast to one reports
+/// "not supported" rather than silently narrowing to 64 bits. `char` isn't
+/// listed separately since a `char` value is just an `integer` holding its
+/// code point (see `eval_literal`'s `char_lit` case), identical in shape to
+/// `uint32`.
+struct scalar_cast_kind {
+  int bits = 0;
+  bool is_signed = false;
+  bool is_float = false;
+};
+
+[[nodiscard]] auto scalar_cast_kind_of(std::string_view name)
+    -> std::optional<scalar_cast_kind> {
+  if (name == "int8") {
+    return scalar_cast_kind{.bits = 8, .is_signed = true};
+  }
+  if (name == "int16") {
+    return scalar_cast_kind{.bits = 16, .is_signed = true};
+  }
+  if (name == "int32") {
+    return scalar_cast_kind{.bits = 32, .is_signed = true};
+  }
+  if (name == "int64" || name == "isize") {
+    return scalar_cast_kind{.bits = 64, .is_signed = true};
+  }
+  if (name == "uint8" || name == "byte") {
+    return scalar_cast_kind{.bits = 8, .is_signed = false};
+  }
+  if (name == "uint16") {
+    return scalar_cast_kind{.bits = 16, .is_signed = false};
+  }
+  if (name == "uint32" || name == "char") {
+    return scalar_cast_kind{.bits = 32, .is_signed = false};
+  }
+  if (name == "uint64" || name == "usize") {
+    return scalar_cast_kind{.bits = 64, .is_signed = false};
+  }
+  if (name == "float32") {
+    return scalar_cast_kind{.bits = 32, .is_float = true};
+  }
+  if (name == "float64") {
+    return scalar_cast_kind{.bits = 64, .is_float = true};
+  }
+  return std::nullopt;
+}
+
+/// Sign-extends the low `bits` of `raw` to a full 64-bit two's-complement
+/// value — mirrors `bytecode::vm`'s `sign_extend` (`src/bytecode/vm.cpp`).
+[[nodiscard]] auto sign_extend_to_64(std::uint64_t raw, int bits)
+    -> std::int64_t {
+  if (bits >= 64) {
+    return static_cast<std::int64_t>(raw);
+  }
+  const auto mask = (std::uint64_t{1} << bits) - 1;
+  raw &= mask;
+  const auto sign_bit = std::uint64_t{1} << (bits - 1);
+  return static_cast<std::int64_t>((raw ^ sign_bit) - sign_bit);
+}
+
+} // namespace
+
+auto evaluator::eval_cast(const ast::cast_expr &cast) -> value {
+  if (cast.operand == nullptr || cast.target_type == nullptr) {
+    return value::make_error();
+  }
+  auto operand = evaluate(*cast.operand);
+  if (operand.is_error()) {
+    return operand;
+  }
+
+  const auto *named =
+      dynamic_cast<const ast::named_type *>(cast.target_type.get());
+  if (named == nullptr || named->path.size() != 1) {
+    return report(cast.span, "this cast target is not yet supported in "
+                             "compile-time evaluation");
+  }
+
+  // Resolve through a bound generic type parameter (`v as T`) the same way
+  // a type argument is, so `T` names the concrete scalar its call site
+  // instantiated it at, not the literal spelling "T".
+  const std::string &type_name_written = named->path.front();
+  std::string resolved_name = type_name_written;
+  if (const auto *local = lookup_local(type_name_written);
+      local != nullptr && local->kind == value_kind::type_value) {
+    resolved_name = local->type_name;
+  }
+
+  if (resolved_name == "bool") {
+    if (operand.kind == value_kind::boolean) {
+      return operand;
+    }
+    if (operand.kind == value_kind::integer) {
+      return value::make_bool(operand.integer != 0);
+    }
+    if (operand.kind == value_kind::floating) {
+      return value::make_bool(operand.floating != 0.0);
+    }
+    return report(cast.span,
+                  "cannot cast this value to `bool` at compile time");
+  }
+
+  const auto kind = scalar_cast_kind_of(resolved_name);
+  if (!kind.has_value()) {
+    return report(cast.span,
+                  std::format("cast to `{}` is not supported in "
+                              "compile-time evaluation",
+                              resolved_name));
+  }
+
+  if (kind->is_float) {
+    double as_double = 0.0;
+    if (operand.kind == value_kind::integer) {
+      as_double = static_cast<double>(operand.integer);
+    } else if (operand.kind == value_kind::floating) {
+      as_double = operand.floating;
+    } else {
+      return report(cast.span,
+                    "`as` requires a compile-time numeric operand");
+    }
+    if (kind->bits == 32) {
+      as_double = static_cast<double>(static_cast<float>(as_double));
+    }
+    return value::make_float(as_double);
+  }
+
+  std::int64_t as_int = 0;
+  if (operand.kind == value_kind::integer) {
+    as_int = operand.integer;
+  } else if (operand.kind == value_kind::floating) {
+    as_int = static_cast<std::int64_t>(operand.floating);
+  } else {
+    return report(cast.span, "`as` requires a compile-time numeric operand");
+  }
+
+  const auto raw = static_cast<std::uint64_t>(as_int);
+  if (kind->is_signed) {
+    return value::make_int(sign_extend_to_64(raw, kind->bits));
+  }
+  const auto mask = kind->bits >= 64 ? ~std::uint64_t{0}
+                                     : (std::uint64_t{1} << kind->bits) - 1;
+  return value::make_int(static_cast<std::int64_t>(raw & mask));
+}
+
 auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
   switch (node.kind) {
   case ast::node_kind::let_stmt: {
@@ -2824,6 +2977,8 @@ auto evaluator::evaluate(const ast::expr &expr) -> value {
     return eval_match(dynamic_cast<const ast::match_expr &>(expr));
   case ast::node_kind::if_expr:
     return eval_if(dynamic_cast<const ast::if_expr &>(expr));
+  case ast::node_kind::cast_expr:
+    return eval_cast(dynamic_cast<const ast::cast_expr &>(expr));
   default:
     return report(expr.span, "this expression form is not yet supported in "
                              "compile-time evaluation");

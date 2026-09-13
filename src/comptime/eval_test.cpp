@@ -166,6 +166,77 @@ auto test_eval_global_binding_reference() -> void {
          "101");
 }
 
+auto test_eval_cast_int_narrowing_wraps_like_runtime() -> void {
+  const auto result = eval_source("300 as int8");
+  expect(result.kind == kira::comptime::value_kind::integer,
+         "expected an integer result");
+  expect(result.integer == 44,
+         "expected `300 as int8` to truncate like a runtime cast (300 mod "
+         "256 - 256 = 44)");
+}
+
+auto test_eval_cast_negative_to_unsigned_zero_extends() -> void {
+  // `as` binds tighter than unary `-` (it's parsed as a postfix suffix), so
+  // the negation must be parenthesized to apply to the whole value before
+  // the cast rather than to `1 as uint8` first.
+  const auto result = eval_source("(-1) as uint8");
+  expect(result.kind == kira::comptime::value_kind::integer,
+         "expected an integer result");
+  expect(result.integer == 255,
+         "expected `(-1) as uint8` to reinterpret as the unsigned pattern "
+         "255");
+}
+
+auto test_eval_cast_int_to_float() -> void {
+  const auto result = eval_source("5 as float64");
+  expect(result.kind == kira::comptime::value_kind::floating,
+         "expected a floating result");
+  expect(result.floating == 5.0, "expected `5 as float64` to evaluate to 5.0");
+}
+
+auto test_eval_cast_float_to_int_truncates_toward_zero() -> void {
+  const auto result = eval_source("3.9 as int32");
+  expect(result.kind == kira::comptime::value_kind::integer,
+         "expected an integer result");
+  expect(result.integer == 3,
+         "expected `3.9 as int32` to truncate toward zero");
+}
+
+auto test_eval_cast_through_bound_generic_type_param() -> void {
+  // Regression check for todo item 12: `static def min[T]()` needs
+  // `<value> as T` to resolve `T` to whatever scalar the call site bound it
+  // to, not fail as an unsupported cast target.
+  kira::diagnostic_bag diag;
+  auto eval = kira::comptime::evaluator(diag, 0);
+  eval.push_locals(
+      {{"T", kira::comptime::value::make_type_value("int32", nullptr)}});
+
+  kira::diagnostic_bag parse_diag;
+  auto sources = kira::source_manager{};
+  const auto file_id = sources.add_file(
+      "cast_generic.kira",
+      "module sample\n\ndef run():\n  let result = 300 as T\n");
+  const auto *file = sources.get(*file_id);
+  auto lexer = kira::lexer(file->source(), file->id(), parse_diag);
+  auto tokens = lexer.tokenize();
+  auto parser = kira::parser(std::move(tokens), file->id(), parse_diag);
+  auto ast_file = parser.parse_file();
+  expect(!parse_diag.has_errors(), "expected cast-generic source to parse");
+
+  auto *run_func =
+      dynamic_cast<kira::ast::func_decl *>(ast_file->items[0].get());
+  auto *let_result =
+      dynamic_cast<kira::ast::let_stmt *>(run_func->body_stmts[0].get());
+  const auto result = eval.evaluate(*let_result->initializer);
+  eval.pop_locals();
+
+  expect(result.kind == kira::comptime::value_kind::integer,
+         "expected an integer result");
+  expect(result.integer == 300,
+         "expected `300 as T` with `T` bound to `int32` to pass 300 through "
+         "unchanged (it fits in int32)");
+}
+
 auto test_eval_quote_boxes_matching_fragment_kind() -> void {
   const auto result = eval_source("`(1 + 2)`");
   expect(result.kind == kira::comptime::value_kind::expr_fragment,
@@ -188,6 +259,11 @@ auto main() -> int {
   test_eval_match_expr_block_arm_tail_value();
   test_eval_if_expr_tail_value_without_return();
   test_eval_global_binding_reference();
+  test_eval_cast_int_narrowing_wraps_like_runtime();
+  test_eval_cast_negative_to_unsigned_zero_extends();
+  test_eval_cast_int_to_float();
+  test_eval_cast_float_to_int_truncates_toward_zero();
+  test_eval_cast_through_bound_generic_type_param();
   test_eval_quote_boxes_matching_fragment_kind();
   return 0;
 }

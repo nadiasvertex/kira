@@ -278,6 +278,16 @@ private:
   /// `eval_match`'s block-body handling.
   [[nodiscard]] auto eval_if(const ast::if_expr &if_expr_node) -> value;
 
+  /// `<expr> as <type>` — numeric/bool/char scalar conversion. `target_type`
+  /// is resolved the same way a generic type argument is (`resolve_generic_
+  /// type_arg`'s bound-local-then-builtin-name path), so a `static def[T]`
+  /// body can write `v as T` with `T` bound to whatever scalar the caller
+  /// instantiated it at. Anything else (a compound/user type, or a name that
+  /// doesn't resolve at all) reports a specific "cast to '<name>' is not
+  /// supported" diagnostic rather than the generic unsupported-expression
+  /// fallback.
+  [[nodiscard]] auto eval_cast(const ast::cast_expr &cast) -> value;
+
   /// Recognizes `expr.lit(...)`/`expr.ident(...)` — the AST-builder
   /// intrinsics that construct a new `expr` quote-value programmatically
   /// (as opposed to capturing existing syntax via a backtick quote). `expr`

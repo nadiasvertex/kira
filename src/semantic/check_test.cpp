@@ -1141,6 +1141,20 @@ auto test_accepts_static_def_call_evaluates() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_static_generic_call_casts_to_bound_type_param() -> void {
+  // Regression check for todo item 12: `src/comptime/eval.cpp` had no case
+  // for `ast::node_kind::cast_expr` at all, so `v as T` inside a generic
+  // `static def[T]` body — the pattern `std.limits.min`/`max` use — failed
+  // every call with "this expression form is not yet supported in
+  // compile-time evaluation".
+  const auto analyzed = analyze_test_data_file(
+      "accept_static_generic_call_casts_to_bound_type_param.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `v as T` to cast a compile-time value down "
+                     "to the type parameter `T` was bound to:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_reports_static_for_evaluates_each_iteration() -> void {
   const auto analyzed =
       analyze_test_data_file("report_static_for_evaluates_each_iteration.kira");
@@ -3104,6 +3118,7 @@ auto main() -> int {
     test_accepts_static_assert_compares_variant_payloads();
     test_accepts_quote_expr_typed_by_fragment_kind();
     test_accepts_static_def_call_evaluates();
+    test_accepts_static_generic_call_casts_to_bound_type_param();
     test_accepts_static_struct_value_evaluates();
     test_accepts_static_let_forward_reference();
     test_accepts_splice_expr_reifies_quoted_value();
