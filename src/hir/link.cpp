@@ -299,16 +299,57 @@ struct collector {
 auto find_reachable_modules(const hir_module &entry,
                             const ptr_vec<hir_module> &all_modules)
     -> std::vector<const hir_module *> {
-  auto by_name = std::unordered_map<std::string, const hir_module *>{};
+  // A module name may have more than one `hir_module` behind it — Kira's
+  // multi-file modules (`session.cpp`'s `build_semantic_session`) lower one
+  // `hir_module` per *file*, so a module declared across several files (like
+  // `std.traits`) surfaces here as several same-named entries, every one of
+  // which must be pulled in together: a reference to the module name is a
+  // reference to whichever file happens to define the callee, not to
+  // whichever file lowering happened to visit first.
+  auto by_name =
+      std::unordered_map<std::string, std::vector<const hir_module *>>{};
   for (const auto &module : all_modules) {
     if (module != nullptr) {
-      by_name.emplace(module->module_name, module.get());
+      by_name[module->module_name].push_back(module.get());
     }
   }
 
+  // `entry` must land at `result.front()` exactly — callers like
+  // `run_hir_module`/`build_hir_module` look up the requested function only
+  // in `modules.front()`, so it has to be the very `hir_module` the caller
+  // already resolved that function against, not merely a same-named sibling.
   auto result = std::vector<const hir_module *>{&entry};
   auto visited = std::unordered_set<std::string>{entry.module_name};
   auto queue = std::deque<const hir_module *>{&entry};
+
+  auto visit_module_name = [&](std::string_view module_name) -> void {
+    if (!visited.insert(std::string(module_name)).second) {
+      return;
+    }
+    const auto it = by_name.find(std::string(module_name));
+    if (it == by_name.end()) {
+      return; // referenced module wasn't part of this compile session
+    }
+    for (const auto *sibling : it->second) {
+      if (sibling == &entry) {
+        continue; // already at result.front()
+      }
+      result.push_back(sibling);
+      queue.push_back(sibling);
+    }
+  };
+
+  // Pull in every other file that also declares `entry`'s own module name —
+  // the loop below only discovers modules *referenced from* a function
+  // body, so `entry`'s own siblings need this one explicit pass.
+  if (const auto it = by_name.find(entry.module_name); it != by_name.end()) {
+    for (const auto *sibling : it->second) {
+      if (sibling != &entry) {
+        result.push_back(sibling);
+        queue.push_back(sibling);
+      }
+    }
+  }
 
   while (!queue.empty()) {
     const auto *current = queue.front();
@@ -324,15 +365,7 @@ auto find_reachable_modules(const hir_module &entry,
     }
 
     for (const auto &module_name : found.modules) {
-      if (!visited.insert(module_name).second) {
-        continue;
-      }
-      const auto it = by_name.find(module_name);
-      if (it == by_name.end()) {
-        continue; // referenced module wasn't part of this compile session
-      }
-      result.push_back(it->second);
-      queue.push_back(it->second);
+      visit_module_name(module_name);
     }
   }
 

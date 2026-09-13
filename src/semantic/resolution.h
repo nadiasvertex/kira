@@ -7,12 +7,6 @@
 
 namespace kira::semantic {
 
-/// Reports every distinct module path declared by more than one input file.
-/// Marks all contributing files as failing so later phases skip them.
-auto detect_duplicate_module_paths(const std::vector<parsed_module> &inputs,
-                                   diagnostic_bag &diag,
-                                   std::vector<bool> &file_has_errors) -> void;
-
 /// Validates that every module with a dotted parent (e.g. `a.b`) has a
 /// corresponding submodule declaration in its parent module's file, and that
 /// a module declared inline is not also given a separate external file.

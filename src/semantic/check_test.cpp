@@ -68,20 +68,59 @@ auto find_std_dir() -> kira::testing::fs::path {
   std::abort();
 }
 
-/// Fixtures for the real auto-injected prelude (`std/traits.kira`,
+/// Fixtures for the real auto-injected prelude (`std/traits*.kira`,
 /// `std/iter.kira`, `std/prelude.kira`, `std/io.kira`, `std/console.kira`,
 /// `std/fmt.kira`) — mirrors
 /// `inject_stdlib_prelude` (`src/driver/driver.cpp`), which every real
 /// `kira` invocation prepends to its session, so bound positions like
 /// `T: eq` and `impl show for point`, and `prelude.kira`'s `use
 /// std.console`, resolve here the same way they do for a real compile.
+/// `std.traits` itself spans several files (`traits.kira` plus its
+/// `traits.*.kira` siblings) that all declare `module std.traits` — Kira's
+/// multi-file module support merges them into one module scope, so every
+/// file has to be listed for the merged module to be complete.
 auto prelude_fixtures() -> std::vector<source_fixture> {
   const auto std_dir = find_std_dir();
   return {
       source_fixture{
+          .path = "std/intrinsics.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "intrinsics.kira"),
+      },
+      source_fixture{
           .path = "std/traits.kira",
           .text = kira::testing::load_test_data_file(std_dir.string(),
                                                      "traits.kira"),
+      },
+      source_fixture{
+          .path = "std/traits.ord.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "traits.ord.kira"),
+      },
+      source_fixture{
+          .path = "std/traits.show.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "traits.show.kira"),
+      },
+      source_fixture{
+          .path = "std/traits.numeric.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "traits.numeric.kira"),
+      },
+      source_fixture{
+          .path = "std/traits.conversion.kira",
+          .text = kira::testing::load_test_data_file(
+              std_dir.string(), "traits.conversion.kira"),
+      },
+      source_fixture{
+          .path = "std/traits.category.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "traits.category.kira"),
+      },
+      source_fixture{
+          .path = "std/traits.hash.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "traits.hash.kira"),
       },
       source_fixture{
           .path = "std/iter.kira",

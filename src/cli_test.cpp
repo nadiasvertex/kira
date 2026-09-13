@@ -619,11 +619,15 @@ auto test_compile_sources_handles_multiple_files() -> void {
          "expected second metadata file to exist");
 }
 
-/// Verify that duplicate module paths are rejected across files.
-auto test_compile_sources_reports_duplicate_module_paths() -> void {
+/// Verify that several files declaring the same `module` path merge into one
+/// module: each file's `pub` declarations are visible to the others (and to
+/// a separate importer) as if they'd been written in a single file, the way
+/// several C++ translation units may reopen the same namespace.
+auto test_compile_sources_merges_multi_file_module_declarations() -> void {
   auto temp = make_temp_dir();
   auto source_a = temp.path / "first.kira";
   auto source_b = temp.path / "second.kira";
+  auto consumer_source = temp.path / "consumer.kira";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_a, "module sample.tools\n"
@@ -631,30 +635,31 @@ auto test_compile_sources_reports_duplicate_module_paths() -> void {
                        "  return 1\n");
   write_file(source_b, "module sample.tools\n"
                        "pub def second() -> int32:\n"
-                       "  return 2\n");
+                       "  return first()\n");
+  write_file(consumer_source, "module sample.app\n"
+                              "use sample.tools\n"
+                              "pub def run() -> int32:\n"
+                              "  return sample.tools.first() + "
+                              "sample.tools.second()\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
-      .sources = {source_a.string(), source_b.string()},
+      .sources = {source_a.string(), source_b.string(),
+                  consumer_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
   auto report = kira::driver::compile_sources(cfg, false);
-  expect(report.has_value(),
-         "expected duplicate-module compile to return a report");
-  expect(report->error_count > 0, "expected duplicate module path to fail");
-  expect(report->modules.empty(),
-         "expected duplicate modules to block metadata output");
-  expect(report->diagnostics.find("duplicate module path `sample.tools`") !=
-             std::string::npos,
-         "expected duplicate-module diagnostic");
-  expect(report->diagnostics.find("first.kira") != std::string::npos,
-         "expected diagnostic to mention first file");
-  expect(report->diagnostics.find("second.kira") != std::string::npos,
-         "expected diagnostic to mention second file");
-  expect(!fs::exists(metadata_dir),
-         "expected duplicate modules to skip metadata output entirely");
+  expect(report.has_value(), "expected multi-file-module compile to return a "
+                             "report");
+  expect(report->error_count == 0,
+         "expected declarations across files sharing a module path to "
+         "resolve against each other cleanly: " +
+             report->diagnostics);
+  expect(report->modules.size() == 3,
+         "expected one metadata artifact per source file, even though "
+         "`first.kira`/`second.kira` share one module scope");
 }
 
 /// Verify that declared child modules may be compiled in separate files.
@@ -830,14 +835,19 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // `from`/`drop` traits the auto-injected prelude provides, and
   // `prelude.kira` itself now `use`s `std.console`/`std.iter` — mirror what
   // `main.cpp` does for every real invocation (this alone now pulls in
-  // `traits.kira`, `limits.kira`, `iter.kira`, `prelude.kira`, `io.kira`,
-  // `console.kira`, `fmt.kira`, `algo.kira`, `unicode_tables.kira`,
+  // `intrinsics.kira`, `traits.kira`, `traits.ord.kira`, `traits.show.kira`,
+  // `traits.numeric.kira`, `traits.conversion.kira`, `traits.category.kira`,
+  // `traits.hash.kira`, `limits.kira`, `iter.kira`, `prelude.kira`,
+  // `io.kira`, `console.kira`, `fmt.kira`, `algo.kira`, `unicode_tables.kira`,
   // `unicode.kira`, `derive.kira`, `fs/path.kira`, and the assembled
   // `std.platform`) rather than
   // hand-listing sources, which would double-add `io.kira`/`console.kira`
-  // under a different path string and trip a duplicate-module-path
-  // diagnostic (`find_stdlib_source_file`'s resolved path doesn't lexically
-  // match a literal `"src/std/io.kira"` under `bazel test`'s runfiles tree).
+  // under a different path string and trip a duplicate-symbol diagnostic —
+  // metadata is emitted per source *file*, so a module split across several
+  // files (like `std.traits`) legitimately emits one metadata artifact per
+  // file even though they all merge into one module scope
+  // (`find_stdlib_source_file`'s resolved path doesn't lexically match a
+  // literal `"src/std/io.kira"` under `bazel test`'s runfiles tree).
   kira::driver::inject_stdlib_prelude(cfg);
 
   auto report = kira::driver::compile_sources(cfg, false);
@@ -845,11 +855,12 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 18,
-         "expected std.io, std.console, std.traits, std.limits, std.iter, "
-         "std.algo, std.fmt, std.string, std.unicode_tables, std.unicode, "
-         "std.derive, std.fs.path, std.platform, std.panic, std.option, "
-         "std.result, std.list, and prelude to all emit metadata");
+  expect(report->modules.size() == 25,
+         "expected std.io, std.console, std.traits (across its 7 files), "
+         "std.limits, std.iter, std.algo, std.fmt, std.string, "
+         "std.unicode_tables, std.unicode, std.derive, std.fs.path, "
+         "std.platform, std.panic, std.option, std.result, std.list, and "
+         "prelude to all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.
@@ -2792,7 +2803,7 @@ auto main() -> int {
     test_compile_sources_reports_parser_errors();
     test_compile_sources_reports_nested_parser_errors();
     test_compile_sources_handles_multiple_files();
-    test_compile_sources_reports_duplicate_module_paths();
+    test_compile_sources_merges_multi_file_module_declarations();
     test_compile_sources_accepts_declared_external_submodule();
     test_compile_sources_reports_missing_parent_submodule_declaration();
     test_compile_sources_reports_inline_external_submodule_conflict();

@@ -241,8 +241,8 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   // injected, exactly like the others, so it's available to every session
   // even though most sessions never actually reference it by name.
   for (const auto *filename :
-       {"traits.kira", "traits.ord.kira", "traits.show.kira",
-        "traits.numeric.kira", "traits.conversion.kira",
+       {"intrinsics.kira", "traits.kira", "traits.ord.kira",
+        "traits.show.kira", "traits.numeric.kira", "traits.conversion.kira",
         "traits.category.kira", "traits.hash.kira", "limits.kira",
         "iter.kira", "prelude.kira", "panic.kira", "option.kira",
         "result.kira", "list.kira", "io.kira", "console.kira", "algo.kira",

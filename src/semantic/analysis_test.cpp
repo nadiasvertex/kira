@@ -105,15 +105,20 @@ auto test_validate_semantics_accepts_clean_session() -> void {
          "expected no diagnostics for clean semantic session");
 }
 
-auto test_validate_semantics_reports_duplicate_module_paths() -> void {
-  const auto analyzed = analyze_sources(
-      load_fixtures("semantic_analysis_test/duplicate_module_paths"));
+/// Two files declaring the same `module sample.tools` path merge into one
+/// module scope: `second.kira`'s `build()` calls `run()`, declared only in
+/// `first.kira`, unqualified — proving the two files' top-level declarations
+/// resolve against each other the way declarations in one file would.
+auto test_validate_semantics_merges_multi_file_module_declarations() -> void {
+  const auto analyzed =
+      analyze_sources(load_fixtures("semantic_analysis_test/multi_file_module"));
 
-  expect(analyzed.error_count > 0,
-         "expected duplicate module paths to fail semantic validation");
-  expect(analyzed.diagnostics.find("duplicate module path `sample.tools`") !=
-             std::string::npos,
-         "expected duplicate-module-path diagnostic");
+  expect(analyzed.error_count == 0,
+         "expected declarations shared across files under one module path "
+         "to validate cleanly: " +
+             analyzed.diagnostics);
+  expect(analyzed.diagnostics.empty(),
+         "expected no diagnostics for a clean multi-file module");
 }
 
 auto test_validate_semantics_reports_missing_parent_module_declaration()
@@ -196,7 +201,7 @@ auto test_validate_semantics_reports_unresolved_module_qualified_reference()
 auto main() -> int {
   try {
     test_validate_semantics_accepts_clean_session();
-    test_validate_semantics_reports_duplicate_module_paths();
+    test_validate_semantics_merges_multi_file_module_declarations();
     test_validate_semantics_reports_missing_parent_module_declaration();
     test_validate_semantics_reports_unresolved_session_import();
     test_validate_semantics_suggests_close_import_member();

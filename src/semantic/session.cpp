@@ -935,12 +935,21 @@ auto walk_node(const ast::node &node, scope_id active_scope,
 
 } // namespace
 
-/// For each input file with a valid `module` declaration: creates the
-/// module's scope, indexes its direct module-scope symbols, then walks its
-/// items to build nested scopes/symbols and record per-node scope mappings.
+/// For each input file with a valid `module` declaration: finds or creates
+/// the module's scope, indexes its direct module-scope symbols, then walks
+/// its items to build nested scopes/symbols and record per-node scope
+/// mappings. A later file declaring a `module` path already seen earlier in
+/// `inputs` extends that module's existing scope and `module_scope_record`
+/// instead of creating a sibling one under the same name — Kira's multi-file
+/// module support, matching how C++ lets several translation units reopen
+/// the same namespace. `module_scope_record::file_id` still names only the
+/// first file, kept for diagnostics that need *a* location for the module;
+/// nothing treats it as the complete file list (see `module_file_record` in
+/// `module_index.h` for that).
 auto build_semantic_session(const std::vector<parsed_module> &inputs)
     -> semantic_session {
   auto session = semantic_session{};
+  auto module_scope_index_by_name = std::unordered_map<std::string, size_t>{};
 
   for (const auto &input : inputs) {
     if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
@@ -951,20 +960,33 @@ auto build_semantic_session(const std::vector<parsed_module> &inputs)
 
     const auto module_name =
         join_strings(input.ast_file->module_decl->path, ".");
-    const auto module_scope =
-        add_scope(session, semantic_scope_kind::module_scope,
-                  k_invalid_scope_id, input.file_id, module_name, module_name,
-                  source_location{
-                      .file_id = input.file_id,
-                      .span = input.ast_file->module_decl->span,
-                  });
 
-    auto module_record = module_scope_record{
-        .module_name = module_name,
-        .file_id = input.file_id,
-        .scope = module_scope,
-        .symbols = {},
-    };
+    const auto existing = module_scope_index_by_name.find(module_name);
+    const auto is_new_module = existing == module_scope_index_by_name.end();
+
+    const auto module_scope =
+        is_new_module
+            ? add_scope(session, semantic_scope_kind::module_scope,
+                        k_invalid_scope_id, input.file_id, module_name,
+                        module_name,
+                        source_location{
+                            .file_id = input.file_id,
+                            .span = input.ast_file->module_decl->span,
+                        })
+            : session.module_scopes[existing->second].scope;
+
+    if (is_new_module) {
+      module_scope_index_by_name.emplace(module_name,
+                                         session.module_scopes.size());
+      session.module_scopes.push_back(module_scope_record{
+          .module_name = module_name,
+          .file_id = input.file_id,
+          .scope = module_scope,
+          .symbols = {},
+      });
+    }
+    auto &module_record =
+        session.module_scopes[module_scope_index_by_name.at(module_name)];
 
     for (const auto &item : input.ast_file->items) {
       if (item == nullptr || item->has_error) {
@@ -975,7 +997,6 @@ auto build_semantic_session(const std::vector<parsed_module> &inputs)
             add_symbol(session, module_scope, *spec));
       }
     }
-    session.module_scopes.push_back(std::move(module_record));
 
     auto context = scope_build_context{
         .session = session,

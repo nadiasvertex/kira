@@ -14,10 +14,14 @@ auto validate_semantics(const std::vector<parsed_module> &inputs,
   return validate_semantics(inputs, diag, file_has_errors, semantic_options{});
 }
 
-/// Runs the module-graph and declaration-scope validation passes (duplicate
-/// module paths, module boundaries, imports, declaration scopes, qualified
-/// paths), then — unless `options.check_names_and_types` is false — runs the
-/// full name-resolution and type-checking pass.
+/// Runs the module-graph and declaration-scope validation passes (module
+/// boundaries, imports, declaration scopes, qualified paths), then — unless
+/// `options.check_names_and_types` is false — runs the full name-resolution
+/// and type-checking pass. Multiple files may declare the same `module`
+/// path — `build_semantic_session` merges their top-level declarations into
+/// one module scope, the same way C++ lets several translation units reopen
+/// one namespace — so there is deliberately no "duplicate module path"
+/// check here.
 auto validate_semantics(const std::vector<parsed_module> &inputs,
                         diagnostic_bag &diag,
                         std::vector<bool> &file_has_errors,
@@ -25,7 +29,6 @@ auto validate_semantics(const std::vector<parsed_module> &inputs,
   const auto session_index = build_module_session_index(inputs);
   const auto semantic_index = build_semantic_resolution_index(inputs);
 
-  detect_duplicate_module_paths(inputs, diag, file_has_errors);
   validate_module_boundaries(session_index, diag, file_has_errors);
   validate_session_imports(inputs, session_index, semantic_index, diag,
                            file_has_errors);
