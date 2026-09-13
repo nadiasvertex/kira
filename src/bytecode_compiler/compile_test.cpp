@@ -701,6 +701,46 @@ auto test_checked_div_panics_on_divide_by_zero_end_to_end() -> void {
          "expected the panic reason to be integer_divide_by_zero");
 }
 
+// `-128` (etc.) parses its magnitude one past the type's positive max, which
+// `check.cpp`'s `infer_unary` accepts because it knows the negation is about
+// to apply. Compiling that literal negation as "load the magnitude, then
+// negate at runtime" would re-encode the magnitude in the target width
+// first, where it *already* wraps around to that width's minimum value — so
+// the runtime negate would see the minimum value as its own input and trip
+// its own overflow guard. Each of these must produce the minimum value
+// without panicking; `negate` on an actual runtime minimum still must panic,
+// confirming the fold didn't disable the genuine overflow check.
+auto test_negate_of_min_integer_literal_does_not_panic() -> void {
+  auto module = compile_fixture(load_fixture("negate_min_integer_literal.kira"));
+  const auto vm = bc::vm{module};
+
+  auto r8 = vm.run(function_index(module, "min_int8"), std::array<bc::slot_value, 0>{});
+  expect(r8.has_value() && r8->value.i == -128, "expected min_int8() == -128");
+
+  auto r16 = vm.run(function_index(module, "min_int16"), std::array<bc::slot_value, 0>{});
+  expect(r16.has_value() && r16->value.i == -32768, "expected min_int16() == -32768");
+
+  auto r32 = vm.run(function_index(module, "min_int32"), std::array<bc::slot_value, 0>{});
+  expect(r32.has_value() && r32->value.i == -2147483648,
+         "expected min_int32() == -2147483648");
+
+  auto r64 = vm.run(function_index(module, "min_int64"), std::array<bc::slot_value, 0>{});
+  expect(r64.has_value() && r64->value.i == INT64_MIN,
+         "expected min_int64() == INT64_MIN");
+
+  const auto negate_idx = function_index(module, "negate");
+  auto genuine_overflow = vm.run(
+      negate_idx, std::array{bc::slot_value{int64_t{-2147483648}}});
+  expect(!genuine_overflow.has_value(),
+         "expected negating a *runtime* int32::min to still panic");
+  expect(genuine_overflow.error() == bc::panic_reason::integer_overflow,
+         "expected the panic reason to be integer_overflow");
+
+  auto main_result = run_main(module);
+  expect(main_result.has_value() && main_result->value.i == -2147483648,
+         "expected main()'s min_int32() == -2147483648");
+}
+
 auto test_string_literal_len_reads_the_heap_header() -> void {
   // No surface `.len()` yet — reads the heap `str` value's own length slot
   // directly via a hand-assembled op_load_slot, mirroring vm_test.cpp's
@@ -1539,6 +1579,7 @@ auto main() -> int {
     test_cast_widens_int_to_float();
     test_checked_add_panics_on_overflow_end_to_end();
     test_checked_div_panics_on_divide_by_zero_end_to_end();
+    test_negate_of_min_integer_literal_does_not_panic();
     test_string_literal_len_reads_the_heap_header();
     test_tuple_construction_and_projection();
     test_struct_literal_and_field_access();

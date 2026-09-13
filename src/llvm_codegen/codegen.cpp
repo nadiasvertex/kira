@@ -1676,6 +1676,38 @@ private:
                           "llvm_codegen doesn't have yet",
                           ast::unary_op_name(un.op))});
     }
+    if (un.op == ast::unary_op::neg &&
+        un.operand->kind == hir_node_kind::hir_literal &&
+        dynamic_cast<const hir::hir_literal &>(*un.operand).lit_kind ==
+            token_kind::int_lit) {
+      // `-128` as `int8` (and the same for every other width): `check.cpp`'s
+      // `infer_unary` accepts the literal's *magnitude* (128) even though it
+      // is one past the type's positive max, because it already knows a
+      // negation is about to apply. Compiling this as "materialize 128 in
+      // the target width, then negate at runtime" re-encodes that magnitude
+      // first, where it wraps around to the width's minimum value already —
+      // so the runtime negate below would then see that minimum value as
+      // its *input* and trip the very panic guard meant to catch a real
+      // negation of the minimum value (mirrors
+      // `bytecode_compiler/compile.cpp`'s identical fold, which the
+      // bytecode VM needs for the same reason). Folding the negation here,
+      // at compile time, avoids ever materializing that wrapped magnitude.
+      const auto &lit = dynamic_cast<const hir::hir_literal &>(*un.operand);
+      auto kind = numeric_kind_for(un.operand->type, un.span);
+      if (!kind.has_value()) {
+        return std::unexpected(kind.error());
+      }
+      const auto magnitude = parse_uint_literal(lit.value);
+      if (!magnitude.has_value()) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = lit.span,
+            .message = std::format("could not parse integer literal `{}`",
+                                    lit.value)});
+      }
+      auto *ty = llvm_type_for(ctx_, *kind);
+      return llvm::ConstantInt::get(ty, ~(*magnitude) + 1);
+    }
     auto kind = numeric_kind_for(un.operand->type, un.span);
     if (!kind.has_value()) {
       return std::unexpected(kind.error());

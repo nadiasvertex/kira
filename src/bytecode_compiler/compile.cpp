@@ -1469,6 +1469,52 @@ private:
                           "bytecode compiler doesn't have yet",
                           ast::unary_op_name(un.op))});
     }
+    if (un.op == ast::unary_op::neg &&
+        un.operand->kind == hir_node_kind::hir_literal &&
+        dynamic_cast<const hir::hir_literal &>(*un.operand).lit_kind ==
+            token_kind::int_lit) {
+      // `-128` as `int8` (and the same for every other width): `check.cpp`'s
+      // `infer_unary` accepts the literal's *magnitude* (128) even though it
+      // is one past the type's positive max, because it already knows a
+      // negation is about to apply. Compiling this as "load 128, then
+      // negate at runtime" re-encodes that magnitude in the target width
+      // first, where it wraps around to the width's minimum value already —
+      // so the runtime negate then sees `int8::min` as its *input* and
+      // trips `op_neg`'s own overflow guard, which exists to catch a real
+      // runtime negation of the minimum value. Folding the negation here,
+      // at compile time, avoids ever materializing that wrapped magnitude.
+      const auto &lit = dynamic_cast<const hir::hir_literal &>(*un.operand);
+      auto kind = numeric_kind_for(un.operand->type, un.span);
+      if (!kind.has_value()) {
+        return std::unexpected(kind.error());
+      }
+      auto magnitude = encode_literal(lit.lit_kind, lit.value, lit.span, *kind);
+      if (!magnitude.has_value()) {
+        return std::unexpected(magnitude.error());
+      }
+      const auto bits = bytecode::bit_width(*kind);
+      uint64_t negated = ~magnitude->u + 1;
+      if (bits < 64) {
+        // Every other slot_value in this VM stores a signed integer
+        // sign-extended to the full 64-bit register width (see
+        // `store_signed`/`load_signed` in vm.cpp) — masking to `bits` alone
+        // would leave a positive-looking value (e.g. `int32`'s `-1` as
+        // `0x00000000FFFFFFFF` instead of all-ones) for any reader that
+        // treats the slot as a plain `int64_t`, such as this test suite's
+        // direct `.i` reads of a `run()` result.
+        const uint64_t mask = (uint64_t{1} << bits) - 1;
+        negated &= mask;
+        const uint64_t sign_bit = uint64_t{1} << (bits - 1);
+        if ((negated & sign_bit) != 0) {
+          negated |= ~mask;
+        }
+      }
+      const auto index = writer_.add_constant(slot_value{negated});
+      emit_op(opcode::op_load_const);
+      emit_register(dst);
+      writer_.emit_u16(index);
+      return {};
+    }
     auto kind = numeric_kind_for(un.operand->type, un.span);
     if (!kind.has_value()) {
       return std::unexpected(kind.error());
