@@ -95,9 +95,10 @@ struct compile_report {
                                    bool use_color = false)
     -> std::expected<compile_report, std::string>;
 
-/// Appends `prelude.kira` and `std/traits.kira` (found next to the running
-/// binary via the same bundled-data search `find_bazel_archive` uses) to
-/// `cfg.sources`, unless a source with the same resolved path is already
+/// Appends `prelude.kira`, `std/traits.kira`, and the rest of the stdlib
+/// prelude files (found next to the running binary via the same
+/// bundled-data search `find_bazel_archive` uses) to `cfg.sources`, unless
+/// a source with the same resolved path is already
 /// present. This is how every real `kira` invocation gets the auto-imported
 /// prelude — `compile_sources` itself takes exactly the sources it's given,
 /// so its own unit tests are unaffected; only `main.cpp`'s real entry point
