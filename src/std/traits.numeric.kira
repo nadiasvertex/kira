@@ -88,7 +88,7 @@ pub trait one:
     #: The value that leaves any value unchanged when multiplied by it.
     #: Returns:
     #:   the multiplicative identity for this type.
-    pure pure static def one() -> self
+    pure static def one() -> self
 
 # The numeric primitives. Written out one impl per type rather than generated,
 # because there is no way to be generic over "the numeric types" -- and the
