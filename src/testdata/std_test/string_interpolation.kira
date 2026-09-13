@@ -17,5 +17,8 @@ def main() -> int32:
     let neg: int32 = -42
     println("{neg :06}")
 
+    let min64: int64 = -9223372036854775808
+    println("{min64}")
+
     println("{{escaped}} stays literal")
     return 0

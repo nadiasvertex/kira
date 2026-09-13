@@ -230,7 +230,8 @@ pub def fmt_show_u64(v: uint64, spec: format_spec) -> str:
 #:   the formatted string.
 pub def fmt_radix_i64(v: int64, radix: uint8, uppercase: bool, prefix: str, spec: format_spec) -> str:
     let negative = v < 0
-    let magnitude = if negative: (-v) as uint64 else: v as uint64
+    let bits = v as uint64
+    let magnitude = if negative: (18446744073709551615 as uint64 - bits) + (1 as uint64) else: bits
     let digits = rt_fmt_radix_digits(box_u64 { v: magnitude }, box_u8 { v: radix }, box_bool { v: uppercase })
     return pad_integral(negative, prefix, digits, spec)
 

@@ -5,4 +5,5 @@ Hex:  00ff
 Bin:  11111111
 width=8
 -00042
+-9223372036854775808
 {escaped} stays literal
