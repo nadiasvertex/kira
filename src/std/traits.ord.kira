@@ -1,0 +1,104 @@
+module std.traits
+
+#: Equality comparison.
+pub trait eq:
+    #: Checks if two values are equal.
+    #: Args:
+    #:   self: the first value.
+    #:   other: the second value to compare.
+    #: Returns:
+    #:   true if the values are equal, false otherwise.
+    def eq(self, other: &self) -> bool
+
+#: The result of a three-way comparison: less than, equal to, or greater than.
+#:
+#: This was a builtin type name with no variants and no runtime
+#: representation, which made `ord`'s `cmp` a method that could be declared
+#: and never called or matched on. It is an ordinary sum type now, so a
+#: comparator can be written, returned, and matched -- which is what the
+#: comparator-taking algorithms in `std.algo` are built on.
+pub type ordering = @less | @equal | @greater
+
+#: Ordering comparison. Requires eq to be implemented.
+pub trait ord requires eq:
+    #: Compares two values and returns their ordering.
+    #: Args:
+    #:   self: the first value.
+    #:   other: the second value to compare.
+    #: Returns:
+    #:   an ordering indicating whether self is less than, equal to, or greater than other.
+    def cmp(self, other: &self) -> ordering
+
+# The two combinators `deriving ord` is built from. A derived `cmp` is a
+# lexicographic fold over the type's fields, and a fold needs both a
+# per-field three-way comparison and a way to join two results -- neither of
+# which can be written as a single flat expression, which is all the AST
+# builders in `src/std/deriving.kira` can splice into a quoted method body.
+# They live here, rather than in `std.algo` next to `cmp_via_lt`, so a
+# `deriving ord` type does not drag the whole algorithm catalog into the
+# compile: a reachable module is compiled in full, and `std.traits` is
+# already reachable from anything that names `ordering`. `find_prelude_
+# function` (`src/semantic/check.cpp`) lists this module so the generated
+# body can call them unqualified from the user's own module.
+
+#: Three-way-compares two `ord` values using `<`, the primitive every
+#: builtin scalar already has real codegen for. This is what makes
+#: `deriving ord` work without an `impl ord for int32` (and one per other
+#: scalar): such an impl would define the very `cmp` that `<` dispatches to
+#: on that type, and `<` inside its body would then call itself forever.
+#: Type Params:
+#:   T: the value type; must implement `ord`.
+#: Args:
+#:   a: the first value.
+#:   b: the second value.
+#: Returns:
+#:   how `a` relates to `b`.
+pub def ord_cmp[T](a: T, b: T) -> ordering where T: ord:
+    if a < b:
+        return @less
+    if b < a:
+        return @greater
+    return @equal
+
+#: Joins two comparison results the way a lexicographic ordering does: the
+#: first result decides unless it is `@equal`, in which case the next field's
+#: result does. Associative, so a left-nested fold over the fields (which is
+#: the order `static for` produces) gives the same answer as a right-nested
+#: one.
+#: Args:
+#:   first: the more significant field's comparison result.
+#:   next: the comparison result to fall back to when `first` is `@equal`.
+#: Returns:
+#:   `first` unless it is `@equal`, otherwise `next`.
+pub def ord_then(first: ordering, next: ordering) -> ordering:
+    match first:
+        @equal => return next
+        @less => return @less
+        @greater => return @greater
+
+#: The identity of `ord_then`, and the derived `cmp` of a field-less struct:
+#: two values carrying no information compare equal. A function rather than a
+#: bare `@equal` because the AST builders can construct a call but not a
+#: variant reference.
+#: Returns:
+#:   `@equal`.
+pub def ord_equal() -> ordering:
+    return @equal
+
+#: The result of an earlier-declared variant comparing below a later one —
+#: `derive_ord_sum`'s (`src/std/deriving.kira`) primary sort key, before it
+#: ever looks at payloads. A function for the same reason `ord_equal` is:
+#: the AST builders can construct a call but not a bare variant reference.
+#: Returns:
+#:   `@less`.
+pub def ord_less() -> ordering:
+    return @less
+
+#: The result of a later-declared variant comparing above an earlier one —
+#: `derive_ord_sum`'s (`src/std/deriving.kira`) primary sort key. See
+#: `ord_less`'s doc comment for why this is a function rather than a bare
+#: `@greater`.
+#: Returns:
+#:   `@greater`.
+pub def ord_greater() -> ordering:
+    return @greater

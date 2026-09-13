@@ -1,0 +1,17 @@
+module std.traits
+
+#: Conversion from a value of type T to self.
+pub trait from[T]:
+    #: Converts a value of type T into the implementing type.
+    #: Args:
+    #:   value: the value to convert from.
+    #: Returns:
+    #:   the converted value.
+    def from(value: T) -> self
+
+#: Conversion from self into a value of type T.
+pub trait into[T]:
+    #: Converts self into a value of type T.
+    #: Returns:
+    #:   the converted value.
+    def into(self) -> T

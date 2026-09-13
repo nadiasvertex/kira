@@ -1,0 +1,9 @@
+module std.intrinsics
+
+#: Reinterprets a float64's bit pattern as a uint64 -- `as uint64` on a float
+#: is a value conversion (`compile_cast`), not the reinterpret `hash` needs.
+intrinsic def rt_bitcast_f64_to_u64(v: box_f64) -> box_u64
+
+#: Reinterprets a float32's bit pattern as a uint32; the `float32` counterpart
+#: of `rt_bitcast_f64_to_u64`.
+intrinsic def rt_bitcast_f32_to_u32(v: box_f32) -> box_u32

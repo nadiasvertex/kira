@@ -1,0 +1,37 @@
+module std.traits
+
+#: Converting a value to its string representation (user-friendly formatting).
+pub trait show:
+    #: Converts the value to a user-friendly string representation.
+    #: Returns:
+    #:   a string representation of the value.
+    def show(self) -> str
+
+#: Converting a value to its debug representation (detailed formatting).
+pub trait debug:
+    #: Converts the value to a detailed debug string representation, typically with
+    #: additional information useful for debugging.
+    #: Returns:
+    #:   a debug string representation of the value.
+    def debug(self) -> str
+
+#: Converting a value to its hexadecimal string representation.
+pub trait hex:
+    #: Converts the value to a hexadecimal (base-16) string representation.
+    #: Returns:
+    #:   a hexadecimal string representation of the value.
+    def hex(self) -> str
+
+#: Converting a value to its octal string representation.
+pub trait octal:
+    #: Converts the value to an octal (base-8) string representation.
+    #: Returns:
+    #:   an octal string representation of the value.
+    def octal(self) -> str
+
+#: Converting a value to its binary string representation.
+pub trait binary:
+    #: Converts the value to a binary (base-2) string representation.
+    #: Returns:
+    #:   a binary string representation of the value.
+    def binary(self) -> str
