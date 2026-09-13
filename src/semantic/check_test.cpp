@@ -109,8 +109,8 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
       },
       source_fixture{
           .path = "std/traits.conversion.kira",
-          .text = kira::testing::load_test_data_file(
-              std_dir.string(), "traits.conversion.kira"),
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "traits.conversion.kira"),
       },
       source_fixture{
           .path = "std/traits.category.kira",

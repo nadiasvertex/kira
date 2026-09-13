@@ -196,18 +196,39 @@ struct builtin_method_signature {
 /// `hir::lower_call` (spec/collections-algorithms-design.md).
 inline constexpr auto k_builtin_methods =
     std::to_array<builtin_method_signature>({
-        {.owner="list", .name="len", .result=builtin_result_shape::usize_result},
-        {.owner="list", .name="push", .result=builtin_result_shape::unit_result},
-        {.owner="list", .name="cell", .result=builtin_result_shape::cell_of_element},
-        {.owner="list", .name="mutable_cell",
-         .result=builtin_result_shape::option_of_mut_cell_of_element},
-        {.owner="slice", .name="len", .result=builtin_result_shape::usize_result},
-        {.owner="str", .name="len", .result=builtin_result_shape::usize_result},
-        {.owner="str", .name="as_bytes", .result=builtin_result_shape::byte_slice},
-        {.owner="generator", .name="next", .result=builtin_result_shape::option_of_element},
-        {.owner="cell", .name="get", .result=builtin_result_shape::element},
-        {.owner="cell_mut", .name="get", .result=builtin_result_shape::element},
-        {.owner="cell_mut", .name="set", .result=builtin_result_shape::unit_result},
+        {.owner = "list",
+         .name = "len",
+         .result = builtin_result_shape::usize_result},
+        {.owner = "list",
+         .name = "push",
+         .result = builtin_result_shape::unit_result},
+        {.owner = "list",
+         .name = "cell",
+         .result = builtin_result_shape::cell_of_element},
+        {.owner = "list",
+         .name = "mutable_cell",
+         .result = builtin_result_shape::option_of_mut_cell_of_element},
+        {.owner = "slice",
+         .name = "len",
+         .result = builtin_result_shape::usize_result},
+        {.owner = "str",
+         .name = "len",
+         .result = builtin_result_shape::usize_result},
+        {.owner = "str",
+         .name = "as_bytes",
+         .result = builtin_result_shape::byte_slice},
+        {.owner = "generator",
+         .name = "next",
+         .result = builtin_result_shape::option_of_element},
+        {.owner = "cell",
+         .name = "get",
+         .result = builtin_result_shape::element},
+        {.owner = "cell_mut",
+         .name = "get",
+         .result = builtin_result_shape::element},
+        {.owner = "cell_mut",
+         .name = "set",
+         .result = builtin_result_shape::unit_result},
     });
 
 /// The key `k_builtin_methods` files a receiver under, or empty when the
@@ -864,7 +885,10 @@ public:
       : index_(index), diag_(diag), file_has_errors_(file_has_errors),
         comptime_eval_(diag, 0) {
     comptime_eval_.set_variant_resolver(
-        [this](const ast::node &node) -> std::optional<std::pair<std::string, std::string>> { return resolve_variant_tag(node); });
+        [this](const ast::node &node)
+            -> std::optional<std::pair<std::string, std::string>> {
+          return resolve_variant_tag(node);
+        });
   }
 
   /// Entry point: validates impl coherence session-wide, then checks every
@@ -1504,7 +1528,8 @@ private:
                      frame.call_file)
               .with_label(frame.call_span, "this call needs that copy"));
       for (const auto &solution : frame.context_solutions) {
-        annotated.children.emplace_back(diagnostic_level::note, solution, frame.call_file);
+        annotated.children.emplace_back(diagnostic_level::note, solution,
+                                        frame.call_file);
       }
     }
     return annotated;
@@ -14569,12 +14594,12 @@ private:
       }
       auto result = expected_tail;
       const auto if_type = check_body_nodes(decl.if_body, expected_tail);
-      result = join_branch_type(
-          result, if_type,
-          decl.if_body.empty() || decl.if_body.back() == nullptr
-              ? decl.span
-              : decl.if_body.back()->span,
-          "`static if`");
+      result = join_branch_type(result, if_type,
+                                decl.if_body.empty() ||
+                                        decl.if_body.back() == nullptr
+                                    ? decl.span
+                                    : decl.if_body.back()->span,
+                                "`static if`");
       if (!decl.else_body.empty()) {
         const auto else_type = check_body_nodes(decl.else_body, expected_tail);
         result = join_branch_type(result, else_type,
@@ -14824,7 +14849,8 @@ private:
     // stack symmetric with `scopes_`/`capture_barriers_` above.
     auto type_param_values =
         type_param_comptime_values(decl.type_params, type_param_slots_);
-    comptime_eval_.push_locals({type_param_values.begin(), type_param_values.end()});
+    comptime_eval_.push_locals(
+        {type_param_values.begin(), type_param_values.end()});
     auto saved_scopes = std::move(scopes_);
     scopes_.clear();
     // Barriers index into `scopes_`, so they have to travel with it: a stale
@@ -16270,7 +16296,8 @@ private:
     // diagnostics stay per-instantiation, while projections through a module
     // parameter (`DB.conn`, `DB.query(...)`) resolve via the import aliases
     // bound at check time.
-    const auto reject_member = [&](source_span span, std::string_view what) -> void {
+    const auto reject_member = [&](source_span span,
+                                   std::string_view what) -> void {
       auto diag =
           diagnostic(diagnostic_level::error,
                      std::format("instantiating `{}` is not supported yet: {}",
@@ -16620,10 +16647,8 @@ private:
       return std::nullopt;
     }
     require_bool(*decl.if_condition, "a `static if` condition");
-    const auto inside_generic_scope =
-        std::ranges::any_of(type_params_, [](const auto &scope) -> bool {
-          return !scope.empty();
-        });
+    const auto inside_generic_scope = std::ranges::any_of(
+        type_params_, [](const auto &scope) -> bool { return !scope.empty(); });
     if (inside_generic_scope) {
       return std::nullopt;
     }

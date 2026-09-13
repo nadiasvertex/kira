@@ -70,14 +70,29 @@ auto find_std_dir() -> kira::testing::fs::path {
 auto prelude_fixtures() -> std::vector<source_fixture> {
   const auto std_dir = find_std_dir();
   auto fixtures = std::vector<source_fixture>{};
-  for (const auto *filename :
-       {"intrinsics.kira", "traits.kira", "traits.ord.kira", "traits.show.kira",
-        "traits.numeric.kira", "traits.conversion.kira",
-        "traits.category.kira", "traits.hash.kira", "limits.kira",
-        "iter.kira", "prelude.kira", "panic.kira", "option.kira",
-        "result.kira", "list.kira", "io.kira", "console.kira", "algo.kira",
-        "fmt.kira", "unicode_tables.kira", "unicode.kira", "string.kira",
-        "deriving.kira"}) {
+  for (const auto *filename : {"intrinsics.kira",
+                               "traits.kira",
+                               "traits.ord.kira",
+                               "traits.show.kira",
+                               "traits.numeric.kira",
+                               "traits.conversion.kira",
+                               "traits.category.kira",
+                               "traits.hash.kira",
+                               "limits.kira",
+                               "iter.kira",
+                               "prelude.kira",
+                               "panic.kira",
+                               "option.kira",
+                               "result.kira",
+                               "list.kira",
+                               "io.kira",
+                               "console.kira",
+                               "algo.kira",
+                               "fmt.kira",
+                               "unicode_tables.kira",
+                               "unicode.kira",
+                               "string.kira",
+                               "deriving.kira"}) {
     fixtures.push_back(source_fixture{
         .path = std::string("std/") + filename,
         .text = kira::testing::load_test_data_file(std_dir.string(), filename),

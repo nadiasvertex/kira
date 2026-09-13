@@ -1399,7 +1399,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
 
       switch (op) {
       case opcode::op_load_const: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto idx = ops.imm16();
         f.registers[dst] = f.function->constants[idx];
@@ -1407,7 +1407,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_move: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto src = ops.reg();
         f.registers[dst] = f.registers[src];
@@ -1415,7 +1415,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_load_global: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto idx = ops.imm16();
         f.registers[dst] = globals_[idx];
@@ -1423,7 +1423,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_store_global: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto idx = ops.imm16();
         const auto src = ops.reg();
         globals_[idx] = f.registers[src];
@@ -1453,7 +1453,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       case opcode::op_le:
       case opcode::op_gt:
       case opcode::op_ge: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto lhs = ops.reg();
         const auto rhs = ops.reg();
@@ -1466,7 +1466,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
 
       case opcode::op_neg:
       case opcode::op_bitnot: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto src = ops.reg();
         const auto kind = static_cast<numeric_kind>(ops.imm8());
@@ -1476,7 +1476,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_not_bool: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto src = ops.reg();
         f.registers[dst] = store_bool((f.registers[src].u & 1U) == 0U);
@@ -1485,7 +1485,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_cast: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto src = ops.reg();
         const auto from_kind = static_cast<numeric_kind>(ops.imm8());
@@ -1496,13 +1496,13 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_jump: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto offset = ops.rel32();
         f.pc = static_cast<size_t>(static_cast<int64_t>(ops.pos()) + offset);
         break;
       }
       case opcode::op_jump_if_false: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto cond = ops.reg();
         const auto offset = ops.rel32();
         const size_t after = ops.pos();
@@ -1513,7 +1513,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_jump_if_true: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto cond = ops.reg();
         const auto offset = ops.rel32();
         const size_t after = ops.pos();
@@ -1524,7 +1524,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_call: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto fn_idx = ops.imm16();
         const auto first_arg = ops.reg();
@@ -1537,7 +1537,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         continue; // `f` is invalidated by push_frame's push_back.
       }
       case opcode::op_return_value: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto src = ops.reg();
         const slot_value result = f.registers[src];
         const bool has_caller = f.has_caller;
@@ -1559,7 +1559,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_tail_call: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto fn_idx = ops.imm16();
         const auto first_arg = ops.reg();
         const auto argc = ops.imm8();
@@ -1583,7 +1583,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_call_intrinsic: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto intrinsic_id = ops.imm8();
         const auto first_arg = ops.reg();
@@ -1596,7 +1596,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_alloc: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto byte_size = ops.imm16();
         auto *raw = kira::runtime::global_arena().allocate(byte_size);
@@ -1605,7 +1605,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_load_slot: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto ptr_reg = ops.reg();
         const auto byte_offset = ops.imm16();
@@ -1616,7 +1616,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_store_slot: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto ptr_reg = ops.reg();
         const auto byte_offset = ops.imm16();
         const auto src = ops.reg();
@@ -1628,7 +1628,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_addr_local: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto src = ops.reg();
         // `registers` is a `std::vector`; its buffer is stable across the
@@ -1640,7 +1640,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_addr_slot: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto ptr_reg = ops.reg();
         const auto byte_offset = ops.imm16();
@@ -1649,7 +1649,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_addr_indexed: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto ptr_reg = ops.reg();
         const auto index_reg = ops.reg();
@@ -1661,7 +1661,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_load_str_const: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto idx = ops.imm16();
         const auto &text = f.function->string_constants[idx];
@@ -1676,7 +1676,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_load_indexed: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto ptr_reg = ops.reg();
         const auto index_reg = ops.reg();
@@ -1688,7 +1688,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_store_indexed: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto ptr_reg = ops.reg();
         const auto index_reg = ops.reg();
         const auto src = ops.reg();
@@ -1700,7 +1700,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_list_push: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto header_reg = ops.reg();
         const auto value_reg = ops.reg();
         const auto elem_size = ops.imm8();
@@ -1714,7 +1714,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_panic_if: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto cond = ops.reg();
         const auto reason = static_cast<panic_reason>(ops.imm8());
         if ((f.registers[cond].u & 1U) != 0U) {
@@ -1728,7 +1728,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         throw panic_error(panic_reason::explicit_panic);
 
       case opcode::op_load_direct_fn: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto fn_idx = ops.imm16();
         f.pc = ops.pos();
@@ -1743,7 +1743,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_make_closure: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto fn_idx = ops.imm16();
         const auto env_reg = ops.reg();
@@ -1757,7 +1757,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_call_indirect: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto closure_reg = ops.reg();
         const auto first_arg = ops.reg();
@@ -1786,7 +1786,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
 
       case opcode::op_make_generator: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto step_fn_idx = ops.imm16();
         const auto state_ptr_reg = ops.reg();
@@ -1802,7 +1802,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_yield: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto value_reg = ops.reg();
         const auto generator_reg = ops.reg();
         const auto next_resume_index = ops.imm8();
@@ -1831,7 +1831,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         continue;
       }
       case opcode::op_generator_next: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
@@ -1855,7 +1855,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         continue; // `f` is invalidated by push_frame's push_back.
       }
       case opcode::op_str_decode_scalar: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto str_reg = ops.reg();
         const auto offset_reg = ops.reg();
@@ -1867,7 +1867,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
       case opcode::op_str_scalar_width: {
-        auto ops = operand_cursor{.code=code, .at=ip};
+        auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto str_reg = ops.reg();
         const auto offset_reg = ops.reg();

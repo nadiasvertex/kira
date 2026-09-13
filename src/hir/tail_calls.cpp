@@ -126,7 +126,8 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_unary: {
-    collect_bound_symbols(*dynamic_cast<const hir_unary &>(node).operand, bound);
+    collect_bound_symbols(*dynamic_cast<const hir_unary &>(node).operand,
+                          bound);
     return;
   }
   case hir_node_kind::hir_cast: {
@@ -203,8 +204,8 @@ auto collect_bound_symbols(const hir_node &node,
     return;
   }
   case hir_node_kind::hir_generator_next: {
-    collect_bound_symbols(*dynamic_cast<const hir_generator_next &>(node).object,
-                          bound);
+    collect_bound_symbols(
+        *dynamic_cast<const hir_generator_next &>(node).object, bound);
     return;
   }
   // A lambda is a separate scope compiled as its own function — see

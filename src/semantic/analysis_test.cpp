@@ -110,8 +110,8 @@ auto test_validate_semantics_accepts_clean_session() -> void {
 /// `first.kira`, unqualified — proving the two files' top-level declarations
 /// resolve against each other the way declarations in one file would.
 auto test_validate_semantics_merges_multi_file_module_declarations() -> void {
-  const auto analyzed =
-      analyze_sources(load_fixtures("semantic_analysis_test/multi_file_module"));
+  const auto analyzed = analyze_sources(
+      load_fixtures("semantic_analysis_test/multi_file_module"));
 
   expect(analyzed.error_count == 0,
          "expected declarations shared across files under one module path "

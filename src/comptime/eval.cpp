@@ -241,9 +241,8 @@ auto evaluator::resolve_pending_static(const std::string &name,
 
 auto evaluator::report(source_span span, std::string message) -> value {
   if (!diagnostics_suppressed_) {
-    diag_.emit(
-        diagnostic(diagnostic_level::error, std::move(message), file_id_)
-            .with_label(span, "here"));
+    diag_.emit(diagnostic(diagnostic_level::error, std::move(message), file_id_)
+                   .with_label(span, "here"));
   }
   return value::make_error();
 }

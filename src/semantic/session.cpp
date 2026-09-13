@@ -965,15 +965,14 @@ auto build_semantic_session(const std::vector<parsed_module> &inputs)
     const auto is_new_module = existing == module_scope_index_by_name.end();
 
     const auto module_scope =
-        is_new_module
-            ? add_scope(session, semantic_scope_kind::module_scope,
-                        k_invalid_scope_id, input.file_id, module_name,
-                        module_name,
-                        source_location{
-                            .file_id = input.file_id,
-                            .span = input.ast_file->module_decl->span,
-                        })
-            : session.module_scopes[existing->second].scope;
+        is_new_module ? add_scope(session, semantic_scope_kind::module_scope,
+                                  k_invalid_scope_id, input.file_id,
+                                  module_name, module_name,
+                                  source_location{
+                                      .file_id = input.file_id,
+                                      .span = input.ast_file->module_decl->span,
+                                  })
+                      : session.module_scopes[existing->second].scope;
 
     if (is_new_module) {
       module_scope_index_by_name.emplace(module_name,

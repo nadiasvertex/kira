@@ -3258,7 +3258,8 @@ auto lowerer::lower_str_scalar_loop(
                                       std::string("0"))),
       /*mut=*/true)));
 
-  const auto container_ref = [span, iterable_type, container_symbol]() -> ptr<hir_expr> {
+  const auto container_ref = [span, iterable_type,
+                              container_symbol]() -> ptr<hir_expr> {
     return ptr<hir_expr>(make<hir_local_ref>(
         span, iterable_type, container_symbol, std::string("<for container>")));
   };
@@ -4269,8 +4270,9 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   // runs the body's prelude exactly once, on the first resumption, before any
   // of the body proper — so it lowers below like any other precondition.
   const auto has_post = std::ranges::any_of(
-      decl.contracts,
-      [](const ast::contract_clause &contract) -> bool { return !contract.is_pre; });
+      decl.contracts, [](const ast::contract_clause &contract) -> bool {
+        return !contract.is_pre;
+      });
   if (decl.modifiers.is_generator && has_post) {
     return fail(lowering_error_kind::unsupported_construct, decl.span,
                 std::format("a `post` condition on the `generator def` `{}` "
