@@ -430,6 +430,75 @@ auto test_compile_sources_rejects_use_gated_by_nonliteral_static_if() -> void {
              report->diagnostics);
 }
 
+/// Verify that a module-scope `static if` selecting between two competing
+/// top-level declarations of the same name (not gating a `use`) registers the
+/// taken branch's name — spec/todo.md item 7. Both branches declare a `type
+/// word` with a different width; using a literal that only fits in `int64`
+/// checks that the `true` branch's `int64` was genuinely selected (not just
+/// that name resolution stopped failing).
+auto test_compile_sources_folds_static_if_top_level_type_selection() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "app.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module app\n"
+                          "static if true:\n"
+                          "    type word = int64\n"
+                          "else:\n"
+                          "    type word = int32\n"
+                          "def use_it() -> word:\n"
+                          "    return 9223372036854775807\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         std::string("expected `word` to resolve to the `static if true` "
+                     "branch's `int64` so the literal fits:\n") +
+             report->diagnostics);
+}
+
+/// Mirror of the above with the condition flipped to `false`: the `else`
+/// branch's `type word = int32` must be the one registered. Reusing the same
+/// `int64`-only literal here must now fail with an overflow diagnostic,
+/// confirming the `int32` branch — not the `int64` one — was actually picked.
+auto test_compile_sources_folds_static_if_top_level_type_selection_else()
+    -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "app.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module app\n"
+                          "static if false:\n"
+                          "    type word = int64\n"
+                          "else:\n"
+                          "    type word = int32\n"
+                          "def use_it() -> word:\n"
+                          "    return 9223372036854775807\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count > 0,
+         "expected `word` to resolve to the `else` branch's `int32`, "
+         "rejecting a literal that only fits in `int64`");
+  expect(report->diagnostics.find("does not fit in") != std::string::npos,
+         std::string("expected an integer-literal-range diagnostic:\n") +
+             report->diagnostics);
+}
+
 /// Verify that a fully-annotated module also lowers to HIR alongside its
 /// metadata, and that the outcome is recorded on the report.
 auto test_compile_sources_lowers_module_to_hir() -> void {
@@ -2985,6 +3054,8 @@ auto main() -> int {
     test_compile_sources_writes_functor_instantiation_metadata();
     test_compile_sources_folds_static_if_import_selection();
     test_compile_sources_rejects_use_gated_by_nonliteral_static_if();
+    test_compile_sources_folds_static_if_top_level_type_selection();
+    test_compile_sources_folds_static_if_top_level_type_selection_else();
     test_compile_sources_lowers_module_to_hir();
     test_compile_sources_records_hir_lowering_failure_without_failing_compile();
     test_compile_sources_skips_lowering_when_parse_only();
