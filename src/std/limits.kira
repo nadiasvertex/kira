@@ -52,20 +52,32 @@ pub static pure def min[T]() -> T:
 #: The most positive representable value of `T`.
 pub static pure def max[T]() -> T:
     let n = T.name()
-    if n == "float32":
+    static if n == "int8":
+        return 127 as T
+    static if n == "uint8" or n == "byte":
+        return 255 as T
+    static if n == "int16":
+        return 32767 as T
+    static if n == "uint16":
+        return 65535 as T
+    static if n == "int32":
+        return 2147483647 as T
+    static if n == "uint32":
+        return 4294967295 as T
+    static if n == "int64" or n == "isize":
+        return 9223372036854775807 as T
+    static if n == "uint64" or n == "usize":
+        return 18446744073709551615 as T
+    static if n == "float32":
         return 3.40282347e38 as T
-    if n == "float64":
+    static if n == "float64":
         return 1.7976931348623157e308 as T
-    let v: uint64 = match n:
-      "int8"            => 127
-      "int16"           => 32767
-      "int32"           => 2147483647
-      "int64" | "isize" => 9223372036854775807
-      "uint8" | "byte"  => 255
-      "uint16"          => 65535
-      "uint32"          => 4294967295
-      _                 => 18446744073709551615
-    return v as T
+
+    # Should never arrive here.
+    return 0
+
+
+
 
 #: The value of digits[T] is the number of digits in base-radix that can be represented by the type T without change. For
 #: integer types, this is the number of bits not counting the sign bit and the padding bits (if any). For floating-point
