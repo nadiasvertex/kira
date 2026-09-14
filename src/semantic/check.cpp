@@ -1388,6 +1388,38 @@ private:
   /// invoked at compile time, and its own body is never lowered.
   bool in_comptime_only_function_ = false;
 
+  /// Nesting depth of "couldn't decide which branch, so check both" `static
+  /// if` fallbacks (`resolve_static_if_branch` returned `nullopt` — an
+  /// unresolved condition, most commonly one that depends on a still-abstract
+  /// generic type parameter in the un-instantiated template pass every
+  /// top-level function gets in addition to its per-call-site instantiation
+  /// checks). A `static assert` reached only through one of those speculative
+  /// branches has no more claim to being genuinely reached than its sibling
+  /// branch does — the fallback exists to still catch real problems (typos,
+  /// undefined names) in *both* candidates, not to certify either one as
+  /// live. Diagnosing it as an unconditional failure would be a false
+  /// positive for the extremely common "one `static if`/`static assert`
+  /// chain per possible type, with a trailing `static assert false` standing
+  /// in for the case no branch matches" pattern (`std.limits.max`): that
+  /// trailing assert is only ever actually reached when every real
+  /// instantiation's own concretely-bound condition already narrowed past
+  /// it, which the *unresolved* pass can never know. See `check_static_decl`'s
+  /// `assertion` case, the only consumer.
+  int in_speculative_static_branch_ = 0;
+
+  /// Whether a preceding sibling statement in the body list `check_body_
+  /// nodes` is currently walking is already known (for the concrete
+  /// instantiation being checked right now) to have returned — see
+  /// `check_body_nodes`'s own comment for why every statement is still
+  /// visited regardless, and `stmt_definitely_returns` for what counts.
+  /// Saved/restored per `check_body_nodes` call so it never leaks into an
+  /// unrelated sibling block (a nested `static if` branch, a lambda body,
+  /// ...). Consulted by `check_static_decl`'s `assertion` case for the same
+  /// reason `in_speculative_static_branch_` is: a `static assert` reached
+  /// only past a provably-dead earlier `return` has no more claim to being
+  /// live than one reached through an unresolved branch does.
+  bool in_known_unreachable_code_ = false;
+
   /// Enclosing `while`/`for` loops in the body currently being checked, used
   /// to reject `break`/`continue` that have no loop to act on. Saved and
   /// reset across every function and lambda body: a loop in the *enclosing*
@@ -12338,6 +12370,16 @@ private:
                         type_id expected_tail) -> type_id {
     push_scope();
     auto last = types_.builtin("unit");
+    // Every statement is still visited below regardless of reachability —
+    // `hir::lower` walks this same list unconditionally and needs every
+    // node's type/resolution recorded, so this never skips a `check_body_
+    // node` call. It only tracks, for `check_static_decl`'s `assertion`
+    // case, whether a *preceding sibling* in this same block is already
+    // known (for this concrete instantiation) to have returned — see
+    // `stmt_definitely_returns`'s doc comment for why a `static assert`
+    // reached only past one of those must not be judged reachable.
+    const auto saved_unreachable = in_known_unreachable_code_;
+    in_known_unreachable_code_ = false;
     for (size_t i = 0; i < items.size(); ++i) {
       if (items[i] == nullptr) {
         continue;
@@ -12346,9 +12388,14 @@ private:
       last =
           check_body_node(*items[i], is_last ? expected_tail : k_unknown_type);
       if (!is_last) {
-        last = types_.builtin("unit");
+        last = in_known_unreachable_code_ ? types_.builtin("never")
+                                          : types_.builtin("unit");
+        if (stmt_definitely_returns(*items[i])) {
+          in_known_unreachable_code_ = true;
+        }
       }
     }
+    in_known_unreachable_code_ = saved_unreachable;
     pop_scope();
     return last;
   }
@@ -14731,6 +14778,7 @@ private:
         return branch_type != k_unknown_type ? branch_type : unit;
       }
       auto result = expected_tail;
+      ++in_speculative_static_branch_;
       const auto if_type = check_body_nodes(decl.if_body, expected_tail);
       result = join_branch_type(result, if_type,
                                 decl.if_body.empty() ||
@@ -14745,7 +14793,9 @@ private:
                                       ? decl.else_body.back()->span
                                       : decl.span,
                                   "`static if`");
-      } else if (types_.entry(result).name == "never") {
+      }
+      --in_speculative_static_branch_;
+      if (decl.else_body.empty() && types_.entry(result).name == "never") {
         // See the identical `if_stmt` comment above: a branch-only `static
         // if` with no `else` must not make the whole construct register as
         // `never` when its one branch purely diverges, or later statements
@@ -16785,20 +16835,33 @@ private:
   /// instantiation) must still narrow, so the check looks at each in-scope
   /// parameter's actual type rather than just whether any generic scope is
   /// active.
+  /// Whether any type parameter currently in scope is still abstract (an
+  /// unbound `type_param_kind`, as opposed to one `push_type_params` bound to
+  /// a concrete type from a monomorphization instance) — i.e. whether the
+  /// function body being checked right now is the un-instantiated generic
+  /// template pass rather than a concretely-bound instantiation. Shared by
+  /// `resolve_static_if_branch` (a `static if` condition mentioning an
+  /// abstract type parameter can't be folded yet) and `check_static_decl`'s
+  /// `assertion` case (a `static assert` anywhere in a still-abstract body —
+  /// nested in an unresolved `static if` branch or not — has exactly the
+  /// same problem: nothing about it is known to be reachable, or even
+  /// meaningful, until the real per-call-site instantiation checks it with
+  /// concrete types bound).
+  auto inside_unbound_generic_scope() -> bool {
+    return std::ranges::any_of(type_params_, [this](const auto &scope) -> bool {
+      return std::ranges::any_of(scope, [this](const auto &param) -> bool {
+        return types_.entry(param.second).kind == type_kind::type_param_kind;
+      });
+    });
+  }
+
   auto resolve_static_if_branch(const ast::static_decl &decl)
       -> std::optional<bool> {
     if (decl.if_condition == nullptr || decl.if_condition->has_error) {
       return std::nullopt;
     }
     require_bool(*decl.if_condition, "a `static if` condition");
-    const auto inside_unbound_generic_scope =
-        std::ranges::any_of(type_params_, [this](const auto &scope) -> bool {
-          return std::ranges::any_of(scope, [this](const auto &param) -> bool {
-            return types_.entry(param.second).kind ==
-                   type_kind::type_param_kind;
-          });
-        });
-    if (inside_unbound_generic_scope) {
+    if (inside_unbound_generic_scope()) {
       return std::nullopt;
     }
     // `try_evaluate`, not `evaluate`: a condition can easily depend on
@@ -16815,6 +16878,51 @@ private:
       return evaluated->is_true();
     }
     return std::nullopt;
+  }
+
+  /// Whether checking `node` as a body statement is guaranteed to have
+  /// already produced a `return` — used by `check_body_nodes` to stop
+  /// checking a block once it knows every later sibling is unreachable.
+  /// Deliberately narrow: only a `return_stmt`, or a `static if` whose
+  /// condition `resolve_static_if_branch` can actually resolve (every type
+  /// parameter in scope concretely bound) *and* whose one selected branch
+  /// itself definitely returns, counts. An ordinary runtime `if`/`match`, or
+  /// a `static if` that can't be resolved yet (the un-instantiated template
+  /// pass), is never treated as return-guaranteeing here — proving that in
+  /// general needs real control-flow analysis this compiler doesn't have.
+  /// This exists only to remove a false positive the checker's own
+  /// per-branch comptime narrowing introduces: a chain of independent
+  /// `static if cond: return ...` statements (one per possible concrete
+  /// type, `std.limits.max`'s shape) with a trailing catch-all `static
+  /// assert`/`return` is, for any one concrete instantiation, only ever
+  /// reached past whichever single `static if` actually matched — the
+  /// others' bodies are skipped already (empty `else_body`), but without
+  /// this, the *trailing* statement was still checked as if every one of
+  /// those earlier `return`s could fall through.
+  auto stmt_definitely_returns(const ast::node &node) -> bool {
+    switch (node.kind) {
+    case ast::node_kind::return_stmt:
+      return true;
+    case ast::node_kind::static_decl: {
+      const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+      if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
+        return false;
+      }
+      const auto taken_branch = resolve_static_if_branch(decl);
+      if (!taken_branch.has_value()) {
+        return false;
+      }
+      const auto &body = *taken_branch ? decl.if_body : decl.else_body;
+      for (const auto &item : body | std::views::reverse) {
+        if (item != nullptr) {
+          return stmt_definitely_returns(*item);
+        }
+      }
+      return false;
+    }
+    default:
+      return false;
+    }
   }
 
   auto check_static_decl(const ast::static_decl &decl) -> void {
@@ -16848,9 +16956,21 @@ private:
           !decl.assert_condition->has_error) {
         require_bool(*decl.assert_condition, "a `static assert` condition");
         const auto evaluated = comptime_eval_.evaluate(*decl.assert_condition);
+        // Skip the "condition was false" diagnostic (but not evaluation
+        // itself, which still surfaces a genuine problem like an undefined
+        // name) in three cases where "false" isn't a trustworthy verdict
+        // yet: inside a `static if`'s speculative, not-known-to-be-reached
+        // fallback branch (`in_speculative_static_branch_`); anywhere in a
+        // still-abstract generic template pass (`inside_unbound_generic_
+        // scope`); or past a preceding sibling already known to have
+        // returned (`in_known_unreachable_code_`) — see each helper's doc
+        // comment for why an unconditional `static assert false` standing
+        // in for "no case matched" must not be judged reachable in any of
+        // them.
         if (!evaluated.is_error() &&
             evaluated.kind == comptime::value_kind::boolean &&
-            !evaluated.is_true()) {
+            !evaluated.is_true() && in_speculative_static_branch_ == 0 &&
+            !in_known_unreachable_code_ && !inside_unbound_generic_scope()) {
           auto diag = diagnostic(diagnostic_level::error,
                                  decl.assert_message.has_value()
                                      ? *decl.assert_message
@@ -16874,8 +16994,10 @@ private:
         check_body_nodes(*taken_branch ? decl.if_body : decl.else_body,
                          k_unknown_type);
       } else {
+        ++in_speculative_static_branch_;
         check_body_nodes(decl.if_body, k_unknown_type);
         check_body_nodes(decl.else_body, k_unknown_type);
+        --in_speculative_static_branch_;
       }
       return;
     }

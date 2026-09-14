@@ -1252,6 +1252,22 @@ auto test_accepts_static_if_narrows_through_let_bound_name() -> void {
              analyzed.diagnostics);
 }
 
+auto test_accepts_static_if_chain_with_trailing_static_assert() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_static_if_chain_with_trailing_static_assert.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected a trailing `static assert false` after a "
+                     "chain of independent `static if n == \"...\": return "
+                     "...` statements (`std.limits.max`'s shape) to never be "
+                     "judged reachable — neither in the un-instantiated "
+                     "template pass (where `T` is still abstract, so no "
+                     "`static if` can be folded) nor in `max_of[int8]`'s own "
+                     "instantiation (where the first `static if` resolves "
+                     "and returns, leaving the assert an unreachable sibling "
+                     "statement):\n") +
+             analyzed.diagnostics);
+}
+
 auto test_accepts_static_assert_compares_variant_payloads() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_assert_compares_variant_payloads.kira");
@@ -3207,6 +3223,7 @@ auto main() -> int {
     test_accepts_static_if_statement_body_in_generic_static_def();
     test_accepts_static_if_narrows_in_bound_generic_instance();
     test_accepts_static_if_narrows_through_let_bound_name();
+    test_accepts_static_if_chain_with_trailing_static_assert();
     test_accepts_static_assert_compares_variant_payloads();
     test_accepts_quote_expr_typed_by_fragment_kind();
     test_accepts_static_def_call_evaluates();
