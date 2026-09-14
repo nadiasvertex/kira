@@ -1,0 +1,9 @@
+module sample
+
+type point = { x: int32, y: int32 }
+
+def field_names[T]() -> list[str]:
+    static for field in T.fields() => field.name
+
+def run() -> list[str]:
+    return field_names[point]()

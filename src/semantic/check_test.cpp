@@ -1166,6 +1166,21 @@ auto test_reports_static_for_evaluates_each_iteration() -> void {
       "expected the per-iteration `static assert` message for n == 3");
 }
 
+auto test_accepts_static_for_inline_as_function_tail() -> void {
+  // Regression check for todo item 7: `static for field in T.fields() =>
+  // field.name` used as a function's sole/tail statement was rejected with
+  // "not every path... returns a value" because `check_body_node`'s
+  // `static_decl` case hard-coded the tail type of every non-`static if`
+  // kind to `unit`, discarding the inline form's yielded expression type.
+  const auto analyzed = analyze_test_data_file(
+      "accept_static_for_inline_as_function_tail.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected an inline `static for ... => ...` as a "
+                     "function's tail statement to be recognized as "
+                     "returning a value:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_accepts_static_struct_value_evaluates() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_static_struct_value_evaluates.kira");
@@ -3250,6 +3265,7 @@ auto main() -> int {
     test_reports_quote_type_annotation_mismatch();
     test_reports_static_assert_evaluates_false();
     test_reports_static_for_evaluates_each_iteration();
+    test_accepts_static_for_inline_as_function_tail();
     test_reports_splice_expr_wrong_fragment_kind();
     test_reports_hygiene_prevents_spliced_binding_leak();
     test_reports_splice_requires_quote_value();

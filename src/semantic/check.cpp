@@ -1451,6 +1451,15 @@ private:
 
   // --- caches ---------------------------------------------------------------
   std::unordered_map<const ast::static_decl *, type_id> static_types_;
+  /// The type inferred for `static for pat in iter => yield_expr`'s
+  /// `for_yield` expression, keyed by the enclosing `static_decl`. Populated
+  /// once in `check_static_decl` (the yield expression is type-checked a
+  /// single time against the iterable's element type, not once per
+  /// unrolled iteration); consulted by `check_body_node` so an inline
+  /// `static for` used as a block's tail statement reports the type it
+  /// actually produces instead of `unit`.
+  std::unordered_map<const ast::static_decl *, type_id>
+      static_for_yield_types_;
   std::unordered_set<const ast::static_decl *> statics_in_progress_;
   /// Each `static let`'s evaluated compile-time value, keyed by declaration
   /// so same-named statics in different modules stay distinct — see
@@ -14768,6 +14777,18 @@ private:
       const auto &decl = dynamic_cast<const ast::static_decl &>(node);
       if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
         check_item(node, /*at_module_scope=*/false);
+        // `static for pat in iter => yield_expr` is exactly as
+        // value-producing as the expression it yields (mirrors how `if`
+        // and `static if` above report their branch type rather than a
+        // hard-coded `unit`) — otherwise this inline form used as a
+        // function's tail statement is wrongly treated as falling off the
+        // end without returning a value.
+        if (decl.decl_kind == ast::static_decl_kind::for_inline) {
+          if (const auto it = static_for_yield_types_.find(&decl);
+              it != static_for_yield_types_.end()) {
+            return it->second;
+          }
+        }
         return unit;
       }
       // Mirrors `if_stmt` above: a `static if` used as a block's tail
@@ -17026,7 +17047,8 @@ private:
         require_bool(*decl.for_guard, "a `static for` guard");
       }
       if (decl.for_yield != nullptr) {
-        infer_expr(*decl.for_yield, k_unknown_type);
+        static_for_yield_types_.insert_or_assign(
+            &decl, infer_expr(*decl.for_yield, k_unknown_type));
       }
       check_body_nodes(decl.for_body, k_unknown_type);
       pop_scope();
