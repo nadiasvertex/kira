@@ -1,0 +1,38 @@
+module main
+
+# ==========================================================================
+#  `static assert` — compile-time assertion with an optional message.
+#
+#  A closed, false condition is a compile error at the assertion's
+#  location; a condition that depends on runtime input instead lowers to a
+#  runtime panic. The message is an ordinary string, so it can use `{expr}`
+#  interpolation to embed compile-time values (a type parameter's name, a
+#  computed number, ...) right in the diagnostic.
+#
+#  Run it:      kira demo/static-assert.kira
+#  Compile it:  kira --compile -o static-assert demo/static-assert.kira
+# ==========================================================================
+
+static LIMIT: int32 = 100
+
+# A passing assertion; the interpolated message is never shown, but must
+# still be well-formed.
+static assert LIMIT <= 1_000, "LIMIT ({LIMIT}) must not exceed {1_000}"
+
+# `max_of` handles every type it knows about via `static if`; the trailing
+# `static assert false` is unreachable for a real call site but, once `T` is
+# bound, still needs a message — interpolating `T`'s reflected name says
+# exactly which type was missing.
+def max_of[T]() -> T:
+    let n = T.name()
+    static if n == "int8":
+        return 127 as T
+    static if n == "int16":
+        return 32767 as T
+    static assert false, "unhandled type '{n}' in max_of"
+    return 0 as T
+
+def main() -> int32:
+    println("max_of[int8]={max_of[int8]()}")
+    println("max_of[int16]={max_of[int16]()}")
+    return 0

@@ -1,0 +1,31 @@
+module codegen_stress.static_if_statement_in_function_body
+
+# Regression test for spec/todo.md item 7: a `static if` used as an ordinary
+# (non-tail) function-body statement never lowered at all — `hir::lower_stmt`
+# had no case for it, so any generic function shaped like `std.limits.max`
+# (a chain of `static if <type check>: return ...` statements followed by a
+# trailing `static assert false` catch-all) type-checked but failed at
+# lowering with "statement kind 15 is not lowered yet". This is the exact
+# shape of `accept_static_if_chain_with_trailing_static_assert.kira`
+# (src/testdata/semantic_check_test/), which only proved the checker's
+# reachability analysis was correct — it never exercised code generation,
+# since `check_test.cpp` never lowers or runs anything.
+#
+# max_of[int8]() should take the first `static if` branch and return 127;
+# max_of[int16]() should skip it (condition false, no `else`, so lowering
+# must not emit its `return`), take the second branch, and return 32767.
+# Neither call should ever reach the trailing `static assert false`.
+
+# expect: 32894
+
+def max_of[T]() -> T:
+    let n = T.name()
+    static if n == "int8":
+        return 127 as T
+    static if n == "int16":
+        return 32767 as T
+    static assert false, "unhandled type"
+    return 0 as T
+
+def main() -> int32:
+    return (max_of[int8]() as int32) + (max_of[int16]() as int32)

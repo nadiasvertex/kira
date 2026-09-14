@@ -1,0 +1,24 @@
+module main
+
+# ==========================================================================
+#  `static if` — compile-time branch selection.
+#
+#  The condition is evaluated by the compile-time interpreter; the branch
+#  not taken is discarded before name resolution ever sees it, so it need
+#  not even type-check. Shown here inside a function body, selecting
+#  between statements per generic instantiation.
+#
+#  Run it:      kira demo/static-if.kira
+#  Compile it:  kira --compile -o static-if demo/static-if.kira
+# ==========================================================================
+
+def describe[T]() -> str:
+    static if T.name() == "int64":
+        return "wide"
+    else:
+        return "narrow"
+
+def main() -> int32:
+    println("describe[int64]={describe[int64]()}")
+    println("describe[int32]={describe[int32]()}")
+    return 0

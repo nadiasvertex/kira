@@ -2707,6 +2707,54 @@ auto lowerer::lower_stmt(const ast::node &node)
     }
     return lower_stmt(*found->second);
   }
+  case ast::node_kind::static_decl: {
+    // A `static if` used as a plain function-body statement (as opposed to
+    // a block's tail expression, handled by `lower_tail_control_flow_stmt`,
+    // or a module-item `static if`, handled in `lower_module_items`).
+    // `checker::check_body_node`/`check_static_decl` already picked the
+    // taken branch during checking (recorded in `static_if_taken_branch`
+    // precisely so this lowerer never re-runs comptime evaluation and risks
+    // disagreeing with the checker) — mirroring the checker's own
+    // `check_body_nodes` call for the branch, this splices the branch's
+    // statements directly into the enclosing statement list rather than
+    // nesting them in a new HIR block/scope, since the checker never pushed
+    // a scope for them either.
+    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+    if (decl.decl_kind == ast::static_decl_kind::assertion) {
+      // Purely compile-time: `checker::check_static_decl`'s `assertion`
+      // case already evaluated and (if false) diagnosed the condition
+      // during checking, exactly as it does for a module-scope `static
+      // assert` (which `lower_module_items` likewise emits no code for) —
+      // there is nothing left for a runtime backend to do here.
+      return ptr_vec<hir_node>{};
+    }
+    if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
+      return fail(lowering_error_kind::unsupported_construct, decl.span,
+                  "this `static` declaration is not lowered as a function-"
+                  "body statement (see spec/todo.md)");
+    }
+    const auto found = checked_.static_if_taken_branch.find(&decl);
+    if (found == checked_.static_if_taken_branch.end()) {
+      return fail(lowering_error_kind::unsupported_construct, decl.span,
+                  "this `static if` condition was never resolved to a "
+                  "concrete branch during checking");
+    }
+    const auto &branch_body = found->second ? decl.if_body : decl.else_body;
+    auto result = ptr_vec<hir_node>{};
+    for (const auto &stmt : branch_body) {
+      if (stmt == nullptr) {
+        continue;
+      }
+      auto lowered = lower_stmt(*stmt);
+      if (!lowered.has_value()) {
+        return std::unexpected(lowered.error());
+      }
+      for (auto &lowered_stmt : *lowered) {
+        result.push_back(std::move(lowered_stmt));
+      }
+    }
+    return result;
+  }
   default:
     return fail(lowering_error_kind::unsupported_construct, node.span,
                 std::format("statement kind {} is not lowered yet "

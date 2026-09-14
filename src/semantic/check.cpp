@@ -962,6 +962,7 @@ public:
         .static_const_values = std::move(static_const_values_),
         .folded_comptime_calls = std::move(folded_comptime_calls_),
         .static_global_defs = std::move(static_global_defs_),
+        .static_if_taken_branch = std::move(static_if_taken_branch_),
         .static_global_refs = std::move(static_global_refs_),
         .static_global_owners = std::move(static_global_owners_),
         .proven_in_bounds = std::move(proven_in_bounds_),
@@ -1273,6 +1274,9 @@ private:
   /// `reify_static_global`.
   std::unordered_map<const ast::static_decl *, checked_types::static_global_def>
       static_global_defs_;
+  /// See `checked_types::static_if_taken_branch`'s doc comment. Populated by
+  /// `check_static_decl`'s `conditional_compilation` case.
+  std::unordered_map<const ast::static_decl *, bool> static_if_taken_branch_;
   /// See `checked_types::static_global_refs`'s doc comment. Populated by
   /// `record_static_const_reference`.
   std::unordered_map<const ast::node *, std::string> static_global_refs_;
@@ -14773,6 +14777,7 @@ private:
       // both like an ordinary `if`).
       const auto taken_branch = resolve_static_if_branch(decl);
       if (taken_branch.has_value()) {
+        static_if_taken_branch_.insert_or_assign(&decl, *taken_branch);
         const auto branch_type = check_body_nodes(
             *taken_branch ? decl.if_body : decl.else_body, expected_tail);
         return branch_type != k_unknown_type ? branch_type : unit;
@@ -16991,6 +16996,7 @@ private:
       // template, ...), fall back to checking both branches so users still
       // get diagnostics for whichever branch has real problems.
       if (taken_branch.has_value()) {
+        static_if_taken_branch_.insert_or_assign(&decl, *taken_branch);
         check_body_nodes(*taken_branch ? decl.if_body : decl.else_body,
                          k_unknown_type);
       } else {

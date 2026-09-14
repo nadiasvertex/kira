@@ -824,6 +824,18 @@ struct checked_types {
   };
   std::unordered_map<const ast::static_decl *, static_global_def>
       static_global_defs;
+  /// Every function-body-scope `static if`/`static if`-`else` (`decl_kind ==
+  /// conditional_compilation`) whose condition `checker::resolve_static_if_
+  /// branch` resolved to a concrete boolean, mapped to which side was taken
+  /// (`true` selects `if_body`, `false` selects `else_body`). `hir::lower_
+  /// stmt`'s `static_decl` case looks a node up here instead of re-running
+  /// compile-time evaluation itself, so the lowerer's branch selection can
+  /// never drift from the checker's. Absent for a `static_decl` the checker
+  /// couldn't resolve (an un-instantiated generic template's speculative
+  /// pass) — such a node is never reached by `hir::lower_stmt` because a
+  /// template body is never lowered directly, only its concrete
+  /// instantiations are.
+  std::unordered_map<const ast::static_decl *, bool> static_if_taken_branch;
   /// Every `ident_expr`/`module_path_expr` that resolved to a reified static
   /// global (see `static_global_defs`), mapped to that global's `name` —
   /// `hir::lower_ident`/`lower_module_path` look this up before falling back

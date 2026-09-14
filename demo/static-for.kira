@@ -1,0 +1,31 @@
+module main
+
+# ==========================================================================
+#  `static for` — compile-time unrolling over a compile-time iterable.
+#
+#  `static for` doesn't loop at runtime: it generates one code path per
+#  iteration, with the loop variable bound to that iteration's concrete
+#  value. Two forms: an inline expression-yielding form (used inside an
+#  expression position) and a block-statement form (ordinary statements per
+#  iteration). Here the iterable is `T.fields()`, compile-time reflection
+#  over a struct's field list.
+#
+#  Run it:      kira demo/static-for.kira
+#  Compile it:  kira --compile -o static-for demo/static-for.kira
+# ==========================================================================
+
+type point = { x: int32, y: int32 }
+
+# Inline form: yields one `field.name` per field, collected into a list.
+def field_names[T]() -> list[str]:
+    static for field in T.fields() => field.name
+
+# Block form: an arbitrary statement per field, unrolled at compile time.
+def print_fields[T]():
+    static for field in T.fields():
+        println("field={field.name} type={field.type_name}")
+
+def main() -> int32:
+    println("names={field_names[point]()}")
+    print_fields[point]()
+    return 0
