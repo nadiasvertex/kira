@@ -1,0 +1,33 @@
+module sample
+
+# Regression test for `check_static_decl`'s `assertion` case: a trailing
+# `static assert false` standing in for "no case matched" after a chain of
+# independent `static if n == "...": return ...` statements (one per possible
+# concrete type — `std.limits.max`'s real shape) must never be judged
+# reachable, in either of the two passes a generic function's body goes
+# through:
+#
+#   - The un-instantiated template pass (this file's own `check_item` loop
+#     reaches `max_of` here even though nothing below ever calls it) has
+#     every type parameter still abstract, so `resolve_static_if_branch`
+#     can't fold any of the `static if`s and falls back to checking both
+#     branches of each — including the trailing assert, which has no
+#     condition tied to `n`/`T` at all and would otherwise fail unconditionally
+#     regardless of what `T` turns out to be.
+#   - The per-call-site instantiation pass (`run`'s call to `max_of[int8]()`)
+#     concretely binds `T`, so the *first* `static if` resolves definitely
+#     true and its own body returns — but the trailing assert is still an
+#     ordinary sibling statement in the same list, reached unconditionally
+#     unless the checker also knows that preceding return already accounted
+#     for every path.
+def max_of[T]() -> T:
+    let n = T.name()
+    static if n == "int8":
+        return 127 as T
+    static if n == "int16":
+        return 32767 as T
+    static assert false, "unhandled type"
+    return 0
+
+def run() -> int8:
+    return max_of[int8]()
