@@ -2612,20 +2612,20 @@ auto test_deriving_reflects_field_concrete_type() -> void {
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path,
-            "module sample\n"
-            "static def derive_show[T]() -> def_expr:\n"
-            "    var body: expr = expr.lit(\"\")\n"
-            "    static for f in T.fields():\n"
-            "        body = expr.interp_concat(body, expr.lit(f.type_name))\n"
-            "    return `(impl show for ~(expr.ident(T.name())):\n"
-            "        def show(self) -> str:\n"
-            "            return ~body)`\n"
-            "type wrap[T] = { value: T } deriving show\n"
-            "def main() -> int32:\n"
-            "    let w: wrap[int32] = { value: 42 }\n"
-            "    if w.show() == \"int32\":\n"
-            "        return 255\n"
-            "    return 0\n");
+             "module sample\n"
+             "static def derive_show[T]() -> def_expr:\n"
+             "    var body: expr = expr.lit(\"\")\n"
+             "    static for f in T.fields():\n"
+             "        body = expr.interp_concat(body, expr.lit(f.type_name))\n"
+             "    return `(impl show for ~(expr.ident(T.name())):\n"
+             "        def show(self) -> str:\n"
+             "            return ~body)`\n"
+             "type wrap[T] = { value: T } deriving show\n"
+             "def main() -> int32:\n"
+             "    let w: wrap[int32] = { value: 42 }\n"
+             "    if w.show() == \"int32\":\n"
+             "        return 255\n"
+             "    return 0\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",

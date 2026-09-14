@@ -1068,17 +1068,16 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
 }
 
 auto test_parser_disambiguates_tilde_splice_from_bitwise_not() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "def run(x: i32) -> i32:\n"
-      "  let a = ~5\n"
-      "  let b = ~true\n"
-      "  let c = ~\"str\"\n"
-      "  let d = ~-x\n"
-      "  let e = ~foo\n"
-      "  let f = ~foo[i32]()\n"
-      "  return a\n");
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "def run(x: i32) -> i32:\n"
+                             "  let a = ~5\n"
+                             "  let b = ~true\n"
+                             "  let c = ~\"str\"\n"
+                             "  let d = ~-x\n"
+                             "  let e = ~foo\n"
+                             "  let f = ~foo[i32]()\n"
+                             "  return a\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected single function item");
@@ -1091,8 +1090,7 @@ auto test_parser_disambiguates_tilde_splice_from_bitwise_not() -> void {
 
   auto initializer_of = [](kira::ast::node *stmt_node) -> kira::ast::expr * {
     auto *let = expect_node<kira::ast::let_stmt>(
-        stmt_node, kira::ast::node_kind::let_stmt,
-        "expected let statement");
+        stmt_node, kira::ast::node_kind::let_stmt, "expected let statement");
     return let->initializer.get();
   };
 

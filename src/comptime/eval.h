@@ -74,7 +74,8 @@ public:
   /// the ordinary, expected outcome for a condition that depends on
   /// something the evaluator has no value for at this point (an ordinary
   /// function-local `let`, say, as opposed to a `static let` global).
-  [[nodiscard]] auto try_evaluate(const ast::expr &expr) -> std::optional<value> {
+  [[nodiscard]] auto try_evaluate(const ast::expr &expr)
+      -> std::optional<value> {
     const auto saved_suppressed = diagnostics_suppressed_;
     diagnostics_suppressed_ = true;
     auto result = evaluate(expr);

@@ -1703,7 +1703,7 @@ private:
             .kind = codegen_error_kind::unsupported_construct,
             .span = lit.span,
             .message = std::format("could not parse integer literal `{}`",
-                                    lit.value)});
+                                   lit.value)});
       }
       auto *ty = llvm_type_for(ctx_, *kind);
       return llvm::ConstantInt::get(ty, ~(*magnitude) + 1);

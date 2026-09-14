@@ -711,26 +711,32 @@ auto test_checked_div_panics_on_divide_by_zero_end_to_end() -> void {
 // without panicking; `negate` on an actual runtime minimum still must panic,
 // confirming the fold didn't disable the genuine overflow check.
 auto test_negate_of_min_integer_literal_does_not_panic() -> void {
-  auto module = compile_fixture(load_fixture("negate_min_integer_literal.kira"));
+  auto module =
+      compile_fixture(load_fixture("negate_min_integer_literal.kira"));
   const auto vm = bc::vm{module};
 
-  auto r8 = vm.run(function_index(module, "min_int8"), std::array<bc::slot_value, 0>{});
+  auto r8 = vm.run(function_index(module, "min_int8"),
+                   std::array<bc::slot_value, 0>{});
   expect(r8.has_value() && r8->value.i == -128, "expected min_int8() == -128");
 
-  auto r16 = vm.run(function_index(module, "min_int16"), std::array<bc::slot_value, 0>{});
-  expect(r16.has_value() && r16->value.i == -32768, "expected min_int16() == -32768");
+  auto r16 = vm.run(function_index(module, "min_int16"),
+                    std::array<bc::slot_value, 0>{});
+  expect(r16.has_value() && r16->value.i == -32768,
+         "expected min_int16() == -32768");
 
-  auto r32 = vm.run(function_index(module, "min_int32"), std::array<bc::slot_value, 0>{});
+  auto r32 = vm.run(function_index(module, "min_int32"),
+                    std::array<bc::slot_value, 0>{});
   expect(r32.has_value() && r32->value.i == -2147483648,
          "expected min_int32() == -2147483648");
 
-  auto r64 = vm.run(function_index(module, "min_int64"), std::array<bc::slot_value, 0>{});
+  auto r64 = vm.run(function_index(module, "min_int64"),
+                    std::array<bc::slot_value, 0>{});
   expect(r64.has_value() && r64->value.i == INT64_MIN,
          "expected min_int64() == INT64_MIN");
 
   const auto negate_idx = function_index(module, "negate");
-  auto genuine_overflow = vm.run(
-      negate_idx, std::array{bc::slot_value{int64_t{-2147483648}}});
+  auto genuine_overflow =
+      vm.run(negate_idx, std::array{bc::slot_value{int64_t{-2147483648}}});
   expect(!genuine_overflow.has_value(),
          "expected negating a *runtime* int32::min to still panic");
   expect(genuine_overflow.error() == bc::panic_reason::integer_overflow,

@@ -98,14 +98,14 @@ auto parse_float_literal(std::string_view text) -> std::optional<double> {
 auto is_int_literal_operand(const ast::expr &e) -> bool {
   if (e.kind == ast::node_kind::literal_expr) {
     return dynamic_cast<const ast::literal_expr &>(e).lit_kind ==
-          token_kind::int_lit;
+           token_kind::int_lit;
   }
   if (e.kind == ast::node_kind::cast_expr) {
     const auto &cast = dynamic_cast<const ast::cast_expr &>(e);
     return cast.operand != nullptr &&
-          cast.operand->kind == ast::node_kind::literal_expr &&
-          dynamic_cast<const ast::literal_expr &>(*cast.operand).lit_kind ==
-              token_kind::int_lit;
+           cast.operand->kind == ast::node_kind::literal_expr &&
+           dynamic_cast<const ast::literal_expr &>(*cast.operand).lit_kind ==
+               token_kind::int_lit;
   }
   return false;
 }

@@ -7200,11 +7200,11 @@ private:
       // unbound) isn't proven non-numeric — checking whether it implements
       // an operator-overload trait has to wait for a concrete instantiation
       // the same way the literal bounds-check does.
-      return types_.is_numeric(lhs)          ? lhs
-             : types_.is_numeric(rhs)        ? rhs
-             : is_deferred_type_param(lhs)   ? lhs
-             : is_deferred_type_param(rhs)   ? rhs
-                                              : k_unknown_type;
+      return types_.is_numeric(lhs)        ? lhs
+             : types_.is_numeric(rhs)      ? rhs
+             : is_deferred_type_param(lhs) ? lhs
+             : is_deferred_type_param(rhs) ? rhs
+                                           : k_unknown_type;
     }
 
     const auto trait_name = operator_trait_for(binary.op);
@@ -7562,12 +7562,12 @@ private:
         if (const auto *lit =
                 dynamic_cast<const ast::literal_expr *>(cast->operand.get());
             lit != nullptr && lit->lit_kind == token_kind::int_lit) {
-          const auto target = cast->target_type != nullptr
-                                   ? resolve_type(*cast->target_type,
-                                                  current_resolve_ctx())
-                                   : expected;
+          const auto target =
+              cast->target_type != nullptr
+                  ? resolve_type(*cast->target_type, current_resolve_ctx())
+                  : expected;
           const auto result_type = infer_literal(*lit, target,
-                                                  /*negated=*/true);
+                                                 /*negated=*/true);
           record_expr_type(*lit, result_type);
           record_expr_type(*cast, result_type);
           return result_type;
@@ -13065,10 +13065,10 @@ private:
       return infer_field(dynamic_cast<const ast::field_expr &>(expr));
     case ast::node_kind::cast_expr: {
       const auto &cast = dynamic_cast<const ast::cast_expr &>(expr);
-      const auto target = cast.target_type != nullptr
-                               ? resolve_type(*cast.target_type,
-                                              current_resolve_ctx())
-                               : k_unknown_type;
+      const auto target =
+          cast.target_type != nullptr
+              ? resolve_type(*cast.target_type, current_resolve_ctx())
+              : k_unknown_type;
       if (cast.operand != nullptr) {
         // A literal operand adopts the cast's own target as its expected
         // type (e.g. `300000000000 as int64` should size the literal
@@ -13078,8 +13078,8 @@ private:
         // narrowing obligation on an already-typed expression.
         const auto *operand_lit =
             dynamic_cast<const ast::literal_expr *>(cast.operand.get());
-        infer_expr(*cast.operand, operand_lit != nullptr ? target
-                                                          : k_unknown_type);
+        infer_expr(*cast.operand,
+                   operand_lit != nullptr ? target : k_unknown_type);
       }
       return target;
     }
@@ -16791,13 +16791,12 @@ private:
       return std::nullopt;
     }
     require_bool(*decl.if_condition, "a `static if` condition");
-    const auto inside_unbound_generic_scope = std::ranges::any_of(
-        type_params_, [this](const auto &scope) -> bool {
-          return std::ranges::any_of(
-              scope, [this](const auto &param) -> bool {
-                return types_.entry(param.second).kind ==
-                       type_kind::type_param_kind;
-              });
+    const auto inside_unbound_generic_scope =
+        std::ranges::any_of(type_params_, [this](const auto &scope) -> bool {
+          return std::ranges::any_of(scope, [this](const auto &param) -> bool {
+            return types_.entry(param.second).kind ==
+                   type_kind::type_param_kind;
+          });
         });
     if (inside_unbound_generic_scope) {
       return std::nullopt;
