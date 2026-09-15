@@ -1,0 +1,19 @@
+module sample
+
+use std.traits.from
+
+type parse_error = @bad_digit(str) | @empty
+type app_error = @parse(str) | @other(str)
+
+impl from[parse_error] for app_error:
+    def from(e: parse_error) -> app_error:
+        match e:
+            @bad_digit(s) => @parse(s)
+            @empty        => @parse("empty")
+
+def parse_num(s: str) -> result[int32, parse_error]:
+    return @ok(42)
+
+def run(s: str) -> result[int32, app_error]:
+    let n = parse_num(s)?
+    return @ok(n)

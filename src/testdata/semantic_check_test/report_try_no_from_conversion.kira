@@ -1,0 +1,11 @@
+module sample
+
+type parse_error = @bad_digit(str) | @empty
+type app_error = @other(str)
+
+def parse_num(s: str) -> result[int32, parse_error]:
+    return @err(@empty)
+
+def run(s: str) -> result[int32, app_error]:
+    let n = parse_num(s)?
+    return @ok(n)
