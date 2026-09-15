@@ -80,9 +80,9 @@ error: cannot propagate `{E1}` with `?` in a function that returns `result[_, {E
 
 `option`'s `?` never triggers a conversion — `@none` carries no error payload to convert.
 
-**Implemented via:** `checker::maybe_wire_try_conversion` (`src/semantic/check.cpp`), called from `infer_try`, resolves the impl using the same `trait_args_of_impl_for`/`find_method`/`instantiate_impl_method_for` machinery operator-overload dispatch uses, and records it in `checked_types::try_conversions`/`try_conversion_types`. `hir::lower_try` (`src/hir/lower.cpp`) reads that record to emit the reconstructed `@err(...)` call in place of the unchanged-subject return.
+## Limitations
 
-**Known gap:** method resolution for `from` (`checker::find_declared_method`) selects the first `impl from[...] for E2` block found for `E2`, regardless of its trait argument — a type with two `impl from[...]` blocks for different source error types does not reliably disambiguate between them. This is a pre-existing limitation of the general trait-method lookup (shared with every other `from`/`into` use, not specific to `?`), not something this feature introduced.
+Method resolution for `from` selects the first `impl from[...] for E2` block found for `E2`, regardless of its trait argument — a type with two `impl from[...]` blocks for different source error types does not reliably disambiguate between them. 
 
 ## Panics vs. errors
 
