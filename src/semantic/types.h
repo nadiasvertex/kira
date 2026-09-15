@@ -725,6 +725,20 @@ struct checked_types {
   /// indexable iterables, which lower through their own dedicated shapes.
   std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
       for_iterator_dispatches;
+  /// Every `?` (`try_expr`) whose operand's `result[_, E1]` error type
+  /// differs from the enclosing function's declared `result[_, E2]` error
+  /// type and resolved against a real `impl from[E1] for E2` — see
+  /// `checker::infer_try`. `receiver` is always unset (`from` is an
+  /// associated function, not a `self`-receiver method); `impl_target_type`
+  /// names `E2`. Absent when the two error types are the same (no
+  /// conversion needed) or when no such impl exists (already diagnosed).
+  std::unordered_map<const ast::try_expr *, resolved_callee> try_conversions;
+  /// For every entry in `try_conversions`, the enclosing function's full
+  /// declared return type (`result[_, E2]`) — `hir::lower_try` needs this
+  /// to type the reconstructed `@err(E2::from(e))` value it builds in the
+  /// failure arm, since that value's type is the *function's* return type,
+  /// not the operand's.
+  std::unordered_map<const ast::try_expr *, type_id> try_conversion_types;
   /// Resolved once from `std.fmt`'s own type declarations — see
   /// `fmt_runtime_types`'s doc comment.
   fmt_runtime_types fmt_types;

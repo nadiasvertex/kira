@@ -246,6 +246,13 @@ auto test_accepts_typed_core_program() -> void {
          "expected typed core program to check cleanly");
 }
 
+auto test_accepts_try_from_conversion() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_try_from_conversion.kira");
+  expect(analyzed.error_count == 0,
+         "expected `?` with a matching `impl from[...]` to check cleanly");
+}
+
 auto test_accepts_structs_and_methods() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_structs_and_methods.kira");
@@ -1172,8 +1179,8 @@ auto test_accepts_static_for_inline_as_function_tail() -> void {
   // "not every path... returns a value" because `check_body_node`'s
   // `static_decl` case hard-coded the tail type of every non-`static if`
   // kind to `unit`, discarding the inline form's yielded expression type.
-  const auto analyzed = analyze_test_data_file(
-      "accept_static_for_inline_as_function_tail.kira");
+  const auto analyzed =
+      analyze_test_data_file("accept_static_for_inline_as_function_tail.kira");
   expect(analyzed.error_count == 0,
          std::string("expected an inline `static for ... => ...` as a "
                      "function's tail statement to be recognized as "
@@ -1464,6 +1471,17 @@ auto test_reports_try_in_plain_function() -> void {
   expect_diagnostic(analyzed,
                     "cannot use `?` in a function that returns `int32`",
                     "expected try-propagation diagnostic");
+}
+
+auto test_reports_try_with_no_from_conversion() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_try_no_from_conversion.kira");
+  expect(analyzed.error_count > 0,
+         "expected `?` with no `impl from[...]` to fail");
+  expect_diagnostic(analyzed,
+                    "cannot propagate `parse_error` with `?` in a function "
+                    "that returns `result[_, app_error]`",
+                    "expected missing-from-conversion diagnostic");
 }
 
 auto test_reports_unannotated_pub_function() -> void {
@@ -3193,6 +3211,7 @@ auto test_generic_struct_literal_wrong_type_arg_count() -> void {
 auto main() -> int {
   try {
     test_accepts_typed_core_program();
+    test_accepts_try_from_conversion();
     test_accepts_structs_and_methods();
     test_accepts_packed_struct();
     test_accepts_collections_and_lambdas();
@@ -3287,6 +3306,7 @@ auto main() -> int {
     test_reports_non_exhaustive_match();
     test_reports_unknown_variant_in_pattern();
     test_reports_try_in_plain_function();
+    test_reports_try_with_no_from_conversion();
     test_reports_unknown_intrinsic();
     test_reports_unannotated_intrinsic();
     test_reports_yield_outside_generator();

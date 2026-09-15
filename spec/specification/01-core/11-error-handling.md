@@ -1,6 +1,6 @@
 # 11. Error Handling
 
-**Status:** Partial — see Implementation status
+**Status:** Implemented
 
 Covers `option[T]`/`result[T, E]`, the `?` operator, and the distinction between panics and errors.
 
@@ -51,13 +51,38 @@ The checker (`infer_try` in `src/semantic/check.cpp`) requires:
 
 `?` on `option` behaves the same way: `e?` yields the inner value on `@some`, and returns `@none` from the function on `@none`.
 
-## Implementation status
+### Error-type conversion via `from`
 
-The design describe `?` as *converting* a propagated error through `from` when the operand's error type differs from the enclosing function's declared error type — e.g. propagating a `parse_error` out of a function that returns `result[_, io_error]` via `impl from[parse_error] for io_error`. **This conversion is not implemented.** `lower_try` in `src/hir/lower.cpp` desugars `x?` to a two-arm match whose failure arm returns the original subject value *unchanged*:
+When the operand is `result[_, E1]` and the enclosing function returns `result[_, E2]` with `E1 != E2`, `?` requires `impl from[E1] for E2` (`std.traits.from`, `src/std/traits.conversion.kira`) and applies it automatically: the failure arm reconstructs `@err(E2.from(e))` instead of forwarding `e` unchanged.
 
-> "The failure arm returns the *original* subject value rather than reconstructing `@err(e)`/`@none` — it's already exactly that value; the checker only requires the enclosing function to also return a result/option (not that the two share the same success type), so nothing needs rebuilding here." (`src/hir/lower.cpp`, `lower_try`)
+```kira
+use std.traits.from
 
-`infer_try` in `src/semantic/check.cpp` likewise only checks that both sides are `result`/`option` wrappers — it does not compare the operand's error type against the function's declared error type, and no `from`-conversion call is inserted anywhere in the desugaring. In practice, `?` only propagates cleanly today when the operand's error type is identical to (or otherwise unifies with) the enclosing function's error type; the multi-error-type example above, and the accompanying `` cannot propagate `parse_error` with `?` `` / "no conversion from ... exists" diagnostic shape from the old tutorial, describe a target design with no corresponding implementation found in `src/semantic` or `src/hir`.
+impl from[parse_error] for app_error:
+    def from(e: parse_error) -> app_error:
+        match e:
+            @bad_digit(s) => @parse(s)
+            @empty        => @parse("empty")
+
+def load_config(path: str) -> result[config, app_error]:
+    let text = read_file(path)?      # io_error propagates unchanged if app_error == io_error
+    let n    = parse_num(text)?      # parse_error converts to app_error via the impl above
+    return @ok(n)
+```
+
+No conversion is attempted (or needed) when the two error types already match, including when either is `unknown` (an unannotated context). When they differ and no matching `impl from[E1] for E2` exists, the checker reports:
+
+```
+error: cannot propagate `{E1}` with `?` in a function that returns `result[_, {E2}]`
+  help: no conversion from this error type exists
+  help: Add `impl from[{E1}] for {E2}` with a `from` method to convert between error types.
+```
+
+`option`'s `?` never triggers a conversion — `@none` carries no error payload to convert.
+
+**Implemented via:** `checker::maybe_wire_try_conversion` (`src/semantic/check.cpp`), called from `infer_try`, resolves the impl using the same `trait_args_of_impl_for`/`find_method`/`instantiate_impl_method_for` machinery operator-overload dispatch uses, and records it in `checked_types::try_conversions`/`try_conversion_types`. `hir::lower_try` (`src/hir/lower.cpp`) reads that record to emit the reconstructed `@err(...)` call in place of the unchanged-subject return.
+
+**Known gap:** method resolution for `from` (`checker::find_declared_method`) selects the first `impl from[...] for E2` block found for `E2`, regardless of its trait argument — a type with two `impl from[...]` blocks for different source error types does not reliably disambiguate between them. This is a pre-existing limitation of the general trait-method lookup (shared with every other `from`/`into` use, not specific to `?`), not something this feature introduced.
 
 ## Panics vs. errors
 
@@ -71,5 +96,5 @@ panic("should never reach here")
 
 ## See also
 
-- [Built-in Types](02-built-in-types.md) — the `from` mechanism `?` uses (in its designed, not-yet-implemented form) for conversion.
+- [Built-in Types](02-built-in-types.md) — the `from`/`into` traits `?` uses for error-type conversion.
 - [Pattern Matching](09-pattern-matching.md) — `if let`/`while let`, the common way to inspect a single `option`/`result` case.

@@ -1843,11 +1843,11 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
   // `x?` desugars to a two-arm match on the wrapper's runtime tag:
   //   match x: @ok(_)/@some(_) => <the unwrapped payload>
   //            @err(_)/@none  => return <x, unchanged>
-  // The failure arm returns the *original* subject value rather than
-  // reconstructing `@err(e)`/`@none` — it's already exactly that value;
-  // the checker only requires the enclosing function to also return a
-  // result/option (not that the two share the same success type), so
-  // nothing needs rebuilding here.
+  // The failure arm returns the *original* subject value unchanged, unless
+  // `checker::maybe_wire_try_conversion` recorded a `from`-conversion in
+  // `checked_.try_conversions` (operand's error type differs from the
+  // enclosing function's) — then the failure arm instead binds the error
+  // payload, converts it, and reconstructs `@err(<converted>)`.
   auto type = checked_type_of(try_expr);
   if (!type.has_value()) {
     return std::unexpected(type.error());
@@ -1912,8 +1912,49 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
   auto failure_pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
       try_expr.span, failure_variant, std::move(failure_args)));
   auto failure_stmts = ptr_vec<hir_node>{};
-  failure_stmts.push_back(
-      ptr<hir_node>(make<hir_return>(try_expr.span, make_place())));
+  auto failure_value = ptr<hir_expr>{};
+  if (is_result) {
+    if (const auto found = checked_.try_conversions.find(&try_expr);
+        found != checked_.try_conversions.end()) {
+      const auto &resolved = found->second;
+      const auto return_type_found =
+          checked_.try_conversion_types.find(&try_expr);
+      const auto fn_return_type =
+          return_type_found != checked_.try_conversion_types.end()
+              ? return_type_found->second
+              : k_unknown_type;
+      const auto &fn_return_entry = checked_.types.entry(fn_return_type);
+      const auto fn_err_type = fn_return_entry.args.size() > 1
+                                   ? fn_return_entry.args[1]
+                                   : k_unknown_type;
+      const auto err_payload_type =
+          entry.args.size() > 1 ? entry.args[1] : k_unknown_type;
+      const auto local_name =
+          resolved.impl_target_type.empty()
+              ? resolved.decl->name
+              : std::format("{}::{}", resolved.impl_target_type,
+                            resolved.decl->name);
+      auto err_payload = ptr<hir_expr>(
+          make<hir_variant_payload>(try_expr.span, err_payload_type,
+                                    make_place(), failure_variant, size_t{0}));
+      const auto symbol = resolve_reference(local_name);
+      auto callee = ptr<hir_expr>(
+          make<hir_local_ref>(try_expr.span, k_unknown_type, symbol, local_name,
+                              resolved.owner_module));
+      auto call_args = ptr_vec<hir_expr>{};
+      call_args.push_back(std::move(err_payload));
+      auto converted = ptr<hir_expr>(make<hir_call>(
+          try_expr.span, fn_err_type, std::move(callee), std::move(call_args)));
+      auto init_args = ptr_vec<hir_expr>{};
+      init_args.push_back(std::move(converted));
+      failure_value = ptr<hir_expr>(
+          make<hir_variant_init>(try_expr.span, fn_return_type, failure_variant,
+                                 std::move(init_args)));
+    }
+  }
+  failure_stmts.push_back(ptr<hir_node>(make<hir_return>(
+      try_expr.span,
+      failure_value != nullptr ? std::move(failure_value) : make_place())));
   auto failure_arm =
       hir_match_arm{.pattern = std::move(failure_pattern),
                     .guard = nullptr,

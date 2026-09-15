@@ -2940,6 +2940,83 @@ auto test_build_derives_hash_via_deriving_clause() -> void {
 #endif
 }
 
+/// spec/specification/01-core/11-error-handling.md: `?` propagating a
+/// `result[_, E1]` operand out of a function declared `result[_, E2]` with
+/// `E1 != E2` now requires (and, when found, applies) `impl from[E1] for
+/// E2` — see `checker::maybe_wire_try_conversion` and `hir::lower_try`.
+/// Asserts a computed value through the real linked executable, not just
+/// "compiles cleanly": each converted `parse_error` variant must land on
+/// the `app_error` variant its `from` impl maps it to, distinguishable only
+/// by actually running the conversion.
+auto test_build_try_applies_from_conversion() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_try_from_conversion_build.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_try_from_conversion_build_bin";
+
+  write_file(source_path,
+             "module sample\n"
+             "use std.traits.from\n"
+             "type parse_error = @bad_digit(int32) | @empty\n"
+             "type app_error = @parse(int32) | @other\n"
+             "impl from[parse_error] for app_error:\n"
+             "    def from(e: parse_error) -> app_error:\n"
+             "        match e:\n"
+             "            @bad_digit(n) => @parse(n)\n"
+             "            @empty        => @other\n"
+             "def parse_num(fail: bool) -> result[int32, parse_error]:\n"
+             "    if fail:\n"
+             "        return @err(@bad_digit(7))\n"
+             "    return @ok(42)\n"
+             "def run(fail: bool) -> result[int32, app_error]:\n"
+             "    let n = parse_num(fail)?\n"
+             "    return @ok(n)\n"
+             "def main() -> int32:\n"
+             "    match run(true):\n"
+             "        @ok(_) => return -1\n"
+             "        @err(e) => match e:\n"
+             "            @parse(n) => match run(false):\n"
+             "                @ok(m)  => return n + m\n"
+             "                @err(_) => return -2\n"
+             "            @other => return -3\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `?` with a `from`-conversion to build cleanly: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected the `from`-conversion sample to link "
+                     "successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  const auto exit_status = std::system(output_path.string().c_str());
+  expect(exit_status != -1, "expected the linked executable to launch");
+#ifdef WEXITSTATUS
+  // `run(true)` propagates `@bad_digit(7)` converted to `@parse(7)`, then
+  // `run(false)` succeeds with `42` — `7 + 42 == 49`, a value only reachable
+  // if the conversion actually ran (any missed conversion, or converting to
+  // the wrong variant, sends control down `@other`/`@ok(_)` instead).
+  expect(WEXITSTATUS(exit_status) == 49,
+         std::format("expected the `from`-converted error's payload to "
+                     "reach `main` via the LLVM tier, got {}",
+                     WEXITSTATUS(exit_status)));
+#endif
+}
+
 /// spec/todo.md item 7: `hash` had no impls for `float32`/`float64` because
 /// `as uint64` on a float is a value conversion (`compile_cast` emits
 /// `FPToUI`), not the bit-pattern reinterpret hashing needs. `std.traits` now
@@ -3204,6 +3281,7 @@ auto main() -> int {
     test_run_derives_ord_via_deriving_clause();
     test_run_derives_hash_via_deriving_clause();
     test_build_derives_hash_via_deriving_clause();
+    test_build_try_applies_from_conversion();
     test_run_derives_hash_for_floats();
     test_run_derives_for_generic_types();
     test_build_derives_for_generic_types();

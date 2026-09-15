@@ -46,9 +46,8 @@ branch_contains_use(const std::vector<ast::ptr<ast::node>> &items) -> bool {
     if (stat == nullptr ||
         stat->decl_kind != ast::static_decl_kind::conditional_compilation) {
       if (auto *sub_module =
-              item != nullptr
-                  ? dynamic_cast<ast::sub_module_decl *>(item.get())
-                  : nullptr;
+              item != nullptr ? dynamic_cast<ast::sub_module_decl *>(item.get())
+                              : nullptr;
           sub_module != nullptr && !sub_module->is_functor() &&
           !sub_module->items.empty()) {
         sub_module->items =

@@ -947,6 +947,8 @@ public:
         .interp_dispatches = std::move(interp_dispatches_),
         .type_param_reflections = std::move(type_param_reflections_),
         .for_iterator_dispatches = std::move(for_iterator_dispatches_),
+        .try_conversions = std::move(try_conversions_),
+        .try_conversion_types = std::move(try_conversion_types_),
         .fmt_types = fmt_types,
         .synthesized_decls = std::move(synthesized_decls_),
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
@@ -1152,6 +1154,15 @@ private:
   /// `for_stmt` case, handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
       for_iterator_dispatches_;
+  /// Every `?` whose operand's error type needed a `from`-conversion to the
+  /// enclosing function's declared error type, recorded by `infer_try`.
+  /// Handed to the caller via `take_checked_types`.
+  std::unordered_map<const ast::try_expr *, resolved_callee> try_conversions_;
+  /// Paired with `try_conversions_`: the enclosing function's full declared
+  /// return type for each entry, needed by `hir::lower_try` to type the
+  /// reconstructed `@err(...)` value. Handed to the caller via
+  /// `take_checked_types`.
+  std::unordered_map<const ast::try_expr *, type_id> try_conversion_types_;
   /// Owns every trait-default method clone `build_method_table` synthesizes
   /// (see `synthesized_method` in types.h) — lifetime must outlive
   /// `checked_types`, so both are moved out together in
@@ -1458,8 +1469,7 @@ private:
   /// unrolled iteration); consulted by `check_body_node` so an inline
   /// `static for` used as a block's tail statement reports the type it
   /// actually produces instead of `unit`.
-  std::unordered_map<const ast::static_decl *, type_id>
-      static_for_yield_types_;
+  std::unordered_map<const ast::static_decl *, type_id> static_for_yield_types_;
   std::unordered_set<const ast::static_decl *> statics_in_progress_;
   /// Each `static let`'s evaluated compile-time value, keyed by declaration
   /// so same-named statics in different modules stay distinct — see
@@ -12858,10 +12868,64 @@ private:
     return types_.builtin_generic("list", {yield_type});
   }
 
+  /// When `operand_err` (the `?` operand's `result[_, E]` error type)
+  /// differs from `fn_err` (the enclosing function's declared error type),
+  /// requires an `impl from[operand_err] for fn_err` and records the
+  /// resolved conversion in `try_conversions_`/`try_conversion_types_` for
+  /// `hir::lower_try` to apply — mirroring how `require_operand_trait`
+  /// records `operator_dispatches_` for operator overloading. Identical
+  /// error types (including two unknowns) need no conversion and are a
+  /// silent no-op, matching `?`'s current same-type-only behavior.
+  auto maybe_wire_try_conversion(const ast::try_expr &expr, type_id operand_err,
+                                 type_id fn_err, type_id fn_return_type)
+      -> void {
+    const auto stripped_operand_err = strip_refs(operand_err);
+    const auto stripped_fn_err = strip_refs(fn_err);
+    if (stripped_operand_err == stripped_fn_err ||
+        types_.is_unknown(stripped_operand_err) ||
+        types_.is_unknown(stripped_fn_err)) {
+      return;
+    }
+    const auto trait_args = trait_args_of_impl_for(stripped_fn_err, "from");
+    const auto convertible =
+        trait_args.has_value() && !trait_args->empty() &&
+        strip_refs((*trait_args)[0]) == stripped_operand_err;
+    if (!convertible) {
+      error_with_help(
+          expr.span,
+          std::format(
+              "cannot propagate `{}` with `?` in a function that returns "
+              "`result[_, {}]`",
+              types_.display(stripped_operand_err),
+              types_.display(stripped_fn_err)),
+          "no conversion from this error type exists",
+          std::format("Add `impl from[{}] for {}` with a `from` method to "
+                      "convert between error types.",
+                      types_.display(stripped_operand_err),
+                      types_.display(stripped_fn_err)));
+      return;
+    }
+    const auto &fn_err_entry = types_.entry(stripped_fn_err);
+    const auto *method = find_method(fn_err_entry, "from", stripped_fn_err);
+    if (method == nullptr) {
+      return;
+    }
+    const auto *callee = instantiate_impl_method_for(
+        expr, *method, fn_err_entry, stripped_fn_err);
+    try_conversions_[&expr] = resolved_callee{
+        .decl = callee != nullptr ? callee : method->decl,
+        .owner_module = method->owner->module_name,
+        .impl_target_type = callee != nullptr ? "" : fn_err_entry.name,
+        .receiver = nullptr};
+    try_conversion_types_[&expr] = fn_return_type;
+  }
+
   /// Types `expr?`: the operand must be `result`/`option`, and (when the
   /// enclosing function's return type is known) that return type must also
   /// be `result`/`option` for the early-return side of `?` to make sense.
-  /// Yields the wrapped success type.
+  /// When the operand's error type differs from the enclosing function's,
+  /// a `from`-conversion is required and applied automatically (see
+  /// `maybe_wire_try_conversion`). Yields the wrapped success type.
   auto infer_try(const ast::try_expr &expr) -> type_id {
     if (expr.operand == nullptr) {
       return k_unknown_type;
@@ -12883,7 +12947,8 @@ private:
     }
 
     if (return_annotated_) {
-      const auto &return_entry = types_.entry(strip_refs(return_type_));
+      const auto return_type = strip_refs(return_type_);
+      const auto &return_entry = types_.entry(return_type);
       const auto returns_wrapper =
           return_entry.kind == type_kind::builtin_generic_kind &&
           (return_entry.name == "result" || return_entry.name == "option");
@@ -12895,6 +12960,11 @@ private:
             "`?` needs a `result` or `option` return type to propagate into",
             "Change the function to return `result[T, E]` (or `option[T]`), "
             "or handle the failure here with `match`.");
+      } else if (is_wrapper && entry.name == "result" &&
+                 return_entry.name == "result" && entry.args.size() > 1 &&
+                 return_entry.args.size() > 1) {
+        maybe_wire_try_conversion(expr, entry.args[1], return_entry.args[1],
+                                  return_type);
       }
     }
 

@@ -1721,6 +1721,59 @@ auto test_lowers_try_expr_on_option() -> void {
          "expected the `none` pattern to have no payload slots");
 }
 
+auto test_lowers_try_expr_with_from_conversion() -> void {
+  auto fixture = check_fixture(
+      "module sample\n"
+      "use std.traits.from\n"
+      "type parse_error = @bad_digit(str) | @empty\n"
+      "type app_error = @parse(str) | @other(str)\n"
+      "impl from[parse_error] for app_error:\n"
+      "    def from(e: parse_error) -> app_error:\n"
+      "        match e:\n"
+      "            @bad_digit(s) => @parse(s)\n"
+      "            @empty        => @parse(\"empty\")\n"
+      "def parse_num(v: result[int32, parse_error]) -> result[int32, "
+      "app_error]:\n"
+      "    let n = v?\n"
+      "    return @ok(n)\n");
+  const auto &decl = find_func(*fixture.ast_file, "parse_num");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a `?` with a resolved `from`-conversion to lower");
+
+  const auto &function = **result;
+  const auto &let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts.front());
+  const auto &match = dynamic_cast<const hir::hir_match &>(*let.initializer);
+  expect(match.arms.size() == 2, "expected exactly two arms (ok and err)");
+
+  const auto &failure_stmt =
+      dynamic_cast<const hir::hir_return &>(*match.arms[1].body->stmts.front());
+  expect(failure_stmt.value->kind == hir::hir_node_kind::hir_variant_init,
+         "expected the failure arm to reconstruct `@err(...)` rather than "
+         "forward the subject unchanged");
+  const auto &err_init =
+      dynamic_cast<const hir::hir_variant_init &>(*failure_stmt.value);
+  expect(err_init.variant_name == "err",
+         "expected the reconstructed variant to be `err`");
+  expect(err_init.args.size() == 1,
+         "expected the reconstructed `@err` to carry one payload argument");
+
+  const auto &converted_call =
+      dynamic_cast<const hir::hir_call &>(*err_init.args.front());
+  const auto &callee =
+      dynamic_cast<const hir::hir_local_ref &>(*converted_call.callee);
+  expect(callee.name == "app_error::from",
+         "expected the failure arm to call the resolved `from` conversion");
+  expect(converted_call.args.size() == 1,
+         "expected the `from` call to take the operand's error payload");
+  const auto &err_payload = dynamic_cast<const hir::hir_variant_payload &>(
+      *converted_call.args.front());
+  expect(err_payload.variant_name == "err",
+         "expected the conversion's argument to project the `err` payload");
+}
+
 auto test_lowers_range_for_loop() -> void {
   auto fixture = check_fixture("module sample\n"
                                "def sum_up_to(n: int32) -> int32:\n"
@@ -2652,6 +2705,7 @@ auto main() -> int {
     test_lowers_bare_unit_variant();
     test_lowers_try_expr_on_result();
     test_lowers_try_expr_on_option();
+    test_lowers_try_expr_with_from_conversion();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();
     test_lowers_struct_pattern_let_destructuring();
