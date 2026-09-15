@@ -2836,6 +2836,110 @@ auto test_run_derives_hash_via_deriving_clause() -> void {
                      report->run->exit_code));
 }
 
+/// spec/todo.md item 6 (now stale): claimed `deriving hash` "does not lower
+/// through the HIR/LLVM tier at all" and is "exercised only via the tier-0
+/// bytecode VM (`cli_test.cpp`'s `run` mode), not `codegen_stress_test`".
+/// The first half was never true by the time that entry was written —
+/// `hash` joined `show`/`eq`/`debug`/`ord` on the real-derivation path in
+/// the same change (`9030718`) that made generic `deriving` work, and
+/// `evaluate_derive_call`/`ensure_derived_instance_impls` name no template,
+/// concrete or generic, sum or struct; direct `--compile` runs of concrete,
+/// generic, and sum-type `deriving hash` all lower and execute correctly.
+/// The second half is real: `codegen_stress_test.cpp`'s `check_source`
+/// builds its `parsed_module` list from the corpus file alone, with no
+/// stdlib injected, so a corpus file cannot invoke a derived method (`.hash()`,
+/// `.eq()`, `.show()` — not specific to `hash`) without hitting exactly the
+/// old "no concrete checked type is available for this node" failure, since
+/// `evaluate_derive_call`'s `has_pending_function` guard degrades quietly to
+/// the type-check-only fallback when `std.derive` was never injected. Wiring
+/// stdlib injection into that harness is future scope; this test closes the
+/// coverage gap the way `test_build_links_and_runs_a_heap_using_program`
+/// does for heap types — the LLVM tier, driven through the real driver
+/// (`cli_config::build`), actually linking and running a native binary —
+/// using the exact same source and exit-code encoding as
+/// `test_run_derives_hash_via_deriving_clause` above, so the two tests are
+/// directly comparable.
+auto test_build_derives_hash_via_deriving_clause() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_derive_hash_build.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_derive_hash_build_bin";
+
+  write_file(
+      source_path,
+      "module sample\n"
+      "type inner = { a: int32 } deriving hash\n"
+      "type point = { x: int32, y: int32 } deriving hash\n"
+      "type named = { tag: str, n: int32 } deriving hash\n"
+      "type nested = { i: inner, z: int32 } deriving hash\n"
+      "type empty = { } deriving hash\n"
+      "type shape = @dot | @spot | @line(int32) | @seg(int32) deriving hash\n"
+      "def bit(cond: bool, weight: int32) -> int32:\n"
+      "    if cond:\n"
+      "        return weight\n"
+      "    return 0\n"
+      "def main() -> int32:\n"
+      "    var total: int32 = 0\n"
+      "    let a: point = { x: 1, y: 2 }\n"
+      "    let b: point = { x: 1, y: 2 }\n"
+      "    let c: point = { x: 2, y: 1 }\n"
+      "    total = total + bit(a.hash() == b.hash(), 1)\n"
+      "    total = total + bit(a.hash() != c.hash(), 2)\n"
+      "    let d: point = { x: 2, y: 1 }\n"
+      "    total = total + bit(c.hash() == d.hash() and a.hash() != d.hash(),\n"
+      "                        4)\n"
+      "    let e: empty = { }\n"
+      "    total = total + bit(e.hash() == hash_seed(), 8)\n"
+      "    let p: point = { x: 3, y: 4 }\n"
+      "    total = total + bit(p.hash() == 4914197620444624338, 16)\n"
+      "    let s1: named = { tag: \"abc\", n: 1 }\n"
+      "    let s2: named = { tag: \"abd\", n: 1 }\n"
+      "    total = total + bit(s1.hash() != s2.hash() and\n"
+      "                        s1.hash() == 5766848232050225266, 32)\n"
+      "    let n1: nested = { i: { a: 1 }, z: 9 }\n"
+      "    let n2: nested = { i: { a: 2 }, z: 9 }\n"
+      "    total = total + bit(n1.hash() != n2.hash(), 64)\n"
+      "    let v1: shape = @dot\n"
+      "    let v2: shape = @spot\n"
+      "    let v3: shape = @line(1)\n"
+      "    let v4: shape = @line(2)\n"
+      "    let v5: shape = @seg(1)\n"
+      "    total = total + bit(v1.hash() != v2.hash() and\n"
+      "                        v3.hash() != v4.hash() and\n"
+      "                        v3.hash() != v5.hash(), 128)\n"
+      "    return total\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `deriving hash` to build cleanly: " + report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `deriving hash` to link successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  const auto exit_status = std::system(output_path.string().c_str());
+  expect(exit_status != -1, "expected the linked executable to launch");
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(exit_status) == 255,
+         std::format("expected every derived-`hash` case to hold (255) via "
+                     "the LLVM tier, got {}",
+                     WEXITSTATUS(exit_status)));
+#endif
+}
+
 /// spec/todo.md item 7: `hash` had no impls for `float32`/`float64` because
 /// `as uint64` on a float is a value conversion (`compile_cast` emits
 /// `FPToUI`), not the bit-pattern reinterpret hashing needs. `std.traits` now
@@ -3099,6 +3203,7 @@ auto main() -> int {
     test_build_derives_eq_and_debug_via_deriving_clause();
     test_run_derives_ord_via_deriving_clause();
     test_run_derives_hash_via_deriving_clause();
+    test_build_derives_hash_via_deriving_clause();
     test_run_derives_hash_for_floats();
     test_run_derives_for_generic_types();
     test_build_derives_for_generic_types();
