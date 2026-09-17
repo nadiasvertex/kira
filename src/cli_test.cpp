@@ -3187,6 +3187,162 @@ auto test_build_test_mode_leaves_existing_main_unchanged() -> void {
 #endif
 }
 
+/// 61-std-test.md's discovery rule is stated over every reachable module,
+/// and an inline submodule is an ordinary module: a `tests` submodule
+/// nested inside another inline submodule is a suite named after *its own*
+/// parent, not after the file's module. Asserts the run's printed report,
+/// not just a clean build — the earlier top-level-only scan compiled
+/// cleanly too, then died with a missing-`main` error that never mentioned
+/// tests.
+auto test_build_discovers_nested_tests_submodules_via_llvm_tier() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_nested_discovery_build.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_nested_discovery_build_bin";
+
+  write_file(source_path,
+             "module app\n"
+             "use std.test.{assert_eq, test_failure}\n"
+             "module geometry:\n"
+             "    pub def area(w: float64, h: float64) -> float64:\n"
+             "        return w * h\n"
+             "    module tests:\n"
+             "        def test_area() -> result[unit, test_failure]:\n"
+             "            return assert_eq(super.area(2.0, 3.0), 6.0)\n"
+             "        def skip_todo() -> result[unit, test_failure]:\n"
+             "            return assert_eq(1, 2)\n"
+             "module counter:\n"
+             "    pub def bump(n: int32) -> int32:\n"
+             "        return n + 1\n"
+             "    module tests:\n"
+             "        def test_bump() -> result[unit, test_failure]:\n"
+             "            return assert_eq(super.bump(1), 2)\n"
+             "module tests:\n"
+             "    def test_file_level() -> result[unit, test_failure]:\n"
+             "        return assert_eq(app.counter.bump(0), 1)\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+      .test_mode = true,
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected nested `--test` discovery to build cleanly: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected the nested-discovery runner to link "
+                     "successfully: {}",
+                     report->build->message));
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 512> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  // Each suite is named after the module directly enclosing its `tests`
+  // submodule, so a nested suite must not be reported as `app.*`.
+  const auto expected_output = "ok app.geometry.test_area\n"
+                               "skip app.geometry.skip_todo\n"
+                               "ok app.counter.test_bump\n"
+                               "ok app.test_file_level\n"
+                               "3 passed, 0 failed, 1 skipped\n";
+  expect(output == expected_output,
+         std::format("unexpected stdout from nested `--test` discovery: `{}`",
+                     output));
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(close_status) == 0,
+         std::format("expected the nested suites (all passing or skipped) to "
+                     "exit 0, got {}",
+                     WEXITSTATUS(close_status)));
+#endif
+}
+
+/// `--test` over sources that parse cleanly but declare no test at all is an
+/// error naming the sources, not a fall-through to the compile's
+/// missing-`main` failure (which never mentions tests). A source declaring
+/// its own `main` is the separate, already-covered case and stays legal.
+auto test_test_mode_without_any_tests_is_an_error() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_no_tests.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path, "module app.geometry\n"
+                          "pub def area(w: float64, h: float64) -> float64:\n"
+                          "    return w * h\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .test_mode = true,
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(!report.has_value(),
+         "expected `--test` with no discoverable tests to fail");
+  expect(report.error().contains("`--test` found no tests in"),
+         std::format("expected the failure to say no tests were found, got: {}",
+                     report.error()));
+  expect(report.error().contains(source_path.string()),
+         std::format("expected the failure to name the scanned source, got: {}",
+                     report.error()));
+  expect(report.error().contains("module tests:"),
+         std::format("expected the failure to show how to declare a test, "
+                     "got: {}",
+                     report.error()));
+}
+
+/// A `tests` submodule holding only hooks contributes no suite (61-std-test.md),
+/// so `--test` over nothing but hooks reports "no tests" rather than running an
+/// empty suite.
+auto test_test_mode_hooks_without_cases_find_no_tests() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_hooks_only.kira";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(source_path,
+             "module app.geometry\n"
+             "use std.test.test_failure\n"
+             "module tests:\n"
+             "    def before_all() -> result[unit, test_failure]:\n"
+             "        return @ok(unit)\n"
+             "    def after_each() -> result[unit, test_failure]:\n"
+             "        return @ok(unit)\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .test_mode = true,
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(!report.has_value(),
+         "expected a hooks-only `tests` submodule to contribute no suite");
+  expect(report.error().contains("`--test` found no tests in"),
+         std::format("expected the hooks-only failure to say no tests were "
+                     "found, got: {}",
+                     report.error()));
+}
+
 /// spec/specification/01-core/11-error-handling.md: `?` propagating a
 /// `result[_, E1]` operand out of a function declared `result[_, E2]` with
 /// `E1 != E2` now requires (and, when found, applies) `impl from[E1] for
@@ -3531,6 +3687,9 @@ auto main() -> int {
     test_build_runs_std_test_suite_via_llvm_tier();
     test_build_discovers_and_runs_tests_submodule_via_llvm_tier();
     test_build_test_mode_leaves_existing_main_unchanged();
+    test_build_discovers_nested_tests_submodules_via_llvm_tier();
+    test_test_mode_without_any_tests_is_an_error();
+    test_test_mode_hooks_without_cases_find_no_tests();
     test_build_try_applies_from_conversion();
     test_run_derives_hash_for_floats();
     test_run_derives_for_generic_types();

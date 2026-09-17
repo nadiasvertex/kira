@@ -155,7 +155,7 @@ module tests:
         return assert_true(super.area(-1.0, 5.0) >= 0.0, "negative width should not underflow")
 ```
 
-`kira --test` compiles this module, discovers the `tests` submodule as a suite named `app.geometry`, and prints:
+`kira --test` compiles this module, discovers the `tests` submodule as a suite named `app.geometry`, and prints (`demo/test-discovery.kira` is a runnable version of this, with nested submodules each carrying their own suite):
 
 ```
 geometry suite starting
@@ -171,7 +171,8 @@ ok app.geometry.after_all
 ```
 
 - Invoked as `kira --test <path>`, in place of `kira <path>`.
-- For every module reachable from `<path>`, the driver looks for a direct inline submodule of it named `tests`. A module without one contributes nothing.
+- For every module reachable from `<path>`, the driver looks for a direct inline submodule of it named `tests`. A module without one contributes nothing. An inline submodule is itself a module, so this applies at every nesting depth: a `tests` submodule of a submodule is a suite named after *that* submodule's path, letting each submodule keep its tests next to the code they cover.
+- A `tests` submodule is not searched for a further `tests` submodule of its own.
 - Within a `tests` submodule, every function taking no parameters and returning `result[unit, test_failure]` is classified by name:
   - exactly `before_all` — the suite's `before_all` hook.
   - exactly `after_all` — the suite's `after_all` hook.
@@ -183,6 +184,7 @@ ok app.geometry.after_all
 - A `tests` submodule with two or more functions sharing any one of the four exact hook names is a compile error.
 - Each `tests` submodule with at least one discovered case contributes one `test_suite`, named after its parent module's path; a `tests` submodule with only hooks and no cases contributes no suite.
 - The driver synthesizes a `main` equivalent to calling `run_suites` on every discovered suite, in module-graph order, and exits with its return code. A source file that already declares its own `main` is compiled unchanged; `kira --test` does not override a user-written entry point.
+- Sources that parse cleanly, declare no `main`, and yield no suite are an error naming the scanned sources and showing how a test is declared — `--test` was asked to run tests and there are none.
 
 ### Runner
 
@@ -235,7 +237,7 @@ def main() -> int32:
 
 ## Implementation status
 
-Fully implemented and end-to-end tested — the checker fix, the library, and `--test` discovery all landed together (`src/semantic/check.cpp`'s `infer_method_call`, `src/llvm_codegen/codegen.cpp`'s `compile_function_value`, `src/std/test.kira`, `src/driver/test_discovery.cpp`, `src/cli_test.cpp`'s `test_build_runs_std_test_suite_via_llvm_tier`/`test_build_discovers_and_runs_tests_submodule_via_llvm_tier`/`test_build_test_mode_leaves_existing_main_unchanged`, and `src/testdata/codegen_stress/080_fn_typed_struct_field_call.kira`/`081_fn_typed_struct_field_list_heterogeneous.kira`) — one gap remains:
+Fully implemented and end-to-end tested — the checker fix, the library, and `--test` discovery all landed together (`src/semantic/check.cpp`'s `infer_method_call`, `src/llvm_codegen/codegen.cpp`'s `compile_function_value`, `src/std/test.kira`, `src/driver/test_discovery.cpp`, `src/cli_test.cpp`'s `test_build_runs_std_test_suite_via_llvm_tier`/`test_build_discovers_and_runs_tests_submodule_via_llvm_tier`/`test_build_discovers_nested_tests_submodules_via_llvm_tier`/`test_build_test_mode_leaves_existing_main_unchanged`/`test_test_mode_without_any_tests_is_an_error`/`test_test_mode_hooks_without_cases_find_no_tests`, and `src/testdata/codegen_stress/080_fn_typed_struct_field_call.kira`/`081_fn_typed_struct_field_list_heterogeneous.kira`) — one gap remains:
 
 - **`suite`'s default parameter values are not lowered.** Default parameter values are a general compiler gap (`spec/todo.md`; the compiler's own diagnostic on hitting one reads "default parameter values are not lowered by the first milestone"), not specific to `std.test`. Until that lands, every call to `suite(...)` must pass all six arguments explicitly — `@none` for any hook a suite doesn't need — rather than omitting trailing ones, exactly as the `suite` calls in this chapter's examples do. `run`'s single-suite wrapper passes all four explicitly for the same reason.
 - The synthesized `--test` runner never needs a bare cross-module function reference as a value (a separate, broader gap than the one this chapter's own fix addresses — a bare `use`-imported or qualified function name used as a plain value, outside call position, is not reliably lowered in every position yet); it always wraps each discovered function in a zero-arg lambda calling it by qualified path (`() => app.geometry.tests.test_area()`), which is unaffected.

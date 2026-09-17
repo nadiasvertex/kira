@@ -4,7 +4,10 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <memory>
 #include <optional>
+#include <ranges>
+#include <string>
 #include <vector>
 
 #include "parse_stage.h"
@@ -64,6 +67,17 @@ struct discovered_suite {
     const auto *fn = dynamic_cast<const ast::func_decl *>(item.get());
     return fn != nullptr && fn->name == "main";
   });
+}
+
+/// Renders the scanned source list for the "no tests" message: one path
+/// named directly, several summarized with a count so the message stays
+/// readable for a large build.
+[[nodiscard]] auto describe_sources(const std::vector<std::string> &sources)
+    -> std::string {
+  if (sources.size() == 1) {
+    return std::format("`{}`", sources.front());
+  }
+  return std::format("the {} source files given", sources.size());
 }
 
 [[nodiscard]] auto join_module_path(const std::vector<std::string> &segments)
@@ -128,6 +142,49 @@ struct discovered_suite {
       out.cases.push_back({.function_name = fn->name, .skip = true});
     } else {
       out.cases.push_back({.function_name = fn->name, .skip = false});
+    }
+  }
+  return {};
+}
+
+/// Collects one suite per inline submodule named `tests` declared anywhere
+/// under `items`, recursing through nested inline submodules so a `tests`
+/// submodule of a submodule is discovered exactly like a top-level one —
+/// inline submodules are ordinary modules, and 61-std-test.md's rule is
+/// stated over every reachable module. `module_path` is the path of the
+/// module whose items these are, so a nested suite is named after its own
+/// parent (`demo.testkit.geometry`), not after the file's module.
+///
+/// A `tests` submodule is not itself descended into: a `tests` submodule
+/// nested inside another `tests` submodule would have no meaningful parent
+/// to name a suite after, and nothing in the spec asks for one.
+[[nodiscard]] auto collect_suites(
+    const std::vector<std::unique_ptr<ast::node>> &items,
+    const std::string &module_path, std::vector<discovered_suite> &out)
+    -> std::expected<void, std::string> {
+  for (const auto &item : items) {
+    const auto *sub = dynamic_cast<const ast::sub_module_decl *>(item.get());
+    if (sub == nullptr || sub->is_functor()) {
+      continue;
+    }
+    const auto sub_path = module_path + "." + sub->name;
+    if (sub->name != "tests") {
+      auto nested = collect_suites(sub->items, sub_path, out);
+      if (!nested.has_value()) {
+        return nested;
+      }
+      continue;
+    }
+    auto suite = discovered_suite{
+        .suite_name = module_path,
+        .tests_module_path = sub_path,
+    };
+    auto classified = classify_tests_submodule(*sub, suite);
+    if (!classified.has_value()) {
+      return std::unexpected(classified.error());
+    }
+    if (!suite.cases.empty()) {
+      out.push_back(std::move(suite));
     }
   }
   return {};
@@ -204,27 +261,36 @@ auto discover_and_inject_test_runner(cli_config &cfg)
     }
     const auto module_path =
         join_module_path(input.ast_file->module_decl->path);
-    for (const auto &item : input.ast_file->items) {
-      const auto *sub = dynamic_cast<const ast::sub_module_decl *>(item.get());
-      if (sub == nullptr || sub->name != "tests" || sub->is_functor()) {
-        continue;
-      }
-      auto suite = discovered_suite{
-          .suite_name = module_path,
-          .tests_module_path = module_path + ".tests",
-      };
-      auto classified = classify_tests_submodule(*sub, suite);
-      if (!classified.has_value()) {
-        return std::unexpected(classified.error());
-      }
-      if (!suite.cases.empty()) {
-        suites.push_back(std::move(suite));
-      }
+    auto collected =
+        collect_suites(input.ast_file->items, module_path, suites);
+    if (!collected.has_value()) {
+      return std::unexpected(collected.error());
     }
   }
 
   if (suites.empty()) {
-    return {};
+    // A parse error upstream is the likelier explanation than "no tests
+    // here", and the real compile reports it with a location; say nothing
+    // and let it.
+    if (std::ranges::find(file_has_errors, true) != file_has_errors.end()) {
+      return {};
+    }
+    return std::unexpected(std::format(
+        "`--test` found no tests in {}\n"
+        "  = help: a test is a function taking no parameters and returning "
+        "`result[unit, test_failure]`, declared inside an inline submodule "
+        "named `tests`:\n"
+        "\n"
+        "      module tests:\n"
+        "          def test_area() -> result[unit, test_failure]:\n"
+        "              return assert_eq(super.area(2.0, 3.0), 6.0)\n"
+        "\n"
+        "  = note: a `tests` submodule holding only hooks (`before_all`, "
+        "`after_all`, `before_each`, `after_each`) and no cases contributes "
+        "no suite, and a function with parameters or another return type "
+        "inside `tests` is ordinary helper code, not a case\n"
+        "  = note: to run a program instead of its tests, drop `--test`",
+        describe_sources(scan_cfg.sources)));
   }
 
   const auto source = render_runner_source(suites);
