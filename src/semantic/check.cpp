@@ -10211,6 +10211,7 @@ private:
       if (const auto field_type = struct_field_type(entry, field.field_name)) {
         const auto &field_entry = types_.entry(*field_type);
         if (field_entry.kind == type_kind::fn_kind) {
+          record_expr_type(field, *field_type);
           return check_call_against_fn_type(call, field_entry,
                                             field.field_name);
         }

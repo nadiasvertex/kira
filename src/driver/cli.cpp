@@ -93,6 +93,14 @@ static const std::unordered_map<std::string_view, cli_converter>
             cfg.build = true;
             return std::monostate{};
           }}},
+        {"--test",
+         {.name = "--test",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.test_mode = true;
+            return std::monostate{};
+          }}},
         {"--compile-function",
          {.name = "--compile-function",
           .needs_value = true,
@@ -327,6 +335,10 @@ auto render_help(std::string_view program_name) -> std::string {
       "                          point\n"
       "  --compile-output, -o PATH\n"
       "                          Write the linked executable to PATH\n"
+      "  --test                   Discover `tests` inline submodules across\n"
+      "                          SOURCES and synthesize a `main` that runs\n"
+      "                          every one via std.test, instead of\n"
+      "                          requiring SOURCES to provide its own `main`\n"
       "  -O0, -O1, -O2, -O3       Optimization level for --compile's LLVM\n"
       "                          output (-O bare means -O1); default -O0,\n"
       "                          no optimization passes run. Has no effect\n"

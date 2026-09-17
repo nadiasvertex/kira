@@ -1,0 +1,20 @@
+module codegen_stress.fn_typed_struct_field_call
+
+# A struct field typed `fn() -> int32`, populated from a plain top-level
+# `def` and called through the field (`h.run()`). Distinct from an ordinary
+# closure local/parameter: the callee here is a `field_expr`, not an
+# `ident_expr` the checker can trace straight back to its binding, so the
+# checker's `infer_method_call` has to record the field expression's own
+# checked type itself (it used to skip this, which made `hir::lower_field`
+# fail with "no concrete checked type is available for this node").
+
+type holder = { name: str, run: fn() -> int32 }
+
+def answer() -> int32:
+    return 42
+
+def main() -> int64:
+    let h: holder = { name: "answer", run: answer }
+    return h.run() as int64
+
+# expect: 42

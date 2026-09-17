@@ -11,6 +11,7 @@
 #include "lowering_stage.h"
 #include "parse_stage.h"
 #include "run_build_stage.h"
+#include "test_discovery.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/borrow_check.h"
 #include "src/semantic/move_check.h"
@@ -263,7 +264,8 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
                                "unicode.kira",
                                "string.kira",
                                "deriving.kira",
-                               "fs/path.kira"}) {
+                               "fs/path.kira",
+                               "test.kira"}) {
     const auto found = find_stdlib_source_file(cfg.program_name, filename);
     if (found && !already_present(*found)) {
       cfg.sources.push_back(found->string());
@@ -305,15 +307,23 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     return std::unexpected{"no source files provided"};
   }
 
+  auto effective_cfg = cfg;
+  if (effective_cfg.test_mode) {
+    auto discovery = discover_and_inject_test_runner(effective_cfg);
+    if (!discovery.has_value()) {
+      return std::unexpected{discovery.error()};
+    }
+  }
+
   auto report = compile_report{};
-  const auto metadata_root = std::filesystem::path(cfg.metadata_dir);
-  const auto stdlib_start =
-      cfg.stdlib_boundary.value_or(static_cast<unsigned>(cfg.sources.size()));
+  const auto metadata_root = std::filesystem::path(effective_cfg.metadata_dir);
+  const auto stdlib_start = effective_cfg.stdlib_boundary.value_or(
+      static_cast<unsigned>(effective_cfg.sources.size()));
   auto sources = source_manager{};
   auto session_diagnostics = diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
 
-  auto parsed_inputs = parse_sources(cfg, sources, session_diagnostics,
+  auto parsed_inputs = parse_sources(effective_cfg, sources, session_diagnostics,
                                      file_has_errors, report.diagnostics);
 
   // Fold import-gating `static if` blocks before the module graph is built, so
@@ -332,9 +342,10 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   const auto checked = semantic::validate_semantics(
       semantic_inputs, session_diagnostics, file_has_errors,
-      semantic::semantic_options{.check_names_and_types = !cfg.parse_only});
+      semantic::semantic_options{.check_names_and_types =
+                                     !effective_cfg.parse_only});
 
-  if (!cfg.parse_only) {
+  if (!effective_cfg.parse_only) {
     semantic::check_moves(semantic_inputs, checked, session_diagnostics,
                           file_has_errors, stdlib_start);
     semantic::check_borrows(semantic_inputs, checked, session_diagnostics,
@@ -348,11 +359,11 @@ auto compile_sources(const cli_config &cfg, bool use_color)
 
   const auto lowering_renderer = diagnostic_renderer(sources, use_color);
   const auto lowered_modules =
-      lower_and_emit_modules(cfg, parsed_inputs, file_has_errors, checked,
-                             metadata_root, lowering_renderer, report);
+      lower_and_emit_modules(effective_cfg, parsed_inputs, file_has_errors,
+                             checked, metadata_root, lowering_renderer, report);
 
-  run_requested_function(cfg, lowered_modules, checked, report);
-  build_requested_function(cfg, lowered_modules, checked, report);
+  run_requested_function(effective_cfg, lowered_modules, checked, report);
+  build_requested_function(effective_cfg, lowered_modules, checked, report);
 
   return report;
 }

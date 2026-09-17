@@ -70,6 +70,13 @@ struct cli_config {
                                     ///< effect on `build`'s LLVM output;
                                     ///< `run` (the bytecode VM) never runs
                                     ///< any LLVM optimization pass.
+  bool test_mode = false; ///< Requested via `--test`: `compile_sources`
+                          ///< scans for `tests` inline submodules and
+                          ///< synthesizes a `main` that runs every
+                          ///< discovered suite, instead of requiring the
+                          ///< caller to provide one — see
+                          ///< `discover_and_inject_test_runner`
+                          ///< (`test_discovery.h`).
 };
 
 /// Aggregate result of compiling all requested source files.

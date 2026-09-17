@@ -1,0 +1,141 @@
+module main
+
+# ==========================================================================
+#  std.test — explicit test registration.
+#
+#  Builds `test_case`s and `test_suite`s by hand and runs them from a
+#  user-written `main`. Shows assertions, `?`-composition, skipped cases,
+#  data-driven (parameterized) cases, all four hooks, and a deliberately
+#  failing case so the report has something to say.
+#
+#  For automatic discovery instead of hand registration, see
+#  demo/test-discovery.kira.
+#
+#  Run it:      kira demo/test-explicit.kira
+#  Compile it:  kira --compile -o test-explicit demo/test-explicit.kira
+#
+#  Exits 1, because one suite below is meant to fail.
+# ==========================================================================
+
+use std.test.{assert_eq, assert_ne, assert_true, assert_false, fail}
+use std.test.{case, skipped, suite, run_suites}
+use std.test.{test_case, test_failure}
+
+# --------------------------------------------------------------------------
+#  The code under test.
+# --------------------------------------------------------------------------
+
+def add(a: int32, b: int32) -> int32:
+  return a + b
+
+def divide(numerator: int32, denominator: int32) -> result[int32, str]:
+  if denominator == 0:
+    return @err("division by zero")
+  return @ok(numerator / denominator)
+
+# --------------------------------------------------------------------------
+#  Plain assertions.
+# --------------------------------------------------------------------------
+
+def test_addition() -> result[unit, test_failure]:
+  return assert_eq(add(2, 2), 4)
+
+def test_inequality() -> result[unit, test_failure]:
+  return assert_ne(add(2, 2), 5)
+
+def test_predicates() -> result[unit, test_failure]:
+  assert_true(add(1, 1) > 0, "sum of positives must be positive")?
+  return assert_false(add(1, 1) == 3, "1 + 1 must not be 3")
+
+# `?` short-circuits on the first failing assertion, so a test body reads
+# as a straight line of checks.
+def test_division_chain() -> result[unit, test_failure]:
+  let value = match divide(84, 2):
+    @ok(n) => n
+    @err(message) => 0 - 1
+  assert_eq(value, 42)?
+  return assert_true(value > 0, "quotient must be positive")
+
+# `fail` reports a failure that isn't an expected/actual mismatch.
+def test_division_by_zero() -> result[unit, test_failure]:
+  return match divide(1, 0):
+    @ok(_) => fail("dividing by zero should not have produced a value")
+    @err(_) => @ok(unit)
+
+# --------------------------------------------------------------------------
+#  Parameterized cases: an ordinary function returning `list[test_case]`.
+# --------------------------------------------------------------------------
+
+def cases_for_add() -> list[test_case]:
+  let inputs = [(1, 1, 2), (2, 2, 4), (0, 0, 0), (0 - 3, 3, 0)]
+  var cases: list[test_case] = []
+  for (a, b, expected) in inputs:
+    cases.push(case("add({a}, {b})", () => assert_eq(add(a, b), expected)))
+  return cases
+
+# --------------------------------------------------------------------------
+#  Hooks. Each returns `result[unit, test_failure]` like a test does, so a
+#  failing hook is reported as its own entry rather than silently ignored.
+# --------------------------------------------------------------------------
+
+def arithmetic_before_all() -> result[unit, test_failure]:
+  println("  [hook] arithmetic suite starting")
+  return @ok(unit)
+
+def arithmetic_after_all() -> result[unit, test_failure]:
+  println("  [hook] arithmetic suite done")
+  return @ok(unit)
+
+def arithmetic_before_each() -> result[unit, test_failure]:
+  return @ok(unit)
+
+def arithmetic_after_each() -> result[unit, test_failure]:
+  return @ok(unit)
+
+# --------------------------------------------------------------------------
+#  A case that fails on purpose, so the demo shows both report forms:
+#  a `@mismatch` (expected/actual) and a `@message`.
+# --------------------------------------------------------------------------
+
+def test_off_by_one() -> result[unit, test_failure]:
+  return assert_eq(add(2, 2), 5)
+
+def test_not_ready() -> result[unit, test_failure]:
+  return fail("feature is not implemented yet")
+
+def test_flaky() -> result[unit, test_failure]:
+  return assert_true(false, "this one is skipped, so it never runs")
+
+def main() -> int32:
+  # `suite` takes all six arguments explicitly: default parameter values
+  # are not lowered yet, so pass `@none` for every hook a suite doesn't use.
+  let passing = suite(
+    "arithmetic",
+    [
+      case("addition", test_addition),
+      case("inequality", test_inequality),
+      case("predicates", test_predicates),
+      case("division_chain", test_division_chain),
+      case("division_by_zero", test_division_by_zero),
+      skipped("flaky", test_flaky),
+    ],
+    @some(arithmetic_before_all),
+    @some(arithmetic_after_all),
+    @some(arithmetic_before_each),
+    @some(arithmetic_after_each),
+  )
+
+  let parameterized = suite(
+    "add_table", cases_for_add(), @none, @none, @none, @none
+  )
+
+  let failing = suite(
+    "deliberate_failures",
+    [case("off_by_one", test_off_by_one), case("not_ready", test_not_ready)],
+    @none,
+    @none,
+    @none,
+    @none,
+  )
+
+  return run_suites([passing, parameterized, failing])

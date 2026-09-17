@@ -1074,6 +1074,52 @@ private:
     return builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), block_ptr, offset);
   }
 
+  /// A bare top-level function referenced as a *value* (not called
+  /// directly) needs the same `{fn_ptr; env_ptr}` closure shape
+  /// `compile_lambda_value` builds, so it can flow through
+  /// `compile_call`'s indirect-call branch — which always prepends an env
+  /// pointer as the callee's hidden first argument, per
+  /// `op_call_indirect`'s bytecode-side convention. `target`'s own
+  /// signature has no such parameter, so this wraps it in a small
+  /// generated thunk that drops the (always-null) env pointer and
+  /// forwards every real argument unchanged.
+  [[nodiscard]] auto compile_function_value(llvm::Function *target)
+      -> llvm::Value * {
+    auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto param_types = std::vector<llvm::Type *>{ptr_ty};
+    for (auto *param_ty : target->getFunctionType()->params()) {
+      param_types.push_back(param_ty);
+    }
+    auto *thunk_type = llvm::FunctionType::get(
+        target->getFunctionType()->getReturnType(), param_types,
+        /*isVarArg=*/false);
+    auto *thunk = llvm::Function::Create(
+        thunk_type, llvm::Function::InternalLinkage,
+        std::format("{}.fnvalue", target->getName().str()),
+        target->getParent());
+
+    auto thunk_builder =
+        llvm::IRBuilder<>(llvm::BasicBlock::Create(ctx_, "entry", thunk));
+    auto forward_args = std::vector<llvm::Value *>{};
+    forward_args.reserve(target->getFunctionType()->getNumParams());
+    for (auto it = std::next(thunk->arg_begin()); it != thunk->arg_end();
+        ++it) {
+      forward_args.push_back(&*it);
+    }
+    auto *call_result = thunk_builder.CreateCall(target, forward_args);
+    if (target->getFunctionType()->getReturnType()->isVoidTy()) {
+      thunk_builder.CreateRetVoid();
+    } else {
+      thunk_builder.CreateRet(call_result);
+    }
+
+    auto *closure_block = compile_heap_alloc(2);
+    builder_.CreateStore(thunk, slot_address(closure_block, size_t{0}));
+    builder_.CreateStore(llvm::ConstantPointerNull::get(ptr_ty),
+                         slot_address(closure_block, size_t{1}));
+    return closure_block;
+  }
+
   /// The runtime-indexed counterpart above — used for fixed `array[T, N]`
   /// element access, where the index is an ordinary runtime value the
   /// compiler bounds-checks itself (via `guard_panic`) before emitting this,
@@ -1126,14 +1172,14 @@ private:
         const auto key = resolve_callee_key(ref);
         if (const auto found = functions_.find(key);
             found != functions_.end()) {
-          return found->second;
+          return compile_function_value(found->second);
         }
         return std::unexpected(codegen_error{
             .kind = codegen_error_kind::unsupported_construct,
             .span = expr.span,
             .message = std::format(
-                "reference to `{}` is not a local binding — a bare function "
-                "value used outside of call position is not supported yet",
+                "reference to `{}` is not a local binding and does not name "
+                "a module-level function",
                 ref.name)});
       }
       return builder_.CreateLoad(slot.type, slot.addr, ref.name);

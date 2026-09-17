@@ -908,8 +908,8 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // `traits.numeric.kira`, `traits.conversion.kira`, `traits.category.kira`,
   // `traits.hash.kira`, `limits.kira`, `iter.kira`, `prelude.kira`,
   // `io.kira`, `console.kira`, `fmt.kira`, `algo.kira`, `unicode_tables.kira`,
-  // `unicode.kira`, `derive.kira`, `fs/path.kira`, and the assembled
-  // `std.platform`) rather than
+  // `unicode.kira`, `derive.kira`, `fs/path.kira`, `test.kira`, and the
+  // assembled `std.platform`) rather than
   // hand-listing sources, which would double-add `io.kira`/`console.kira`
   // under a different path string and trip a duplicate-symbol diagnostic —
   // metadata is emitted per source *file*, so a module split across several
@@ -924,12 +924,12 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 25,
+  expect(report->modules.size() == 26,
          "expected std.io, std.console, std.traits (across its 7 files), "
          "std.limits, std.iter, std.algo, std.fmt, std.string, "
          "std.unicode_tables, std.unicode, std.derive, std.fs.path, "
-         "std.platform, std.panic, std.option, std.result, std.list, and "
-         "prelude to all emit metadata");
+         "std.test, std.platform, std.panic, std.option, std.result, "
+         "std.list, and prelude to all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.
@@ -2940,6 +2940,253 @@ auto test_build_derives_hash_via_deriving_clause() -> void {
 #endif
 }
 
+/// spec/specification/04-stdlib/testing/61-std-test.md: `std.test`'s
+/// `test_case`/`test_suite`/`case`/`skipped`/`suite`/`run_suites` all depend
+/// on calling a function stored in a struct field at runtime — the exact
+/// construct `infer_method_call` (src/semantic/check.cpp) failed to record a
+/// checked type for, and `hir_local_ref`-to-a-module-function
+/// (src/llvm_codegen/codegen.cpp) failed to wrap into the `{fn_ptr;
+/// env_ptr}` shape the LLVM tier's indirect-call path expects. Exercises a
+/// full suite: `before_all`/`after_all`/`before_each`/`after_each`, a
+/// passing case, a failing case (asserting the exact rendered mismatch
+/// message), and a `skipped` case that must never run — via a real linked
+/// executable on the LLVM tier, asserting both the literal stdout report and
+/// the process exit code, not just "compiles cleanly".
+auto test_build_runs_std_test_suite_via_llvm_tier() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_std_test_build.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_std_test_build_bin";
+
+  write_file(
+      source_path,
+      "module sample\n"
+      "use std.test.{case, skipped, suite, run_suites, assert_eq, "
+      "assert_true, test_failure}\n"
+      "def before_all_hook() -> result[unit, test_failure]:\n"
+      "    println(\"suite starting\")\n"
+      "    return @ok(unit)\n"
+      "def after_all_hook() -> result[unit, test_failure]:\n"
+      "    println(\"suite done\")\n"
+      "    return @ok(unit)\n"
+      "def before_each_hook() -> result[unit, test_failure]:\n"
+      "    return @ok(unit)\n"
+      "def after_each_hook() -> result[unit, test_failure]:\n"
+      "    return @ok(unit)\n"
+      "def test_pass() -> result[unit, test_failure]:\n"
+      "    return assert_eq(2 + 2, 4)\n"
+      "def test_fail() -> result[unit, test_failure]:\n"
+      "    return assert_eq(2 + 2, 5)\n"
+      "def test_skip_target() -> result[unit, test_failure]:\n"
+      "    return assert_true(false, \"should never run\")\n"
+      "def main() -> int32:\n"
+      "    return run_suites([\n"
+      "        suite(\"sample\",\n"
+      "              [case(\"pass\", test_pass), case(\"fail\", test_fail), "
+      "skipped(\"skipped_case\", test_skip_target)],\n"
+      "              @some(before_all_hook), @some(after_all_hook), "
+      "@some(before_each_hook), @some(after_each_hook)),\n"
+      "    ])\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the std.test suite to build cleanly: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 512> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  const auto expected_output =
+      "suite starting\n"
+      "ok sample.before_all\n"
+      "ok pass\n"
+      "ok pass.after_each\n"
+      "FAILED fail: values not equal (expected: 5, actual: 4)\n"
+      "ok fail.after_each\n"
+      "skip skipped_case\n"
+      "suite done\n"
+      "ok sample.after_all\n"
+      "5 passed, 1 failed, 1 skipped\n";
+  expect(output == expected_output,
+         std::format("unexpected stdout from the std.test run: `{}`", output));
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(close_status) == 1,
+         std::format("expected run_suites to return 1 (one failed case) via "
+                     "the LLVM tier, got {}",
+                     WEXITSTATUS(close_status)));
+#endif
+}
+
+/// spec/specification/04-stdlib/testing/61-std-test.md's Discovery section:
+/// `--test` (`cli_config::test_mode`, `discover_and_inject_test_runner` in
+/// `src/driver/test_discovery.cpp`) finds an inline `tests` submodule,
+/// classifies its functions by name (`before_all`/`after_all`/
+/// `before_each`/`after_each` exactly, `skip_`-prefixed as skipped,
+/// everything else a case), and synthesizes a `main` calling
+/// `std.test.run_suites` — with no `std.test` call anywhere in the source
+/// itself. Asserts the exact report and exit code through a real linked
+/// executable, exercising the same struct-field-closure fix as the
+/// explicit-registration test above, but reached via generated source text
+/// instead of hand-written calls.
+auto test_build_discovers_and_runs_tests_submodule_via_llvm_tier() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_discovery_build.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_discovery_build_bin";
+
+  write_file(
+      source_path,
+      "module app.geometry\n"
+      "use std.test.{assert_eq, assert_true, test_failure}\n"
+      "pub def area(w: float64, h: float64) -> float64:\n"
+      "    return w * h\n"
+      "module tests:\n"
+      "    def before_all() -> result[unit, test_failure]:\n"
+      "        println(\"geometry suite starting\")\n"
+      "        return @ok(unit)\n"
+      "    def test_area() -> result[unit, test_failure]:\n"
+      "        return assert_eq(super.area(2.0, 3.0), 6.0)\n"
+      "    def test_zero_area() -> result[unit, test_failure]:\n"
+      "        return assert_eq(super.area(0.0, 5.0), 0.0)\n"
+      "    def skip_negative() -> result[unit, test_failure]:\n"
+      "        return assert_true(super.area(-1.0, 5.0) >= 0.0, "
+      "\"negative width should not underflow\")\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+      .test_mode = true,
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `--test` discovery to build cleanly: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `--test`'s synthesized runner to link "
+                     "successfully: {}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 512> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  const auto expected_output = "geometry suite starting\n"
+                               "ok app.geometry.before_all\n"
+                               "ok app.geometry.test_area\n"
+                               "ok app.geometry.test_zero_area\n"
+                               "skip app.geometry.skip_negative\n"
+                               "3 passed, 0 failed, 1 skipped\n";
+  expect(output == expected_output,
+         std::format("unexpected stdout from `--test` discovery: `{}`", output));
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(close_status) == 0,
+         std::format("expected the discovered suite (all cases passing or "
+                     "skipped) to exit 0, got {}",
+                     WEXITSTATUS(close_status)));
+#endif
+}
+
+/// `--test` "does not override a user-written entry point" — a source that
+/// already declares `main` compiles and runs unchanged, even though it also
+/// has a `tests` submodule alongside it (`discover_and_inject_test_runner`'s
+/// `file_declares_main` bail-out).
+auto test_build_test_mode_leaves_existing_main_unchanged() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_discovery_existing_main.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_discovery_existing_main_bin";
+
+  write_file(source_path, "module has_both\n"
+                          "use std.test.test_failure\n"
+                          "module tests:\n"
+                          "    def test_x() -> result[unit, test_failure]:\n"
+                          "        return @ok(unit)\n"
+                          "def main() -> int32:\n"
+                          "    println(\"ordinary program\")\n"
+                          "    return 7\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+      .test_mode = true,
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the existing-`main` program to build cleanly: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected the existing-`main` program to link "
+                     "successfully: {}",
+                     report->build->message));
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  expect(output == "ordinary program\n",
+         std::format("expected `--test` to leave the user's own `main` in "
+                     "place, got stdout `{}`",
+                     output));
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(close_status) == 7,
+         std::format("expected the user's own `main` to return 7 unchanged, "
+                     "got {}",
+                     WEXITSTATUS(close_status)));
+#endif
+}
+
 /// spec/specification/01-core/11-error-handling.md: `?` propagating a
 /// `result[_, E1]` operand out of a function declared `result[_, E2]` with
 /// `E1 != E2` now requires (and, when found, applies) `impl from[E1] for
@@ -3281,6 +3528,9 @@ auto main() -> int {
     test_run_derives_ord_via_deriving_clause();
     test_run_derives_hash_via_deriving_clause();
     test_build_derives_hash_via_deriving_clause();
+    test_build_runs_std_test_suite_via_llvm_tier();
+    test_build_discovers_and_runs_tests_submodule_via_llvm_tier();
+    test_build_test_mode_leaves_existing_main_unchanged();
     test_build_try_applies_from_conversion();
     test_run_derives_hash_for_floats();
     test_run_derives_for_generic_types();

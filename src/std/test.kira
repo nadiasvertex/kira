@@ -1,0 +1,185 @@
+module std.test
+
+#: Unit testing: assertions, test-case/test-suite registration, and a
+#: runner. See spec/specification/04-stdlib/testing/61-std-test.md.
+
+#: An assertion failure: either a bare message, or an expected/actual
+#: mismatch with both sides already rendered to `str`.
+pub type test_failure =
+    | @message(str)
+    | @mismatch(str, str, str)
+
+#: Succeeds iff `cond` is `true`; otherwise fails with `message`.
+pub def assert_true(cond: bool, message: str) -> result[unit, test_failure]:
+    if cond:
+        return @ok(unit)
+    return @err(@message(message))
+
+#: Succeeds iff `cond` is `false`; otherwise fails with `message`.
+pub def assert_false(cond: bool, message: str) -> result[unit, test_failure]:
+    if not cond:
+        return @ok(unit)
+    return @err(@message(message))
+
+#: Succeeds iff `actual == expected`; otherwise fails with a rendered
+#: expected/actual mismatch.
+pub def assert_eq[T](actual: T, expected: T) -> result[unit, test_failure] where T: show + eq:
+    if actual == expected:
+        return @ok(unit)
+    return @err(@mismatch("{expected}", "{actual}", "values not equal"))
+
+#: Succeeds iff `actual != expected`; otherwise fails with a rendered
+#: expected/actual mismatch.
+pub def assert_ne[T](actual: T, expected: T) -> result[unit, test_failure] where T: show + eq:
+    if actual != expected:
+        return @ok(unit)
+    return @err(@mismatch("{expected}", "{actual}", "values unexpectedly equal"))
+
+#: Always fails with `message`.
+pub def fail(message: str) -> result[unit, test_failure]:
+    return @err(@message(message))
+
+#: One test to run: a name, the function to call, and whether the runner
+#: should skip calling it.
+pub type test_case = {
+    pub name: str,
+    pub run: fn() -> result[unit, test_failure],
+    pub skip: bool,
+}
+
+#: Builds an ordinary (non-skipped) test case.
+pub def case(name: str, run: fn() -> result[unit, test_failure]) -> test_case:
+    return { name: name, run: run, skip: false }
+
+#: Builds a test case the runner reports as skipped, without calling `run`.
+pub def skipped(name: str, run: fn() -> result[unit, test_failure]) -> test_case:
+    return { name: name, run: run, skip: true }
+
+#: A named group of test cases with optional once-per-suite
+#: (`before_all`/`after_all`) and once-per-case (`before_each`/`after_each`)
+#: hooks.
+pub type test_suite = {
+    pub name: str,
+    pub cases: list[test_case],
+    pub before_all: option[fn() -> result[unit, test_failure]],
+    pub after_all: option[fn() -> result[unit, test_failure]],
+    pub before_each: option[fn() -> result[unit, test_failure]],
+    pub after_each: option[fn() -> result[unit, test_failure]],
+}
+
+#: Builds a `test_suite`. Pass `@none` explicitly for any hook a suite
+#: doesn't need (default parameter values are not yet lowered by the
+#: compiler — see `spec/todo.md`).
+pub def suite(
+    name: str,
+    cases: list[test_case],
+    before_all: option[fn() -> result[unit, test_failure]],
+    after_all: option[fn() -> result[unit, test_failure]],
+    before_each: option[fn() -> result[unit, test_failure]],
+    after_each: option[fn() -> result[unit, test_failure]],
+) -> test_suite:
+    return {
+        name: name,
+        cases: cases,
+        before_all: before_all,
+        after_all: after_all,
+        before_each: before_each,
+        after_each: after_each,
+    }
+
+#: Renders a `test_failure` for a report line.
+def render_failure(f: test_failure) -> str:
+    return match f:
+        @message(text) => text
+        @mismatch(expected, actual, message) => "{message} (expected: {expected}, actual: {actual})"
+
+#: Prints one report line for `name` and returns whether it passed.
+def report(name: str, outcome: result[unit, test_failure]) -> bool:
+    match outcome:
+        @ok(_) => println("ok {name}")
+        @err(f) => println("FAILED {name}: {render_failure(f)}")
+    return match outcome:
+        @ok(_) => true
+        @err(_) => false
+
+#: Runs every case in `cases` in order (skipping `skip: true` ones), with no
+#: suite-level hooks and no per-suite name in the report. Equivalent to
+#: `run_suites([suite("", cases)])`.
+pub def run(cases: list[test_case]) -> int32:
+    return run_suites([suite("", cases, @none, @none, @none, @none)])
+
+#: Runs every suite in order and prints a report; returns `0` if every case
+#: and hook passed, `1` otherwise.
+pub def run_suites(suites: list[test_suite]) -> int32:
+    var passed: int32 = 0
+    var failed: int32 = 0
+    var skipped_count: int32 = 0
+
+    for s in suites:
+        var suite_failure: option[test_failure] = @none
+        match s.before_all:
+            @some(hook) =>:
+                let outcome = hook()
+                match outcome:
+                    @ok(_) => unit
+                    @err(f) =>:
+                        suite_failure = @some(f)
+                if report("{s.name}.before_all", outcome):
+                    passed = passed + 1
+                else:
+                    failed = failed + 1
+            @none => unit
+
+        for c in s.cases:
+            if c.skip:
+                println("skip {c.name}")
+                skipped_count = skipped_count + 1
+            else:
+                match suite_failure:
+                    @some(f) =>:
+                        if report(c.name, @err(f)):
+                            passed = passed + 1
+                        else:
+                            failed = failed + 1
+                    @none =>:
+                        var case_failure: option[test_failure] = @none
+                        match s.before_each:
+                            @some(hook) =>:
+                                match hook():
+                                    @ok(_) => unit
+                                    @err(f) =>:
+                                        case_failure = @some(f)
+                            @none => unit
+
+                        match case_failure:
+                            @some(f) =>:
+                                if report(c.name, @err(f)):
+                                    passed = passed + 1
+                                else:
+                                    failed = failed + 1
+                            @none =>:
+                                if report(c.name, c.run()):
+                                    passed = passed + 1
+                                else:
+                                    failed = failed + 1
+
+                        match s.after_each:
+                            @some(hook) =>:
+                                if report("{c.name}.after_each", hook()):
+                                    passed = passed + 1
+                                else:
+                                    failed = failed + 1
+                            @none => unit
+
+        match s.after_all:
+            @some(hook) =>:
+                if report("{s.name}.after_all", hook()):
+                    passed = passed + 1
+                else:
+                    failed = failed + 1
+            @none => unit
+
+    println("{passed} passed, {failed} failed, {skipped_count} skipped")
+    if failed == 0:
+        return 0
+    return 1

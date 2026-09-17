@@ -1,0 +1,31 @@
+module codegen_stress.fn_typed_struct_field_list_heterogeneous
+
+# The `test_case`-shaped scenario `std.test` depends on: a `list[holder]`
+# where each element's `fn`-typed field holds a *different* concrete
+# function, read back out through a `for` loop and called indirectly. This
+# is the genuinely runtime-polymorphic case a single struct instance
+# (080_fn_typed_struct_field_call.kira) doesn't exercise on its own.
+
+type holder = { name: str, run: fn() -> int32 }
+
+def one() -> int32:
+    return 1
+
+def two() -> int32:
+    return 2
+
+def three() -> int32:
+    return 3
+
+def main() -> int64:
+    let items: list[holder] = [
+        { name: "one", run: one },
+        { name: "two", run: two },
+        { name: "three", run: three },
+    ]
+    var total = 0
+    for item in items:
+        total = total + item.run()
+    return total as int64
+
+# expect: 6

@@ -1,0 +1,135 @@
+module demo.testkit
+
+# ==========================================================================
+#  std.test — automatic test discovery with `kira --test`.
+#
+#  No `main`, no call to `suite`/`case`/`run_suites`. `kira --test` walks
+#  every reachable module, treats the inline submodule literally named
+#  `tests` as one suite named after its parent module, and synthesizes the
+#  entry point itself.
+#
+#  Inside a `tests` submodule, every zero-argument function returning
+#  `result[unit, test_failure]` is classified by name:
+#
+#      before_all / after_all      once-per-suite hooks
+#      before_each / after_each    once-per-case hooks
+#      skip_*                      a case the runner reports as skipped
+#      anything else               an ordinary case
+#
+#  Anything else in the submodule (a helper with parameters, or a different
+#  return type) is ordinary private code and takes no part in the suite.
+#
+#  For hand-registered suites with a user-written `main`, see
+#  demo/test-explicit.kira.
+#
+#  Run it:  kira --test demo/test-discovery.kira
+#
+#  Exits 1: one case below fails on purpose.
+# ==========================================================================
+
+use std.test.{assert_eq, assert_ne, assert_true, assert_false, fail, test_failure}
+
+# --------------------------------------------------------------------------
+#  The code under test.
+# --------------------------------------------------------------------------
+
+pub def area(w: float64, h: float64) -> float64:
+  return w * h
+
+pub def perimeter(w: float64, h: float64) -> float64:
+  return 2.0 * (w + h)
+
+pub type counter = { pub value: int32 }
+
+pub def make_counter() -> counter:
+  return { value: 0 }
+
+pub def bump(c: counter, by: int32) -> counter:
+  return { value: c.value + by }
+
+pub def digit_value(c: char) -> result[int32, str]:
+  if c >= '0' and c <= '9':
+    return @ok((c as int32) - ('0' as int32))
+  return @err("not a digit")
+
+# An ordinary function that happens to be named like a hook. It lives
+# outside the `tests` submodule, so discovery never looks at it.
+def before_all() -> unit:
+  println("not a test hook")
+
+# --------------------------------------------------------------------------
+#  The suite. Discovery names it after this file's module: `demo.testkit`.
+# --------------------------------------------------------------------------
+
+module tests:
+  # ---- hooks -------------------------------------------------------------
+
+  def before_all() -> result[unit, test_failure]:
+    println("  [hook] testkit suite starting")
+    return @ok(unit)
+
+  def after_all() -> result[unit, test_failure]:
+    println("  [hook] testkit suite done")
+    return @ok(unit)
+
+  def before_each() -> result[unit, test_failure]:
+    return @ok(unit)
+
+  def after_each() -> result[unit, test_failure]:
+    return @ok(unit)
+
+  # ---- a helper, not a case (it takes a parameter) -----------------------
+
+  def bumped_twice(by: int32) -> int32:
+    return super.bump(super.bump(super.make_counter(), by), by).value
+
+  # ---- cases -------------------------------------------------------------
+
+  def test_area() -> result[unit, test_failure]:
+    return assert_eq(super.area(2.0, 3.0), 6.0)
+
+  def test_zero_area() -> result[unit, test_failure]:
+    return assert_eq(super.area(0.0, 5.0), 0.0)
+
+  def test_perimeter() -> result[unit, test_failure]:
+    return assert_eq(super.perimeter(2.0, 3.0), 10.0)
+
+  def test_counter_starts_at_zero() -> result[unit, test_failure]:
+    return assert_eq(super.make_counter().value, 0)
+
+  # `?` short-circuits on the first failing assertion, so a test body reads
+  # as a straight line of checks.
+  def test_bump_accumulates() -> result[unit, test_failure]:
+    assert_eq(bumped_twice(5), 10)?
+    return assert_ne(bumped_twice(5), 5)
+
+  def test_bump_is_not_in_place() -> result[unit, test_failure]:
+    let start = super.make_counter()
+    let bumped = super.bump(start, 7)
+    assert_eq(start.value, 0)?
+    assert_false(bumped.value == start.value, "bump must not mutate its input")?
+    return assert_eq(bumped.value, 7)
+
+  def test_digit() -> result[unit, test_failure]:
+    return match super.digit_value('7'):
+      @ok(n) => assert_eq(n, 7)
+      @err(message) => fail(message)
+
+  def test_rejects_non_digit() -> result[unit, test_failure]:
+    return match super.digit_value('x'):
+      @ok(_) => fail("'x' is not a digit, but it parsed as one")
+      @err(_) => assert_true(true, "unreachable")
+
+  # A `skip_` prefix makes the case skipped; the prefix stays in the
+  # reported name, so it is obvious which case was left out.
+  def skip_negative_area() -> result[unit, test_failure]:
+    return assert_true(
+      super.area(0.0 - 1.0, 5.0) >= 0.0, "negative width should not underflow"
+    )
+
+  # Fails on purpose, so the report shows a `@mismatch` line and the run
+  # exits non-zero.
+  def test_known_bug() -> result[unit, test_failure]:
+    return match super.digit_value('9'):
+      @ok(n) => assert_eq(n, 10)
+      @err(message) => fail(message)

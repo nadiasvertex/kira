@@ -13,6 +13,7 @@ cc_library(
         "parse_stage.cpp",
         "run_build_stage.cpp",
         "static_if_stage.cpp",
+        "test_discovery.cpp",
     ],
     hdrs = [
       "aot.h",
@@ -26,6 +27,7 @@ cc_library(
       "parse_stage.h",
       "run_build_stage.h",
       "static_if_stage.h",
+      "test_discovery.h",
     ],
     copts = [
       "-Wno-deprecated",
