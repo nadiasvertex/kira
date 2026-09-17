@@ -692,6 +692,17 @@ struct checked_types {
   /// (a plain same-module/imported bare-name call, a method call) or never
   /// resolved at all.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees;
+  /// Every `ident_expr` that names a module-level function in *value*
+  /// position — bound to a `let`, passed as an argument, returned — rather
+  /// than being called. `checker::resolve_ident` records the declaration and
+  /// its owning module here for exactly the same reason `resolved_callees`
+  /// exists for the call case: lowering cannot redo the import/wildcard
+  /// resolution itself, and without `owner_module` both backends key the
+  /// reference against the *referencing* module and fail to find it
+  /// ("reference to `f` is not a local binding"). Only `decl`/`owner_module`/
+  /// `impl_target_type` are meaningful; `receiver` is always null (a bare
+  /// value reference has no receiver to pass).
+  std::unordered_map<const ast::node *, resolved_callee> resolved_fn_values;
   /// Every arithmetic operator (`+`/`-`/`*`/`/`/`%`) resolved against a
   /// user struct/sum operand's `add`/`sub`/`mul`/`div`/`rem` impl — see
   /// `checker::require_operand_trait` (`check.cpp`). `receiver` is always

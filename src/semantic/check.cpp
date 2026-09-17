@@ -942,6 +942,7 @@ public:
         .struct_literal_field_types = std::move(struct_literal_field_types_),
         .call_argument_mappings = std::move(call_argument_mappings_),
         .resolved_callees = std::move(resolved_callees_),
+        .resolved_fn_values = std::move(resolved_fn_values_),
         .operator_dispatches = std::move(operator_dispatches_),
         .ord_dispatch_result_types = std::move(ord_dispatch_result_types_),
         .interp_dispatches = std::move(interp_dispatches_),
@@ -1105,6 +1106,10 @@ private:
   /// Every module-qualified or type-qualified call resolved by
   /// `infer_qualified_call`. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees_;
+  /// Every value-position reference to a module-level function, recorded by
+  /// `record_fn_value_reference`. Handed to the caller via
+  /// `take_checked_types` as `checked_types::resolved_fn_values`.
+  std::unordered_map<const ast::node *, resolved_callee> resolved_fn_values_;
   /// Every arithmetic operator resolved against a user operand's overload
   /// trait method, recorded by `require_operand_trait`. Handed to the
   /// caller via `take_checked_types`.
@@ -6610,6 +6615,8 @@ private:
     if (module_ != nullptr) {
       if (const auto it = module_->functions.find(name);
           it != module_->functions.end()) {
+        record_fn_value_reference(ident, *it->second.decl,
+                                  module_->module_name);
         return fn_type_of(*it->second.decl, module_);
       }
       if (const auto it = module_->statics.find(name);
@@ -6626,6 +6633,8 @@ private:
         const auto member = imported_member_name(*binding);
         if (const auto it = source->functions.find(member);
             it != source->functions.end()) {
+          record_fn_value_reference(ident, *it->second.decl,
+                                    source->module_name);
           return fn_type_of(*it->second.decl, source);
         }
         if (const auto it = source->statics.find(member);
@@ -6643,6 +6652,8 @@ private:
     for (const auto *source : wildcard_import_sources()) {
       if (const auto it = source->functions.find(std::string(name));
           it != source->functions.end()) {
+        record_fn_value_reference(ident, *it->second.decl,
+                                  source->module_name);
         return fn_type_of(*it->second.decl, source);
       }
       if (const auto it = source->statics.find(std::string(name));
@@ -6782,6 +6793,24 @@ private:
   /// keyed on `ast::node` precisely so both spellings can be recorded, and
   /// `hir::lower_module_path` looks the path form up the same way
   /// `hir::lower_ident` looks up the bare one.
+  /// Records that `reference` names `decl` — a module-level function used as
+  /// a plain value rather than called. Lowering reads this back (see
+  /// `checked_types::resolved_fn_values`) to build the reference's
+  /// `hir_local_ref` with the *declaring* module as its `owner_module`, which
+  /// is what both backends key their function tables on and what
+  /// `hir::find_reachable_modules` walks to decide a module must be compiled
+  /// at all. Without it a cross-module reference resolves against the
+  /// referencing module and finds nothing.
+  auto record_fn_value_reference(const ast::expr &reference,
+                                 const ast::func_decl &decl,
+                                 std::string_view owner_module) -> void {
+    resolved_fn_values_[&reference] =
+        resolved_callee{.decl = &decl,
+                        .owner_module = std::string(owner_module),
+                        .impl_target_type = "",
+                        .receiver = nullptr};
+  }
+
   auto record_static_const_reference(const ast::expr &reference,
                                      const ast::static_decl &decl, type_id type,
                                      std::string_view owner_module) -> void {

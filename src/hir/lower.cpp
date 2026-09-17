@@ -957,6 +957,25 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
     return ok_expr(make<hir_global_ref>(ident.span, *type, it->second,
                                         global_owner_of(it->second)));
   }
+  // A module-level function named in value position (bound to a `let`,
+  // passed as an argument) rather than called — `check.cpp`'s
+  // `record_fn_value_reference` resolved which declaration, and in which
+  // module, exactly as `resolved_callees` does for the call case. Carrying
+  // the owner through is what lets both backends find the function under
+  // the same key a call to it would use, and what lets
+  // `find_reachable_modules` see that the declaring module is needed at all.
+  if (const auto found = checked_.resolved_fn_values.find(&ident);
+      found != checked_.resolved_fn_values.end()) {
+    const auto &resolved = found->second;
+    const auto local_name =
+        resolved.impl_target_type.empty()
+            ? resolved.decl->name
+            : std::format("{}::{}", resolved.impl_target_type,
+                          resolved.decl->name);
+    const auto symbol = resolve_reference(local_name);
+    return ok_expr(make<hir_local_ref>(ident.span, *type, symbol, local_name,
+                                       resolved.owner_module));
+  }
   const auto symbol = resolve_reference(ident.name);
   return ok_expr(make<hir_local_ref>(ident.span, *type, symbol, ident.name));
 }

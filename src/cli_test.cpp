@@ -1251,6 +1251,93 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 #endif
 }
 
+/// A function imported from another module and used as a *plain value* —
+/// bound to a `let` of `fn` type, and passed as a call argument — rather
+/// than called directly. Both uses used to type-check and then fail in
+/// lowering with "reference to `target` is not a local binding", because
+/// `semantic::checker::resolve_ident`'s import/wildcard branches returned
+/// the function's type without recording *which* declaration, in which
+/// module, they had resolved — so `hir::lower_ident` built an
+/// `hir_local_ref` with no `owner_module` and both backends looked the name
+/// up under the *referencing* module's key and found nothing. The identical
+/// construct on a same-module function, or a lambda literal, always worked,
+/// which is what made this look like a checker gap rather than a lowering
+/// one. `checked_types::resolved_fn_values` closes it, mirroring
+/// `resolved_callees` for the call case.
+///
+/// Runs the program on both tiers (the bytecode VM and a linked native
+/// binary) and asserts the computed value, not just that compilation
+/// succeeded: the exit code is `twice(target()) == 14`, so a reference that
+/// silently resolved to the wrong function would still be caught.
+auto test_cross_module_function_used_as_a_value() -> void {
+  auto temp = make_temp_dir();
+  auto inner_path = temp.path / "inner.kira";
+  auto main_path = temp.path / "main.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "fn_value_bin";
+
+  write_file(inner_path, "module inner\n"
+                         "def target() -> int32:\n"
+                         "  7\n"
+                         "def twice(x: int32) -> int32:\n"
+                         "  x * 2\n");
+  write_file(main_path, "module main\n"
+                        "use inner.target\n"
+                        "use inner.twice\n"
+                        "def apply(f: fn(int32) -> int32, v: int32) -> int32:\n"
+                        "  f(v)\n"
+                        "def main() -> int32:\n"
+                        "  let g: fn() -> int32 = target\n"
+                        "  apply(twice, g())\n");
+
+  kira::driver::cli_config run_cfg{
+      .program_name = "kira",
+      .sources = {main_path.string(), inner_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected a bare cross-module function value to compile cleanly: " +
+             run_report->diagnostics);
+  expect(run_report->run.has_value(), "expected a run outcome to be recorded");
+  expect(run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == 14,
+         "expected the bytecode VM to reach `inner.twice` through a bare "
+         "`target`/`twice` value reference and compute twice(target()) == 14");
+
+  kira::driver::cli_config build_cfg{
+      .program_name = "kira",
+      .sources = {main_path.string(), inner_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+
+  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value(),
+         "expected compile driver to return a build report");
+  expect(build_report->build.has_value(),
+         "expected a build outcome to be recorded");
+  expect(build_report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     build_report->build->message));
+
+  const auto exit_status = std::system(output_path.string().c_str());
+  expect(exit_status != -1, "expected the linked executable to launch");
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(exit_status) == 14,
+         "expected the LLVM tier to agree with the VM: twice(target()) == 14");
+#endif
+}
+
 /// Same program as `test_build_links_and_runs_a_heap_using_program`, built
 /// at `-O2` instead of the default `-O0` — proves `cli_config::opt_level`
 /// actually reaches `llvm_codegen::emit_object_file`'s
@@ -3660,6 +3747,7 @@ auto main() -> int {
     test_compile_sources_reports_unresolved_session_import();
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
+    test_cross_module_function_used_as_a_value();
     test_build_at_o2_still_links_and_runs_correctly();
     test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();
