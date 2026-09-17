@@ -67,6 +67,8 @@ greet("Alice")                  # uses default: loud = false
 greet("Bob", loud: true)        # named argument
 ```
 
+A default value is evaluated **at the call site**, once per call that omits the argument — `def push(xs: list[int32] = [])` hands each such call its own fresh list, never one shared between them. It follows that a default may only name things the call site can also see (a literal, a `static let`, a function to call); it may not refer to another of the function's parameters, since those are values of a call that has not happened yet.
+
 ## Functions as values
 
 A function name used as a value has type `fn(ParamTypes...) -> ReturnType` and may be passed, stored, and called like any other value.

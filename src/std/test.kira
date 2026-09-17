@@ -67,16 +67,15 @@ pub type test_suite = {
     pub after_each: option[fn() -> result[unit, test_failure]],
 }
 
-#: Builds a `test_suite`. Pass `@none` explicitly for any hook a suite
-#: doesn't need (default parameter values are not yet lowered by the
-#: compiler — see `spec/todo.md`).
+#: Builds a `test_suite`. Every hook defaults to `@none`, so a suite that
+#: needs none of them passes only a name and its cases.
 pub def suite(
     name: str,
     cases: list[test_case],
-    before_all: option[fn() -> result[unit, test_failure]],
-    after_all: option[fn() -> result[unit, test_failure]],
-    before_each: option[fn() -> result[unit, test_failure]],
-    after_each: option[fn() -> result[unit, test_failure]],
+    before_all: option[fn() -> result[unit, test_failure]] = @none,
+    after_all: option[fn() -> result[unit, test_failure]] = @none,
+    before_each: option[fn() -> result[unit, test_failure]] = @none,
+    after_each: option[fn() -> result[unit, test_failure]] = @none,
 ) -> test_suite:
     return {
         name: name,
@@ -106,7 +105,7 @@ def report(name: str, outcome: result[unit, test_failure]) -> bool:
 #: suite-level hooks and no per-suite name in the report. Equivalent to
 #: `run_suites([suite("", cases)])`.
 pub def run(cases: list[test_case]) -> int32:
-    return run_suites([suite("", cases, @none, @none, @none, @none)])
+    return run_suites([suite("", cases)])
 
 #: Runs every suite in order and prints a report; returns `0` if every case
 #: and hook passed, `1` otherwise.

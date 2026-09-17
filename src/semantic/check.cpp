@@ -138,6 +138,10 @@ struct fn_param_info {
   type_id type = k_unknown_type;
   bool has_default = false;
   source_span span;
+  /// The declaration's default-value expression, when it has one — carried
+  /// through to `call_argument_mapping::defaults_by_param` so a call that
+  /// omits this argument can lower the default in the caller's place.
+  const ast::expr *default_value = nullptr;
 };
 
 /// One method available on a type, from an inherent/trait `impl` block
@@ -4783,6 +4787,7 @@ private:
           .type = type,
           .has_default = param.default_value != nullptr,
           .span = param.span,
+          .default_value = param.default_value.get(),
       });
     }
     return params;
@@ -4928,8 +4933,18 @@ private:
     // `call_argument_mappings_` is published before the arguments are
     // checked, not after, because the generic solving between the two passes
     // below reads it back to find which argument reached which parameter.
+    auto defaults_by_param = std::vector<const ast::expr *>{};
+    auto param_names = std::vector<std::string>{};
+    defaults_by_param.reserve(params.size());
+    param_names.reserve(params.size());
+    for (const auto &param : params) {
+      defaults_by_param.push_back(param.default_value);
+      param_names.push_back(param.name);
+    }
     call_argument_mappings_[&call] =
-        call_argument_mapping{.args_by_param = args_by_param};
+        call_argument_mapping{.args_by_param = args_by_param,
+                              .defaults_by_param = std::move(defaults_by_param),
+                              .param_names = std::move(param_names)};
 
     const auto check_argument =
         [&](const pending_argument &item,

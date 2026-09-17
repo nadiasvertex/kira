@@ -48,9 +48,7 @@ packed type header = { magic: uint16, flags: byte, len: uint32 }
 # len @ offset 3 (4 bytes) -> size 7, align 1
 ```
 
-`packed` only applies to struct types; writing it before a sum type, type alias, or refinement type is diagnosed as an error (`` `packed` only applies to struct types; `{}` is {} ``, `src/semantic/check.cpp`), since those have no field layout to pack.
-
-Both the default and `packed` layout rules are implemented end to end, including codegen: `src/runtime/layout.cpp` computes offsets from `ast::type_modifiers::is_packed`, and `src/testdata/codegen_test/packed_struct_layout.kira` / `padded_struct_layout.kira` exercise both through the compiled program, not just the type checker.
+`packed` only applies to struct types; writing it before a sum type, type alias, or refinement type is diagnosed as an error, since those have no field layout to pack.
 
 ## Type aliases
 

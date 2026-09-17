@@ -1,0 +1,37 @@
+module codegen_stress.default_parameter_values
+
+# Omitted trailing arguments are supplied from the parameter's declared
+# default, which is lowered at the *call site* (`hir::lower_call`): the
+# callee is an ordinary function of full declared arity and knows nothing
+# about defaults. Covers the three shapes a default takes — a literal, a
+# reference to a module-level `static let`, and a call — plus a named
+# argument that skips over a defaulted parameter, and a method whose
+# receiver must stay ahead of the spliced-in default.
+
+static let base: int32 = 7
+
+def seed() -> int32:
+    return 5
+
+def bump(x: int32 = 3) -> int32:
+    return x + 1
+
+def scaled(n: int32, factor: int32 = base, offset: int32 = seed()) -> int32:
+    return n * factor + offset
+
+type counter = { n: int32 }
+
+extend counter:
+    def bumped(self, by: int32 = 10) -> int32:
+        return self.n + by
+
+def main() -> int64:
+    let a = bump()              # 4
+    let b = bump(10)            # 11
+    let c = scaled(2)           # 2 * 7 + 5 = 19
+    let d = scaled(2, 3)        # 2 * 3 + 5 = 11
+    let e = scaled(2, offset: 1) # 2 * 7 + 1 = 15
+    let f = counter{n: 1}.bumped() # 11
+    return (a + b + c + d + e + f) as int64
+
+# expect: 71

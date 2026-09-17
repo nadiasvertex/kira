@@ -446,8 +446,18 @@ private:
 /// `self` already skipped for a method call) — whichever call argument
 /// that turned out to be, positional or named; null means the argument was
 /// omitted and the parameter's default value applies.
+///
+/// `defaults_by_param[i]` is that parameter's declared default-value
+/// expression (null when it has none), and `param_names[i]` its spelling.
+/// Both are copied from the callee's signature at the point the call is
+/// checked because lowering has no route back to the declaration a call
+/// resolved against for every call form — and an omitted argument is lowered
+/// by lowering the callee's default expression right here at the call site
+/// (see `lower_call`), which needs exactly these two pieces.
 struct call_argument_mapping {
   std::vector<const ast::expr *> args_by_param;
+  std::vector<const ast::expr *> defaults_by_param;
+  std::vector<std::string> param_names;
 };
 
 /// The declaration a module-qualified free-function call (`std.io.open(...)`),

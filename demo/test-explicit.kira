@@ -107,8 +107,7 @@ def test_flaky() -> result[unit, test_failure]:
   return assert_true(false, "this one is skipped, so it never runs")
 
 def main() -> int32:
-  # `suite` takes all six arguments explicitly: default parameter values
-  # are not lowered yet, so pass `@none` for every hook a suite doesn't use.
+  # Hooks default to `@none`, so a suite names only the ones it uses.
   let passing = suite(
     "arithmetic",
     [
@@ -119,23 +118,19 @@ def main() -> int32:
       case("division_by_zero", test_division_by_zero),
       skipped("flaky", test_flaky),
     ],
-    @some(arithmetic_before_all),
-    @some(arithmetic_after_all),
-    @some(arithmetic_before_each),
-    @some(arithmetic_after_each),
+    before_all: @some(arithmetic_before_all),
+    after_all: @some(arithmetic_after_all),
+    before_each: @some(arithmetic_before_each),
+    after_each: @some(arithmetic_after_each),
   )
 
   let parameterized = suite(
-    "add_table", cases_for_add(), @none, @none, @none, @none
+    "add_table", cases_for_add()
   )
 
   let failing = suite(
     "deliberate_failures",
     [case("off_by_one", test_off_by_one), case("not_ready", test_not_ready)],
-    @none,
-    @none,
-    @none,
-    @none,
   )
 
   return run_suites([passing, parameterized, failing])

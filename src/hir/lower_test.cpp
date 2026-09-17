@@ -1574,7 +1574,11 @@ auto test_lowers_named_call_arguments_in_declared_order() -> void {
          "expected the second argument to reference caller's `y` parameter");
 }
 
-auto test_rejects_call_relying_on_default_argument() -> void {
+/// An omitted argument is filled in at the *call site* by lowering the
+/// callee's default expression there, so the emitted call carries the full
+/// declared arity — the callee is an ordinary function that knows nothing
+/// about defaults.
+auto test_lowers_call_relying_on_default_argument() -> void {
   auto fixture =
       check_fixture("module sample\n"
                     "def greet(name: str, greeting: str = \"hello\") -> str:\n"
@@ -1584,10 +1588,44 @@ auto test_rejects_call_relying_on_default_argument() -> void {
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
   auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a call relying on a default argument to lower");
+
+  const auto &function = **result;
+  const auto &ret =
+      dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
+  const auto &call = dynamic_cast<const hir::hir_call &>(*ret.value);
+  expect(call.args.size() == 2,
+         "expected the omitted argument to be supplied, giving two arguments");
+  const auto &first_arg =
+      dynamic_cast<const hir::hir_local_ref &>(*call.args[0]);
+  expect(first_arg.name == "name",
+         "expected the written argument to stay in the first position");
+  const auto &second_arg =
+      dynamic_cast<const hir::hir_literal &>(*call.args[1]);
+  expect(second_arg.value == "\"hello\"",
+         "expected the default value's literal to be spliced in as the "
+         "second argument");
+}
+
+/// A default that names one of the callee's *own* parameters cannot be
+/// evaluated in the caller's frame, and is refused rather than lowered into
+/// a reference to a binding that doesn't exist there.
+auto test_rejects_default_referring_to_another_parameter() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "def f(a: int32, b: int32 = a) -> int32:\n"
+                               "    return a + b\n"
+                               "def caller() -> int32:\n"
+                               "    return f(2)\n");
+  const auto &decl = find_func(*fixture.ast_file, "caller");
+
+  auto result = hir::lower_function(decl, fixture.checked);
   expect(!result.has_value(),
-         "expected a call relying on a default argument to be rejected");
+         "expected a default referring to another parameter to be rejected");
   expect(result.error().kind == hir::lowering_error_kind::unsupported_construct,
          "expected the specific unsupported_construct error kind");
+  expect(result.error().message.find("parameter `a`") != std::string::npos,
+         "expected the message to name the parameter the default refers to");
 }
 
 auto test_lowers_variant_construction_with_payload() -> void {
@@ -2700,7 +2738,8 @@ auto main() -> int {
     test_lowers_cross_module_generic_return_type();
     test_lowers_type_qualified_associated_call();
     test_lowers_named_call_arguments_in_declared_order();
-    test_rejects_call_relying_on_default_argument();
+    test_lowers_call_relying_on_default_argument();
+    test_rejects_default_referring_to_another_parameter();
     test_lowers_variant_construction_with_payload();
     test_lowers_bare_unit_variant();
     test_lowers_try_expr_on_result();

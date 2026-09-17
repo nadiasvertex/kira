@@ -193,7 +193,7 @@ def run(cases: list[test_case]) -> int32
 def run_suites(suites: list[test_suite]) -> int32
 ```
 
-- `run` executes every `test_case` in `cases` in order, except those with `skip = true`; equivalent to `run_suites([suite("", cases, @none, @none, @none, @none)])` with no per-suite name printed.
+- `run` executes every `test_case` in `cases` in order, except those with `skip = true`; equivalent to `run_suites([suite("", cases)])` with no per-suite name printed.
 - `run_suites` executes each `test_suite` in order:
   1. its `before_all`, if any;
   2. for each case in `cases`, in order: if `skip = true`, record it skipped and move on; otherwise call `before_each` (if any), then — only if `before_each` did not fail — the case's `run`, then `after_each` (if any);
@@ -228,18 +228,16 @@ def test_increment() -> result[unit, test_failure]:
 
 def main() -> int32:
     return run_suites([
-        suite("arithmetic", [case("addition", test_addition), skipped("flaky", test_flaky)],
-              @none, @none, @none, @none),
+        suite("arithmetic", [case("addition", test_addition), skipped("flaky", test_flaky)]),
         suite("counter", [case("increment", test_increment)],
-              @some(before_all_hook), @none, @none, @none),
+              before_all: @some(before_all_hook)),
     ])
 ```
 
 ## Implementation status
 
-Fully implemented and end-to-end tested — the checker fix, the library, and `--test` discovery all landed together (`src/semantic/check.cpp`'s `infer_method_call`, `src/llvm_codegen/codegen.cpp`'s `compile_function_value`, `src/std/test.kira`, `src/driver/test_discovery.cpp`, `src/cli_test.cpp`'s `test_build_runs_std_test_suite_via_llvm_tier`/`test_build_discovers_and_runs_tests_submodule_via_llvm_tier`/`test_build_discovers_nested_tests_submodules_via_llvm_tier`/`test_build_test_mode_leaves_existing_main_unchanged`/`test_test_mode_without_any_tests_is_an_error`/`test_test_mode_hooks_without_cases_find_no_tests`, and `src/testdata/codegen_stress/080_fn_typed_struct_field_call.kira`/`081_fn_typed_struct_field_list_heterogeneous.kira`) — one gap remains:
+Fully implemented and end-to-end tested — the checker fix, the library, and `--test` discovery all landed together (`src/semantic/check.cpp`'s `infer_method_call`, `src/llvm_codegen/codegen.cpp`'s `compile_function_value`, `src/std/test.kira`, `src/driver/test_discovery.cpp`, `src/cli_test.cpp`'s `test_build_runs_std_test_suite_via_llvm_tier`/`test_build_discovers_and_runs_tests_submodule_via_llvm_tier`/`test_build_discovers_nested_tests_submodules_via_llvm_tier`/`test_build_test_mode_leaves_existing_main_unchanged`/`test_test_mode_without_any_tests_is_an_error`/`test_test_mode_hooks_without_cases_find_no_tests`, and `src/testdata/codegen_stress/080_fn_typed_struct_field_call.kira`/`081_fn_typed_struct_field_list_heterogeneous.kira`) — and `suite`'s hook defaults now work as documented (default parameter values are lowered at the call site; see `spec/todo.md` item 6), so a suite names only the hooks it uses.
 
-- **`suite`'s default parameter values are not lowered.** Default parameter values are a general compiler gap (`spec/todo.md`; the compiler's own diagnostic on hitting one reads "default parameter values are not lowered by the first milestone"), not specific to `std.test`. Until that lands, every call to `suite(...)` must pass all six arguments explicitly — `@none` for any hook a suite doesn't need — rather than omitting trailing ones, exactly as the `suite` calls in this chapter's examples do. `run`'s single-suite wrapper passes all four explicitly for the same reason.
 - The synthesized `--test` runner never needs a bare cross-module function reference as a value (a separate, broader gap than the one this chapter's own fix addresses — a bare `use`-imported or qualified function name used as a plain value, outside call position, is not reliably lowered in every position yet); it always wraps each discovered function in a zero-arg lambda calling it by qualified path (`() => app.geometry.tests.test_area()`), which is unaffected.
 
 ## See also

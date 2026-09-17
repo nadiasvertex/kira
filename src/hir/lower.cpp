@@ -350,6 +350,11 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_call(const ast::call_expr &call)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto
+  lower_default_argument(const ast::call_expr &call,
+                         const semantic::call_argument_mapping &mapping,
+                         size_t index)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_field(const ast::field_expr &field)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_module_path(const ast::module_path_expr &path)
@@ -777,6 +782,20 @@ private:
   /// body, where a `return` returns from the lambda and settles nothing about
   /// the enclosing function's promise (see `lower_lambda`).
   std::vector<const ast::contract_clause *> post_contracts_;
+  /// The callee's parameter names while a default-value expression is being
+  /// lowered at a call site (`lower_default_argument`), null otherwise.
+  ///
+  /// A default expression was type-checked inside the *callee's* signature
+  /// scope but is lowered here, in the caller's. Everything that scope could
+  /// give it survives the move — a reference to a module-level function,
+  /// `static let`, or another module's declaration is resolved by the
+  /// checker and recorded against the AST node itself (see `lower_ident`), so
+  /// it lowers identically from either side. The one thing that does not
+  /// survive is a reference to one of the callee's own parameters: that is a
+  /// local binding of a frame this call has not built yet. `lower_ident`
+  /// consults this list to refuse such a default with a real explanation
+  /// instead of minting a global reference to a name no module defines.
+  const std::vector<std::string> *default_argument_params_ = nullptr;
 };
 
 auto lowerer::lower_expr(const ast::expr &expr)
@@ -976,8 +995,52 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
     return ok_expr(make<hir_local_ref>(ident.span, *type, symbol, local_name,
                                        resolved.owner_module));
   }
+  // A default-value expression naming one of the callee's own parameters —
+  // see `default_argument_params_`. `resolve_reference` below would happily
+  // mint a global-reference id for it and leave both backends to fail with
+  // "reference to `n` is not a local binding", which explains nothing.
+  if (default_argument_params_ != nullptr &&
+      !lookup_local(ident.name).has_value() &&
+      std::ranges::find(*default_argument_params_, ident.name) !=
+          default_argument_params_->end()) {
+    return fail(
+        lowering_error_kind::unsupported_construct, ident.span,
+        std::format(
+            "this default value refers to the parameter `{}`, but a default "
+            "is evaluated at the call site, where the call's other arguments "
+            "do not exist yet; give the parameter a default that stands on "
+            "its own (a literal, a constant, or a call), or make it a "
+            "required parameter and compute the value in the body",
+            ident.name));
+  }
   const auto symbol = resolve_reference(ident.name);
   return ok_expr(make<hir_local_ref>(ident.span, *type, symbol, ident.name));
+}
+
+auto lowerer::lower_default_argument(
+    const ast::call_expr &call, const semantic::call_argument_mapping &mapping,
+    size_t index) -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto *default_expr = index < mapping.defaults_by_param.size()
+                                 ? mapping.defaults_by_param[index]
+                                 : nullptr;
+  const auto name = index < mapping.param_names.size()
+                        ? mapping.param_names[index]
+                        : std::format("#{}", index + 1);
+  if (default_expr == nullptr) {
+    // The checker reports a missing required argument itself
+    // (`check_call_args_against`), so reaching here means the call was
+    // already diagnosed and lowering is running on a program it shouldn't
+    // be — fail closed rather than emit a call with a hole in it.
+    return fail(lowering_error_kind::unsupported_construct, call.span,
+                std::format("call omits the argument for parameter `{}`, "
+                            "which declares no default value",
+                            name));
+  }
+  const auto *const saved = default_argument_params_;
+  default_argument_params_ = &mapping.param_names;
+  auto lowered = lower_expr(*default_expr);
+  default_argument_params_ = saved;
+  return lowered;
 }
 
 auto lowerer::lower_binary(const ast::binary_expr &bin)
@@ -1351,12 +1414,21 @@ auto lowerer::lower_call(const ast::call_expr &call)
     if (receiver_arg != nullptr) {
       args.push_back(std::move(receiver_arg));
     }
-    for (const auto *arg_expr : mapping->second.args_by_param) {
+    for (size_t i = 0; i < mapping->second.args_by_param.size(); ++i) {
+      const auto *arg_expr = mapping->second.args_by_param[i];
       if (arg_expr == nullptr) {
-        return fail(lowering_error_kind::unsupported_construct, call.span,
-                    "calls that rely on a parameter's default value are "
-                    "not lowered yet — the default expression's evaluation "
-                    "context isn't threaded through this pass");
+        // The argument was omitted, so the parameter's declared default
+        // applies. It is lowered *here*, once per call site that omits it,
+        // rather than inside the callee: a default is an expression the
+        // caller would otherwise have written out longhand, and evaluating
+        // it in the caller's place is what makes `f()` and `f(0)` compile to
+        // the same call.
+        auto defaulted = lower_default_argument(call, mapping->second, i);
+        if (!defaulted.has_value()) {
+          return std::unexpected(defaulted.error());
+        }
+        args.push_back(std::move(*defaulted));
+        continue;
       }
       auto lowered = lower_expr(*arg_expr);
       if (!lowered.has_value()) {
@@ -4433,12 +4505,10 @@ auto lowerer::lower_function(const ast::func_decl &decl)
                               "only lowers explicitly annotated signatures",
                               decl.name));
     }
-    if (param.default_value != nullptr) {
-      pop_scope();
-      return fail(lowering_error_kind::unsupported_construct, param.span,
-                  "default parameter values are not lowered by the first "
-                  "milestone");
-    }
+    // A default value is a *call-site* construct: the callee still takes the
+    // parameter like any other, and every call that omits the argument
+    // lowers the default expression in its own place (`lower_call`). Nothing
+    // about the declaration changes here.
     if (param.pattern == nullptr || param.pattern->has_error) {
       pop_scope();
       return fail(lowering_error_kind::unsupported_construct, param.span,

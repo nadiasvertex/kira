@@ -196,13 +196,17 @@ struct discovered_suite {
 /// now lower on both backends (`checked_types::resolved_fn_values`), so the
 /// runner names the function directly instead of hiding it behind a
 /// zero-arg lambda that only forwarded the call.
+///
+/// A hook a suite doesn't declare is simply left out of the call: `suite`
+/// defaults every hook to `@none`, so only the hooks that exist are named.
 [[nodiscard]] auto render_runner_source(
     const std::vector<discovered_suite> &suites) -> std::string {
-  auto hook_expr = [](const std::optional<std::string> &hook) -> std::string {
+  auto hook_arg = [](std::string_view param,
+                     const std::optional<std::string> &hook) -> std::string {
     if (!hook.has_value()) {
-      return "@none";
+      return {};
     }
-    return std::format("@some({})", *hook);
+    return std::format(", {}: @some({})", param, *hook);
   };
 
   auto source = std::string{"module kira_test_runner\n\n"
@@ -217,10 +221,11 @@ struct discovered_suite {
                             suite.suite_name, c.function_name,
                             suite.tests_module_path, c.function_name);
     }
-    source += std::format("        ], {}, {}, {}, {}),\n",
-                          hook_expr(suite.before_all), hook_expr(suite.after_all),
-                          hook_expr(suite.before_each),
-                          hook_expr(suite.after_each));
+    source += std::format("        ]{}{}{}{}),\n",
+                          hook_arg("before_all", suite.before_all),
+                          hook_arg("after_all", suite.after_all),
+                          hook_arg("before_each", suite.before_each),
+                          hook_arg("after_each", suite.after_each));
   }
   source += "    ])\n";
   return source;
