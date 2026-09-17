@@ -1338,6 +1338,90 @@ auto test_cross_module_function_used_as_a_value() -> void {
 #endif
 }
 
+/// The *module-qualified* spelling of the same thing: `outer.inner.target`
+/// named as a plain value, with no `use` bringing the name into scope. The
+/// bare-name form above resolves through `resolve_ident`; a dotted path
+/// parses as `module_path_expr` and goes through `infer_module_path` +
+/// `hir::lower_module_path` instead, which recorded nothing and died with
+/// "only a two-segment `value.field` path is lowered by the first milestone".
+/// `infer_module_path` now records the resolution in `resolved_fn_values`
+/// exactly as `resolve_ident` does, and `lower_module_path` reads it back.
+///
+/// This is what let `--test`'s synthesized runner drop its zero-arg lambda
+/// wrappers (`driver/test_discovery.cpp`) — it names each discovered function
+/// by its fully-qualified path, with no import to lean on.
+///
+/// Asserts the computed value on both tiers (`twice(target()) == 14`), not
+/// merely that it compiled, so a path that resolved to the wrong declaration
+/// would still fail.
+auto test_module_qualified_function_used_as_a_value() -> void {
+  auto temp = make_temp_dir();
+  auto inner_path = temp.path / "qualified_inner.kira";
+  auto main_path = temp.path / "qualified_main.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "qualified_fn_value_bin";
+
+  write_file(inner_path, "module outer.inner\n"
+                         "def target() -> int32:\n"
+                         "  7\n"
+                         "def twice(x: int32) -> int32:\n"
+                         "  x * 2\n");
+  write_file(main_path, "module main\n"
+                        "def apply(f: fn(int32) -> int32, v: int32) -> int32:\n"
+                        "  f(v)\n"
+                        "def main() -> int32:\n"
+                        "  let g: fn() -> int32 = outer.inner.target\n"
+                        "  apply(outer.inner.twice, g())\n");
+
+  kira::driver::cli_config run_cfg{
+      .program_name = "kira",
+      .sources = {main_path.string(), inner_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+
+  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected a module-qualified function value to compile cleanly: " +
+             run_report->diagnostics);
+  expect(run_report->run.has_value(), "expected a run outcome to be recorded");
+  expect(run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == 14,
+         "expected the bytecode VM to reach `outer.inner.twice` through a "
+         "qualified path value reference and compute twice(target()) == 14");
+
+  kira::driver::cli_config build_cfg{
+      .program_name = "kira",
+      .sources = {main_path.string(), inner_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+
+  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value(),
+         "expected compile driver to return a build report");
+  expect(build_report->build.has_value(),
+         "expected a build outcome to be recorded");
+  expect(build_report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     build_report->build->message));
+
+  const auto qualified_exit = std::system(output_path.string().c_str());
+  expect(qualified_exit != -1, "expected the linked executable to launch");
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(qualified_exit) == 14,
+         "expected the LLVM tier to agree with the VM on a qualified "
+         "function-value path: twice(target()) == 14");
+#endif
+}
+
 /// Same program as `test_build_links_and_runs_a_heap_using_program`, built
 /// at `-O2` instead of the default `-O0` — proves `cli_config::opt_level`
 /// actually reaches `llvm_codegen::emit_object_file`'s
@@ -3748,6 +3832,7 @@ auto main() -> int {
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
     test_cross_module_function_used_as_a_value();
+    test_module_qualified_function_used_as_a_value();
     test_build_at_o2_still_links_and_runs_correctly();
     test_build_links_and_runs_a_string_interpolation_program();
     test_run_reports_exit_code_and_silent_summary();

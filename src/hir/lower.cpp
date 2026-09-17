@@ -1477,6 +1477,27 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
     return ok_expr(make<hir_global_ref>(path.span, *type, it->second,
                                         global_owner_of(it->second)));
   }
+  // A module-qualified function named in value position (`a.b.f` handed to a
+  // higher-order function rather than called) — `check.cpp`'s
+  // `infer_module_path` recorded which declaration, in which module, exactly
+  // as it does for the bare-name spelling. Same treatment as `lower_ident`'s
+  // branch: the owner is what both backends key their function tables on.
+  if (const auto found = checked_.resolved_fn_values.find(&path);
+      found != checked_.resolved_fn_values.end()) {
+    auto type = checked_type_of(path);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    const auto &resolved = found->second;
+    const auto local_name =
+        resolved.impl_target_type.empty()
+            ? resolved.decl->name
+            : std::format("{}::{}", resolved.impl_target_type,
+                          resolved.decl->name);
+    const auto symbol = resolve_reference(local_name);
+    return ok_expr(make<hir_local_ref>(path.span, *type, symbol, local_name,
+                                       resolved.owner_module));
+  }
   if (path.segments.size() != 2) {
     return fail(lowering_error_kind::unsupported_construct, path.span,
                 "only a two-segment `value.field` path is lowered by the "

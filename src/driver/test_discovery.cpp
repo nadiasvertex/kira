@@ -191,19 +191,18 @@ struct discovered_suite {
 }
 
 /// Builds the synthesized runner's full source text: one `suite(...)` entry
-/// per discovered `tests` submodule, each case/hook a zero-arg lambda
-/// wrapping a qualified call — not a bare cross-module function reference,
-/// which the checker does not yet record a lowerable type for outside call
-/// position (see the `check.cpp`/`codegen.cpp` fixes this module's sibling
-/// commit made for the *struct-field* case; a bare cross-module value
-/// reference is a separate, broader gap this sidesteps rather than chases).
+/// per discovered `tests` submodule, each case/hook a bare qualified
+/// reference to the discovered function. Bare cross-module function values
+/// now lower on both backends (`checked_types::resolved_fn_values`), so the
+/// runner names the function directly instead of hiding it behind a
+/// zero-arg lambda that only forwarded the call.
 [[nodiscard]] auto render_runner_source(
     const std::vector<discovered_suite> &suites) -> std::string {
   auto hook_expr = [](const std::optional<std::string> &hook) -> std::string {
     if (!hook.has_value()) {
       return "@none";
     }
-    return std::format("@some(() => {}())", *hook);
+    return std::format("@some({})", *hook);
   };
 
   auto source = std::string{"module kira_test_runner\n\n"
@@ -214,7 +213,7 @@ struct discovered_suite {
     source += std::format("        suite(\"{}\", [\n", suite.suite_name);
     for (const auto &c : suite.cases) {
       const auto *ctor = c.skip ? "skipped" : "case";
-      source += std::format("            {}(\"{}.{}\", () => {}.{}()),\n", ctor,
+      source += std::format("            {}(\"{}.{}\", {}.{}),\n", ctor,
                             suite.suite_name, c.function_name,
                             suite.tests_module_path, c.function_name);
     }

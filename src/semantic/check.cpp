@@ -2003,22 +2003,19 @@ private:
     return index_.find_module(qualified);
   }
 
-  /// The module whose `static` bindings include the one `path` names, trying
-  /// the three readings `find_type_decl_by_path` tries, in the same order: a
-  /// leading import alias, the absolute path, then relative to the module
-  /// being checked. Returns null when the path names no module-scope
-  /// `static` at all, so the caller can fall through to the existing
+  /// The module that owns the member `path` names, where "owns" is decided
+  /// by `owns` — trying the three readings `find_type_decl_by_path` tries, in
+  /// the same order: a leading import alias, the absolute path, then relative
+  /// to the module being checked. Returns null when no reading names an
+  /// owning module, so the caller can fall through to the existing
   /// "validated elsewhere" behavior rather than reporting anything here.
-  [[nodiscard]] auto
-  find_static_owner_of_path(const std::vector<std::string> &path) const
+  template <typename OwnsFn>
+  [[nodiscard]] auto find_member_owner_of_path(
+      const std::vector<std::string> &path, const OwnsFn &owns) const
       -> const module_members * {
     if (path.size() < 2) {
       return nullptr;
     }
-    const auto owns = [&path](const module_members *members) -> bool {
-      return members != nullptr && members->statics.contains(path.back());
-    };
-
     if (const auto *binding = find_import(path.front());
         binding != nullptr && binding->leaf_name.empty()) {
       const module_members *aliased =
@@ -2043,6 +2040,28 @@ private:
       return owner;
     }
     return nullptr;
+  }
+
+  /// The module whose `static` bindings include the one `path` names.
+  [[nodiscard]] auto
+  find_static_owner_of_path(const std::vector<std::string> &path) const
+      -> const module_members * {
+    return find_member_owner_of_path(
+        path, [&path](const module_members *members) -> bool {
+          return members != nullptr && members->statics.contains(path.back());
+        });
+  }
+
+  /// The module whose functions include the one `path` names — the call-free
+  /// counterpart of the callee resolution a qualified *call* goes through, so
+  /// `a.b.f` written as a plain value finds the same declaration.
+  [[nodiscard]] auto
+  find_fn_owner_of_path(const std::vector<std::string> &path) const
+      -> const module_members * {
+    return find_member_owner_of_path(
+        path, [&path](const module_members *members) -> bool {
+          return members != nullptr && members->functions.contains(path.back());
+        });
   }
 
   /// Whether `path`'s first segment names (or prefixes) a module declared
@@ -11476,6 +11495,18 @@ private:
           record_static_const_reference(path, *it->second.decl, type,
                                         owner->module_name);
           return type;
+        }
+      }
+      // A module-qualified function named as a plain value rather than called
+      // (`app.geometry.tests.test_area` passed to `case(...)`). The bare-name
+      // spelling records this in `resolve_ident`; recording it here is what
+      // lets `hir::lower_module_path` build the same owner-carrying reference
+      // instead of failing as an unsupported long path.
+      if (const auto *owner = find_fn_owner_of_path(path.segments)) {
+        if (const auto it = owner->functions.find(path.segments.back());
+            it != owner->functions.end()) {
+          record_fn_value_reference(path, *it->second.decl, owner->module_name);
+          return fn_type_of(*it->second.decl, owner);
         }
       }
       return k_unknown_type; // module references are validated elsewhere
