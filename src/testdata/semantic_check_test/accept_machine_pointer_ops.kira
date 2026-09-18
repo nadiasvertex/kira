@@ -1,0 +1,19 @@
+module sample
+
+# The same operations `reject_raw_pointer_outside_machine.kira` refuses, all
+# accepted inside a `machine` function — the gate is on the enclosing
+# function's modifier, not on the operation being unusual.
+
+machine def through_pointer() -> int32:
+    var xs = [1, 2, 3]
+    let p = xs.as_mut_ptr()
+    p[0] = 9
+    return p[0] + p[1]
+
+machine def through_buffer() -> int32:
+    var buf = uninit[int32, 4]()
+    buf[2] = 7
+    return buf[2] + int32(buf.len())
+
+machine def sizes() -> usize:
+    return size_of[int64]() + align_of[int32]()

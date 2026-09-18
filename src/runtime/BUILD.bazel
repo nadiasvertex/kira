@@ -1,6 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
-# `alwayslink`: `kira_rt_alloc` (arena.cpp) is only ever called from
+# `alwayslink`: `kira_heap_alloc` (allocator.cpp) is only ever called from
 # generated IR (JIT or AOT), never directly by this repo's own C++ — the
 # same reason `//src/llvm_codegen:runtime`/`:aot_runtime` need it for
 # `kira_codegen_panic`. Without it, a binary that only reaches this library
@@ -9,6 +9,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 cc_library(
     name = "runtime",
     srcs = [
+        "allocator.cpp",
         "arena.cpp",
         "fmt.cpp",
         "io.cpp",
@@ -19,6 +20,7 @@ cc_library(
         "string_ops.cpp",
     ],
     hdrs = [
+        "allocator.h",
         "arena.h",
         "fmt.h",
         "io.h",
@@ -35,6 +37,15 @@ cc_library(
         "//src/utf8",
     ],
     visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "allocator_test",
+    srcs = ["allocator_test.cpp"],
+    deps = [
+        ":runtime",
+        "//src/testing",
+    ],
 )
 
 cc_test(

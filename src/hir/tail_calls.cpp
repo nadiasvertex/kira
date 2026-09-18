@@ -186,6 +186,13 @@ auto collect_bound_symbols(const hir_node &node,
     }
     return;
   }
+  case hir_node_kind::hir_stack_buffer:
+    return; // a leaf: fixed size, no sub-expressions
+  case hir_node_kind::hir_container_data: {
+    collect_bound_symbols(
+        *dynamic_cast<const hir_container_data &>(node).object, bound);
+    return;
+  }
   case hir_node_kind::hir_container_len: {
     collect_bound_symbols(*dynamic_cast<const hir_container_len &>(node).object,
                           bound);

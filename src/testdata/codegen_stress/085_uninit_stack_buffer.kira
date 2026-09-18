@@ -1,0 +1,48 @@
+module codegen_stress.uninit_stack_buffer
+
+# `uninit[T, N]()` — genuine frame-local storage, not a heap block: an
+# `alloca` in the entry block on the LLVM tier, a fixed range of the frame's
+# own byte scratch on the bytecode tier.
+#
+# Three things an `# expect:` catches that backend agreement would not:
+#  - the buffer strides by `size_of[T]()`, checked at two widths so a
+#    hardcoded 8-byte stride fails the `int32` case;
+#  - `.len()` folds to `N` rather than loading a header slot the buffer does
+#    not have;
+#  - a buffer declared inside a loop body reuses one frame slot across
+#    iterations instead of consuming more on each, so its contents survive
+#    exactly as long as the frame does and no further.
+
+machine def narrow() -> int32:
+    var buf = uninit[int32, 8]()
+    var i: usize = 0
+    while i < buf.len():
+        buf[i] = int32(i) * 2
+        i = i + 1
+    return buf[0] + buf[3] + buf[7] + int32(buf.len())
+
+machine def wide() -> int64:
+    var buf = uninit[int64, 4]()
+    buf[0] = 1000
+    buf[3] = 2000
+    return buf[0] + buf[1] + buf[2] + buf[3]
+
+machine def in_a_loop() -> int32:
+    var total = 0
+    var n = 0
+    while n < 3:
+        var buf = uninit[int32, 2]()
+        buf[0] = n
+        buf[1] = n * 10
+        total = total + buf[0] + buf[1]
+        n = n + 1
+    return total
+
+def main() -> int32:
+    # 28 + 3000 + 33
+    return narrow() + int32(wide()) + in_a_loop()
+
+# narrow:    0 + 6 + 14 + 8 = 28
+# wide:      1000 + 0 + 0 + 2000 = 3000   (unwritten slots read as zero)
+# in_a_loop: (0+0) + (1+10) + (2+20) = 33
+# expect: 3061

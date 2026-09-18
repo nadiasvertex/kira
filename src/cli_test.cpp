@@ -924,12 +924,12 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 26,
+  expect(report->modules.size() == 27,
          "expected std.io, std.console, std.traits (across its 7 files), "
          "std.limits, std.iter, std.algo, std.fmt, std.string, "
          "std.unicode_tables, std.unicode, std.derive, std.fs.path, "
          "std.test, std.platform, std.panic, std.option, std.result, "
-         "std.list, and prelude to all emit metadata");
+         "std.mem, std.list, and prelude to all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.
@@ -1206,7 +1206,7 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
 /// arithmetic panic, or intrinsic call) used to fail to link with pages of
 /// undefined `std::__1::*`/`operator new`/`__cxa_*` symbols. Regression
 /// test for switching that invocation to `c++`: builds a struct-returning
-/// program (forces a real `kira_rt_alloc` reference, so this is a
+/// program (forces a real `kira_heap_alloc` reference, so this is a
 /// meaningful link, not one the linker trivially no-ops because nothing in
 /// the object file needs either archive), then actually runs the produced
 /// executable as a real child process and checks its exit code — proving

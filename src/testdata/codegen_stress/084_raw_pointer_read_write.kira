@@ -1,0 +1,44 @@
+module codegen_stress.raw_pointer_read_write
+
+# `.as_ptr()`/`.as_mut_ptr()` and raw-pointer indexing, on both a fixed
+# `array[T, N]` and a `list[T]` — the two shapes whose data block lives in a
+# different place (an array *is* its block; a list keeps a pointer at slot 2
+# of its header).
+#
+# `# expect:` rather than backend agreement alone, deliberately: a pointer
+# aimed at the wrong offset is precisely the bug both tiers would make
+# together, since both read the same `resolve_container_view`. The `list`
+# case here is the one that would land inside the `{len, cap, data}` header
+# if the data slot were read wrongly — the same class of bug CLAUDE.md
+# records for `&mut xs[2]`.
+#
+# Element stride is exercised at two widths (`int32` and `int64`) so an
+# address scaled by a hardcoded 8 fails on the `int32` half.
+
+machine def array_sum() -> int32:
+    var xs = [10, 20, 30, 40]
+    let p = xs.as_mut_ptr()
+    p[1] = 99
+    return p[0] + p[1] + p[2] + p[3]
+
+machine def list_sum() -> int32:
+    var xs = [1, 2, 3]
+    xs.push(4)
+    let p = xs.as_mut_ptr()
+    p[0] = 7
+    return p[0] + p[1] + p[2] + p[3]
+
+machine def wide_sum() -> int64:
+    var xs: array[int64, 3] = [100, 200, 300]
+    let p = xs.as_mut_ptr()
+    p[2] = 400
+    return p[0] + p[1] + p[2]
+
+def main() -> int32:
+    # 179 + 16 + 700
+    return array_sum() + list_sum() + int32(wide_sum())
+
+# array_sum: 10 + 99 + 30 + 40 = 179
+# list_sum:  7 + 2 + 3 + 4 = 16
+# wide_sum:  100 + 200 + 400 = 700
+# expect: 895

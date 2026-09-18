@@ -9,20 +9,19 @@
 #include <string>
 #include <string_view>
 
-#include "src/runtime/arena.h"
+#include "src/runtime/allocator.h"
 #include "src/utf8/utf8.h"
 
 namespace {
 
-using kira::runtime::global_arena;
 
 [[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
   return static_cast<uint64_t *>(
-      global_arena().allocate(count * sizeof(uint64_t)));
+      kira_heap_alloc(count * sizeof(uint64_t)));
 }
 
 [[nodiscard]] auto make_str(std::string_view text) -> uint64_t * {
-  auto *bytes = static_cast<char *>(global_arena().allocate(text.size()));
+  auto *bytes = static_cast<char *>(kira_heap_alloc(text.size()));
   if (!text.empty()) {
     std::memcpy(bytes, text.data(), text.size());
   }

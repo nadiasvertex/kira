@@ -8,15 +8,14 @@
 #include <string_view>
 #include <unistd.h>
 
-#include "src/runtime/arena.h"
+#include "src/runtime/allocator.h"
 
 namespace {
 
-using kira::runtime::global_arena;
 
 [[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
   return static_cast<uint64_t *>(
-      global_arena().allocate(count * sizeof(uint64_t)));
+      kira_heap_alloc(count * sizeof(uint64_t)));
 }
 
 [[nodiscard]] auto raw_fd_of(const uint64_t *fd_struct) -> int {

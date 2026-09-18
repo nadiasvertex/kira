@@ -255,6 +255,7 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
                                "panic.kira",
                                "option.kira",
                                "result.kira",
+                               "mem.kira",
                                "list.kira",
                                "io.kira",
                                "console.kira",

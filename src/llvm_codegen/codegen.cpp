@@ -1282,6 +1282,12 @@ private:
       }
       return builder_.CreateLoad(*ty, result, "match.value");
     }
+    case hir_node_kind::hir_stack_buffer:
+      return compile_stack_buffer(
+          dynamic_cast<const hir::hir_stack_buffer &>(expr));
+    case hir_node_kind::hir_container_data:
+      return compile_container_data(
+          dynamic_cast<const hir::hir_container_data &>(expr));
     case hir_node_kind::hir_container_len:
       return compile_container_len(
           dynamic_cast<const hir::hir_container_len &>(expr));
@@ -2595,6 +2601,10 @@ private:
   /// `resolve_container_view` exactly, so the two backends can't drift on
   /// where a given container's data pointer or element stride lives.
   struct container_view {
+    /// The element count to bounds-check against, or `nullptr` for a raw
+    /// `*T`/`*mut T` — a pointer carries no length, so an access through
+    /// one is unchecked by construction. Every consumer must therefore test
+    /// this before emitting a bounds check.
     llvm::Value *len;
     llvm::Value *data;
     uint8_t elem_size;
@@ -2613,6 +2623,33 @@ private:
         object_entry.kind == semantic::type_kind::builtin_generic_kind &&
         (object_entry.name == "slice" || object_entry.name == "slice_mut");
     const bool indexing_view = indexing_str || indexing_slice;
+    // A raw pointer *is* its own data block: no header to read, and no
+    // length to check against. This is the unchecked access the `machine`
+    // layer exists to permit (spec/specification/03-advanced/
+    // 38-machine-layer.md).
+    if (object_entry.kind == semantic::type_kind::ptr_kind) {
+      return container_view{.len = nullptr,
+                            .data = object,
+                            .elem_size = element_stride(object_entry.result)};
+    }
+    // `uninit[T, N]` is its own data block, like a fixed array, but its
+    // length lives in the const-generic second argument rather than in
+    // `array_size`.
+    if (object_entry.kind == semantic::type_kind::builtin_generic_kind &&
+        object_entry.name == "uninit") {
+      const auto slots = runtime::uninit_slot_count(types_, object_entry);
+      if (!slots.has_value()) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = span,
+            .message = "this `uninit[T, N]` has no statically known slot "
+                       "count"});
+      }
+      return container_view{
+          .len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), *slots),
+          .data = object,
+          .elem_size = element_stride(object_entry.args.front())};
+    }
     if (!indexing_list && !indexing_view &&
         (object_entry.kind != semantic::type_kind::array_kind ||
          !object_entry.array_size.has_value())) {
@@ -2620,8 +2657,8 @@ private:
           .kind = codegen_error_kind::unsupported_construct,
           .span = span,
           .message = "indexing is only supported for a fixed-size array "
-                     "with a statically known length, a list, a `str`, or a "
-                     "`slice`/`slice_mut` yet"});
+                     "with a statically known length, a list, a `str`, a "
+                     "`slice`/`slice_mut`, or a raw `*T`/`*mut T` yet"});
     }
 
     const auto elem_size =
@@ -2764,9 +2801,11 @@ private:
     if (!view.has_value()) {
       return std::unexpected(view.error());
     }
-    auto *out_of_bounds =
-        builder_.CreateICmpUGE(index64, view->len, "index.oob");
-    guard_panic(out_of_bounds, panic_reason::index_out_of_bounds);
+    if (view->len != nullptr) {
+      auto *out_of_bounds =
+          builder_.CreateICmpUGE(index64, view->len, "index.oob");
+      guard_panic(out_of_bounds, panic_reason::index_out_of_bounds);
+    }
 
     // A plain `slot_address`-style 8x-scaled offset is only correct when
     // `elem_size == 8`; every element type now has its own natural stride
@@ -2815,6 +2854,51 @@ private:
   /// both layouts (`src/runtime/layout.h`) put their length at slot 0, so
   /// this is the same one load regardless of which container kind
   /// `node.object` actually is.
+  /// `uninit[T, N]()` — genuine stack storage, as an `alloca` placed in the
+  /// entry block (via `create_local_alloca`) rather than at the point of
+  /// use. Entry-block placement is what makes the buffer a fixed frame slot:
+  /// an `alloca` inside a loop body would allocate once per iteration and
+  /// grow the frame without bound.
+  ///
+  /// Zero-initialized to match `kira_heap_alloc`'s guarantee, so that a
+  /// buffer behaves the same whichever storage a collection is using. That
+  /// is a deliberate choice beyond what `uninit` promises: the type's
+  /// contract is that a slot may not hold a valid `T`, and zeroed bytes are
+  /// still not a valid `T` for most types — this only removes the
+  /// *nondeterminism*, so a bug that reads an unwritten slot fails the same
+  /// way every run instead of depending on what was previously on the stack.
+  [[nodiscard]] auto compile_stack_buffer(const hir::hir_stack_buffer &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto *byte_ty = llvm::Type::getInt8Ty(ctx_);
+    auto *buffer_ty = llvm::ArrayType::get(byte_ty, node.byte_size);
+    auto *slot = create_local_alloca(buffer_ty, "uninit.buf");
+    slot->setAlignment(llvm::Align(node.align_bytes));
+    if (node.byte_size > 0) {
+      builder_.CreateMemSet(
+          slot, llvm::ConstantInt::get(byte_ty, 0),
+          llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), node.byte_size),
+          llvm::MaybeAlign(node.align_bytes));
+    }
+    return slot;
+  }
+
+  /// `xs.as_ptr()` / `xs.as_mut_ptr()` — the address of element 0 of the
+  /// receiver's data block, read through the same `resolve_container_view`
+  /// indexing uses, so the two can never disagree about where a given
+  /// container's elements actually start.
+  [[nodiscard]] auto compile_container_data(const hir::hir_container_data &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto view = resolve_container_view(node.object->type, *object, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
+    }
+    return view->data;
+  }
+
   [[nodiscard]] auto compile_container_len(const hir::hir_container_len &node)
       -> std::expected<llvm::Value *, codegen_error> {
     auto object = compile_expr(*node.object);

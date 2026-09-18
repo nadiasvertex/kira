@@ -688,6 +688,25 @@ struct fmt_runtime_types {
   type_id option_usize = 0;
 };
 
+/// Which of the two layout questions a `checked_types::layout_queries` entry
+/// asks about its operand type.
+enum class layout_query_kind : uint8_t {
+  size_of,  ///< `size_of[T]()` — the bytes one `T` occupies.
+  align_of, ///< `align_of[T]()` — the byte boundary a `T` must start on.
+};
+
+/// A resolved `size_of[T]()` / `align_of[T]()` — which type, which question.
+struct layout_query {
+  type_id operand = 0;
+  layout_query_kind kind = layout_query_kind::size_of;
+};
+
+/// A resolved `uninit[T, N]()` — `N` slots, each sized and aligned for `T`.
+struct stack_buffer_request {
+  type_id element = 0;
+  uint64_t count = 0;
+};
+
 struct checked_types {
   type_table types;
   std::unordered_map<const ast::node *, type_id> node_types;
@@ -842,6 +861,33 @@ struct checked_types {
   /// a function `hir::lower_module` deliberately never lowers.
   std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
       folded_comptime_calls;
+  /// Every `size_of[T]()` / `align_of[T]()` call, mapped to the type it
+  /// asks about. The *answer* is deliberately not stored here: a type's
+  /// size and alignment are `src/runtime/layout.h`'s to define — it is the
+  /// single source both backends read their layouts from — and
+  /// `//src/runtime` depends on this library, so the checker cannot call
+  /// into it without a cycle. The checker therefore resolves only the
+  /// question (which type, which query), and `hir::lower_call` answers it
+  /// against `runtime::layout_of` and splices in an integer literal. That
+  /// also keeps the two in step by construction: a `size_of[T]()` can never
+  /// disagree with the stride the same `T` actually occupies in a struct
+  /// field or list element, because both come from the one function.
+  std::unordered_map<const ast::call_expr *, layout_query> layout_queries;
+  /// Every `ptr_cast[U](p)` call, mapped to the pointer type it produces.
+  /// A raw pointer's runtime representation is an address and nothing else,
+  /// identical for every pointee type, so this generates no code at all:
+  /// `hir::lower_call` lowers the operand and retypes the resulting node.
+  /// The entry exists because that retype is the *whole* operation — without
+  /// it the node would keep the source pointee type, and the next `p[i]`
+  /// through it would scale by the wrong element stride.
+  std::unordered_map<const ast::call_expr *, type_id> ptr_casts;
+  /// Every `uninit[T, N]()` call, mapped to the buffer it asks for: the
+  /// element type and the slot count. Like `layout_queries`, the *size* is
+  /// deliberately not stored — `hir::lower_call` derives both the byte size
+  /// and the alignment from `runtime::layout_of(T)`, so a `uninit[T, N]`'s
+  /// stride can never disagree with the stride a `*mut T` through it uses.
+  std::unordered_map<const ast::call_expr *, stack_buffer_request>
+      stack_buffers;
   /// One top-level `static let` reified as real backing data — an
   /// array/list/tuple whose elements are all scalar (integer/floating/
   /// boolean), which `checker::materialize_const_literal` cannot inline the

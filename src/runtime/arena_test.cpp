@@ -5,6 +5,7 @@
 #include <exception>
 #include <iostream>
 
+#include "src/runtime/allocator.h"
 #include "src/runtime/arena.h"
 #include "src/testing/test_assert.h"
 
@@ -32,8 +33,8 @@ auto test_allocation_across_block_boundary() -> void {
 }
 
 auto test_c_abi_entry_point_allocates() -> void {
-  auto *p = kira_rt_alloc(64);
-  expect(p != nullptr, "expected kira_rt_alloc to return non-null memory");
+  auto *p = kira_heap_alloc(64);
+  expect(p != nullptr, "expected kira_heap_alloc to return non-null memory");
 }
 
 } // namespace

@@ -2109,6 +2109,51 @@ auto test_accepts_state_machine_match() -> void {
          "required to check cleanly");
 }
 
+// ==========================================================================
+//  The `machine` layer (spec/specification/03-advanced/38-machine-layer.md).
+//  `machine` used to parse and compose with the other modifiers while
+//  granting no capability at all — raw pointers were equally usable outside
+//  one, which made the modifier decoration. These pin the gate down from
+//  both sides.
+// ==========================================================================
+
+auto test_reports_raw_pointer_outside_machine() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_raw_pointer_outside_machine.kira");
+  expect(analyzed.error_count > 0,
+         "expected raw-memory operations in an ordinary function to be "
+         "rejected");
+  expect_diagnostic(
+      analyzed, "`as_mut_ptr` is only allowed inside a `machine` function",
+      "expected handing out a raw pointer to be gated");
+  expect_diagnostic(
+      analyzed,
+      "indexing a raw pointer is only allowed inside a `machine` function",
+      "expected indexing through a raw pointer to be gated");
+  expect_diagnostic(
+      analyzed, "`uninit[T, N]` is only allowed inside a `machine` function",
+      "expected allocating an uninitialized buffer to be gated");
+}
+
+auto test_accepts_machine_pointer_ops() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_machine_pointer_ops.kira");
+  expect(analyzed.error_count == 0,
+         "expected the same raw-memory operations to check cleanly inside a "
+         "`machine` function");
+}
+
+auto test_reports_write_through_const_pointer() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_write_through_const_pointer.kira");
+  expect(analyzed.error_count > 0,
+         "expected a write through a read-only `*T` to be rejected");
+  expect_diagnostic(
+      analyzed, "cannot write through `p`",
+      "expected the diagnostic to name the pointer's read-only type rather "
+      "than blame the binding's `let`/`var`");
+}
+
 auto test_accepts_intrinsic_decl() -> void {
   const auto analyzed = analyze_test_data_file("accept_intrinsic_decl.kira");
   expect(analyzed.error_count == 0,
@@ -3248,6 +3293,9 @@ auto main() -> int {
     test_ordering_variants_are_prelude_reachable();
     test_reports_extend_on_unapplied_generic();
     test_impl_method_takes_priority_over_extend();
+    test_reports_raw_pointer_outside_machine();
+    test_accepts_machine_pointer_ops();
+    test_reports_write_through_const_pointer();
     test_accepts_intrinsic_decl();
     test_accepts_string_interpolation();
     test_accepts_static_let_evaluates();

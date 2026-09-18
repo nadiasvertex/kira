@@ -66,10 +66,16 @@ inline constexpr const char *kPanicSymbolName = "kira_codegen_panic";
 /// The exact symbol name generated IR calls to allocate a heap value
 /// (`spec/codegen-design.md` Decision 3/increment 6) — every non-scalar
 /// value (`str`, `list[T]`, tuple/struct/sum-type/closure) is allocated
-/// through this one entry point, defined in `src/runtime/arena.h` and
+/// through this one entry point, defined in `src/runtime/allocator.h` and
 /// resolved the same way `kPanicSymbolName` already is (process-symbol
 /// lookup for the JIT, ordinary static linking for `kira build`).
-inline constexpr const char *kAllocSymbolName = "kira_rt_alloc";
+///
+/// Named `kira_heap_alloc`, not `kira_rt_alloc`: the `kira_rt_*` prefix is
+/// reserved for the uniform-ABI intrinsic entry points (`src/intrinsics.h`),
+/// and `rt_alloc` is now one of them — a Kira-callable intrinsic whose
+/// native symbol `kira_rt_alloc` takes and returns opaque heap pointers,
+/// unlike this one's `(i64) -> ptr`.
+inline constexpr const char *kAllocSymbolName = "kira_heap_alloc";
 
 /// The exact symbol name generated IR calls to grow a `list[T]` value and
 /// reserve its next element slot (`spec/codegen-design.md` increment 5) —

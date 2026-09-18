@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "src/intrinsics.h"
+#include "src/runtime/allocator.h"
 #include "src/runtime/arena.h"
 #include "src/runtime/layout.h"
 #include "src/runtime/platform_query.h"
@@ -815,6 +816,11 @@ struct operand_cursor {
 struct frame {
   const bytecode_function *function = nullptr;
   std::vector<slot_value> registers;
+  /// This frame's `uninit[T, N]` storage (`op_stack_alloc`). Sized once,
+  /// from `bytecode_function::stack_byte_size`, and never resized — every
+  /// offset into it is fixed at compile time, and a pointer taken into it
+  /// must stay valid for the life of the frame.
+  std::vector<std::byte> stack_bytes;
   size_t pc = 0;
   uint16_t result_reg = 0;
   bool has_caller = false;
@@ -829,6 +835,11 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   frame f;
   f.function = &fn;
   f.registers.assign(fn.register_count, slot_value{});
+  // Zero-filled, matching `kira_heap_alloc`'s guarantee and the LLVM tier's
+  // `memset` of the same buffer, so a read of an unwritten slot is at least
+  // deterministic across tiers rather than exposing whatever the previous
+  // frame left behind.
+  f.stack_bytes.assign(fn.stack_byte_size, std::byte{});
   for (size_t i = 0; i < args.size(); ++i) {
     f.registers[i] = args[i];
   }
@@ -855,7 +866,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 
 [[nodiscard]] auto alloc_struct(std::span<const slot_value> fields)
     -> slot_value {
-  auto *raw = kira::runtime::global_arena().allocate(fields.size() *
+  auto *raw = kira_heap_alloc(fields.size() *
                                                      sizeof(slot_value));
   auto *slots = static_cast<slot_value *>(raw);
   for (size_t i = 0; i < fields.size(); ++i) {
@@ -994,7 +1005,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] auto make_runtime_str(std::string_view text) -> slot_value {
-  auto *bytes = kira::runtime::global_arena().allocate(text.size());
+  auto *bytes = kira_heap_alloc(text.size());
   if (!text.empty()) {
     std::memcpy(bytes, text.data(), text.size());
   }
@@ -1219,6 +1230,27 @@ auto intrinsic_rt_fmt_f64_general(std::span<const slot_value> args)
 // active union member here, so the reinterpret goes through `std::bit_cast`
 // rather than reading `.u` directly off it.
 
+/// `rt_alloc`/`rt_realloc`/`rt_free` (`src/runtime/allocator.h`). A
+/// `*mut byte` is a raw address in the slot's `.u`, exactly as it is in the
+/// LLVM tier's `ptr` -- the two tiers hand the same pointer values to the
+/// same allocator, which is what keeps a `list` built on these intrinsics
+/// byte-for-byte identical across them.
+auto intrinsic_rt_alloc(std::span<const slot_value> args) -> slot_value {
+  auto *block = kira_heap_alloc(unbox(args[0]).u);
+  return slot_value{reinterpret_cast<uint64_t>(block)}; // NOLINT
+}
+
+auto intrinsic_rt_realloc(std::span<const slot_value> args) -> slot_value {
+  auto *block = kira_heap_realloc(reinterpret_cast<void *>(args[0].u), // NOLINT
+                                  unbox(args[1]).u, unbox(args[2]).u);
+  return slot_value{reinterpret_cast<uint64_t>(block)}; // NOLINT
+}
+
+auto intrinsic_rt_free(std::span<const slot_value> args) -> slot_value {
+  kira_heap_free(reinterpret_cast<void *>(args[0].u), unbox(args[1]).u); // NOLINT
+  return slot_value{}; // `unit`
+}
+
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
     -> slot_value {
   const auto bits = std::bit_cast<uint64_t>(unbox(args[0]).f);
@@ -1342,7 +1374,7 @@ using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 /// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 33> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, 36> k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
@@ -1376,6 +1408,9 @@ constexpr std::array<intrinsic_fn, 33> k_intrinsics = {{
     intrinsic_rt_panic,
     intrinsic_rt_bitcast_f64_to_u64,
     intrinsic_rt_bitcast_f32_to_u32,
+    intrinsic_rt_alloc,
+    intrinsic_rt_realloc,
+    intrinsic_rt_free,
 }};
 
 static_assert(k_intrinsics.size() == kira::known_intrinsic_names.size(),
@@ -1595,11 +1630,22 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         break;
       }
 
+      case opcode::op_stack_alloc: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto byte_offset = ops.imm16();
+        // The range was reserved whole on frame entry, so this is address
+        // arithmetic and nothing else — no allocation, and the result stays
+        // valid until the frame is popped.
+        f.registers[dst] = ptr_to_slot(f.stack_bytes.data() + byte_offset);
+        f.pc = ops.pos();
+        break;
+      }
       case opcode::op_alloc: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto byte_size = ops.imm16();
-        auto *raw = kira::runtime::global_arena().allocate(byte_size);
+        auto *raw = kira_heap_alloc(byte_size);
         f.registers[dst] = ptr_to_slot(raw);
         f.pc = ops.pos();
         break;
@@ -1666,7 +1712,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto idx = ops.imm16();
         const auto &text = f.function->string_constants[idx];
         auto *header =
-            kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+            kira_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(text.size())};
         slots[1] = ptr_to_slot(const_cast<char *>(text.data()));
@@ -1733,7 +1779,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto fn_idx = ops.imm16();
         f.pc = ops.pos();
         auto *header =
-            kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+            kira_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
         slots[1] =
@@ -1749,7 +1795,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto env_reg = ops.reg();
         f.pc = ops.pos();
         auto *header =
-            kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+            kira_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
         slots[1] = f.registers[env_reg];
@@ -1792,7 +1838,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto state_ptr_reg = ops.reg();
         f.pc = ops.pos();
         auto *header =
-            kira::runtime::global_arena().allocate(4 * sizeof(slot_value));
+            kira_heap_alloc(4 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(step_fn_idx)};
         slots[1] = f.registers[state_ptr_reg];
@@ -1812,7 +1858,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         // see `runtime::layout.cpp`'s `make_two_variants("some", 1, "none",
         // 0)` and `sum_variant_tag`'s declaration-index tagging).
         auto *header =
-            kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+            kira_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{int64_t{0}};
         slots[1] = f.registers[value_reg];
@@ -1840,7 +1886,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
           // `option::none` — a 2-slot `{ tag=1; payload }` block; the
           // payload slot is never read back for `none`, left zeroed.
           auto *header =
-              kira::runtime::global_arena().allocate(2 * sizeof(slot_value));
+              kira_heap_alloc(2 * sizeof(slot_value));
           auto *slots = static_cast<slot_value *>(header);
           slots[0] = slot_value{int64_t{1}};
           slots[1] = slot_value{};

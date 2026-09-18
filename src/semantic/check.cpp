@@ -165,6 +165,8 @@ enum class builtin_result_shape : uint8_t {
   byte_slice,                    ///< `slice[byte]`.
   cell_of_element,               ///< `cell[T]`.
   option_of_mut_cell_of_element, ///< `option[cell_mut[T]]`.
+  ptr_to_element,                ///< `*T` -- `as_ptr`.
+  mut_ptr_to_element,            ///< `*mut T` -- `as_mut_ptr`.
 };
 
 /// One builtin inherent method: the receiver type constructor it belongs to,
@@ -233,6 +235,52 @@ inline constexpr auto k_builtin_methods =
         {.owner = "cell_mut",
          .name = "set",
          .result = builtin_result_shape::unit_result},
+        // `as_ptr`/`as_mut_ptr` (spec/specification/03-advanced/
+        // 38-machine-layer.md): the address of element 0 of a container's
+        // data block. This is the only way to obtain a raw pointer to
+        // memory the language already owns -- `rt_alloc` being the only way
+        // to obtain one to memory it does not. Both lower to the same
+        // `hir_container_data` node, which reads the data pointer straight
+        // out of the receiver's header; the two differ only in the
+        // mutability of the resulting pointer type, which is what the
+        // borrow/move checkers see.
+        {.owner = "list",
+         .name = "as_ptr",
+         .result = builtin_result_shape::ptr_to_element},
+        {.owner = "list",
+         .name = "as_mut_ptr",
+         .result = builtin_result_shape::mut_ptr_to_element},
+        {.owner = "slice",
+         .name = "as_ptr",
+         .result = builtin_result_shape::ptr_to_element},
+        {.owner = "slice",
+         .name = "as_mut_ptr",
+         .result = builtin_result_shape::mut_ptr_to_element},
+        {.owner = "array",
+         .name = "len",
+         .result = builtin_result_shape::usize_result},
+        {.owner = "array",
+         .name = "as_ptr",
+         .result = builtin_result_shape::ptr_to_element},
+        {.owner = "array",
+         .name = "as_mut_ptr",
+         .result = builtin_result_shape::mut_ptr_to_element},
+        {.owner = "str",
+         .name = "as_ptr",
+         .result = builtin_result_shape::ptr_to_element},
+        // `uninit[T, N]` is a raw buffer, so `as_mut_ptr` is how anything is
+        // ever written into it. `len` answers `N`, which is a compile-time
+        // constant -- the buffer's *capacity*, not a count of initialized
+        // slots, which the type by construction does not track.
+        {.owner = "uninit",
+         .name = "len",
+         .result = builtin_result_shape::usize_result},
+        {.owner = "uninit",
+         .name = "as_ptr",
+         .result = builtin_result_shape::ptr_to_element},
+        {.owner = "uninit",
+         .name = "as_mut_ptr",
+         .result = builtin_result_shape::mut_ptr_to_element},
     });
 
 /// The key `k_builtin_methods` files a receiver under, or empty when the
@@ -243,6 +291,12 @@ inline constexpr auto k_builtin_methods =
     -> std::string_view {
   if (object.kind == type_kind::builtin_kind && object.name == "str") {
     return "str";
+  }
+  // A fixed `array[T, N]` is its own data block, so `as_ptr`/`as_mut_ptr`
+  // are meaningful on it exactly as they are on a `list`/`slice` -- it is
+  // the one indexable shape that is not `builtin_generic_kind`.
+  if (object.kind == type_kind::array_kind) {
+    return "array";
   }
   if (object.kind != type_kind::builtin_generic_kind) {
     return {};
@@ -257,7 +311,8 @@ inline constexpr auto k_builtin_methods =
     return object.name;
   }
   if (object.name == "list" || object.name == "option" ||
-      object.name == "result" || object.name == "generator") {
+      object.name == "result" || object.name == "generator" ||
+      object.name == "uninit") {
     return object.name;
   }
   return {};
@@ -968,6 +1023,9 @@ public:
         .synthesized_const_literals = std::move(synthesized_const_literals_),
         .static_const_values = std::move(static_const_values_),
         .folded_comptime_calls = std::move(folded_comptime_calls_),
+        .layout_queries = std::move(layout_queries_),
+        .ptr_casts = std::move(ptr_casts_),
+        .stack_buffers = std::move(stack_buffers_),
         .static_global_defs = std::move(static_global_defs_),
         .static_if_taken_branch = std::move(static_if_taken_branch_),
         .static_global_refs = std::move(static_global_refs_),
@@ -1304,6 +1362,14 @@ private:
   /// `try_fold_comptime_only_call`, from `instantiate_generic_function`.
   std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
       folded_comptime_calls_;
+  /// See `checked_types::layout_queries`. Populated by
+  /// `infer_layout_query_call`.
+  std::unordered_map<const ast::call_expr *, layout_query> layout_queries_;
+  /// See `checked_types::ptr_casts`. Populated by `infer_ptr_cast_call`.
+  std::unordered_map<const ast::call_expr *, type_id> ptr_casts_;
+  /// See `checked_types::stack_buffers`. Populated by `infer_uninit_call`.
+  std::unordered_map<const ast::call_expr *, stack_buffer_request>
+      stack_buffers_;
   /// See `checked_types::static_global_owners`'s doc comment. Populated by
   /// `reify_static_global`.
   std::unordered_map<std::string, std::string> static_global_owners_;
@@ -1411,6 +1477,14 @@ private:
   /// handled by direct evaluator execution whenever this function itself is
   /// invoked at compile time, and its own body is never lowered.
   bool in_comptime_only_function_ = false;
+  /// Whether the function body currently being checked carries the `machine`
+  /// modifier. Raw-pointer operations (`as_ptr`/`as_mut_ptr`, `ptr_cast`,
+  /// indexing or dereferencing a `*T`/`*mut T`, and constructing a
+  /// `uninit[T, N]`) are permitted only where this is set — that gating is
+  /// the whole of what `machine` *means*
+  /// (spec/specification/03-advanced/38-machine-layer.md), and until it
+  /// existed the modifier was syntax with nothing behind it.
+  bool in_machine_function_ = false;
 
   /// Nesting depth of "couldn't decide which branch, so check both" `static
   /// if` fallbacks (`resolve_static_if_branch` returned `nullopt` — an
@@ -1920,6 +1994,27 @@ private:
               : k_unknown_type;
       bind_value(param.name, type, binding_origin::parameter, param.span);
     }
+  }
+
+  /// Whether any generic parameter currently in scope is still *abstract* —
+  /// an unsubstituted `type_param_kind` rather than a concrete type some
+  /// instantiation bound it to.
+  ///
+  /// This is the checker's test for "the body being checked is a template,
+  /// not an instance". A generic `def`, `impl` or `extend` body is checked
+  /// twice: once abstractly, to catch mistakes that do not depend on the
+  /// argument, and once per instantiation with real types. Diagnostics that
+  /// can only be decided from concrete types belong to the second pass, and
+  /// reporting them in the first blames the user for a phase boundary.
+  [[nodiscard]] auto in_abstract_type_param_scope() -> bool {
+    for (const auto &scope : type_params_) {
+      for (const auto &[name, id] : scope) {
+        if (types_.entry(id).kind == type_kind::type_param_kind) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// Looks up an in-scope generic parameter by name, searching from the
@@ -5673,6 +5768,14 @@ private:
 
       if (explicit_arg != nullptr) {
         const auto resolved = explicit_type_argument(*explicit_arg);
+        if (!resolved.has_value() && in_abstract_type_param_scope()) {
+          // `alloc[T](0)` inside `extend[T] vec[T]` — the bracket names the
+          // enclosing block's own parameter, which is still abstract in the
+          // template pass and so resolves to nothing here. Not a mistake:
+          // the instantiated copy names a real type. Same phase-boundary
+          // reasoning as the unsolved-parameter cases below.
+          return std::nullopt;
+        }
         if (!resolved.has_value()) {
           error_with_help(
               explicit_arg->span,
@@ -5714,8 +5817,32 @@ private:
         continue;
       }
       const auto found = type_bindings.find(param.name);
-      if (found == type_bindings.end() || types_.is_unknown(found->second) ||
+      if (found != type_bindings.end() && !types_.is_unknown(found->second) &&
           mentions_abstract_type(found->second)) {
+        // The arguments *did* determine `T` — as another type parameter that
+        // is still abstract. That can only happen while checking a template:
+        // a generic `extend`/`impl` block's method body, or a generic
+        // function's, before monomorphization has picked anything concrete.
+        // There is no instance to compile here and none is wanted; the
+        // instantiated copy reaches this same code with real types.
+        //
+        // Reporting it blamed the user for the compiler looking a phase too
+        // early, and pointed them at a fix ("give it outright in brackets")
+        // that does not apply — the same mistake `check_impl_generic_method_
+        // call`'s `mentions_type_param` bail-out already avoids for *method*
+        // calls. A free generic call in the same body had no such guard, so
+        // `extend[T] vec[T]` could not call any generic function at all.
+        return std::nullopt;
+      }
+      if (found == type_bindings.end() || types_.is_unknown(found->second)) {
+        if (in_abstract_type_param_scope()) {
+          // Same reasoning as the abstract-binding case just above, for the
+          // shape where unification produced no binding at all rather than
+          // an abstract one: an argument typed by a still-abstract parameter
+          // cannot pin anything down yet. Quiet here, reported for real when
+          // the enclosing template is instantiated.
+          return std::nullopt;
+        }
         report_unsolved_type_param(call, decl, param);
         return std::nullopt;
       }
@@ -6533,6 +6660,7 @@ private:
       }
     }
     for (const auto prelude : {"println", "print", "panic", "assert", "size_of",
+                               "align_of", "ptr_cast",
                                "args", "env", "min", "max"}) {
       candidates.emplace_back(prelude);
     }
@@ -6569,7 +6697,8 @@ private:
   /// "no concrete checked type" message. They are real statements now.
   auto is_prelude_value_name(std::string_view name) -> bool {
     return name == "println" || name == "print" || name == "panic" ||
-           name == "assert" || name == "size_of" || name == "args" ||
+           name == "assert" || name == "size_of" || name == "align_of" ||
+           name == "ptr_cast" || name == "args" ||
            name == "env" || name == "min" || name == "max" ||
            name == "cancel" || name == "pool" || name == "io" ||
            name == "cpu" || name == "channel" || name == "watch" ||
@@ -7728,8 +7857,12 @@ private:
       return stripped;
     case ast::unary_op::deref: {
       const auto &entry = types_.entry(operand);
-      if (entry.kind == type_kind::ptr_kind ||
-          entry.kind == type_kind::ref_kind) {
+      if (entry.kind == type_kind::ptr_kind) {
+        require_machine_context(unary.span, "dereferencing a raw pointer");
+        return entry.result;
+      }
+      if (entry.kind == type_kind::ref_kind) {
+        // A `&T`/`&mut T` is a checked borrow, not raw memory — never gated.
         return entry.result;
       }
       return k_unknown_type;
@@ -9023,7 +9156,14 @@ private:
     if (owner.empty()) {
       return k_unknown_type;
     }
-    const auto element = object.args.empty() ? k_unknown_type : object.args[0];
+    // `array[T, N]` keeps its element type in `result`, not `args`, and a
+    // `str` is a block of `byte` with no element type recorded at all.
+    const auto element =
+        object.kind == type_kind::array_kind ? object.result
+        : (object.kind == type_kind::builtin_kind && object.name == "str")
+            ? types_.builtin("byte")
+        : object.args.empty() ? k_unknown_type
+                              : object.args[0];
     for (const auto &method : k_builtin_methods) {
       if (method.owner != owner || method.name != name) {
         continue;
@@ -9048,6 +9188,10 @@ private:
       case builtin_result_shape::option_of_mut_cell_of_element:
         return types_.builtin_generic(
             "option", {types_.builtin_generic("cell_mut", {element})});
+      case builtin_result_shape::ptr_to_element:
+        return types_.ptr_to(element, false);
+      case builtin_result_shape::mut_ptr_to_element:
+        return types_.ptr_to(element, true);
       }
     }
     return k_unknown_type;
@@ -10360,6 +10504,15 @@ private:
       // only when the name isn't one of the hardcoded builtin methods.
       const auto builtin_result =
           builtin_method_result(entry, field.field_name);
+      if (!types_.is_unknown(builtin_result) &&
+          (field.field_name == "as_ptr" || field.field_name == "as_mut_ptr")) {
+        // Handing out a raw pointer into a container's storage escapes every
+        // guarantee the container makes about its own memory, so it is gated
+        // the same as any other raw-pointer operation. Reading or indexing
+        // the container itself stays unrestricted.
+        require_machine_context(
+            call.span, std::format("`{}`", field.field_name));
+      }
       if (types_.is_unknown(builtin_result)) {
         if (const auto *method =
                 find_builtin_impl_method(entry.name, field.field_name)) {
@@ -10942,6 +11095,235 @@ private:
                                    explicit_args);
   }
 
+  /// Recognizes `size_of[T]()` and `align_of[T]()`, the two layout queries,
+  /// and records which type each asks about
+  /// (`checked_types::layout_queries`) for `hir::lower_call` to answer
+  /// against `runtime::layout_of`. Both are prelude names with no
+  /// declaration anywhere — `size_of` used to type-check to `usize` here and
+  /// then reach lowering with nothing behind it, which is why
+  /// `size_of[int32]()` reported "no concrete checked type is available for
+  /// this node" for a program that was entirely correct.
+  ///
+  /// The value form `size_of(expr)` is accepted too, asking about the
+  /// expression's own type. `expr` is still type-checked (so a mistake
+  /// inside it is still reported) but is never evaluated at runtime — the
+  /// whole call folds to a constant — so it must not be spelled with a
+  /// side-effecting expression. Returns `nullopt` for every other shape, and
+  /// for a `size_of` the user has shadowed with a real declaration or local.
+  auto infer_layout_query_call(const ast::call_expr &call)
+      -> std::optional<type_id> {
+    auto bracket_args = explicit_generic_args{};
+    const auto *base = call.callee->kind == ast::node_kind::ident_expr
+                           ? call.callee.get()
+                           : explicit_generic_callee(*call.callee, bracket_args);
+    if (base == nullptr || base->kind != ast::node_kind::ident_expr) {
+      return std::nullopt;
+    }
+    const auto &name = dynamic_cast<const ast::ident_expr &>(*base).name;
+    const auto kind = name == "size_of"  ? layout_query_kind::size_of
+                      : name == "align_of" ? layout_query_kind::align_of
+                                           : layout_query_kind::size_of;
+    if (name != "size_of" && name != "align_of") {
+      return std::nullopt;
+    }
+    // A user is free to define their own `size_of`; the prelude never wins
+    // over a real declaration or a local binding of the same name.
+    if (lookup_value(name) != nullptr || find_callable_decl(name).has_value()) {
+      return std::nullopt;
+    }
+
+    const auto usize = types_.builtin("usize");
+    auto operand = k_unknown_type;
+    if (bracket_args.size() == 1) {
+      // `size_of[T]()` — the type is in the brackets, and the parentheses
+      // must be empty.
+      if (!call.args.empty()) {
+        error(call.span,
+              std::format("`{}[T]()` takes no value arguments, found {}", name,
+                          call.args.size()),
+              "remove these arguments");
+      }
+      // An unresolved bracket argument is *not* an error here. Inside a
+      // `concept` body or an un-instantiated generic template, `T` is not a
+      // resolvable type yet — `size_of[T]() <= 64` as a concept constraint
+      // is the motivating case — and the instantiated copy will reach this
+      // same code later with a concrete type. The query is still recorded,
+      // with an unknown operand, so that lowering can say something useful
+      // if one of these ever does reach it.
+      if (const auto resolved = explicit_type_argument(bracket_args.front())) {
+        operand = *resolved;
+      }
+    } else if (bracket_args.empty() && call.args.size() == 1 &&
+               call.args.front().value != nullptr) {
+      // `size_of(expr)` — ask about the expression's own type.
+      operand = strip_refs(infer_expr(*call.args.front().value, k_unknown_type));
+    } else {
+      error(call.span,
+            std::format("`{}` takes one type argument, as `{}[T]()`", name,
+                        name),
+            "expected exactly one type argument");
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+
+    layout_queries_[&call] = layout_query{.operand = operand, .kind = kind};
+    record_expr_type(*base, k_unknown_type);
+    return record_expr_type(call, usize);
+  }
+
+  /// Reports `operation` as needing a `machine` function, unless one is
+  /// already in force. Returns whether the operation is permitted, so a
+  /// caller can still produce a sensible type afterwards rather than
+  /// cascading — a rejected `machine` operation is a permission error, not
+  /// an "I don't know what this is" error.
+  auto require_machine_context(source_span span, std::string_view operation)
+      -> bool {
+    if (in_machine_function_) {
+      return true;
+    }
+    error_with_help(
+        span,
+        std::format("{} is only allowed inside a `machine` function",
+                    operation),
+        "raw memory access outside the machine layer",
+        "Mark the enclosing function `machine` to take responsibility for "
+        "the memory it touches, and keep it small: `machine` suspends the "
+        "compiler's usual guarantees for the whole body, so the safe API "
+        "belongs on the outside of it.");
+    return false;
+  }
+
+  /// Recognizes `uninit[T, N]()` — a fixed-capacity buffer of `N` slots,
+  /// each sized and aligned for `T`, with no guarantee that any slot holds a
+  /// valid `T` (spec/specification/03-advanced/38-machine-layer.md).
+  ///
+  /// Unlike every other aggregate in the language, this one is *not*
+  /// heap-allocated: it becomes a genuine stack slot in the enclosing frame
+  /// (an `alloca` on the LLVM tier, a statically-sized frame-local byte
+  /// range on the bytecode tier). That is the entire point of the type — a
+  /// `small_list[T, N]` that spills to the heap only past `N` elements has
+  /// no reason to exist if its inline storage is itself a heap block.
+  ///
+  /// `N` must fold to a definite non-negative constant here. Inside an
+  /// un-instantiated generic template it will not, and the buffer type is
+  /// left un-sized; the monomorphized copy reaches this code again with a
+  /// real count.
+  auto infer_uninit_call(const ast::call_expr &call)
+      -> std::optional<type_id> {
+    auto bracket_args = explicit_generic_args{};
+    const auto *base = explicit_generic_callee(*call.callee, bracket_args);
+    if (base == nullptr || base->kind != ast::node_kind::ident_expr ||
+        bracket_args.size() != 2) {
+      return std::nullopt;
+    }
+    const auto &name = dynamic_cast<const ast::ident_expr &>(*base).name;
+    if (name != "uninit") {
+      return std::nullopt;
+    }
+    if (lookup_value(name) != nullptr || find_callable_decl(name).has_value()) {
+      return std::nullopt;
+    }
+    record_expr_type(*base, k_unknown_type);
+    require_machine_context(call.span, "`uninit[T, N]`");
+    if (!call.args.empty()) {
+      error(call.span,
+            std::format("`uninit[T, N]()` takes no value arguments, found {}",
+                        call.args.size()),
+            "remove these arguments");
+    }
+
+    const auto element =
+        explicit_type_argument(bracket_args.front()).value_or(k_unknown_type);
+    auto count = std::optional<uint64_t>{};
+    if (bracket_args[1].value != nullptr) {
+      if (const auto folded = explicit_value_argument(*bracket_args[1].value);
+          folded.has_value() && *folded >= 0) {
+        count = static_cast<uint64_t>(*folded);
+      }
+    }
+    if (!count.has_value()) {
+      // No definite slot count: leave the type un-sized rather than report.
+      // A template body legitimately reaches here; so does a genuinely bad
+      // count, and lowering reports that one with the span in hand.
+      return record_expr_type(
+          call, types_.builtin_generic("uninit", {element, k_unknown_type}));
+    }
+    stack_buffers_[&call] =
+        stack_buffer_request{.element = element, .count = *count};
+    return record_expr_type(
+        call, types_.builtin_generic(
+                  "uninit",
+                  {element, types_.const_value(types_.usize_type(), *count)}));
+  }
+
+  /// Recognizes `ptr_cast[U](p)` — reinterprets a raw pointer as pointing
+  /// at a different type. Every raw pointer has the same runtime
+  /// representation (an address), so this is a type-level operation with no
+  /// code behind it; see `checked_types::ptr_casts`.
+  ///
+  /// The result's mutability follows the operand's: a `*mut byte` casts to a
+  /// `*mut U` and a `*byte` to a `*U`. There is deliberately no way to gain
+  /// mutability through a cast, because that would let `machine` code write
+  /// through a pointer obtained from an immutable `as_ptr()` without the
+  /// operation ever being spelled.
+  ///
+  /// This is what makes `rt_alloc` usable: it hands back an untyped
+  /// `*mut byte`, and a collection storing `T`s has to say, once, that the
+  /// block holds `T`s.
+  auto infer_ptr_cast_call(const ast::call_expr &call)
+      -> std::optional<type_id> {
+    auto bracket_args = explicit_generic_args{};
+    const auto *base = explicit_generic_callee(*call.callee, bracket_args);
+    if (base == nullptr || base->kind != ast::node_kind::ident_expr ||
+        bracket_args.size() != 1) {
+      return std::nullopt;
+    }
+    const auto &name = dynamic_cast<const ast::ident_expr &>(*base).name;
+    if (name != "ptr_cast") {
+      return std::nullopt;
+    }
+    if (lookup_value(name) != nullptr || find_callable_decl(name).has_value()) {
+      return std::nullopt; // a real `ptr_cast` the user declared wins
+    }
+    record_expr_type(*base, k_unknown_type);
+
+    if (call.args.size() != 1 || call.args.front().value == nullptr) {
+      error(call.span,
+            std::format("`ptr_cast[U]` takes exactly one pointer argument, "
+                        "found {}",
+                        call.args.size()),
+            "expected one argument");
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+    const auto operand =
+        strip_refs(infer_expr(*call.args.front().value, k_unknown_type));
+    const auto &operand_entry = types_.entry(operand);
+    if (operand_entry.kind != type_kind::ptr_kind) {
+      if (types_.is_unknown(operand) || operand == k_error_type) {
+        return record_expr_type(call, k_unknown_type);
+      }
+      error(call.args.front().value->span,
+            std::format("`ptr_cast` requires a raw pointer, found `{}`",
+                        types_.display(operand)),
+            "not a `*T` or `*mut T`");
+      return k_error_type;
+    }
+    require_machine_context(call.span, "`ptr_cast`");
+    // An unresolved target type is not an error: inside an un-instantiated
+    // generic template (`ptr_cast[T](raw)` in `std.mem`'s `alloc[T]`) there
+    // is no concrete `T` yet, and the monomorphized copy reaches this code
+    // again with one. The template itself is never lowered. Same reasoning
+    // as `infer_layout_query_call`'s unresolved-argument case.
+    const auto target =
+        explicit_type_argument(bracket_args.front()).value_or(k_unknown_type);
+    const auto result = types_.ptr_to(target, operand_entry.is_mut);
+    if (!types_.is_unknown(target)) {
+      ptr_casts_[&call] = result;
+    }
+    return record_expr_type(call, result);
+  }
+
   /// Recognizes `name[T](...)` — a compile-time generic call to a top-level
   /// `static def` function (e.g. `derive_show[point]()`), distinguished
   /// from ordinary indexing-then-calling by `ident_names_callable_decl`
@@ -11087,6 +11469,20 @@ private:
     if (call.callee->kind == ast::node_kind::field_expr) {
       return infer_method_call(
           call, dynamic_cast<const ast::field_expr &>(*call.callee));
+    }
+
+    // `size_of[T]()` / `align_of[T]()`. Tried before every other bracketed-
+    // callee form: neither names a real declaration, so each of the shapes
+    // below would fail to resolve it and the call would reach lowering with
+    // no concrete type at all.
+    if (const auto result = infer_layout_query_call(call)) {
+      return *result;
+    }
+    if (const auto result = infer_ptr_cast_call(call)) {
+      return *result;
+    }
+    if (const auto result = infer_uninit_call(call)) {
+      return *result;
     }
 
     if (call.callee->kind == ast::node_kind::index_expr) {
@@ -12071,11 +12467,40 @@ private:
     };
 
     switch (entry.kind) {
+    // `p[i]` on a raw `*T`/`*mut T`: the pointer *is* the data block, so
+    // this is a bare load at `p + i * size_of[T]()` with no length to check
+    // against -- exactly the unchecked access the `machine` layer exists to
+    // permit (spec/specification/03-advanced/38-machine-layer.md). It is
+    // also the read/write half of pointer arithmetic: `p[0]` is `*p`, and
+    // `&p[i]` is `p + i`.
+    case type_kind::ptr_kind:
+      require_machine_context(index.span, "indexing a raw pointer");
+      require_integer_key();
+      if (key_is_range) {
+        error(index.span,
+              "a raw pointer cannot be range-indexed",
+              "no length is known for a raw pointer");
+        return k_error_type;
+      }
+      return entry.result;
     case type_kind::array_kind:
       require_integer_key();
       return key_is_range ? types_.builtin_generic("slice", {entry.result})
                           : entry.result;
     case type_kind::builtin_generic_kind: {
+      if (entry.name == "uninit") {
+        // `buf[i]` on a `uninit[T, N]`: bounds-checked against `N` (a
+        // compile-time constant, so the check costs nothing at run time),
+        // but saying nothing about whether slot `i` holds a valid `T` --
+        // that is the guarantee the type deliberately does not make.
+        require_integer_key();
+        if (key_is_range) {
+          error(index.span, "a `uninit[T, N]` buffer cannot be range-indexed",
+                "no slot is known to hold a valid value");
+          return k_error_type;
+        }
+        return entry.args.empty() ? k_unknown_type : entry.args[0];
+      }
       if (entry.name == "list" || entry.name == "slice" ||
           entry.name == "slice_mut") {
         require_integer_key();
@@ -14512,9 +14937,36 @@ private:
         }
         if (!root_name.empty()) {
           const auto *binding = lookup_value(root_name);
+          // A `&mut`/`*mut` binding is *itself* immutable here — what is
+          // being written is the pointee, and the right to write it comes
+          // from the type, not from how the pointer was bound. `let p =
+          // xs.as_mut_ptr()` followed by `p[0] = 1` changes `xs`, never
+          // `p`; requiring `var p` would be asking the user to declare the
+          // wrong thing mutable.
+          const auto &binding_entry =
+              binding != nullptr ? types_.entry(binding->type)
+                                 : types_.entry(k_unknown_type);
+          const auto writes_through_indirection =
+              binding_entry.kind == type_kind::ref_kind ||
+              (binding_entry.kind == type_kind::ptr_kind &&
+               binding_entry.is_mut);
+          // Writing *through* a read-only `*T` is refused on the type, not
+          // on the binding: `var p` would not make it legal, and reporting
+          // "declare `p` with `var`" here would hand the user advice that
+          // both fails to help and, taken, would let the write through.
           if (binding != nullptr &&
-              binding->origin == binding_origin::let_binding &&
-              types_.entry(binding->type).kind != type_kind::ref_kind) {
+              binding_entry.kind == type_kind::ptr_kind &&
+              !binding_entry.is_mut && stmt.target->kind != ast::node_kind::ident_expr) {
+            error_with_help(
+                stmt.target->span,
+                std::format("cannot write through `{}` — it is a `{}`",
+                            root_name, types_.display(binding->type)),
+                "this pointer is read-only",
+                "A `*T` only permits reads. Obtain a `*mut T` instead — for "
+                "example with `.as_mut_ptr()` rather than `.as_ptr()`.");
+          } else if (binding != nullptr &&
+                     binding->origin == binding_origin::let_binding &&
+                     !writes_through_indirection) {
             error_with_help(
                 stmt.target->span,
                 std::format("cannot mutate `{}` — it is bound with `let`",
@@ -15182,6 +15634,8 @@ private:
     // `try_fold_comptime_only_call`.
     const auto saved_in_comptime_only_function = in_comptime_only_function_;
     in_comptime_only_function_ = comptime_only_functions_.contains(&decl);
+    const auto saved_in_machine_function = in_machine_function_;
+    in_machine_function_ = decl.modifiers.is_machine;
     // A value parameter this function has no constant for is still a symbol
     // here, which makes this the *template* — see the member's doc comment.
     const auto saved_template = in_const_generic_template_;
@@ -15518,6 +15972,7 @@ private:
     in_const_generic_template_ = saved_template;
     in_type_generic_template_ = saved_type_template;
     in_comptime_only_function_ = saved_in_comptime_only_function;
+    in_machine_function_ = saved_in_machine_function;
     comptime_eval_.pop_locals();
     pop_type_params();
 

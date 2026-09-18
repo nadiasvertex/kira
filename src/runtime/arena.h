@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -40,16 +39,13 @@ private:
 /// context object threaded through the VM/codegen call paths: both tiers
 /// already assume a single-threaded, single-arena-per-process model (no
 /// concurrency story exists yet, per `spec/llm-compiler-roadmap.md`'s "What
-/// Not To Assume Yet"), and `kira_rt_alloc` below needs a plain C-ABI
-/// symbol `llvm_codegen`-compiled IR can call with no context argument.
+/// Not To Assume Yet"), and `kira_heap_alloc` (`allocator.h`) needs a plain
+/// C-ABI symbol `llvm_codegen`-compiled IR can call with no context argument.
+///
+/// This is no longer the only allocation strategy: it is one of the two
+/// `kira::runtime::allocator_mode`s, selected by `KIRA_ALLOCATOR=arena`. The
+/// C-ABI entry points every allocation actually goes through live in
+/// `allocator.h`.
 [[nodiscard]] auto global_arena() -> bump_arena &;
 
 } // namespace kira::runtime
-
-/// C-ABI entry point `llvm_codegen`-compiled IR (JIT and AOT alike) calls to
-/// allocate heap memory from `global_arena()`. The bytecode VM calls
-/// `kira::runtime::global_arena().allocate(...)` directly (a plain C++ call,
-/// no ABI boundary to cross) — this `extern "C"` wrapper exists solely for
-/// the LLVM tier, the same reason `kira_codegen_panic`
-/// (`src/llvm_codegen/runtime.h`) is `extern "C"`.
-extern "C" auto kira_rt_alloc(uint64_t bytes) -> void *;

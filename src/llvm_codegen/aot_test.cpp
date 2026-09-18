@@ -105,8 +105,8 @@ auto build_and_run(const fs::path &dir, const std::string &kira_source) -> int {
   const auto output_path = dir / "program";
 
   compile_to_object(kira_source, object_path);
-  // `kira_rt_alloc` (`src/runtime/arena.h`'s real bump-allocator
-  // implementation, not linked into this hand-built test binary) backs
+  // `kira_heap_alloc` (`src/runtime/allocator.h`'s real implementation, not
+  // linked into this hand-built test binary) backs
   // every heap allocation a compiled program's struct/array/str/list
   // construction needs — a plain `malloc` stands in here, matching this
   // stub's own "not about the real runtime's behavior, just about
@@ -116,7 +116,7 @@ auto build_and_run(const fs::path &dir, const std::string &kira_source) -> int {
                         "void kira_codegen_panic(unsigned char reason) {\n"
                         "  exit(100 + reason);\n"
                         "}\n"
-                        "void *kira_rt_alloc(uint64_t bytes) {\n"
+                        "void *kira_heap_alloc(uint64_t bytes) {\n"
                         "  return calloc(1, bytes);\n"
                         "}\n");
 

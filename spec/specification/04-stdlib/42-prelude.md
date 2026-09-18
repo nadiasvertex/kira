@@ -12,11 +12,19 @@ The prelude is the set of names available in every module without a `use` declar
 
 **Concepts:** `send`, `share`.
 
-**Functions:** `println`, `print`, `panic`, `assert`, `size_of`, `args`, `env`, `drop`.
+**Functions:** `println`, `print`, `panic`, `assert`, `size_of`, `align_of`, `ptr_cast`, `uninit`, `args`, `env`, `drop`.
 
 `drop` is the one entry here that does not exist: no `def drop` is defined outside the `drop` trait itself, and a call to `drop(x)` type-checks but then fails to lower (see [Shared Ownership and Drop](../02-intermediate/17-shared-ownership-and-drop.md), Implementation status). The `drop` *trait* listed above is genuinely prelude-reachable.
 
-Each prelude type/trait/function is specified in full in its owning chapter — this list is an index, not the normative definition of any of them. See [Built-in Types](../core/02-built-in-types.md), [Traits](../intermediate/18-traits.md), [Error Handling](../core/11-error-handling.md) (`option`/`result`), [Views](../intermediate/15-views.md) (`slice`, `cell`), [Trait Objects](../intermediate/24-trait-objects.md) (`box`), and [Data-Race Freedom](../intermediate/30-data-race-freedom.md) (`send`/`share`).
+Four of these are not ordinary functions but compiler-answered forms, each taking its argument in brackets:
+
+- `size_of[T]()` and `align_of[T]()` fold at lowering time to the bytes a `T` occupies and the boundary it must start on, answered from `runtime::layout_of` — the one function both backends read every field offset and element stride from. Note that a struct, sum, `list` or other heap-referenced type answers 8: what such a value occupies *as a binding, field or element* is a pointer. That is the number a collection needs to stride its storage by. `size_of(expr)` is also accepted, asking about the expression's type; the expression is type-checked but never evaluated.
+- `ptr_cast[U](p)` reinterprets a raw pointer as pointing at a `U`. Mutability follows the operand, so a cast can never gain the right to write.
+- `uninit[T, N]()` is a fixed-capacity, alignment-correct buffer of `N` slots sized for `T`, allocated in the enclosing frame rather than on the heap.
+
+The last three are raw-memory operations and are refused outside a `machine` function — see [The `machine` Layer](../03-advanced/38-machine-layer.md). `size_of`/`align_of` are not gated: they only ask about a type.
+
+Each prelude type/trait/function is specified in full in its owning chapter — this list is an index, not the normative definition of any of them. See [Built-in Types](../01-core/02-built-in-types.md), [Traits](../02-intermediate/18-traits.md), [Error Handling](../01-core/11-error-handling.md) (`option`/`result`), [Views](../02-intermediate/15-views.md) (`slice`, `cell`), [Trait Objects](../02-intermediate/24-trait-objects.md) (`box`), and [Data-Race Freedom](../02-intermediate/30-data-race-freedom.md) (`send`/`share`).
 
 ## Opting out
 

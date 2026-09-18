@@ -114,6 +114,17 @@ struct layout_info {
 
 /// Whether struct-kind `id`'s declaration carries the `packed` modifier
 /// (`ast::type_modifiers::is_packed`). `false` for a non-struct `id`.
+/// The `N` of a `uninit[T, N]`, or `nullopt` when the slot count is not a
+/// definite compile-time constant (an un-instantiated generic template).
+/// `N` is a const-generic *value* argument, so it lives in the entry's
+/// second type argument as a `const_value_kind` rather than in
+/// `array_size` the way a fixed `array[T, N]`'s length does — which is the
+/// only reason both backends need a named helper for it instead of reading
+/// the field directly.
+[[nodiscard]] auto uninit_slot_count(const semantic::type_table &types,
+                                     const semantic::type_entry &entry)
+    -> std::optional<uint64_t>;
+
 [[nodiscard]] auto is_struct_packed(const semantic::type_table &types,
                                     semantic::type_id id) -> bool;
 

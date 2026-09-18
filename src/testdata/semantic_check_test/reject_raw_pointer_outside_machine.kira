@@ -1,0 +1,15 @@
+module sample
+
+# `machine` must grant a real capability, not merely parse. Each of these is
+# a raw-memory operation reached from an ordinary function, and each must be
+# refused: handing out a pointer into a container's storage, indexing through
+# one, and allocating an `uninit` buffer.
+
+def take_pointer() -> unit:
+    var xs = [1, 2, 3]
+    let p = xs.as_mut_ptr()
+    p[0] = 9
+
+def make_buffer() -> unit:
+    var buf = uninit[int32, 4]()
+    buf[0] = 1

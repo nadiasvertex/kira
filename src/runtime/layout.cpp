@@ -5,7 +5,7 @@
 #include <utility>
 
 #include "src/parser/ast.h"
-#include "src/runtime/arena.h"
+#include "src/runtime/allocator.h"
 
 namespace kira::runtime {
 
@@ -426,6 +426,20 @@ auto layout_of(const type_table &types, semantic::type_id id)
   return layout_of_entry(types.entry(types.strip_refinement(id)));
 }
 
+auto uninit_slot_count(const type_table &types,
+                       const semantic::type_entry &entry)
+    -> std::optional<uint64_t> {
+  if (entry.args.size() < 2) {
+    return std::nullopt;
+  }
+  const auto &count = types.entry(entry.args[1]);
+  if (count.kind != type_kind::const_value_kind ||
+      !count.value.is_constant() || count.value.constant < 0) {
+    return std::nullopt;
+  }
+  return static_cast<uint64_t>(count.value.constant);
+}
+
 auto is_struct_packed(const type_table &types, semantic::type_id id) -> bool {
   id = strip_refs(types, id);
   const auto &entry = types.entry(id);
@@ -526,7 +540,7 @@ auto list_reserve_slot(uint64_t *header, size_t elem_size) -> void * {
   if (len >= cap) {
     const auto new_cap = cap == 0 ? uint64_t{4} : cap * 2;
     auto *new_data =
-        static_cast<uint8_t *>(global_arena().allocate(new_cap * elem_size));
+        static_cast<uint8_t *>(kira_heap_alloc(new_cap * elem_size));
     if (cap > 0) {
       const auto *old_data =
           reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(header[2]));

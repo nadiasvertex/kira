@@ -15,6 +15,7 @@
 #include "src/hir/nodes.h"
 #include "src/hir/tail_calls.h"
 #include "src/parser/ast.h"
+#include "src/runtime/layout.h"
 #include "src/semantic/types.h"
 
 namespace kira::hir {
@@ -1224,6 +1225,77 @@ auto lowerer::lower_call(const ast::call_expr &call)
     return lower_literal(*folded->second);
   }
 
+  // `uninit[T, N]()` — a frame-local buffer of `N` slots sized for `T`.
+  // The size comes from `runtime::layout_of`, the same function `size_of[T]`
+  // and every element stride read from, so the buffer's capacity is exactly
+  // `N` elements as indexed through it.
+  if (const auto buffer = checked_.stack_buffers.find(&call);
+      buffer != checked_.stack_buffers.end()) {
+    const auto layout =
+        runtime::layout_of(checked_.types, buffer->second.element);
+    if (!layout.has_value()) {
+      return fail(lowering_error_kind::unresolved_type, call.span,
+                  std::format("`{}` has no known size, so a buffer of it "
+                              "cannot be laid out",
+                              checked_.types.display(buffer->second.element)));
+    }
+    return ok_expr(make<hir_stack_buffer>(
+        call.span, *type, layout->size_bytes * buffer->second.count,
+        layout->align_bytes));
+  }
+
+  // `ptr_cast[U](p)` — a pure retype. The lowered operand node *is* the
+  // result; only its `type` changes, which is the entire operation (see
+  // `checked_types::ptr_casts`). Emitting nothing is correct rather than an
+  // optimization: a raw pointer is an address, and every raw pointer has the
+  // same representation, so there is no conversion to perform. The retype
+  // has to happen, though — both backends read an element stride off
+  // `node.object->type` when indexing, so a node left claiming the source
+  // pointee type would scale the next `p[i]` by the wrong width.
+  if (const auto cast = checked_.ptr_casts.find(&call);
+      cast != checked_.ptr_casts.end()) {
+    if (call.args.empty() || call.args.front().value == nullptr) {
+      return fail(lowering_error_kind::unresolved_type, call.span,
+                  "`ptr_cast` has no operand to cast");
+    }
+    auto operand = lower_expr(*call.args.front().value);
+    if (!operand.has_value()) {
+      return std::unexpected(operand.error());
+    }
+    (*operand)->type = cast->second;
+    return ok_expr(std::move(*operand));
+  }
+
+  // `size_of[T]()` / `align_of[T]()` — the checker resolved *which* type
+  // each asks about (`checked_types::layout_queries`); the answer comes
+  // from `runtime::layout_of`, the one function both backends already read
+  // every field offset and element stride out of. Answering it here rather
+  // than in the checker is what makes `size_of[T]()` agree with `T`'s real
+  // stride by construction instead of by coincidence.
+  if (const auto query = checked_.layout_queries.find(&call);
+      query != checked_.layout_queries.end()) {
+    if (query->second.operand == k_unknown_type ||
+        query->second.operand == k_error_type) {
+      return fail(lowering_error_kind::unresolved_type, call.span,
+                  "cannot tell which type this asks the size or alignment "
+                  "of — name a concrete type, or a type parameter of the "
+                  "enclosing function");
+    }
+    const auto layout =
+        runtime::layout_of(checked_.types, query->second.operand);
+    if (!layout.has_value()) {
+      return fail(lowering_error_kind::unresolved_type, call.span,
+                  std::format("`{}` has no known size or alignment",
+                              checked_.types.display(query->second.operand)));
+    }
+    const auto answer =
+        query->second.kind == semantic::layout_query_kind::size_of
+            ? layout->size_bytes
+            : layout->align_bytes;
+    return ok_expr(make<hir_literal>(call.span, *type, token_kind::int_lit,
+                                     std::to_string(answer)));
+  }
+
   // `x.len()`/`x.as_bytes()` on a builtin container/`str` — these have no
   // `func_decl` backing them at all (`semantic::check.cpp`'s
   // `builtin_method_result` is a hardcoded type-rule table, not a real
@@ -1236,12 +1308,45 @@ auto lowerer::lower_call(const ast::call_expr &call)
       !checked_.resolved_callees.contains(&call)) {
     const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
     if (field.object != nullptr && field.field_name == "len") {
+      // A fixed `array[T, N]` and a `uninit[T, N]` are their own data
+      // blocks, with no `{len; ...}` header to read a count out of — their
+      // length is a compile-time constant, and `hir_container_len` would
+      // load whatever the first element happens to be instead.
+      const auto object_type = checked_type_of(*field.object);
+      if (object_type.has_value()) {
+        const auto &object_entry = checked_.types.entry(*object_type);
+        const auto constant_len =
+            object_entry.kind == type_kind::array_kind
+                ? object_entry.array_size
+                : (object_entry.kind == type_kind::builtin_generic_kind &&
+                           object_entry.name == "uninit"
+                       ? runtime::uninit_slot_count(checked_.types,
+                                                    object_entry)
+                       : std::nullopt);
+        if (constant_len.has_value()) {
+          return ok_expr(make<hir_literal>(call.span, *type,
+                                           token_kind::int_lit,
+                                           std::to_string(*constant_len)));
+        }
+      }
       auto object = lower_expr(*field.object);
       if (!object.has_value()) {
         return std::unexpected(object.error());
       }
       return ok_expr(
           make<hir_container_len>(call.span, *type, std::move(*object)));
+    }
+    if (field.object != nullptr &&
+        (field.field_name == "as_ptr" || field.field_name == "as_mut_ptr")) {
+      // `builtin_method_result` already decided whether this receiver is
+      // allowed to produce a mutable pointer and typed the call accordingly;
+      // both forms read the same data pointer, so they lower identically.
+      auto object = lower_expr(*field.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      return ok_expr(
+          make<hir_container_data>(call.span, *type, std::move(*object)));
     }
     if (field.object != nullptr && field.field_name == "as_bytes") {
       // `str` and `slice[byte]` share the same `{len; data_ptr}` runtime

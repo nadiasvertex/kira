@@ -5,17 +5,16 @@
 #include <string>
 #include <string_view>
 
-#include "src/runtime/arena.h"
+#include "src/runtime/allocator.h"
 #include "src/runtime/platform_query.h"
 
 namespace {
 
-using kira::runtime::global_arena;
 namespace query = kira::runtime::platform_query;
 
 [[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
   return static_cast<uint64_t *>(
-      global_arena().allocate(count * sizeof(uint64_t)));
+      kira_heap_alloc(count * sizeof(uint64_t)));
 }
 
 [[nodiscard]] auto ptr_slot(void *raw) -> uint64_t {
@@ -23,7 +22,7 @@ namespace query = kira::runtime::platform_query;
 }
 
 [[nodiscard]] auto make_str(std::string_view text) -> uint64_t * {
-  auto *bytes = static_cast<char *>(global_arena().allocate(text.size()));
+  auto *bytes = static_cast<char *>(kira_heap_alloc(text.size()));
   if (!text.empty()) {
     std::memcpy(bytes, text.data(), text.size());
   }

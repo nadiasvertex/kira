@@ -47,6 +47,13 @@ struct bytecode_function {
   /// `str` value's data slot directly at one of these entries without
   /// copying its bytes into the arena.
   std::vector<std::string> string_constants;
+  /// Total bytes of frame-local storage this function's `uninit[T, N]`
+  /// buffers need (`op_stack_alloc`). Reserved once, on frame entry, rather
+  /// than grown per allocation: a buffer's address must stay valid for the
+  /// whole frame, and a growing `std::vector` would move it out from under
+  /// any pointer already taken into it. Every `op_stack_alloc` therefore
+  /// carries a *fixed offset* into this range, assigned at compile time.
+  uint32_t stack_byte_size = 0;
 };
 
 /// One compiled module: every function lowered from it, in an order that

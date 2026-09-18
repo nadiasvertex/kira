@@ -141,6 +141,11 @@ struct collector {
         walk_expr(*arg);
       }
       return;
+    case hir_node_kind::hir_stack_buffer:
+      return; // a leaf: fixed size, no sub-expressions
+    case hir_node_kind::hir_container_data:
+      walk_expr(*dynamic_cast<const hir_container_data &>(expr).object);
+      return;
     case hir_node_kind::hir_container_len:
       walk_expr(*dynamic_cast<const hir_container_len &>(expr).object);
       return;

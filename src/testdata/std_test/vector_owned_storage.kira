@@ -1,0 +1,64 @@
+module main
+
+# `std.list`'s `vector[T]` — a growable list written in Kira, owning its own
+# heap storage through `std.mem` over the `rt_alloc`/`rt_realloc`/`rt_free`
+# intrinsics, with no compiler support for the type beyond what any user
+# struct gets.
+#
+# Exercises the operations the builtin `list[T]` has never been able to
+# offer, because no primitive could shrink or re-home its storage: `pop`,
+# `clear`, `reserve`, `capacity`, and an explicit `free`.
+#
+# Also pins the growth schedule (4, then doubling), since capacity is
+# observable and a change to it is a change to the type's cost model, not an
+# implementation detail.
+
+use std.list.vector
+
+def show(label: str, o: option[int32]) -> unit:
+    match o:
+        @some(x) => println("{label}={x}")
+        @none => println("{label}=none")
+
+def main() -> unit:
+    var v = vector[int32].new()
+    println("fresh empty={v.is_empty()} len={v.len()} cap={v.capacity()}")
+
+    # Growth: 0 -> 4 -> 8 -> 16 over ten pushes.
+    var i = 0
+    while i < 10:
+        v.push(i * 3)
+        i = i + 1
+    println("filled len={v.len()} cap={v.capacity()} empty={v.is_empty()}")
+
+    show("get(0)", v.get(0))
+    show("get(4)", v.get(4))
+    show("get(9)", v.get(9))
+    show("get(10)", v.get(10))
+
+    println("set(0,42)={v.set(0, 42)} set(99,1)={v.set(99, 1)}")
+    show("get(0)", v.get(0))
+
+    show("pop", v.pop())
+    println("after pop len={v.len()} cap={v.capacity()}")
+
+    # `reserve` grows without changing the contents or the length.
+    v.reserve(100)
+    println("reserved len={v.len()} cap={v.capacity()}")
+    show("get(3)", v.get(3))
+    # Never shrinks.
+    v.reserve(2)
+    println("reserve smaller cap={v.capacity()}")
+
+    # `clear` keeps the capacity; popping an empty vector yields `@none`.
+    v.clear()
+    println("cleared len={v.len()} cap={v.capacity()} empty={v.is_empty()}")
+    show("pop empty", v.pop())
+    show("get(0) empty", v.get(0))
+
+    # Storage is reusable after clearing.
+    v.push(7)
+    show("re-push get(0)", v.get(0))
+
+    v.free()
+    println("freed len={v.len()} cap={v.capacity()}")

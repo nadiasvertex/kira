@@ -1,0 +1,29 @@
+module codegen_stress.size_of_and_align_of
+
+# `size_of[T]()` / `align_of[T]()` fold to constants at lowering time,
+# answered from `runtime::layout_of` — the same function both backends read
+# every field offset and element stride from. Checked with an `# expect:`
+# rather than only backend agreement, because agreement is exactly the check
+# that cannot catch both tiers reading the same wrong layout (CLAUDE.md).
+#
+# A struct answers 8: a struct *value* is heap-referenced, so what one
+# occupies as a binding, field or element is a pointer. That is the number a
+# collection needs to stride its storage by, which is the question `size_of`
+# is here to answer.
+
+type pair = { a: int32, b: int64 }
+
+def main() -> int32:
+    var total: usize = 0
+    total = total + size_of[int8]()          # 1
+    total = total + size_of[int16]() * 10    # 20
+    total = total + size_of[int32]() * 100   # 400
+    total = total + size_of[int64]() * 1000  # 8000
+    total = total + size_of[bool]() * 10000  # 10000
+    total = total + size_of[pair]() * 100000 # 800000
+    total = total + align_of[int32]()        # 4
+    total = total + align_of[int64]() * 10   # 80
+    return int32(total)
+
+# 1 + 20 + 400 + 8000 + 10000 + 800000 + 4 + 80
+# expect: 818505

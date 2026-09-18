@@ -155,3 +155,35 @@ intrinsic def rt_gethostname() -> result[str, io_errno]
 #: Returns:
 #:   the processor name string on success, or an io_errno on failure.
 intrinsic def rt_processor_name() -> result[str, io_errno]
+
+####################
+# Memory intrinsics
+####################
+
+#: Raw heap allocation (`src/runtime/allocator.h`). These are the substrate a
+#: collection owns its own storage over -- `std.mem` wraps them in the typed,
+#: element-counted forms ordinary code should use, and `std.list` is built on
+#: those.
+#:
+#: Every block is zero-filled and 8-byte aligned, including the grown tail of
+#: a `rt_realloc`. Sizes are in *bytes*, not elements.
+#:
+#: The allocator behind them is selectable at run time
+#: (`KIRA_ALLOCATOR=system|arena`); `arena` never reclaims, which makes
+#: `rt_free` a no-op there. Code built on these must therefore be correct
+#: under both -- it must not, for instance, rely on a freed block being
+#: reused.
+
+#: Allocates `bytes` of zeroed memory. Returns a null pointer for a request
+#: of 0 bytes; an allocation that cannot be satisfied terminates the process
+#: rather than returning null, since there is no failure channel here yet.
+intrinsic def rt_alloc(bytes: box_usize) -> *mut byte
+
+#: Resizes a block obtained from `rt_alloc`/`rt_realloc`, preserving the
+#: first `min(old_bytes, new_bytes)` bytes and zeroing any growth. A null
+#: `p` allocates; a `new_bytes` of 0 frees and returns null.
+intrinsic def rt_realloc(p: *mut byte, old_bytes: box_usize, new_bytes: box_usize) -> *mut byte
+
+#: Releases a block obtained from `rt_alloc`/`rt_realloc`. A null `p` is a
+#: no-op. `bytes` must be the size the block was last allocated at.
+intrinsic def rt_free(p: *mut byte, bytes: box_usize) -> unit

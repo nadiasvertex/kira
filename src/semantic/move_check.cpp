@@ -111,6 +111,17 @@ private:
     if (types.is_unknown(id)) {
       return false;
     }
+    // A raw `*T`/`*mut T` is an address and nothing more: copying one
+    // duplicates a machine word, and the language makes no claim about who
+    // owns the memory behind it — that is precisely what distinguishes it
+    // from every tracked type. Treating one as movable made the natural
+    // `rt_free(p, n)` after a `ptr_cast[T](p)` report a use-after-move for a
+    // value that was never moved (`spec/specification/03-advanced/
+    // 38-machine-layer.md`: inside `machine` code the compiler makes none of
+    // its usual guarantees, and ownership is the user's to track).
+    if (types.entry(id).kind == type_kind::ptr_kind) {
+      return false;
+    }
     return !types.is_boolean(id) && !types.is_numeric(id) && !types.is_unit(id);
   }
 

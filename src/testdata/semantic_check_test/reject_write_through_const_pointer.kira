@@ -1,0 +1,10 @@
+module sample
+
+# Writing through a read-only `*T` is refused on the *type*, not on how the
+# binding was declared. Declaring `p` with `var` must not make it legal —
+# `var` would only permit reassigning `p` itself.
+
+machine def write_through_const() -> unit:
+    var xs = [1, 2, 3]
+    var p = xs.as_ptr()
+    p[0] = 9

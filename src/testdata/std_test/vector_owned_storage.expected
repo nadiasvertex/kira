@@ -1,0 +1,18 @@
+fresh empty=true len=0 cap=0
+filled len=10 cap=16 empty=false
+get(0)=0
+get(4)=12
+get(9)=27
+get(10)=none
+set(0,42)=true set(99,1)=false
+get(0)=42
+pop=27
+after pop len=9 cap=16
+reserved len=9 cap=100
+get(3)=9
+reserve smaller cap=100
+cleared len=0 cap=100 empty=true
+pop empty=none
+get(0) empty=none
+re-push get(0)=7
+freed len=0 cap=0

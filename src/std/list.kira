@@ -47,3 +47,123 @@ extend[T] list[T]:
         if self.len() == 0:
             return @none
         return @some(self[self.len() - 1])
+
+# ==========================================================================
+#  `vector[T]` — a growable list written in Kira, owning its own storage.
+#
+#  This is the `list` rebuild the header comment above anticipated: `push`,
+#  `pop`, `clear` and `reserve` are ordinary Kira here, over `std.mem`'s
+#  typed allocation and raw-pointer indexing, with no compiler support for
+#  the type itself beyond what any user struct gets.
+#
+#  It is deliberately a *separate* type from the builtin `list[T]` rather
+#  than a replacement for it. The builtin is still what `[1, 2, 3]`
+#  constructs, what `for x in xs` iterates, and what every other stdlib
+#  module is written against; displacing it means moving literal
+#  construction, iteration and index sugar off a compiler-known 3-slot
+#  representation, which is a language change rather than a library one.
+#  `vector[T]` is the destination that change would move `list[T]` to, and it
+#  exists now so the substrate underneath it is exercised by something real.
+#
+#  Storage is exactly `cap` elements at `data`, or a null `data` when
+#  `cap == 0`; `len <= cap` always, and slots `len..cap` are zeroed but hold
+#  no meaningful value. Every method that touches memory is `machine` and
+#  short; everything a caller needs is safe.
+#
+#  Not yet handled, and not hidden: `free` must be called explicitly. Kira
+#  runs no scope-exit `drop` glue on either backend (`spec/todo.md` item 6),
+#  so a `vector` that goes out of scope leaks its buffer under
+#  `KIRA_ALLOCATOR=system` exactly as every heap value already leaks under
+#  the bump arena. Elements are not dropped either, for the same reason.
+# ==========================================================================
+
+use std.mem.{alloc, resize, free as mem_free, copy}
+
+## A growable, contiguous sequence of `T`, owning its own heap storage.
+pub type vector[T] = {
+    ## Number of elements actually stored.
+    len: usize,
+    ## Number of elements `data` has room for.
+    cap: usize,
+    ## The storage, or null when `cap` is 0.
+    data: *mut T,
+}
+
+extend[T] vector[T]:
+    ## An empty `vector` that has not allocated anything yet.
+    pub machine def new() -> vector[T]:
+        return vector[T] { len: 0, cap: 0, data: alloc[T](0) }
+
+    ## How many elements this holds.
+    pub def len(self) -> usize:
+        return self.len
+
+    ## How many elements this can hold before it must grow.
+    pub def capacity(self) -> usize:
+        return self.cap
+
+    ## Whether this holds no elements.
+    pub def is_empty(self) -> bool:
+        return self.len == 0
+
+    ## Ensures room for at least `n` elements without reallocating again.
+    ##
+    ## Never shrinks: a smaller `n` than the current capacity is a no-op.
+    pub machine def reserve(mut self, n: usize) -> unit:
+        if n <= self.cap:
+            return
+        self.data = resize(self.data, self.cap, n)
+        self.cap = n
+
+    ## Appends `value`, growing the storage if it is full.
+    ##
+    ## Growth doubles the capacity (starting at 4), so a sequence of `n`
+    ## pushes performs O(log n) reallocations and copies each element O(1)
+    ## times on average.
+    pub machine def push(mut self, value: T) -> unit:
+        if self.len == self.cap:
+            var grown = self.cap * 2
+            if grown == 0:
+                grown = 4
+            self.reserve(grown)
+        self.data[self.len] = value
+        self.len = self.len + 1
+
+    ## Removes and returns the last element, or `@none` when empty.
+    ##
+    ## The vacated slot is left as it was rather than cleared: nothing can
+    ## read it back (`len` no longer covers it) and a later `push` overwrites
+    ## it outright.
+    pub machine def pop(mut self) -> option[T]:
+        if self.len == 0:
+            return @none
+        self.len = self.len - 1
+        return @some(self.data[self.len])
+
+    ## The element at `i`, or `@none` when `i` is out of range.
+    pub machine def get(self, i: usize) -> option[T]:
+        if i >= self.len:
+            return @none
+        return @some(self.data[i])
+
+    ## Replaces the element at `i`. Returns whether `i` was in range.
+    pub machine def set(mut self, i: usize, value: T) -> bool:
+        if i >= self.len:
+            return false
+        self.data[i] = value
+        return true
+
+    ## Removes every element, keeping the allocated capacity.
+    ##
+    ## O(1): only `len` changes. The elements are not dropped, because
+    ## nothing in Kira runs `drop` yet.
+    pub def clear(mut self) -> unit:
+        self.len = 0
+
+    ## Releases the storage, leaving an empty `vector` that owns nothing.
+    ##
+    ## Must be called explicitly — see this section's header comment.
+    pub machine def free(mut self) -> unit:
+        mem_free(self.data, self.cap)
+        self.len = 0
+        self.cap = 0

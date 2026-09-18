@@ -21,6 +21,10 @@ cc_library(
     deps = [
         "//src:intrinsics",
         "//src/parser:parser",
+        # `size_of[T]()`/`align_of[T]()` fold here, against the same
+        # `runtime::layout_of` both backends read every field offset and
+        # element stride from — see `lower_call`'s `layout_queries` branch.
+        "//src/runtime:runtime",
         "//src/semantic:semantic",
     ],
     visibility = ["//visibility:public"],

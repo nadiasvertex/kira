@@ -101,6 +101,10 @@ enum class hir_node_kind : uint8_t {
                    ///< elements — see `hir_tuple_index`'s doc comment.
   hir_variant_payload, ///< Sum-type payload projection (pattern lowering only).
   hir_variant_init,    ///< Sum-type variant construction `@variant(args...)`.
+  hir_stack_buffer,    ///< A frame-local `uninit[T, N]` buffer; see
+                       ///< `hir_stack_buffer`.
+  hir_container_data,  ///< A container's raw data pointer (`as_ptr`/
+                       ///< `as_mut_ptr`); see `hir_container_data`.
   hir_container_len,   ///< A container's element count (`for`-loop lowering
                        ///< only).
   hir_generator_next,  ///< `g.next()` on a `generator[T]` value — no
@@ -488,6 +492,51 @@ struct hir_container_len : hir_expr {
 
   hir_container_len(source_span s, type_id t, ptr<hir_expr> obj)
       : hir_expr(hir_node_kind::hir_container_len, s, t),
+        object(std::move(obj)) {}
+};
+
+/// A `uninit[T, N]()` buffer: `byte_size` bytes of frame-local storage,
+/// aligned to `align_bytes`. `type` is the `uninit[T, N]` itself, whose
+/// runtime representation is the buffer's base address.
+///
+/// The one aggregate in the language that is *not* heap-allocated. Both
+/// backends give it genuine stack storage — an `alloca` in the LLVM tier's
+/// entry block, a statically-sized frame-local byte range in the bytecode
+/// tier — because a fixed-capacity inline buffer whose storage came from the
+/// heap would defeat its only purpose (see `hir_stack_buffer`'s consumers in
+/// `spec/specification/04-stdlib/collections/47-small-list.md`).
+///
+/// The size is fixed at lowering time, so neither backend ever performs a
+/// dynamically-sized stack allocation: the bytecode tier sums every buffer
+/// in a function into one frame-local byte count reserved on entry, which is
+/// what keeps a buffer's address stable for the whole frame.
+struct hir_stack_buffer : hir_expr {
+  uint64_t byte_size = 0;
+  uint64_t align_bytes = 8;
+
+  hir_stack_buffer(source_span s, type_id t, uint64_t size, uint64_t align)
+      : hir_expr(hir_node_kind::hir_stack_buffer, s, t), byte_size(size),
+        align_bytes(align) {}
+};
+
+/// The address of element 0 of `object`'s data block — what `xs.as_ptr()`
+/// and `xs.as_mut_ptr()` lower to, for any of the shapes
+/// `resolve_container_view` understands (a `list[T]`, a `slice`/
+/// `slice_mut[T]`, a `str`, or a fixed `array[T, N]`). `type` is the
+/// resulting `*T`/`*mut T`.
+///
+/// A distinct node rather than `&object[0]`, which would compute the same
+/// address: indexing emits a bounds check, so `xs.as_ptr()` on an empty
+/// container would panic where it must instead hand back the (possibly
+/// null) data pointer. The mutability distinction between `as_ptr` and
+/// `as_mut_ptr` lives entirely in `type` — both read the same header slot,
+/// and it is the checker, not the backend, that decides which one a given
+/// receiver is allowed to produce.
+struct hir_container_data : hir_expr {
+  ptr<hir_expr> object;
+
+  hir_container_data(source_span s, type_id t, ptr<hir_expr> obj)
+      : hir_expr(hir_node_kind::hir_container_data, s, t),
         object(std::move(obj)) {}
 };
 

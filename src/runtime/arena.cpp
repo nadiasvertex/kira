@@ -29,7 +29,3 @@ auto global_arena() -> bump_arena & {
 }
 
 } // namespace kira::runtime
-
-extern "C" auto kira_rt_alloc(uint64_t bytes) -> void * {
-  return kira::runtime::global_arena().allocate(bytes);
-}

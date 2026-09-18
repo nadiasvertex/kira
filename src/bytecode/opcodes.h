@@ -266,6 +266,16 @@ enum class opcode : uint8_t {
   //  generic over "a flat block of 8-byte slots" (`src/runtime/layout.h`),
   //  matching the same "parameterize, don't combinatorially enumerate"
   //  choice `numeric_kind` already made for arithmetic.
+  op_stack_alloc,    ///< u16 dst, u16 byte_offset — reg[dst] = the address
+                     ///< of `byte_offset` within this frame's own
+                     ///< `stack_byte_size` scratch range. The frame-local
+                     ///< counterpart of `op_alloc`: storage for a
+                     ///< `uninit[T, N]` buffer, which is the one aggregate
+                     ///< that must not be heap-allocated. The offset is
+                     ///< fixed at compile time and the range is reserved
+                     ///< whole on frame entry, so the address is stable for
+                     ///< the life of the frame and the opcode itself
+                     ///< allocates nothing.
   op_alloc,          ///< u16 dst, u16 byte_size — reg[dst] = a fresh, zeroed
                      ///< `byte_size`-byte block from the arena. Despite the
                      ///< name, this has always just allocated a byte count
@@ -626,6 +636,8 @@ struct operand_signature {
   case opcode::op_call_intrinsic:
     return sig({reg, imm8, reg, imm8});
 
+  case opcode::op_stack_alloc:
+    return sig({reg, imm16});
   case opcode::op_alloc:
     return sig({reg, imm16});
   case opcode::op_load_slot:

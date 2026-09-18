@@ -84,6 +84,7 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
                                "panic.kira",
                                "option.kira",
                                "result.kira",
+                               "mem.kira",
                                "list.kira",
                                "io.kira",
                                "console.kira",

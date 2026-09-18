@@ -819,6 +819,7 @@ private:
       function.code[site.code_offset + 1] =
           static_cast<uint8_t>((physical >> 8) & 0xFF);
     }
+    function.stack_byte_size = stack_bytes_used_;
     if (auto layout =
             verify_operand_layout(function, input.instruction_offsets, span);
         !layout.has_value()) {
@@ -1311,6 +1312,12 @@ private:
           dynamic_cast<const hir::hir_variant_payload &>(expr), dst);
     case hir_node_kind::hir_match:
       return compile_match(dynamic_cast<const hir::hir_match &>(expr), dst);
+    case hir_node_kind::hir_stack_buffer:
+      return compile_stack_buffer(
+          dynamic_cast<const hir::hir_stack_buffer &>(expr), dst);
+    case hir_node_kind::hir_container_data:
+      return compile_container_data(
+          dynamic_cast<const hir::hir_container_data &>(expr), dst);
     case hir_node_kind::hir_container_len:
       return compile_container_len(
           dynamic_cast<const hir::hir_container_len &>(expr), dst);
@@ -2184,6 +2191,64 @@ private:
   /// both layouts (`src/runtime/layout.h`) put their length at slot 0, so
   /// this is the same one `op_load_slot` regardless of which container
   /// kind `node.object` actually is.
+  /// `uninit[T, N]()` — a fixed range of this frame's own scratch storage
+  /// (`op_stack_alloc`), not a heap block.
+  ///
+  /// Each buffer is handed a distinct, compile-time-fixed offset and the
+  /// total is reserved whole when the frame is pushed, so a buffer's address
+  /// never moves and the opcode itself does no allocation. A buffer inside a
+  /// loop body therefore reuses one frame slot across iterations rather than
+  /// consuming more on each — matching the LLVM tier, where the `alloca`
+  /// sits in the entry block for exactly the same reason.
+  [[nodiscard]] auto compile_stack_buffer(const hir::hir_stack_buffer &node,
+                                          virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    // Round the running total up to this buffer's alignment before placing
+    // it. The frame's storage itself is `std::vector<std::byte>`, whose data
+    // pointer is suitably aligned for any scalar, so an aligned offset
+    // within it yields an aligned address.
+    const auto align = node.align_bytes == 0 ? uint64_t{1} : node.align_bytes;
+    const auto offset = (stack_bytes_used_ + align - 1) / align * align;
+    const auto end = offset + node.byte_size;
+    if (end > k_max_stack_bytes) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = std::format(
+              "this function's `uninit` buffers need {} bytes of frame "
+              "storage, more than the {} a single frame can address",
+              end, k_max_stack_bytes)});
+    }
+    stack_bytes_used_ = static_cast<uint32_t>(end);
+
+    emit_op(opcode::op_stack_alloc);
+    emit_register(dst);
+    writer_.emit_u16(static_cast<uint16_t>(offset));
+    return {};
+  }
+
+  /// `xs.as_ptr()` / `xs.as_mut_ptr()` — the address of element 0 of the
+  /// receiver's data block, read through the same `resolve_container_view`
+  /// indexing uses, so the two can never disagree about where a given
+  /// container's elements actually start.
+  [[nodiscard]] auto compile_container_data(const hir::hir_container_data &node,
+                                            virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    auto view =
+        resolve_container_view(node.object->type, *object_reg, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
+    }
+    emit_op(opcode::op_move);
+    emit_register(dst);
+    emit_register(view->data_reg);
+    return {};
+  }
+
   [[nodiscard]] auto compile_container_len(const hir::hir_container_len &node,
                                            virtual_reg dst)
       -> std::expected<void, compile_error> {
@@ -2478,7 +2543,16 @@ private:
           static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
       return {};
     };
-    if (auto result = emit_bounds_check(*end_reg, len_reg);
+    if (!len_reg.has_value()) {
+      // A raw pointer has no length to slice against; the checker rejects
+      // `p[a..b]` outright, so reaching here means the two disagree.
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "a raw pointer cannot be range-indexed — it carries no "
+                     "length"});
+    }
+    if (auto result = emit_bounds_check(*end_reg, *len_reg);
         !result.has_value()) {
       return std::unexpected(result.error());
     }
@@ -2576,7 +2650,11 @@ private:
   /// or element stride lives — the exact bug `compile_addr_of`'s own doc
   /// comment on `list` warns about.
   struct container_view {
-    virtual_reg len_reg;
+    /// The register holding the element count to bounds-check against, or
+    /// `nullopt` for a raw `*T`/`*mut T` — a pointer carries no length, so
+    /// an access through one is unchecked by construction. Every consumer
+    /// must test this before emitting a bounds check.
+    std::optional<virtual_reg> len_reg;
     virtual_reg data_reg;
     uint8_t elem_size;
   };
@@ -2594,6 +2672,41 @@ private:
         object_entry.kind == semantic::type_kind::builtin_generic_kind &&
         (object_entry.name == "slice" || object_entry.name == "slice_mut");
     const bool indexing_view = indexing_str || indexing_slice;
+    // A raw pointer *is* its own data block: no header to read, and no
+    // length to check against. This is the unchecked access the `machine`
+    // layer exists to permit (spec/specification/03-advanced/
+    // 38-machine-layer.md).
+    if (object_entry.kind == semantic::type_kind::ptr_kind) {
+      return container_view{.len_reg = std::nullopt,
+                            .data_reg = object_reg,
+                            .elem_size = element_stride(object_entry.result)};
+    }
+    // `uninit[T, N]` is its own data block, like a fixed array, but its
+    // length lives in the const-generic second argument rather than in
+    // `array_size`.
+    if (object_entry.kind == semantic::type_kind::builtin_generic_kind &&
+        object_entry.name == "uninit") {
+      const auto slots = runtime::uninit_slot_count(types_, object_entry);
+      if (!slots.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = span,
+            .message = "this `uninit[T, N]` has no statically known slot "
+                       "count"});
+      }
+      auto len_reg_exp = alloc_register(span);
+      if (!len_reg_exp.has_value()) {
+        return std::unexpected(len_reg_exp.error());
+      }
+      const auto len_const = writer_.add_constant(slot_value{*slots});
+      emit_op(opcode::op_load_const);
+      emit_register(*len_reg_exp);
+      writer_.emit_u16(len_const);
+      return container_view{
+          .len_reg = *len_reg_exp,
+          .data_reg = object_reg,
+          .elem_size = element_stride(object_entry.args.front())};
+    }
     if (!indexing_list && !indexing_view &&
         (object_entry.kind != semantic::type_kind::array_kind ||
          !object_entry.array_size.has_value())) {
@@ -2601,8 +2714,8 @@ private:
           .kind = compile_error_kind::unsupported_construct,
           .span = span,
           .message = "indexing is only supported for a fixed-size array "
-                     "with a statically known length, a list, a `str`, or a "
-                     "`slice`/`slice_mut` yet"});
+                     "with a statically known length, a list, a `str`, a "
+                     "`slice`/`slice_mut`, or a raw `*T`/`*mut T` yet"});
     }
 
     const auto elem_size =
@@ -2665,19 +2778,21 @@ private:
     const auto data_reg = view->data_reg;
     const auto elem_size = view->elem_size;
 
-    auto oob_reg = alloc_register(node.span);
-    if (!oob_reg.has_value()) {
-      return std::unexpected(oob_reg.error());
+    if (len_reg.has_value()) {
+      auto oob_reg = alloc_register(node.span);
+      if (!oob_reg.has_value()) {
+        return std::unexpected(oob_reg.error());
+      }
+      emit_op(opcode::op_ge);
+      emit_register(*oob_reg);
+      emit_register(*index_reg);
+      emit_register(*len_reg);
+      writer_.emit_numeric_kind(numeric_kind::u64);
+      emit_op(opcode::op_panic_if);
+      emit_register(*oob_reg);
+      writer_.emit_u8(
+          static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
     }
-    emit_op(opcode::op_ge);
-    emit_register(*oob_reg);
-    emit_register(*index_reg);
-    emit_register(len_reg);
-    writer_.emit_numeric_kind(numeric_kind::u64);
-    emit_op(opcode::op_panic_if);
-    emit_register(*oob_reg);
-    writer_.emit_u8(
-        static_cast<uint8_t>(bytecode::panic_reason::index_out_of_bounds));
 
     return element_location{
         .data_reg = data_reg, .index_reg = *index_reg, .elem_size = elem_size};
@@ -4021,6 +4136,12 @@ private:
   /// between a symbol's promotion being *decided* and it being *done*.
   std::unordered_set<hir::symbol_id> cell_promoted_;
   size_t next_register_ = 0;
+  /// Bytes of frame-local `uninit[T, N]` storage placed so far in this
+  /// function; becomes `bytecode_function::stack_byte_size`. Capped by
+  /// `k_max_stack_bytes` because `op_stack_alloc` encodes its offset as a
+  /// 16-bit immediate.
+  uint32_t stack_bytes_used_ = 0;
+  static constexpr uint32_t k_max_stack_bytes = 0xFFFF;
 
   // ------------------------------------------------------------------
   //  Register-allocation bookkeeping, accumulated while emitting and
