@@ -1,0 +1,16 @@
+module sample
+
+# A type that can be read at an index (`index`) but has no `index_mut` impl
+# must be told that specifically when a mutable interior reference is taken
+# -- not the generic "not indexable" diagnostic, which would be false, and
+# would send the reader looking at reads that work fine.
+
+type readable = { a: int32 }
+
+impl index[usize] for readable:
+    type output = int32
+    def at(self, i: usize) -> int32:
+        return self.a
+
+def borrow_it(mut r: readable) -> unit:
+    let c = &mut r[0]

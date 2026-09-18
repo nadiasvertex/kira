@@ -798,6 +798,16 @@ struct checked_types {
   /// and the assigned value as its two explicit arguments.
   std::unordered_map<const ast::index_expr *, resolved_callee>
       index_set_dispatches;
+  /// Every `&mut v[i]` resolved against a user type's `std.traits.index_mut`
+  /// impl, keyed by the `index_expr` the `&mut` wraps. `receiver` is that
+  /// expression's `object`; `at_mut` takes the subscript as its sole
+  /// explicit argument and returns the `cell_mut[T]` the whole `&mut v[i]`
+  /// expression evaluates to. Consulted only by `hir::lower_unary`: the
+  /// enclosing `&mut` is what selects `at_mut` over `index_dispatches`'
+  /// read-only `at`, so this dispatch is never reached through
+  /// `hir::lower_index` the way the other two are.
+  std::unordered_map<const ast::index_expr *, resolved_callee>
+      index_mut_dispatches;
   /// Every sequence literal (`[a, b, c]`, `[v; n]`) written where a user
   /// type implementing `std.traits.from_array` was expected — see
   /// `checker::try_wire_from_array`. The literal itself still lowers to the

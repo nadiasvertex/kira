@@ -1006,6 +1006,7 @@ public:
         .ord_dispatch_result_types = std::move(ord_dispatch_result_types_),
         .index_dispatches = std::move(index_dispatches_),
         .index_set_dispatches = std::move(index_set_dispatches_),
+        .index_mut_dispatches = std::move(index_mut_dispatches_),
         .array_literal_conversions = std::move(array_literal_conversions_),
         .interp_dispatches = std::move(interp_dispatches_),
         .type_param_reflections = std::move(type_param_reflections_),
@@ -1195,6 +1196,11 @@ private:
       index_dispatches_;
   std::unordered_map<const ast::index_expr *, resolved_callee>
       index_set_dispatches_;
+  /// Every `&mut v[i]` resolved against a user type's `index_mut` impl —
+  /// recorded by `require_index_mut_trait`, consulted by
+  /// `hir::lower_unary`.
+  std::unordered_map<const ast::index_expr *, resolved_callee>
+      index_mut_dispatches_;
   /// Sequence literals that construct a user collection through its
   /// `from_array` impl, recorded by `try_wire_from_array`.
   std::unordered_map<const ast::array_expr *, array_literal_conversion>
@@ -7922,6 +7928,49 @@ private:
           return types_.ref_to(types_.builtin_generic("slice_mut", {element}),
                                true);
         }
+        // `&mut v[i]` on a user type: `v[i]` alone already dispatched to
+        // `index`'s `at` (an ordinary read) by the `infer_expr` call above —
+        // but an enclosing `&mut` means a mutable interior reference was
+        // wanted instead, which only `index_mut`'s `at_mut` can hand out (a
+        // user type has no directly addressable element the way a
+        // list/array/slice does). Re-dispatch here rather than in
+        // `infer_index`, which has no way to know about this enclosing
+        // `&mut` at the point it runs.
+        const auto &index = dynamic_cast<const ast::index_expr &>(*unary.operand);
+        if (index.object != nullptr) {
+          const auto object_type =
+              base_shape(infer_expr(*index.object, k_unknown_type));
+          const auto &object_entry = types_.entry(strip_refs(object_type));
+          if (object_entry.kind == type_kind::struct_kind ||
+              object_entry.kind == type_kind::sum_kind ||
+              object_entry.kind == type_kind::opaque_kind) {
+            if (type_has_trait(object_entry, "index_mut")) {
+              const auto result =
+                  require_index_mut_trait(index, object_type, object_entry);
+              if (!types_.is_unknown(result)) {
+                record_expr_type(index, result);
+                return result;
+              }
+            } else if (type_has_trait(object_entry, "index")) {
+              error_with_help(
+                  unary.span,
+                  std::format("cannot borrow `{}[...]` mutably",
+                              types_.display(strip_refs(object_type))),
+                  std::format(
+                      "`{}` can be read at an index but has no `index_mut` "
+                      "impl",
+                      types_.display(strip_refs(object_type))),
+                  std::format(
+                      "Taking a mutable interior reference is a separate "
+                      "capability from reading. Add:\n\n    impl "
+                      "index_mut[usize] for {}:\n"
+                      "        def at_mut(mut self, i: usize) -> mut "
+                      "cell[self.output]:\n            ...",
+                      object_entry.name));
+              return k_error_type;
+            }
+          }
+        }
       }
       return types_.ref_to(stripped, true);
     }
@@ -12528,6 +12577,71 @@ private:
                         .impl_target_type = callee != nullptr ? "" : entry.name,
                         .receiver = index.object.get()};
     return resolve_index_output(target, "index", *method);
+  }
+
+  /// `at_mut`'s return type, `-> mut cell[self.output]`, names an
+  /// associated type `index_mut` never declares itself — `index_mut[I]
+  /// requires index[I]` and reuses *that* trait's `output`. `impl_assoc_
+  /// types_[target]["index_mut"]` is therefore always empty, so `self.output`
+  /// is resolved here against the `index` impl's recorded bindings for the
+  /// same target instead, mirroring `resolve_index_output`'s generic-impl
+  /// fallback for the rest.
+  auto resolve_index_mut_output(type_id target, const method_entry &method)
+      -> type_id {
+    const auto target_it = impl_assoc_types_.find(target);
+    if (target_it != impl_assoc_types_.end()) {
+      if (const auto trait_it = target_it->second.find("index");
+          trait_it != target_it->second.end()) {
+        const auto saved_assoc = self_assoc_types_;
+        self_assoc_types_ = trait_it->second;
+        const auto result = signature_return_type(*method.decl, method.owner);
+        self_assoc_types_ = saved_assoc;
+        if (!types_.is_unknown(result) && !mentions_type_param(result)) {
+          return result;
+        }
+      }
+    }
+    if (method.block_type_params != nullptr) {
+      auto bindings = std::unordered_map<std::string, type_id>{};
+      unify_rigid(method.impl_target_pattern, target, bindings);
+      const auto declared = signature_return_type(*method.decl, method.owner,
+                                                  method.block_type_params);
+      const auto substituted = substitute_solved(declared, bindings);
+      if (!types_.is_unknown(substituted)) {
+        return substituted;
+      }
+    }
+    return resolve_operator_return_type(target, "index_mut", method);
+  }
+
+  /// The mutable-borrow half: `&mut v[i]` on a user receiver, against
+  /// `index_mut`. Called from `infer_unary`'s `addr_of_mut` case rather than
+  /// from `infer_index` itself, since only the enclosing `&mut` decides
+  /// whether a read (`at`) or a mutable borrow (`at_mut`) is meant — the two
+  /// share syntax up to that point. Returns `k_unknown_type` when the
+  /// receiver has no `index_mut` impl at all, so the caller can fall back to
+  /// its own diagnostic for that case (mirroring the missing-method hush in
+  /// `require_index_trait`, but the "not indexable at all" case is the
+  /// caller's to report since it also knows about plain `index`).
+  auto require_index_mut_trait(const ast::index_expr &index, type_id object,
+                               const type_entry &entry) -> type_id {
+    const auto target = strip_refs(object);
+    if (!type_has_trait(entry, "index_mut")) {
+      return k_unknown_type;
+    }
+    const auto *method = find_method(entry, "at_mut", target);
+    if (method == nullptr || method->decl->params.empty() ||
+        param_name_of(method->decl->params.front()) != "self") {
+      return k_unknown_type;
+    }
+    const auto *callee =
+        instantiate_impl_method_for(index, *method, entry, target);
+    index_mut_dispatches_[&index] =
+        resolved_callee{.decl = callee != nullptr ? callee : method->decl,
+                        .owner_module = method->owner->module_name,
+                        .impl_target_type = callee != nullptr ? "" : entry.name,
+                        .receiver = index.object.get()};
+    return resolve_index_mut_output(target, *method);
   }
 
   /// The write half: `v[i] = x` on a user receiver, against `index_set`.

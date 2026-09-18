@@ -1194,6 +1194,36 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
     return fail(lowering_error_kind::unsupported_construct, un.span,
                 "unary expression is missing its operand");
   }
+  // `&mut v[i]` on a user type resolved to `index_mut` (see check.cpp's
+  // `require_index_mut_trait`) lowers to a call to `at_mut` directly: that
+  // call already returns the `cell_mut[T]` this whole expression's value is,
+  // so there is no separate address to take on top of it — unlike an
+  // ordinary `&mut` place, `at_mut`'s result *is* the mutable view, not
+  // something to point at. Handled here rather than by falling through to
+  // `lower_index` + wrapping in `hir_unary`, since a `hir_unary(addr_of_mut,
+  // ...)` over a call result has no meaning either backend's `compile_
+  // addr_of` can give it.
+  if (un.op == ast::unary_op::addr_of_mut &&
+      un.operand->kind == ast::node_kind::index_expr) {
+    const auto &index = dynamic_cast<const ast::index_expr &>(*un.operand);
+    if (const auto found = checked_.index_mut_dispatches.find(&index);
+        found != checked_.index_mut_dispatches.end()) {
+      if (index.object == nullptr || index.index == nullptr) {
+        return fail(lowering_error_kind::unsupported_construct, index.span,
+                    "index expression is missing its target or index");
+      }
+      auto object = lower_expr(*index.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      auto idx = lower_expr(*index.index);
+      if (!idx.has_value()) {
+        return std::unexpected(idx.error());
+      }
+      return lower_index_dispatch(index.span, *type, found->second,
+                                  std::move(*object), std::move(*idx));
+    }
+  }
   auto operand = lower_expr(*un.operand);
   if (!operand.has_value()) {
     return std::unexpected(operand.error());

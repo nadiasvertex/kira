@@ -2185,6 +2185,107 @@ auto test_reports_index_write_without_index_set() -> void {
       "from a type that is not indexable at all");
 }
 
+auto test_reports_index_mut_borrow_without_impl() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_index_mut_without_impl.kira");
+  expect(analyzed.error_count > 0,
+         "expected `&mut v[i]` without an `index_mut` impl to be rejected");
+  expect_diagnostic(analyzed, "cannot borrow",
+                    "expected the diagnostic to be about the mutable borrow");
+  expect_diagnostic(
+      analyzed, "can be read at an index but has no `index_mut` impl",
+      "expected the diagnostic to distinguish a missing mutable-borrow "
+      "capability from a type that is not indexable at all");
+}
+
+auto test_dispatches_index_mut_borrow() -> void {
+  // Not `analyze_test_data_file`: a bare error-count/diagnostic check here
+  // could not fail on a broken dispatch. If `&mut w[0]` never reached
+  // `index_mut` at all, `infer_unary`'s plain fallback (`ref_to(stripped,
+  // true)`) would type `w[0]` as `int32` via the *read* `at` and the whole
+  // expression as `&mut int32` -- an ordinary reference with no annotation
+  // to contradict it, so the fixture would still check cleanly with zero
+  // diagnostics either way. Only inspecting the recorded dispatch and the
+  // expression's actual resolved type can tell the two apart.
+  auto sources = kira::source_manager{};
+  auto diag = kira::diagnostic_bag{};
+  auto file_has_errors = std::vector<bool>{};
+  auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
+  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+
+  const auto test_data_dir =
+      kira::testing::find_test_data_dir("semantic_check_test");
+  auto fixtures = prelude_fixtures();
+  fixtures.push_back(source_fixture{
+      .path = "accept_index_mut_dispatch.kira",
+      .text = kira::testing::load_test_data_file(
+          test_data_dir.string(), "accept_index_mut_dispatch.kira"),
+  });
+
+  const kira::ast::file *sample_file = nullptr;
+  for (const auto &fixture : fixtures) {
+    const auto file_id = sources.add_file(fixture.path, fixture.text);
+    expect(file_id.has_value(), "expected fixture source to register");
+    file_has_errors.resize(static_cast<size_t>(*file_id) + 1, false);
+
+    const auto *file = sources.get(*file_id);
+    expect(file != nullptr, "expected registered fixture source");
+    auto lexer = kira::lexer(file->source(), file->id(), diag);
+    auto tokens = lexer.tokenize();
+    auto parser = kira::parser(std::move(tokens), file->id(), diag);
+    auto ast_file = parser.parse_file();
+    if (fixture.path == "accept_index_mut_dispatch.kira") {
+      sample_file = ast_file.get();
+    }
+    parsed_modules.push_back(kira::semantic::parsed_module{
+        .file_id = *file_id, .ast_file = ast_file.get()});
+    ast_files.push_back(std::move(ast_file));
+  }
+  expect(diag.error_count() == 0, "expected fixtures to parse cleanly");
+  expect(sample_file != nullptr, "expected to find the sample fixture's AST");
+  const auto &ast_file = *sample_file;
+
+  auto checked =
+      kira::semantic::check_program(parsed_modules, diag, file_has_errors);
+  if (diag.error_count() != 0) {
+    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+  }
+  expect(diag.error_count() == 0,
+         "expected `&mut w[i]` against an `index_mut` impl to check cleanly");
+
+  expect(!checked.index_mut_dispatches.empty(),
+         "expected `&mut w[0]` to have been recorded as an `index_mut` "
+         "dispatch");
+
+  const kira::ast::func_decl *borrow_it = nullptr;
+  for (const auto &item : ast_file.items) {
+    if (item != nullptr && item->kind == kira::ast::node_kind::func_decl) {
+      const auto &decl = dynamic_cast<const kira::ast::func_decl &>(*item);
+      if (decl.name == "borrow_it") {
+        borrow_it = &decl;
+        break;
+      }
+    }
+  }
+  expect(borrow_it != nullptr, "expected to find `borrow_it`'s declaration");
+  expect(borrow_it->body_stmts.size() == 1,
+         "expected `borrow_it`'s body to be a single `let` statement");
+
+  const auto &let_stmt = dynamic_cast<const kira::ast::let_stmt &>(
+      *borrow_it->body_stmts.front());
+  expect(let_stmt.initializer != nullptr,
+         "expected `let c = &mut w[0]` to have an initializer");
+
+  const auto it = checked.node_types.find(let_stmt.initializer.get());
+  expect(it != checked.node_types.end(),
+         "expected `&mut w[0]`'s resolved type to be persisted");
+  const auto &entry = checked.types.entry(it->second);
+  expect(entry.kind == kira::semantic::type_kind::builtin_generic_kind &&
+             entry.name == "cell_mut",
+         "expected `&mut w[0]` to resolve to `cell_mut[T]` via `at_mut`, not "
+         "an ordinary `&mut` reference to `at`'s read result");
+}
+
 auto test_accepts_intrinsic_decl() -> void {
   const auto analyzed = analyze_test_data_file("accept_intrinsic_decl.kira");
   expect(analyzed.error_count == 0,
@@ -3329,6 +3430,8 @@ auto main() -> int {
     test_reports_write_through_const_pointer();
     test_reports_index_without_impl();
     test_reports_index_write_without_index_set();
+    test_reports_index_mut_borrow_without_impl();
+    test_dispatches_index_mut_borrow();
     test_accepts_intrinsic_decl();
     test_accepts_string_interpolation();
     test_accepts_static_let_evaluates();
