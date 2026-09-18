@@ -1,0 +1,13 @@
+module borrow_check.mutation_during_ref_for_loop
+
+use std.list.vector
+
+# The borrow `for x in &xs` holds is live for the whole loop body, exactly
+# like a view: freeing (or otherwise mutably borrowing) `xs` while the loop
+# is still iterating over it must be rejected, not silently allowed to run
+# concurrently with the iteration reading `xs`'s storage.
+
+def demo() -> unit:
+    var xs: vector[int32] = [1, 2, 3]
+    for x in &xs:
+        xs.free()

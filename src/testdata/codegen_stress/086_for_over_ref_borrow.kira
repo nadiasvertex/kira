@@ -1,0 +1,59 @@
+module codegen_stress.for_over_ref_borrow
+
+# `for x in &v` (spec/todo.md #20): a bare `&`/`&mut` as the loop's whole
+# iterable dispatches to a non-consuming `iter` free function instead of
+# `into_iterator`'s always-consuming `into_iter`, so `v` stays usable
+# afterward. No stdlib here (this harness injects none — see
+# `todo-item-6-deriving-hash-stale`), so the collection, its cursor, and the
+# `iterator[T]` trait are all hand-rolled, mirroring
+# `037_user_iterator_for_loop.kira`. The cursor holds its own `end` (copied
+# once, at `iter()` time) rather than re-reading `src.len` per `next()` — a
+# 3-segment `self.src.len` field chain hits an unrelated, pre-existing
+# lowering gap ("only a two-segment `value.field` path is lowered"),
+# `list_iter[T]` in `std.iter` sidesteps the same way.
+#
+# `# expect:` rather than only cross-tier agreement, per CLAUDE.md: both
+# backends read the cursor's `data` pointer through the same
+# `src/runtime/layout.h` element-stride rules, so a cursor that mis-strode
+# through the elements would agree between tiers and still be wrong.
+#
+# `xs` staying usable after the first loop — a second `for x in &xs` sees the
+# element appended in between — is the actual point of the feature: an
+# always-consuming `into_iter` would have made the append a use-after-move.
+#
+# sum([1,2,3,4,5]) = 15; sum([1,2,3,4,5,6]) = 21; 15 + 21 = 36.
+# expect: 36
+
+trait iterator[T]:
+    def next(mut self) -> option[T]
+
+type bag = { data: array[int32, 8], len: usize }
+type bag_cursor = { src: &bag, at: usize, end: usize }
+
+impl iterator[int32] for bag_cursor:
+    def next(mut self) -> option[int32]:
+        if self.at >= self.end:
+            return @none
+        let value = self.src.data[self.at]
+        self.at = self.at + 1
+        return @some(value)
+
+def iter(xs: &bag) -> bag_cursor:
+    return bag_cursor { src: xs, at: 0, end: xs.len }
+
+def push(xs: &mut bag, value: int32) -> unit:
+    xs.data[xs.len] = value
+    xs.len = xs.len + 1
+
+def main() -> int32:
+    var xs = bag { data: [1, 2, 3, 4, 5, 0, 0, 0], len: 5 }
+    var sum = 0
+    for x in &xs:
+        sum = sum + x
+
+    push(&mut xs, 6)
+    var sum2 = 0
+    for x in &xs:
+        sum2 = sum2 + x
+
+    return sum + sum2

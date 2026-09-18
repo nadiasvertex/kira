@@ -270,6 +270,20 @@ auto test_reuse_after_plain_value_capture_is_accepted() -> void {
          "by-value copy, so reusing the original binding checks cleanly");
 }
 
+// ==========================================================================
+//  `for x in &v` (spec/todo.md #20) dispatches through a non-consuming
+//  `iter` route, so it must not move `v` the way `for x in v` does.
+// ==========================================================================
+
+auto test_reuse_after_for_x_in_ref_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_reuse_after_for_x_in_ref.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `for x in &xs` not to move `xs`, so "
+                     "`xs.free()` afterward checks cleanly:\n") +
+             analyzed.diagnostics);
+}
+
 } // namespace
 
 auto main() -> int {
@@ -281,6 +295,7 @@ auto main() -> int {
     test_repeated_iter_values_chains_are_accepted();
     test_reuse_after_move_capture_is_rejected();
     test_reuse_after_plain_value_capture_is_accepted();
+    test_reuse_after_for_x_in_ref_is_accepted();
   } catch (const std::exception &ex) {
     std::cerr << "move_check_test failed: unhandled exception: " << ex.what()
               << '\n';

@@ -1,0 +1,16 @@
+module borrow_check.for_over_ref_borrow
+
+use std.list.vector
+
+# `for x in &xs` (spec/todo.md #20) borrows `xs` for exactly the loop's
+# duration rather than moving it the way `for x in xs` would — unlike a
+# stored `&`/`&mut`, this one is allowed to "escape" into the loop, and `xs`
+# is fully usable again once the loop ends.
+
+def demo() -> int32:
+    var xs: vector[int32] = [1, 2, 3]
+    var sum = 0
+    for x in &xs:
+        sum = sum + x
+    xs.free()
+    return sum

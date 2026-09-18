@@ -474,6 +474,32 @@ auto test_owned_return_keeps_args_free_is_accepted() -> void {
          "its reference arguments borrowed past the call");
 }
 
+// ==========================================================================
+//  `for x in &v` (spec/todo.md #20): a bare `&`/`&mut` iterable is allowed to
+//  "escape" into the loop it was made for, and is tracked as a view live for
+//  the loop's whole body.
+// ==========================================================================
+
+auto test_for_over_ref_borrow_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_for_over_ref_borrow.kira");
+  expect(analyzed.error_count == 0,
+         std::string("expected `for x in &xs` to check cleanly without "
+                     "hitting the escape rule:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_mutation_during_ref_for_loop_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_mutation_during_ref_for_loop.kira");
+  expect(analyzed.error_count > 0,
+         "expected freeing `xs` while `for x in &xs` is still iterating it "
+         "to be rejected");
+  expect_diagnostic(analyzed, "cannot borrow `xs` while the view `xs` of `xs`",
+                    "expected the loop's borrow to be tracked as a live view "
+                    "of `xs` for the whole body");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -506,6 +532,8 @@ auto main() -> int {
     test_by_value_capture_is_not_a_borrow();
     test_shared_capture_closures_are_accepted();
     test_owned_return_keeps_args_free_is_accepted();
+    test_for_over_ref_borrow_is_accepted();
+    test_mutation_during_ref_for_loop_is_rejected();
   } catch (const std::exception &ex) {
     std::cerr << "borrow_check_test failed: unhandled exception: " << ex.what()
               << '\n';

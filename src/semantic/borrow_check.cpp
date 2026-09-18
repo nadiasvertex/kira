@@ -1120,7 +1120,35 @@ private:
 
     case ast::node_kind::for_stmt: {
       const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
+      // A bare `&`/`&mut` as the *whole* iterable (`for x in &v`) is the
+      // checker's non-consuming `iter`/`iter_mut` route (spec/todo.md #20):
+      // its lifetime is exactly the loop's duration, so — unlike a borrow
+      // stored anywhere else — it is allowed to "escape" into the loop, and
+      // the borrowed root is kept live as a view for the whole body so a
+      // mutation of it mid-loop still conflicts.
       if (stmt.iterable != nullptr) {
+        if (const auto *borrow = as_ref_borrow(*stmt.iterable)) {
+          walk_expr(*stmt.iterable, /*borrow_ok=*/true, seed);
+          auto extended = seed;
+          if (borrow->operand != nullptr) {
+            auto root = root_binding_name(*borrow->operand);
+            if (!root.empty()) {
+              auto held =
+                  call_borrow{.root = root,
+                             .is_mut = borrow->op == ast::unary_op::addr_of_mut,
+                             .is_view = true,
+                             .via = root,
+                             .span = borrow->span};
+              check_new_borrows(seed, {held});
+              extended.push_back(std::move(held));
+            }
+          }
+          if (stmt.guard != nullptr) {
+            walk_expr(*stmt.guard, /*borrow_ok=*/false, extended);
+          }
+          walk_body(stmt.body, extended);
+          return;
+        }
         walk_expr(*stmt.iterable, /*borrow_ok=*/false, seed);
       }
       if (stmt.guard != nullptr) {

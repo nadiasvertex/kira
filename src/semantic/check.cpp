@@ -13742,6 +13742,78 @@ private:
   /// here or lowering finds no such function. Passing `nullptr` answers the
   /// element type without compiling anything, which is what `element_type_of`
   /// wants — it is asked about types in places that are not loops at all.
+  /// Resolves the *borrowing* iteration route for `for x in &e` / `for x in
+  /// &mut e`: a UFCS free function named `iter`/`iter_mut` (the
+  /// `xs: &list[T]` / `xs: &mut list[T]` shape `std.iter` already declares
+  /// for the builtin `list`) whose first parameter accepts `operand`'s type
+  /// by the matching reference kind. Tried only when the loop's whole
+  /// iterable is a bare `&`/`&mut` borrow, and tried *before*
+  /// `try_resolve_into_iterator` — that adapter's `into_iter(self)` always
+  /// consumes, which is exactly what a written `&`/`&mut` says not to do
+  /// (spec/todo.md #20).
+  ///
+  /// `nullopt` when no visible `iter`/`iter_mut` accepts `operand`, or what
+  /// it returns is not itself iterable; the caller then falls through to
+  /// `try_resolve_into_iterator`/`try_resolve_iterator` over the whole
+  /// (still-referenced) iterable, exactly as before this route existed.
+  auto try_resolve_iter_borrow(type_id operand, bool is_mut,
+                               const ast::node *site)
+      -> std::optional<iterator_loop_dispatch> {
+    const auto name = std::string(is_mut ? "iter_mut" : "iter");
+    for (const auto &candidate : collect_ufcs_candidates(name)) {
+      const auto params = signature_params(*candidate.decl, candidate.owner,
+                                           /*skip_self=*/false);
+      if (params.empty()) {
+        continue;
+      }
+      const auto &param_entry = types_.entry(params.front().type);
+      if (param_entry.kind != type_kind::ref_kind ||
+          param_entry.is_mut != is_mut) {
+        continue;
+      }
+      const auto bare_param = strip_refs(params.front().type);
+      if (!types_.compatible(bare_param, operand)) {
+        continue;
+      }
+
+      auto bindings = std::unordered_map<std::string, type_id>{};
+      unify_rigid(bare_param, operand, bindings);
+      const auto ret_type = substitute_solved(
+          signature_return_type(*candidate.decl, candidate.owner), bindings);
+      if (types_.is_unknown(ret_type) || ret_type == k_error_type) {
+        continue;
+      }
+
+      auto inner = try_resolve_iterator(ret_type, site);
+      if (!inner.has_value()) {
+        continue;
+      }
+
+      inner->adapter_decl = candidate.decl;
+      inner->adapter_owner_module = candidate.owner->module_name;
+      inner->adapter_impl_target_type = "";
+      inner->adapter_result_type = ret_type;
+
+      // A generic `iter[T]`/`iter_mut[T]` needs its own compiled instance for
+      // the reason `try_resolve_into_iterator` documents: nothing in the
+      // source names this call.
+      if (site != nullptr && is_generic_template(*candidate.decl) &&
+          !in_const_generic_template_ && !in_type_generic_template_) {
+        auto solution = generic_solution{};
+        solution.suffix = std::format("${}", mangle_type_for_instance(operand));
+        const auto instance_name =
+            std::format("{}{}", candidate.decl->name, solution.suffix);
+        if (const auto *instance = find_or_check_generic_instance(
+                *site, *candidate.decl, candidate.owner, candidate.file_id,
+                solution, instance_name, &bindings)) {
+          inner->adapter_decl = instance;
+        }
+      }
+      return inner;
+    }
+    return std::nullopt;
+  }
+
   /// Resolves a *collection*'s `std.iter.into_iterator[T]` conformance for a
   /// `for` loop: finds `into_iter(self) -> I`, resolves `I`, and returns the
   /// dispatch for iterating that `I` with the adapter call recorded on it.
@@ -15774,15 +15846,37 @@ private:
       if (stmt.iterable != nullptr) {
         const auto iterable = infer_expr(*stmt.iterable, k_unknown_type);
         element = element_type_of(iterable, stmt.iterable->span);
+
+        // A bare `&`/`&mut` as the *whole* iterable (`for x in &v`) asks for
+        // the non-consuming `iter`/`iter_mut` route, tried before anything
+        // else so it never falls back to `into_iterator`'s always-consuming
+        // `into_iter` for a collection the caller explicitly did not want
+        // moved (spec/todo.md #20).
+        const auto *borrow =
+            dynamic_cast<const ast::unary_expr *>(stmt.iterable.get());
+        const auto is_top_level_borrow =
+            borrow != nullptr && borrow->operand != nullptr &&
+            (borrow->op == ast::unary_op::addr_of ||
+             borrow->op == ast::unary_op::addr_of_mut);
+        auto borrowed =
+            is_top_level_borrow
+                ? try_resolve_iter_borrow(
+                      strip_refs(iterable),
+                      borrow->op == ast::unary_op::addr_of_mut, &stmt)
+                : std::nullopt;
+
         // Record the `next`-method dispatch so lowering can desugar a
         // user-iterator loop into `while let @some(x) = it.next(): ...`.
         //
-        // `into_iterator` first: a type that both *is* an iterator and can
+        // `into_iterator` next: a type that both *is* an iterator and can
         // *hand back* one should hand it back, since being consumed by a
         // loop is the more surprising of the two readings. A collection
         // reaches a loop only through this path — it has no `next` of its
         // own (`spec/list-migration-design.md` phase 2).
-        if (auto into = try_resolve_into_iterator(iterable, &stmt)) {
+        if (borrowed) {
+          element = borrowed->element_type;
+          for_iterator_dispatches_[&stmt] = std::move(*borrowed);
+        } else if (auto into = try_resolve_into_iterator(iterable, &stmt)) {
           element = into->element_type;
           for_iterator_dispatches_[&stmt] = std::move(*into);
         } else if (auto iter = try_resolve_iterator(iterable, &stmt)) {

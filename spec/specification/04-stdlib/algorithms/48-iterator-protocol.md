@@ -38,6 +38,8 @@ pub trait into_iterator[T]:
 
 - For types where iterating means handing back something *else*. `for` does not require this trait — it resolves iterators structurally, so a type with a suitable `next` is already usable in a `for` loop without implementing `into_iterator`.
 
+`into_iter(self)` takes `self` by value, so `for x in v` over a type that only implements `into_iterator` moves `v`. Writing the loop's iterable as an explicit borrow instead — `for x in &v` / `for x in &mut v` — dispatches to a UFCS free function named `iter` / `iter_mut` (the same constructors described below for `list[T]`) rather than `into_iter`, so `v` is not moved and is fully usable again once the loop ends. This route is tried before `into_iterator`, so a type offering both never has its `&`/`&mut` iteration silently consume the collection.
+
 ```kira
 pub trait from_iter[T]:
     static def from_iter[I](it: I) -> self

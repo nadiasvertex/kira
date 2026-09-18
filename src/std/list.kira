@@ -218,6 +218,27 @@ impl[T] into_iterator[T] for vector[T]:
     def into_iter(self) -> vector_iter[T]:
         return vector_iter[T] { data: self.data, len: self.len, i: 0 }
 
+## `for x in &v` / `for x in &mut v` — the non-consuming route `for`
+## dispatches to instead of `into_iter` when the loop's iterable is written
+## as an explicit borrow (spec/todo.md #20), so iterating a `vector[T]` no
+## longer forces a move: `xs.free()` (or any other later use of `xs`) still
+## type-checks after the loop ends.
+##
+## Same `vector_iter[T]` the consuming route builds — nothing here actually
+## owns the storage either way, `into_iter` just never zeroed `self` out — so
+## borrowing and consuming construct an identical handle; only which of `xs`
+## the move checker considers used up differs.
+pub def iter[T](xs: &vector[T]) -> vector_iter[T]:
+    return vector_iter[T] { data: xs.data, len: xs.len, i: 0 }
+
+## The `&mut` sibling of `iter`, for `for x in &mut v`. Yields the same `T`
+## copies `iter`/`into_iter` do — `vector[T]` has no mutable-reference
+## iteration yet, since that needs `index_mut` wired through a view
+## (spec/todo.md #19) — so `&mut` here only widens which bindings the loop
+## accepts, not what each iteration hands back.
+pub def iter_mut[T](xs: &mut vector[T]) -> vector_iter[T]:
+    return vector_iter[T] { data: xs.data, len: xs.len, i: 0 }
+
 ## `let v: vector[int32] = [1, 2, 3]`.
 ##
 ## Allocates exactly `n` elements — a literal's length is known at compile
