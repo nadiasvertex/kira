@@ -1,0 +1,38 @@
+module main
+
+# ==========================================================================
+#  Script mode — a file whose `main` is implicit.
+#
+#  Every top-level *statement* in the entry module (the `let`, `var`, `for`
+#  and `println` below) is collected, in source order, into a synthesized
+#  `def main() -> unit`. Top-level *declarations* — `def`, `type`, `trait`,
+#  `impl` — stay where they are, so a script may still define and call its
+#  own functions, as `label` shows.
+#
+#  The two forms are exclusive: a file that has top-level statements may not
+#  also declare `main` explicitly. See `hello-world-main.kira` for the
+#  explicit form, and `hello-world.kira` for the smallest script of all.
+#
+#  Run it:      kira demo/script-mode.kira
+#  Compile it:  kira --compile -o script-mode demo/script-mode.kira
+# ==========================================================================
+
+def label(n: int32) -> str:
+  if n % 15 == 0:
+    return "fizzbuzz"
+  if n % 3 == 0:
+    return "fizz"
+  if n % 5 == 0:
+    return "buzz"
+  return "number"
+
+let limit = 15
+var hits = 0
+
+for i in 1..limit + 1:
+  let name = label(i)
+  if name != "number":
+    hits = hits + 1
+  println("{i :2}: {name}")
+
+println("hits: {hits}")

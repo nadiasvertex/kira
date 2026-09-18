@@ -3792,6 +3792,85 @@ auto test_run_derives_sum_type_via_deriving_clause() -> void {
                   report->run->exit_code));
 }
 
+/// Script mode, end to end: a `module main` file with no `def main` at all,
+/// whose top-level statements `parser::synthesize_script_main` collects into
+/// an implicit `def main() -> unit`. The parser tests cover the synthesis at
+/// the AST level; this covers the rest of the pipeline — that the synthesized
+/// function survives semantic analysis, lowers, links, and actually runs —
+/// and it asserts the program's real stdout rather than a clean compile,
+/// because the failure mode worth catching is a `main` that is accepted and
+/// then never executes its statements (or executes them out of source
+/// order). The shape mirrors `demo/script-mode.kira`: statements interleaved
+/// with a `def` declaration, which must stay a declaration rather than being
+/// swept into `main`'s body.
+auto test_build_runs_script_mode_implicit_main() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_script_mode.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_script_mode_bin";
+
+  write_file(source_path, "module main\n"
+                          "println(\"first\")\n"
+                          "def label(n: int32) -> str:\n"
+                          "    if n % 2 == 0:\n"
+                          "        return \"even\"\n"
+                          "    return \"odd\"\n"
+                          "var total = 0\n"
+                          "for i in 1..4:\n"
+                          "    total = total + i\n"
+                          "    println(\"{i}: {label(i)}\")\n"
+                          "println(\"total: {total}\")\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected a script-mode file with an implicit `main` to compile "
+         "cleanly: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected the script-mode program to link successfully: "
+                     "{}",
+                     report->build->message));
+  expect(fs::exists(output_path), "expected a linked executable to be written");
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  // The leading "first" pins source order: the statement before the `def`
+  // must still run before the loop that follows it.
+  const auto expected_output = "first\n"
+                               "1: odd\n"
+                               "2: even\n"
+                               "3: odd\n"
+                               "total: 6\n";
+  expect(output == expected_output,
+         std::format("unexpected stdout from the implicit `main`: `{}`",
+                     output));
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(close_status) == 0,
+         std::format("expected the implicit `main() -> unit` to exit 0, got {}",
+                     WEXITSTATUS(close_status)));
+#endif
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -3870,6 +3949,7 @@ auto main() -> int {
     test_deriving_reflects_field_concrete_type();
     test_deriving_ord_without_eq_points_at_the_deriving_clause();
     test_run_derives_sum_type_via_deriving_clause();
+    test_build_runs_script_mode_implicit_main();
   } catch (const std::exception &ex) {
     std::cerr << "cli_test failed with exception: " << ex.what() << '\n';
     return 1;
