@@ -1,0 +1,81 @@
+module std.traits
+
+# The operators that let a user type behave like a built-in collection:
+# indexing, and construction from a sequence literal.
+#
+# `a[i]` is the only core operator that used to be a compiler builtin over a
+# handful of known container shapes rather than a trait anyone can implement
+# (`spec/list-migration-design.md` phase 1). These traits are what make it
+# ordinary: a user collection that implements them is indexable with exactly
+# the syntax `list`/`slice`/`str`/`array` have always had.
+#
+# Reading, borrowing and writing are three traits rather than one because
+# they are three different capabilities. A read-only view implements `index`
+# alone; a type that permits `v[i] = x` also implements `index_set`. Folding
+# them together would mean every indexable type has to answer for writing,
+# and would make the diagnostic for a missing write capability say "not
+# indexable", which is the wrong thing to tell someone whose `v[i]` reads
+# work fine.
+#
+# The index type is a parameter, so one collection can be indexed several
+# ways: `index[usize]` for elements and `index[range]` for sub-ranges are
+# separate impls with different `output` types, not a special case in the
+# compiler.
+
+#: Reading `self[i]`.
+pub trait index[I]:
+    #: The type `self[i]` evaluates to.
+    type output
+    #: Returns the value at `i`.
+    #: Args:
+    #:   self: the collection.
+    #:   i: the index.
+    #: Returns:
+    #:   the value at that index.
+    def at(self, i: I) -> self.output
+
+#: Borrowing `&mut self[i]`.
+#:
+#: Separate from `index` because handing out a mutable interior reference is
+#: a stronger promise than answering a read: the collection must not move its
+#: storage while that reference is live.
+pub trait index_mut[I] requires index[I]:
+    #: Returns a mutable view of the value at `i`.
+    #: Args:
+    #:   self: the collection.
+    #:   i: the index.
+    #: Returns:
+    #:   a mutable view of the value at that index.
+    def at_mut(mut self, i: I) -> mut cell[self.output]
+
+#: Writing `self[i] = value`.
+pub trait index_set[I]:
+    #: The type `self[i] = value` accepts.
+    type output
+    #: Stores `value` at `i`.
+    #: Args:
+    #:   self: the collection.
+    #:   i: the index.
+    #:   value: the value to store.
+    #: Returns:
+    #:   unit (nothing).
+    def set_at(mut self, i: I, value: self.output) -> unit
+
+#: Construction from a sequence literal.
+#:
+#: A type implementing this can be built by writing `[a, b, c]` where that
+#: type is expected — the literal's elements are collected into an
+#: `array[T, n]`, and this is handed that array. `n` is a compile-time
+#: constant, so an impl may size its storage exactly.
+#:
+#: This is the third privilege `list[T]` used to hold alone
+#: (`spec/list-migration-design.md` phase 3): literal syntax was wired to one
+#: compiler-known type rather than to anything that could say what a literal
+#: of it means.
+pub trait from_array[T]:
+    #: Builds self from the literal's elements.
+    #: Args:
+    #:   items: the literal's elements, with its length in the type.
+    #: Returns:
+    #:   the constructed collection.
+    static def from_array[n: usize](items: array[T, n]) -> self

@@ -16,7 +16,7 @@ Covers `list[T]`'s representation, growth strategy, and the operations available
 
 - **Growth.** `push` reserves a slot via `list_reserve_slot`, which grows `data` when `len == cap`: starting capacity 4, doubling thereafter. Growing allocates a fresh, larger block from the shared bump arena and copies the existing `len * elem_size` bytes across; there is no in-place realloc.
 - **Element width.** The reserved slot's address is computed from `layout_of(T).size_bytes` (1/2/4/8 bytes), so `list[bool]` and `list[int16]` do not pay 8 bytes per element the way the header's own slots do.
-- The denaturalization to `pub type list[T] = { data: *mut T, len: usize, cap: usize }` over the `machine` substrate (`spec/collections-algorithms-design.md` §6.2) is **half done**: the destination type exists and works — see `vector[T]` below — but `list[T]` itself has not moved to it. What still stands in the way is the *sugar*, not the data structure: array-literal lowering through a `list_from_array` constructor, `for` routed through `into_iterator`, and an `index` trait with an operator hook for `v[i]` (indexing is still a builtin operator, not a user-overridable trait method). The phased plan for those three language changes, and the scope-exit-`drop` prerequisite that gates the final flip, is [list-migration-design.md](../../../list-migration-design.md).
+- The denaturalization to `pub type list[T] = { data: *mut T, len: usize, cap: usize }` over the `machine` substrate (`spec/collections-algorithms-design.md` §6.2) is **half done**: the destination type exists and works — see `vector[T]` below — but `list[T]` itself has not moved to it. What still stands in the way is the *sugar*, not the data structure: array-literal lowering through a `list_from_array` constructor, `for` routed through `into_iterator`, and an `index` trait with an operator hook for `v[i]` (indexing is still a builtin operator, not a user-overridable trait method). **Those three language changes have since landed** — indexing is the `std.traits.index`/`index_set` traits, `for` routes through `std.iter.into_iterator`, and literals construct through `std.traits.from_array` — and `vector[T]` implements all four, so it is now usable as `let v: vector[int32] = [1, 2, 3]`, `v[0]`, `v[1] = x`, `for x in v`. What still blocks `list[T]` itself moving is scope-exit `drop` (`../../../todo.md` item 6) and a *borrowing* iteration route, since `into_iter(self)` consumes the collection (item 20). See [list-migration-design.md](../../../list-migration-design.md).
 
 ## Operations
 
@@ -115,3 +115,29 @@ v.free()
 - [The Iterator Protocol](../algorithms/48-iterator-protocol.md) — `iter`, `iter_mut`, `into_iter` over `list[T]`.
 - [Lazy Adapters](../algorithms/49-lazy-adapters.md) and [Aggregation](../algorithms/50-aggregation.md) — where `filter`, `contains`-equivalents (`any`/`find`), and friends now live.
 - [Sorting and Searching](../algorithms/51-sorting-and-searching.md) — planned home of `sort` and the other slice algorithms.
+
+
+## `vector[T]` as an ordinary collection
+
+`vector[T]` implements the four traits that used to be `list[T]`'s exclusive privileges, so it is usable with the same syntax:
+
+```kira
+use std.list.vector
+
+var v: vector[int32] = [10, 20, 30]   # from_array[T]
+let first = v[0]                      # index[usize]
+v[1] = 99                             # index_set[usize]
+for x in v:                           # into_iterator[T]
+    println("{x}")
+```
+
+| Trait | Gives | Notes |
+|---|---|---|
+| `std.traits.index[usize]` | `v[i]` | bounds-checked; panics out of range |
+| `std.traits.index_set[usize]` | `v[i] = x` | same check |
+| `std.iter.into_iterator[T]` | `for x in v` | **consumes `v`** — see below |
+| `std.traits.from_array[T]` | `let v: vector[int32] = [...]` | allocates exactly the literal's length |
+
+**Iterating consumes the vector.** `into_iter(self)` takes the collection by value, so `for x in v` moves it and the move checker refuses every later use, `v.free()` included. That is correct for `into_iterator` and is not what a collection wants; a borrowing route (`for x in &v`) is [`todo.md`](../../../todo.md) item 20, and a prerequisite for `list[T]` itself moving onto this storage.
+
+`&mut v[i]` is not available: `std.traits.index_mut` is declared but not wired (item 19).

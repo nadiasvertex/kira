@@ -2702,10 +2702,10 @@ private:
       emit_op(opcode::op_load_const);
       emit_register(*len_reg_exp);
       writer_.emit_u16(len_const);
-      return container_view{
-          .len_reg = *len_reg_exp,
-          .data_reg = object_reg,
-          .elem_size = element_stride(object_entry.args.front())};
+      return container_view{.len_reg = *len_reg_exp,
+                            .data_reg = object_reg,
+                            .elem_size =
+                                element_stride(object_entry.args.front())};
     }
     if (!indexing_list && !indexing_view &&
         (object_entry.kind != semantic::type_kind::array_kind ||

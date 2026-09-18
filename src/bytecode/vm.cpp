@@ -866,8 +866,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 
 [[nodiscard]] auto alloc_struct(std::span<const slot_value> fields)
     -> slot_value {
-  auto *raw = kira_heap_alloc(fields.size() *
-                                                     sizeof(slot_value));
+  auto *raw = kira_heap_alloc(fields.size() * sizeof(slot_value));
   auto *slots = static_cast<slot_value *>(raw);
   for (size_t i = 0; i < fields.size(); ++i) {
     slots[i] = fields[i];
@@ -1247,8 +1246,9 @@ auto intrinsic_rt_realloc(std::span<const slot_value> args) -> slot_value {
 }
 
 auto intrinsic_rt_free(std::span<const slot_value> args) -> slot_value {
-  kira_heap_free(reinterpret_cast<void *>(args[0].u), unbox(args[1]).u); // NOLINT
-  return slot_value{}; // `unit`
+  kira_heap_free(reinterpret_cast<void *>(args[0].u),
+                 unbox(args[1]).u); // NOLINT
+  return slot_value{};              // `unit`
 }
 
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
@@ -1711,8 +1711,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto dst = ops.reg();
         const auto idx = ops.imm16();
         const auto &text = f.function->string_constants[idx];
-        auto *header =
-            kira_heap_alloc(2 * sizeof(slot_value));
+        auto *header = kira_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(text.size())};
         slots[1] = ptr_to_slot(const_cast<char *>(text.data()));
@@ -1778,8 +1777,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto dst = ops.reg();
         const auto fn_idx = ops.imm16();
         f.pc = ops.pos();
-        auto *header =
-            kira_heap_alloc(2 * sizeof(slot_value));
+        auto *header = kira_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
         slots[1] =
@@ -1794,8 +1792,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto fn_idx = ops.imm16();
         const auto env_reg = ops.reg();
         f.pc = ops.pos();
-        auto *header =
-            kira_heap_alloc(2 * sizeof(slot_value));
+        auto *header = kira_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
         slots[1] = f.registers[env_reg];
@@ -1837,8 +1834,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto step_fn_idx = ops.imm16();
         const auto state_ptr_reg = ops.reg();
         f.pc = ops.pos();
-        auto *header =
-            kira_heap_alloc(4 * sizeof(slot_value));
+        auto *header = kira_heap_alloc(4 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(step_fn_idx)};
         slots[1] = f.registers[state_ptr_reg];
@@ -1857,8 +1853,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         // matching `option`'s hardcoded variant order (`some`=0, `none`=1;
         // see `runtime::layout.cpp`'s `make_two_variants("some", 1, "none",
         // 0)` and `sum_variant_tag`'s declaration-index tagging).
-        auto *header =
-            kira_heap_alloc(2 * sizeof(slot_value));
+        auto *header = kira_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{int64_t{0}};
         slots[1] = f.registers[value_reg];
@@ -1885,8 +1880,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         if (gen_slots[3].u != 0) {
           // `option::none` — a 2-slot `{ tag=1; payload }` block; the
           // payload slot is never read back for `none`, left zeroed.
-          auto *header =
-              kira_heap_alloc(2 * sizeof(slot_value));
+          auto *header = kira_heap_alloc(2 * sizeof(slot_value));
           auto *slots = static_cast<slot_value *>(header);
           slots[0] = slot_value{int64_t{1}};
           slots[1] = slot_value{};

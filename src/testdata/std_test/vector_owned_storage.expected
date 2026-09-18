@@ -16,3 +16,9 @@ pop empty=none
 get(0) empty=none
 re-push get(0)=7
 freed len=0 cap=0
+literal len=3 cap=3
+indexed=10,20,30
+written=10,99,30
+iterated sum=139 order=10.99.30.
+wide=1000,2000
+wide sum=3000

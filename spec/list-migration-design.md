@@ -1,6 +1,18 @@
 # Moving `list[T]` out of the compiler
 
-**Status:** Plan. Nothing here is implemented.
+**Status:** Phases 1-3 implemented. Phase 4 blocked (see below).
+
+| Phase | What it makes possible | Status |
+|---|---|---|
+| 1 | `index`/`index_set` traits — `v[i]`, `v[i] = x` on any type | **Done.** `index_mut` declared but not wired; see below |
+| 2 | `for` through `into_iterator` | **Done**, consuming only — a borrowing route is still missing (todo 20) |
+| 3 | `from_array` construction, and the settled `list` default for literals | **Done** |
+| 4 | Flip `list[T]` onto `vector[T]`'s storage | **Blocked** on todo 6 (drop glue) and todo 20 |
+| 5 | A user collection with all four, as proof | **Done** as `vector[T]` (`src/std/list.kira`) |
+
+`vector[T]` now implements all four and is usable as
+`let v: vector[int32] = [1, 2, 3]`, `v[0]`, `v[1] = x`, `for x in v` — the
+whole surface `list[T]` had to be a builtin to provide.
 
 `vector[T]` (`src/std/list.kira:83`) is a growable, heap-owning sequence
 written entirely in Kira over `std.mem` and the `machine` layer, with no
@@ -52,7 +64,7 @@ reverse-order drop of locals at scope exit, implicit field-wise drop for
 aggregates, and not dropping a moved-from binding. Unwinding-through-drop and
 the prelude `drop(x)` function are not prerequisites.
 
-## Phase 1 — an `index` trait with an operator hook
+## Phase 1 — an `index` trait with an operator hook *(done)*
 
 Indexing is the only core operator with no user-facing trait. `+`, `-`, `*`,
 `/`, `%`, `==`, `!=` all dispatch to impls through `operator_dispatches`
@@ -68,15 +80,23 @@ diagnostics:
 ```kira
 pub trait index[I]:
     type output
-    def at(self, i: I) -> Self.output
+    def at(self, i: I) -> self.output
 
-pub trait index_mut[I]: requires index[I]
-    def at_mut(mut self, i: I) -> mut Self.output
+pub trait index_mut[I] requires index[I]:
+    def at_mut(mut self, i: I) -> mut cell[self.output]
 
 pub trait index_set[I]:
     type output
-    def set_at(mut self, i: I, value: Self.output) -> unit
+    def set_at(mut self, i: I, value: self.output) -> unit
 ```
+
+*(As shipped, in `src/std/traits.index.kira`.* `at_mut` returns
+`mut cell[self.output]` rather than a bare `mut self.output`: `mut` is only
+accepted in type position before `slice[T]` or `cell[T]`, so a bare
+`mut self.output` does not parse. `cell` is the language's existing spelling
+for a mutable view of one element — it is what the builtin
+`list.mutable_cell()` already hands back — so this is the right shape rather
+than a detour around the parser.)*
 
 - `xs[i]` in value position → `index.at`.
 - `xs[i] = v` → `index_set.set_at`.
@@ -118,13 +138,36 @@ help: Indexing is a trait, not a builtin. Add an impl that says what
                   ...
 ```
 
-**Tests.** A `codegen_stress` file with `# expect:` on a user type whose
-`at` deliberately returns `i * 2 + 1` — a value no accidental fall-through to
-the builtin indexer could produce. Plus a `semantic_check_test` for the
-missing-impl diagnostic, and one confirming `xs[i] = v` on a type with `index`
-but no `index_set` is refused *naming `index_set`*, not "cannot mutate".
+**Tests.** `src/testdata/std_test/index_trait.kira` — a `ramp` with no
+storage at all, whose elements are computed, so a `v[i]` that silently fell
+through to some builtin container's direct addressing could not produce the
+printed values. Plus `reject_index_without_impl.kira` and
+`reject_index_write_without_index_set.kira` in `semantic_check_test` for the
+two diagnostics.
 
-## Phase 2 — `for` through `into_iterator`
+It lives in `std_test`, not `codegen_stress`, because `codegen_stress` is
+compiled *without the stdlib injected* and these traits are stdlib
+declarations. `std_test` compares exact expected output, which is the same
+strength of check as `# expect:` and not a differential one.
+
+**What actually shipped, beyond the plan.**
+
+- `index_mut` is **declared but not wired**. `&mut v[i]` on a user type still
+  has no route; only reads and whole-element writes do. The borrow form needs
+  the returned `cell` threaded through the existing view-exclusivity rules,
+  which is a larger change than the other two and was not needed by
+  `vector[T]`.
+- Resolving the element type needed more than `resolve_operator_return_type`.
+  An impl's `output` is filed under the target type *as written*, so a
+  generic `impl[T] index[usize] for holder[T]` files it under `holder[T]`
+  with `T` abstract and a lookup against `holder[int32]` misses. Worse, the
+  spelling a user reaches for first is a literal `-> T`, not `-> self.output`,
+  which is not an associated type at all. `resolve_index_output` resolves the
+  declaration's own return type with the impl block's parameters in scope and
+  then substitutes the receiver's arguments — the two-step
+  `check_impl_generic_method_call` already used for parameter types.
+
+## Phase 2 — `for` through `into_iterator` *(done, with one gap)*
 
 `into_iterator[T]` already exists (`src/std/iter.kira:46`) and is unused by
 the compiler. `for` currently reaches a user type only by duck-typing on a
@@ -157,11 +200,23 @@ in lowering — no new HIR node, matching how the duck-typed path was done.
 `impl[T] into_iterator[T] for vector[T]`. This is where the first real proof
 lands: `for x in v` over a Kira-written collection, both tiers, same output.
 
-**Test.** A `# expect:` corpus file summing a `vector` through `for`, and a
-negative test that a struct with neither impl gets a diagnostic naming
-`into_iterator` rather than a lowering failure.
+**Test.** `src/testdata/std_test/into_iterator_loop.kira` — exact output, at
+two element widths, and the *order* of the elements is printed too, so an
+adapter called once per iteration rather than once per loop (which would
+restart the iterator and yield the first element forever) fails rather than
+passing.
 
-## Phase 3 — literal construction through a named constructor
+**The gap this exposed, and it matters for phase 4.** `into_iter(self)` takes
+the collection **by value**, so `for x in v` *consumes* `v`: the move checker
+correctly refuses any later use, including `v.free()`. That is right for this
+trait and wrong for a collection — `for x in xs` over a `list` must not
+consume `xs`, and today it does not. So phase 2 is only half of what phase 4
+needs; the other half is a **borrowing** route (`for x in &v`, through an
+`iter(&self)`-shaped conversion), recorded as todo item 20. Flipping `list[T]`
+before that exists would break every `for` loop over a list that uses the list
+again afterwards, which is most of them.
+
+## Phase 3 — literal construction through a named constructor *(done)*
 
 `[1, 2, 3]` becomes a `list[T]` because `infer_array` says so
 (`src/semantic/check.cpp:14154`). The array *value* is built, then the
@@ -171,7 +226,7 @@ negative test that a struct with neither impl gets a diagnostic naming
 
 ```kira
 pub trait from_array[T]:
-    def from_array[n: usize](items: array[T, n]) -> Self
+    static def from_array[n: usize](items: array[T, n]) -> self
 ```
 
 Const-generic monomorphization already compiles a `def f[n: usize]` once per
@@ -188,20 +243,75 @@ constant, so the `n` half of this costs nothing new.
 generalizes. Lowering wraps the existing array-literal HIR in a call. Again,
 no backend change.
 
-**Open question, to settle before implementing.** An array literal in a
-position with *no* expectation (`let xs = [1, 2, 3]`) currently produces
-`array[int32, 3]`. After the migration, `let xs = [1, 2, 3]` most likely
-wants a `list`. Two candidate answers: (a) a designated default collection
-named in the prelude, or (b) keep it an `array` and require
-`let xs: list[int32] = [1, 2, 3]`. (b) is more honest and worse to write; (a)
-is a hidden default of exactly the kind the rest of the language avoids.
-**Recommendation: (b)**, plus a diagnostic on the first `.push` to an array
-that says which annotation to add. Decide this before writing code, not
-during.
+**Settled: an unannotated literal is a `list`.** `let xs = [1, 2, 3]`
+produces `list[int32]`, not `array[int32, 3]`. This is a change to inference
+that lands with phase 3, independently of whether `list` is still a builtin
+at the time.
+
+This is what [06-collections-list-array.md](specification/01-core/06-collections-list-array.md)
+already says the language means — *"For general-purpose code, `list` is the
+default choice; `array` is for when the size is fixed and known at compile
+time."* Inference disagreeing with that is the bug; a fixed size is the
+special case and should be the thing you have to ask for.
+
+**One rule, not two.** No expectation → `list`, for every literal form,
+including the fill form: `let zeros = [0.0; 4]` is a `list[float64]` of four
+zeros. An `array` is spelled by saying so:
+
+```kira
+let xs = [1, 2, 3]                        # list[int32]
+let zeros = [0.0; 4]                      # list[float64]
+let rgb: array[uint8, 3] = [255, 0, 0]    # array, because it was asked for
+```
+
+Resisting a second rule for the fill form is deliberate. "A literal with a
+constant repeat count is an array, otherwise a list" is a distinction nothing
+else in the language draws, and it would make `[0; 4]` and `[0, 0, 0, 0]`
+different types — which is exactly the kind of thing a reader has to keep in
+their head rather than derive.
+
+**Blast radius, as measured after the fact: nearly none.** The element form
+(`[1, 2, 3]`) *already* inferred as a `list` when nothing was expected — only
+the fill form `[0; n]` produced an `array`, so the "one rule" change was the
+one-line removal of that inconsistency. No test in the tree changed behavior.
+The ~110 unannotated literals counted beforehand were almost all already
+lists.
+
+**Two real compiler bugs this phase surfaced**, both pre-existing in shape
+and both now fixed (todo items 17 and 18):
+
+1. **A `static def` with generic parameters was never monomorphized.**
+   `check_call_against_decl` gated instantiation on `is_free_function`, and a
+   `static def` in an `extend`/`impl` block is not in `owner->functions`. A
+   generic one reached lowering as its uncompiled template and both backends
+   reported "call to `trio::from_array` could not be resolved to a function
+   in this compiled module" — a codegen failure for correct code. This is
+   entirely independent of `from_array`; any `static def f[T]` on a type hit
+   it.
+2. **A silent wrong-value bug on the literal's element width.** The element
+   type was read from the impl method's first parameter *without* the impl
+   block's type parameters in scope, so it came back abstract, and an
+   abstract element is laid out at 8 bytes. The caller then wrote a
+   `[10, 20, 30]` of `int32` eight bytes apart while the callee read it four
+   bytes apart, and the literal came back as `10, 0, 20`. It was found by
+   running the thing, not by a type error. The `int64` case was correct
+   throughout — which is exactly why the test covers both widths.
+
+**Why this ordering is safe.** Phase 3 changes what an unannotated literal
+*infers to*; it does not change what a `list` is made of. At phase 3 `list`
+is still the builtin, so `let xs = [1, 2, 3]` produces the same arena-backed
+3-slot value it always did — no new leak, nothing waiting on drop glue. The
+storage change is phase 4's alone.
+
+**Still to do here.** The type-mismatch a fill literal now produces where an
+`array` was expected is the ordinary one (``expected `array[int32, 4]`, found
+`list[int32]` ``). It should say *why* the literal is a list and name the
+annotation that restores the old meaning; it does not yet.
 
 ## Phase 4 — flip `list[T]`
 
-Only after phases 1–3 and todo item 6.
+**Blocked.** Needs todo item 6 (scope-exit `drop`) *and* todo item 20
+(borrowing iteration). Phases 1-3 are done; neither remaining blocker is.
 
 1. Rename `vector[T]` → `list[T]` in `src/std/list.kira`, with
    `impl index`/`index_set`/`into_iterator`/`from_array`, and `drop`.
@@ -229,26 +339,31 @@ benefits every user collection and not just `list`. The migration's value is
 that `list` stops being special; buying its performance back with a *second*
 special case would spend the whole point.
 
-## Phase 5 — what the migration buys, made visible
+## Phase 5 — what the migration buys, made visible *(done, bar drop)*
 
-The deliverable that proves it worked is a user-written collection in the
-test corpus — a `ring[T]` or `grid[T]` — constructed from a literal,
-iterated with `for`, indexed with `[]`, and dropped at scope exit, with a
-`# expect:` value. Every one of those is impossible today. If that file
-compiles and runs identically on both tiers, `list` genuinely is not special
-any more.
+`vector[T]` is the proof: `src/std/list.kira` now carries
+`impl[T] index[usize]`, `index_set[usize]`, `into_iterator[T]` and
+`from_array[T]` for it, and `src/testdata/std_test/vector_owned_storage.kira`
+builds one from a literal, indexes it, writes through the index, and iterates
+it — identically on both tiers. Every one of those was impossible before this
+work.
+
+The one part of the original phase-5 goal still missing is "dropped at scope
+exit", which is todo item 6, and the `for` loop there consumes the collection
+rather than borrowing it (todo item 20).
 
 ## Ordering summary
 
 ```
-Phase 1 (index trait)      ─┐
-Phase 2 (into_iterator)    ─┼─ independent, any order, no backend changes
-Phase 3 (from_array)       ─┘
+Phase 1 (index trait)      ─┐  DONE
+Phase 2 (into_iterator)    ─┼─ DONE (consuming only)
+Phase 3 (from_array)       ─┘  DONE
 
-todo item 6 (drop glue)    ─── independent, required before ↓
+todo item 20 (for x in &v) ─── NOT DONE, required before ↓
+todo item  6 (drop glue)   ─── NOT DONE, required before ↓
 
-Phase 4 (flip list)        ─── needs all four above
-Phase 5 (proof)            ─── needs phase 4
+Phase 4 (flip list)        ─── blocked on both
+Phase 5 (proof)            ─── DONE as vector[T], bar scope-exit drop
 ```
 
 Phases 1–3 each make the language strictly more capable on their own and are

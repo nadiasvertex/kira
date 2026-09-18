@@ -4,7 +4,7 @@
 
 Cooperative cancellation mechanics for tasks: the per-task cancellation token, explicit checking, `await yield` as a suspension-and-check point, and cancelling a `crew` from outside.
 
-See [Concurrency Execution Model](../intermediate/26-concurrency-execution-model.md) for the basic cancellation-scope description (a `crew`'s tasks are cancelled together when the scope exits abnormally). This chapter covers the mechanics beneath that model.
+See [Concurrency Execution Model](../02-intermediate/26-concurrency-execution-model.md) for the basic cancellation-scope description (a `crew`'s tasks are cancelled together when the scope exits abnormally). This chapter covers the mechanics beneath that model.
 
 ## Design
 
@@ -41,5 +41,5 @@ Not implemented. This depends on the concurrency runtime described in `spec/conc
 
 ## See also
 
-- [Concurrency Execution Model](../intermediate/26-concurrency-execution-model.md) — the basic `crew`/cancellation-scope model this chapter extends; avoid duplicating its description here.
+- [Concurrency Execution Model](../02-intermediate/26-concurrency-execution-model.md) — the basic `crew`/cancellation-scope model this chapter extends; avoid duplicating its description here.
 - [Advanced Concurrency: Execution Graphs](40-execution-graphs.md) — another advanced-layer feature blocked on the same runtime.

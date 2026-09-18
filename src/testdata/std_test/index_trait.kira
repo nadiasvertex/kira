@@ -1,0 +1,71 @@
+module main
+
+# `v[i]` and `v[i] = x` on a user type, through the `std.traits.index` and
+# `index_set` impls — indexing as an ordinary trait rather than a compiler
+# privilege reserved for `list`/`slice`/`str`/`array`
+# (`spec/list-migration-design.md` phase 1).
+#
+# Lives here rather than in `codegen_stress` because the traits are stdlib
+# declarations and that corpus is compiled without the stdlib injected.
+#
+# Every value printed is one no *undispatched* `v[i]` could produce: `ramp`
+# has no storage at all and computes its elements, and `offset`'s reads come
+# back through a method that the direct element addressing of a builtin
+# container would bypass entirely. A dispatch that silently didn't happen
+# cannot print these numbers.
+
+# A "collection" with no storage: every element is computed.
+type ramp = { start: int32 }
+
+impl index[usize] for ramp:
+    type output = int32
+    def at(self, i: usize) -> int32:
+        return self.start + int32(i) * 7
+
+# A generic collection. Its `at` is written `-> T`, not `-> self.output`,
+# because that is the spelling a user reaches for first and the one whose
+# type resolution has to work — resolving it needs the impl block's type
+# parameters in scope *and* the receiver's arguments substituted in.
+type offset[T] = { a: T, b: T, c: T }
+
+impl[T] index[usize] for offset[T]:
+    type output = T
+    def at(self, i: usize) -> T:
+        if i == 0:
+            return self.a
+        if i == 1:
+            return self.b
+        return self.c
+
+impl[T] index_set[usize] for offset[T]:
+    type output = T
+    def set_at(mut self, i: usize, value: T) -> unit:
+        if i == 0:
+            self.a = value
+        else:
+            if i == 1:
+                self.b = value
+            else:
+                self.c = value
+
+def main() -> unit:
+    let r = ramp { start: 5 }
+    println("ramp={r[0]},{r[1]},{r[2]},{r[3]}")
+
+    var o = offset[int32] { a: 1, b: 2, c: 3 }
+    o[1] = 20
+    o[2] = 300
+    println("offset={o[0]},{o[1]},{o[2]}")
+
+    # A second element width: a dispatch that assumed an 8-byte stride would
+    # be right here and wrong above.
+    var w = offset[int64] { a: 1000, b: 2000, c: 3000 }
+    w[0] = 4000
+    println("wide={w[0]},{w[1]},{w[2]}")
+
+    # The index type is a trait parameter, so the subscript need not be a
+    # `usize` at all — this is what will let `v[a..b]` be an `index[range]`
+    # impl rather than a second mechanism in the compiler.
+    let s = ramp { start: 100 }
+    let k: usize = 2
+    println("computed={s[k]}")

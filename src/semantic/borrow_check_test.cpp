@@ -77,6 +77,7 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
                                "traits.numeric.kira",
                                "traits.conversion.kira",
                                "traits.category.kira",
+                               "traits.index.kira",
                                "traits.hash.kira",
                                "limits.kira",
                                "iter.kira",

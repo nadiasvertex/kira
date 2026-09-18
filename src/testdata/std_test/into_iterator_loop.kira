@@ -1,0 +1,61 @@
+module main
+
+# `for x in collection` routed through `std.iter.into_iterator`
+# (`spec/list-migration-design.md` phase 2).
+#
+# Before this, `for` reached a user type only by duck-typing on a `next`
+# method, so a *collection* — which is not itself an iterator, and is not
+# consumed by being looped over — had no way in at all. That is the gap that
+# kept `list[T]` a builtin: iteration was a privilege, not a trait.
+#
+# The values printed are chosen so a loop that silently iterated something
+# else cannot produce them, and the order is observable, so an adapter
+# called per-iteration instead of once (which would restart the iterator and
+# hang, or yield the first element forever) fails rather than passing.
+
+type trio[T] = { a: T, b: T, c: T }
+type trio_iter[T] = { a: T, b: T, c: T, i: usize }
+
+impl[T] iterator[T] for trio_iter[T]:
+    def next(mut self) -> option[T]:
+        if self.i == 0:
+            self.i = 1
+            return @some(self.a)
+        if self.i == 1:
+            self.i = 2
+            return @some(self.b)
+        if self.i == 2:
+            self.i = 3
+            return @some(self.c)
+        return @none
+
+impl[T] into_iterator[T] for trio[T]:
+    type iter = trio_iter[T]
+    def into_iter(self) -> trio_iter[T]:
+        return trio_iter[T] { a: self.a, b: self.b, c: self.c, i: 0 }
+
+def main() -> unit:
+    let t = trio[int32] { a: 10, b: 20, c: 30 }
+    var total = 0
+    var order = ""
+    for x in t:
+        total = total + x
+        order = "{order}{x}."
+    println("total={total} order={order}")
+
+    # A second element width, and a second instantiation of the same impls —
+    # the adapter and the iterator each need their own compiled instance per
+    # element type, and a missing one shows up as a link failure, not a
+    # wrong number.
+    let w = trio[int64] { a: 100, b: 200, c: 300 }
+    var wide: int64 = 0
+    for y in w:
+        wide = wide + y
+    println("wide={wide}")
+
+    # Iterating the iterator *directly* still works: the structural `next`
+    # path is unchanged, and is what a type with no `into_iterator` uses.
+    var direct = 0
+    for z in trio_iter[int32] { a: 1, b: 2, c: 4, i: 0 }:
+        direct = direct + z
+    println("direct={direct}")

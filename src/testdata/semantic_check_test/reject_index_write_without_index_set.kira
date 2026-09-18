@@ -1,0 +1,16 @@
+module sample
+
+# Reading and writing through `[...]` are separate capabilities. A type with
+# `index` but no `index_set` supports `v[i]` and not `v[i] = x`, and must be
+# told *that* — "not indexable" would be false, and would send the reader
+# looking at reads that work fine.
+
+type readable = { a: int32 }
+
+impl index[usize] for readable:
+    type output = int32
+    def at(self, i: usize) -> int32:
+        return self.a
+
+def write_it(mut r: readable) -> unit:
+    r[0] = 5

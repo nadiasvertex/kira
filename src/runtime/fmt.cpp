@@ -14,10 +14,8 @@
 
 namespace {
 
-
 [[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
-  return static_cast<uint64_t *>(
-      kira_heap_alloc(count * sizeof(uint64_t)));
+  return static_cast<uint64_t *>(kira_heap_alloc(count * sizeof(uint64_t)));
 }
 
 [[nodiscard]] auto make_str(std::string_view text) -> uint64_t * {

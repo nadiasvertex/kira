@@ -11,7 +11,6 @@
 #include "lowering_stage.h"
 #include "parse_stage.h"
 #include "run_build_stage.h"
-#include "test_discovery.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/borrow_check.h"
 #include "src/semantic/move_check.h"
@@ -19,6 +18,7 @@
 #include "src/util/str.h"
 #include "src/version.h"
 #include "static_if_stage.h"
+#include "test_discovery.h"
 
 using kira::source_manager;
 using kira::util::append_text;
@@ -248,6 +248,7 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
                                "traits.numeric.kira",
                                "traits.conversion.kira",
                                "traits.category.kira",
+                               "traits.index.kira",
                                "traits.hash.kira",
                                "limits.kira",
                                "iter.kira",
@@ -324,8 +325,9 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   auto session_diagnostics = diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
 
-  auto parsed_inputs = parse_sources(effective_cfg, sources, session_diagnostics,
-                                     file_has_errors, report.diagnostics);
+  auto parsed_inputs =
+      parse_sources(effective_cfg, sources, session_diagnostics,
+                    file_has_errors, report.diagnostics);
 
   // Fold import-gating `static if` blocks before the module graph is built, so
   // the selected `use`s (and any other items in the taken branch) become real

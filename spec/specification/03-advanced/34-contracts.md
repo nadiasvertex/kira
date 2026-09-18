@@ -73,6 +73,6 @@ Implemented end to end: parsing (`pre`/`post`/`invariant` clauses), type checkin
 
 ## See also
 
-- [Contracts on Trait Methods](../intermediate/23-contracts-on-trait-methods.md) — behavioral-subtyping rules for contracts on trait method implementations (strengthening/weakening across `impl`).
+- [Contracts on Trait Methods](../02-intermediate/23-contracts-on-trait-methods.md) — behavioral-subtyping rules for contracts on trait method implementations (strengthening/weakening across `impl`).
 - [Dependent and Refinement Types](33-dependent-and-refinement-types.md) — the solver contracts share, and the facts/obligations model.
 - [Compile-Time Execution](31-compile-time-execution.md) — `pure`, the requirement contract predicates must satisfy.

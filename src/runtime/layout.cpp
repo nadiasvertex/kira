@@ -433,8 +433,8 @@ auto uninit_slot_count(const type_table &types,
     return std::nullopt;
   }
   const auto &count = types.entry(entry.args[1]);
-  if (count.kind != type_kind::const_value_kind ||
-      !count.value.is_constant() || count.value.constant < 0) {
+  if (count.kind != type_kind::const_value_kind || !count.value.is_constant() ||
+      count.value.constant < 0) {
     return std::nullopt;
   }
   return static_cast<uint64_t>(count.value.constant);

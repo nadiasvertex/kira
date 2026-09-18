@@ -61,8 +61,8 @@ auto kira_heap_alloc(uint64_t bytes) -> void *;
 /// preserving the first `min(old_bytes, new_bytes)` bytes and zeroing any
 /// growth. A null `ptr` behaves as `kira_heap_alloc(new_bytes)`; a
 /// `new_bytes` of 0 frees and returns `nullptr`.
-auto kira_heap_realloc(void *ptr, uint64_t old_bytes,
-                       uint64_t new_bytes) -> void *;
+auto kira_heap_realloc(void *ptr, uint64_t old_bytes, uint64_t new_bytes)
+    -> void *;
 
 /// Releases a block obtained from the two above. A null `ptr` is a no-op.
 /// In `arena` mode this does nothing at all — deliberately, see

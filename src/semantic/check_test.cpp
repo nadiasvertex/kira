@@ -118,6 +118,11 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
                                                      "traits.category.kira"),
       },
       source_fixture{
+          .path = "std/traits.index.kira",
+          .text = kira::testing::load_test_data_file(std_dir.string(),
+                                                     "traits.index.kira"),
+      },
+      source_fixture{
           .path = "std/traits.hash.kira",
           .text = kira::testing::load_test_data_file(std_dir.string(),
                                                      "traits.hash.kira"),
@@ -2123,9 +2128,9 @@ auto test_reports_raw_pointer_outside_machine() -> void {
   expect(analyzed.error_count > 0,
          "expected raw-memory operations in an ordinary function to be "
          "rejected");
-  expect_diagnostic(
-      analyzed, "`as_mut_ptr` is only allowed inside a `machine` function",
-      "expected handing out a raw pointer to be gated");
+  expect_diagnostic(analyzed,
+                    "`as_mut_ptr` is only allowed inside a `machine` function",
+                    "expected handing out a raw pointer to be gated");
   expect_diagnostic(
       analyzed,
       "indexing a raw pointer is only allowed inside a `machine` function",
@@ -2152,6 +2157,32 @@ auto test_reports_write_through_const_pointer() -> void {
       analyzed, "cannot write through `p`",
       "expected the diagnostic to name the pointer's read-only type rather "
       "than blame the binding's `let`/`var`");
+}
+
+auto test_reports_index_without_impl() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_index_without_impl.kira");
+  expect(analyzed.error_count > 0,
+         "expected indexing a type with no `index` impl to be rejected");
+  expect_diagnostic(analyzed, "cannot be indexed",
+                    "expected the diagnostic to name the indexing attempt");
+  expect_diagnostic(
+      analyzed, "Indexing is a trait, not a builtin",
+      "expected the help to explain that indexing is opt-in, and show the "
+      "impl to write");
+}
+
+auto test_reports_index_write_without_index_set() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_index_write_without_index_set.kira");
+  expect(analyzed.error_count > 0,
+         "expected `v[i] = x` without an `index_set` impl to be rejected");
+  expect_diagnostic(analyzed, "cannot assign to",
+                    "expected the diagnostic to be about assignment");
+  expect_diagnostic(
+      analyzed, "can be read at an index but not written",
+      "expected the diagnostic to distinguish a missing write capability "
+      "from a type that is not indexable at all");
 }
 
 auto test_accepts_intrinsic_decl() -> void {
@@ -3296,6 +3327,8 @@ auto main() -> int {
     test_reports_raw_pointer_outside_machine();
     test_accepts_machine_pointer_ops();
     test_reports_write_through_const_pointer();
+    test_reports_index_without_impl();
+    test_reports_index_write_without_index_set();
     test_accepts_intrinsic_decl();
     test_accepts_string_interpolation();
     test_accepts_static_let_evaluates();

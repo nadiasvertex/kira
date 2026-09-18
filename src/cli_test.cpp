@@ -924,8 +924,8 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 27,
-         "expected std.io, std.console, std.traits (across its 7 files), "
+  expect(report->modules.size() == 28,
+         "expected std.io, std.console, std.traits (across its 8 files), "
          "std.limits, std.iter, std.algo, std.fmt, std.string, "
          "std.unicode_tables, std.unicode, std.derive, std.fs.path, "
          "std.test, std.platform, std.panic, std.option, std.result, "
@@ -3228,23 +3228,22 @@ auto test_build_discovers_and_runs_tests_submodule_via_llvm_tier() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_discovery_build_bin";
 
-  write_file(
-      source_path,
-      "module app.geometry\n"
-      "use std.test.{assert_eq, assert_true, test_failure}\n"
-      "pub def area(w: float64, h: float64) -> float64:\n"
-      "    return w * h\n"
-      "module tests:\n"
-      "    def before_all() -> result[unit, test_failure]:\n"
-      "        println(\"geometry suite starting\")\n"
-      "        return @ok(unit)\n"
-      "    def test_area() -> result[unit, test_failure]:\n"
-      "        return assert_eq(super.area(2.0, 3.0), 6.0)\n"
-      "    def test_zero_area() -> result[unit, test_failure]:\n"
-      "        return assert_eq(super.area(0.0, 5.0), 0.0)\n"
-      "    def skip_negative() -> result[unit, test_failure]:\n"
-      "        return assert_true(super.area(-1.0, 5.0) >= 0.0, "
-      "\"negative width should not underflow\")\n");
+  write_file(source_path,
+             "module app.geometry\n"
+             "use std.test.{assert_eq, assert_true, test_failure}\n"
+             "pub def area(w: float64, h: float64) -> float64:\n"
+             "    return w * h\n"
+             "module tests:\n"
+             "    def before_all() -> result[unit, test_failure]:\n"
+             "        println(\"geometry suite starting\")\n"
+             "        return @ok(unit)\n"
+             "    def test_area() -> result[unit, test_failure]:\n"
+             "        return assert_eq(super.area(2.0, 3.0), 6.0)\n"
+             "    def test_zero_area() -> result[unit, test_failure]:\n"
+             "        return assert_eq(super.area(0.0, 5.0), 0.0)\n"
+             "    def skip_negative() -> result[unit, test_failure]:\n"
+             "        return assert_true(super.area(-1.0, 5.0) >= 0.0, "
+             "\"negative width should not underflow\")\n");
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
@@ -3285,8 +3284,9 @@ auto test_build_discovers_and_runs_tests_submodule_via_llvm_tier() -> void {
                                "ok app.geometry.test_zero_area\n"
                                "skip app.geometry.skip_negative\n"
                                "3 passed, 0 failed, 1 skipped\n";
-  expect(output == expected_output,
-         std::format("unexpected stdout from `--test` discovery: `{}`", output));
+  expect(
+      output == expected_output,
+      std::format("unexpected stdout from `--test` discovery: `{}`", output));
 #ifdef WEXITSTATUS
   expect(WEXITSTATUS(close_status) == 0,
          std::format("expected the discovered suite (all cases passing or "
@@ -3479,9 +3479,9 @@ auto test_test_mode_without_any_tests_is_an_error() -> void {
                      report.error()));
 }
 
-/// A `tests` submodule holding only hooks contributes no suite (61-std-test.md),
-/// so `--test` over nothing but hooks reports "no tests" rather than running an
-/// empty suite.
+/// A `tests` submodule holding only hooks contributes no suite
+/// (61-std-test.md), so `--test` over nothing but hooks reports "no tests"
+/// rather than running an empty suite.
 auto test_test_mode_hooks_without_cases_find_no_tests() -> void {
   auto temp = make_temp_dir();
   auto source_path = temp.path / "sample_hooks_only.kira";
@@ -3861,9 +3861,9 @@ auto test_build_runs_script_mode_implicit_main() -> void {
                                "2: even\n"
                                "3: odd\n"
                                "total: 6\n";
-  expect(output == expected_output,
-         std::format("unexpected stdout from the implicit `main`: `{}`",
-                     output));
+  expect(
+      output == expected_output,
+      std::format("unexpected stdout from the implicit `main`: `{}`", output));
 #ifdef WEXITSTATUS
   expect(WEXITSTATUS(close_status) == 0,
          std::format("expected the implicit `main() -> unit` to exit 0, got {}",

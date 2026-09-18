@@ -62,3 +62,37 @@ def main() -> unit:
 
     v.free()
     println("freed len={v.len()} cap={v.capacity()}")
+
+    # `vector[T]` as an ordinary collection: built from a literal, indexed,
+    # and iterated, all through the `from_array`/`index`/`index_set`/
+    # `into_iterator` impls rather than through anything the compiler knows
+    # about this type specifically (`spec/list-migration-design.md`).
+    var lit: vector[int32] = [10, 20, 30]
+    println("literal len={lit.len()} cap={lit.capacity()}")
+    println("indexed={lit[0]},{lit[1]},{lit[2]}")
+    lit[1] = 99
+    println("written={lit[0]},{lit[1]},{lit[2]}")
+    lit.free()
+
+    # `for x in v` goes through `into_iterator`, whose `into_iter(self)`
+    # takes the collection *by value* — so iterating consumes it, and the
+    # move checker refuses any later use. That is correct for this trait and
+    # wrong for a collection: `for x in xs` over a `list` must not consume
+    # `xs`. A borrowing route is the remaining phase-2 work (`spec/todo.md`
+    # item 20), so the vector iterated here is deliberately one that is not
+    # used again — and, having been moved, it cannot be freed either.
+    let consumed: vector[int32] = [10, 99, 30]
+    var sum = 0
+    var order = ""
+    for x in consumed:
+        sum = sum + x
+        order = "{order}{x}."
+    println("iterated sum={sum} order={order}")
+
+    # A second element width, through the same generic impls.
+    var wide: vector[int64] = [1000, 2000]
+    println("wide={wide[0]},{wide[1]}")
+    var wsum: int64 = 0
+    for y in wide:
+        wsum = wsum + y
+    println("wide sum={wsum}")

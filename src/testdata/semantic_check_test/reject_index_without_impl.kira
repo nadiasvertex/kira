@@ -1,0 +1,10 @@
+module sample
+
+# Indexing is a trait, not a builtin. A user type with no `index` impl is
+# not indexable, and the diagnostic must say which impl to write rather than
+# reporting a generic "not an indexable value".
+
+type grid = { a: int32 }
+
+def read_it(g: grid) -> int32:
+    return g[0]

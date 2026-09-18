@@ -489,11 +489,38 @@ struct resolved_callee {
 /// matching `resolved_callee` fields (the mangled call `hir::lower_call` would
 /// emit for a hand-written `it.next()` is `impl_target_type::next`);
 /// `element_type` is the `T` the loop variable binds.
+/// A sequence literal that constructs a user collection through its
+/// `std.traits.from_array` impl: the constructor to call, and the
+/// `array[T, n]` type the literal itself still has. Lowering needs the array
+/// type explicitly because the *expression's* checked type is now the
+/// collection, not the array it is built from.
+struct array_literal_conversion {
+  resolved_callee callee;
+  type_id array_type = 0;
+};
+
 struct iterator_loop_dispatch {
   const ast::func_decl *decl = nullptr;
   std::string owner_module;
   std::string impl_target_type;
   type_id element_type = 0;
+  /// Set when the loop's iterable is not itself an iterator but implements
+  /// `std.iter.into_iterator[T]` — the `into_iter` method to call *once*,
+  /// before the loop, to obtain the thing `decl` (`next`) is then called on.
+  /// Null for a type that is directly iterable, which is the common case and
+  /// the one that existed before.
+  ///
+  /// This is what lets a *collection* be iterated, as opposed to only an
+  /// iterator: `for x in v` over a `vector[T]` has nowhere to put a `next`,
+  /// because the collection is not consumed by iterating it
+  /// (`spec/list-migration-design.md` phase 2).
+  const ast::func_decl *adapter_decl = nullptr;
+  std::string adapter_owner_module;
+  std::string adapter_impl_target_type;
+  /// The iterator type `adapter_decl` returns — the type of the loop's
+  /// internal handle once the adapter has run. Meaningless when
+  /// `adapter_decl` is null.
+  type_id adapter_result_type = 0;
 };
 
 /// How one interpolation segment's embedded expression
@@ -749,6 +776,37 @@ struct checked_types {
   /// the result down to `bool`.
   std::unordered_map<const ast::binary_expr *, type_id>
       ord_dispatch_result_types;
+  /// Every `v[i]` *read* resolved against a user type's `std.traits.index`
+  /// impl — see `checker::require_index_trait` (`check.cpp`). `receiver` is
+  /// the `index_expr::object`; the subscript becomes `at`'s sole explicit
+  /// argument.
+  ///
+  /// Keyed separately from `operator_dispatches` rather than sharing it: an
+  /// index expression has a receiver and a subscript, not two operands, and
+  /// the same node can appear as either a value (`x = v[i]`, dispatching to
+  /// `at`) or a place (`v[i] = x`, dispatching to `set_at` and recorded in
+  /// `index_set_dispatches` instead). One map keyed by node could not hold
+  /// both answers for the same syntax.
+  ///
+  /// Absent for every builtin container (`list`/`slice`/`str`/`array`/
+  /// `uninit`/`*T`), which keeps its direct addressing — `hir::lower_index`
+  /// emits an `hir_index` when no entry is found.
+  std::unordered_map<const ast::index_expr *, resolved_callee> index_dispatches;
+  /// Every `v[i] = x` resolved against a user type's `std.traits.index_set`
+  /// impl, keyed by the assignment *target* (the `index_expr` on the left).
+  /// `receiver` is that expression's `object`; `set_at` takes the subscript
+  /// and the assigned value as its two explicit arguments.
+  std::unordered_map<const ast::index_expr *, resolved_callee>
+      index_set_dispatches;
+  /// Every sequence literal (`[a, b, c]`, `[v; n]`) written where a user
+  /// type implementing `std.traits.from_array` was expected — see
+  /// `checker::try_wire_from_array`. The literal itself still lowers to the
+  /// `array[T, n]` it always did; `hir::lower_array` then wraps that in a
+  /// call to the recorded `from_array`, so literal syntax reaches any
+  /// collection that says what a literal of it means rather than only the
+  /// compiler-known `list`.
+  std::unordered_map<const ast::array_expr *, array_literal_conversion>
+      array_literal_conversions;
   /// Every interpolation segment's resolved rendering dispatch — see
   /// `interp_dispatch`'s doc comment. Keyed by the segment's `value`
   /// expression pointer (`ast::interp_segment::value.get()`).

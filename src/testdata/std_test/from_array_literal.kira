@@ -1,0 +1,64 @@
+module main
+
+# `[a, b, c]` constructing a user collection through `std.traits.from_array`
+# (`spec/list-migration-design.md` phase 3), and the settled rule that a
+# sequence literal with no expected type is a `list`.
+#
+# Literal syntax used to be wired to one compiler-known type. This is the
+# third of the four privileges `list[T]` held alone.
+
+type trio = { a: int32, b: int32, c: int32 }
+
+impl from_array[int32] for trio:
+    static def from_array[n: usize](items: array[int32, n]) -> trio:
+        # Deliberately not a straight copy: a literal that reached `trio`
+        # some other way — by being reinterpreted rather than constructed —
+        # could not produce these numbers.
+        return trio { a: items[0] * 10, b: items[1] * 10, c: items[2] * 10 }
+
+type pair[T] = { x: T, y: T }
+
+impl[T] from_array[T] for pair[T]:
+    static def from_array[n: usize](items: array[T, n]) -> pair[T]:
+        return pair[T] { x: items[0], y: items[1] }
+
+def show(label: str, t: trio) -> unit:
+    println("{label}={t.a},{t.b},{t.c}")
+
+def take_list(xs: list[int32]) -> usize:
+    return xs.len()
+
+def main() -> unit:
+    # Through an annotation...
+    let t: trio = [7, 8, 9]
+    show("annotated", t)
+
+    # ...and through a parameter's expected type, with no annotation at all.
+    show("argument", [1, 2, 3])
+
+    # A second length compiles a second instance of the same `from_array`;
+    # a missing one is a link failure, not a wrong number.
+    let u: trio = [4, 5, 6]
+    show("second", u)
+
+    # The settled default: a sequence literal with no expected type is a
+    # `list`, for both spellings. `[0; n]` used to be an `array` while
+    # `[0, 0, 0]` was already a `list` — one rule now covers both.
+    let elements = [1, 2, 3, 4]
+    let filled = [7; 5]
+    println("elements={take_list(elements)} filled={take_list(filled)}")
+
+    # A *generic* impl, at two element widths. This is the case that was
+    # silently wrong: the element type reached the literal unresolved, so
+    # the caller wrote the elements 8 bytes apart while the callee read them
+    # at the real width, and `[10, 20, 30]` came back as `10, 0, 20`. The
+    # narrow width is the one that fails; the 8-byte one passes either way,
+    # which is exactly why both are here.
+    let narrow: pair[int32] = [10, 20]
+    println("narrow={narrow.x},{narrow.y}")
+    let wide: pair[int64] = [100, 200]
+    println("wide={wide.x},{wide.y}")
+
+    # An `array` is still available, by asking for one.
+    let fixed: array[int32, 3] = [1, 2, 3]
+    println("fixed={fixed.len()}")

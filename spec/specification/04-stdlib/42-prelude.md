@@ -8,7 +8,9 @@ The prelude is the set of names available in every module without a `use` declar
 
 **Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types (`int8`..`int128`, `uint8`..`uint128`, `float32`/`float64`/`float128`, `isize`, `usize`), `array`, `slice`, `mut slice`, `option`, `result`, `list`, `box`, `cell`, `cell_mut`.
 
-**Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `rem`, `neg`, `drop`, and the remaining arithmetic operator traits.
+**Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `rem`, `neg`, `drop`, `index`, `index_mut`, `index_set`, `from_array`, and the remaining arithmetic operator traits.
+
+`index`/`index_set` are what make `v[i]` and `v[i] = x` work on a user type, and `from_array` is what makes `let v: my_type = [1, 2, 3]` work — the operators that used to be reserved for the built-in sequences. `index_mut` is declared but not yet wired (`../../todo.md` item 19).
 
 **Concepts:** `send`, `share`.
 

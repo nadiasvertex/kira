@@ -1103,7 +1103,7 @@ private:
     auto forward_args = std::vector<llvm::Value *>{};
     forward_args.reserve(target->getFunctionType()->getNumParams());
     for (auto it = std::next(thunk->arg_begin()); it != thunk->arg_end();
-        ++it) {
+         ++it) {
       forward_args.push_back(&*it);
     }
     auto *call_result = thunk_builder.CreateCall(target, forward_args);

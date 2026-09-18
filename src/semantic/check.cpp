@@ -1004,6 +1004,9 @@ public:
         .resolved_fn_values = std::move(resolved_fn_values_),
         .operator_dispatches = std::move(operator_dispatches_),
         .ord_dispatch_result_types = std::move(ord_dispatch_result_types_),
+        .index_dispatches = std::move(index_dispatches_),
+        .index_set_dispatches = std::move(index_set_dispatches_),
+        .array_literal_conversions = std::move(array_literal_conversions_),
         .interp_dispatches = std::move(interp_dispatches_),
         .type_param_reflections = std::move(type_param_reflections_),
         .for_iterator_dispatches = std::move(for_iterator_dispatches_),
@@ -1184,6 +1187,18 @@ private:
   /// its own to derive it from `resolved_callee::decl->return_type`.
   std::unordered_map<const ast::binary_expr *, type_id>
       ord_dispatch_result_types_;
+  /// Every `v[i]` read resolved against a user type's `index` impl, and
+  /// every `v[i] = x` resolved against its `index_set` impl — recorded by
+  /// `require_index_trait`/`require_index_set_trait`. Two maps because the
+  /// same `index_expr` node means different things in the two positions.
+  std::unordered_map<const ast::index_expr *, resolved_callee>
+      index_dispatches_;
+  std::unordered_map<const ast::index_expr *, resolved_callee>
+      index_set_dispatches_;
+  /// Sequence literals that construct a user collection through its
+  /// `from_array` impl, recorded by `try_wire_from_array`.
+  std::unordered_map<const ast::array_expr *, array_literal_conversion>
+      array_literal_conversions_;
   /// Per-(target type, trait name) associated-type bindings captured while
   /// checking that trait's impl (`check_impl_decl`) — the only place
   /// `self_assoc_types_` is ever populated. A method resolved by
@@ -2109,8 +2124,9 @@ private:
   /// owning module, so the caller can fall through to the existing
   /// "validated elsewhere" behavior rather than reporting anything here.
   template <typename OwnsFn>
-  [[nodiscard]] auto find_member_owner_of_path(
-      const std::vector<std::string> &path, const OwnsFn &owns) const
+  [[nodiscard]] auto
+  find_member_owner_of_path(const std::vector<std::string> &path,
+                            const OwnsFn &owns) const
       -> const module_members * {
     if (path.size() < 2) {
       return nullptr;
@@ -5180,8 +5196,17 @@ private:
     // Value parameters and type parameters take the same road, together: a
     // template mixing them (`[n: usize, T]`) is one solution with both kinds
     // of binding in it, not a third case.
+    // `is_static` alongside `is_free_function`: a `static def` in an
+    // `extend`/`impl` block is not in `owner->functions`, so it failed this
+    // test and was never monomorphized. A generic one then reached lowering
+    // as its uncompiled *template*, and both backends reported "call to
+    // `trio::from_array` could not be resolved to a function in this
+    // compiled module" — a codegen failure for correct code. A static method
+    // takes no receiver, so its instance is named and dispatched exactly
+    // like a free function's.
     if (!in_const_generic_template_ && !in_type_generic_template_ &&
-        is_generic_template(decl) && is_free_function(decl, owner)) {
+        is_generic_template(decl) &&
+        (is_free_function(decl, owner) || decl.modifiers.is_static)) {
       if (const auto result = instantiate_generic_function(
               call, decl, owner, decl_file, solved, params, explicit_args)) {
         return *result;
@@ -6659,9 +6684,9 @@ private:
         candidates.push_back(name);
       }
     }
-    for (const auto prelude : {"println", "print", "panic", "assert", "size_of",
-                               "align_of", "ptr_cast",
-                               "args", "env", "min", "max"}) {
+    for (const auto prelude :
+         {"println", "print", "panic", "assert", "size_of", "align_of",
+          "ptr_cast", "args", "env", "min", "max"}) {
       candidates.emplace_back(prelude);
     }
     return candidates;
@@ -6698,11 +6723,11 @@ private:
   auto is_prelude_value_name(std::string_view name) -> bool {
     return name == "println" || name == "print" || name == "panic" ||
            name == "assert" || name == "size_of" || name == "align_of" ||
-           name == "ptr_cast" || name == "args" ||
-           name == "env" || name == "min" || name == "max" ||
-           name == "cancel" || name == "pool" || name == "io" ||
-           name == "cpu" || name == "channel" || name == "watch" ||
-           name == "shared" || name == "expr";
+           name == "ptr_cast" || name == "args" || name == "env" ||
+           name == "min" || name == "max" || name == "cancel" ||
+           name == "pool" || name == "io" || name == "cpu" ||
+           name == "channel" || name == "watch" || name == "shared" ||
+           name == "expr";
   }
 
   /// Resolves a value-position identifier through, in order: a variant
@@ -6815,8 +6840,7 @@ private:
     for (const auto *source : wildcard_import_sources()) {
       if (const auto it = source->functions.find(std::string(name));
           it != source->functions.end()) {
-        record_fn_value_reference(ident, *it->second.decl,
-                                  source->module_name);
+        record_fn_value_reference(ident, *it->second.decl, source->module_name);
         return fn_type_of(*it->second.decl, source);
       }
       if (const auto it = source->statics.find(std::string(name));
@@ -10510,8 +10534,8 @@ private:
         // guarantee the container makes about its own memory, so it is gated
         // the same as any other raw-pointer operation. Reading or indexing
         // the container itself stays unrestricted.
-        require_machine_context(
-            call.span, std::format("`{}`", field.field_name));
+        require_machine_context(call.span,
+                                std::format("`{}`", field.field_name));
       }
       if (types_.is_unknown(builtin_result)) {
         if (const auto *method =
@@ -10918,10 +10942,19 @@ private:
             record_expr_type(field, fn_type_of(*method->decl, method->owner));
             const auto params =
                 signature_params(*method->decl, method->owner, false);
-            check_call_args_against(
-                call, params, method->decl->name,
-                source_location{.file_id = file_id_,
-                                .span = method->decl->span});
+            // `solved` carries the callee's *value* parameters as the
+            // arguments determined them. Without it a `static def
+            // from_array[n: usize](items: array[T, n])` never has `n`
+            // solved, `solve_generic_params` finds no instance to build,
+            // and nothing is recorded in `resolved_callees_` — leaving
+            // lowering to name the uncompiled template `trio::from_array`
+            // and both backends to report "could not be resolved to a
+            // function in this compiled module" for correct code.
+            auto solved = value_bindings{};
+            check_call_args_against(call, params, method->decl->name,
+                                    source_location{.file_id = file_id_,
+                                                    .span = method->decl->span},
+                                    &solved);
             auto bindings = std::unordered_map<std::string, type_id>{};
             if (const auto mapping = call_argument_mappings_.find(&call);
                 mapping != call_argument_mappings_.end()) {
@@ -10941,7 +10974,8 @@ private:
             // associated function resolves to its monomorphized copy.
             if (!method->decl->type_params.empty()) {
               if (const auto *instance = instantiate_hk_method(
-                      call, *method, root.front(), bindings)) {
+                      call, *method, root.front(), bindings,
+                      /*explicit_args=*/{}, solved)) {
                 resolved_callees_[&call] =
                     resolved_callee{.decl = instance,
                                     .owner_module = method->owner->module_name,
@@ -11113,14 +11147,15 @@ private:
   auto infer_layout_query_call(const ast::call_expr &call)
       -> std::optional<type_id> {
     auto bracket_args = explicit_generic_args{};
-    const auto *base = call.callee->kind == ast::node_kind::ident_expr
-                           ? call.callee.get()
-                           : explicit_generic_callee(*call.callee, bracket_args);
+    const auto *base =
+        call.callee->kind == ast::node_kind::ident_expr
+            ? call.callee.get()
+            : explicit_generic_callee(*call.callee, bracket_args);
     if (base == nullptr || base->kind != ast::node_kind::ident_expr) {
       return std::nullopt;
     }
     const auto &name = dynamic_cast<const ast::ident_expr &>(*base).name;
-    const auto kind = name == "size_of"  ? layout_query_kind::size_of
+    const auto kind = name == "size_of"    ? layout_query_kind::size_of
                       : name == "align_of" ? layout_query_kind::align_of
                                            : layout_query_kind::size_of;
     if (name != "size_of" && name != "align_of") {
@@ -11156,12 +11191,13 @@ private:
     } else if (bracket_args.empty() && call.args.size() == 1 &&
                call.args.front().value != nullptr) {
       // `size_of(expr)` — ask about the expression's own type.
-      operand = strip_refs(infer_expr(*call.args.front().value, k_unknown_type));
+      operand =
+          strip_refs(infer_expr(*call.args.front().value, k_unknown_type));
     } else {
-      error(call.span,
-            std::format("`{}` takes one type argument, as `{}[T]()`", name,
-                        name),
-            "expected exactly one type argument");
+      error(
+          call.span,
+          std::format("`{}` takes one type argument, as `{}[T]()`", name, name),
+          "expected exactly one type argument");
       infer_call_args_loosely(call);
       return k_error_type;
     }
@@ -11208,8 +11244,7 @@ private:
   /// un-instantiated generic template it will not, and the buffer type is
   /// left un-sized; the monomorphized copy reaches this code again with a
   /// real count.
-  auto infer_uninit_call(const ast::call_expr &call)
-      -> std::optional<type_id> {
+  auto infer_uninit_call(const ast::call_expr &call) -> std::optional<type_id> {
     auto bracket_args = explicit_generic_args{};
     const auto *base = explicit_generic_callee(*call.callee, bracket_args);
     if (base == nullptr || base->kind != ast::node_kind::ident_expr ||
@@ -12414,6 +12449,170 @@ private:
   /// `ident_names_callable_decl`, then, for `array`/`list`/`slice`/`str`,
   /// requires an integer key (except for a range key, which produces a
   /// slice/substring rather than a single element).
+  /// Resolves `v[i]` on a user struct/sum/opaque receiver against its
+  /// `std.traits.index` impl, recording the dispatch so `hir::lower_index`
+  /// emits a call to `at` instead of the direct element addressing every
+  /// builtin container uses.
+  ///
+  /// This is what makes indexing an ordinary trait rather than a compiler
+  /// privilege reserved for `list`/`slice`/`str`/`array`
+  /// (`spec/list-migration-design.md` phase 1). The builtin receivers do not
+  /// come through here at all — they keep their direct addressing, so this
+  /// adds a capability without changing any existing lowering.
+  /// The element type an index impl yields for *this* receiver.
+  ///
+  /// `impl_assoc_types_` is keyed by the impl's target type as written, so a
+  /// generic `impl[T] index[usize] for holder[T]` files its `output = T`
+  /// under `holder[T]` — with `T` still abstract — and a lookup against the
+  /// concrete `holder[int32]` misses it entirely. Falling back to the
+  /// pattern's own binding and substituting the receiver's arguments into it
+  /// is what makes a generic collection indexable at all; without this the
+  /// checker types `h[0]` as unknown and lowering fails with "no concrete
+  /// checked type is available for this node" on correct code.
+  auto resolve_index_output(type_id target, std::string_view trait_name,
+                            const method_entry &method) -> type_id {
+    const auto direct =
+        resolve_operator_return_type(target, trait_name, method);
+    if (!types_.is_unknown(direct) && !mentions_type_param(direct)) {
+      return direct;
+    }
+    // Resolve the declaration's own return type with the impl block's type
+    // parameters in scope (so a literally-written `-> T` resolves to the
+    // parameter rather than to `unknown`), then apply the bindings the
+    // receiver pins — the same two-step `check_impl_generic_method_call`
+    // uses for this method's *parameter* types.
+    if (method.block_type_params != nullptr) {
+      auto bindings = std::unordered_map<std::string, type_id>{};
+      unify_rigid(method.impl_target_pattern, target, bindings);
+      const auto declared = signature_return_type(*method.decl, method.owner,
+                                                  method.block_type_params);
+      const auto substituted = substitute_solved(declared, bindings);
+      if (!types_.is_unknown(substituted)) {
+        return substituted;
+      }
+    }
+    return direct;
+  }
+
+  auto require_index_trait(const ast::index_expr &index, type_id object,
+                           const type_entry &entry) -> type_id {
+    const auto target = strip_refs(object);
+    if (!type_has_trait(entry, "index")) {
+      error_with_help(
+          index.span,
+          std::format("`{}` cannot be indexed with `[...]`",
+                      types_.display(target)),
+          std::format("this is a `{}`, which has no `index` impl",
+                      types_.display(target)),
+          std::format(
+              "Indexing is a trait, not a builtin. Add an impl that says "
+              "what `{}[...]` means:\n\n    impl index[usize] for {}:\n"
+              "        type output = ...\n"
+              "        def at(self, i: usize) -> ...:\n            ...",
+              types_.display(target), entry.name));
+      return k_error_type;
+    }
+    const auto *method = find_method(entry, "at", target);
+    if (method == nullptr || method->decl->params.empty() ||
+        param_name_of(method->decl->params.front()) != "self") {
+      // `index` is implemented but `at` is not resolvable for this receiver
+      // — already diagnosed by impl checking, so stay quiet rather than
+      // reporting the same missing method twice in different words.
+      return k_unknown_type;
+    }
+    const auto *callee =
+        instantiate_impl_method_for(index, *method, entry, target);
+    index_dispatches_[&index] =
+        resolved_callee{.decl = callee != nullptr ? callee : method->decl,
+                        .owner_module = method->owner->module_name,
+                        .impl_target_type = callee != nullptr ? "" : entry.name,
+                        .receiver = index.object.get()};
+    return resolve_index_output(target, "index", *method);
+  }
+
+  /// The write half: `v[i] = x` on a user receiver, against `index_set`.
+  ///
+  /// Reported separately from `index` so a type that supports reads but not
+  /// writes gets told *that*, rather than "not indexable" — which would be
+  /// false, and would send the user looking at their working `v[i]` reads.
+  /// `signature_params` for a method looked up from outside its own impl,
+  /// with that impl's associated-type bindings reinstated — the parameter
+  /// counterpart of `resolve_operator_return_type`, and needed for the same
+  /// reason: `set_at`'s `value: self.output` resolves to `unknown` without
+  /// them.
+  auto resolve_impl_param_types(type_id target, std::string_view trait_name,
+                                const method_entry &method)
+      -> std::vector<fn_param_info> {
+    const auto target_it = impl_assoc_types_.find(target);
+    const auto trait_it = target_it == impl_assoc_types_.end()
+                              ? decltype(target_it->second.end()){}
+                              : target_it->second.find(std::string(trait_name));
+    if (target_it == impl_assoc_types_.end() ||
+        trait_it == target_it->second.end()) {
+      return signature_params(*method.decl, method.owner, false);
+    }
+    const auto saved_assoc = self_assoc_types_;
+    self_assoc_types_ = trait_it->second;
+    auto result = signature_params(*method.decl, method.owner, false);
+    self_assoc_types_ = saved_assoc;
+    return result;
+  }
+
+  auto require_index_set_trait(const ast::index_expr &index, type_id object,
+                               const type_entry &entry) -> type_id {
+    const auto target = strip_refs(object);
+    if (!type_has_trait(entry, "index_set")) {
+      const auto reads = type_has_trait(entry, "index");
+      error_with_help(
+          index.span,
+          std::format("cannot assign to `{}[...]`", types_.display(target)),
+          reads ? std::format("`{}` can be read at an index but not written",
+                              types_.display(target))
+                : std::format("this is a `{}`, which has no `index_set` impl",
+                              types_.display(target)),
+          std::format(
+              "Writing through `[...]` is a separate capability from "
+              "reading it. Add:\n\n    impl index_set[usize] for {}:\n"
+              "        type output = ...\n"
+              "        def set_at(mut self, i: usize, value: ...) -> unit:\n"
+              "            ...",
+              entry.name));
+      return k_error_type;
+    }
+    const auto *method = find_method(entry, "set_at", target);
+    if (method == nullptr || method->decl->params.empty() ||
+        param_name_of(method->decl->params.front()) != "self") {
+      return k_unknown_type;
+    }
+    const auto *callee =
+        instantiate_impl_method_for(index, *method, entry, target);
+    index_set_dispatches_[&index] =
+        resolved_callee{.decl = callee != nullptr ? callee : method->decl,
+                        .owner_module = method->owner->module_name,
+                        .impl_target_type = callee != nullptr ? "" : entry.name,
+                        .receiver = index.object.get()};
+    // The assigned value's expected type is `set_at`'s `value` parameter,
+    // which is `self.output` in the trait and only resolves under the
+    // impl's associated-type bindings.
+    auto params = resolve_impl_param_types(target, "index_set", *method);
+    if (params.size() < 2) {
+      return k_unknown_type;
+    }
+    // Same generic-impl substitution the read half needs — `value:
+    // self.output` is `T` until the receiver's arguments are applied.
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    unify_rigid(method->impl_target_pattern, target, bindings);
+    const auto declared = params.back().type;
+    if (!mentions_type_param(declared)) {
+      return declared;
+    }
+    auto pattern_params = resolve_impl_param_types(method->impl_target_pattern,
+                                                   "index_set", *method);
+    return pattern_params.size() >= 2
+               ? substitute_solved(pattern_params.back().type, bindings)
+               : declared;
+  }
+
   auto infer_index(const ast::index_expr &index) -> type_id {
     if (index.object == nullptr) {
       return k_unknown_type;
@@ -12477,8 +12676,7 @@ private:
       require_machine_context(index.span, "indexing a raw pointer");
       require_integer_key();
       if (key_is_range) {
-        error(index.span,
-              "a raw pointer cannot be range-indexed",
+        error(index.span, "a raw pointer cannot be range-indexed",
               "no length is known for a raw pointer");
         return k_error_type;
       }
@@ -12535,6 +12733,12 @@ private:
       }
       return k_unknown_type;
     }
+    // A user type is indexable exactly when it says so, by implementing
+    // `std.traits.index` — see `require_index_trait`.
+    case type_kind::struct_kind:
+    case type_kind::sum_kind:
+    case type_kind::opaque_kind:
+      return require_index_trait(index, object, entry);
     default:
       return k_unknown_type;
     }
@@ -13538,6 +13742,81 @@ private:
   /// here or lowering finds no such function. Passing `nullptr` answers the
   /// element type without compiling anything, which is what `element_type_of`
   /// wants — it is asked about types in places that are not loops at all.
+  /// Resolves a *collection*'s `std.iter.into_iterator[T]` conformance for a
+  /// `for` loop: finds `into_iter(self) -> I`, resolves `I`, and returns the
+  /// dispatch for iterating that `I` with the adapter call recorded on it.
+  ///
+  /// Tried before `try_resolve_iterator`, so a type that is both a
+  /// collection and an iterator hands back its iterator rather than being
+  /// consumed — "give me your iterator" is the more specific answer.
+  ///
+  /// `nullopt` when the type has no usable `into_iter`, or when what it
+  /// returns is not itself iterable; the caller then falls through to the
+  /// structural `next` path exactly as before.
+  auto try_resolve_into_iterator(type_id iterable, const ast::node *site)
+      -> std::optional<iterator_loop_dispatch> {
+    const auto stripped = strip_refs(iterable);
+    const auto &entry = types_.entry(stripped);
+    if (entry.decl == nullptr) {
+      return std::nullopt;
+    }
+    const auto *method = find_method(entry, "into_iter", stripped);
+    if (method == nullptr || method->decl->params.empty() ||
+        param_name_of(method->decl->params.front()) != "self") {
+      return std::nullopt;
+    }
+
+    // The iterator type, with the impl's parameters solved from the receiver
+    // — the same two-step every other generic-impl return type needs.
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    if (method->block_type_params != nullptr) {
+      unify_rigid(method->impl_target_pattern, stripped, bindings);
+    }
+    const auto iter_type =
+        substitute_solved(signature_return_type(*method->decl, method->owner,
+                                                method->block_type_params),
+                          bindings);
+    if (types_.is_unknown(iter_type) || iter_type == k_error_type) {
+      return std::nullopt;
+    }
+
+    // What `into_iter` hands back has to be iterable in its own right, or
+    // there is no loop to build. Resolved with the same `site`, so the
+    // iterator's `next` instance is compiled here too.
+    auto inner = try_resolve_iterator(iter_type, site);
+    if (!inner.has_value()) {
+      return std::nullopt;
+    }
+
+    inner->adapter_decl = method->decl;
+    inner->adapter_owner_module = method->owner->module_name;
+    inner->adapter_impl_target_type = entry.name;
+    inner->adapter_result_type = iter_type;
+
+    // An `into_iter` on a generic collection needs its own compiled
+    // instance, for the reason `check_impl_generic_method_call` documents:
+    // nothing in the source names this call, so if the instance is not
+    // requested here, lowering finds no such function.
+    if (site != nullptr && impl_needs_instance(*method, entry) &&
+        !in_const_generic_template_ && !in_type_generic_template_) {
+      auto scoped_params = method->fixed_type_params;
+      scoped_params.insert(bindings.begin(), bindings.end());
+      auto solution = generic_solution{};
+      solution.suffix = std::format("${}", mangle_type_for_instance(stripped));
+      const auto name = std::format("{}::{}{}", entry.name, method->decl->name,
+                                    solution.suffix);
+      if (const auto *instance = find_or_check_generic_instance(
+              *site, *method->decl, method->owner, method->file_id, solution,
+              name, &scoped_params, stripped)) {
+        // The instance's name already carries the receiver, so it is a plain
+        // function name rather than a `Type::method` pair to be joined.
+        inner->adapter_decl = instance;
+        inner->adapter_impl_target_type = "";
+      }
+    }
+    return inner;
+  }
+
   auto try_resolve_iterator(type_id iterable, const ast::node *site = nullptr)
       -> std::optional<iterator_loop_dispatch> {
     const auto stripped = strip_refs(iterable);
@@ -14151,7 +14430,174 @@ private:
   /// `list[T]`/`slice[T]`) determines the element type and result container;
   /// with no useful expectation, an explicit list defaults to `list[T]` with
   /// `T` inferred from its first element, checking the rest against it.
+  /// The constant length of a `[value; n]` fill literal, when `n` is one.
+  /// `nullopt` inside a template, where `n` is still a symbol — the same
+  /// answer `infer_array`'s own fill branch arrives at, and for the same
+  /// reason.
+  auto fill_count_of(const ast::array_expr &array) -> std::optional<uint64_t> {
+    if (array.fill_count == nullptr) {
+      return std::nullopt;
+    }
+    if (array.fill_count->kind == ast::node_kind::literal_expr) {
+      const auto &lit =
+          dynamic_cast<const ast::literal_expr &>(*array.fill_count);
+      if (lit.lit_kind == token_kind::int_lit) {
+        return parse_integer_literal(lit.value);
+      }
+    }
+    if (const auto folded = explicit_value_argument(*array.fill_count);
+        folded.has_value() && *folded >= 0) {
+      return static_cast<uint64_t>(*folded);
+    }
+    return std::nullopt;
+  }
+
+  /// Compiles the `from_array` instance this literal needs and points the
+  /// recorded conversion at it.
+  ///
+  /// Nothing in the source names this call — the literal is the whole
+  /// syntax — so if the instance is not requested here, lowering finds only
+  /// the uncompiled template and both backends report "could not be resolved
+  /// to a function in this compiled module". The same reason
+  /// `try_resolve_iterator` requests its `next` instance from the loop.
+  auto instantiate_from_array_for(const ast::array_expr &array, type_id target,
+                                  uint64_t length) -> void {
+    if (in_const_generic_template_ || in_type_generic_template_) {
+      return;
+    }
+    const auto conversion = array_literal_conversions_.find(&array);
+    if (conversion == array_literal_conversions_.end()) {
+      return;
+    }
+    const auto &entry = types_.entry(target);
+    const auto *method = find_method(entry, "from_array", target);
+    if (method == nullptr || method->decl->type_params.empty()) {
+      return;
+    }
+    const auto &length_param = method->decl->type_params.front();
+    if (!length_param.is_value_param) {
+      return;
+    }
+
+    auto solution = generic_solution{};
+    bind_generic_constant(solution, length_param, types_.usize_type(),
+                          static_cast<int64_t>(length));
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    if (method->block_type_params != nullptr) {
+      unify_rigid(method->impl_target_pattern, target, bindings);
+      solve_impl_value_params(*method, target, bindings);
+    }
+    auto scoped_params = method->fixed_type_params;
+    scoped_params.insert(bindings.begin(), bindings.end());
+    carry_impl_value_slots(*method, bindings, solution);
+    // The receiver goes in the name as well as the length. Without it
+    // `vector[int32]` and `vector[int64]` both want `vector::from_array$3`
+    // and share one instance — whichever was compiled first, read at the
+    // other's element width. That is a silent wrong-value bug, not a link
+    // failure, which is why this name is the same shape every other
+    // impl-method instance uses.
+    solution.suffix += std::format("${}", mangle_type_for_instance(target));
+    const auto name = std::format("{}::{}{}", entry.name, method->decl->name,
+                                  solution.suffix);
+    const auto *instance = find_or_check_generic_instance(
+        array, *method->decl, method->owner, method->file_id, solution, name,
+        &scoped_params, target, method->block_type_params);
+    if (instance == nullptr) {
+      return;
+    }
+    // The instance's name already carries its length, so it is a plain
+    // function name rather than a `Type::method` pair to be joined.
+    conversion->second.callee.decl = instance;
+    conversion->second.callee.impl_target_type = "";
+  }
+
+  /// If `expected` is a user type implementing `std.traits.from_array`,
+  /// records the constructor this literal should be handed to and answers
+  /// the element type the literal's elements must have.
+  ///
+  /// This is what makes `[1, 2, 3]` reach a collection other than the
+  /// compiler-known `list` (`spec/list-migration-design.md` phase 3). The
+  /// literal keeps its `array[T, n]` shape all the way through lowering; the
+  /// only change is the call wrapped around it.
+  auto try_wire_from_array(const ast::array_expr &array, type_id expected)
+      -> std::optional<type_id> {
+    const auto target = strip_refs(expected);
+    const auto &entry = types_.entry(target);
+    if (entry.kind != type_kind::struct_kind &&
+        entry.kind != type_kind::sum_kind &&
+        entry.kind != type_kind::opaque_kind) {
+      return std::nullopt;
+    }
+    if (!type_has_trait(entry, "from_array")) {
+      return std::nullopt;
+    }
+    const auto *method = find_method(entry, "from_array", target);
+    if (method == nullptr) {
+      return std::nullopt;
+    }
+    // The element type is the impl's `T`, recovered from its target pattern
+    // the same way every other generic-impl question is answered here.
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    if (method->block_type_params != nullptr) {
+      unify_rigid(method->impl_target_pattern, target, bindings);
+    }
+    // `block_type_params` passed so the impl block's `T` resolves to the
+    // parameter rather than to `unknown` — `substitute_solved` can bind a
+    // type parameter but has nothing to bind an unknown to. Without it the
+    // element type comes back abstract and the *caller* builds the literal
+    // at an 8-byte stride while the callee reads it at the real width: a
+    // silent wrong-value bug, which is exactly why this path is covered by
+    // an exact-output test at two element widths.
+    const auto params = signature_params(*method->decl, method->owner, false,
+                                         method->block_type_params);
+    if (params.empty()) {
+      return std::nullopt;
+    }
+    const auto &array_param = types_.entry(
+        strip_refs(substitute_solved(params.front().type, bindings)));
+    if (array_param.kind != type_kind::array_kind) {
+      return std::nullopt;
+    }
+    array_literal_conversions_[&array] = array_literal_conversion{
+        .callee = resolved_callee{.decl = method->decl,
+                                  .owner_module = method->owner->module_name,
+                                  .impl_target_type = std::string(entry.name)},
+        // Filled in by the caller once the literal's own length is known.
+        .array_type = k_unknown_type};
+    return array_param.result;
+  }
+
   auto infer_array(const ast::array_expr &array, type_id expected) -> type_id {
+    // A user collection that says what a literal of it means: check the
+    // elements against its element type, then answer with the collection.
+    // Done before the builtin shapes below, because `expected` being a user
+    // type rules every one of them out anyway.
+    if (const auto from_array_element = try_wire_from_array(array, expected)) {
+      if (array.fill_value != nullptr) {
+        infer_expr(*array.fill_value, *from_array_element);
+        if (array.fill_count != nullptr) {
+          infer_expr(*array.fill_count, types_.builtin("usize"));
+        }
+      }
+      for (const auto &item : array.elements) {
+        if (item != nullptr) {
+          infer_expr(*item, *from_array_element);
+        }
+      }
+      // The literal still *is* an `array[T, n]` underneath; record which one
+      // so lowering can build it before wrapping it in the constructor call.
+      const auto count = array.fill_value != nullptr
+                             ? fill_count_of(array)
+                             : std::optional<uint64_t>{array.elements.size()};
+      array_literal_conversions_[&array].array_type = array_with_length(
+          *from_array_element,
+          count.has_value() ? types_.const_value(types_.usize_type(), *count)
+                            : k_unknown_type);
+      if (count.has_value()) {
+        instantiate_from_array_for(array, strip_refs(expected), *count);
+      }
+      return strip_refs(expected);
+    }
     const auto &expected_entry = types_.entry(strip_refs(expected));
     auto element_expected = k_unknown_type;
     auto expected_is_array = false;
@@ -14191,6 +14637,18 @@ private:
         }
       }
       if (expected_is_list) {
+        return types_.builtin_generic("list", {element});
+      }
+      // No expected type: a sequence literal is a `list`, exactly as the
+      // element form a few lines below already was. One rule for both
+      // spellings — "a literal with a constant repeat count is an array,
+      // otherwise a list" would make `[0; 4]` and `[0, 0, 0, 0]` different
+      // types, a distinction nothing else in the language draws
+      // (`spec/list-migration-design.md` phase 3, and
+      // `01-core/06-collections-list-array.md`: "For general-purpose code,
+      // `list` is the default choice"). An `array` is spelled by asking for
+      // one, which is what `expected_is_array` below serves.
+      if (!expected_is_array && types_.is_unknown(strip_refs(expected))) {
         return types_.builtin_generic("list", {element});
       }
       const auto length = count.has_value()
@@ -14875,6 +15333,34 @@ private:
   /// for mutation through a `let`-bound root; a compound-assignment
   /// operator (`+=` etc.) requires a numeric target; and the assigned
   /// value's type is checked against the target's type.
+  /// If `target` is `v[i]` with `v` a user struct/sum/opaque, resolves the
+  /// write against `index_set` and answers the element type the assigned
+  /// value must have. `nullopt` for every other assignment shape, including
+  /// an index into a builtin container, which keeps its direct store.
+  auto check_user_index_assignment(const ast::expr &target)
+      -> std::optional<type_id> {
+    if (target.kind != ast::node_kind::index_expr) {
+      return std::nullopt;
+    }
+    const auto &index = dynamic_cast<const ast::index_expr &>(target);
+    if (index.object == nullptr) {
+      return std::nullopt;
+    }
+    const auto object = base_shape(infer_expr(*index.object, k_unknown_type));
+    const auto &entry = types_.entry(object);
+    if (entry.kind != type_kind::struct_kind &&
+        entry.kind != type_kind::sum_kind &&
+        entry.kind != type_kind::opaque_kind) {
+      return std::nullopt;
+    }
+    if (index.index != nullptr) {
+      infer_expr(*index.index, types_.builtin("usize"));
+    }
+    const auto element = require_index_set_trait(index, object, entry);
+    record_expr_type(target, element);
+    return element;
+  }
+
   auto check_assignment(const ast::assign_stmt &stmt) -> void {
     auto target_type = k_unknown_type;
 
@@ -14923,6 +15409,14 @@ private:
           target_type =
               record_expr_type(ident, resolve_ident(ident, k_unknown_type));
         }
+      } else if (const auto assigned_element =
+                     check_user_index_assignment(*stmt.target);
+                 assigned_element.has_value()) {
+        // `v[i] = x` on a user type dispatches to `index_set`, and must not
+        // go through `infer_expr` on the target: that would resolve the
+        // same syntax as a *read* against `index`, reporting "has no
+        // `index` impl" for a type whose only omission is the write half.
+        target_type = *assigned_element;
       } else {
         target_type = infer_expr(*stmt.target, k_unknown_type);
         auto root_name = std::string{};
@@ -14943,9 +15437,9 @@ private:
           // xs.as_mut_ptr()` followed by `p[0] = 1` changes `xs`, never
           // `p`; requiring `var p` would be asking the user to declare the
           // wrong thing mutable.
-          const auto &binding_entry =
-              binding != nullptr ? types_.entry(binding->type)
-                                 : types_.entry(k_unknown_type);
+          const auto &binding_entry = binding != nullptr
+                                          ? types_.entry(binding->type)
+                                          : types_.entry(k_unknown_type);
           const auto writes_through_indirection =
               binding_entry.kind == type_kind::ref_kind ||
               (binding_entry.kind == type_kind::ptr_kind &&
@@ -14954,9 +15448,9 @@ private:
           // on the binding: `var p` would not make it legal, and reporting
           // "declare `p` with `var`" here would hand the user advice that
           // both fails to help and, taken, would let the write through.
-          if (binding != nullptr &&
-              binding_entry.kind == type_kind::ptr_kind &&
-              !binding_entry.is_mut && stmt.target->kind != ast::node_kind::ident_expr) {
+          if (binding != nullptr && binding_entry.kind == type_kind::ptr_kind &&
+              !binding_entry.is_mut &&
+              stmt.target->kind != ast::node_kind::ident_expr) {
             error_with_help(
                 stmt.target->span,
                 std::format("cannot write through `{}` — it is a `{}`",
@@ -15282,7 +15776,16 @@ private:
         element = element_type_of(iterable, stmt.iterable->span);
         // Record the `next`-method dispatch so lowering can desugar a
         // user-iterator loop into `while let @some(x) = it.next(): ...`.
-        if (auto iter = try_resolve_iterator(iterable, &stmt)) {
+        //
+        // `into_iterator` first: a type that both *is* an iterator and can
+        // *hand back* one should hand it back, since being consumed by a
+        // loop is the more surprising of the two readings. A collection
+        // reaches a loop only through this path — it has no `next` of its
+        // own (`spec/list-migration-design.md` phase 2).
+        if (auto into = try_resolve_into_iterator(iterable, &stmt)) {
+          element = into->element_type;
+          for_iterator_dispatches_[&stmt] = std::move(*into);
+        } else if (auto iter = try_resolve_iterator(iterable, &stmt)) {
           for_iterator_dispatches_[&stmt] = std::move(*iter);
         }
       }

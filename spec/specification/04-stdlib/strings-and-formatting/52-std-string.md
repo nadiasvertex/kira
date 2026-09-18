@@ -6,7 +6,7 @@ Covers `std.string`, the UTF-8 method surface `extend`ed onto the built-in `str`
 
 ## Model
 
-- `str` is a byte sequence behind a `{ len; data_ptr }` header; `len` is a **byte** length. See [Built-in Types](../../core/02-built-in-types.md).
+- `str` is a byte sequence behind a `{ len; data_ptr }` header; `len` is a **byte** length. See [Built-in Types](../../01-core/02-built-in-types.md).
 - Byte indices are the currency: `find`/`rfind`/`split` report byte offsets, and `s[a..b]` slices by byte offset. Slicing is O(1) and copy-free — pointer arithmetic over the shared buffer.
 - Iteration yields `char` (Unicode scalar values), decoded from UTF-8 as the string is walked. Byte length and scalar length are distinct.
 - Every offset these methods report lands on a scalar boundary. This follows from UTF-8's self-synchronization property: a valid UTF-8 needle can only match a valid UTF-8 haystack at scalar boundaries, so byte-level substring search is automatically scalar-correct — search runs at raw-byte speed with no decoding on the hot path.

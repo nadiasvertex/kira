@@ -78,6 +78,7 @@ extend[T] list[T]:
 # ==========================================================================
 
 use std.mem.{alloc, resize, free as mem_free, copy}
+use std.panic.panic
 
 ## A growable, contiguous sequence of `T`, owning its own heap storage.
 pub type vector[T] = {
@@ -167,3 +168,66 @@ extend[T] vector[T]:
         mem_free(self.data, self.cap)
         self.len = 0
         self.cap = 0
+
+# --------------------------------------------------------------------------
+#  `vector[T]` as an ordinary collection.
+#
+#  These four impls are what `spec/list-migration-design.md` phases 1-3 made
+#  possible, and together they are the whole of what `list[T]` gets from the
+#  compiler that a user type could not have: indexing, iteration, and
+#  construction from a literal. With them, `vector[T]` is usable with the
+#  same syntax as the builtin — which is the point of the migration, and the
+#  thing to check before phase 4 moves `list[T]` onto this storage.
+# --------------------------------------------------------------------------
+
+## Reading `v[i]`. Bounds-checked: an out-of-range index panics rather than
+## reading past the end, exactly as the builtin `list[T]` does.
+impl[T] index[usize] for vector[T]:
+    type output = T
+    machine def at(self, i: usize) -> T:
+        if i >= self.len:
+            panic("index out of range")
+        return self.data[i]
+
+## Writing `v[i] = x`, with the same bounds check.
+impl[T] index_set[usize] for vector[T]:
+    type output = T
+    machine def set_at(mut self, i: usize, value: T) -> unit:
+        if i >= self.len:
+            panic("index out of range")
+        self.data[i] = value
+
+## An iterator over a `vector[T]`'s elements, by value.
+##
+## Holds the storage pointer and a cursor rather than a copy of the vector:
+## iterating must not allocate, and must see the elements the vector has.
+pub type vector_iter[T] = { data: *mut T, len: usize, i: usize }
+
+impl[T] iterator[T] for vector_iter[T]:
+    machine def next(mut self) -> option[T]:
+        if self.i >= self.len:
+            return @none
+        let value = self.data[self.i]
+        self.i = self.i + 1
+        return @some(value)
+
+## `for x in v` — the collection hands back an iterator rather than being
+## one itself, which is why this is `into_iterator` and not `iterator`.
+impl[T] into_iterator[T] for vector[T]:
+    type iter = vector_iter[T]
+    def into_iter(self) -> vector_iter[T]:
+        return vector_iter[T] { data: self.data, len: self.len, i: 0 }
+
+## `let v: vector[int32] = [1, 2, 3]`.
+##
+## Allocates exactly `n` elements — a literal's length is known at compile
+## time, so there is no reason to over-reserve and no reason to grow.
+impl[T] from_array[T] for vector[T]:
+    static machine def from_array[n: usize](items: array[T, n]) -> vector[T]:
+        var out = vector[T].new()
+        out.reserve(n)
+        var i: usize = 0
+        while i < n:
+            out.push(items[i])
+            i = i + 1
+        return out

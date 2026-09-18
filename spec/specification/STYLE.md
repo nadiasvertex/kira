@@ -10,7 +10,7 @@ Write like the ISO C++ standard or the C++ standard library reference (cpprefere
 - No motivating preamble ("Sometimes you want to..."). State the construct, its syntax, its semantics, its rules.
 - Keep prose short; prefer a list of rules to a paragraph of explanation.
 - Code examples are allowed but minimal — one canonical example per construct, not a tour. Do not repeat an example to show "another way to do the same thing" unless the second form has different semantics.
-- Cross-reference other chapters by title and relative path, e.g. `see [Traits](../intermediate/18-traits.md)`.
+- Cross-reference other chapters by title and relative path, e.g. `see [Traits](02-intermediate/18-traits.md)`.
 
 ## Required chapter header
 

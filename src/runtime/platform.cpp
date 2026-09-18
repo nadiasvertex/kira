@@ -13,8 +13,7 @@ namespace {
 namespace query = kira::runtime::platform_query;
 
 [[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
-  return static_cast<uint64_t *>(
-      kira_heap_alloc(count * sizeof(uint64_t)));
+  return static_cast<uint64_t *>(kira_heap_alloc(count * sizeof(uint64_t)));
 }
 
 [[nodiscard]] auto ptr_slot(void *raw) -> uint64_t {

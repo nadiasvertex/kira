@@ -39,7 +39,7 @@ struct discovered_suite {
                                    std::string_view expected_name) -> bool {
   const auto *named = dynamic_cast<const ast::named_type *>(node);
   return named != nullptr && named->path.size() == 1 &&
-        named->path.front() == expected_name;
+         named->path.front() == expected_name;
 }
 
 /// Structural (syntax-only) match for `result[unit, test_failure]` — no
@@ -54,12 +54,12 @@ struct discovered_suite {
     return false;
   }
   return is_simple_named(named->type_args[0].value.get(), "unit") &&
-        is_simple_named(named->type_args[1].value.get(), "test_failure");
+         is_simple_named(named->type_args[1].value.get(), "test_failure");
 }
 
 [[nodiscard]] auto is_test_shaped(const ast::func_decl &fn) -> bool {
   return fn.params.empty() && fn.return_type != nullptr &&
-        is_result_unit_test_failure(fn.return_type.get());
+         is_result_unit_test_failure(fn.return_type.get());
 }
 
 [[nodiscard]] auto file_declares_main(const ast::file &f) -> bool {
@@ -158,9 +158,10 @@ struct discovered_suite {
 /// A `tests` submodule is not itself descended into: a `tests` submodule
 /// nested inside another `tests` submodule would have no meaningful parent
 /// to name a suite after, and nothing in the spec asks for one.
-[[nodiscard]] auto collect_suites(
-    const std::vector<std::unique_ptr<ast::node>> &items,
-    const std::string &module_path, std::vector<discovered_suite> &out)
+[[nodiscard]] auto
+collect_suites(const std::vector<std::unique_ptr<ast::node>> &items,
+               const std::string &module_path,
+               std::vector<discovered_suite> &out)
     -> std::expected<void, std::string> {
   for (const auto &item : items) {
     const auto *sub = dynamic_cast<const ast::sub_module_decl *>(item.get());
@@ -199,8 +200,9 @@ struct discovered_suite {
 ///
 /// A hook a suite doesn't declare is simply left out of the call: `suite`
 /// defaults every hook to `@none`, so only the hooks that exist are named.
-[[nodiscard]] auto render_runner_source(
-    const std::vector<discovered_suite> &suites) -> std::string {
+[[nodiscard]] auto
+render_runner_source(const std::vector<discovered_suite> &suites)
+    -> std::string {
   auto hook_arg = [](std::string_view param,
                      const std::optional<std::string> &hook) -> std::string {
     if (!hook.has_value()) {
@@ -209,10 +211,11 @@ struct discovered_suite {
     return std::format(", {}: @some({})", param, *hook);
   };
 
-  auto source = std::string{"module kira_test_runner\n\n"
-                            "use std.test.{case, skipped, suite, run_suites}\n\n"
-                            "def main() -> int32:\n"
-                            "    return run_suites([\n"};
+  auto source =
+      std::string{"module kira_test_runner\n\n"
+                  "use std.test.{case, skipped, suite, run_suites}\n\n"
+                  "def main() -> int32:\n"
+                  "    return run_suites([\n"};
   for (const auto &suite : suites) {
     source += std::format("        suite(\"{}\", [\n", suite.suite_name);
     for (const auto &c : suite.cases) {
@@ -265,8 +268,7 @@ auto discover_and_inject_test_runner(cli_config &cfg)
     }
     const auto module_path =
         join_module_path(input.ast_file->module_decl->path);
-    auto collected =
-        collect_suites(input.ast_file->items, module_path, suites);
+    auto collected = collect_suites(input.ast_file->items, module_path, suites);
     if (!collected.has_value()) {
       return std::unexpected(collected.error());
     }
@@ -308,9 +310,9 @@ auto discover_and_inject_test_runner(cli_config &cfg)
   }
   auto out = std::ofstream(out_path, std::ios::trunc);
   if (!out) {
-    return std::unexpected(std::format(
-        "could not write the synthesized test runner to `{}`",
-        out_path.string()));
+    return std::unexpected(
+        std::format("could not write the synthesized test runner to `{}`",
+                    out_path.string()));
   }
   out << source;
   out.close();

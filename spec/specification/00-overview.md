@@ -42,5 +42,5 @@ When a feature from a later section would resolve the diagnostic — for example
 
 ## See also
 
-- [The Prelude](stdlib/42-prelude.md) — names available in every module without a `use` declaration.
+- [The Prelude](04-stdlib/42-prelude.md) — names available in every module without a `use` declaration.
 - `../kira-grammar.ebnf` — grammar productions referenced by name throughout.

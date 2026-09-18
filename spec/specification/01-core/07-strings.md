@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-Covers the built-in `str` type, string literal interpolation and escape sequences, and `char`. This chapter covers only the built-in type and its literal syntax; the method surface (`.contains`, `.split`, `.replace`, etc.) is specified in [std.string](../stdlib/strings-and-formatting/52-std-string.md) — not duplicated here.
+Covers the built-in `str` type, string literal interpolation and escape sequences, and `char`. This chapter covers only the built-in type and its literal syntax; the method surface (`.contains`, `.split`, `.replace`, etc.) is specified in [std.string](../04-stdlib/strings-and-formatting/52-std-string.md) — not duplicated here.
 
 ## `str`
 
@@ -20,7 +20,7 @@ An interpolation brace is written literally by doubling it:
 let literal = "{{x}} stays literal"    # "{x} stays literal" — {{ is {, }} is }
 ```
 
-`str` methods (`.len()`, `.to_uppercase()`, `.contains()`, `.split()`, ...) are specified in [std.string](../stdlib/strings-and-formatting/52-std-string.md), including the byte-vs-character-count distinction for `.len()`.
+`str` methods (`.len()`, `.to_uppercase()`, `.contains()`, `.split()`, ...) are specified in [std.string](../04-stdlib/strings-and-formatting/52-std-string.md), including the byte-vs-character-count distinction for `.len()`.
 
 ## Escape sequences
 
@@ -40,5 +40,5 @@ let ch = 'a'    # a char; also '\n', '♥'
 
 ## See also
 
-- [std.string](../stdlib/strings-and-formatting/52-std-string.md) — the `str` method surface.
+- [std.string](../04-stdlib/strings-and-formatting/52-std-string.md) — the `str` method surface.
 - [Collections](06-collections-list-array.md) — `list`/`array`, the other built-in sequence types.

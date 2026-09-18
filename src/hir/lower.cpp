@@ -362,9 +362,21 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_index(const ast::index_expr &index)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// Builds the call an `index`/`index_set` dispatch stands for; `value` is
+  /// null for the read (`at`) half and the assigned value for the write
+  /// (`set_at`) half.
+  [[nodiscard]] auto
+  lower_index_dispatch(source_span span, type_id result,
+                       const semantic::resolved_callee &resolved,
+                       ptr<hir_expr> object, ptr<hir_expr> subject,
+                       ptr<hir_expr> value = nullptr)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_tuple(const ast::tuple_expr &tuple)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_array(const ast::array_expr &array)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_array_value(const ast::array_expr &array,
+                                       type_id type)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_struct(const ast::struct_expr &literal)
       -> std::expected<ptr<hir_expr>, lowering_error>;
@@ -1724,8 +1736,49 @@ auto lowerer::lower_index(const ast::index_expr &index)
   if (!idx.has_value()) {
     return std::unexpected(idx.error());
   }
+  // `v[i]` on a user type resolved to a real `std.traits.index` impl (see
+  // `check.cpp`'s `require_index_trait`) lowers to an ordinary call to that
+  // `at` method — receiver as the hidden `self`, subscript as its sole
+  // explicit argument — exactly as `lower_binary` does for an overloaded
+  // arithmetic operator. Builtin containers record no dispatch and keep the
+  // direct `hir_index` addressing below, so neither backend changes.
+  if (const auto found = checked_.index_dispatches.find(&index);
+      found != checked_.index_dispatches.end()) {
+    return lower_index_dispatch(index.span, *type, found->second,
+                                std::move(*object), std::move(*idx));
+  }
   return ok_expr(
       make<hir_index>(index.span, *type, std::move(*object), std::move(*idx)));
+}
+
+/// Builds the `receiver.method(args...)` call an index dispatch stands for.
+/// Shared by the read (`at`) and write (`set_at`) halves so the mangled-name
+/// convention cannot drift between them.
+auto lowerer::lower_index_dispatch(source_span span, type_id result,
+                                   const semantic::resolved_callee &resolved,
+                                   ptr<hir_expr> object, ptr<hir_expr> subject,
+                                   ptr<hir_expr> value)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  // An empty `impl_target_type` means `decl` is already a monomorphized
+  // instance carrying its own mangled name — the same convention
+  // `lower_call` and `lower_binary` follow. Composing `Type::method`
+  // unconditionally would produce a key no compiled function ever had.
+  const auto local_name = resolved.impl_target_type.empty()
+                              ? resolved.decl->name
+                              : std::format("{}::{}", resolved.impl_target_type,
+                                            resolved.decl->name);
+  const auto symbol = resolve_reference(local_name);
+  auto callee = ptr<hir_expr>(make<hir_local_ref>(
+      span, k_unknown_type, symbol, local_name, resolved.owner_module));
+  auto args = ptr_vec<hir_expr>{};
+  args.reserve(3);
+  args.push_back(std::move(object));
+  args.push_back(std::move(subject));
+  if (value != nullptr) {
+    args.push_back(std::move(value));
+  }
+  return ok_expr(
+      hir::make<hir_call>(span, result, std::move(callee), std::move(args)));
 }
 
 auto lowerer::lower_tuple(const ast::tuple_expr &tuple)
@@ -1756,6 +1809,44 @@ auto lowerer::lower_array(const ast::array_expr &array)
   if (!type.has_value()) {
     return std::unexpected(type.error());
   }
+  // A literal written where a user collection was expected: build the
+  // `array[T, n]` exactly as before, then hand it to that collection's
+  // `from_array`. The array type comes from the recorded conversion rather
+  // than from `checked_type_of`, which now answers with the collection.
+  if (const auto found = checked_.array_literal_conversions.find(&array);
+      found != checked_.array_literal_conversions.end()) {
+    const auto &conversion = found->second;
+    if (conversion.array_type == k_unknown_type) {
+      return fail(lowering_error_kind::unresolved_type, array.span,
+                  "the length of this literal did not resolve to a constant, "
+                  "so there is no array type to build it as");
+    }
+    auto inner = lower_array_value(array, conversion.array_type);
+    if (!inner.has_value()) {
+      return std::unexpected(inner.error());
+    }
+    const auto local_name =
+        conversion.callee.impl_target_type.empty()
+            ? conversion.callee.decl->name
+            : std::format("{}::{}", conversion.callee.impl_target_type,
+                          conversion.callee.decl->name);
+    const auto symbol = resolve_reference(local_name);
+    auto callee = ptr<hir_expr>(
+        make<hir_local_ref>(array.span, k_unknown_type, symbol, local_name,
+                            conversion.callee.owner_module));
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(std::move(*inner));
+    return ok_expr(hir::make<hir_call>(array.span, *type, std::move(callee),
+                                       std::move(args)));
+  }
+  return lower_array_value(array, *type);
+}
+
+/// Builds the `array[T, n]` value a sequence literal denotes, at the type
+/// given rather than the literal's own checked type — the two differ when
+/// the literal is being handed to a `from_array` constructor.
+auto lowerer::lower_array_value(const ast::array_expr &array, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
   if (array.fill_value != nullptr) {
     auto fill_value = lower_expr(*array.fill_value);
     if (!fill_value.has_value()) {
@@ -1769,7 +1860,7 @@ auto lowerer::lower_array(const ast::array_expr &array)
       }
       fill_count = std::move(*lowered_count);
     }
-    return ok_expr(make<hir_array_init>(array.span, *type, ptr_vec<hir_expr>{},
+    return ok_expr(make<hir_array_init>(array.span, type, ptr_vec<hir_expr>{},
                                         std::move(*fill_value),
                                         std::move(fill_count)));
   }
@@ -1787,7 +1878,7 @@ auto lowerer::lower_array(const ast::array_expr &array)
     }
     elements.push_back(std::move(*lowered));
   }
-  return ok_expr(make<hir_array_init>(array.span, *type, std::move(elements),
+  return ok_expr(make<hir_array_init>(array.span, type, std::move(elements),
                                       nullptr, nullptr));
 }
 
@@ -2862,6 +2953,48 @@ auto lowerer::lower_stmt(const ast::node &node)
       return fail(lowering_error_kind::unsupported_construct, assign.span,
                   "assignment is missing its target or value");
     }
+    // `v[i] = x` on a user type with an `index_set` impl is a call to
+    // `set_at`, not a store into a place — the collection decides what
+    // writing at `i` means, and may have no addressable slot at all. Handled
+    // before the target is lowered, because there is no place to lower.
+    if (assign.target->kind == ast::node_kind::index_expr) {
+      const auto &place = dynamic_cast<const ast::index_expr &>(*assign.target);
+      if (const auto found = checked_.index_set_dispatches.find(&place);
+          found != checked_.index_set_dispatches.end()) {
+        if (assign.op != ast::assign_op::assign) {
+          return fail(lowering_error_kind::unsupported_construct, assign.span,
+                      "compound assignment through an `index_set` impl is "
+                      "not supported yet — write `v[i] = v[i] + x`");
+        }
+        if (place.object == nullptr || place.index == nullptr) {
+          return fail(lowering_error_kind::unsupported_construct, assign.span,
+                      "index assignment is missing its target or index");
+        }
+        auto object = lower_expr(*place.object);
+        if (!object.has_value()) {
+          return std::unexpected(object.error());
+        }
+        auto subject = lower_expr(*place.index);
+        if (!subject.has_value()) {
+          return std::unexpected(subject.error());
+        }
+        auto assigned = lower_expr(*assign.value);
+        if (!assigned.has_value()) {
+          return std::unexpected(assigned.error());
+        }
+        auto call = lower_index_dispatch(
+            // `set_at` returns `unit` and this is a statement, so the
+            // call's value is discarded — `k_unknown_type` is what
+            // `lower_binary` uses for the same reason on its callee.
+            assign.span, k_unknown_type, found->second, std::move(*object),
+            std::move(*subject), std::move(*assigned));
+        if (!call.has_value()) {
+          return std::unexpected(call.error());
+        }
+        return one_stmt(
+            ptr<hir_node>(make<hir_expr_stmt>(assign.span, std::move(*call))));
+      }
+    }
     auto target = lower_expr(*assign.target);
     if (!target.has_value()) {
       return std::unexpected(target.error());
@@ -3826,6 +3959,29 @@ auto lowerer::lower_iterator_loop(
   if (!handle_value.has_value()) {
     return std::unexpected(handle_value.error());
   }
+  // A collection reaches the loop through `into_iterator`: call `into_iter`
+  // once, here, and iterate what it returns. The handle the loop then holds
+  // is that iterator, not the collection, so `handle_type` changes with it —
+  // passing the collection's type to `next` would hand the backends a
+  // receiver typed as the wrong thing.
+  auto handle_type = iterable_type;
+  if (dispatch.adapter_decl != nullptr) {
+    const auto adapter_name =
+        dispatch.adapter_impl_target_type.empty()
+            ? dispatch.adapter_decl->name
+            : std::format("{}::{}", dispatch.adapter_impl_target_type,
+                          dispatch.adapter_decl->name);
+    const auto adapter_symbol = resolve_reference(adapter_name);
+    auto adapter_callee = ptr<hir_expr>(
+        make<hir_local_ref>(iterable.span, k_unknown_type, adapter_symbol,
+                            adapter_name, dispatch.adapter_owner_module));
+    auto adapter_args = ptr_vec<hir_expr>{};
+    adapter_args.push_back(std::move(*handle_value));
+    handle_value = ok_expr(hir::make<hir_call>(
+        iterable.span, dispatch.adapter_result_type, std::move(adapter_callee),
+        std::move(adapter_args)));
+    handle_type = dispatch.adapter_result_type;
+  }
   auto result = ptr_vec<hir_node>{};
   const auto handle_symbol = mint_symbol();
   result.push_back(ptr<hir_node>(make<hir_let>(iterable.span, handle_symbol,
@@ -3850,7 +4006,7 @@ auto lowerer::lower_iterator_loop(
       span, k_unknown_type, callee_symbol, method_name, dispatch.owner_module));
   auto call_args = ptr_vec<hir_expr>{};
   call_args.push_back(ptr<hir_expr>(
-      make<hir_local_ref>(iterable.span, iterable_type, handle_symbol,
+      make<hir_local_ref>(iterable.span, handle_type, handle_symbol,
                           std::string("<for iterator>"))));
 
   const auto subject_symbol = mint_symbol();
