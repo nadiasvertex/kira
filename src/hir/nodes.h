@@ -116,6 +116,9 @@ enum class hir_node_kind : uint8_t {
   hir_str_scalar_width,  ///< Bytes consumed decoding the scalar at a byte
                          ///< offset into a `str` — companion to
                          ///< `hir_str_decode_scalar`.
+  hir_mutable_cell, ///< `xs.mutable_cell(i)`: a bounds-checked
+                    ///< `option[cell_mut[T]]`; see `hir_mutable_cell`.
+  hir_cell_set,     ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,
@@ -585,6 +588,44 @@ struct hir_generator_next : hir_expr {
   hir_generator_next(source_span s, type_id t, ptr<hir_expr> obj)
       : hir_expr(hir_node_kind::hir_generator_next, s, t),
         object(std::move(obj)) {}
+};
+
+/// `xs.mutable_cell(i)`: bounds-checks `index` against `object`'s element
+/// count and evaluates to `@some(<address of element i>)` if in bounds,
+/// `@none` otherwise — a `cell_mut[T]` is a bare element address (see
+/// `hir_container_data`'s "runtime representation" rationale, which applies
+/// identically here), so the payload is the same address `&mut object[index]`
+/// would compute, just reached without `compile_element_address`'s
+/// unconditional panic on failure. `object.cell(i)` (the non-`option`,
+/// panic-on-failure sibling) needs no dedicated node: it lowers straight to
+/// `hir_unary(addr_of, hir_index(object, index))`, since that already panics
+/// on out-of-bounds the way plain indexing does. `type` is always
+/// `option[cell_mut[T]]`.
+struct hir_mutable_cell : hir_expr {
+  ptr<hir_expr> object;
+  ptr<hir_expr> index;
+
+  hir_mutable_cell(source_span s, type_id t, ptr<hir_expr> obj,
+                   ptr<hir_expr> idx)
+      : hir_expr(hir_node_kind::hir_mutable_cell, s, t),
+        object(std::move(obj)), index(std::move(idx)) {}
+};
+
+/// `c.set(v)` on a `cell_mut[T]`: stores `v` through the address `c` already
+/// is (see `hir_mutable_cell`) and evaluates to `unit`. A dedicated node
+/// rather than reuse of `hir_assign` (`*c = v`), because `hir_assign` is a
+/// statement — it has no value of its own to plug into an expression
+/// position, and `c.set(v)` is a method call used as one. `cell.get()`/
+/// `cell_mut.get()` need no equivalent node: they lower straight to
+/// `hir_unary(deref, cell_expr)`, since reading through the address is all
+/// `get` ever does.
+struct hir_cell_set : hir_expr {
+  ptr<hir_expr> cell;
+  ptr<hir_expr> value;
+
+  hir_cell_set(source_span s, type_id t, ptr<hir_expr> c, ptr<hir_expr> v)
+      : hir_expr(hir_node_kind::hir_cell_set, s, t), cell(std::move(c)),
+        value(std::move(v)) {}
 };
 
 /// Indentation-delimited block. In expression position its `type` is the

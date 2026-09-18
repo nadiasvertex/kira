@@ -7897,8 +7897,22 @@ private:
       }
       return k_unknown_type;
     }
-    case ast::unary_op::addr_of:
+    case ast::unary_op::addr_of: {
+      // `&expr` where a `cell[T]` is expected (an `index_mut`-style trait
+      // method's body handing back the single-element view its signature
+      // promises) types directly as the `cell[T]` rather than `&T`: the two
+      // are the same bare address at runtime (`spec/todo.md` item 19), so
+      // there is nothing this would paper over — it just lets the checker
+      // record the shape lowering (and the borrow checker's view tracking)
+      // already expect instead of a mismatched-but-compatible `&T`.
+      const auto &expected_entry = types_.entry(expected);
+      if (expected_entry.kind == type_kind::builtin_generic_kind &&
+          expected_entry.name == "cell" && expected_entry.args.size() == 1 &&
+          types_.compatible(expected_entry.args.front(), stripped)) {
+        return expected;
+      }
       return types_.ref_to(stripped, false);
+    }
     case ast::unary_op::addr_of_mut: {
       // Lending a value mutably hands someone else the right to change it, so
       // nothing known about it survives the loan. The design doc is explicit
@@ -7971,6 +7985,15 @@ private:
             }
           }
         }
+      }
+      // `&mut expr` where a `cell_mut[T]` is expected — the mutable sibling
+      // of the `addr_of` case above.
+      const auto &expected_entry = types_.entry(expected);
+      if (expected_entry.kind == type_kind::builtin_generic_kind &&
+          expected_entry.name == "cell_mut" &&
+          expected_entry.args.size() == 1 &&
+          types_.compatible(expected_entry.args.front(), stripped)) {
+        return expected;
       }
       return types_.ref_to(stripped, true);
     }

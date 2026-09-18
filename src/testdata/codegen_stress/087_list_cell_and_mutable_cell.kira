@@ -1,0 +1,35 @@
+module main
+
+# expect: 1220
+
+# `xs.cell(i)`/`xs.mutable_cell(i)` (spec/specification/02-intermediate/
+# 15-views.md's single-element views) — a `cell[T]`/`cell_mut[T]` is a bare
+# element address at runtime (see spec/todo.md item 19), built by hand rather
+# than through `hir_variant_init` for the `mutable_cell` bounds-check-or-@none
+# case. Exercises construction (`cell`/`mutable_cell`, both the in-bounds and
+# out-of-bounds arm), reading (`get`), and writing (`set`) on both backends,
+# combined into one deterministic integer so agreement alone can't hide a
+# shared addressing bug (the layout/addressing concern `codegen_stress_test`'s
+# own doc comment calls out).
+
+def double_at(xs: &mut list[int32], i: usize) -> bool:
+    if let @some(c) = xs.mutable_cell(i):
+        c.set(c.get() * 2)
+        return true
+    return false
+
+def main() -> int32:
+    let mut xs = [10, 20, 30, 40, 50]
+
+    let doubled = double_at(&mut xs, 2)   # 30 -> 60
+    let oob = double_at(&mut xs, 99)       # out of bounds, no-op
+
+    let c = xs.cell(3)
+    let read_back = c.get()               # 40
+
+    let sum = xs[0] + xs[1] + xs[2] + xs[3] + xs[4] # 10+20+60+40+50 = 180
+
+    let doubled_flag = if doubled: 1 else: 0
+    let oob_flag = if oob: 1 else: 0
+
+    return sum + read_back + doubled_flag * 1000 - oob_flag * 1000

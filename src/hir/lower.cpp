@@ -1438,6 +1438,81 @@ auto lowerer::lower_call(const ast::call_expr &call)
                          call.span, *type, token_kind::kw_unit, "")))));
       return ok_expr(make<hir_block>(call.span, *type, std::move(stmts)));
     }
+    // `xs.cell(i)`: an unchecked single-element view — same address a plain
+    // `&xs[i]` would compute (and the same panic on out-of-bounds), just
+    // named/typed as `cell[T]` rather than `&T`. No dedicated node: reuse
+    // `hir_unary(addr_of, hir_index(...))` verbatim.
+    if (field.object != nullptr && field.field_name == "cell" &&
+        call.args.size() == 1 && call.args.front().value != nullptr) {
+      const auto element_type = checked_.types.entry(*type).args.front();
+      auto object = lower_expr(*field.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      auto idx = lower_expr(*call.args.front().value);
+      if (!idx.has_value()) {
+        return std::unexpected(idx.error());
+      }
+      auto index_node = ptr<hir_expr>(make<hir_index>(
+          call.span, element_type, std::move(*object), std::move(*idx)));
+      return ok_expr(hir::make<hir_unary>(
+          call.span, *type, ast::unary_op::addr_of, std::move(index_node)));
+    }
+    // `xs.mutable_cell(i)`: the checked, non-panicking sibling — see
+    // `hir_mutable_cell`.
+    if (field.object != nullptr && field.field_name == "mutable_cell" &&
+        call.args.size() == 1 && call.args.front().value != nullptr) {
+      auto object = lower_expr(*field.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      auto idx = lower_expr(*call.args.front().value);
+      if (!idx.has_value()) {
+        return std::unexpected(idx.error());
+      }
+      return ok_expr(make<hir_mutable_cell>(call.span, *type,
+                                            std::move(*object),
+                                            std::move(*idx)));
+    }
+    // `c.get()` on a `cell[T]`/`cell_mut[T]`: reading through the address `c`
+    // already is. No dedicated node: reuse `hir_unary(deref, ...)` verbatim.
+    if (field.object != nullptr && field.field_name == "get" &&
+        call.args.empty()) {
+      const auto object_type = checked_type_of(*field.object);
+      if (object_type.has_value()) {
+        const auto &object_entry = checked_.types.entry(*object_type);
+        if (object_entry.kind == type_kind::builtin_generic_kind &&
+            (object_entry.name == "cell" || object_entry.name == "cell_mut")) {
+          auto object = lower_expr(*field.object);
+          if (!object.has_value()) {
+            return std::unexpected(object.error());
+          }
+          return ok_expr(hir::make<hir_unary>(
+              call.span, *type, ast::unary_op::deref, std::move(*object)));
+        }
+      }
+    }
+    // `c.set(v)` on a `cell_mut[T]` — see `hir_cell_set`.
+    if (field.object != nullptr && field.field_name == "set" &&
+        call.args.size() == 1 && call.args.front().value != nullptr) {
+      const auto object_type = checked_type_of(*field.object);
+      if (object_type.has_value()) {
+        const auto &object_entry = checked_.types.entry(*object_type);
+        if (object_entry.kind == type_kind::builtin_generic_kind &&
+            object_entry.name == "cell_mut") {
+          auto object = lower_expr(*field.object);
+          if (!object.has_value()) {
+            return std::unexpected(object.error());
+          }
+          auto value = lower_expr(*call.args.front().value);
+          if (!value.has_value()) {
+            return std::unexpected(value.error());
+          }
+          return ok_expr(make<hir_cell_set>(
+              call.span, *type, std::move(*object), std::move(*value)));
+        }
+      }
+    }
   }
 
   // `@variant(args...)` parses as a call whose callee is the variant's

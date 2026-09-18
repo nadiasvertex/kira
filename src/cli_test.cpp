@@ -1251,6 +1251,85 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 #endif
 }
 
+/// `&mut v[i]` on a user type implementing `std.traits.index_mut`
+/// (spec/todo.md item 19) — dispatches to `at_mut`, whose body returns
+/// `&mut self.a` where its signature promises a `cell_mut[T]`. That return
+/// type-checks (`type_table::compatible`'s `cell`/`cell_mut` rule,
+/// `checker::infer_unary`'s matching `addr_of_mut` case) because the two are
+/// the same bare address at runtime, and `c.get()`/`c.set(...)` on the
+/// result exercise `cell_mut`'s actual runtime representation on both
+/// tiers. This needs the full driver rather than `codegen_stress_test`'s
+/// corpus, which checks a single file with no stdlib injected and so has no
+/// `index`/`index_mut` traits to dispatch against (see
+/// `test_run_ord_dispatch_translates_ordering_to_bool` for the same
+/// constraint on a different trait).
+auto test_run_index_mut_dispatches_to_cell_mut() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_index_mut.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_index_mut_bin";
+
+  write_file(source_path,
+             "module sample\n"
+             "type writable = { a: int32 }\n"
+             "impl index[usize] for writable:\n"
+             "  type output = int32\n"
+             "  def at(self, i: usize) -> int32:\n"
+             "    return self.a\n"
+             "impl index_mut[usize] for writable:\n"
+             "  def at_mut(mut self, i: usize) -> mut cell[self.output]:\n"
+             "    return &mut self.a\n"
+             "def main() -> int32:\n"
+             "  let mut w = writable{ a: 10 }\n"
+             "  let c = &mut w[0]\n"
+             "  c.set(c.get() * 5)\n"
+             "  return w.a\n");
+
+  kira::driver::cli_config run_cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected the index_mut program to compile cleanly");
+  expect(run_report->run.has_value(), "expected a run outcome to be recorded");
+  expect(run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == 50,
+         "expected the bytecode VM's exit code to be 10 * 5 == 50");
+
+  kira::driver::cli_config build_cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value(), "expected compile driver to return a report");
+  expect(build_report->build.has_value(),
+         "expected a build outcome to be recorded");
+  expect(build_report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     build_report->build->message));
+
+  const auto exit_status = std::system(output_path.string().c_str());
+  expect(exit_status != -1, "expected the linked executable to launch");
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(exit_status) == 50,
+         "expected the linked executable's exit code to be 10 * 5 == 50");
+#endif
+}
+
 /// A function imported from another module and used as a *plain value* —
 /// bound to a `let` of `fn` type, and passed as a call argument — rather
 /// than called directly. Both uses used to type-check and then fail in
@@ -3910,6 +3989,7 @@ auto main() -> int {
     test_compile_sources_reports_unresolved_session_import();
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
+    test_run_index_mut_dispatches_to_cell_mut();
     test_cross_module_function_used_as_a_value();
     test_module_qualified_function_used_as_a_value();
     test_build_at_o2_still_links_and_runs_correctly();

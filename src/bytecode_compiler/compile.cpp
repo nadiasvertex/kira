@@ -1330,6 +1330,12 @@ private:
     case hir_node_kind::hir_str_scalar_width:
       return compile_str_scalar_width(
           dynamic_cast<const hir::hir_str_scalar_width &>(expr), dst);
+    case hir_node_kind::hir_mutable_cell:
+      return compile_mutable_cell(
+          dynamic_cast<const hir::hir_mutable_cell &>(expr), dst);
+    case hir_node_kind::hir_cell_set:
+      return compile_cell_set(dynamic_cast<const hir::hir_cell_set &>(expr),
+                              dst);
     case hir_node_kind::hir_block:
       // A block used in expression position (e.g. a comprehension's
       // desugared accumulator block, `hir::lower_comprehension`) — its
@@ -1419,7 +1425,8 @@ private:
     case semantic::type_kind::builtin_generic_kind:
       return entry.name == "list" || entry.name == "slice" ||
              entry.name == "slice_mut" || entry.name == "option" ||
-             entry.name == "result";
+             entry.name == "result" || entry.name == "cell" ||
+             entry.name == "cell_mut";
     default:
       return false;
     }
@@ -2796,6 +2803,128 @@ private:
 
     return element_location{
         .data_reg = data_reg, .index_reg = *index_reg, .elem_size = elem_size};
+  }
+
+  /// `xs.mutable_cell(i)` — `@some(&xs[i])`/`@none` built by hand rather than
+  /// through `compile_variant_init`: the bounds check must branch to `@none`
+  /// on failure instead of `op_panic_if`'s unconditional trap, mirroring
+  /// `compile_if`'s own jump/patch shape. Only ever called with a `list[T]`
+  /// receiver (the sole `k_builtin_methods` owner of `mutable_cell`), which
+  /// always has a real length to check against.
+  [[nodiscard]] auto compile_mutable_cell(const hir::hir_mutable_cell &node,
+                                          virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    auto object_reg = compile_expr(*node.object);
+    if (!object_reg.has_value()) {
+      return std::unexpected(object_reg.error());
+    }
+    auto index_reg = compile_expr(*node.index);
+    if (!index_reg.has_value()) {
+      return std::unexpected(index_reg.error());
+    }
+    auto view =
+        resolve_container_view(node.object->type, *object_reg, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
+    }
+    if (!view->len_reg.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "`mutable_cell` needs a receiver with a checkable "
+                     "length"});
+    }
+    const auto some_tag = runtime::sum_variant_tag(types_, node.type, "some");
+    const auto none_tag = runtime::sum_variant_tag(types_, node.type, "none");
+    if (!some_tag.has_value() || !none_tag.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "`mutable_cell`'s result does not resolve to "
+                     "`option`'s `some`/`none` variants — this should have "
+                     "been rejected by the type checker"});
+    }
+    const auto payload_slots = runtime::sum_max_payload_slots(types_, node.type);
+
+    auto in_bounds_reg = alloc_register(node.span);
+    if (!in_bounds_reg.has_value()) {
+      return std::unexpected(in_bounds_reg.error());
+    }
+    emit_op(opcode::op_lt);
+    emit_register(*in_bounds_reg);
+    emit_register(*index_reg);
+    emit_register(*view->len_reg);
+    writer_.emit_numeric_kind(numeric_kind::u64);
+    emit_op(opcode::op_jump_if_false);
+    emit_register(*in_bounds_reg);
+    const auto none_placeholder = writer_.emit_jump_placeholder();
+
+    // In-bounds arm: `@some(&object[index])`.
+    auto addr_reg = alloc_register(node.span);
+    if (!addr_reg.has_value()) {
+      return std::unexpected(addr_reg.error());
+    }
+    emit_op(opcode::op_addr_indexed);
+    emit_register(*addr_reg);
+    emit_register(view->data_reg);
+    emit_register(*index_reg);
+    writer_.emit_u8(view->elem_size);
+
+    emit_alloc_slots(dst, static_cast<uint16_t>(1 + payload_slots));
+    const auto some_tag_const =
+        writer_.add_constant(slot_value{static_cast<int64_t>(*some_tag)});
+    auto some_tag_reg = alloc_register(node.span);
+    if (!some_tag_reg.has_value()) {
+      return std::unexpected(some_tag_reg.error());
+    }
+    emit_op(opcode::op_load_const);
+    emit_register(*some_tag_reg);
+    writer_.emit_u16(some_tag_const);
+    emit_store_slot(dst, 0, *some_tag_reg);
+    emit_store_slot(dst, 1, *addr_reg);
+
+    emit_op(opcode::op_jump);
+    const auto end_placeholder = writer_.emit_jump_placeholder();
+
+    // Out-of-bounds arm: `@none`.
+    writer_.patch_jump_to_here(none_placeholder);
+    emit_alloc_slots(dst, static_cast<uint16_t>(1 + payload_slots));
+    const auto none_tag_const =
+        writer_.add_constant(slot_value{static_cast<int64_t>(*none_tag)});
+    auto none_tag_reg = alloc_register(node.span);
+    if (!none_tag_reg.has_value()) {
+      return std::unexpected(none_tag_reg.error());
+    }
+    emit_op(opcode::op_load_const);
+    emit_register(*none_tag_reg);
+    writer_.emit_u16(none_tag_const);
+    emit_store_slot(dst, 0, *none_tag_reg);
+
+    writer_.patch_jump_to_here(end_placeholder);
+    return {};
+  }
+
+  /// `c.set(v)` on a `cell_mut[T]` — stores through the address `c` already
+  /// is (see `hir_cell_set`), then evaluates to `unit`. Shares the same
+  /// deref-store logic `compile_assign` uses for `*c = v`.
+  [[nodiscard]] auto compile_cell_set(const hir::hir_cell_set &node,
+                                      virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    auto ptr_reg = compile_expr(*node.cell);
+    if (!ptr_reg.has_value()) {
+      return std::unexpected(ptr_reg.error());
+    }
+    auto value_reg = compile_expr(*node.value);
+    if (!value_reg.has_value()) {
+      return std::unexpected(value_reg.error());
+    }
+    emit_store_field(*ptr_reg, 0, *value_reg,
+                     element_stride(node.value->type));
+    const auto index = writer_.add_constant(slot_value{uint64_t{0}});
+    emit_op(opcode::op_load_const);
+    emit_register(dst);
+    writer_.emit_u16(index);
+    return {};
   }
 
   /// Sum-type variant construction `@variant(args...)`: allocates a heap

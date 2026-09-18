@@ -640,6 +640,21 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
   }
 
   if (expected_entry.kind != found_entry.kind) {
+    // A `&T`/`&mut T` place and a `cell[T]`/`mut cell[T]` view are the same
+    // bare address at runtime (`spec/todo.md` item 19) — the distinction is
+    // purely in the API surface (a view is tracked by the borrow checker and
+    // travels with `get`/`set` instead of `*`/`= `), so a `&mut` place is
+    // accepted wherever a `cell_mut` is expected, and likewise `&`/`cell`.
+    // `cell_mut` still demands a *mutable* reference: accepting a plain `&T`
+    // there would let `c.set(...)` write through a borrow that was never
+    // granted exclusively.
+    if (expected_entry.kind == type_kind::builtin_generic_kind &&
+        found_entry.kind == type_kind::ref_kind &&
+        expected_entry.args.size() == 1 &&
+        (expected_entry.name == "cell" ||
+         (expected_entry.name == "cell_mut" && found_entry.is_mut))) {
+      return compatible(expected_entry.args.front(), found_entry.result);
+    }
     // A `&T` argument position accepts a lent `T`; the borrow checker owns
     // the deeper rules, so typing treats the reference as its target here.
     if (expected_entry.kind == type_kind::ref_kind) {

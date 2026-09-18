@@ -4,11 +4,11 @@ module sample
 # rather than `index`'s `at` -- the two share syntax (`v[i]`) up to the
 # enclosing `&mut`, which is what selects between them.
 #
-# `at_mut`'s body cannot yet construct the `cell_mut[T]` it returns (`cell`/
-# `cell_mut` have no runtime representation on either backend -- see
-# spec/todo.md item 19), so it is left as `panic(...)`, whose `never` return
-# type unifies with anything. That is enough to exercise the *checker's*
-# dispatch and type resolution, which is what this fixture is for.
+# `at_mut`'s body returns `&mut self.a` where its signature promises a
+# `cell_mut[T]` -- these type-check as interchangeable (`type_table::
+# compatible`'s `cell`/`cell_mut` rule, `checker::infer_unary`'s matching
+# `addr_of_mut` case) because a `cell_mut[T]` is the same bare address at
+# runtime as a `&mut T` (see spec/todo.md item 19).
 
 type writable = { a: int32 }
 
@@ -19,7 +19,7 @@ impl index[usize] for writable:
 
 impl index_mut[usize] for writable:
     def at_mut(mut self, i: usize) -> mut cell[self.output]:
-        panic("cell construction is not implemented yet")
+        return &mut self.a
 
 def borrow_it(mut w: writable) -> unit:
     let c = &mut w[0]

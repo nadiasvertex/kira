@@ -1300,6 +1300,11 @@ private:
     case hir_node_kind::hir_str_scalar_width:
       return compile_str_scalar_width(
           dynamic_cast<const hir::hir_str_scalar_width &>(expr));
+    case hir_node_kind::hir_mutable_cell:
+      return compile_mutable_cell(
+          dynamic_cast<const hir::hir_mutable_cell &>(expr));
+    case hir_node_kind::hir_cell_set:
+      return compile_cell_set(dynamic_cast<const hir::hir_cell_set &>(expr));
     case hir_node_kind::hir_block: {
       // A block used in expression position (e.g. a comprehension's
       // desugared accumulator block, `hir::lower_comprehension`) — mirrors
@@ -1676,7 +1681,8 @@ private:
     case semantic::type_kind::builtin_generic_kind:
       return entry.name == "list" || entry.name == "slice" ||
              entry.name == "slice_mut" || entry.name == "option" ||
-             entry.name == "result";
+             entry.name == "result" || entry.name == "cell" ||
+             entry.name == "cell_mut";
     default:
       return false;
     }
@@ -2847,6 +2853,105 @@ private:
       return std::unexpected(elem_ty.error());
     }
     return builder_.CreateLoad(*elem_ty, *address);
+  }
+
+  /// `xs.mutable_cell(i)` — `@some(&xs[i])`/`@none` built by hand rather than
+  /// through `compile_variant_init`: the bounds check must branch to `@none`
+  /// on failure instead of `guard_panic`'s unconditional trap, so there is no
+  /// single `llvm::Value*` address to hand a generic variant-construction
+  /// path before the check has even run. Mirrors `compile_variant_init`'s
+  /// tag/payload-store shape once inside each arm.
+  [[nodiscard]] auto compile_mutable_cell(const hir::hir_mutable_cell &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto index_kind = numeric_kind_for(node.index->type, node.span);
+    if (!index_kind.has_value()) {
+      return std::unexpected(index_kind.error());
+    }
+    auto index_value = compile_expr(*node.index);
+    if (!index_value.has_value()) {
+      return std::unexpected(index_value.error());
+    }
+    auto *index64 =
+        builder_.CreateIntCast(*index_value, llvm::Type::getInt64Ty(ctx_),
+                               is_signed_integer(*index_kind), "cell.index.i64");
+
+    auto view = resolve_container_view(node.object->type, *object, node.span);
+    if (!view.has_value()) {
+      return std::unexpected(view.error());
+    }
+    const auto some_tag = runtime::sum_variant_tag(types_, node.type, "some");
+    const auto none_tag = runtime::sum_variant_tag(types_, node.type, "none");
+    if (!some_tag.has_value() || !none_tag.has_value()) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = "`mutable_cell`'s result does not resolve to "
+                     "`option`'s `some`/`none` variants — this should have "
+                     "been rejected by the type checker"});
+    }
+    const auto payload_slots = runtime::sum_max_payload_slots(types_, node.type);
+    auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto *result_slot = create_local_alloca(ptr_ty, "mutable_cell.result");
+
+    auto *in_bounds = view->len != nullptr
+                          ? builder_.CreateICmpULT(index64, view->len,
+                                                   "cell.index.in_bounds")
+                          : llvm::ConstantInt::getTrue(ctx_);
+    auto *some_bb =
+        llvm::BasicBlock::Create(ctx_, "mutable_cell.some", current_fn_);
+    auto *none_bb =
+        llvm::BasicBlock::Create(ctx_, "mutable_cell.none", current_fn_);
+    auto *merge_bb =
+        llvm::BasicBlock::Create(ctx_, "mutable_cell.merge", current_fn_);
+    builder_.CreateCondBr(in_bounds, some_bb, none_bb);
+
+    builder_.SetInsertPoint(some_bb);
+    auto *stride_const =
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), view->elem_size);
+    auto *byte_offset =
+        builder_.CreateMul(index64, stride_const, "cell.index.byte_offset");
+    auto *element_addr = byte_address(view->data, byte_offset);
+    auto *some_block = compile_heap_alloc(1 + payload_slots);
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+                               static_cast<uint64_t>(*some_tag)),
+        slot_address(some_block, size_t{0}));
+    builder_.CreateStore(element_addr, slot_address(some_block, size_t{1}));
+    builder_.CreateStore(some_block, result_slot);
+    builder_.CreateBr(merge_bb);
+
+    builder_.SetInsertPoint(none_bb);
+    auto *none_block = compile_heap_alloc(1 + payload_slots);
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+                               static_cast<uint64_t>(*none_tag)),
+        slot_address(none_block, size_t{0}));
+    builder_.CreateStore(none_block, result_slot);
+    builder_.CreateBr(merge_bb);
+
+    builder_.SetInsertPoint(merge_bb);
+    return builder_.CreateLoad(ptr_ty, result_slot);
+  }
+
+  /// `c.set(v)` on a `cell_mut[T]` — stores through the address `c` already
+  /// is (see `hir_cell_set`), then evaluates to `unit`. Shares the same
+  /// deref-store logic `compile_assign` uses for `*c = v`.
+  [[nodiscard]] auto compile_cell_set(const hir::hir_cell_set &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto ptr = compile_expr(*node.cell);
+    if (!ptr.has_value()) {
+      return std::unexpected(ptr.error());
+    }
+    auto value = compile_expr(*node.value);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    builder_.CreateStore(*value, *ptr);
+    return llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0);
   }
 
   /// A container's runtime element count (`for`/`while` loop bound

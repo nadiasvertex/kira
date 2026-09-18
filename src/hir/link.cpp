@@ -164,6 +164,18 @@ struct collector {
       walk_expr(*n.byte_offset);
       return;
     }
+    case hir_node_kind::hir_mutable_cell: {
+      const auto &n = dynamic_cast<const hir_mutable_cell &>(expr);
+      walk_expr(*n.object);
+      walk_expr(*n.index);
+      return;
+    }
+    case hir_node_kind::hir_cell_set: {
+      const auto &n = dynamic_cast<const hir_cell_set &>(expr);
+      walk_expr(*n.cell);
+      walk_expr(*n.value);
+      return;
+    }
     default:
       return;
     }
