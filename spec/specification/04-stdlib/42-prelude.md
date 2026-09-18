@@ -14,6 +14,8 @@ The prelude is the set of names available in every module without a `use` declar
 
 **Functions:** `println`, `print`, `panic`, `assert`, `size_of`, `args`, `env`, `drop`.
 
+`drop` is the one entry here that does not exist: no `def drop` is defined outside the `drop` trait itself, and a call to `drop(x)` type-checks but then fails to lower (see [Shared Ownership and Drop](../02-intermediate/17-shared-ownership-and-drop.md), Implementation status). The `drop` *trait* listed above is genuinely prelude-reachable.
+
 Each prelude type/trait/function is specified in full in its owning chapter — this list is an index, not the normative definition of any of them. See [Built-in Types](../core/02-built-in-types.md), [Traits](../intermediate/18-traits.md), [Error Handling](../core/11-error-handling.md) (`option`/`result`), [Views](../intermediate/15-views.md) (`slice`, `cell`), [Trait Objects](../intermediate/24-trait-objects.md) (`box`), and [Data-Race Freedom](../intermediate/30-data-race-freedom.md) (`send`/`share`).
 
 ## Opting out

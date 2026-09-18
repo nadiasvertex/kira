@@ -142,7 +142,7 @@ process_next_step()
 
 - `if`, `while` (including `while let`), both forms of `for`, and `break`/`continue` are implemented end-to-end.
 - The irrefutability rule for a `for` head (and for `let`/`var`) is not yet enforced: the checker records a for-loop pattern's bindings without checking that it can't fail, and lowering (`hir/lower.cpp`) assumes it never does — passing a refutable pattern (e.g. `for @some(x) in xs:`) currently compiles instead of being rejected, and its runtime behavior on a non-matching element is unspecified. Treat this as a checker gap against the rule stated above, not a supported way to filter a loop.
-- `scope` is design-only: there is no `scope` keyword, `scope_stmt` production, or parser/checker/lowering support yet. Everything in the `scope` section above describes the target design, layered on drop semantics that already work for every other kind of scope.
+- `scope` is design-only: the `scope_stmt` production is in `spec/kira-grammar.ebnf`, but there is no `scope` keyword token and no parser/checker/lowering support, so `scope:` is a parse error today. Everything in the `scope` section above describes the target design — including its drop behavior, which rests on scope-exit `drop` glue that does **not** exist for any kind of scope (see [Shared Ownership and Drop](../02-intermediate/17-shared-ownership-and-drop.md), Implementation status). Implementing `scope` is therefore blocked on destructors, not merely on parsing a keyword.
 
 ## See also
 

@@ -7,7 +7,7 @@ Ownership transfer on assignment and call, `&`/`&mut` borrowing, and the invaria
 ## Ownership
 
 1. Assigning a value or passing it to a function transfers ownership by default. The source binding is no longer accessible afterward.
-2. When the owner of a value goes out of scope, the value is freed (see [Shared Ownership and Drop](17-shared-ownership-and-drop.md)).
+2. When the owner of a value goes out of scope, the value is freed (see [Shared Ownership and Drop](17-shared-ownership-and-drop.md)). This rule is not yet realized: the compiler emits no scope-exit `drop` glue, and every heap-backed value is allocated from a bump arena (`src/runtime/arena.h`) that never reclaims anything. The move checking that *would* drive rule 2 is implemented; the freeing is not.
 
 ```kira
 def process(data: list[int32]) -> int32:    # takes ownership of data

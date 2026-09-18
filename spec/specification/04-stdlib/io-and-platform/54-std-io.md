@@ -1,6 +1,6 @@
 # 54. `std.io`
 
-**Status:** Implemented
+**Status:** Partial
 
 Byte-level I/O: error types, the `reader`/`writer` traits, `open_options`, and the `file_handle` type.
 
@@ -109,7 +109,7 @@ pub def stderr_handle() -> file_handle
 
 - `impl reader for file_handle`: `read` delegates to `rt_read`, converting the error.
 - `impl writer for file_handle`: `write` delegates to `rt_write`; `flush` delegates to `rt_flush`; both convert the error. `write_all` is inherited from the trait default.
-- `impl drop for file_handle`: calls `rt_close` on drop, discarding the result — a `file_handle` going out of scope closes its descriptor unconditionally.
+- `impl drop for file_handle`: calls `rt_close` on drop, discarding the result — a `file_handle` going out of scope is *intended* to close its descriptor unconditionally. **This does not happen today:** the compiler emits no scope-exit `drop` glue on either backend (see [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md), Implementation status), so this impl never runs. Until destructors land, every `file_handle` not explicitly `.close()`d leaks its descriptor — call `close` explicitly.
 
 ### `extend file_handle`
 
@@ -117,7 +117,11 @@ pub def stderr_handle() -> file_handle
 pub def close(mut self) -> result[unit, io_error]
 ```
 
-Explicitly closes the handle via `rt_close`, sets `self.fd` to the sentinel `raw_fd { value: -1 }`, and returns the result (unlike `drop`, which discards it). Intended for callers that need to observe a close failure; a `file_handle` not explicitly closed is still closed by `drop`.
+Explicitly closes the handle via `rt_close`, sets `self.fd` to the sentinel `raw_fd { value: -1 }`, and returns the result (unlike `drop`, which discards it). Intended for callers that need to observe a close failure. A `file_handle` not explicitly closed is meant to be closed by `drop` — but destructors do not run yet (see above), so `close` is currently the *only* way a descriptor is released.
+
+## Implementation status
+
+Everything in this chapter is implemented in `src/std/io.kira` over the `rt_*` intrinsics, with one exception: **`impl drop for file_handle` never runs.** The impl is written and compiles, but the compiler emits no scope-exit destructor glue on either backend, so a descriptor is released only by an explicit `close()`. See [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md), Implementation status, and item 6 in [todo.md](../../../todo.md).
 
 ## See also
 
