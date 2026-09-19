@@ -1435,6 +1435,34 @@ private:
     }
   }
 
+  /// Whether `id` (stripped of `&`/`&mut`) is a raw `*T`/`*mut T` —
+  /// the signal that distinguishes a *raw pointer* from an *ordinary Kira
+  /// reference* to the same compound type, which `is_heap_pointer_value`'s
+  /// `&`/`&mut`/`*` shortcuts must tell apart and previously didn't.
+  ///
+  /// The shortcuts are correct for an ordinary place of compound type: a
+  /// `&`/`&mut` Kira reference to something already heap-boxed is
+  /// bit-identical to the boxed value itself, so `&x`/`*r` is a no-op
+  /// either way. A *raw* pointer means something different by the machine
+  /// layer's own contract (`spec/specification/03-advanced/
+  /// 38-machine-layer.md`: "`&p[i]` is the offset address") — `&p[i]` is
+  /// `p + i * size_of[T]()`, the *slot's* address, regardless of whether
+  /// `T` itself happens to be heap-boxed; `*p` is a real load through that
+  /// address, giving back whatever value (inline or boxed) the slot holds.
+  /// Reusing the ordinary-reference shortcuts for a raw pointer instead
+  /// treated "the value at the slot" and "the slot's own address" as
+  /// interchangeable — for a compound `T`, that's the boxed pointer
+  /// already stored at the slot mistaken for the slot's address (`&p[i]`),
+  /// or the slot's address mistaken for a load through it (`*p`) — either
+  /// way an arbitrary heap pointer misread as the wrong one of the two.
+  /// Found via `list[T]`'s `index[range[usize]]` impl (`&mut
+  /// self.data[i.start]`) once `T` was a tuple — `std.algo`'s `sort_by`/
+  /// `stable_sort` over `list[(int32, int32)]` reliably crashed the VM
+  /// (`src/testdata/std_test/algo_sort.kira`'s `sort_by` case).
+  [[nodiscard]] auto is_raw_pointer_type(type_id id) const -> bool {
+    return types_.entry(strip_refs(id)).kind == semantic::type_kind::ptr_kind;
+  }
+
   [[nodiscard]] auto compile_unary(const hir::hir_unary &un, virtual_reg dst)
       -> std::expected<void, compile_error> {
     if (un.op == ast::unary_op::logical_not) {
@@ -1449,7 +1477,8 @@ private:
     }
     if ((un.op == ast::unary_op::addr_of ||
          un.op == ast::unary_op::addr_of_mut) &&
-        is_heap_pointer_value(un.operand->type)) {
+        is_heap_pointer_value(un.operand->type) &&
+        !is_raw_pointer_type(un.type)) {
       // The operand's compiled value already is the pointer a reference to
       // it would hold — compile it straight into `dst`, no new opcode.
       return compile_expr_into(*un.operand, dst);
@@ -1462,7 +1491,8 @@ private:
       return compile_addr_of(*un.operand, dst);
     }
     if (un.op == ast::unary_op::deref) {
-      if (is_heap_pointer_value(un.type)) {
+      if (is_heap_pointer_value(un.type) &&
+          !is_raw_pointer_type(un.operand->type)) {
         // Mirror of the `addr_of` passthrough above: for an aggregate
         // referent the reference's value already *is* the referent's, so
         // there is nothing to load.

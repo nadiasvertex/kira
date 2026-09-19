@@ -1,36 +1,39 @@
 # Moving `list[T]` out of the compiler
 
-**Status:** Phases 1-3 implemented. Both phase-4 prerequisites (todo items 6
-and 20) now hold for the case phase 4 needs; phase 4 itself has not started.
+**Status:** All five phases implemented. `list[T]` is an ordinary Kira type
+over `std.mem`; what is left is cleanup and the consequences the flip exposed
+(todo items 16-20).
 
 | Phase | What it makes possible | Status |
 |---|---|---|
-| 1 | `index`/`index_set` traits — `v[i]`, `v[i] = x` on any type | **Done.** `index_mut` declared but not wired; see below |
-| 2 | `for` through `into_iterator` | **Done**, both consuming and borrowing (`for x in &v`, todo 20, landed) |
+| 1 | `index`/`index_set` traits — `v[i]`, `v[i] = x` on any type | **Done**, `index_mut` included. Selection is by key type, so `index[usize]` and `index[range[usize]]` coexist; `&v[i]` (a read-borrow) still has no trait — todo 17 |
+| 2 | `for` through `into_iterator` | **Done**, both consuming and borrowing (`for x in &v`) |
 | 3 | `from_array` construction, and the settled `list` default for literals | **Done** |
-| 4 | Flip `list[T]` onto `vector[T]`'s storage | **Unblocked, not started.** Needed todo 6 (drop glue) and todo 20 (borrowing `for`); both now hold for the narrow case this phase exercises |
-| 5 | A user collection with all four, as proof | **Done** as `vector[T]` (`src/std/list.kira`) |
+| 4 | Flip `list[T]` onto `vector[T]`'s storage | **Done.** `list[T]` is the Kira struct; the builtin entries are gone. Residual dead backend code, an unfinished stdlib sweep, and the un-taken benchmark are todo 16; what the flip exposed is todo 17-19 |
+| 5 | A user collection with all four, as proof | **Done.** The proof type *became* `list[T]` in phase 4, which is the strongest form of it |
 
-`vector[T]` now implements all four and is usable as
-`let v: vector[int32] = [1, 2, 3]`, `v[0]`, `v[1] = x`, `for x in v` — the
-whole surface `list[T]` had to be a builtin to provide.
-
-`vector[T]` (`src/std/list.kira:83`) is a growable, heap-owning sequence
+`list[T]` (`src/std/list.kira`) is now a growable, heap-owning sequence
 written entirely in Kira over `std.mem` and the `machine` layer, with no
-compiler support beyond what any user struct gets. It is the type `list[T]`
-should *be*. This document is the plan for making it so.
+compiler support beyond what any user struct gets — reached through
+`std.traits`'s `index`/`index_mut`/`index_set`/`from_array` and `std.iter`'s
+`into_iterator`. `let v: list[int32] = [1, 2, 3]`, `v[0]`, `v[1] = x`,
+`v[0..2]`, `for x in v` all go through traits a user collection can
+implement. It was written first as `vector[T]` and renamed in phase 4; the
+sections below are the plan that was carried out, kept as the record of why
+each piece is where it is.
 
-The point is not to delete code for its own sake. Every capability the
-compiler currently reserves for `list[T]` — literal construction, iteration,
-indexing — is a capability no user-written collection can have. Each phase
-below removes one of those reservations by turning it into a language feature
-any type can opt into. The migration of `list[T]` is the acceptance test for
-that feature, not the goal in itself.
+The point was not to delete code for its own sake. Every capability the
+compiler reserved for `list[T]` — literal construction, iteration, indexing —
+was a capability no user-written collection could have. Each phase removes
+one of those reservations by turning it into a language feature any type can
+opt into. The migration of `list[T]` is the acceptance test for that feature,
+not the goal in itself.
 
-## What the compiler currently knows about `list`
+## What the compiler knew about `list` *(all four removed)*
 
-Four distinct pieces of knowledge, in four places. They are what a Kira struct
-cannot replicate today.
+Four distinct pieces of knowledge, in four places — what a Kira struct could
+not replicate. Each row's location is where the privilege lived before the
+phase that removed it.
 
 | # | Privilege | Where it lives |
 |---|---|---|
@@ -319,23 +322,65 @@ annotation that restores the old meaning; it does not yet.
 
 ## Phase 4 — flip `list[T]`
 
-**Unblocked, not started.** Needed todo item 6 (scope-exit `drop`) *and* todo
-item 20 (borrowing iteration); both now hold for the shape this phase
-exercises (see Phase 0 above). Not yet attempted — in particular, `impl drop
-for vector[T]`/`list[T]` still needs writing, and the performance
-measurement below still needs to happen before flipping the builtin.
+**Done, with a tail.** Steps 1 and 2 landed; 3 and 4 left dead code behind,
+and 5 is incomplete. Tracked as todo item 16.
 
-1. Rename `vector[T]` → `list[T]` in `src/std/list.kira`, with
-   `impl index`/`index_set`/`into_iterator`/`from_array`, and `drop`.
-2. Delete `list` from `k_builtin_generic_arities`
-   (`src/semantic/types.cpp:39`) and its four entries from
-   `k_builtin_methods` (`src/semantic/check.cpp:205-216`).
+1. ~~Rename `vector[T]` → `list[T]`~~ **Done** — `src/std/list.kira`, with
+   `impl index`/`index_mut`/`index_set`/`into_iterator`/`from_array`, and
+   `drop`.
+2. ~~Delete `list` from `k_builtin_generic_arities` and its four entries
+   from `k_builtin_methods`~~ **Done.**
 3. Delete the `list` arm of `resolve_container_view` in **both** backends.
-   `slice`, `str` and `array` keep theirs — they are views and language
-   primitives, not library types.
+   **Not done, but inert:** `is_list_type`
+   (`src/bytecode_compiler/compile.cpp:1025`,
+   `src/llvm_codegen/codegen.cpp:980`) tests `builtin_generic_kind`, which
+   `list` no longer is, so the arms can never fire. `slice`, `str` and
+   `array` keep theirs — they are views and language primitives, not
+   library types.
 4. Delete `list_reserve_slot` from the runtime and its LLVM declaration.
+   **Not done** (`src/llvm_codegen/codegen.h:86`).
 5. Sweep every stdlib module written against builtin `list` — `std.algo` in
-   particular, whose sorts index and swap in hot loops.
+   particular, whose sorts index and swap in hot loops. **Partly done:**
+   `std.algo` is clean and `src/testdata/std_test/algo_sort.kira` runs on
+   both tiers. `std.io` (todo 18) and `std.iter`'s borrowing iterators
+   (todo 17) are not.
+
+Three things had to arrive with this phase, none of them anticipated above:
+
+- **`range[T]` became an ordinary struct** (`std.traits`). `v[a..b]` on a
+  library collection dispatches to `impl index[range[usize]]`, whose `at`
+  *receives* the range and reads its bounds — impossible for a type that
+  was only ever desugared away. `for i in a..b` and range-indexing an
+  `array`/`slice`/`str` still lower their bounds directly and build no
+  value, so nothing that worked before pays for it.
+- **`index_mut` carries its own `output_mut`** rather than
+  `cell[index.output]`. A mutable borrow is not uniformly "a cell around
+  what a read yields": borrowing one element gives `cell_mut[T]`, an
+  address to write through; borrowing a range gives `slice_mut[T]`, which
+  is already a mutable view and wants no cell around it.
+- **A pre-existing `&`/`&mut`/`*` codegen bug, found and fixed.**
+  `list[T]`'s `index[range[usize]]` impl (`&mut self.data[i.start]` over
+  its raw `*mut T` storage) was the first thing to ever take `&p[i]`/`*p`
+  of a raw pointer whose element type is compound (heap-boxed on both
+  backends: a struct, sum, tuple, or array). Both backends' `compile_unary`
+  short-circuit `&x`/`*r` to a no-op whenever the referent is already
+  heap-boxed — correct for an *ordinary* Kira reference (`&T`/`&mut T`),
+  where a compound value's own representation already **is** its address,
+  but wrong for a *raw* pointer, where `&p[i]` means "the offset address"
+  (`spec/specification/03-advanced/38-machine-layer.md`) regardless of the
+  pointee's representation. The shortcut conflated the two, reading a
+  slot's *contents* (for compound `T`, the boxed pointer stored there)
+  back as if it were the slot's own address, and vice versa for `*p`. This
+  reliably crashed the bytecode VM (SIGBUS) and silently corrupted memory
+  on LLVM for any `list[T]` with a compound `T` reached through
+  `index[range[usize]]` — `std.algo`'s `sort_by`/`sort_by_key` over a
+  `list[(int32, int32)]`, say. Fixed by gating both
+  shortcuts on the referent's type, not just its heap-kind-ness
+  (`src/bytecode_compiler/compile.cpp`'s and `src/llvm_codegen/codegen.cpp`'s
+  `is_raw_pointer_type`). Regression:
+  `src/testdata/codegen_stress/088_raw_pointer_addr_of_compound_element.kira`
+  (`# expect:`, not backend agreement — both tiers had made the identical
+  mistake).
 
 **The thing that will actually hurt, and the honest answer.** Every `list`
 operation becomes a real Kira call where it used to be an inlined opcode
@@ -351,18 +396,19 @@ benefits every user collection and not just `list`. The migration's value is
 that `list` stops being special; buying its performance back with a *second*
 special case would spend the whole point.
 
-## Phase 5 — what the migration buys, made visible *(done, bar drop)*
+## Phase 5 — what the migration buys, made visible *(done)*
 
-`vector[T]` is the proof: `src/std/list.kira` now carries
-`impl[T] index[usize]`, `index_set[usize]`, `into_iterator[T]` and
-`from_array[T]` for it, and `src/testdata/std_test/vector_owned_storage.kira`
-builds one from a literal, indexes it, writes through the index, and iterates
-it — identically on both tiers. Every one of those was impossible before this
+The library type is the proof: `src/std/list.kira` carries
+`impl[T] index[usize]`, `index[range[usize]]`, `index_mut`, `index_set[usize]`,
+`into_iterator[T]`, `from_array[T]` and `drop` for it, and
+`src/testdata/std_test/list_owned_storage.kira` builds one from a literal,
+indexes it, range-indexes it, writes through the index, and iterates it —
+identically on both tiers. Every one of those was impossible before this
 work.
 
-The one part of the original phase-5 goal still missing is "dropped at scope
-exit", which is todo item 6, and the `for` loop there consumes the collection
-rather than borrowing it (todo item 20).
+Scope-exit `drop` landed (todo item 6, for the plain-`let` shape this
+exercises), and phase 4 then made the proof total: the library type is not a
+demonstration alongside `list[T]` any more, it *is* `list[T]`.
 
 ## Ordering summary
 
@@ -383,14 +429,22 @@ todo item  6 (drop glue)   ─── DONE for the narrow case phase 4 needs
                                 pattern bindings, sum-type field drop) — none
                                 of them block phase 4 below.
 
-Phase 4 (flip list)        ─── unblocked; not yet started
-Phase 5 (proof)            ─── DONE as vector[T], bar scope-exit drop
+Phase 4 (flip list)        ─── DONE (2026-09-19). Brought three unplanned
+                                things with it: `range[T]` as an ordinary
+                                struct, `index_mut`'s own `output_mut`, and a
+                                pre-existing `&`/`*` codegen bug for raw
+                                pointers to compound elements (found via
+                                `sort_by` on a tuple `list`, fixed both
+                                tiers). Tail: todo 16 (dead backend arms,
+                                unswept `std.io`, the benchmark nobody took)
+                                and todo 17-19 (what the flip exposed).
+Phase 5 (proof)            ─── DONE; phase 4 turned the proof into `list[T]`
 ```
 
-Phases 1–3 each make the language strictly more capable on their own and are
-worth landing whether or not phase 4 ever happens. That is deliberate: if the
-performance measurement in phase 4 comes back bad enough to stop the
-migration, nothing in phases 1–3 was wasted.
+Phases 1–3 each make the language strictly more capable on their own and were
+worth landing whether or not phase 4 ever happened. That is deliberate — and
+the benchmark phase 4 asked for *before* flipping was never taken, so the
+cost of the flip is still unmeasured (todo item 16).
 
 ## See also
 
@@ -398,4 +452,5 @@ migration, nothing in phases 1–3 was wasted.
   `list[T]` and `vector[T]` are today.
 - [`38-machine-layer.md`](specification/03-advanced/38-machine-layer.md) —
   the substrate `vector[T]` is built on.
-- [`todo.md`](todo.md) item 6 — drop glue, the phase 4 prerequisite.
+- [`todo.md`](todo.md) items 16-20 — what the migration left behind and
+  what it exposed.

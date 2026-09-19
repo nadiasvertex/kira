@@ -1691,6 +1691,19 @@ private:
     }
   }
 
+  /// Whether `id` (stripped of `&`/`&mut`) is a raw `*T`/`*mut T` — see the
+  /// identical guard's doc comment in `src/bytecode_compiler/compile.cpp`
+  /// (`is_raw_pointer_type`), which this mirrors: `is_heap_pointer_value`'s
+  /// `&`/`&mut`/`*` passthroughs are correct for an ordinary place of
+  /// compound type, but mean something different for a *raw* pointer
+  /// (machine-layer address arithmetic vs. an ordinary Kira reference),
+  /// and reusing them there conflated "the value at a slot" with "the
+  /// slot's own address".
+  [[nodiscard]] auto is_raw_pointer_type(type_id id) const -> bool {
+    return types_.entry(strip_refs(types_, id)).kind ==
+           semantic::type_kind::ptr_kind;
+  }
+
   [[nodiscard]] auto compile_unary(const hir::hir_unary &un)
       -> std::expected<llvm::Value *, codegen_error> {
     if (un.op == ast::unary_op::logical_not) {
@@ -1702,7 +1715,8 @@ private:
     }
     if ((un.op == ast::unary_op::addr_of ||
          un.op == ast::unary_op::addr_of_mut) &&
-        is_heap_pointer_value(un.operand->type)) {
+        is_heap_pointer_value(un.operand->type) &&
+        !is_raw_pointer_type(un.type)) {
       // The operand's compiled value already is the pointer a reference to
       // it would hold — compile it straight through, no new instruction.
       return compile_expr(*un.operand);
@@ -1713,7 +1727,8 @@ private:
       return compile_addr_of(*un.operand);
     }
     if (un.op == ast::unary_op::deref) {
-      if (is_heap_pointer_value(un.type)) {
+      if (is_heap_pointer_value(un.type) &&
+          !is_raw_pointer_type(un.operand->type)) {
         // Mirror of the `addr_of` passthrough above: an aggregate
         // reference's value already *is* the referent's.
         return compile_expr(*un.operand);
@@ -3039,10 +3054,9 @@ private:
     if (!len_value.has_value()) {
       return std::unexpected(len_value.error());
     }
-    auto *len64 = builder_.CreateIntCast(*len_value,
-                                         llvm::Type::getInt64Ty(ctx_),
-                                         is_signed_integer(*len_kind),
-                                         "slice_from_raw_parts.len");
+    auto *len64 = builder_.CreateIntCast(
+        *len_value, llvm::Type::getInt64Ty(ctx_), is_signed_integer(*len_kind),
+        "slice_from_raw_parts.len");
     auto *header = compile_heap_alloc(2);
     builder_.CreateStore(len64, slot_address(header, size_t{0}));
     builder_.CreateStore(*data, slot_address(header, size_t{1}));

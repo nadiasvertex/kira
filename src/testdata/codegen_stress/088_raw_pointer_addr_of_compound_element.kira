@@ -1,0 +1,50 @@
+module codegen_stress.raw_pointer_addr_of_compound_element
+
+# `&mut p[i]`/`&p[i]` on a raw pointer whose element type is *compound*
+# (heap-boxed on both backends: a struct, sum, tuple, array — anything
+# `is_heap_pointer_value` says yes to) — regression for a real bug found
+# building `list[T]`'s `index[range[usize]]` impl (`src/std/list.kira`,
+# `&mut self.data[i.start]`), which crashed `std.algo`'s `sort_by` over a
+# `list[(int32, int32)]` with a bad-memory-access SIGBUS on the bytecode
+# tier and silent corruption on LLVM.
+#
+# `compile_unary`'s `&`/`&mut` shortcut for an already-heap-boxed operand
+# (`is_heap_pointer_value`, both backends) is correct for an *ordinary*
+# place of compound type — a Kira reference to something already
+# heap-boxed is bit-identical to the boxed value, nothing to compute — but
+# wrong for `p[i]` with `p` a raw pointer: the machine layer defines `&p[i]`
+# as "the offset address" (`spec/specification/03-advanced/
+# 38-machine-layer.md`), `p + i * size_of[T]()`, regardless of whether `T`
+# is heap-boxed. Reusing the ordinary-reference shortcut there read the
+# *contents* of slot `i` (for compound `T`, the boxed pointer already
+# stored there) and returned that as if it were the slot's own address —
+# an arbitrary heap pointer, misread as `p + i * size`.
+#
+# `# expect:` rather than backend agreement alone, deliberately (same
+# reasoning as 084's own doc comment): both backends compute this address
+# from the same `is_heap_pointer_value`/`resolve_container_view` pattern
+# and had made exactly the same mistake before the fix — agreement would
+# not have caught it.
+
+type pair = (int32, int32)
+
+use std.mem.alloc
+
+machine def swap_via_addr(p: *mut pair, a: usize, b: usize) -> unit:
+    let pa = &mut p[a]
+    let pb = &mut p[b]
+    let tmp = *pa
+    *pa = *pb
+    *pb = tmp
+
+machine def main() -> int32:
+    var buf: *mut pair = alloc[pair](3)
+    buf[0] = (1, 10)
+    buf[1] = (2, 20)
+    buf[2] = (3, 30)
+    swap_via_addr(buf, 0, 2)
+    # buf: (3,30), (2,20), (1,10)
+    return buf[0].0 + buf[0].1 + buf[1].0 + buf[1].1 + buf[2].0 + buf[2].1
+
+# 3 + 30 + 2 + 20 + 1 + 10
+# expect: 66

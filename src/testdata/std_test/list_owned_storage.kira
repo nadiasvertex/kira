@@ -1,19 +1,19 @@
 module main
 
-# `std.list`'s `vector[T]` — a growable list written in Kira, owning its own
+# `std.list`'s `list[T]` — a growable list written in Kira, owning its own
 # heap storage through `std.mem` over the `rt_alloc`/`rt_realloc`/`rt_free`
 # intrinsics, with no compiler support for the type beyond what any user
 # struct gets.
 #
-# Exercises the operations the builtin `list[T]` has never been able to
-# offer, because no primitive could shrink or re-home its storage: `pop`,
+# Exercises the operations the builtin `list[T]` could never offer, because
+# no primitive could shrink or re-home its storage: `pop`,
 # `clear`, `reserve`, `capacity`, and an explicit `free`.
 #
 # Also pins the growth schedule (4, then doubling), since capacity is
 # observable and a change to it is a change to the type's cost model, not an
 # implementation detail.
 
-use std.list.vector
+use std.list.list
 
 def show(label: str, o: option[int32]) -> unit:
     match o:
@@ -21,7 +21,7 @@ def show(label: str, o: option[int32]) -> unit:
         @none => println("{label}=none")
 
 def main() -> unit:
-    var v = vector[int32].new()
+    var v = list[int32].new()
     println("fresh empty={v.is_empty()} len={v.len()} cap={v.capacity()}")
 
     # Growth: 0 -> 4 -> 8 -> 16 over ten pushes.
@@ -50,7 +50,7 @@ def main() -> unit:
     v.reserve(2)
     println("reserve smaller cap={v.capacity()}")
 
-    # `clear` keeps the capacity; popping an empty vector yields `@none`.
+    # `clear` keeps the capacity; popping an empty list yields `@none`.
     v.clear()
     println("cleared len={v.len()} cap={v.capacity()} empty={v.is_empty()}")
     show("pop empty", v.pop())
@@ -63,11 +63,11 @@ def main() -> unit:
     v.free()
     println("freed len={v.len()} cap={v.capacity()}")
 
-    # `vector[T]` as an ordinary collection: built from a literal, indexed,
+    # `list[T]` as an ordinary collection: built from a literal, indexed,
     # and iterated, all through the `from_array`/`index`/`index_set`/
     # `into_iterator` impls rather than through anything the compiler knows
     # about this type specifically (`spec/list-migration-design.md`).
-    var lit: vector[int32] = [10, 20, 30]
+    var lit: list[int32] = [10, 20, 30]
     println("literal len={lit.len()} cap={lit.capacity()}")
     println("indexed={lit[0]},{lit[1]},{lit[2]}")
     lit[1] = 99
@@ -79,9 +79,9 @@ def main() -> unit:
     # move checker refuses any later use. That is correct for this trait and
     # wrong for a collection: `for x in xs` over a `list` must not consume
     # `xs`. A borrowing route is the remaining phase-2 work (`spec/todo.md`
-    # item 20), so the vector iterated here is deliberately one that is not
+    # item 20), so the list iterated here is deliberately one that is not
     # used again — and, having been moved, it cannot be freed either.
-    let consumed: vector[int32] = [10, 99, 30]
+    let consumed: list[int32] = [10, 99, 30]
     var sum = 0
     var order = ""
     for x in consumed:
@@ -90,7 +90,7 @@ def main() -> unit:
     println("iterated sum={sum} order={order}")
 
     # A second element width, through the same generic impls.
-    var wide: vector[int64] = [1000, 2000]
+    var wide: list[int64] = [1000, 2000]
     println("wide={wide[0]},{wide[1]}")
     var wsum: int64 = 0
     for y in wide:
