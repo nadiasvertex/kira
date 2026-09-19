@@ -35,8 +35,7 @@ struct generic_arity_entry {
 };
 
 /// Prelude container names and their allowed generic-argument arities.
-constexpr std::array<generic_arity_entry, 16> k_builtin_generic_arities = {{
-    {.name = "list", .min_args = 1, .max_args = 1},
+constexpr std::array<generic_arity_entry, 15> k_builtin_generic_arities = {{
     {.name = "option", .min_args = 1, .max_args = 1},
     {.name = "result", .min_args = 2, .max_args = 2},
     {.name = "box", .min_args = 1, .max_args = 1},

@@ -8,6 +8,10 @@ moved_from body done
 drop 11
 field_wise body done
 drop 20
+touch 50
+touch 50
+method_receiver body done
+drop 50
 early_return taking the early path
 drop 30
 drop 40

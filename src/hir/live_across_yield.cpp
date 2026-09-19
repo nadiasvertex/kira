@@ -220,6 +220,12 @@ struct walker {
     case hir_node_kind::hir_container_data:
       walk_expr(*dynamic_cast<const hir_container_data &>(expr).object);
       return;
+    case hir_node_kind::hir_slice_from_raw_parts: {
+      const auto &n = dynamic_cast<const hir_slice_from_raw_parts &>(expr);
+      walk_expr(*n.pointer);
+      walk_expr(*n.len);
+      return;
+    }
     case hir_node_kind::hir_container_len:
       walk_expr(*dynamic_cast<const hir_container_len &>(expr).object);
       return;

@@ -1288,6 +1288,9 @@ private:
     case hir_node_kind::hir_container_data:
       return compile_container_data(
           dynamic_cast<const hir::hir_container_data &>(expr));
+    case hir_node_kind::hir_slice_from_raw_parts:
+      return compile_slice_from_raw_parts(
+          dynamic_cast<const hir::hir_slice_from_raw_parts &>(expr));
     case hir_node_kind::hir_container_len:
       return compile_container_len(
           dynamic_cast<const hir::hir_container_len &>(expr));
@@ -3014,6 +3017,36 @@ private:
     return builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
                                slot_address(*object, size_t{0}),
                                "container.len");
+  }
+
+  /// `std.mem.slice_from_raw_parts`/`slice_mut_from_raw_parts` — builds the
+  /// same 2-slot `{len, data}` header `compile_range_index` builds for
+  /// `xs[a..b]`, just from a caller-supplied pointer and length instead of
+  /// one derived from an existing container's own view. See
+  /// `hir_slice_from_raw_parts`'s doc comment.
+  [[nodiscard]] auto
+  compile_slice_from_raw_parts(const hir::hir_slice_from_raw_parts &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto data = compile_expr(*node.pointer);
+    if (!data.has_value()) {
+      return std::unexpected(data.error());
+    }
+    auto len_kind = numeric_kind_for(node.len->type, node.span);
+    if (!len_kind.has_value()) {
+      return std::unexpected(len_kind.error());
+    }
+    auto len_value = compile_expr(*node.len);
+    if (!len_value.has_value()) {
+      return std::unexpected(len_value.error());
+    }
+    auto *len64 = builder_.CreateIntCast(*len_value,
+                                         llvm::Type::getInt64Ty(ctx_),
+                                         is_signed_integer(*len_kind),
+                                         "slice_from_raw_parts.len");
+    auto *header = compile_heap_alloc(2);
+    builder_.CreateStore(len64, slot_address(header, size_t{0}));
+    builder_.CreateStore(*data, slot_address(header, size_t{1}));
+    return header;
   }
 
   /// Compiled form of `hir_str_decode_scalar` — calls the shared

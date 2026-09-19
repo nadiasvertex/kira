@@ -1,6 +1,5 @@
 #include "src/hir/drop_schedule.h"
 
-#include <algorithm>
 #include <ranges>
 
 namespace kira::hir {
@@ -63,22 +62,19 @@ public:
   explicit drop_walker(const checked_types &checked) : checked_(checked) {}
 
   auto walk_function(const ast::func_decl &decl) -> void {
-    // `decl` is itself some type's own `impl drop`'s `drop` method: its
-    // `self` must not be auto-dropped at the end (that would recursively
-    // call this exact method forever — this *is* the drop). `checked_.
-    // drop_plans` maps each droppable type to a `resolved_callee` whose
-    // `decl` points at exactly this AST node when that type's own drop is
-    // `decl` (a generic `impl drop`'s per-instance clone is a distinct
-    // `func_decl`, already the one `decl` is here for that instantiation —
-    // see `checker::resolve_own_drop`/`instantiate_impl_method_for`).
-    const auto is_own_drop_method = std::ranges::any_of(
-        checked_.drop_plans, [&decl](const auto &entry) -> bool {
-          return entry.second.own_drop.has_value() &&
-                 entry.second.own_drop->decl == &decl;
-        });
+    // A method's `self`/`mut self` is always passed *by reference*,
+    // regardless of the `mut` spelling — `move_check.cpp`'s
+    // `receiver_is_moved` documents this ("methods always take `self` by
+    // reference ... called repeatedly on the same binding throughout
+    // `std.algo`"). So the function body never owns `self`, and it must
+    // never be scheduled for a scope-exit drop — not just inside a type's
+    // own `drop` method (which would otherwise recurse into itself
+    // forever), but in *every* method: `push`/`reserve`/etc. on a droppable
+    // receiver would otherwise drop it out from under a caller who still
+    // owns and uses it after the call returns.
     push_scope();
     for (const auto &param : decl.params) {
-      if (is_own_drop_method && param.pattern != nullptr &&
+      if (param.pattern != nullptr &&
           param.pattern->kind == ast::node_kind::binding_pattern &&
           dynamic_cast<const ast::binding_pattern &>(*param.pattern).name ==
               "self") {

@@ -21,43 +21,44 @@ module std.mem
 
 use std.intrinsics.{rt_alloc, rt_realloc, rt_free, box_usize}
 
-## Allocates room for `count` values of `T`, zero-filled.
-##
-## Returns a null pointer when `count` is 0. An allocation that cannot be
-## satisfied terminates the process rather than returning null — there is no
-## failure channel here yet.
+#: Allocates room for `count` values of `T`, zero-filled.
+#:
+#: Returns a null pointer when `count` is 0. An allocation that cannot be
+#: satisfied terminates the process rather than returning null — there is no
+#: failure channel here yet.
 pub machine def alloc[T](count: usize) -> *mut T:
     let raw = rt_alloc(box_usize { v: count * size_of[T]() })
     return ptr_cast[T](raw)
 
-## Resizes a block from `old_count` to `new_count` values of `T`, preserving
-## the first `min(old_count, new_count)` values and zeroing any growth.
-##
-## `p` must have come from `alloc`/`resize` at `old_count`, or be null (in
-## which case this allocates). A `new_count` of 0 frees and returns null.
-##
-## The returned pointer may differ from `p`; the old one must not be used
-## again.
+#: Resizes a block from `old_count` to `new_count` values of `T`, preserving
+#: the first `min(old_count, new_count)` values and zeroing any growth.
+#:
+#: `p` must have come from `alloc`/`resize` at `old_count`, or be null (in
+#: which case this allocates). A `new_count` of 0 frees and returns null.
+#:
+#: The returned pointer may differ from `p`; the old one must not be used
+#: again.
 pub machine def resize[T](p: *mut T, old_count: usize, new_count: usize) -> *mut T:
     let raw = rt_realloc(ptr_cast[byte](p),
                          box_usize { v: old_count * size_of[T]() },
                          box_usize { v: new_count * size_of[T]() })
     return ptr_cast[T](raw)
 
-## Releases a block obtained from `alloc`/`resize`. A null `p` is a no-op.
-##
-## `count` must be the element count the block was last sized at. This does
-## *not* run `drop` on the values in the block — destructors do not run
-## anywhere in Kira yet (see `spec/todo.md` item 6), so a collection holding
-## resource-owning elements leaks them regardless of what it does here.
+#: Releases a block obtained from `alloc`/`resize`. A null `p` is a no-op.
+#:
+#: `count` must be the element count the block was last sized at. This does
+#: *not* run `drop` on the values in the block — scope-exit `drop` (see
+#: `spec/todo.md` item 6) does not recurse through a container's elements,
+#: only through struct fields — so a collection holding resource-owning
+#: elements leaks them regardless of what it does here.
 pub machine def free[T](p: *mut T, count: usize) -> unit:
     rt_free(ptr_cast[byte](p), box_usize { v: count * size_of[T]() })
 
-## Copies `count` values of `T` from `src` to `dst`.
-##
-## The two ranges must not overlap. Written as an element loop rather than a
-## bulk byte move because a bulk primitive would be one more intrinsic, and
-## this is not on a path where its cost has been shown to matter.
+#: Copies `count` values of `T` from `src` to `dst`.
+#:
+#: The two ranges must not overlap. Written as an element loop rather than a
+#: bulk byte move because a bulk primitive would be one more intrinsic, and
+#: this is not on a path where its cost has been shown to matter.
 pub machine def copy[T](dst: *mut T, src: *T, count: usize) -> unit:
     var i: usize = 0
     while i < count:

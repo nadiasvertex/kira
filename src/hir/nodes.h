@@ -105,6 +105,9 @@ enum class hir_node_kind : uint8_t {
                        ///< `hir_stack_buffer`.
   hir_container_data,  ///< A container's raw data pointer (`as_ptr`/
                        ///< `as_mut_ptr`); see `hir_container_data`.
+  hir_slice_from_raw_parts, ///< Builds a `slice[T]`/`slice_mut[T]` view
+                            ///< header from a pointer and a length; see
+                            ///< `hir_slice_from_raw_parts`.
   hir_container_len,   ///< A container's element count (`for`-loop lowering
                        ///< only).
   hir_generator_next,  ///< `g.next()` on a `generator[T]` value — no
@@ -541,6 +544,27 @@ struct hir_container_data : hir_expr {
   hir_container_data(source_span s, type_id t, ptr<hir_expr> obj)
       : hir_expr(hir_node_kind::hir_container_data, s, t),
         object(std::move(obj)) {}
+};
+
+/// Builds a `slice[T]`/`slice_mut[T]` value from a raw pointer and a
+/// length — `std.mem.slice_from_raw_parts`/`slice_mut_from_raw_parts`'s
+/// only lowering (`semantic::checker::infer_slice_from_raw_parts_call`
+/// records which of the two `type` is; construction is identical either
+/// way, a 2-slot `{len, data}` header exactly like a range-index's result,
+/// see `compile_range_index`). The one way a library type can hand back a
+/// view over storage the compiler doesn't itself know how to range-index
+/// (`spec/todo.md`) — `ptr`/`len` are evaluated, not reinterpreted, so
+/// there is no bounds relationship to an existing container to check here;
+/// the caller is trusted the same way any other `machine` pointer
+/// operation is.
+struct hir_slice_from_raw_parts : hir_expr {
+  ptr<hir_expr> pointer;
+  ptr<hir_expr> len;
+
+  hir_slice_from_raw_parts(source_span s, type_id t, ptr<hir_expr> p,
+                           ptr<hir_expr> l)
+      : hir_expr(hir_node_kind::hir_slice_from_raw_parts, s, t),
+        pointer(std::move(p)), len(std::move(l)) {}
 };
 
 /// The decoded Unicode scalar at byte offset `byte_offset` within `object`

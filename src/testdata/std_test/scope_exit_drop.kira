@@ -38,6 +38,23 @@ def field_wise_drop() -> unit:
     let h = holder { inner: noisy { id: 20 }, tag: 99 }
     println("field_wise body done")
 
+extend noisy:
+    def touch(mut self) -> unit:
+        println("touch {self.id}")
+
+# A method's `self`/`mut self` receiver is always passed *by reference*
+# (`src/semantic/move_check.cpp`'s `receiver_is_moved`: "methods always take
+# `self` by reference, regardless of `mut`") — calling a method on a
+# droppable value must not drop it out from under the caller who still owns
+# it. `a` is used (and would double-drop or use-after-drop if `touch`'s own
+# `self` parameter were wrongly scheduled for a drop at `touch`'s own return)
+# twice here, then drops exactly once, at this function's own scope exit.
+def method_receiver_not_dropped_early() -> unit:
+    let a = noisy { id: 50 }
+    a.touch()
+    a.touch()
+    println("method_receiver body done")
+
 def early_return(flag: bool) -> unit:
     let a = noisy { id: 30 }
     if flag:
@@ -59,6 +76,7 @@ def main() -> unit:
     reverse_order()
     moved_from_never_drops()
     field_wise_drop()
+    method_receiver_not_dropped_early()
     early_return(true)
     early_break()
     println("main done")

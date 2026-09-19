@@ -1,126 +1,82 @@
 module std.list
 
-# Inherent methods on `list[T]`.
+# `list[T]` — a growable, heap-owning sequence, written entirely in Kira over
+# `std.mem`'s typed allocation and the `machine` layer's raw-pointer
+# indexing, with no compiler support for the type beyond what any user
+# struct gets (`spec/list-migration-design.md`). `[1, 2, 3]` reaches this
+# type through `std.traits.from_array`, `xs[i]`/`xs[i] = v` through
+# `std.traits.index`/`index_set`, and `for x in xs` through
+# `std.iter.into_iterator` — the same three traits phases 1-3 of the
+# migration gave every user collection, not anything `list` alone has.
 #
-# Like `std.option` and `std.result`, these were `k_builtin_methods` entries
-# the compiler typed without any backend compiling them. They are ordinary
-# Kira here, over the primitives the builtin `list` still provides directly:
-# `len` and indexing.
+# Storage is exactly `cap` elements at `data`, or a null `data` when
+# `cap == 0`; `len <= cap` always, and slots `len..cap` are zeroed but hold
+# no meaningful value. Every method that touches memory is `machine` and
+# short; everything a caller needs is safe.
 #
-# Only the direct accessors live here, deliberately. The builtin table also
-# carried `contains`, `any`, `all`, `find`, and `filter`, and those are *not*
-# reimplemented as list methods: they are iterator operations, and
-# `spec/collections-algorithms-design.md` puts them on the pipeline
-# (`xs.iter().any(...)`) so they compose and stay lazy. `std.algo` already
-# owns `filter` as a lazy adapter — an eager `list.filter` would have shadowed
-# it with a different meaning for the same name. The rest arrive with the
-# terminals in that same module.
-#
-# `sort` is likewise absent here: it belongs with the slice algorithms
-# (`std.algo`'s `sort`/`stable_sort`/etc., spec/specification/04-stdlib/
-# algorithms/51-sorting-and-searching.md), over a `slice_mut[T]` range
-# rather than a whole list — `xs.sort()` on a `list[T]` reaches it via UFCS
-# once a caller forms the full-range view itself (`sort(&mut xs[0..xs.len()])`);
-# no forwarding method is added here to avoid re-deriving the same range on
-# every call. `pop` and `clear` need to *shrink* a list, which no primitive
-# exposes; they return once Phase 7 rebuilds `list` over `alloc`/pointer
-# primitives.
-#
-# All of them were removed from the builtin table regardless, since an entry
-# there with no lowering is worse than no entry at all: it type-checks and
-# then fails inside the compiler, where absence gives an honest "no method"
-# with a suggestion.
-
-extend[T] list[T]:
-    ## Whether this list has no elements.
-    def is_empty(self) -> bool:
-        return self.len() == 0
-
-    ## The first element, or `@none` when the list is empty.
-    def first(self) -> option[T]:
-        if self.len() == 0:
-            return @none
-        return @some(self[0])
-
-    ## The last element, or `@none` when the list is empty.
-    def last(self) -> option[T]:
-        if self.len() == 0:
-            return @none
-        return @some(self[self.len() - 1])
-
-# ==========================================================================
-#  `vector[T]` — a growable list written in Kira, owning its own storage.
-#
-#  This is the `list` rebuild the header comment above anticipated: `push`,
-#  `pop`, `clear` and `reserve` are ordinary Kira here, over `std.mem`'s
-#  typed allocation and raw-pointer indexing, with no compiler support for
-#  the type itself beyond what any user struct gets.
-#
-#  It is deliberately a *separate* type from the builtin `list[T]` rather
-#  than a replacement for it. The builtin is still what `[1, 2, 3]`
-#  constructs, what `for x in xs` iterates, and what every other stdlib
-#  module is written against; displacing it means moving literal
-#  construction, iteration and index sugar off a compiler-known 3-slot
-#  representation, which is a language change rather than a library one.
-#  `vector[T]` is the destination that change would move `list[T]` to, and it
-#  exists now so the substrate underneath it is exercised by something real.
-#
-#  Storage is exactly `cap` elements at `data`, or a null `data` when
-#  `cap == 0`; `len <= cap` always, and slots `len..cap` are zeroed but hold
-#  no meaningful value. Every method that touches memory is `machine` and
-#  short; everything a caller needs is safe.
-#
-#  Not yet handled, and not hidden: `free` must be called explicitly. Kira
-#  runs no scope-exit `drop` glue on either backend (`spec/todo.md` item 6),
-#  so a `vector` that goes out of scope leaks its buffer under
-#  `KIRA_ALLOCATOR=system` exactly as every heap value already leaks under
-#  the bump arena. Elements are not dropped either, for the same reason.
-# ==========================================================================
+# `impl drop` below releases the storage automatically at scope exit
+# (`spec/todo.md` item 6). Elements are not individually dropped — a
+# container recursing `drop` through its elements isn't implemented, only a
+# struct's own fields are — so a `list` of resource-owning elements still
+# leaks *those*, just not its own backing allocation.
 
 use std.mem.{alloc, resize, free as mem_free, copy}
 use std.panic.panic
+use std.iter.list_into_iter
 
-## A growable, contiguous sequence of `T`, owning its own heap storage.
-pub type vector[T] = {
-    ## Number of elements actually stored.
+#: A growable, contiguous sequence of `T`, owning its own heap storage.
+pub type list[T] = {
+    #: Number of elements actually stored.
     len: usize,
-    ## Number of elements `data` has room for.
+    #: Number of elements `data` has room for.
     cap: usize,
-    ## The storage, or null when `cap` is 0.
+    #: The storage, or null when `cap` is 0.
     data: *mut T,
 }
 
-extend[T] vector[T]:
-    ## An empty `vector` that has not allocated anything yet.
-    pub machine def new() -> vector[T]:
-        return vector[T] { len: 0, cap: 0, data: alloc[T](0) }
+extend[T] list[T]:
+    #: An empty `list` that has not allocated anything yet.
+    pub machine def new() -> list[T]:
+        return list[T] { len: 0, cap: 0, data: alloc[T](0) }
 
-    ## How many elements this holds.
+    #: How many elements this holds.
     pub def len(self) -> usize:
         return self.len
 
-    ## How many elements this can hold before it must grow.
+    #: How many elements this can hold before it must grow.
     pub def capacity(self) -> usize:
         return self.cap
 
-    ## Whether this holds no elements.
+    #: Whether this holds no elements.
     pub def is_empty(self) -> bool:
         return self.len == 0
 
-    ## Ensures room for at least `n` elements without reallocating again.
-    ##
-    ## Never shrinks: a smaller `n` than the current capacity is a no-op.
+    #: The first element, or `@none` when the list is empty.
+    pub def first(self) -> option[T]:
+        if self.len == 0:
+            return @none
+        return @some(self[0])
+
+    #: The last element, or `@none` when the list is empty.
+    pub def last(self) -> option[T]:
+        if self.len == 0:
+            return @none
+        return @some(self[self.len - 1])
+
+    #: Ensures room for at least `n` elements without reallocating again.
+    #:
+    #: Never shrinks: a smaller `n` than the current capacity is a no-op.
     pub machine def reserve(mut self, n: usize) -> unit:
         if n <= self.cap:
             return
         self.data = resize(self.data, self.cap, n)
         self.cap = n
 
-    ## Appends `value`, growing the storage if it is full.
-    ##
-    ## Growth doubles the capacity (starting at 4), so a sequence of `n`
-    ## pushes performs O(log n) reallocations and copies each element O(1)
-    ## times on average.
+    #: Appends `value`, growing the storage if it is full.
+    #:
+    #: Growth doubles the capacity (starting at 4), so a sequence of `n`
+    #: pushes performs O(log n) reallocations and copies each element O(1)
+    #: times on average.
     pub machine def push(mut self, value: T) -> unit:
         if self.len == self.cap:
             var grown = self.cap * 2
@@ -130,122 +86,129 @@ extend[T] vector[T]:
         self.data[self.len] = value
         self.len = self.len + 1
 
-    ## Removes and returns the last element, or `@none` when empty.
-    ##
-    ## The vacated slot is left as it was rather than cleared: nothing can
-    ## read it back (`len` no longer covers it) and a later `push` overwrites
-    ## it outright.
+    #: Removes and returns the last element, or `@none` when empty.
+    #:
+    #: The vacated slot is left as it was rather than cleared: nothing can
+    #: read it back (`len` no longer covers it) and a later `push` overwrites
+    #: it outright.
     pub machine def pop(mut self) -> option[T]:
         if self.len == 0:
             return @none
         self.len = self.len - 1
         return @some(self.data[self.len])
 
-    ## The element at `i`, or `@none` when `i` is out of range.
+    #: The element at `i`, or `@none` when `i` is out of range.
     pub machine def get(self, i: usize) -> option[T]:
         if i >= self.len:
             return @none
         return @some(self.data[i])
 
-    ## Replaces the element at `i`. Returns whether `i` was in range.
+    #: Replaces the element at `i`. Returns whether `i` was in range.
     pub machine def set(mut self, i: usize, value: T) -> bool:
         if i >= self.len:
             return false
         self.data[i] = value
         return true
 
-    ## Removes every element, keeping the allocated capacity.
-    ##
-    ## O(1): only `len` changes. The elements are not dropped, because
-    ## nothing in Kira runs `drop` yet.
+    #: Removes every element, keeping the allocated capacity.
+    #:
+    #: O(1): only `len` changes. The elements are not dropped — a container
+    #: recursing `drop` through its elements is not implemented.
     pub def clear(mut self) -> unit:
         self.len = 0
 
-    ## Releases the storage, leaving an empty `vector` that owns nothing.
-    ##
-    ## Must be called explicitly — see this section's header comment.
+    #: Releases the storage, leaving an empty `list` that owns nothing.
+    #:
+    #: Calling this explicitly is fine — `free` on an already-freed (`cap ==
+    #: 0`, `data` null) list is a no-op — but is no longer required: `drop`
+    #: below runs it automatically at scope exit. `data` must be nulled out
+    #: here, not just `cap` zeroed: `drop`'s own `mem_free` reads `self.data`
+    #: again regardless, and re-freeing the same stale (already-freed)
+    #: pointer is a real double-free, not merely a logical one — `mem_free`'s
+    #: `count == 0` does not stop it from calling through to the allocator.
     pub machine def free(mut self) -> unit:
         mem_free(self.data, self.cap)
         self.len = 0
         self.cap = 0
+        self.data = alloc[T](0)
 
-# --------------------------------------------------------------------------
-#  `vector[T]` as an ordinary collection.
-#
-#  These four impls are what `spec/list-migration-design.md` phases 1-3 made
-#  possible, and together they are the whole of what `list[T]` gets from the
-#  compiler that a user type could not have: indexing, iteration, and
-#  construction from a literal. With them, `vector[T]` is usable with the
-#  same syntax as the builtin — which is the point of the migration, and the
-#  thing to check before phase 4 moves `list[T]` onto this storage.
-# --------------------------------------------------------------------------
+    #: The address of element 0, for raw-pointer access (`spec/specification/
+    #: 03-advanced/38-machine-layer.md`). Bounds are the caller's
+    #: responsibility past this point, same as `array`/`slice`.
+    pub machine def as_ptr(self) -> *T:
+        return self.data
 
-## Reading `v[i]`. Bounds-checked: an out-of-range index panics rather than
-## reading past the end, exactly as the builtin `list[T]` does.
-impl[T] index[usize] for vector[T]:
+    #: The `&mut` sibling of `as_ptr`.
+    pub machine def as_mut_ptr(mut self) -> *mut T:
+        return self.data
+
+    #: A read-only view of every element, for the algorithms
+    #: (`std.algo`'s sort/search family) that operate over a `slice[T]`
+    #: range rather than a whole collection. `array`/`slice`/`str` are the
+    #: only receivers the compiler still range-indexes directly
+    #: (`spec/list-migration-design.md` phase 4); this is how a library
+    #: type built the same view `xs[0..xs.len()]` would have been.
+    pub machine def as_slice(self) -> slice[T]:
+        return slice_from_raw_parts(self.data, self.len)
+
+    #: The `&mut` sibling of `as_slice`.
+    pub machine def as_mut_slice(mut self) -> slice_mut[T]:
+        return slice_mut_from_raw_parts(self.data, self.len)
+
+impl[T] drop for list[T]:
+    #: Releases the storage this list owns. Elements are not individually
+    #: dropped (`spec/todo.md` item 6: sum/struct payload recursion through a
+    #: container isn't implemented), only the backing allocation itself —
+    #: exactly what `free` above already does, and safe to run twice: a list
+    #: already `free`d has `cap == 0`/`data` null, and `mem_free` on that is
+    #: a no-op.
+    machine def drop(mut self) -> unit:
+        mem_free(self.data, self.cap)
+
+#: Reading `v[i]`. Bounds-checked: an out-of-range index panics rather than
+#: reading past the end.
+impl[T] index[usize] for list[T]:
     type output = T
     machine def at(self, i: usize) -> T:
         if i >= self.len:
             panic("index out of range")
         return self.data[i]
 
-## Writing `v[i] = x`, with the same bounds check.
-impl[T] index_set[usize] for vector[T]:
+#: Borrowing `&mut v[i]`, with the same bounds check.
+impl[T] index_mut[usize] for list[T]:
+    machine def at_mut(mut self, i: usize) -> mut cell[T]:
+        if i >= self.len:
+            panic("index out of range")
+        return &mut self.data[i]
+
+#: Writing `v[i] = x`, with the same bounds check.
+impl[T] index_set[usize] for list[T]:
     type output = T
     machine def set_at(mut self, i: usize, value: T) -> unit:
         if i >= self.len:
             panic("index out of range")
         self.data[i] = value
 
-## An iterator over a `vector[T]`'s elements, by value.
-##
-## Holds the storage pointer and a cursor rather than a copy of the vector:
-## iterating must not allocate, and must see the elements the vector has.
-pub type vector_iter[T] = { data: *mut T, len: usize, i: usize }
+#: `for x in v` — hands back `std.iter`'s consuming iterator
+#: (`list_into_iter[T]`), the same one `std.iter.into_iter` already builds
+#: for `xs.into_iter()`/`xs.collect()` UFCS calls. `std.iter` also already
+#: provides the *borrowing* routes `for x in &v`/`for x in &mut v` dispatch
+#: to (`iter`/`iter_mut`, spec/todo.md #20) — real `&T`/`&mut T`-yielding,
+#: double-ended, exact-size iteration, all written once there rather than
+#: duplicated here at a weaker (value-copy-only) level.
+impl[T] into_iterator[T] for list[T]:
+    type iter = list_into_iter[T]
+    def into_iter(self) -> list_into_iter[T]:
+        let n = self.len
+        return list_into_iter[T] { src: self, at: 0, end: n }
 
-impl[T] iterator[T] for vector_iter[T]:
-    machine def next(mut self) -> option[T]:
-        if self.i >= self.len:
-            return @none
-        let value = self.data[self.i]
-        self.i = self.i + 1
-        return @some(value)
-
-## `for x in v` — the collection hands back an iterator rather than being
-## one itself, which is why this is `into_iterator` and not `iterator`.
-impl[T] into_iterator[T] for vector[T]:
-    type iter = vector_iter[T]
-    def into_iter(self) -> vector_iter[T]:
-        return vector_iter[T] { data: self.data, len: self.len, i: 0 }
-
-## `for x in &v` / `for x in &mut v` — the non-consuming route `for`
-## dispatches to instead of `into_iter` when the loop's iterable is written
-## as an explicit borrow (spec/todo.md #20), so iterating a `vector[T]` no
-## longer forces a move: `xs.free()` (or any other later use of `xs`) still
-## type-checks after the loop ends.
-##
-## Same `vector_iter[T]` the consuming route builds — nothing here actually
-## owns the storage either way, `into_iter` just never zeroed `self` out — so
-## borrowing and consuming construct an identical handle; only which of `xs`
-## the move checker considers used up differs.
-pub def iter[T](xs: &vector[T]) -> vector_iter[T]:
-    return vector_iter[T] { data: xs.data, len: xs.len, i: 0 }
-
-## The `&mut` sibling of `iter`, for `for x in &mut v`. Yields the same `T`
-## copies `iter`/`into_iter` do — `vector[T]` has no mutable-reference
-## iteration yet, since that needs `index_mut` wired through a view
-## (spec/todo.md #19) — so `&mut` here only widens which bindings the loop
-## accepts, not what each iteration hands back.
-pub def iter_mut[T](xs: &mut vector[T]) -> vector_iter[T]:
-    return vector_iter[T] { data: xs.data, len: xs.len, i: 0 }
-
-## `let v: vector[int32] = [1, 2, 3]`.
-##
-## Allocates exactly `n` elements — a literal's length is known at compile
-## time, so there is no reason to over-reserve and no reason to grow.
-impl[T] from_array[T] for vector[T]:
-    static machine def from_array[n: usize](items: array[T, n]) -> vector[T]:
-        var out = vector[T].new()
+#: `let v: list[int32] = [1, 2, 3]`.
+#:
+#: Allocates exactly `n` elements — a literal's length is known at compile
+#: time, so there is no reason to over-reserve and no reason to grow.
+impl[T] from_array[T] for list[T]:
+    static machine def from_array[n: usize](items: array[T, n]) -> list[T]:
+        var out = list[T].new()
         out.reserve(n)
         var i: usize = 0
         while i < n:

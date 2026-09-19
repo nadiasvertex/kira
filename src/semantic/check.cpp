@@ -161,7 +161,6 @@ enum class builtin_result_shape : uint8_t {
   unit_result,                   ///< `unit`.
   element,                       ///< The receiver's element type, `T`.
   option_of_element,             ///< `option[T]`.
-  list_of_element,               ///< `list[T]`.
   byte_slice,                    ///< `slice[byte]`.
   cell_of_element,               ///< `cell[T]`.
   option_of_mut_cell_of_element, ///< `option[cell_mut[T]]`.
@@ -202,18 +201,6 @@ struct builtin_method_signature {
 /// `hir::lower_call` (spec/collections-algorithms-design.md).
 inline constexpr auto k_builtin_methods =
     std::to_array<builtin_method_signature>({
-        {.owner = "list",
-         .name = "len",
-         .result = builtin_result_shape::usize_result},
-        {.owner = "list",
-         .name = "push",
-         .result = builtin_result_shape::unit_result},
-        {.owner = "list",
-         .name = "cell",
-         .result = builtin_result_shape::cell_of_element},
-        {.owner = "list",
-         .name = "mutable_cell",
-         .result = builtin_result_shape::option_of_mut_cell_of_element},
         {.owner = "slice",
          .name = "len",
          .result = builtin_result_shape::usize_result},
@@ -244,12 +231,6 @@ inline constexpr auto k_builtin_methods =
         // out of the receiver's header; the two differ only in the
         // mutability of the resulting pointer type, which is what the
         // borrow/move checkers see.
-        {.owner = "list",
-         .name = "as_ptr",
-         .result = builtin_result_shape::ptr_to_element},
-        {.owner = "list",
-         .name = "as_mut_ptr",
-         .result = builtin_result_shape::mut_ptr_to_element},
         {.owner = "slice",
          .name = "as_ptr",
          .result = builtin_result_shape::ptr_to_element},
@@ -310,7 +291,7 @@ inline constexpr auto k_builtin_methods =
     // both into one owner would offer it on a read-only `cell` too.
     return object.name;
   }
-  if (object.name == "list" || object.name == "option" ||
+  if (object.name == "option" ||
       object.name == "result" || object.name == "generator" ||
       object.name == "uninit") {
     return object.name;
@@ -1013,6 +994,7 @@ public:
         .type_param_reflections = std::move(type_param_reflections_),
         .for_iterator_dispatches = std::move(for_iterator_dispatches_),
         .drop_plans = std::move(drop_plans_),
+        .comprehension_dispatches = std::move(comprehension_dispatches_),
         .try_conversions = std::move(try_conversions_),
         .try_conversion_types = std::move(try_conversion_types_),
         .fmt_types = fmt_types,
@@ -1031,6 +1013,7 @@ public:
         .folded_comptime_calls = std::move(folded_comptime_calls_),
         .layout_queries = std::move(layout_queries_),
         .ptr_casts = std::move(ptr_casts_),
+        .slice_from_raw_parts_calls = std::move(slice_from_raw_parts_calls_),
         .stack_buffers = std::move(stack_buffers_),
         .static_global_defs = std::move(static_global_defs_),
         .static_if_taken_branch = std::move(static_if_taken_branch_),
@@ -1248,6 +1231,11 @@ private:
   /// Populated once by `resolve_drop_plans`, after the main per-function
   /// walk. Handed to the caller via `take_checked_types`.
   std::unordered_map<type_id, drop_plan> drop_plans_;
+  /// Every `for ... => yield` comprehension's resolved constructor/push
+  /// calls — see `comprehension_dispatch` in types.h. Populated by
+  /// `infer_for_expr`.
+  std::unordered_map<const ast::for_expr *, comprehension_dispatch>
+      comprehension_dispatches_;
   /// Every `?` whose operand's error type needed a `from`-conversion to the
   /// enclosing function's declared error type, recorded by `infer_try`.
   /// Handed to the caller via `take_checked_types`.
@@ -1394,6 +1382,7 @@ private:
   std::unordered_map<const ast::call_expr *, layout_query> layout_queries_;
   /// See `checked_types::ptr_casts`. Populated by `infer_ptr_cast_call`.
   std::unordered_map<const ast::call_expr *, type_id> ptr_casts_;
+  std::unordered_set<const ast::call_expr *> slice_from_raw_parts_calls_;
   /// See `checked_types::stack_buffers`. Populated by `infer_uninit_call`.
   std::unordered_map<const ast::call_expr *, stack_buffer_request>
       stack_buffers_;
@@ -6785,7 +6774,8 @@ private:
     }
     for (const auto prelude :
          {"println", "print", "panic", "assert", "size_of", "align_of",
-          "ptr_cast", "args", "env", "min", "max"}) {
+          "ptr_cast", "args", "env", "min", "max", "slice_from_raw_parts",
+          "slice_mut_from_raw_parts"}) {
       candidates.emplace_back(prelude);
     }
     return candidates;
@@ -6826,7 +6816,8 @@ private:
            name == "min" || name == "max" || name == "cancel" ||
            name == "pool" || name == "io" || name == "cpu" ||
            name == "channel" || name == "watch" || name == "shared" ||
-           name == "expr";
+           name == "expr" || name == "slice_from_raw_parts" ||
+           name == "slice_mut_from_raw_parts";
   }
 
   /// Resolves a value-position identifier through, in order: a variant
@@ -8220,8 +8211,8 @@ private:
   /// `use`. Shared by the type and variant lookups below, which have to agree:
   /// a sum type reachable by name whose variants were not would let
   /// `ordering` be written in a signature and never constructed.
-  static constexpr std::array<std::string_view, 3> k_prelude_reexport_modules =
-      {"prelude", "std.traits", "std.iter"};
+  static constexpr std::array<std::string_view, 4> k_prelude_reexport_modules =
+      {"prelude", "std.traits", "std.iter", "std.list"};
 
   /// Finds a trait declaration named `name` in the auto-imported prelude —
   /// module `prelude` itself, or one of the stdlib modules it re-exports
@@ -8445,6 +8436,15 @@ private:
       for (const auto &ext : members.extends) {
         const auto target = strip_refs(resolve_extend_target(ext));
         const auto &target_entry = types_.entry(target);
+        if (ext.module_name == "std.list") {
+          std::fprintf(stderr,
+                       "[DEBUG] extend module=%s target.decl=%p "
+                       "target.name=%s target.kind=%d\n",
+                       std::string(module_name).c_str(),
+                       (const void *)target_entry.decl,
+                       std::string(target_entry.name).c_str(),
+                       (int)target_entry.kind);
+        }
         auto extend_methods = std::deque<method_entry>{};
         for (const auto &item : ext.decl->items) {
           if (item == nullptr || item->has_error ||
@@ -9369,8 +9369,6 @@ private:
         return element;
       case builtin_result_shape::option_of_element:
         return types_.builtin_generic("option", {element});
-      case builtin_result_shape::list_of_element:
-        return types_.builtin_generic("list", {element});
       case builtin_result_shape::byte_slice:
         return types_.builtin_generic("slice", {types_.builtin("byte")});
       case builtin_result_shape::cell_of_element:
@@ -9410,6 +9408,12 @@ private:
                                                    const type_entry &entry,
                                                    type_id object)
       -> std::optional<type_id> {
+    std::fprintf(stderr,
+                 "[DEBUG] report_unknown_builtin_method field=%s "
+                 "entry.decl=%p entry.name=%s entry.kind=%d object=%u\n",
+                 std::string(field.field_name).c_str(),
+                 (const void *)entry.decl, std::string(entry.name).c_str(),
+                 (int)entry.kind, object);
     // Restricting to these two kinds is what keeps an unresolved receiver
     // silent: `k_unknown_type` is `unknown_kind`, and a type parameter is
     // `type_param_kind`, so neither reaches the report below.
@@ -10574,6 +10578,11 @@ private:
     case type_kind::struct_kind:
     case type_kind::sum_kind:
     case type_kind::opaque_kind: {
+      if (field.field_name == "push") {
+        std::fprintf(stderr,
+                     "[DEBUG2] push receiver entry.decl=%p entry.name=%s\n",
+                     (const void *)entry.decl, std::string(entry.name).c_str());
+      }
       if (const auto *method = find_method(entry, field.field_name, object)) {
         // `x.drop()` is refused outright (spec/specification/02-intermediate/
         // 17-shared-ownership-and-drop.md, "no direct `x.drop()` call") —
@@ -11549,6 +11558,71 @@ private:
     return record_expr_type(call, result);
   }
 
+  /// Recognizes `slice_from_raw_parts(p, len)` / `slice_mut_from_raw_parts(p,
+  /// len)` — builds a `slice[T]`/`slice_mut[T]` view over memory the caller
+  /// already has a raw pointer to, with `T` read straight off `p`'s own
+  /// pointee type (no explicit `[T]` needed, unlike `ptr_cast`, since a
+  /// pointer's pointee already says what `T` is unambiguously).
+  ///
+  /// This is the one primitive a library collection needs and had no way to
+  /// get: `array`/`slice`/`str` are the only receivers the compiler still
+  /// range-indexes directly (`spec/list-migration-design.md` phase 4), so a
+  /// type like `list[T]` that wants to hand back a view of *part* of its own
+  /// storage — as `std.algo`'s sort family does via `&mut xs[a..b]` — has no
+  /// way to build one from its own `as_ptr`/`as_mut_ptr` otherwise.
+  auto infer_slice_from_raw_parts_call(const ast::call_expr &call)
+      -> std::optional<type_id> {
+    if (call.callee == nullptr ||
+        call.callee->kind != ast::node_kind::ident_expr) {
+      return std::nullopt;
+    }
+    const auto &name = dynamic_cast<const ast::ident_expr &>(*call.callee).name;
+    const auto is_mut = name == "slice_mut_from_raw_parts";
+    if (!is_mut && name != "slice_from_raw_parts") {
+      return std::nullopt;
+    }
+    if (lookup_value(name) != nullptr || find_callable_decl(name).has_value()) {
+      return std::nullopt; // a real declaration of this name wins
+    }
+    record_expr_type(*call.callee, k_unknown_type);
+    if (call.args.size() != 2 || call.args[0].value == nullptr ||
+        call.args[1].value == nullptr) {
+      error(call.span,
+            std::format("`{}` takes exactly two arguments: a pointer and a "
+                        "length",
+                        name),
+            "expected two arguments");
+      infer_call_args_loosely(call);
+      return record_expr_type(call, k_error_type);
+    }
+    require_machine_context(call.span, std::format("`{}`", name));
+    const auto ptr_type = strip_refs(infer_expr(*call.args[0].value, k_unknown_type));
+    const auto &ptr_entry = types_.entry(ptr_type);
+    infer_expr(*call.args[1].value, types_.builtin("usize"));
+    if (ptr_entry.kind != type_kind::ptr_kind) {
+      if (types_.is_unknown(ptr_type) || ptr_type == k_error_type) {
+        return record_expr_type(call, k_unknown_type);
+      }
+      error(call.args[0].value->span,
+            std::format("`{}` requires a raw pointer, found `{}`", name,
+                        types_.display(ptr_type)),
+            "not a `*T` or `*mut T`");
+      return record_expr_type(call, k_error_type);
+    }
+    if (is_mut && !ptr_entry.is_mut) {
+      error(call.args[0].value->span,
+            std::format("`{}` requires a `*mut T` pointer, found `{}`", name,
+                        types_.display(ptr_type)),
+            "this pointer is not mutable");
+      return record_expr_type(call, k_error_type);
+    }
+    const auto element = ptr_entry.result;
+    const auto result =
+        types_.builtin_generic(is_mut ? "slice_mut" : "slice", {element});
+    slice_from_raw_parts_calls_.insert(&call);
+    return record_expr_type(call, result);
+  }
+
   /// Recognizes `name[T](...)` — a compile-time generic call to a top-level
   /// `static def` function (e.g. `derive_show[point]()`), distinguished
   /// from ordinary indexing-then-calling by `ident_names_callable_decl`
@@ -11704,6 +11778,9 @@ private:
       return *result;
     }
     if (const auto result = infer_ptr_cast_call(call)) {
+      return *result;
+    }
+    if (const auto result = infer_slice_from_raw_parts_call(call)) {
       return *result;
     }
     if (const auto result = infer_uninit_call(call)) {
@@ -11893,7 +11970,7 @@ private:
     }
     if (name == "args") {
       infer_call_args_loosely(call);
-      return types_.builtin_generic("list", {types_.builtin("str")});
+      return resolve_list_type(types_.builtin("str"));
     }
     if (name == "env") {
       infer_call_args_loosely(call);
@@ -12954,14 +13031,13 @@ private:
         }
         return entry.args.empty() ? k_unknown_type : entry.args[0];
       }
-      if (entry.name == "list" || entry.name == "slice" ||
-          entry.name == "slice_mut") {
+      if (entry.name == "slice" || entry.name == "slice_mut") {
         require_integer_key();
         const auto element =
             entry.args.empty() ? k_unknown_type : entry.args[0];
         // A range-sliced `slice_mut` stays a `slice_mut` (a sub-view of a
-        // mutable slice is still mutable) — `list`/`slice` range-slice to a
-        // plain (immutable) `slice`, same as before.
+        // mutable slice is still mutable) — `slice` range-slices to a plain
+        // (immutable) `slice`, same as before.
         if (key_is_range) {
           return types_.builtin_generic(
               entry.name == "slice_mut" ? "slice_mut" : "slice", {element});
@@ -13825,7 +13901,9 @@ private:
       yield_type = infer_expr(*expr.yield_expr, k_unknown_type);
     }
     pop_scope();
-    return types_.builtin_generic("list", {yield_type});
+    const auto list_type = resolve_list_type(yield_type);
+    resolve_comprehension_dispatch(expr, list_type);
+    return list_type;
   }
 
   /// When `operand_err` (the `?` operand's `result[_, E]` error type)
@@ -14217,9 +14295,9 @@ private:
     case type_kind::array_kind:
       return entry.result;
     case type_kind::builtin_generic_kind:
-      if (entry.name == "list" || entry.name == "slice" ||
-          entry.name == "slice_mut" || entry.name == "range" ||
-          entry.name == "option" || entry.name == "generator") {
+      if (entry.name == "slice" || entry.name == "slice_mut" ||
+          entry.name == "range" || entry.name == "option" ||
+          entry.name == "generator") {
         return entry.args.empty() ? k_unknown_type : entry.args[0];
       }
       return k_unknown_type;
@@ -14838,17 +14916,17 @@ private:
     conversion->second.callee.impl_target_type = "";
   }
 
-  /// If `expected` is a user type implementing `std.traits.from_array`,
-  /// records the constructor this literal should be handed to and answers
-  /// the element type the literal's elements must have.
-  ///
-  /// This is what makes `[1, 2, 3]` reach a collection other than the
-  /// compiler-known `list` (`spec/list-migration-design.md` phase 3). The
-  /// literal keeps its `array[T, n]` shape all the way through lowering; the
-  /// only change is the call wrapped around it.
-  auto try_wire_from_array(const ast::array_expr &array, type_id expected)
+  /// If `target` is a user type implementing `std.traits.from_array`,
+  /// records the constructor this literal should be handed to
+  /// (`array_literal_conversions_[&array].callee`, `.array_type` left for
+  /// the caller to fill in once the literal's own length is known) and
+  /// answers the element type the literal's elements must have. Pure
+  /// resolution — does not itself infer the elements, so a caller that has
+  /// already inferred them (the no-expectation default-`list` path,
+  /// `infer_array` below) can call this without re-inferring.
+  auto resolve_array_literal_conversion(const ast::array_expr &array,
+                                        type_id target)
       -> std::optional<type_id> {
-    const auto target = strip_refs(expected);
     const auto &entry = types_.entry(target);
     if (entry.kind != type_kind::struct_kind &&
         entry.kind != type_kind::sum_kind &&
@@ -14894,6 +14972,89 @@ private:
     return array_param.result;
   }
 
+  /// If `expected` is a user type implementing `std.traits.from_array`,
+  /// infers the literal's elements against it and records the conversion.
+  ///
+  /// This is what makes `[1, 2, 3]` reach a collection other than `list[T]`
+  /// (`spec/list-migration-design.md` phase 3). The literal keeps its
+  /// `array[T, n]` shape all the way through lowering; the only change is
+  /// the call wrapped around it.
+  auto try_wire_from_array(const ast::array_expr &array, type_id expected)
+      -> std::optional<type_id> {
+    return resolve_array_literal_conversion(array, strip_refs(expected));
+  }
+
+  /// The real `list[T]` (`std.list`, prelude-re-exported) instantiated at
+  /// `element` — what an unannotated `[1, 2, 3]` or `[0; 4]` literal answers
+  /// with (`spec/list-migration-design.md` phase 3's "one rule": no
+  /// expectation means `list`, for every literal spelling). `list` is an
+  /// ordinary generic user type since phase 4, so this is exactly
+  /// `find_prelude_type`/`instantiate_user_type`'s path, just with the
+  /// element type already in hand as a `type_id` rather than an AST node —
+  /// `make_user_type` is the one piece of that path that takes arguments
+  /// directly.
+  auto resolve_list_type(type_id element) -> type_id {
+    const auto found = find_prelude_type("list");
+    if (!found.has_value()) {
+      return k_unknown_type;
+    }
+    return make_user_type(*found->first, found->second, {element});
+  }
+
+  /// Resolves a `for ... => yield` comprehension's `list[T]::new`/
+  /// `list[T]::push` calls into `comprehension_dispatches_`
+  /// (`hir::lower_for_expr` builds the actual calls from it). Mirrors
+  /// `resolve_own_drop`'s `find_method`/`instantiate_impl_method_for`
+  /// pattern — the same shape whether the method takes `self` (`push`) or
+  /// not (the static `new`).
+  auto resolve_comprehension_dispatch(const ast::for_expr &expr,
+                                      type_id list_type) -> void {
+    if (in_const_generic_template_ || in_type_generic_template_) {
+      return;
+    }
+    const auto &entry = types_.entry(list_type);
+    const auto *new_method = find_method(entry, "new", list_type);
+    const auto *push_method = find_method(entry, "push", list_type);
+    if (new_method == nullptr || push_method == nullptr) {
+      return;
+    }
+    const auto build_callee =
+        [&](const method_entry &method) -> resolved_callee {
+      const auto *instance =
+          instantiate_impl_method_for(expr, method, entry, list_type);
+      return resolved_callee{
+          .decl = instance != nullptr ? instance : method.decl,
+          .owner_module = method.owner->module_name,
+          .impl_target_type = instance != nullptr ? "" : entry.name};
+    };
+    comprehension_dispatches_[&expr] = comprehension_dispatch{
+        .new_callee = build_callee(*new_method),
+        .push_callee = build_callee(*push_method),
+        .list_type = list_type};
+  }
+
+  /// Records the `from_array` conversion for a literal whose elements have
+  /// already been inferred (the no-expectation default-`list` path below) —
+  /// `resolve_array_literal_conversion` only resolves the constructor, so
+  /// this fills in `.array_type`/instantiates the same way the explicit-
+  /// annotation path at the top of `infer_array` does, without re-inferring
+  /// the elements a second time.
+  auto wire_default_list(const ast::array_expr &array, type_id element,
+                         std::optional<uint64_t> count) -> type_id {
+    const auto target = resolve_list_type(element);
+    if (!resolve_array_literal_conversion(array, target).has_value()) {
+      return target; // `list[T]` always has `from_array` — see std.list.
+    }
+    array_literal_conversions_[&array].array_type = array_with_length(
+        element, count.has_value()
+                     ? types_.const_value(types_.usize_type(), *count)
+                     : k_unknown_type);
+    if (count.has_value()) {
+      instantiate_from_array_for(array, target, *count);
+    }
+    return target;
+  }
+
   auto infer_array(const ast::array_expr &array, type_id expected) -> type_id {
     // A user collection that says what a literal of it means: check the
     // elements against its element type, then answer with the collection.
@@ -14928,16 +15089,13 @@ private:
     const auto &expected_entry = types_.entry(strip_refs(expected));
     auto element_expected = k_unknown_type;
     auto expected_is_array = false;
-    auto expected_is_list = false;
     if (expected_entry.kind == type_kind::array_kind) {
       element_expected = expected_entry.result;
       expected_is_array = true;
     } else if (expected_entry.kind == type_kind::builtin_generic_kind &&
-               (expected_entry.name == "list" ||
-                expected_entry.name == "slice")) {
+               expected_entry.name == "slice") {
       element_expected =
           expected_entry.args.empty() ? k_unknown_type : expected_entry.args[0];
-      expected_is_list = true;
     }
 
     if (array.fill_value != nullptr) {
@@ -14963,9 +15121,6 @@ private:
           count = static_cast<uint64_t>(*folded);
         }
       }
-      if (expected_is_list) {
-        return types_.builtin_generic("list", {element});
-      }
       // No expected type: a sequence literal is a `list`, exactly as the
       // element form a few lines below already was. One rule for both
       // spellings — "a literal with a constant repeat count is an array,
@@ -14976,7 +15131,7 @@ private:
       // `list` is the default choice"). An `array` is spelled by asking for
       // one, which is what `expected_is_array` below serves.
       if (!expected_is_array && types_.is_unknown(strip_refs(expected))) {
-        return types_.builtin_generic("list", {element});
+        return wire_default_list(array, element, count);
       }
       const auto length = count.has_value()
                               ? types_.const_value(types_.usize_type(), *count)
@@ -15014,7 +15169,7 @@ private:
           element,
           types_.const_value(types_.usize_type(), array.elements.size()));
     }
-    return types_.builtin_generic("list", {element});
+    return wire_default_list(array, element, array.elements.size());
   }
 
   // ==========================================================================

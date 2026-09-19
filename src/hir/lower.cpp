@@ -1395,6 +1395,27 @@ auto lowerer::lower_call(const ast::call_expr &call)
     return ok_expr(std::move(*operand));
   }
 
+  // `slice_from_raw_parts(p, len)` / `slice_mut_from_raw_parts(p, len)` —
+  // see `checked_types::slice_from_raw_parts_calls`.
+  if (checked_.slice_from_raw_parts_calls.contains(&call)) {
+    if (call.args.size() != 2 || call.args[0].value == nullptr ||
+        call.args[1].value == nullptr) {
+      return fail(lowering_error_kind::unresolved_type, call.span,
+                  "`slice_from_raw_parts` has no pointer/length operands to "
+                  "build a view from");
+    }
+    auto pointer = lower_expr(*call.args[0].value);
+    if (!pointer.has_value()) {
+      return std::unexpected(pointer.error());
+    }
+    auto len = lower_expr(*call.args[1].value);
+    if (!len.has_value()) {
+      return std::unexpected(len.error());
+    }
+    return ok_expr(make<hir_slice_from_raw_parts>(
+        call.span, *type, std::move(*pointer), std::move(*len)));
+  }
+
   // `size_of[T]()` / `align_of[T]()` — the checker resolved *which* type
   // each asks about (`checked_types::layout_queries`); the answer comes
   // from `runtime::layout_of`, the one function both backends already read
@@ -4402,12 +4423,12 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
   if (!type.has_value()) {
     return std::unexpected(type.error());
   }
-  const auto &result_entry = checked_.types.entry(*type);
-  if (result_entry.kind != type_kind::builtin_generic_kind ||
-      result_entry.name != "list" || result_entry.args.empty()) {
+  const auto dispatch = checked_.comprehension_dispatches.find(&for_expr);
+  if (dispatch == checked_.comprehension_dispatches.end()) {
     return fail(lowering_error_kind::unresolved_type, for_expr.span,
-                "comprehension did not resolve to a concrete list[T] "
-                "result");
+                "internal error: comprehension has no resolved list[T]::new"
+                "/push dispatch — the checker and lowering have gotten out "
+                "of sync");
   }
   if (for_expr.yield_expr == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, for_expr.span,
@@ -4418,30 +4439,56 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
                 "comprehension has no iteration clauses");
   }
 
+  // Same convention `lower_index_dispatch`/`build_drop_calls` follow: an
+  // empty `impl_target_type` means `decl` is already a monomorphized
+  // instance carrying its own mangled name.
+  const auto call_from_resolved =
+      [this](source_span call_span, type_id result,
+             const semantic::resolved_callee &resolved,
+             ptr_vec<hir_expr> args) -> ptr<hir_expr> {
+    const auto local_name =
+        resolved.impl_target_type.empty()
+            ? resolved.decl->name
+            : std::format("{}::{}", resolved.impl_target_type,
+                          resolved.decl->name);
+    const auto symbol = resolve_reference(local_name);
+    auto callee = ptr<hir_expr>(make<hir_local_ref>(
+        call_span, k_unknown_type, symbol, local_name, resolved.owner_module));
+    return ptr<hir_expr>(hir::make<hir_call>(call_span, result,
+                                             std::move(callee),
+                                             std::move(args)));
+  };
+
   const auto span = for_expr.span;
-  const auto list_type = *type;
+  const auto list_type = dispatch->second.list_type;
   const auto acc_symbol = mint_symbol();
 
   auto stmts = ptr_vec<hir_node>{};
   stmts.push_back(ptr<hir_node>(make<hir_let>(
       span, acc_symbol, std::string("<comprehension result>"),
-      ptr<hir_expr>(make<hir_array_init>(span, list_type, ptr_vec<hir_expr>{},
-                                         nullptr, nullptr)),
+      call_from_resolved(span, list_type, dispatch->second.new_callee,
+                         ptr_vec<hir_expr>{}),
       /*mut=*/true)));
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-      innermost = [this, &for_expr, acc_symbol, list_type,
-                   span]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
+      innermost =
+          [this, &for_expr, acc_symbol, list_type, span, &dispatch,
+           &call_from_resolved]()
+      -> std::expected<ptr_vec<hir_node>, lowering_error> {
     auto yield_value = lower_expr(*for_expr.yield_expr);
     if (!yield_value.has_value()) {
       return std::unexpected(yield_value.error());
     }
-    auto push_stmt = ptr<hir_node>(
-        make<hir_list_push>(span,
-                            ptr<hir_expr>(make<hir_local_ref>(
-                                span, list_type, acc_symbol,
-                                std::string("<comprehension result>"))),
-                            std::move(*yield_value)));
+    auto push_args = ptr_vec<hir_expr>{};
+    push_args.push_back(ptr<hir_expr>(make<hir_local_ref>(
+        span, list_type, acc_symbol, std::string("<comprehension result>"))));
+    push_args.push_back(std::move(*yield_value));
+    auto push_stmt = ptr<hir_node>(make<hir_expr_stmt>(
+        span, call_from_resolved(span,
+                                 drop_call_result_type(
+                                     checked_, *dispatch->second.push_callee.decl),
+                                 dispatch->second.push_callee,
+                                 std::move(push_args))));
 
     auto result = ptr_vec<hir_node>{};
     if (for_expr.guard != nullptr) {

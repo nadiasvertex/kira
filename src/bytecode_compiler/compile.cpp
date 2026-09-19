@@ -1318,6 +1318,9 @@ private:
     case hir_node_kind::hir_container_data:
       return compile_container_data(
           dynamic_cast<const hir::hir_container_data &>(expr), dst);
+    case hir_node_kind::hir_slice_from_raw_parts:
+      return compile_slice_from_raw_parts(
+          dynamic_cast<const hir::hir_slice_from_raw_parts &>(expr), dst);
     case hir_node_kind::hir_container_len:
       return compile_container_len(
           dynamic_cast<const hir::hir_container_len &>(expr), dst);
@@ -2264,6 +2267,29 @@ private:
       return std::unexpected(object_reg.error());
     }
     emit_load_slot(dst, *object_reg, 0);
+    return {};
+  }
+
+  /// `std.mem.slice_from_raw_parts`/`slice_mut_from_raw_parts` — builds the
+  /// same 2-slot `{len, data}` header `compile_range_index` builds for
+  /// `xs[a..b]`, just from a caller-supplied pointer and length instead of
+  /// one derived from an existing container's own view. See
+  /// `hir_slice_from_raw_parts`'s doc comment.
+  [[nodiscard]] auto
+  compile_slice_from_raw_parts(const hir::hir_slice_from_raw_parts &node,
+                               virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    auto data_reg = compile_expr(*node.pointer);
+    if (!data_reg.has_value()) {
+      return std::unexpected(data_reg.error());
+    }
+    auto len_reg = compile_expr(*node.len);
+    if (!len_reg.has_value()) {
+      return std::unexpected(len_reg.error());
+    }
+    emit_alloc_slots(dst, 2);
+    emit_store_slot(dst, 0, *len_reg);
+    emit_store_slot(dst, 1, *data_reg);
     return {};
   }
 

@@ -514,6 +514,18 @@ struct drop_plan {
   std::vector<std::pair<std::string, type_id>> droppable_fields;
 };
 
+/// The resolved `list[T]::new`/`list[T]::push` calls a `for ... => yield`
+/// comprehension (`checker::infer_for_expr`) desugars into — see
+/// `hir::lower_for_expr`. Recorded once at type-checking time because
+/// nothing in the source names either call (the comprehension syntax is the
+/// whole of it), the same reason `array_literal_conversion` exists for
+/// literal-to-constructor calls.
+struct comprehension_dispatch {
+  resolved_callee new_callee;
+  resolved_callee push_callee;
+  type_id list_type = 0;
+};
+
 struct iterator_loop_dispatch {
   const ast::func_decl *decl = nullptr;
   std::string owner_module;
@@ -854,6 +866,11 @@ struct checked_types {
   /// `types`. Consumed by `hir::compute_drop_schedule`/`hir::lowerer` to
   /// build scope-exit drop calls (`spec/todo.md` item 6).
   std::unordered_map<type_id, drop_plan> drop_plans;
+  /// Every `for ... => yield` comprehension's resolved `list[T]::new`/
+  /// `list[T]::push` calls — see `comprehension_dispatch`'s doc comment.
+  /// Keyed by the `ast::for_expr` node.
+  std::unordered_map<const ast::for_expr *, comprehension_dispatch>
+      comprehension_dispatches;
   /// Every `?` (`try_expr`) whose operand's `result[_, E1]` error type
   /// differs from the enclosing function's declared `result[_, E2]` error
   /// type and resolved against a real `impl from[E1] for E2` — see
@@ -970,6 +987,14 @@ struct checked_types {
   /// it the node would keep the source pointee type, and the next `p[i]`
   /// through it would scale by the wrong element stride.
   std::unordered_map<const ast::call_expr *, type_id> ptr_casts;
+  /// Every `std.mem.slice_from_raw_parts(p, len)`/
+  /// `slice_mut_from_raw_parts(p, len)` call — see
+  /// `checker::infer_slice_from_raw_parts_call`. `hir::lower_call` builds an
+  /// `hir::hir_slice_from_raw_parts` from it directly (the call's own
+  /// recorded checked type already says `slice[T]` vs `slice_mut[T]`); no
+  /// `func_decl` backs either name (same rationale as
+  /// `layout_queries`/`ptr_casts`).
+  std::unordered_set<const ast::call_expr *> slice_from_raw_parts_calls;
   /// Every `uninit[T, N]()` call, mapped to the buffer it asks for: the
   /// element type and the slot count. Like `layout_queries`, the *size* is
   /// deliberately not stored — `hir::lower_call` derives both the byte size

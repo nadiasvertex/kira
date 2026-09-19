@@ -193,6 +193,12 @@ auto collect_bound_symbols(const hir_node &node,
         *dynamic_cast<const hir_container_data &>(node).object, bound);
     return;
   }
+  case hir_node_kind::hir_slice_from_raw_parts: {
+    const auto &parts = dynamic_cast<const hir_slice_from_raw_parts &>(node);
+    collect_bound_symbols(*parts.pointer, bound);
+    collect_bound_symbols(*parts.len, bound);
+    return;
+  }
   case hir_node_kind::hir_container_len: {
     collect_bound_symbols(*dynamic_cast<const hir_container_len &>(node).object,
                           bound);
