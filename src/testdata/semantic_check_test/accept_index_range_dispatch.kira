@@ -1,0 +1,53 @@
+module sample
+
+# Indexing by a position and indexing by a range are separate `index`
+# impls with different `output`s, and a use site picks the one whose key
+# type it supplies (`check_index_key`/`index_key_filter`). Before that,
+# method lookup found `at` by name alone, so `v[0..2]` reached the element
+# impl and typed as one `int32`.
+#
+# The annotations are the assertion: each names the `output` of the impl
+# that *should* answer, so picking the other one is a type error rather
+# than something that quietly checks.
+
+type window = { a: int32, b: int32, c: int32 }
+
+impl index[usize] for window:
+    type output = int32
+    def at(self, i: usize) -> int32:
+        if i == 0:
+            return self.a
+        if i == 1:
+            return self.b
+        return self.c
+
+impl index[range[usize]] for window:
+    type output = bool
+    def at(self, i: range[usize]) -> bool:
+        return i.end > i.start
+
+impl index_mut[usize] for window:
+    type output_mut = cell_mut[int32]
+    def at_mut(mut self, i: usize) -> cell_mut[int32]:
+        return &mut self.a
+
+# The element impl answers a position.
+def element(w: window) -> int32:
+    let one: int32 = w[1]
+    return one
+
+# The range impl answers a range, with its own `output`.
+def sub(w: window) -> bool:
+    let covers: bool = w[0..2]
+    return covers
+
+# `a..=b` reaches the same impl: it is a `range[usize]` too.
+def sub_inclusive(w: window) -> bool:
+    let covers: bool = w[0..=1]
+    return covers
+
+# `index_mut`'s own `output_mut` — a `cell_mut`, not a cell wrapped around
+# `index`'s `output`, which for the range impl above would be nonsense.
+def borrow(mut w: window) -> unit:
+    let slot: cell_mut[int32] = &mut w[0]
+    slot.set(9)

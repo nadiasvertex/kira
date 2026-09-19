@@ -2172,6 +2172,32 @@ auto test_reports_index_without_impl() -> void {
       "impl to write");
 }
 
+auto test_dispatches_index_by_key_type() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_index_range_dispatch.kira");
+  expect(analyzed.error_count == 0,
+         "expected a type with both an `index[usize]` and an "
+         "`index[range[usize]]` impl to check cleanly");
+}
+
+auto test_reports_index_wrong_key_type() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_index_wrong_key_type.kira");
+  expect(analyzed.error_count > 0,
+         "expected indexing with a key the `index` impl does not take to be "
+         "rejected");
+  expect_diagnostic(analyzed, "cannot index `readable` with `range",
+                    "expected a range key to be rejected against an "
+                    "`index[usize]`-only type, at the index itself");
+  expect_diagnostic(analyzed, "expected an index of type `usize`",
+                    "expected the label to name the key type the impl takes");
+  expect_diagnostic(
+      analyzed, "Indexing by a range is a separate impl with its own `output`",
+      "expected the help to explain that a sub-view is its own impl");
+  expect_diagnostic(analyzed, "cannot index `readable` with `str`",
+                    "expected an unrelated key type to be rejected too");
+}
+
 auto test_reports_direct_drop_call() -> void {
   const auto analyzed = analyze_test_data_file("reject_direct_drop_call.kira");
   expect(analyzed.error_count > 0,
@@ -3440,6 +3466,8 @@ auto main() -> int {
     test_accepts_machine_pointer_ops();
     test_reports_write_through_const_pointer();
     test_reports_index_without_impl();
+    test_reports_index_wrong_key_type();
+    test_dispatches_index_by_key_type();
     test_reports_direct_drop_call();
     test_reports_index_write_without_index_set();
     test_reports_index_mut_borrow_without_impl();

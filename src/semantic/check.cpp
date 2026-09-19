@@ -5,6 +5,7 @@
 #include <charconv>
 #include <deque>
 #include <format>
+#include <functional>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -291,9 +292,8 @@ inline constexpr auto k_builtin_methods =
     // both into one owner would offer it on a read-only `cell` too.
     return object.name;
   }
-  if (object.name == "option" ||
-      object.name == "result" || object.name == "generator" ||
-      object.name == "uninit") {
+  if (object.name == "option" || object.name == "result" ||
+      object.name == "generator" || object.name == "uninit") {
     return object.name;
   }
   return {};
@@ -335,6 +335,10 @@ struct method_entry {
   /// `impl_generic_bindings`.
   type_id impl_target_pattern = k_unknown_type;
 };
+
+/// An extra condition on a method lookup, past the method's name — see
+/// `find_declared_method`. Empty means "any method with that name".
+using method_filter = std::function<bool(const method_entry &)>;
 
 // ==========================================================================
 //  Local parameter-usage inference
@@ -7407,6 +7411,35 @@ private:
   /// looked up from outside its impl (an operator overload's dispatch) would
   /// see `self_assoc_types_` as whatever it happened to be left at — empty,
   /// most of the time — and `self.output` would resolve to `unknown`.
+  /// `trait[arg]` as `impl_assoc_types_` files a parameterized trait's
+  /// bindings — the key that tells two impls of the same trait apart. Built
+  /// from the resolved argument types so the impl side and the use site
+  /// spell it the same way regardless of how each wrote them.
+  auto parameterized_trait_key(std::string_view trait_name, type_id argument)
+      -> std::string {
+    return std::format("{}[{}]", trait_name, types_.display(argument));
+  }
+
+  /// The same key, read off an `impl trait[args] for ...` declaration.
+  /// Falls back to the bare trait name when the trait takes no arguments.
+  auto impl_trait_arguments_key(const ast::impl_decl &decl,
+                                std::string_view trait_name,
+                                const resolve_ctx &ctx) -> std::string {
+    if (decl.trait_type == nullptr ||
+        decl.trait_type->kind != ast::node_kind::named_type) {
+      return std::string(trait_name);
+    }
+    const auto &named = dynamic_cast<const ast::named_type &>(*decl.trait_type);
+    const auto *argument = named.type_args.size() == 1
+                               ? dynamic_cast<const ast::type_expr *>(
+                                     named.type_args.front().value.get())
+                               : nullptr;
+    if (argument == nullptr) {
+      return std::string(trait_name);
+    }
+    return parameterized_trait_key(trait_name, resolve_type(*argument, ctx));
+  }
+
   auto resolve_operator_return_type(type_id target, std::string_view trait_name,
                                     const method_entry &method) -> type_id {
     const auto target_it = impl_assoc_types_.find(target);
@@ -7863,16 +7896,27 @@ private:
 
     case ast::binary_op::range:
     case ast::binary_op::range_inclusive: {
+      // An expected `range[E]` seeds *both* bounds with `E`. Without it the
+      // left bound is inferred blind, so `0..n` with `n: usize` takes its
+      // element type from the bare literal `0` — an `int32` — and comes out
+      // as `range[int32]` even where a `range[usize]` was asked for. That
+      // matters now that a range can select an impl (`index[range[usize]]`):
+      // an element type decided by which side happens to be a literal would
+      // pick the wrong one, or none.
+      const auto hint = range_element_type(expected).value_or(k_unknown_type);
       const auto lhs = binary.lhs != nullptr
-                           ? strip_refs(infer_expr(*binary.lhs, k_unknown_type))
+                           ? strip_refs(infer_expr(*binary.lhs, hint))
                            : k_unknown_type;
-      const auto rhs = binary.rhs != nullptr
-                           ? strip_refs(infer_expr(*binary.rhs, lhs))
-                           : k_unknown_type;
-      const auto element = types_.is_integer(lhs)   ? lhs
+      const auto rhs =
+          binary.rhs != nullptr
+              ? strip_refs(infer_expr(*binary.rhs,
+                                      types_.is_unknown(hint) ? lhs : hint))
+              : k_unknown_type;
+      const auto element = types_.is_integer(hint)  ? hint
+                           : types_.is_integer(lhs) ? lhs
                            : types_.is_integer(rhs) ? rhs
                                                     : k_unknown_type;
-      return types_.builtin_generic("range", {element});
+      return resolve_range_type(element);
     }
 
     case ast::binary_op::pipe:
@@ -7896,6 +7940,46 @@ private:
   /// operand, `not` requires and yields `bool`, `~` requires (and preserves)
   /// an integer operand, `*` (deref) unwraps a pointer/reference, and
   /// `&`/`&mut` wrap the operand in a reference type.
+  /// `&p[i]` / `&mut p[i]` where `p` is a raw pointer: the *offset address*,
+  /// `p + i`, and so a pointer again rather than a borrow
+  /// (`spec/specification/03-advanced/38-machine-layer.md`: "`&p[i]` is the
+  /// offset address"). Typing it as `&T` instead left the machine layer
+  /// with no way to express pointer arithmetic at all — the one thing a
+  /// raw pointer is for. `nullopt` when this isn't that shape, leaving the
+  /// ordinary borrow rules to run.
+  /// An expected `cell[T]`/`cell_mut[T]` wins over it: a single-element
+  /// view and an offset address are the same address at runtime, and an
+  /// `index_mut` impl body writing `&mut self.data[i]` against a declared
+  /// `cell_mut[T]` means the view. Only where nothing else is expected does
+  /// the machine-layer reading apply.
+  auto raw_pointer_element_address(const ast::unary_expr &unary,
+                                   type_id expected) -> std::optional<type_id> {
+    if (unary.operand == nullptr ||
+        unary.operand->kind != ast::node_kind::index_expr) {
+      return std::nullopt;
+    }
+    if (const auto &expected_entry = types_.entry(expected);
+        expected_entry.kind == type_kind::builtin_generic_kind &&
+        (expected_entry.name == "cell" || expected_entry.name == "cell_mut")) {
+      return std::nullopt;
+    }
+    const auto &index = dynamic_cast<const ast::index_expr &>(*unary.operand);
+    if (index.object == nullptr) {
+      return std::nullopt;
+    }
+    const auto object =
+        strip_refs(base_shape(infer_expr(*index.object, k_unknown_type)));
+    const auto &entry = types_.entry(object);
+    if (entry.kind != type_kind::ptr_kind) {
+      return std::nullopt;
+    }
+    // The offset address carries the pointer's own mutability: `&p[i]` on a
+    // `*mut T` is a `*mut T`, on a `*T` a `*T`. `&` and `&mut` agree here
+    // because neither is a borrow — an address into raw memory is as
+    // writable as the pointer it came from, no more and no less.
+    return types_.ptr_to(entry.result, entry.is_mut);
+  }
+
   auto infer_unary(const ast::unary_expr &unary, type_id expected) -> type_id {
     // `-<int literal>` is checked as a unit rather than inferring the
     // literal generically first: the literal's *magnitude* (e.g. `128`) is
@@ -7982,6 +8066,9 @@ private:
       return k_unknown_type;
     }
     case ast::unary_op::addr_of: {
+      if (const auto offset = raw_pointer_element_address(unary, expected)) {
+        return *offset;
+      }
       // `&expr` where a `cell[T]` is expected (an `index_mut`-style trait
       // method's body handing back the single-element view its signature
       // promises) types directly as the `cell[T]` rather than `&T`: the two
@@ -7998,6 +8085,9 @@ private:
       return types_.ref_to(stripped, false);
     }
     case ast::unary_op::addr_of_mut: {
+      if (const auto offset = raw_pointer_element_address(unary, expected)) {
+        return *offset;
+      }
       // Lending a value mutably hands someone else the right to change it, so
       // nothing known about it survives the loan. The design doc is explicit
       // that narrowing does not flow through an `&mut`
@@ -8043,12 +8133,34 @@ private:
           if (object_entry.kind == type_kind::struct_kind ||
               object_entry.kind == type_kind::sum_kind ||
               object_entry.kind == type_kind::opaque_kind) {
+            if (stripped == k_error_type) {
+              // The read dispatch this `&mut` sits on top of already
+              // rejected the key (`check_index_key`); re-dispatching against
+              // `index_mut` would report the same mismatch a second time in
+              // the trait's own words.
+              return k_error_type;
+            }
             if (type_has_trait(object_entry, "index_mut")) {
-              const auto result =
-                  require_index_mut_trait(index, object_type, object_entry);
+              const auto result = require_index_mut_trait(
+                  index, object_type, object_entry, recorded_key_type(index));
               if (!types_.is_unknown(result)) {
                 record_expr_type(index, result);
-                return result;
+                // A `cell_mut[T]` *is* the address of the element, so it
+                // stands as the whole `&mut v[i]`. Any other view — the
+                // `slice_mut[T]` a range impl hands back — is a value, and
+                // `&mut` of it is a reference to that value, matching what
+                // `&mut arr[a..b]` on a builtin container already answers
+                // (`&mut slice_mut[T]`). Without this the two spellings
+                // disagree and a `slice_mut[T]` argument fails to solve the
+                // callee's `T` against a `&mut slice_mut[T]` parameter.
+                const auto &result_entry = types_.entry(result);
+                const auto is_cell =
+                    result_entry.kind == type_kind::builtin_generic_kind &&
+                    (result_entry.name == "cell" ||
+                     result_entry.name == "cell_mut");
+                return is_cell || result == k_error_type
+                           ? result
+                           : types_.ref_to(result, true);
               }
             } else if (type_has_trait(object_entry, "index")) {
               error_with_help(
@@ -8063,8 +8175,9 @@ private:
                       "Taking a mutable interior reference is a separate "
                       "capability from reading. Add:\n\n    impl "
                       "index_mut[usize] for {}:\n"
-                      "        def at_mut(mut self, i: usize) -> mut "
-                      "cell[self.output]:\n            ...",
+                      "        type output_mut = cell_mut[...]\n"
+                      "        def at_mut(mut self, i: usize) -> "
+                      "self.output_mut:\n            ...",
                       object_entry.name));
               return k_error_type;
             }
@@ -8372,6 +8485,27 @@ private:
   /// against the impl's own generic parameters. For an impl of a
   /// higher-kinded trait the target resolves to the unapplied constructor
   /// (`ctor_ref_kind`) rather than an instantiation.
+  /// `impl_trait_arguments_key` for a session-wide `impl_ref`, resolved in
+  /// the impl's *own* module with its block parameters rigid — the same
+  /// context `resolve_impl_target` builds, so the two halves of a coherence
+  /// key are read the same way.
+  auto resolve_impl_trait_key(const impl_ref &impl, std::string_view trait_name)
+      -> std::string {
+    auto param_bindings = std::unordered_map<std::string, type_id>{};
+    for (const auto &param : impl.decl->type_params) {
+      if (!param.name.empty()) {
+        param_bindings.emplace(
+            param.name,
+            types_.type_param(param.name, param.higher_kinded_arity));
+      }
+    }
+    const auto ctx = resolve_ctx{.module = index_.find_module(impl.module_name),
+                                 .param_bindings = &param_bindings,
+                                 .use_type_param_stack = false,
+                                 .quiet = true};
+    return impl_trait_arguments_key(*impl.decl, trait_name, ctx);
+  }
+
   auto resolve_impl_target(const impl_ref &impl) -> type_id {
     if (impl.decl->for_type == nullptr) {
       return k_unknown_type;
@@ -8437,13 +8571,12 @@ private:
         const auto target = strip_refs(resolve_extend_target(ext));
         const auto &target_entry = types_.entry(target);
         if (ext.module_name == "std.list") {
-          std::fprintf(stderr,
-                       "[DEBUG] extend module=%s target.decl=%p "
-                       "target.name=%s target.kind=%d\n",
-                       std::string(module_name).c_str(),
-                       (const void *)target_entry.decl,
-                       std::string(target_entry.name).c_str(),
-                       (int)target_entry.kind);
+          std::fprintf(
+              stderr,
+              "[DEBUG] extend module=%s target.decl=%p "
+              "target.name=%s target.kind=%d\n",
+              std::string(module_name).c_str(), (const void *)target_entry.decl,
+              std::string(target_entry.name).c_str(), (int)target_entry.kind);
         }
         auto extend_methods = std::deque<method_entry>{};
         for (const auto &item : ext.decl->items) {
@@ -8739,9 +8872,10 @@ private:
   /// `k_unknown_type` (the default) keeps the historical declaration-level
   /// behavior for callers that have only a `type_entry` in hand.
   auto find_method(const type_entry &instance, std::string_view name,
-                   type_id instance_id = k_unknown_type)
-      -> const method_entry * {
-    if (const auto *found = find_declared_method(instance, name, instance_id)) {
+                   type_id instance_id = k_unknown_type,
+                   const method_filter &accepts = {}) -> const method_entry * {
+    if (const auto *found =
+            find_declared_method(instance, name, instance_id, accepts)) {
       return found;
     }
     // Nothing declared provides `name` for this receiver. If the receiver is
@@ -8754,13 +8888,22 @@ private:
     if (!ensure_derived_instance_impls(instance_id, name)) {
       return nullptr;
     }
-    return find_declared_method(types_.entry(instance_id), name, instance_id);
+    return find_declared_method(types_.entry(instance_id), name, instance_id,
+                                accepts);
   }
 
   /// `find_method`'s search proper, over what is already in `methods_`.
   /// Separated so `find_method` can run it a second time after deriving.
+  ///
+  /// `accepts`, when set, narrows the search past the name: a type may
+  /// carry several impls of the same parameterized trait (`index[usize]`
+  /// and `index[range[usize]]`), each contributing a method of the same
+  /// name, and only the caller knows which one this use site means. Without
+  /// it the first `at` found answers for every key type — see
+  /// `check_index_key`.
   auto find_declared_method(const type_entry &instance, std::string_view name,
-                            type_id instance_id = k_unknown_type)
+                            type_id instance_id = k_unknown_type,
+                            const method_filter &accepts = {})
       -> const method_entry * {
     build_method_table();
     if (instance.decl == nullptr) {
@@ -8779,6 +8922,9 @@ private:
     const method_entry *extension_fallback = nullptr;
     for (const auto &method : it->second) {
       if (method.decl->name != name) {
+        continue;
+      }
+      if (accepts && !accepts(method)) {
         continue;
       }
       if (method.is_extension) {
@@ -9008,6 +9154,28 @@ private:
         entry.kind == type_kind::ptr_kind ||
         entry.kind == type_kind::array_kind) {
       return mentions_type_param(entry.result);
+    }
+    return false;
+  }
+
+  /// Whether `id` has an `unknown` anywhere inside it, not only at the top.
+  /// `types_.is_unknown` answers for the outermost type alone, which reads
+  /// a half-resolved `slice[_]` as resolved — it is not, and a caller that
+  /// stops there hands lowering a type with no element in it.
+  auto mentions_unknown(type_id id) -> bool {
+    const auto entry = types_.entry(id); // copy: callers may intern after
+    if (types_.is_unknown(id)) {
+      return true;
+    }
+    for (const auto arg : entry.args) {
+      if (mentions_unknown(arg)) {
+        return true;
+      }
+    }
+    if (entry.kind == type_kind::fn_kind || entry.kind == type_kind::ref_kind ||
+        entry.kind == type_kind::ptr_kind ||
+        entry.kind == type_kind::array_kind) {
+      return mentions_unknown(entry.result);
     }
     return false;
   }
@@ -9540,10 +9708,16 @@ private:
   ///
   /// `nullptr` means "no instance is needed or possible", and the caller
   /// should keep the declaration it already had.
+  /// `discriminator` distinguishes two instances that would otherwise
+  /// mangle alike: `index[usize]` and `index[range[usize]]` both contribute
+  /// an `at` for the same receiver, so the receiver type alone does not name
+  /// the instance. Empty for every other caller, which keeps their names
+  /// byte-identical to before.
   auto instantiate_impl_method_for(const ast::node &site,
                                    const method_entry &method,
                                    const type_entry &receiver_entry,
-                                   type_id receiver_type)
+                                   type_id receiver_type,
+                                   std::string_view discriminator = {})
       -> const ast::func_decl * {
     if (!impl_needs_instance(method, receiver_entry) ||
         in_const_generic_template_ || in_type_generic_template_ ||
@@ -9565,8 +9739,8 @@ private:
     scoped_params.insert(bindings.begin(), bindings.end());
     auto solution = generic_solution{};
     carry_impl_value_slots(method, bindings, solution);
-    solution.suffix =
-        std::format("${}", mangle_type_for_instance(receiver_type));
+    solution.suffix = std::format(
+        "${}{}", mangle_type_for_instance(receiver_type), discriminator);
     const auto name = std::format("{}::{}{}", receiver_entry.name,
                                   method.decl->name, solution.suffix);
     return find_or_check_generic_instance(
@@ -11596,7 +11770,8 @@ private:
       return record_expr_type(call, k_error_type);
     }
     require_machine_context(call.span, std::format("`{}`", name));
-    const auto ptr_type = strip_refs(infer_expr(*call.args[0].value, k_unknown_type));
+    const auto ptr_type =
+        strip_refs(infer_expr(*call.args[0].value, k_unknown_type));
     const auto &ptr_entry = types_.entry(ptr_type);
     infer_expr(*call.args[1].value, types_.builtin("usize"));
     if (ptr_entry.kind != type_kind::ptr_kind) {
@@ -12740,7 +12915,12 @@ private:
                             const method_entry &method) -> type_id {
     const auto direct =
         resolve_operator_return_type(target, trait_name, method);
-    if (!types_.is_unknown(direct) && !mentions_type_param(direct)) {
+    // `mentions_unknown`, not `is_unknown`: a generic impl whose `at`
+    // returns `slice[T]` resolves here to `slice[_]` when `T` has no
+    // binding yet — resolved-looking at the top and empty inside. Reading
+    // that as final is what typed `xs[a..b]` as `slice[_]` and then failed
+    // to lower for want of an element type.
+    if (!mentions_unknown(direct) && !mentions_type_param(direct)) {
       return direct;
     }
     // Resolve the declaration's own return type with the impl block's type
@@ -12761,8 +12941,128 @@ private:
     return direct;
   }
 
+  /// The declared type of an index method's *key* parameter (`at`/`at_mut`'s
+  /// `i`, `set_at`'s `i`), resolved for this concrete receiver — the same
+  /// two-step the value parameter needs in `require_index_set_trait`, and
+  /// for the same reason: a generic `impl[T] index[usize] for holder[T]`
+  /// files its parameter types against the still-abstract `holder[T]`.
+  auto resolve_index_key_type(type_id target, std::string_view trait_name,
+                              const method_entry &method) -> type_id {
+    const auto params = resolve_impl_param_types(target, trait_name, method);
+    if (params.size() < 2) {
+      return k_unknown_type;
+    }
+    const auto declared = params[1].type;
+    if (!mentions_type_param(declared)) {
+      return declared;
+    }
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    unify_rigid(method.impl_target_pattern, target, bindings);
+    const auto pattern_params = resolve_impl_param_types(
+        method.impl_target_pattern, trait_name, method);
+    return pattern_params.size() >= 2
+               ? substitute_solved(pattern_params[1].type, bindings)
+               : declared;
+  }
+
+  /// Checks the key in `v[k]` against the index impl's declared key type.
+  ///
+  /// Method lookup finds `at`/`at_mut`/`set_at` by *name*, so without this
+  /// every key type reaches the one impl a type happens to have and is
+  /// typed as if it fit. That is how `xs[0..n]` on a type implementing only
+  /// `index[usize]` came back as a single element instead of a sub-view,
+  /// silently, with the resulting mismatch surfacing a frame later at
+  /// whatever the value was passed to. Reported here, at the index itself,
+  /// where the reader can see which impl was consulted and what it takes.
+  /// The type already inferred for `index`'s key expression, for the second
+  /// look `&mut v[k]` takes at an index expression whose key `infer_index`
+  /// has already typed — re-inferring it there would double-report any
+  /// diagnostic inside the key itself.
+  auto recorded_key_type(const ast::index_expr &index) -> type_id {
+    if (index.index == nullptr) {
+      return k_unknown_type;
+    }
+    const auto it = node_types_.find(index.index.get());
+    return it == node_types_.end() ? k_unknown_type : strip_refs(it->second);
+  }
+
+  /// What keeps two index impls' monomorphized methods apart. A receiver
+  /// with both `index[usize]` and `index[range[usize]]` contributes two
+  /// `at`s, and `instantiate_impl_method_for` names an instance after the
+  /// receiver alone — so without this both mangle to
+  /// `list::at$list_int32_`, one definition wins, and every caller of the
+  /// other gets a function whose signature is not the one it is calling.
+  /// Empty for a key the impl leaves generic, where there is nothing to
+  /// tell apart.
+  auto index_instance_discriminator(type_id target, std::string_view trait_name,
+                                    const method_entry &method) -> std::string {
+    const auto key = resolve_index_key_type(target, trait_name, method);
+    if (types_.is_unknown(key) || mentions_type_param(key)) {
+      return {};
+    }
+    return std::format("${}", mangle_type_for_instance(key));
+  }
+
+  /// A `find_method` filter selecting the index method whose declared key
+  /// parameter accepts `key` — the impl `v[k]` actually means when a type
+  /// carries more than one (`index[usize]` *and* `index[range[usize]]`).
+  auto index_key_filter(type_id target, std::string_view trait_name,
+                        type_id key) -> method_filter {
+    return [this, target, trait_name, key](const method_entry &method) {
+      if (method.decl->params.size() < 2) {
+        return false;
+      }
+      const auto declared =
+          strip_refs(resolve_index_key_type(target, trait_name, method));
+      // An unresolved or still-abstract key type is no evidence either way;
+      // let the one candidate through rather than rejecting every impl and
+      // reporting a type as unindexable when it plainly is not.
+      return types_.is_unknown(declared) || mentions_type_param(declared) ||
+             types_.compatible(declared, strip_refs(key));
+    };
+  }
+
+  /// Returns whether the key fits; a mismatch is reported here and makes the
+  /// whole index expression an error, so nothing downstream sees a type
+  /// invented from the wrong impl.
+  auto check_index_key(const ast::index_expr &index, type_id target,
+                       std::string_view trait_name, const method_entry &method,
+                       type_id key) -> bool {
+    const auto expected =
+        strip_refs(resolve_index_key_type(target, trait_name, method));
+    const auto found = strip_refs(key);
+    if (types_.is_unknown(expected) || types_.is_unknown(found) ||
+        expected == k_error_type || found == k_error_type ||
+        mentions_type_param(expected) || types_.compatible(expected, found)) {
+      return true;
+    }
+    const auto key_span =
+        index.index != nullptr ? index.index->span : index.span;
+    const auto key_is_range = is_range_type(found);
+    error_with_help(
+        key_span,
+        std::format("cannot index `{}` with `{}`", types_.display(target),
+                    types_.display(found)),
+        std::format("expected an index of type `{}`", types_.display(expected)),
+        key_is_range
+            ? std::format(
+                  "`{}` implements `{}[{}]`, which indexes one element at a "
+                  "time. Indexing by a range is a separate impl with its own "
+                  "`output` — a sub-view rather than an element:\n\n    impl "
+                  "{}[range[{}]] for {}:\n        type output = ...\n",
+                  types_.display(target), trait_name, types_.display(expected),
+                  trait_name, types_.display(expected), types_.display(target))
+            : std::format(
+                  "`{}` implements `{}[{}]`, so `[...]` takes a `{}`. Indexing "
+                  "it by another type means adding an `{}[{}]` impl of its "
+                  "own.",
+                  types_.display(target), trait_name, types_.display(expected),
+                  types_.display(expected), trait_name, types_.display(found)));
+    return false;
+  }
+
   auto require_index_trait(const ast::index_expr &index, type_id object,
-                           const type_entry &entry) -> type_id {
+                           const type_entry &entry, type_id key) -> type_id {
     const auto target = strip_refs(object);
     if (!type_has_trait(entry, "index")) {
       error_with_help(
@@ -12779,36 +13079,53 @@ private:
               types_.display(target), entry.name));
       return k_error_type;
     }
-    const auto *method = find_method(entry, "at", target);
-    if (method == nullptr || method->decl->params.empty() ||
-        param_name_of(method->decl->params.front()) != "self") {
+    // The impl that takes *this* key, falling back to any `at` at all so a
+    // key no impl accepts is reported against a real signature rather than
+    // read as "not indexable".
+    const auto *method = find_method(entry, "at", target,
+                                     index_key_filter(target, "index", key));
+    const auto *any =
+        method != nullptr ? method : find_method(entry, "at", target);
+    if (any == nullptr || any->decl->params.empty() ||
+        param_name_of(any->decl->params.front()) != "self") {
       // `index` is implemented but `at` is not resolvable for this receiver
       // — already diagnosed by impl checking, so stay quiet rather than
       // reporting the same missing method twice in different words.
       return k_unknown_type;
     }
-    const auto *callee =
-        instantiate_impl_method_for(index, *method, entry, target);
+    if (method == nullptr) {
+      check_index_key(index, target, "index", *any, key);
+      return k_error_type;
+    }
+    const auto *callee = instantiate_impl_method_for(
+        index, *method, entry, target,
+        index_instance_discriminator(target, "index", *method));
     index_dispatches_[&index] =
         resolved_callee{.decl = callee != nullptr ? callee : method->decl,
                         .owner_module = method->owner->module_name,
                         .impl_target_type = callee != nullptr ? "" : entry.name,
                         .receiver = index.object.get()};
-    return resolve_index_output(target, "index", *method);
+    // Resolved against *this* impl's bindings: a type with both
+    // `index[usize]` and `index[range[usize]]` has two `output`s, and the
+    // bare trait name names whichever was checked last.
+    return resolve_index_output(
+        target,
+        parameterized_trait_key(
+            "index", resolve_index_key_type(target, "index", *method)),
+        *method);
   }
 
-  /// `at_mut`'s return type, `-> mut cell[self.output]`, names an
-  /// associated type `index_mut` never declares itself — `index_mut[I]
-  /// requires index[I]` and reuses *that* trait's `output`. `impl_assoc_
-  /// types_[target]["index_mut"]` is therefore always empty, so `self.output`
-  /// is resolved here against the `index` impl's recorded bindings for the
-  /// same target instead, mirroring `resolve_index_output`'s generic-impl
-  /// fallback for the rest.
-  auto resolve_index_mut_output(type_id target, const method_entry &method)
-      -> type_id {
+  /// `at_mut`'s return type, `-> self.output_mut`. `index_mut` declares its
+  /// own associated type rather than reusing `index`'s `output`, because a
+  /// mutable borrow is not uniformly "a cell around what a read yields": a
+  /// sub-view impl hands back a `slice_mut[T]`, which is already a mutable
+  /// view and wants no cell around it. So this resolves against
+  /// `index_mut`'s own bindings for this key, not `index`'s.
+  auto resolve_index_mut_output(type_id target, std::string_view trait_key,
+                                const method_entry &method) -> type_id {
     const auto target_it = impl_assoc_types_.find(target);
     if (target_it != impl_assoc_types_.end()) {
-      if (const auto trait_it = target_it->second.find("index");
+      if (const auto trait_it = target_it->second.find(std::string(trait_key));
           trait_it != target_it->second.end()) {
         const auto saved_assoc = self_assoc_types_;
         self_assoc_types_ = trait_it->second;
@@ -12842,24 +13159,37 @@ private:
   /// `require_index_trait`, but the "not indexable at all" case is the
   /// caller's to report since it also knows about plain `index`).
   auto require_index_mut_trait(const ast::index_expr &index, type_id object,
-                               const type_entry &entry) -> type_id {
+                               const type_entry &entry, type_id key)
+      -> type_id {
     const auto target = strip_refs(object);
     if (!type_has_trait(entry, "index_mut")) {
       return k_unknown_type;
     }
-    const auto *method = find_method(entry, "at_mut", target);
-    if (method == nullptr || method->decl->params.empty() ||
-        param_name_of(method->decl->params.front()) != "self") {
+    const auto *method = find_method(
+        entry, "at_mut", target, index_key_filter(target, "index_mut", key));
+    const auto *any =
+        method != nullptr ? method : find_method(entry, "at_mut", target);
+    if (any == nullptr || any->decl->params.empty() ||
+        param_name_of(any->decl->params.front()) != "self") {
       return k_unknown_type;
     }
-    const auto *callee =
-        instantiate_impl_method_for(index, *method, entry, target);
+    if (method == nullptr) {
+      check_index_key(index, target, "index_mut", *any, key);
+      return k_error_type;
+    }
+    const auto *callee = instantiate_impl_method_for(
+        index, *method, entry, target,
+        index_instance_discriminator(target, "index_mut", *method));
     index_mut_dispatches_[&index] =
         resolved_callee{.decl = callee != nullptr ? callee : method->decl,
                         .owner_module = method->owner->module_name,
                         .impl_target_type = callee != nullptr ? "" : entry.name,
                         .receiver = index.object.get()};
-    return resolve_index_mut_output(target, *method);
+    return resolve_index_mut_output(
+        target,
+        parameterized_trait_key(
+            "index_mut", resolve_index_key_type(target, "index_mut", *method)),
+        *method);
   }
 
   /// The write half: `v[i] = x` on a user receiver, against `index_set`.
@@ -12891,7 +13221,8 @@ private:
   }
 
   auto require_index_set_trait(const ast::index_expr &index, type_id object,
-                               const type_entry &entry) -> type_id {
+                               const type_entry &entry, type_id key)
+      -> type_id {
     const auto target = strip_refs(object);
     if (!type_has_trait(entry, "index_set")) {
       const auto reads = type_has_trait(entry, "index");
@@ -12911,13 +13242,21 @@ private:
               entry.name));
       return k_error_type;
     }
-    const auto *method = find_method(entry, "set_at", target);
-    if (method == nullptr || method->decl->params.empty() ||
-        param_name_of(method->decl->params.front()) != "self") {
+    const auto *method = find_method(
+        entry, "set_at", target, index_key_filter(target, "index_set", key));
+    const auto *any =
+        method != nullptr ? method : find_method(entry, "set_at", target);
+    if (any == nullptr || any->decl->params.empty() ||
+        param_name_of(any->decl->params.front()) != "self") {
       return k_unknown_type;
     }
-    const auto *callee =
-        instantiate_impl_method_for(index, *method, entry, target);
+    if (method == nullptr) {
+      check_index_key(index, target, "index_set", *any, key);
+      return k_error_type;
+    }
+    const auto *callee = instantiate_impl_method_for(
+        index, *method, entry, target,
+        index_instance_discriminator(target, "index_set", *method));
     index_set_dispatches_[&index] =
         resolved_callee{.decl = callee != nullptr ? callee : method->decl,
                         .owner_module = method->owner->module_name,
@@ -12926,7 +13265,9 @@ private:
     // The assigned value's expected type is `set_at`'s `value` parameter,
     // which is `self.output` in the trait and only resolves under the
     // impl's associated-type bindings.
-    auto params = resolve_impl_param_types(target, "index_set", *method);
+    const auto trait_key = parameterized_trait_key(
+        "index_set", resolve_index_key_type(target, "index_set", *method));
+    auto params = resolve_impl_param_types(target, trait_key, *method);
     if (params.size() < 2) {
       return k_unknown_type;
     }
@@ -12939,10 +13280,27 @@ private:
       return declared;
     }
     auto pattern_params = resolve_impl_param_types(method->impl_target_pattern,
-                                                   "index_set", *method);
+                                                   trait_key, *method);
     return pattern_params.size() >= 2
                ? substitute_solved(pattern_params.back().type, bindings)
                : declared;
+  }
+
+  /// The type to infer an index key *against*. `usize` for an ordinary
+  /// index, `range[usize]` when the key is written as a range — indices are
+  /// `usize` either way, and saying so on both bounds is what keeps `v[0..n]`
+  /// from typing as `range[int32]` off its bare left literal.
+  auto expected_index_key(const ast::index_expr &index) -> type_id {
+    const auto usize = types_.builtin("usize");
+    if (index.index == nullptr ||
+        index.index->kind != ast::node_kind::binary_expr) {
+      return usize;
+    }
+    const auto &binary = dynamic_cast<const ast::binary_expr &>(*index.index);
+    return binary.op == ast::binary_op::range ||
+                   binary.op == ast::binary_op::range_inclusive
+               ? resolve_range_type(usize)
+               : usize;
   }
 
   auto infer_index(const ast::index_expr &index) -> type_id {
@@ -12979,12 +13337,10 @@ private:
     const auto &entry = types_.entry(object);
     const auto key =
         index.index != nullptr
-            ? strip_refs(infer_expr(*index.index, types_.builtin("usize")))
+            ? strip_refs(infer_expr(*index.index, expected_index_key(index)))
             : k_unknown_type;
     check_index_in_bounds(index, object, key);
-    const auto key_is_range =
-        types_.entry(key).kind == type_kind::builtin_generic_kind &&
-        types_.entry(key).name == "range";
+    const auto key_is_range = is_range_type(key);
 
     const auto key_span =
         index.index != nullptr ? index.index->span : index.span;
@@ -13069,7 +13425,7 @@ private:
     case type_kind::struct_kind:
     case type_kind::sum_kind:
     case type_kind::opaque_kind:
-      return require_index_trait(index, object, entry);
+      return require_index_trait(index, object, entry, key);
     default:
       return k_unknown_type;
     }
@@ -14290,14 +14646,20 @@ private:
 
   auto element_type_of(type_id iterable, source_span span) -> type_id {
     const auto stripped = strip_refs(iterable);
+    // `for i in a..b` yields the bound type. Checked before the kind
+    // switch because `range[T]` is an ordinary struct now, and the
+    // `struct_kind` arm below would otherwise send it looking for an
+    // `into_iterator` impl it does not have.
+    if (const auto bound = range_element_type(stripped)) {
+      return *bound;
+    }
     const auto &entry = types_.entry(stripped);
     switch (entry.kind) {
     case type_kind::array_kind:
       return entry.result;
     case type_kind::builtin_generic_kind:
       if (entry.name == "slice" || entry.name == "slice_mut" ||
-          entry.name == "range" || entry.name == "option" ||
-          entry.name == "generator") {
+          entry.name == "option" || entry.name == "generator") {
         return entry.args.empty() ? k_unknown_type : entry.args[0];
       }
       return k_unknown_type;
@@ -15001,6 +15363,44 @@ private:
     return make_user_type(*found->first, found->second, {element});
   }
 
+  /// The real `range[T]` (`std.traits`, prelude-re-exported) instantiated at
+  /// `element` — what `a..b` evaluates to. An ordinary struct for the same
+  /// reason `list` is: `impl index[range[usize]]` receives one as a value
+  /// and reads `.start`/`.end`, which a desugared-away builtin could not
+  /// provide.
+  ///
+  /// A session with no stdlib (most unit tests) falls back to the interned
+  /// builtin shape. Nothing there can index by range or read `.start` — the
+  /// two things that need a real value — but `for i in a..b` and
+  /// range-indexing an `array`/`slice`/`str` lower the bounds directly and
+  /// never touch the type, so those keep working exactly as they did.
+  auto resolve_range_type(type_id element) -> type_id {
+    const auto found = find_prelude_type("range");
+    if (!found.has_value()) {
+      return types_.builtin_generic("range", {element});
+    }
+    return make_user_type(*found->first, found->second, {element});
+  }
+
+  /// Whether `type` is a `range[T]`, and its `T` if so. The one place that
+  /// knows how a range is spelled, so the checks scattered across indexing,
+  /// iteration and `in` cannot drift from what `resolve_range_type` builds.
+  auto range_element_type(type_id type) -> std::optional<type_id> {
+    const auto &entry = types_.entry(strip_refs(type));
+    if (entry.name != "range" || entry.args.size() != 1) {
+      return std::nullopt;
+    }
+    if (entry.kind != type_kind::struct_kind &&
+        entry.kind != type_kind::builtin_generic_kind) {
+      return std::nullopt;
+    }
+    return entry.args.front();
+  }
+
+  auto is_range_type(type_id type) -> bool {
+    return range_element_type(type).has_value();
+  }
+
   /// Resolves a `for ... => yield` comprehension's `list[T]::new`/
   /// `list[T]::push` calls into `comprehension_dispatches_`
   /// (`hir::lower_for_expr` builds the actual calls from it). Mirrors
@@ -15027,10 +15427,10 @@ private:
           .owner_module = method.owner->module_name,
           .impl_target_type = instance != nullptr ? "" : entry.name};
     };
-    comprehension_dispatches_[&expr] = comprehension_dispatch{
-        .new_callee = build_callee(*new_method),
-        .push_callee = build_callee(*push_method),
-        .list_type = list_type};
+    comprehension_dispatches_[&expr] =
+        comprehension_dispatch{.new_callee = build_callee(*new_method),
+                               .push_callee = build_callee(*push_method),
+                               .list_type = list_type};
   }
 
   /// Records the `from_array` conversion for a literal whose elements have
@@ -15835,10 +16235,11 @@ private:
         entry.kind != type_kind::opaque_kind) {
       return std::nullopt;
     }
-    if (index.index != nullptr) {
-      infer_expr(*index.index, types_.builtin("usize"));
-    }
-    const auto element = require_index_set_trait(index, object, entry);
+    const auto key =
+        index.index != nullptr
+            ? strip_refs(infer_expr(*index.index, expected_index_key(index)))
+            : k_unknown_type;
+    const auto element = require_index_set_trait(index, object, entry, key);
     record_expr_type(target, element);
     return element;
   }
@@ -17312,6 +17713,17 @@ private:
     // `self.output`-shaped return type correctly.
     if (!trait_name.empty() && !types_.is_unknown(target)) {
       impl_assoc_types_[target][trait_name] = self_assoc_types_;
+      // A parameterized trait can be implemented more than once for the
+      // same target — `index[usize]` for elements and `index[range[usize]]`
+      // for sub-views, with different `output`s. Under the bare trait name
+      // those two overwrite each other, so also file them apart by their
+      // arguments; `parameterized_trait_key` is how a use site asks for the
+      // one it resolved against.
+      if (const auto key =
+              impl_trait_arguments_key(decl, trait_name, current_resolve_ctx());
+          key != trait_name) {
+        impl_assoc_types_[target][key] = self_assoc_types_;
+      }
     }
 
     const auto saved_block_type_params = enclosing_block_type_params_;
@@ -18850,11 +19262,26 @@ private:
         if (!std::ranges::contains(recorded_traits, trait_name)) {
           recorded_traits.push_back(trait_name);
         }
-        const auto key = std::format("{}:{}", trait_name, type_key);
+        // Keyed by the trait *as instantiated*: `index[usize]` and
+        // `index[range[usize]]` are two different capabilities a collection
+        // can offer (an element and a sub-view), not two impls of one
+        // trait. A trait with no arguments keys under its bare name, so
+        // nothing about the `show`/`drop` cases changes.
+        const auto key = std::format(
+            "{}:{}", resolve_impl_trait_key(impl, trait_name), type_key);
+        const auto bare_key = std::format("{}:{}", trait_name, type_key);
         const auto location =
             source_location{.file_id = impl.file_id, .span = impl.decl->span};
         const auto [it, inserted] = impl_trait_index_.emplace(
             key, recorded_impl{.location = location, .target = target});
+        // The bare key answers "does this type implement the trait at all"
+        // (`type_has_trait`, and the `requires` check behind it), which two
+        // impls of one parameterized trait both satisfy — so it is filed
+        // first-wins and never treated as a conflict.
+        if (key != bare_key) {
+          impl_trait_index_.emplace(
+              bare_key, recorded_impl{.location = location, .target = target});
+        }
         if (inserted) {
           continue;
         }

@@ -176,10 +176,36 @@ impl[T] index[usize] for list[T]:
 
 #: Borrowing `&mut v[i]`, with the same bounds check.
 impl[T] index_mut[usize] for list[T]:
-    machine def at_mut(mut self, i: usize) -> mut cell[T]:
+    type output_mut = cell_mut[T]
+    machine def at_mut(mut self, i: usize) -> cell_mut[T]:
         if i >= self.len:
             panic("index out of range")
         return &mut self.data[i]
+
+#: Reading `v[a..b]` — a read-only sub-view over the same storage, no copy.
+#: A separate `index` impl from the element one above, with its own
+#: `output`: indexing by a range means something different from indexing by
+#: a position, and the two answer with different types.
+#:
+#: `b` is exclusive and `b == self.len` is in bounds (an empty view at the
+#: end is a legal, useful thing to ask for); `a > b` is not.
+impl[T] index[range[usize]] for list[T]:
+    type output = slice[T]
+    machine def at(self, i: range[usize]) -> slice[T]:
+        if i.end > self.len or i.start > i.end:
+            panic("range index out of range")
+        return slice_from_raw_parts(&self.data[i.start], i.end - i.start)
+
+#: Borrowing `&mut v[a..b]`. The mutable sibling of the impl above, and the
+#: reason `index_mut` carries its own `output_mut`: this hands back a
+#: `slice_mut[T]`, which is already a mutable view, not a `cell` around one.
+impl[T] index_mut[range[usize]] for list[T]:
+    type output_mut = slice_mut[T]
+    machine def at_mut(mut self, i: range[usize]) -> slice_mut[T]:
+        if i.end > self.len or i.start > i.end:
+            panic("range index out of range")
+        return slice_mut_from_raw_parts(&mut self.data[i.start],
+                                        i.end - i.start)
 
 #: Writing `v[i] = x`, with the same bounds check.
 impl[T] index_set[usize] for list[T]:

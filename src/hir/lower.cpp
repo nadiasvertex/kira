@@ -395,6 +395,16 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_binary(const ast::binary_expr &bin)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// `a..b` in value position, as a `range[T]` struct — see its definition.
+  [[nodiscard]] auto lower_range_value(const ast::binary_expr &range,
+                                       type_id type)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// `expr` as a range binary, or null when it is anything else.
+  [[nodiscard]] static auto range_operand(const ast::expr &expr)
+      -> const ast::binary_expr *;
+  [[nodiscard]] auto lower_range_bounds(const ast::binary_expr &range,
+                                        type_id type)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto
   lower_ordering_comparison(source_span span, type_id bool_type,
                             ast::binary_op op, ptr<hir_expr> ordering_value)
@@ -1143,6 +1153,64 @@ auto lowerer::lower_default_argument(
   return lowered;
 }
 
+auto lowerer::range_operand(const ast::expr &expr) -> const ast::binary_expr * {
+  if (expr.kind != ast::node_kind::binary_expr) {
+    return nullptr;
+  }
+  const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+  return binary.op == ast::binary_op::range ||
+                 binary.op == ast::binary_op::range_inclusive
+             ? &binary
+             : nullptr;
+}
+
+/// `a..b` kept as the `hir_binary` both backends' `compile_range_index`
+/// destructure — bounds only, no value built. See `lower_index`.
+auto lowerer::lower_range_bounds(const ast::binary_expr &range, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto start = lower_expr(*range.lhs);
+  if (!start.has_value()) {
+    return std::unexpected(start.error());
+  }
+  auto end = lower_expr(*range.rhs);
+  if (!end.has_value()) {
+    return std::unexpected(end.error());
+  }
+  return ptr<hir_expr>(hir::make<hir_binary>(
+      range.span, type, range.op, std::move(*start), std::move(*end)));
+}
+
+auto lowerer::lower_range_value(const ast::binary_expr &range, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto start = lower_expr(*range.lhs);
+  if (!start.has_value()) {
+    return std::unexpected(start.error());
+  }
+  auto end = lower_expr(*range.rhs);
+  if (!end.has_value()) {
+    return std::unexpected(end.error());
+  }
+  // `a..=b` is stored as the exclusive `a..(b + 1)`, so `range`'s two
+  // fields mean one thing and everything reading them — the stdlib's
+  // `index[range[usize]]` impls included — needs no case for which
+  // spelling built it.
+  if (range.op == ast::binary_op::range_inclusive) {
+    const auto bound_type = (*end)->type;
+    auto one = ptr<hir_expr>(make<hir_literal>(
+        range.rhs->span, bound_type, token_kind::int_lit, std::string("1")));
+    end = ptr<hir_expr>(hir::make<hir_binary>(range.rhs->span, bound_type,
+                                              ast::binary_op::add,
+                                              std::move(*end), std::move(one)));
+  }
+  auto fields = std::vector<hir_struct_init_field>{};
+  fields.push_back(
+      hir_struct_init_field{.name = "start", .value = std::move(*start)});
+  fields.push_back(
+      hir_struct_init_field{.name = "end", .value = std::move(*end)});
+  return ptr<hir_expr>(
+      make<hir_struct_init>(range.span, type, std::move(fields)));
+}
+
 auto lowerer::lower_binary(const ast::binary_expr &bin)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   auto type = checked_type_of(bin);
@@ -1152,6 +1220,16 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
   if (bin.lhs == nullptr || bin.rhs == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, bin.span,
                 "binary expression is missing an operand");
+  }
+  // `a..b` reaching here is a range used as a *value* — an argument to a
+  // user collection's `index[range[usize]]` impl, which receives it and
+  // reads its bounds. The positions that never need a value (`for i in
+  // a..b`, range-indexing an `array`/`slice`/`str`) are intercepted by
+  // `lower_range_loop`/`lower_index` before this point and still lower the
+  // bounds directly, so nothing that worked before gains an allocation.
+  if (bin.op == ast::binary_op::range ||
+      bin.op == ast::binary_op::range_inclusive) {
+    return lower_range_value(bin, *type);
   }
   // An arithmetic operator on a user struct/sum operand resolved to a real
   // `add`/`sub`/`mul`/`div`/`rem` overload method — see `check.cpp`'s
@@ -1944,7 +2022,18 @@ auto lowerer::lower_index(const ast::index_expr &index)
   if (!object.has_value()) {
     return std::unexpected(object.error());
   }
-  auto idx = lower_expr(*index.index);
+  const auto *key_range = range_operand(*index.index);
+  const auto dispatched = checked_.index_dispatches.contains(&index);
+  // `array`/`slice`/`str` range-indexing is addressing, not a call: both
+  // backends' `compile_range_index` read the two bounds straight off a
+  // `hir_binary` and never build a range at all. Only a dispatch to a
+  // user `index[range[...]]` impl needs one as a value, so the key is
+  // lowered as a range *value* there and kept in its bounds-only shape
+  // everywhere else.
+  auto idx =
+      key_range != nullptr && !dispatched
+          ? lower_range_bounds(*key_range, *checked_type_of(*index.index))
+          : lower_expr(*index.index);
   if (!idx.has_value()) {
     return std::unexpected(idx.error());
   }
@@ -4454,9 +4543,8 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
     const auto symbol = resolve_reference(local_name);
     auto callee = ptr<hir_expr>(make<hir_local_ref>(
         call_span, k_unknown_type, symbol, local_name, resolved.owner_module));
-    return ptr<hir_expr>(hir::make<hir_call>(call_span, result,
-                                             std::move(callee),
-                                             std::move(args)));
+    return ptr<hir_expr>(hir::make<hir_call>(
+        call_span, result, std::move(callee), std::move(args)));
   };
 
   const auto span = for_expr.span;
@@ -4471,9 +4559,8 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
       /*mut=*/true)));
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-      innermost =
-          [this, &for_expr, acc_symbol, list_type, span, &dispatch,
-           &call_from_resolved]()
+      innermost = [this, &for_expr, acc_symbol, list_type, span, &dispatch,
+                   &call_from_resolved]()
       -> std::expected<ptr_vec<hir_node>, lowering_error> {
     auto yield_value = lower_expr(*for_expr.yield_expr);
     if (!yield_value.has_value()) {
@@ -4484,11 +4571,11 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
         span, list_type, acc_symbol, std::string("<comprehension result>"))));
     push_args.push_back(std::move(*yield_value));
     auto push_stmt = ptr<hir_node>(make<hir_expr_stmt>(
-        span, call_from_resolved(span,
-                                 drop_call_result_type(
-                                     checked_, *dispatch->second.push_callee.decl),
-                                 dispatch->second.push_callee,
-                                 std::move(push_args))));
+        span,
+        call_from_resolved(
+            span,
+            drop_call_result_type(checked_, *dispatch->second.push_callee.decl),
+            dispatch->second.push_callee, std::move(push_args))));
 
     auto result = ptr_vec<hir_node>{};
     if (for_expr.guard != nullptr) {

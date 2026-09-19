@@ -1,0 +1,23 @@
+module sample
+
+# `at`/`at_mut`/`set_at` are found by name, so before `check_index_key` every
+# key type reached whatever single `index` impl a type happened to have and
+# was typed as if it fit: `r[0..2]` on an `index[usize]`-only type came back
+# as one `int32` element, and the mismatch only surfaced a frame later at
+# whatever that value was passed to. A wrong key belongs to the index.
+
+type readable = { a: int32 }
+
+impl index[usize] for readable:
+    type output = int32
+    def at(self, i: usize) -> int32:
+        return self.a
+
+# A range key: the shape that motivated this — a sub-view is a different
+# impl with a different `output`, not the element impl called with a range.
+def slice_it(r: readable) -> int32:
+    return r[0..2]
+
+# A key of an unrelated type, rejected the same way.
+def name_it(r: readable) -> int32:
+    return r["a"]
