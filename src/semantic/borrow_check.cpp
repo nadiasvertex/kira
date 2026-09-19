@@ -1133,12 +1133,12 @@ private:
           if (borrow->operand != nullptr) {
             auto root = root_binding_name(*borrow->operand);
             if (!root.empty()) {
-              auto held =
-                  call_borrow{.root = root,
-                             .is_mut = borrow->op == ast::unary_op::addr_of_mut,
-                             .is_view = true,
-                             .via = root,
-                             .span = borrow->span};
+              auto held = call_borrow{.root = root,
+                                      .is_mut = borrow->op ==
+                                                ast::unary_op::addr_of_mut,
+                                      .is_view = true,
+                                      .via = root,
+                                      .span = borrow->span};
               check_new_borrows(seed, {held});
               extended.push_back(std::move(held));
             }

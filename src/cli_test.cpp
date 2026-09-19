@@ -1315,7 +1315,8 @@ auto test_run_index_mut_dispatches_to_cell_mut() -> void {
   };
   kira::driver::inject_stdlib_prelude(build_cfg);
   auto build_report = kira::driver::compile_sources(build_cfg, false);
-  expect(build_report.has_value(), "expected compile driver to return a report");
+  expect(build_report.has_value(),
+         "expected compile driver to return a report");
   expect(build_report->build.has_value(),
          "expected a build outcome to be recorded");
   expect(build_report->build->succeeded,

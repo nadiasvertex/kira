@@ -1,13 +1,14 @@
 # Moving `list[T]` out of the compiler
 
-**Status:** Phases 1-3 implemented. Phase 4 blocked (see below).
+**Status:** Phases 1-3 implemented. Both phase-4 prerequisites (todo items 6
+and 20) now hold for the case phase 4 needs; phase 4 itself has not started.
 
 | Phase | What it makes possible | Status |
 |---|---|---|
 | 1 | `index`/`index_set` traits — `v[i]`, `v[i] = x` on any type | **Done.** `index_mut` declared but not wired; see below |
-| 2 | `for` through `into_iterator` | **Done**, consuming only — a borrowing route is still missing (todo 20) |
+| 2 | `for` through `into_iterator` | **Done**, both consuming and borrowing (`for x in &v`, todo 20, landed) |
 | 3 | `from_array` construction, and the settled `list` default for literals | **Done** |
-| 4 | Flip `list[T]` onto `vector[T]`'s storage | **Blocked** on todo 6 (drop glue) and todo 20 |
+| 4 | Flip `list[T]` onto `vector[T]`'s storage | **Unblocked, not started.** Needed todo 6 (drop glue) and todo 20 (borrowing `for`); both now hold for the narrow case this phase exercises |
 | 5 | A user collection with all four, as proof | **Done** as `vector[T]` (`src/std/list.kira`) |
 
 `vector[T]` now implements all four and is usable as
@@ -46,23 +47,31 @@ Privilege 2 is already almost gone — `extend[T] list[T]` in `src/std/list.kira
 adds `is_empty`/`first`/`last` as ordinary Kira. The remaining four names are
 the ones that need the representation.
 
-## Phase 0 — scope-exit `drop` (prerequisite, todo item 6)
+## Phase 0 — scope-exit `drop` (prerequisite, todo item 6) *(done, for the case this needs)*
 
-**Not optional, and not part of this plan's own scope.** `list[T]` today
-leaks nothing the arena wasn't already leaking. `vector[T]` under
-`KIRA_ALLOCATOR=system` holds a `malloc`ed block that only an explicit
-`.free()` returns. Flipping `list[T]` onto that storage *before* drop glue
-exists would turn every `[1, 2, 3]` in every existing program into a leak —
-a strict regression, silently.
+**Was not optional, and was not part of this plan's own scope.** `list[T]`
+before this landed leaked nothing the arena wasn't already leaking.
+`vector[T]` under `KIRA_ALLOCATOR=system` holds a `malloc`ed block that only
+an explicit `.free()` returns. Flipping `list[T]` onto that storage *before*
+drop glue existed would have turned every `[1, 2, 3]` in every existing
+program into a leak — a strict regression, silently.
 
-So: phases 1–3 are independent of drop and can land in any order. **Phase 4
-must not land until todo item 6 does.** The sequencing is the whole reason
-this document separates them.
+So: phases 1–3 were independent of drop and could land in any order. **Phase
+4 must not land until todo item 6 does** — the sequencing this document
+separated them for.
 
-What phase 4 needs from item 6, specifically, is narrower than the full item:
-reverse-order drop of locals at scope exit, implicit field-wise drop for
-aggregates, and not dropping a moved-from binding. Unwinding-through-drop and
-the prelude `drop(x)` function are not prerequisites.
+What phase 4 needs from item 6, specifically, was narrower than the full
+item: reverse-order drop of locals at scope exit, implicit field-wise drop
+for aggregates, and not dropping a moved-from binding. Unwinding-through-drop
+and the prelude `drop(x)` function were never prerequisites. All three of the
+narrow requirements now hold (`src/semantic/check.cpp`'s `resolve_drop_plans`
++ `src/hir/drop_schedule.{h,cpp}` + `src/hir/lower.cpp`, verified end-to-end
+both backends by `src/testdata/std_test/scope_exit_drop.kira`) — for the
+shape phase 4 actually exercises: a plain `let`/`var` local of struct type,
+in a function/block whose own tail carries no value (`vector[T]`'s methods
+are exactly this shape). See `todo.md` item 6 for the gaps left open beyond
+that (a value-producing tail with live locals to clean up, pattern-bound
+bindings, sum-type field drop) — none of them block phase 4.
 
 ## Phase 1 — an `index` trait with an operator hook *(done)*
 
@@ -310,8 +319,11 @@ annotation that restores the old meaning; it does not yet.
 
 ## Phase 4 — flip `list[T]`
 
-**Blocked.** Needs todo item 6 (scope-exit `drop`) *and* todo item 20
-(borrowing iteration). Phases 1-3 are done; neither remaining blocker is.
+**Unblocked, not started.** Needed todo item 6 (scope-exit `drop`) *and* todo
+item 20 (borrowing iteration); both now hold for the shape this phase
+exercises (see Phase 0 above). Not yet attempted — in particular, `impl drop
+for vector[T]`/`list[T]` still needs writing, and the performance
+measurement below still needs to happen before flipping the builtin.
 
 1. Rename `vector[T]` → `list[T]` in `src/std/list.kira`, with
    `impl index`/`index_set`/`into_iterator`/`from_array`, and `drop`.
@@ -359,10 +371,19 @@ Phase 1 (index trait)      ─┐  DONE
 Phase 2 (into_iterator)    ─┼─ DONE (consuming only)
 Phase 3 (from_array)       ─┘  DONE
 
-todo item 20 (for x in &v) ─── NOT DONE, required before ↓
-todo item  6 (drop glue)   ─── NOT DONE, required before ↓
+todo item 20 (for x in &v) ─── DONE (2026-09-18)
+todo item  6 (drop glue)   ─── DONE for the narrow case phase 4 needs
+                                (2026-09-18) — reverse-order scope-exit drop,
+                                moved-from exclusion, struct field-wise
+                                drop all hold for a plain `let`/`var` in a
+                                unit-tailed scope, which is what `vector[T]`
+                                (a struct, plain locals) exercises. See
+                                todo.md item 6 for the gaps left open
+                                (value-tailed scopes, match/for/destructuring
+                                pattern bindings, sum-type field drop) — none
+                                of them block phase 4 below.
 
-Phase 4 (flip list)        ─── blocked on both
+Phase 4 (flip list)        ─── unblocked; not yet started
 Phase 5 (proof)            ─── DONE as vector[T], bar scope-exit drop
 ```
 

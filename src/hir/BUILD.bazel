@@ -4,6 +4,7 @@ cc_library(
     name = "hir",
     srcs = [
         "captures.cpp",
+        "drop_schedule.cpp",
         "link.cpp",
         "live_across_yield.cpp",
         "lower.cpp",
@@ -11,6 +12,7 @@ cc_library(
     ],
     hdrs = [
         "captures.h",
+        "drop_schedule.h",
         "ids.h",
         "link.h",
         "live_across_yield.h",

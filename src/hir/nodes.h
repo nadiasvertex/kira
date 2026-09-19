@@ -116,9 +116,9 @@ enum class hir_node_kind : uint8_t {
   hir_str_scalar_width,  ///< Bytes consumed decoding the scalar at a byte
                          ///< offset into a `str` — companion to
                          ///< `hir_str_decode_scalar`.
-  hir_mutable_cell, ///< `xs.mutable_cell(i)`: a bounds-checked
-                    ///< `option[cell_mut[T]]`; see `hir_mutable_cell`.
-  hir_cell_set,     ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
+  hir_mutable_cell,      ///< `xs.mutable_cell(i)`: a bounds-checked
+                         ///< `option[cell_mut[T]]`; see `hir_mutable_cell`.
+  hir_cell_set,          ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,
@@ -607,8 +607,8 @@ struct hir_mutable_cell : hir_expr {
 
   hir_mutable_cell(source_span s, type_id t, ptr<hir_expr> obj,
                    ptr<hir_expr> idx)
-      : hir_expr(hir_node_kind::hir_mutable_cell, s, t),
-        object(std::move(obj)), index(std::move(idx)) {}
+      : hir_expr(hir_node_kind::hir_mutable_cell, s, t), object(std::move(obj)),
+        index(std::move(idx)) {}
 };
 
 /// `c.set(v)` on a `cell_mut[T]`: stores `v` through the address `c` already

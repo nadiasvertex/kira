@@ -2172,6 +2172,17 @@ auto test_reports_index_without_impl() -> void {
       "impl to write");
 }
 
+auto test_reports_direct_drop_call() -> void {
+  const auto analyzed = analyze_test_data_file("reject_direct_drop_call.kira");
+  expect(analyzed.error_count > 0,
+         "expected a direct `x.drop()` call to be rejected");
+  expect_diagnostic(analyzed, "may not be called directly",
+                    "expected the diagnostic to name the call being rejected");
+  expect_diagnostic(
+      analyzed, "run it twice",
+      "expected the diagnostic to explain the double-drop hazard");
+}
+
 auto test_reports_index_write_without_index_set() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_index_write_without_index_set.kira");
@@ -2271,8 +2282,8 @@ auto test_dispatches_index_mut_borrow() -> void {
   expect(borrow_it->body_stmts.size() == 1,
          "expected `borrow_it`'s body to be a single `let` statement");
 
-  const auto &let_stmt = dynamic_cast<const kira::ast::let_stmt &>(
-      *borrow_it->body_stmts.front());
+  const auto &let_stmt =
+      dynamic_cast<const kira::ast::let_stmt &>(*borrow_it->body_stmts.front());
   expect(let_stmt.initializer != nullptr,
          "expected `let c = &mut w[0]` to have an initializer");
 
@@ -3429,6 +3440,7 @@ auto main() -> int {
     test_accepts_machine_pointer_ops();
     test_reports_write_through_const_pointer();
     test_reports_index_without_impl();
+    test_reports_direct_drop_call();
     test_reports_index_write_without_index_set();
     test_reports_index_mut_borrow_without_impl();
     test_dispatches_index_mut_borrow();

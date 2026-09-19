@@ -499,6 +499,21 @@ struct array_literal_conversion {
   type_id array_type = 0;
 };
 
+/// What it takes to drop one value of a struct/sum type — see
+/// `checker::resolve_drop_plans` (`check.cpp`). `own_drop` is this type's own
+/// `impl drop`, if it has one; `droppable_fields` are the struct fields (in
+/// declaration order) that are themselves droppable, whether or not this
+/// type has an `own_drop` of its own — the spec's implicit field-wise rule
+/// applies regardless. Sum types never populate `droppable_fields` (payload
+/// recursion is not implemented — a sum type only drops via an explicit
+/// `impl drop` on the sum type itself). A `type_id` absent from
+/// `checked_types::drop_plans` is not droppable at all; that absence is the
+/// scope-exit drop pass's only "should I even look at this local" test.
+struct drop_plan {
+  std::optional<resolved_callee> own_drop;
+  std::vector<std::pair<std::string, type_id>> droppable_fields;
+};
+
 struct iterator_loop_dispatch {
   const ast::func_decl *decl = nullptr;
   std::string owner_module;
@@ -833,6 +848,12 @@ struct checked_types {
   /// indexable iterables, which lower through their own dedicated shapes.
   std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
       for_iterator_dispatches;
+  /// Every struct/sum type found droppable — see `drop_plan`'s doc comment.
+  /// Populated once, after the main per-function walk, by
+  /// `checker::resolve_drop_plans` (`check.cpp`) over every type interned in
+  /// `types`. Consumed by `hir::compute_drop_schedule`/`hir::lowerer` to
+  /// build scope-exit drop calls (`spec/todo.md` item 6).
+  std::unordered_map<type_id, drop_plan> drop_plans;
   /// Every `?` (`try_expr`) whose operand's `result[_, E1]` error type
   /// differs from the enclosing function's declared `result[_, E2]` error
   /// type and resolved against a real `impl from[E1] for E2` — see

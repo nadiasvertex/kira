@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/hir/drop_schedule.h"
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
 #include "src/hir/tail_calls.h"
@@ -177,6 +178,57 @@ template <typename T>
     const auto &node2 = dynamic_cast<const hir_match &>(node);
     return std::ranges::all_of(node2.arms, [](const auto &arm) -> bool {
       return always_returns(*arm.body);
+    });
+  }
+  default:
+    return false;
+  }
+}
+
+/// Broader than `always_returns` above: also true for `hir_break`/
+/// `hir_continue`, not just `hir_return`. Used, together with a separate
+/// check on the block's own type (see `lower_block`'s and `lower_function`'s
+/// call sites), to decide whether it's safe to append scope-exit drop calls
+/// after a block's last lowered statement: unsafe whenever that statement is
+/// already an unconditional jump — nothing after it would ever run, and both
+/// backends terminate the current basic block there already.
+///
+/// This function alone does not cover the *other* hazard — a block whose
+/// `type` is a real (non-unit) value reads its tail value structurally off
+/// `stmts.back()` (`bytecode_compiler`/`llvm_codegen`'s `compile_block_as_
+/// value`), so appending a drop call after a non-jump tail statement there
+/// would silently replace the block's actual value with the drop call's own
+/// (unit). Both call sites additionally require `type` to be `k_unknown_type`
+/// or `unit` before appending anything — spec/todo.md item 6's "a value-
+/// producing tail with live locals to clean up" gap is that combined,
+/// deliberately conservative skip: such a scope's locals are simply not
+/// scheduled for a drop call at all there, a leak rather than a double-drop
+/// or use-after-drop.
+[[nodiscard]] auto always_exits(const hir_node &node) -> bool {
+  switch (node.kind) {
+  case hir_node_kind::hir_return:
+  case hir_node_kind::hir_break:
+  case hir_node_kind::hir_continue:
+    return true;
+  case hir_node_kind::hir_expr_stmt:
+    return always_exits(*dynamic_cast<const hir_expr_stmt &>(node).expr);
+  case hir_node_kind::hir_block: {
+    const auto &block = dynamic_cast<const hir_block &>(node);
+    return std::ranges::any_of(block.stmts, [](const auto &stmt) -> bool {
+      return always_exits(*stmt);
+    });
+  }
+  case hir_node_kind::hir_if: {
+    const auto &node2 = dynamic_cast<const hir_if &>(node);
+    return node2.else_body != nullptr && always_exits(*node2.else_body) &&
+           std::ranges::all_of(node2.branches, [](const auto &branch) -> bool {
+             return always_exits(*branch.body);
+           });
+  }
+  case hir_node_kind::hir_match: {
+    const auto &node2 = dynamic_cast<const hir_match &>(node);
+    return std::ranges::all_of(node2.arms, [](const auto &arm) -> bool {
+      return always_exits(*arm.body);
     });
   }
   default:
@@ -371,6 +423,35 @@ private:
                        ptr<hir_expr> object, ptr<hir_expr> subject,
                        ptr<hir_expr> value = nullptr)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// Builds every synthesized drop call `drop` (this type's own `impl drop`,
+  /// then each droppable field in declaration order — see `drop_plan`'s doc
+  /// comment) needs for one value, appending each as its own `hir_expr_stmt`
+  /// onto `out`. `make_receiver` is invoked once per call actually built
+  /// (own-drop, then once per recursed-into field), never shared, since each
+  /// use needs its own freshly-built HIR expression tree — the same pattern
+  /// `lower_pattern`'s `make_place` callbacks already use.
+  using place_fn = std::function<ptr<hir_expr>()>;
+  [[nodiscard]] auto build_drop_calls(const place_fn &make_receiver,
+                                      type_id type, source_span span,
+                                      ptr_vec<hir_node> &out)
+      -> std::expected<void, lowering_error>;
+  /// Consults `drop_schedule_.scope_exit[key]`, if present, and appends the
+  /// resulting drop calls onto `stmts` — the shared tail both `lower_block`
+  /// (per block) and `lower_function`'s own outer parameter scope call.
+  /// Builds and appends the drop call(s) for one scheduled binding — shared
+  /// tail of `emit_scope_exit_drops` and `emit_jump_drops`.
+  [[nodiscard]] auto emit_one_drop(const pending_drop &drop,
+                                   ptr_vec<hir_node> &stmts)
+      -> std::expected<void, lowering_error>;
+  [[nodiscard]] auto emit_scope_exit_drops(const void *key,
+                                           ptr_vec<hir_node> &stmts)
+      -> std::expected<void, lowering_error>;
+  /// Same idea as `emit_scope_exit_drops`, for a `break`/`continue`/bare
+  /// `return` — `drop_schedule_.jump_exit[&node]`, if present, one group of
+  /// drops per scope the jump passes through, innermost first.
+  [[nodiscard]] auto emit_jump_drops(const ast::node &node,
+                                     ptr_vec<hir_node> &stmts)
+      -> std::expected<void, lowering_error>;
   [[nodiscard]] auto lower_tuple(const ast::tuple_expr &tuple)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_array(const ast::array_expr &array)
@@ -790,6 +871,12 @@ private:
   std::unordered_map<std::string, symbol_id> global_refs_;
   std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
+  /// Where every synthesized scope-exit `drop` call belongs in this
+  /// function's body (and every lambda nested inside it) — computed once,
+  /// at the top of `lower_function`, before the real walk below consults it.
+  /// See `drop_schedule`'s doc comment (`src/hir/drop_schedule.h`) for why
+  /// this needs no new plumbing through `lower_block`'s parameters.
+  drop_schedule drop_schedule_;
   /// The enclosing function's postconditions that still need checking — read
   /// by `lower_return_value` at every exit. Empty while lowering a lambda
   /// body, where a `return` returns from the lambda and settles nothing about
@@ -1470,9 +1557,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
       if (!idx.has_value()) {
         return std::unexpected(idx.error());
       }
-      return ok_expr(make<hir_mutable_cell>(call.span, *type,
-                                            std::move(*object),
-                                            std::move(*idx)));
+      return ok_expr(make<hir_mutable_cell>(
+          call.span, *type, std::move(*object), std::move(*idx)));
     }
     // `c.get()` on a `cell[T]`/`cell_mut[T]`: reading through the address `c`
     // already is. No dedicated node: reuse `hir_unary(deref, ...)` verbatim.
@@ -1884,6 +1970,122 @@ auto lowerer::lower_index_dispatch(source_span span, type_id result,
   }
   return ok_expr(
       hir::make<hir_call>(span, result, std::move(callee), std::move(args)));
+}
+
+/// The `type_id` a droppable type's own `drop() -> unit` resolves to for
+/// `hir_call::type` — read back from `checked_.node_types` off the
+/// declaration's own return-type annotation node (already resolved during
+/// checking, same as every other type this pass reads rather than
+/// re-derives) instead of interning a fresh "unit" here, which `checked_`
+/// (a `const checked_types&`) has no way to do.
+[[nodiscard]] auto drop_call_result_type(const checked_types &checked,
+                                         const ast::func_decl &decl)
+    -> type_id {
+  if (decl.return_type == nullptr) {
+    return k_unknown_type;
+  }
+  const auto found = checked.node_types.find(decl.return_type.get());
+  return found != checked.node_types.end() ? found->second : k_unknown_type;
+}
+
+auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
+                               source_span span, ptr_vec<hir_node> &out)
+    -> std::expected<void, lowering_error> {
+  const auto found = checked_.drop_plans.find(type);
+  if (found == checked_.drop_plans.end()) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                "internal error: scope-exit drop was scheduled for a type "
+                "with no resolved drop plan — the drop-schedule pass and "
+                "checker::resolve_drop_plans have gotten out of sync");
+  }
+  const auto &plan = found->second;
+  if (plan.own_drop.has_value()) {
+    const auto &resolved = *plan.own_drop;
+    // Same convention as `lower_index_dispatch` just above: an empty
+    // `impl_target_type` means `decl` is already a monomorphized instance
+    // carrying its own mangled name.
+    const auto local_name =
+        resolved.impl_target_type.empty()
+            ? resolved.decl->name
+            : std::format("{}::{}", resolved.impl_target_type,
+                          resolved.decl->name);
+    const auto symbol = resolve_reference(local_name);
+    auto callee = ptr<hir_expr>(make<hir_local_ref>(
+        span, k_unknown_type, symbol, local_name, resolved.owner_module));
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(make_receiver());
+    const auto result_type = drop_call_result_type(checked_, *resolved.decl);
+    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(hir::make<hir_call>(
+                  span, result_type, std::move(callee), std::move(args))))));
+  }
+  // Field-wise, in declaration order, regardless of whether this type had
+  // its own `impl drop` above — the spec's implicit field-wise rule applies
+  // either way (`drop_plan`'s doc comment, types.h).
+  for (const auto &[field_name, field_type] : plan.droppable_fields) {
+    const place_fn field_place = [make_receiver, field_name,
+                                  field_type]() -> ptr<hir_expr> {
+      return ptr<hir_expr>(make<hir_field>(source_span::dummy(), field_type,
+                                           make_receiver(), field_name));
+    };
+    if (auto sub = build_drop_calls(field_place, field_type, span, out);
+        !sub.has_value()) {
+      return sub;
+    }
+  }
+  return {};
+}
+
+auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
+    -> std::expected<void, lowering_error> {
+  const auto symbol = lookup_local(drop.name);
+  if (!symbol.has_value()) {
+    return fail(lowering_error_kind::unsupported_construct,
+                source_span::dummy(),
+                std::format("internal error: drop schedule named `{}`, which "
+                            "is not a local in scope at this point",
+                            drop.name));
+  }
+  const auto drop_symbol = *symbol;
+  const auto drop_type = drop.type;
+  const auto drop_name = drop.name;
+  const place_fn make_receiver = [drop_symbol, drop_type,
+                                  drop_name]() -> ptr<hir_expr> {
+    return ptr<hir_expr>(make<hir_local_ref>(source_span::dummy(), drop_type,
+                                             drop_symbol, drop_name));
+  };
+  return build_drop_calls(make_receiver, drop.type, source_span::dummy(),
+                          stmts);
+}
+
+auto lowerer::emit_scope_exit_drops(const void *key, ptr_vec<hir_node> &stmts)
+    -> std::expected<void, lowering_error> {
+  const auto found = drop_schedule_.scope_exit.find(key);
+  if (found == drop_schedule_.scope_exit.end()) {
+    return {};
+  }
+  for (const auto &drop : found->second) {
+    if (auto result = emit_one_drop(drop, stmts); !result.has_value()) {
+      return result;
+    }
+  }
+  return {};
+}
+
+auto lowerer::emit_jump_drops(const ast::node &node, ptr_vec<hir_node> &stmts)
+    -> std::expected<void, lowering_error> {
+  const auto found = drop_schedule_.jump_exit.find(&node);
+  if (found == drop_schedule_.jump_exit.end()) {
+    return {};
+  }
+  for (const auto &group : found->second) {
+    for (const auto &drop : group) {
+      if (auto result = emit_one_drop(drop, stmts); !result.has_value()) {
+        return result;
+      }
+    }
+  }
+  return {};
 }
 
 auto lowerer::lower_tuple(const ast::tuple_expr &tuple)
@@ -2838,6 +3040,21 @@ auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
       lowered_stmts.push_back(std::move(node));
     }
   }
+  // See `always_exits`'s doc comment for why both conditions are needed:
+  // appending anything after an unconditional jump is invalid, and
+  // appending anything after a real (non-unit) tail value would silently
+  // replace it, since both backends read a value-typed block's tail
+  // structurally off `stmts.back()`.
+  const auto safe_to_append_drops =
+      (lowered_stmts.empty() || !always_exits(*lowered_stmts.back())) &&
+      (type == k_unknown_type || checked_.types.is_unit(type));
+  if (safe_to_append_drops) {
+    if (auto result = emit_scope_exit_drops(&stmts, lowered_stmts);
+        !result.has_value()) {
+      pop_scope();
+      return std::unexpected(result.error());
+    }
+  }
   pop_scope();
   return make<hir_block>(span, type, std::move(lowered_stmts));
 }
@@ -3002,20 +3219,47 @@ auto lowerer::lower_stmt(const ast::node &node)
   case ast::node_kind::return_stmt: {
     const auto &ret = dynamic_cast<const ast::return_stmt &>(node);
     if (ret.value == nullptr) {
-      return one_stmt(ptr<hir_node>(make<hir_return>(ret.span, nullptr)));
+      auto stmts = ptr_vec<hir_node>{};
+      if (auto result = emit_jump_drops(node, stmts); !result.has_value()) {
+        return std::unexpected(result.error());
+      }
+      stmts.push_back(ptr<hir_node>(make<hir_return>(ret.span, nullptr)));
+      return stmts;
     }
     auto value = lower_expr(*ret.value);
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    // Not necessarily one statement: an exit from a function with
-    // postconditions is a whole little sequence (bind, check, return).
+    // A value-returning `return`'s own scheduled drops (for a local only
+    // *borrowed* by the returned expression, e.g. `return h.get_id()` —
+    // one directly returned, like `return h`, was already excluded from the
+    // schedule as a move, see `drop_schedule.cpp`'s `return_stmt` case) are
+    // deliberately not emitted here: `hir_return`'s value expression is
+    // evaluated as part of compiling the return itself, not hoisted into an
+    // earlier statement, so a drop call placed ahead of this whole sequence
+    // would run before that read rather than after it — spec/todo.md item
+    // 6's documented gap, the same shape as `lower_block`'s value-producing-
+    // tail one. Not necessarily one statement even without that: an exit
+    // from a function with postconditions is a whole little sequence (bind,
+    // check, return).
     return lower_return_value(ret.span, std::move(*value));
   }
-  case ast::node_kind::break_stmt:
-    return one_stmt(ptr<hir_node>(make<hir_break>(node.span)));
-  case ast::node_kind::continue_stmt:
-    return one_stmt(ptr<hir_node>(make<hir_continue>(node.span)));
+  case ast::node_kind::break_stmt: {
+    auto stmts = ptr_vec<hir_node>{};
+    if (auto result = emit_jump_drops(node, stmts); !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+    stmts.push_back(ptr<hir_node>(make<hir_break>(node.span)));
+    return stmts;
+  }
+  case ast::node_kind::continue_stmt: {
+    auto stmts = ptr_vec<hir_node>{};
+    if (auto result = emit_jump_drops(node, stmts); !result.has_value()) {
+      return std::unexpected(result.error());
+    }
+    stmts.push_back(ptr<hir_node>(make<hir_continue>(node.span)));
+    return stmts;
+  }
   case ast::node_kind::if_stmt: {
     const auto &if_s = dynamic_cast<const ast::if_stmt &>(node);
     auto lowered =
@@ -4848,6 +5092,16 @@ auto lowerer::lower_function(const ast::func_decl &decl)
                             decl.name));
   }
 
+  // A generator's body compiles into a resumable step function, not an
+  // ordinary call frame — a local can be live *across* a `yield` (see
+  // `live_across_yield.h`), so "goes out of scope" doesn't mean the same
+  // thing it does for a plain function. Scope-exit drop for generator
+  // bodies is not implemented; skip computing a schedule so nothing below
+  // finds one to (incorrectly) act on.
+  if (!decl.modifiers.is_generator) {
+    drop_schedule_ = compute_drop_schedule(decl, checked_);
+  }
+
   push_scope();
 
   auto params = std::vector<hir_param>{};
@@ -5036,6 +5290,31 @@ auto lowerer::lower_function(const ast::func_decl &decl)
           stmts.push_back(std::move(*check));
         }
       }
+    }
+  }
+  // Parameters live in this function's own outer scope, not inside
+  // `decl.body_stmts`'s nested one `lower_block` already handled above — so
+  // their drops (if any) are this function's own responsibility, appended
+  // here, right before that outer scope closes. Safe under the same rule
+  // `lower_block` uses (see `always_exits`'s doc comment): skip whenever the
+  // body's last statement already exits unconditionally (an explicit
+  // `return`, including the one the fallthrough-tail-value promotion above
+  // may have just synthesized), *and* whenever the function's own return
+  // type carries a real value onward — a body ending `unit` no differently
+  // than falling off the end (e.g. `file_handle::close`'s trailing `match`
+  // yields its `result[...]`, not `unit`) would otherwise have a unit-typed
+  // drop call appended as its new structural tail, silently replacing the
+  // real return value the same way `lower_block`'s doc comment describes.
+  if (body.has_value() && !decl.modifiers.is_generator &&
+      ((*body)->stmts.empty() || !always_exits(*(*body)->stmts.back())) &&
+      return_type.has_value() &&
+      (*return_type == k_unknown_type ||
+       checked_.types.is_unit(*return_type))) {
+    if (auto result = emit_scope_exit_drops(&decl, (*body)->stmts);
+        !result.has_value()) {
+      pop_scope();
+      post_contracts_.clear();
+      return std::unexpected(result.error());
     }
   }
   pop_scope();

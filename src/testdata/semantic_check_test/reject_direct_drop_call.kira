@@ -1,0 +1,14 @@
+module sample
+
+# There is no direct `x.drop()` call (spec/specification/02-intermediate/
+# 17-shared-ownership-and-drop.md): calling it explicitly and then letting
+# scope exit call it again would double-drop.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return unit
+
+def use_it(mut n: noisy) -> unit:
+    n.drop()

@@ -2844,7 +2844,8 @@ private:
                      "`option`'s `some`/`none` variants — this should have "
                      "been rejected by the type checker"});
     }
-    const auto payload_slots = runtime::sum_max_payload_slots(types_, node.type);
+    const auto payload_slots =
+        runtime::sum_max_payload_slots(types_, node.type);
 
     auto in_bounds_reg = alloc_register(node.span);
     if (!in_bounds_reg.has_value()) {
@@ -2918,8 +2919,7 @@ private:
     if (!value_reg.has_value()) {
       return std::unexpected(value_reg.error());
     }
-    emit_store_field(*ptr_reg, 0, *value_reg,
-                     element_stride(node.value->type));
+    emit_store_field(*ptr_reg, 0, *value_reg, element_stride(node.value->type));
     const auto index = writer_.add_constant(slot_value{uint64_t{0}});
     emit_op(opcode::op_load_const);
     emit_register(dst);

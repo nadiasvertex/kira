@@ -2875,9 +2875,9 @@ private:
     if (!index_value.has_value()) {
       return std::unexpected(index_value.error());
     }
-    auto *index64 =
-        builder_.CreateIntCast(*index_value, llvm::Type::getInt64Ty(ctx_),
-                               is_signed_integer(*index_kind), "cell.index.i64");
+    auto *index64 = builder_.CreateIntCast(
+        *index_value, llvm::Type::getInt64Ty(ctx_),
+        is_signed_integer(*index_kind), "cell.index.i64");
 
     auto view = resolve_container_view(node.object->type, *object, node.span);
     if (!view.has_value()) {
@@ -2893,14 +2893,15 @@ private:
                      "`option`'s `some`/`none` variants — this should have "
                      "been rejected by the type checker"});
     }
-    const auto payload_slots = runtime::sum_max_payload_slots(types_, node.type);
+    const auto payload_slots =
+        runtime::sum_max_payload_slots(types_, node.type);
     auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
     auto *result_slot = create_local_alloca(ptr_ty, "mutable_cell.result");
 
-    auto *in_bounds = view->len != nullptr
-                          ? builder_.CreateICmpULT(index64, view->len,
-                                                   "cell.index.in_bounds")
-                          : llvm::ConstantInt::getTrue(ctx_);
+    auto *in_bounds =
+        view->len != nullptr
+            ? builder_.CreateICmpULT(index64, view->len, "cell.index.in_bounds")
+            : llvm::ConstantInt::getTrue(ctx_);
     auto *some_bb =
         llvm::BasicBlock::Create(ctx_, "mutable_cell.some", current_fn_);
     auto *none_bb =

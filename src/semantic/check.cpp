@@ -994,6 +994,7 @@ public:
     // Precompute which interned types carry a view, before `types_` is moved
     // out below — the borrow checker reads this to track view-borrow lifetimes.
     auto view_bearing = compute_view_bearing_types();
+    resolve_drop_plans();
     return checked_types{
         .types = std::move(types_),
         .node_types = std::move(node_types_),
@@ -1011,6 +1012,7 @@ public:
         .interp_dispatches = std::move(interp_dispatches_),
         .type_param_reflections = std::move(type_param_reflections_),
         .for_iterator_dispatches = std::move(for_iterator_dispatches_),
+        .drop_plans = std::move(drop_plans_),
         .try_conversions = std::move(try_conversions_),
         .try_conversion_types = std::move(try_conversion_types_),
         .fmt_types = fmt_types,
@@ -1242,6 +1244,10 @@ private:
   /// `for_stmt` case, handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
       for_iterator_dispatches_;
+  /// Every struct/sum type found droppable — see `drop_plan` in types.h.
+  /// Populated once by `resolve_drop_plans`, after the main per-function
+  /// walk. Handed to the caller via `take_checked_types`.
+  std::unordered_map<type_id, drop_plan> drop_plans_;
   /// Every `?` whose operand's error type needed a `from`-conversion to the
   /// enclosing function's declared error type, recorded by `infer_try`.
   /// Handed to the caller via `take_checked_types`.
@@ -4752,6 +4758,93 @@ private:
     return result;
   }
 
+  /// Whether `id`'s own `impl drop` resolves, and if so to what — the leaf
+  /// case `resolve_drop_plan` recurses down to. Mirrors `require_operand_
+  /// trait`'s struct/sum handling (`type_has_trait` + `find_method`, then
+  /// `instantiate_impl_method_for` for a per-instance generic impl), but
+  /// unconditionally rather than gated on an operator expression's
+  /// `wire_dispatch` — every droppable type's own drop must be resolved
+  /// here, not just the ones an operator happens to touch.
+  auto resolve_own_drop(const type_entry &entry, type_id id)
+      -> std::optional<resolved_callee> {
+    if (entry.decl == nullptr || !type_has_trait(entry, "drop")) {
+      return std::nullopt;
+    }
+    const auto *method = find_method(entry, "drop", id);
+    if (method == nullptr || method->decl->params.empty() ||
+        param_name_of(method->decl->params.front()) != "self") {
+      return std::nullopt;
+    }
+    const auto *callee =
+        instantiate_impl_method_for(*entry.decl, *method, entry, id);
+    return resolved_callee{.decl = callee != nullptr ? callee : method->decl,
+                           .owner_module = method->owner->module_name,
+                           .impl_target_type =
+                               callee != nullptr ? "" : entry.name};
+  }
+
+  /// Whether `id` is droppable — has its own `impl drop`, or (struct only) a
+  /// field that is; see `drop_plan` in types.h. `visiting` is the current
+  /// recursion path, not a global "already seen" set — a sibling field of
+  /// the same type as an earlier one must still be evaluated on its own, so
+  /// entries are erased on the way back out, unlike `type_contains_view`'s
+  /// `visited` (safe there only because that query is monotonic: once any
+  /// branch answers "true", nothing downstream needs re-exploring). Cycle
+  /// detection here is defense-in-depth rather than an expected case — a
+  /// struct cannot directly contain itself by value, only through `*T`/
+  /// `ref`, neither of which is ever droppable.
+  auto resolve_drop_plan(type_id id, std::unordered_set<type_id> &visiting)
+      -> std::optional<drop_plan> {
+    if (types_.is_unknown(id) || id == k_error_type) {
+      return std::nullopt;
+    }
+    const auto &entry = types_.entry(id);
+    if (entry.kind != type_kind::struct_kind &&
+        entry.kind != type_kind::sum_kind) {
+      return std::nullopt;
+    }
+    if (!visiting.insert(id).second) {
+      return std::nullopt;
+    }
+    auto plan = drop_plan{.own_drop = resolve_own_drop(entry, id)};
+    // Sum-type variant payloads are deliberately not recursed into here —
+    // spec/todo.md item 6's "sum-type field-wise drop" gap. A sum type only
+    // drops via an explicit `impl drop` on the sum type itself, above.
+    if (entry.kind == type_kind::struct_kind) {
+      if (const auto *fields = struct_fields_of(entry)) {
+        for (const auto &field : *fields) {
+          const auto field_type = struct_field_type(entry, field.name);
+          if (field_type.has_value() &&
+              resolve_drop_plan(*field_type, visiting).has_value()) {
+            plan.droppable_fields.emplace_back(field.name, *field_type);
+          }
+        }
+      }
+    }
+    visiting.erase(id);
+    if (!plan.own_drop.has_value() && plan.droppable_fields.empty()) {
+      return std::nullopt;
+    }
+    return plan;
+  }
+
+  /// Populates `drop_plans_` for `checked_types::drop_plans`. Run once, over
+  /// the whole type table, from `take_checked_types` — mirroring `compute_
+  /// view_bearing_types` immediately above: a struct/sum type's droppability
+  /// depends on its fields' resolved types, which needs the same per-
+  /// instance generic substitution `struct_field_type` does, so this can't
+  /// run any earlier than the type table being essentially final.
+  auto resolve_drop_plans() -> void {
+    const auto snapshot = types_.count();
+    for (std::size_t raw = 0; raw < snapshot; ++raw) {
+      const auto id = static_cast<type_id>(raw);
+      auto visiting = std::unordered_set<type_id>{};
+      if (auto plan = resolve_drop_plan(id, visiting); plan.has_value()) {
+        drop_plans_.emplace(id, std::move(*plan));
+      }
+    }
+  }
+
   // ==========================================================================
   //  Function signatures
   // ==========================================================================
@@ -7950,7 +8043,8 @@ private:
         // list/array/slice does). Re-dispatch here rather than in
         // `infer_index`, which has no way to know about this enclosing
         // `&mut` at the point it runs.
-        const auto &index = dynamic_cast<const ast::index_expr &>(*unary.operand);
+        const auto &index =
+            dynamic_cast<const ast::index_expr &>(*unary.operand);
         if (index.object != nullptr) {
           const auto object_type =
               base_shape(infer_expr(*index.object, k_unknown_type));
@@ -10481,6 +10575,30 @@ private:
     case type_kind::sum_kind:
     case type_kind::opaque_kind: {
       if (const auto *method = find_method(entry, field.field_name, object)) {
+        // `x.drop()` is refused outright (spec/specification/02-intermediate/
+        // 17-shared-ownership-and-drop.md, "no direct `x.drop()` call") —
+        // calling it explicitly and then letting scope-exit call it again
+        // would double-drop. Gated on the type actually implementing the
+        // `drop` trait, not merely on the method being named "drop" — an
+        // unrelated user method that happens to share the name is fine.
+        // `method->from_trait` is *not* the right test here: it is set only
+        // for a trait-*default* method reached with no override, and every
+        // real `impl drop for T: def drop(mut self) -> unit: ...` writes its
+        // own body, so `from_trait` is null for the exact case this must
+        // catch.
+        if (field.field_name == "drop" && type_has_trait(entry, "drop")) {
+          error_with_help(
+              call.span,
+              std::format("`{}.drop()` may not be called directly", entry.name),
+              "explicit `drop()` here",
+              "a value's `drop` runs on its own when its scope ends; calling "
+              "it directly and then letting scope exit call it again would "
+              "run it twice. If you need to release it early, end its "
+              "scope early instead (e.g. a `scope:` block once that lands, "
+              "or restructure so this is its last use).");
+          infer_call_args_loosely(call);
+          return k_error_type;
+        }
         record_expr_type(field, fn_type_of(*method->decl, method->owner));
         if (!check_method_accepts_generic_args(field, *method->decl,
                                                explicit_args)) {

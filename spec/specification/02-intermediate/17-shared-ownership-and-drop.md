@@ -1,6 +1,6 @@
 # 17. Shared Ownership and Drop
 
-**Status:** Planned
+**Status:** Partial
 
 `shared[T]` reference-counted values, and the `drop` trait's rules for destructor execution.
 
@@ -46,12 +46,11 @@ impl drop for file:
 
 ## Implementation status
 
-Nothing in this chapter works end-to-end today. It is written normatively, as the target design; none of it describes current behavior.
-
-- **`drop` destructors never run.** The trait is declared (`src/std/traits.kira:4`), an `impl drop for T` type-checks, and the method compiles and is callable — but the compiler never invokes it. `"drop"` appears nowhere in `src/**/*.{cpp,h}` as a recognized trait name, and there is no scope-exit glue on either backend (no `emit_drop`/`drop_glue`/`destructor` code path). Verified: a type whose `drop` prints produces no output when its owner's scope ends, identically on the bytecode VM and the LLVM AOT tier, while an explicit `x.drop()` prints as expected. Consequently every rule in "Destructors: `drop`" above — reverse-declaration-order drop, implicit field-wise drop for aggregates, not dropping a moved-from binding, unwinding through drops on panic — is unimplemented. Real consequence: `impl drop for file_handle` (`src/std/io.kira:159`) never fires, so a `file_handle` not explicitly `.close()`d leaks its fd.
-  - The prelude `drop(x)` free function does not exist. A call to it is accepted by the checker anyway and then fails in lowering with "no concrete checked type is available for this node" — a compiler-gap diagnostic for what is really an undefined name. (The `drop` *trait* is correctly prelude-reachable: `impl drop for T` needs no `use`.)
-  - The direct `x.drop()` call this chapter forbids is currently accepted by the checker; there is no double-drop to diagnose yet precisely because scope exit drops nothing.
-  - What *does* exist is the substrate: `src/semantic/move_check.h` implements the move tracking these rules need underneath them ("a binding that was moved from never drops" and reverse-order drop both require knowing which bindings are live at a program point).
+- **`drop` runs at scope exit for the common case.** `checker::resolve_drop_plans` (`src/semantic/check.cpp`) resolves each droppable type's own `impl drop` plus its droppable fields; `hir::compute_drop_schedule` (`src/hir/drop_schedule.{h,cpp}`) and `hir::lowerer` (`src/hir/lower.cpp`) synthesize the calls. Verified end-to-end, both backends, exact output: reverse-declaration-order drop, a moved-from binding never dropping, implicit field-wise drop for a struct with no own `impl drop`, and drop firing correctly on early `return`/`break`/`continue` (`src/testdata/std_test/scope_exit_drop.kira`). Direct `x.drop()` is rejected, as this chapter requires (`src/testdata/semantic_check_test/reject_direct_drop_call.kira`).
+  - Not yet covered: a block or function whose tail is a real (non-`unit`) value skips scope-exit drop for that scope entirely, rather than corrupting the returned value (a documented leak, never a double-drop); a value-returning `return expr` does not drop a local `expr` only *borrows* from (a directly-returned local, like `return h`, is unaffected); match-arm/`for`-loop/destructuring-pattern bindings are not tracked, only a plain `let`/`var`/simple parameter; and a sum type's field-wise drop (payload recursion) is not implemented — only its own `impl drop` runs.
+  - Unwinding through drops on panic is moot: this compiler has no stack unwinding at all (`panic` traps/aborts).
+  - The prelude `drop(x)` free function still does not exist. A call to it is accepted by the checker anyway and then fails in lowering with "no concrete checked type is available for this node" — a compiler-gap diagnostic for what is really an undefined name. (The `drop` *trait* is correctly prelude-reachable: `impl drop for T` needs no `use`.)
+  - `src/semantic/move_check.h` remains the move-tracking substrate these rules build on; `hir::compute_drop_schedule` is a second, HIR-oriented walker alongside it, not a replacement (see that file's doc comment for why).
 - **`shared[T]` is a name with nothing behind it.** `shared` is registered as a builtin generic (`src/semantic/types.cpp:51`) and that is the entire implementation. The `shared` expression form yields a plain reference — `let a: shared t = shared t{ id: 1 }` fails with ``expected `shared[t]`, found `&t` `` — and `shared[T]` has no methods, so `.clone()` does not resolve. No atomic reference count exists anywhere in the source tree, so neither the read-only-access guarantee nor drop-at-zero is enforced or implemented.
 - **The `scope` block this chapter relies on does not parse.** `scope_stmt` is in `spec/kira-grammar.ebnf`, but there is no `kw_scope` token and no parser support, so the mechanism named above for ending a lifetime early is unavailable.
 

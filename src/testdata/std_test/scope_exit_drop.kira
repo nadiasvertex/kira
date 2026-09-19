@@ -1,0 +1,64 @@
+module main
+
+# Scope-exit `drop` (spec/todo.md item 6): reverse-declaration-order drop,
+# moved-from bindings never dropping, implicit field-wise drop for a struct
+# with no own `impl drop`, and drop firing on early `return`/`break`/
+# `continue` as well as normal fall-through. Every case below prints exactly
+# once per value, in an order that could only come from real drop glue
+# running at the right point — never from an explicit `.free()`-style call,
+# since none is written here.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+# No own `impl drop`, but one field is droppable — the implicit field-wise
+# rule (spec/specification/02-intermediate/17-shared-ownership-and-drop.md)
+# must still fire for it.
+type holder = { inner: noisy, tag: int32 }
+
+def takes(mut n: noisy) -> unit:
+    println("consumed {n.id}")
+
+def reverse_order() -> unit:
+    let a = noisy { id: 1 }
+    let b = noisy { id: 2 }
+    let c = noisy { id: 3 }
+    println("reverse_order body done")
+
+def moved_from_never_drops() -> unit:
+    let a = noisy { id: 10 }
+    let b = noisy { id: 11 }
+    takes(a)
+    println("moved_from body done")
+
+def field_wise_drop() -> unit:
+    let h = holder { inner: noisy { id: 20 }, tag: 99 }
+    println("field_wise body done")
+
+def early_return(flag: bool) -> unit:
+    let a = noisy { id: 30 }
+    if flag:
+        println("early_return taking the early path")
+        return
+    println("early_return fallthrough")
+
+def early_break() -> unit:
+    var i = 0
+    while i < 5:
+        let a = noisy { id: 40 + i }
+        if i == 1:
+            println("early_break breaking")
+            break
+        i = i + 1
+    println("early_break loop done")
+
+def main() -> unit:
+    reverse_order()
+    moved_from_never_drops()
+    field_wise_drop()
+    early_return(true)
+    early_break()
+    println("main done")
