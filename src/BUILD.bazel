@@ -27,6 +27,12 @@ filegroup(
 )
 
 filegroup(
+    name = "inference_snapshot_goldens",
+    srcs = glob(["testdata/inference_snapshot/*.snapshot"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
     name = "semantic_analysis_test_files",
     srcs = glob(["testdata/semantic_analysis_test/**/*.kira"]),
     visibility = ["//visibility:public"],

@@ -771,6 +771,24 @@ struct stack_buffer_request {
 struct checked_types {
   type_table types;
   std::unordered_map<const ast::node *, type_id> node_types;
+  /// The file each node in `node_types` was checked under, recorded at the
+  /// same moment and from the same `file_id_` the checker was standing in.
+  ///
+  /// An `ast::node` carries only a `source_span` — byte offsets with no file
+  /// — so a node pointer alone cannot say where it came from, and every file
+  /// in a session has a byte 0. Nothing in the compiler needed the answer
+  /// before: a pass that holds a node is already standing in its file.
+  /// `semantic::render_snapshot` (`snapshot.h`) is the exception — it walks
+  /// the decision maps from outside any file, and an offset with no file name
+  /// is not a reviewable diff.
+  ///
+  /// Recorded only in `record_expr_type`, which is the single funnel every
+  /// typed expression passes through. That covers the great majority of the
+  /// nodes the other decision maps key against too (a dispatch is always
+  /// recorded for an expression the checker also typed), so those maps
+  /// resolve their file by looking the node up here; a key that isn't
+  /// present renders with its offset alone rather than a guess.
+  std::unordered_map<const ast::node *, file_id_type> node_files;
   std::unordered_map<const ast::field_pattern *, type_id>
       struct_pattern_field_types;
   std::unordered_map<const ast::struct_field_init *, type_id>

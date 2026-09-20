@@ -14,6 +14,7 @@ cc_library(
         "resolution.cpp",
         "scopes.cpp",
         "session.cpp",
+        "snapshot.cpp",
         "symbols.cpp",
         "types.cpp",
     ],
@@ -30,6 +31,7 @@ cc_library(
         "resolution.h",
         "scopes.h",
         "session.h",
+        "snapshot.h",
         "symbols.h",
         "types.h",
     ],
@@ -108,6 +110,24 @@ cc_test(
         ":semantic",
         "//src/parser:parser",
         "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "snapshot_test",
+    size = "medium",
+    srcs = ["snapshot_test.cpp"],
+    data = [
+        "//src:codegen_stress_corpus",
+        "//src:semantic_stress_corpus",
+        "//src:inference_snapshot_goldens",
+        "//src:std_sources",
+    ],
+    deps = [
+        ":semantic",
+        "//src/parser:parser",
+        "//src/testing",
+        "//src/testing:stdlib_fixtures",
     ],
 )
 

@@ -991,6 +991,7 @@ public:
     return checked_types{
         .types = std::move(types_),
         .node_types = std::move(node_types_),
+        .node_files = std::move(node_files_),
         .struct_pattern_field_types = std::move(struct_pattern_field_types_),
         .struct_literal_field_types = std::move(struct_literal_field_types_),
         .call_argument_mappings = std::move(call_argument_mappings_),
@@ -1115,6 +1116,9 @@ private:
   /// `panic` with no real declared type to record). Handed to the caller
   /// via `take_checked_types`.
   std::unordered_map<const ast::node *, type_id> node_types_;
+  /// Written alongside `node_types_`, read only by the snapshot renderer —
+  /// see `checked_types::node_files`.
+  std::unordered_map<const ast::node *, file_id_type> node_files_;
   /// Resolved type of every non-rest `ast::field_pattern` visited by
   /// `check_pattern`'s `struct_pattern` case — needed for shorthand fields
   /// (`{x}`), which have no sub-pattern node of their own to key `node_types_`
@@ -15188,6 +15192,12 @@ private:
   /// it unchanged, so a call site can wrap its result in one expression.
   auto record_expr_type(const ast::node &node, type_id type) -> type_id {
     node_types_[&node] = type;
+    // Where this node was checked, for `semantic::render_snapshot` — see
+    // `checked_types::node_files`. `file_id_` is the file the checker is
+    // standing in, which for a per-call method instance is the method's own
+    // file rather than the caller's (`method_entry::file_id`), and that is
+    // the answer a reader of the snapshot wants.
+    node_files_[&node] = file_id_;
     return type;
   }
 
