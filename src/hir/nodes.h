@@ -108,11 +108,11 @@ enum class hir_node_kind : uint8_t {
   hir_slice_from_raw_parts, ///< Builds a `slice[T]`/`slice_mut[T]` view
                             ///< header from a pointer and a length; see
                             ///< `hir_slice_from_raw_parts`.
-  hir_container_len,   ///< A container's element count (`for`-loop lowering
-                       ///< only).
-  hir_generator_next,  ///< `g.next()` on a `generator[T]` value — no
-                       ///< backing `func_decl`, same rationale as
-                       ///< `hir_container_len`.
+  hir_container_len,     ///< A container's element count (`for`-loop lowering
+                         ///< only).
+  hir_generator_next,    ///< `g.next()` on a `generator[T]` value — no
+                         ///< backing `func_decl`, same rationale as
+                         ///< `hir_container_len`.
   hir_str_decode_scalar, ///< The decoded Unicode scalar at a byte offset
                          ///< into a `str` (`for`-loop lowering only) — see
                          ///< `hir_str_decode_scalar`'s doc comment.

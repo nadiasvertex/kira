@@ -12371,10 +12371,9 @@ private:
   /// Returns `nullopt` rather than reporting when the receiver's method set
   /// is not actually known (see `report_unknown_builtin_method`'s doc
   /// comment for why that matters).
-  [[nodiscard]] auto report_unknown_builtin_field(std::string_view name,
-                                                  source_span span,
-                                                  const type_entry &entry,
-                                                  type_id object)
+  [[nodiscard]] auto
+  report_unknown_builtin_field(std::string_view name, source_span span,
+                               const type_entry &entry, type_id object)
       -> std::optional<type_id> {
     if (entry.kind != type_kind::builtin_kind &&
         entry.kind != type_kind::builtin_generic_kind) {
@@ -12414,8 +12413,7 @@ private:
           "methods instead?",
           display, name));
     } else {
-      diag.with_help(
-          std::format("`{}` has no fields or methods.", display));
+      diag.with_help(std::format("`{}` has no fields or methods.", display));
     }
     emit_diag(diag);
     mark_error();
