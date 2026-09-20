@@ -211,6 +211,16 @@ public:
   /// reports as "cannot infer" once the obligation queue has stalled.
   [[nodiscard]] auto unsolved() const -> std::vector<type_id>;
 
+  /// The variables whose class gained a solution — or was merged into
+  /// another — since the last call, and clears the list.
+  ///
+  /// This is the wake signal the obligation queue runs on, and it is why the
+  /// fixpoint is not a sweep over every pending decision on every pass. A
+  /// *merge* counts as news for the same reason a solution does: an
+  /// obligation watching the variable that was absorbed must be re-pointed
+  /// at the one that absorbed it, or nothing will ever wake it again.
+  [[nodiscard]] auto take_newly_solved() -> std::vector<type_id>;
+
 private:
   /// Whether `value` may stand for a variable of `sort`/`arity`, and why not
   /// if it may not.
@@ -239,6 +249,8 @@ private:
   mutable std::unordered_map<type_id, type_id> parent_;
   /// Solutions, keyed by class representative.
   std::unordered_map<type_id, type_id> solution_;
+  /// Variables bound or merged since the last `take_newly_solved`.
+  std::vector<type_id> newly_solved_;
   /// `zonk` memo, dropped on every successful `bind`.
   std::unordered_map<type_id, type_id> zonk_memo_;
   /// Ids currently being rebuilt, so a value parameter solved in terms of

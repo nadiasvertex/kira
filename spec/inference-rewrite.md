@@ -1,6 +1,6 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phases 0-3 done. Nothing in `src/semantic/check.cpp` has moved yet
+**Status:** Phases 0-4 done. Nothing in `src/semantic/check.cpp` has moved yet
 — the engine exists and is tested, but nothing calls it.
 
 | Phase | What it makes possible | Status |
@@ -9,7 +9,7 @@
 | 1 | `infer_ctxt`: one metavariable store over three sorts, with causes | **Done** — `src/semantic/infer/infer_ctxt.{h,cpp}`, `infer_ctxt_test.cpp` |
 | 2 | One `unify`: rigid-rigid, pattern fragment, value slots | **Done** — `src/semantic/infer/unify.{h,cpp}`, `unify_test.cpp` |
 | 3 | Value slots genuinely *solved*, not merely checked satisfiable | **Done** — `src/semantic/infer/value_solver.{h,cpp}`, `value_solver_test.cpp` |
-| 4 | An obligation queue: methods, trait bounds, refinements, defaulting | Not started |
+| 4 | An obligation queue: methods, trait bounds, refinements, defaulting | **Done** — `src/semantic/infer/obligations.{h,cpp}`, `obligations_test.cpp` |
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | Not started |
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | Not started |
 | 7 | Constraint generation migrated onto the one unifier | Not started |
@@ -418,12 +418,46 @@ than guess — `m + n ~ 5` postpones.
 
 Full suite after reverting: 32/32.
 
-### Phase 4 — obligations
+### Phase 4 — obligations *(done)*
 
-Queue, per-variable wake index (so the fixpoint is not quadratic),
+`src/semantic/infer/obligations.{h,cpp}`, tested by
+`//src/semantic:obligations_test`. Queue, per-variable wake index,
 retry-to-fixpoint, stall detection, the four kinds above. Candidate assembly
-stays pluggable so the existing impl lookup drops in unchanged, and
-`reason.cpp` plugs in behind the refinement kind with no new prover.
+is a `std::function` per kind, so the existing impl lookup drops in unchanged
+and `reason.cpp` plugs in behind the refinement kind with no new prover; the
+queue interprets neither, and carries an opaque `payload` for whatever table
+the caller assembles candidates from.
+
+**The wake signal.** `infer_ctxt::take_newly_solved()` returns the variables
+bound since the last call, and the queue wakes only their watchers — so a
+pass costs what actually changed rather than a sweep over every pending
+decision. A *merge* counts as news for the same reason a solution does: an
+obligation watching the variable that was absorbed must be re-pointed at the
+one that absorbed it, so every attempt that leaves an obligation waiting
+re-indexes its watches by their current representative. A wake index that
+silently stops waking is worse than none, since the symptom is a stall with
+no explanation.
+
+**The unifier is inside the same fixpoint.** A deferred `F[A] ~ G[B]` and a
+waiting `T: ord` can unblock each other, so `run_fixpoint` interleaves
+`retry_deferred` with obligation attempts rather than draining them in
+sequence. Two loops would make the answer depend on which drained first —
+the order-dependent inference this rewrite exists to remove.
+
+**Defaulting is structurally last, not politely last.** It is excluded from
+`run_fixpoint` entirely and attempted only by `flush`, one candidate at a
+time, each followed by another full fixpoint.
+
+**A test that could not fail, and the bug it was hiding.** The first version
+of `test_defaulting_is_last_resort` had each resolver check
+`solution(...)` before binding — so the *resolver* was enforcing last-resort
+and the test passed however the queue ordered them. Deliberately breaking
+`flush` to run defaults first did not fail it. Rewritten so both resolvers
+bind unconditionally and ordering alone decides the answer, it failed
+immediately **on the unbroken code**: `run_fixpoint` was attempting defaulting
+obligations along with everything else, and a default could beat a constraint
+that was one pass away. That is the real fix in this phase, and nothing else
+in the suite would have found it.
 
 ### Phase 5 — blame and diagnostics
 

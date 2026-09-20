@@ -276,9 +276,11 @@ auto infer_ctxt::bind(type_id var, type_id value, cause_id why)
     // for either reaches both. Direction is arbitrary but fixed: the bound
     // variable points at the target.
     parent_[root] = target;
+    newly_solved_.push_back(target);
   } else {
     solution_[root] = target;
   }
+  newly_solved_.push_back(root);
   zonk_memo_.clear();
   return {};
 }
@@ -446,6 +448,12 @@ auto infer_ctxt::cause_chain(cause_id id) const -> std::vector<cause_id> {
 }
 
 auto infer_ctxt::meta_count() const -> size_t { return mint_order_.size(); }
+
+auto infer_ctxt::take_newly_solved() -> std::vector<type_id> {
+  auto news = std::vector<type_id>{};
+  news.swap(newly_solved_);
+  return news;
+}
 
 auto infer_ctxt::unsolved() const -> std::vector<type_id> {
   auto open = std::vector<type_id>{};
