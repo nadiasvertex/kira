@@ -71,7 +71,7 @@ extend[T] list[T]:
     #: answers `@none` instead.
     pub machine def cell(self, i: usize) -> cell[T]:
         if i >= self.len:
-            panic("index out of range")
+            panic("index out of bounds")
         return &self.data[i]
 
     #: A writable single-element view of `v[i]`, or `@none` when `i` is out
@@ -192,7 +192,7 @@ impl[T] index[usize] for list[T]:
     type output = T
     machine def at(self, i: usize) -> T:
         if i >= self.len:
-            panic("index out of range")
+            panic("index out of bounds")
         return self.data[i]
 
 #: Borrowing `&mut v[i]`, with the same bounds check.
@@ -200,7 +200,7 @@ impl[T] index_mut[usize] for list[T]:
     type output_mut = cell_mut[T]
     machine def at_mut(mut self, i: usize) -> cell_mut[T]:
         if i >= self.len:
-            panic("index out of range")
+            panic("index out of bounds")
         return &mut self.data[i]
 
 #: Borrowing `&v[i]`, with the same bounds check. The read-only sibling of
@@ -209,7 +209,7 @@ impl[T] index_mut[usize] for list[T]:
 impl[T] index_ref[usize] for list[T]:
     machine def at_ref(self, i: usize) -> cell[T]:
         if i >= self.len:
-            panic("index out of range")
+            panic("index out of bounds")
         return &self.data[i]
 
 #: Reading `v[a..b]` — a read-only sub-view over the same storage, no copy.
@@ -223,7 +223,7 @@ impl[T] index[range[usize]] for list[T]:
     type output = slice[T]
     machine def at(self, i: range[usize]) -> slice[T]:
         if i.end > self.len or i.start > i.end:
-            panic("range index out of range")
+            panic("range index out of bounds")
         return slice_from_raw_parts(&self.data[i.start], i.end - i.start)
 
 #: Borrowing `&mut v[a..b]`. The mutable sibling of the impl above, and the
@@ -233,7 +233,7 @@ impl[T] index_mut[range[usize]] for list[T]:
     type output_mut = slice_mut[T]
     machine def at_mut(mut self, i: range[usize]) -> slice_mut[T]:
         if i.end > self.len or i.start > i.end:
-            panic("range index out of range")
+            panic("range index out of bounds")
         return slice_mut_from_raw_parts(&mut self.data[i.start],
                                         i.end - i.start)
 
@@ -242,7 +242,7 @@ impl[T] index_set[usize] for list[T]:
     type output = T
     machine def set_at(mut self, i: usize, value: T) -> unit:
         if i >= self.len:
-            panic("index out of range")
+            panic("index out of bounds")
         self.data[i] = value
 
 #: `for x in v` — hands back `std.iter`'s consuming iterator

@@ -1,6 +1,7 @@
 #include "driver/cli.h"
 
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include <array>
 #include <chrono>
@@ -14,6 +15,7 @@
 #include <string_view>
 #include <vector>
 
+#include "src/bytecode/panic.h"
 #include "src/module_metadata.pb.h"
 
 namespace {
@@ -1251,32 +1253,34 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 #endif
 }
 
-/// A `list` index out of range aborts the built program with a panic
-/// message on stderr.
+/// An out-of-range index terminates the built program the same way for
+/// every container, with the same message and the same exit status.
 ///
-/// This is the only level at which that is observable. `list` is an
-/// ordinary stdlib type, so `xs[i]` out of range reaches
-/// `src/std/list.kira`'s `panic("index out of range")` -> `rt_panic`, which
-/// writes to stderr and aborts the process on both tiers by design (see
-/// `intrinsic_rt_panic`, `src/bytecode/vm.cpp`). A harness running either
-/// tier in-process cannot catch an abort, so
+/// This is the only level at which a bounds violation is observable at all.
+/// It is fatal by design (`bytecode::is_fatal`, `src/bytecode/panic.h`):
+/// there is nothing a program can do about having been wrong about a
+/// container's extent, so neither tier unwinds to its host for one — the
+/// bytecode VM and the JIT terminate through `raise_panic`, an AOT binary
+/// through `kira_codegen_panic`/`kira_rt_panic`. A harness embedding either
+/// tier therefore cannot catch it, which is why
 /// `bytecode_compiler/compile_test.cpp` and `llvm_codegen/codegen_test.cpp`
-/// assert the bounds *decision* via `mutable_cell` instead, and the panic
-/// itself is checked here by running a real child process.
+/// assert the bounds *decision* through `mutable_cell` instead, and the
+/// termination itself is checked here by running a real child process.
 ///
-/// `array[T, N]` is unaffected and still raises a catchable
-/// `panic_reason::index_out_of_bounds` from a bounds-checked opcode; its
-/// in-process tests are unchanged.
-auto test_built_program_panics_on_list_index_out_of_bounds() -> void {
+/// Both containers are covered because they reach it by different routes:
+/// `array[T, N]` through a compiler-emitted bounds check, `list[T]` through
+/// ordinary Kira calling `std.panic.panic` (`src/std/list.kira`). They used
+/// to disagree — the array unwound with a catchable
+/// `panic_reason::index_out_of_bounds` while the list aborted — so asserting
+/// them together is the point, not duplication.
+auto check_out_of_bounds_index_terminates(std::string_view label,
+                                          const std::string &program) -> void {
   auto temp = make_temp_dir();
   auto source_path = temp.path / "oob.kira";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "oob_bin";
 
-  write_file(source_path, "module sample\n"
-                          "def main() -> int32:\n"
-                          "  let xs = [1, 2, 3]\n"
-                          "  return xs[5]\n");
+  write_file(source_path, program);
 
   kira::driver::cli_config cfg{
       .program_name = "kira",
@@ -1294,16 +1298,16 @@ auto test_built_program_panics_on_list_index_out_of_bounds() -> void {
   auto report = kira::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
-         "expected an out-of-range index to be a runtime error, not a "
-         "compile-time one: " +
-             report->diagnostics);
+         std::format("[{}] expected an out-of-range index to be a runtime "
+                     "error, not a compile-time one: {}",
+                     label, report->diagnostics));
   expect(report->build.has_value(), "expected a build outcome to be recorded");
   expect(report->build->succeeded,
-         std::format("expected `--build` to link successfully: {}",
+         std::format("[{}] expected `--build` to link successfully: {}", label,
                      report->build->message));
 
-  // stderr is where `rt_panic` writes; redirect it into the pipe so the
-  // message can be read, and so the test's own output stays clean.
+  // stderr is where the panic message goes; fold it into the pipe so it can
+  // be read, and so the test's own output stays clean.
   const auto command = std::format("{} 2>&1", output_path.string());
   auto *pipe = popen(command.c_str(), "r"); // NOLINT
   expect(pipe != nullptr, "expected the linked executable to launch");
@@ -1315,12 +1319,100 @@ auto test_built_program_panics_on_list_index_out_of_bounds() -> void {
   }
   const auto close_status = pclose(pipe);
 
+  expect(output.find("index out of bounds") != std::string::npos,
+         std::format("[{}] expected the panic message on stderr, got: `{}`",
+                     label, output));
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(close_status) == kira::bytecode::k_panic_exit_code,
+         std::format("[{}] expected a panic to leave exit status {}, got {}",
+                     label, kira::bytecode::k_panic_exit_code,
+                     WEXITSTATUS(close_status)));
+#else
   expect(close_status != 0,
-         "expected an out-of-range `xs[5]` to abort the program, not to "
-         "return normally");
-  expect(
-      output.find("index out of range") != std::string::npos,
-      std::format("expected the panic message on stderr, got: `{}`", output));
+         std::format("[{}] expected an out-of-range index to terminate the "
+                     "program, not to return normally",
+                     label));
+#endif
+}
+
+/// Runs `program` through the bytecode VM in a forked child and returns its
+/// exit status.
+///
+/// Forked because the thing being checked is that the VM *does not* hand a
+/// bounds violation back to its host: `raise_panic` terminates the process
+/// for a fatal reason, so a harness calling `compile_sources` directly would
+/// die with it. The child absorbs that, and the parent reads the status.
+/// The AOT half above cannot substitute for this — `kira_codegen_panic`'s
+/// AOT copy terminates for every reason, so a built binary would keep
+/// passing even if the in-process tiers went back to unwinding.
+auto run_in_forked_child(const std::string &program) -> int {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "oob_run.kira";
+  auto metadata_dir = temp.path / "meta";
+  write_file(source_path, program);
+
+  std::fflush(nullptr); // Don't let the child re-flush the parent's buffers.
+  const auto child = fork();
+  expect(child != -1, "expected to fork a child to run the VM in");
+  if (child == 0) {
+    kira::driver::cli_config cfg{
+        .program_name = "kira",
+        .sources = {source_path.string()},
+        .metadata_dir = metadata_dir.string(),
+        .show_help = false,
+        .run = true,
+    };
+    kira::driver::inject_stdlib_prelude(cfg);
+    (void)freopen("/dev/null", "w", stderr);
+    (void)kira::driver::compile_sources(cfg, false);
+    // Reached only if the VM handed the panic back instead of terminating.
+    _exit(0);
+  }
+  auto status = 0;
+  expect(waitpid(child, &status, 0) == child, "expected to reap the child");
+  return status;
+}
+
+auto test_out_of_bounds_index_terminates_for_every_container() -> void {
+  check_out_of_bounds_index_terminates("array",
+                                       "module sample\n"
+                                       "def main() -> int32:\n"
+                                       "  let a: array[int32, 3] = [1, 2, 3]\n"
+                                       "  var i: usize = 5\n"
+                                       "  return a[i]\n");
+  check_out_of_bounds_index_terminates("list", "module sample\n"
+                                               "def main() -> int32:\n"
+                                               "  let xs = [1, 2, 3]\n"
+                                               "  return xs[5]\n");
+
+  // The same two programs through the bytecode VM, which is where the
+  // fatal-vs-catchable decision actually lives (`bytecode::raise_panic`).
+  for (const auto &[label, program] :
+       std::vector<std::pair<std::string_view, std::string>>{
+           {"array (vm)", "module sample\n"
+                          "def main() -> int32:\n"
+                          "  let a: array[int32, 3] = [1, 2, 3]\n"
+                          "  var i: usize = 5\n"
+                          "  return a[i]\n"},
+           {"list (vm)", "module sample\n"
+                         "def main() -> int32:\n"
+                         "  let xs = [1, 2, 3]\n"
+                         "  return xs[5]\n"}}) {
+    const auto status = run_in_forked_child(program);
+#ifdef WEXITSTATUS
+    expect(WIFEXITED(status) != 0,
+           std::format("[{}] expected the VM to exit, not to be signalled",
+                       label));
+    expect(WEXITSTATUS(status) == kira::bytecode::k_panic_exit_code,
+           std::format("[{}] expected the VM to terminate with status {} "
+                       "rather than hand the panic back to its host; got {}",
+                       label, kira::bytecode::k_panic_exit_code,
+                       WEXITSTATUS(status)));
+#else
+    expect(status != 0,
+           std::format("[{}] expected the VM to terminate", label));
+#endif
+  }
 }
 
 /// `&mut v[i]` on a user type implementing `std.traits.index_mut`
@@ -4137,7 +4229,7 @@ auto main() -> int {
     test_compile_sources_reports_unresolved_session_import();
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
-    test_built_program_panics_on_list_index_out_of_bounds();
+    test_out_of_bounds_index_terminates_for_every_container();
     test_run_index_mut_dispatches_to_cell_mut();
     test_run_index_ref_dispatches_to_cell();
     test_cross_module_function_used_as_a_value();

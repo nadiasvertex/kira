@@ -133,7 +133,7 @@ for x in v:                           # into_iterator[T]
 
 | Trait | Gives | Notes |
 |---|---|---|
-| `std.traits.index[usize]` | `v[i]` | bounds-checked; panics out of range |
+| `std.traits.index[usize]` | `v[i]` | bounds-checked; out of range terminates the program with `index out of bounds`, exactly as it does for `array`/`slice`/`str` |
 | `std.traits.index_set[usize]` | `v[i] = x` | same check |
 | `std.iter.into_iterator[T]` | `for x in v` | **consumes `v`** — see below |
 | `std.traits.from_array[T]` | `let v: vector[int32] = [...]` | allocates exactly the literal's length |

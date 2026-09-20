@@ -12,9 +12,8 @@
 // it is for `jit_support.h`'s in-process JIT execution. Instead this
 // prints a friendly message (CLAUDE.md's "compiler is a teacher" applies
 // to a shipped binary's runtime failures too, not just compile-time
-// diagnostics) and exits with a fixed nonzero status — 101, matching the
-// convention several other languages already use for "the program itself
-// signaled a panic," so it's distinguishable from an ordinary `exit(1)`.
+// diagnostics) and exits with `k_panic_exit_code` — see its doc comment
+// (`src/bytecode/panic.h`) for why 101 and not `abort`'s 134.
 //
 // Deliberately duplicates `panic_reason_message` (panic.cpp) rather than
 // calling it: this is a standalone AOT runtime meant to link against
@@ -37,6 +36,11 @@ extern "C" [[noreturn]] void kira_codegen_panic(uint8_t reason) {
   case kira::bytecode::panic_reason::stack_overflow:
     message = "stack overflow";
     break;
+  // Reached here, unlike in the in-process handler (`runtime.cpp`), which
+  // routes through `raise_panic` and terminates on a fatal reason
+  // (`bytecode::is_fatal`) before any message lookup. This runtime
+  // terminates for every reason anyway, so the two agree on what a bounds
+  // violation prints and what status it leaves.
   case kira::bytecode::panic_reason::index_out_of_bounds:
     message = "index out of bounds";
     break;
@@ -54,5 +58,5 @@ extern "C" [[noreturn]] void kira_codegen_panic(uint8_t reason) {
     break;
   }
   std::println(stderr, "panic: {}", message);
-  std::exit(101);
+  std::exit(kira::bytecode::k_panic_exit_code);
 }

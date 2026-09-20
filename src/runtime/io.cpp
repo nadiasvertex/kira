@@ -126,7 +126,11 @@ auto kira_rt_flush(uint64_t * /*fd*/) -> uint64_t * {
   (void)::write(2, k_prefix.data(), k_prefix.size());
   (void)::write(2, text.data(), text.size());
   (void)::write(2, "\n", 1);
-  std::abort();
+  // `bytecode::k_panic_exit_code` (`src/bytecode/panic.h`) — repeated here
+  // rather than included, so this runtime keeps linking against nothing but
+  // the object `emit_object_file` produces. Every panic, from either source
+  // and on either tier, leaves the same status.
+  std::exit(101);
 }
 
 } // extern "C"

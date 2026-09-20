@@ -94,6 +94,18 @@ let x = opt.unwrap()        # panics if opt is none
 panic("should never reach here")
 ```
 
+A panic terminates the program. It prints `panic: <message>` on stderr and
+exits with status 101 — the same message and the same status whichever
+backend ran the program, and whether the panic came from `panic()` in Kira
+or from a check the compiler emitted.
+
+An out-of-range index is the same event on every container. `array[T, N]`,
+`slice[T]` and `str` are bounds-checked by the compiler; `list[T]` checks
+itself, in ordinary Kira (`src/std/list.kira`). Both report `index out of
+bounds` and terminate: there is nothing a program can do about having been
+wrong about a container's extent, so a bounds violation is never handed back
+to anything — not to the program, and not to a host embedding a Kira tier.
+
 ## See also
 
 - [Built-in Types](02-built-in-types.md) — the `from`/`into` traits `?` uses for error-type conversion.

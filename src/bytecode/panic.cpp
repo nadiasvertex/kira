@@ -1,5 +1,7 @@
 #include "src/bytecode/panic.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 
 namespace kira::bytecode {
@@ -24,6 +26,20 @@ auto panic_reason_message(panic_reason reason) noexcept -> std::string_view {
     return "invariant violated";
   }
   return "unknown panic";
+}
+
+auto raise_panic(panic_reason reason) -> void {
+  if (is_fatal(reason)) {
+    // Matches `kira_rt_panic`'s output (`src/runtime/io.cpp`) so a bounds
+    // violation reads the same whichever container raised it and whichever
+    // tier ran the program.
+    const auto message = panic_reason_message(reason);
+    std::fputs("panic: ", stderr);
+    std::fwrite(message.data(), 1, message.size(), stderr);
+    std::fputc('\n', stderr);
+    std::exit(k_panic_exit_code);
+  }
+  throw panic_error(reason);
 }
 
 panic_error::panic_error(panic_reason reason)

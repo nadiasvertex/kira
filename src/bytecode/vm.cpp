@@ -1356,16 +1356,17 @@ namespace platform_query = kira::runtime::platform_query;
 }
 
 /// Mirrors `kira_rt_panic` (`src/runtime/io.cpp`) for the bytecode tier:
-/// reports `msg` on stderr and terminates. Both tiers abort rather than
-/// unwinding, so a panicking program behaves identically whichever backend
-/// ran it — which is what lets `codegen_stress_test` cross-check them.
+/// reports `msg` on stderr and terminates with `k_panic_exit_code`. Both
+/// tiers terminate rather than unwinding, so a panicking program behaves
+/// identically whichever backend ran it — which is what lets
+/// `codegen_stress_test` cross-check them.
 [[noreturn]] auto intrinsic_rt_panic(std::span<const slot_value> args)
     -> slot_value {
   const auto text = view_of(args[0]);
   std::fputs("panic: ", stderr);
   std::fwrite(text.data(), 1, text.size(), stderr);
   std::fputc('\n', stderr);
-  std::abort();
+  std::exit(k_panic_exit_code);
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
@@ -1763,14 +1764,14 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto cond = ops.reg();
         const auto reason = static_cast<panic_reason>(ops.imm8());
         if ((f.registers[cond].u & 1U) != 0U) {
-          throw panic_error(reason);
+          raise_panic(reason);
         }
         f.pc = ops.pos();
         break;
       }
 
       case opcode::op_panic:
-        throw panic_error(panic_reason::explicit_panic);
+        raise_panic(panic_reason::explicit_panic);
 
       case opcode::op_load_direct_fn: {
         auto ops = operand_cursor{.code = code, .at = ip};

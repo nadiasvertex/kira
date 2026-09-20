@@ -802,14 +802,6 @@ auto test_narrow_element_array_has_no_padding_in_memory() -> void {
          "`int16` elements, not 40");
 }
 
-auto test_array_index_out_of_bounds_panics() -> void {
-  auto jf = jit_fixture_for(load_fixture("array_out_of_bounds.kira"));
-  auto result = jf.jit.run("main", bc::numeric_kind::i32);
-  expect(!result.has_value(), "expected a[5] on a 3-element array to panic");
-  expect(result.error() == bc::panic_reason::index_out_of_bounds,
-         "expected the panic reason to be index_out_of_bounds");
-}
-
 auto test_violated_precondition_panics() -> void {
   auto jf = jit_fixture_for(load_fixture("contract_violation.kira"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -1270,7 +1262,6 @@ auto main() -> int {
     test_padded_struct_has_alignment_padding_in_memory();
     test_narrow_element_array_construction_and_indexing();
     test_narrow_element_array_has_no_padding_in_memory();
-    test_array_index_out_of_bounds_panics();
     test_violated_precondition_panics();
     test_violated_generator_precondition_panics();
     test_satisfied_generator_precondition_yields_normally();
