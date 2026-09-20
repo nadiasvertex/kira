@@ -8568,24 +8568,41 @@ private:
   /// Also records every `extend` block's methods, against the target's
   /// `type_decl` when it names a user type or against the target's builtin
   /// name (`extend_methods_by_builtin_`) otherwise.
+  ///
+  /// Trait-default monomorphization is deferred to a second pass (below,
+  /// `deferred_defaults`) rather than run inline as each impl is visited:
+  /// `monomorphize_trait_default` type-checks a clone of the default body,
+  /// and that check can itself call `find_method`/`build_method_table`
+  /// reentrantly (e.g. a default `read_to_end` calling `list[byte].push`).
+  /// `methods_built_` is already `true` by then, so a reentrant call would
+  /// see whatever subset of `methods_`/`extend_methods_by_builtin_` this
+  /// loop happened to have populated so far — order-dependent on
+  /// `index_.modules`'s (unordered) iteration order, i.e. on which module
+  /// the compile's entry point happens to be (spec/todo.md item 18). Doing
+  /// every extend/impl registration for every module first, then
+  /// monomorphizing defaults only once that's complete, means a reentrant
+  /// lookup during monomorphization always sees the fully built table.
   auto build_method_table() -> void {
     if (methods_built_) {
       return;
     }
     methods_built_ = true;
 
+    struct deferred_trait_default {
+      const ast::func_decl *decl;
+      type_id target;
+      std::string target_type_name;
+      const ast::trait_decl *trait_decl;
+      const module_members *trait_module;
+      file_id_type trait_file_id;
+      std::deque<method_entry> *methods;
+    };
+    auto deferred_defaults = std::vector<deferred_trait_default>{};
+
     for (const auto &[module_name, members] : index_.modules) {
       for (const auto &ext : members.extends) {
         const auto target = strip_refs(resolve_extend_target(ext));
         const auto &target_entry = types_.entry(target);
-        if (ext.module_name == "std.list") {
-          std::fprintf(
-              stderr,
-              "[DEBUG] extend module=%s target.decl=%p "
-              "target.name=%s target.kind=%d\n",
-              std::string(module_name).c_str(), (const void *)target_entry.decl,
-              std::string(target_entry.name).c_str(), (int)target_entry.kind);
-        }
         auto extend_methods = std::deque<method_entry>{};
         for (const auto &item : ext.decl->items) {
           if (item == nullptr || item->has_error ||
@@ -8744,11 +8761,24 @@ private:
             });
             continue;
           }
-          monomorphize_trait_default(*decl, target, target_type_name,
-                                     trait_decl, trait_module, trait_file_id,
-                                     methods);
+          deferred_defaults.push_back(deferred_trait_default{
+              .decl = decl,
+              .target = target,
+              .target_type_name = target_type_name,
+              .trait_decl = trait_decl,
+              .trait_module = trait_module,
+              .trait_file_id = trait_file_id,
+              .methods = &methods,
+          });
         }
       }
+    }
+
+    for (const auto &deferred : deferred_defaults) {
+      monomorphize_trait_default(*deferred.decl, deferred.target,
+                                 deferred.target_type_name,
+                                 deferred.trait_decl, deferred.trait_module,
+                                 deferred.trait_file_id, *deferred.methods);
     }
   }
 
@@ -9591,12 +9621,6 @@ private:
                                                    const type_entry &entry,
                                                    type_id object)
       -> std::optional<type_id> {
-    std::fprintf(stderr,
-                 "[DEBUG] report_unknown_builtin_method field=%s "
-                 "entry.decl=%p entry.name=%s entry.kind=%d object=%u\n",
-                 std::string(field.field_name).c_str(),
-                 (const void *)entry.decl, std::string(entry.name).c_str(),
-                 (int)entry.kind, object);
     // Restricting to these two kinds is what keeps an unresolved receiver
     // silent: `k_unknown_type` is `unknown_kind`, and a type parameter is
     // `type_param_kind`, so neither reaches the report below.
@@ -10770,11 +10794,6 @@ private:
     case type_kind::struct_kind:
     case type_kind::sum_kind:
     case type_kind::opaque_kind: {
-      if (field.field_name == "push") {
-        std::fprintf(stderr,
-                     "[DEBUG2] push receiver entry.decl=%p entry.name=%s\n",
-                     (const void *)entry.decl, std::string(entry.name).c_str());
-      }
       if (const auto *method = find_method(entry, field.field_name, object)) {
         // `x.drop()` is refused outright (spec/specification/02-intermediate/
         // 17-shared-ownership-and-drop.md, "no direct `x.drop()` call") —
