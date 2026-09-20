@@ -307,6 +307,14 @@ struct method_entry {
       nullptr; ///< Owning trait, if this is a default method.
   bool is_extension =
       false; ///< Whether this method came from an `extend` block.
+  /// The trait this method implements, if any — set for both a trait's
+  /// default body (redundant with `from_trait->name`) and an impl's own
+  /// override of a required/provided trait method; empty for an `extend`
+  /// block or any other inherent method. Lets a caller identify a specific,
+  /// known-consuming trait method (`into_iterator::into_iter`) without a
+  /// general by-value-`self` convention to key off — see
+  /// `move_checker::receiver_is_moved`.
+  std::string trait_name;
   /// File the method was written in. Every per-call instance of this method
   /// is re-checked, and name resolution reads imports out of the file being
   /// checked — so an instance checked under the *caller's* file cannot see
@@ -8662,6 +8670,11 @@ private:
         // previous call triggered.
         const auto target_type_name = std::string(target_entry.name);
 
+        // Trait methods with default bodies are callable through the impl;
+        // also recorded on the impl's own overridden methods below, so a
+        // caller can identify a method by the trait it implements.
+        const auto trait_name = trait_name_of_impl(*impl.decl);
+
         for (const auto &item : impl.decl->items) {
           if (item == nullptr || item->has_error ||
               item->kind != ast::node_kind::func_decl) {
@@ -8673,14 +8686,14 @@ private:
               .decl = decl,
               .owner = &members,
               .from_trait = nullptr,
+              .is_extension = false,
+              .trait_name = trait_name,
               .file_id = impl.file_id,
               .block_type_params = &impl.decl->type_params,
               .impl_target_pattern = target,
           });
         }
 
-        // Trait methods with default bodies are callable through the impl.
-        const auto trait_name = trait_name_of_impl(*impl.decl);
         if (trait_name.empty()) {
           continue;
         }
@@ -8726,6 +8739,7 @@ private:
                 .decl = decl,
                 .owner = trait_module,
                 .from_trait = trait_decl,
+                .trait_name = trait_name,
                 .file_id = trait_file_id,
             });
             continue;
@@ -8808,6 +8822,7 @@ private:
         .decl = raw,
         .owner = trait_module,
         .from_trait = nullptr,
+        .trait_name = trait_decl != nullptr ? trait_decl->name : std::string{},
         .file_id = trait_file_id,
         .fixed_type_params = std::move(bound_trait_params),
     });
@@ -9760,7 +9775,8 @@ private:
         resolved_callee{.decl = method.decl,
                         .owner_module = method.owner->module_name,
                         .impl_target_type = std::string(target_type_name),
-                        .receiver = &receiver};
+                        .receiver = &receiver,
+                        .trait_name = method.trait_name};
   }
 
   /// Types a call to a `self`-taking method that is a *generic template*
@@ -9814,7 +9830,8 @@ private:
         resolved_callee{.decl = instance,
                         .owner_module = method.owner->module_name,
                         .impl_target_type = "",
-                        .receiver = &receiver};
+                        .receiver = &receiver,
+                        .trait_name = method.trait_name};
     return substitute_solved(signature_return_type(*method.decl, method.owner),
                              bindings);
   }
@@ -10016,7 +10033,8 @@ private:
         resolved_callee{.decl = instance,
                         .owner_module = method.owner->module_name,
                         .impl_target_type = "",
-                        .receiver = &receiver};
+                        .receiver = &receiver,
+                        .trait_name = method.trait_name};
     return substitute_solved(signature_return_type(*method.decl, method.owner,
                                                    method.block_type_params),
                              bindings);

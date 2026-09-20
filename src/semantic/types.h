@@ -478,6 +478,13 @@ struct resolved_callee {
   std::string owner_module;
   std::string impl_target_type;
   const ast::expr *receiver = nullptr;
+  /// The trait this call's method implements, if resolution went through a
+  /// trait impl (`method_entry::trait_name`); empty for an inherent/`extend`
+  /// method, a plain free function, or an unresolved call. Lets a caller
+  /// identify a specific, known-consuming trait method
+  /// (`into_iterator::into_iter`) without a general by-value-`self`
+  /// convention to key off — see `move_checker::receiver_is_moved`.
+  std::string trait_name;
 };
 
 /// The resolved `next`-method dispatch for a `for x in it: ...` loop whose

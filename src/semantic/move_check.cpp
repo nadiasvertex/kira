@@ -139,20 +139,29 @@ private:
   }
 
   /// Whether a `receiver.method(...)` call moves `receiver`, the same way a
-  /// plain by-value call argument would. True only when the call resolved to
-  /// a real declaration (`checked_.resolved_callees`) whose first parameter
-  /// is neither a `self` receiver (methods always take `self` by reference,
-  /// regardless of `mut` — see `impl iterator`'s `next(mut self)`, called
-  /// repeatedly on the same binding throughout `std.algo`) nor an explicit
-  /// `&`/`&mut` reference. A first parameter with an ordinary name and a
-  /// plain (non-reference) type — `for_each[I, T](it: I, ...)` in
-  /// `std.algo`, e.g. — moves its receiver exactly like any other by-value
-  /// parameter: calling `nv.for_each(...)` and then reusing `nv` is a
-  /// use-after-move, the same as passing `nv` twice as a plain argument
-  /// would be. An unresolved call (callee not in `resolved_callees`, e.g. a
-  /// call through a plain `fn(...)`-typed value) is conservatively treated
-  /// as not moving, matching this pass's general policy of never guessing at
-  /// a type it can't look up.
+  /// plain by-value call argument would. True when the call resolved to a
+  /// real declaration (`checked_.resolved_callees`) whose first parameter is
+  /// either an ordinary by-value parameter with no `&`/`&mut` reference type,
+  /// or a `self` receiver resolved through a known-consuming trait method
+  /// (currently only `std.iter`'s `into_iterator::into_iter` — its doc
+  /// comment and the language's one spec-documented instance of by-value
+  /// `self`). Every other `self`/`mut self` receiver — an inherent/`extend`
+  /// method, or any other trait's method, e.g. `iterator`'s `next(mut self)`
+  /// called repeatedly on the same binding throughout `std.algo` — always
+  /// takes its receiver by reference regardless of `mut`, matching this
+  /// pass's guardrail (`accept_repeated_self_method_calls.kira`): the
+  /// checker gives `self` and `mut self` the identical unwrapped type
+  /// (`check_function`, `check.cpp`), so nothing short of a method's known
+  /// identity distinguishes a genuinely consuming `self` from an ordinary
+  /// borrowed one. A first parameter with an ordinary name and a plain
+  /// (non-reference) type — `for_each[I, T](it: I, ...)` in `std.algo`,
+  /// e.g. — moves its receiver exactly like any other by-value parameter:
+  /// calling `nv.for_each(...)` and then reusing `nv` is a use-after-move,
+  /// the same as passing `nv` twice as a plain argument would be. An
+  /// unresolved call (callee not in `resolved_callees`, e.g. a call through
+  /// a plain `fn(...)`-typed value) is conservatively treated as not moving,
+  /// matching this pass's general policy of never guessing at a type it
+  /// can't look up.
   [[nodiscard]] auto receiver_is_moved(const ast::call_expr &call) const
       -> bool {
     const auto it = checked_.resolved_callees.find(&call);
@@ -165,7 +174,7 @@ private:
     }
     const auto &front = decl.params.front();
     if (param_name_of(front) == "self") {
-      return false;
+      return it->second.trait_name == "into_iterator";
     }
     const auto param_type = lookup_type(front.pattern.get());
     if (checked_.types.is_unknown(param_type)) {

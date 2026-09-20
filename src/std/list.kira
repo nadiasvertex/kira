@@ -241,3 +241,9 @@ impl[T] from_array[T] for list[T]:
             out.push(items[i])
             i = i + 1
         return out
+
+#: `vector[T]` is `list[T]` by another name — the spelling
+#: `spec/todo.md` item 20's tests import (`std.list.vector`). There is
+#: exactly one growable-sequence type; this alias exists so callers can
+#: use either name without `list[T]` and `vector[T]` diverging.
+pub type vector[T] = list[T]
