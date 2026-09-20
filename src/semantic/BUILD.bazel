@@ -8,6 +8,7 @@ cc_library(
         "borrow_check.cpp",
         "check.cpp",
         "infer/infer_ctxt.cpp",
+        "infer/unify.cpp",
         "linear_poly.cpp",
         "module_index.cpp",
         "move_check.cpp",
@@ -26,6 +27,7 @@ cc_library(
         "check.h",
         "ids.h",
         "infer/infer_ctxt.h",
+        "infer/unify.h",
         "linear_poly.h",
         "module_index.h",
         "move_check.h",
@@ -136,6 +138,15 @@ cc_test(
 cc_test(
     name = "infer_ctxt_test",
     srcs = ["infer/infer_ctxt_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "unify_test",
+    srcs = ["infer/unify_test.cpp"],
     deps = [
         ":semantic",
         "//src/testing",

@@ -1,13 +1,13 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phases 0 and 1 done. Nothing in `src/semantic/check.cpp` has moved
-yet — the store exists and is tested, but nothing calls it.
+**Status:** Phases 0-2 done. Nothing in `src/semantic/check.cpp` has moved yet
+— the store and the unifier exist and are tested, but nothing calls them.
 
 | Phase | What it makes possible | Status |
 |---|---|---|
 | 0 | A golden snapshot of every elaboration decision, so the rewrite is falsifiable | **Done** — `src/semantic/snapshot.{h,cpp}`, `snapshot_test.cpp`, golden at `src/testdata/inference_snapshot/session.snapshot` |
 | 1 | `infer_ctxt`: one metavariable store over three sorts, with causes | **Done** — `src/semantic/infer/infer_ctxt.{h,cpp}`, `infer_ctxt_test.cpp` |
-| 2 | One `unify`: rigid-rigid, pattern fragment, value slots | Not started |
+| 2 | One `unify`: rigid-rigid, pattern fragment, value slots | **Done** — `src/semantic/infer/unify.{h,cpp}`, `unify_test.cpp` |
 | 3 | Value slots genuinely *solved*, not merely checked satisfiable | Not started |
 | 4 | An obligation queue: methods, trait bounds, refinements, defaulting | Not started |
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | Not started |
@@ -310,14 +310,63 @@ Also unlike a per-kind switch: the occurs check walks `args`/`result`
 generically, since a kind added later would otherwise silently stop being
 checked and let an infinite type through.
 
-### Phase 2 — the unifier
+### Phase 2 — the unifier *(done)*
 
-One `unify(a, b, cause)` covering every `type_kind` uniformly, with the three
-rules above. The pattern-fragment rule includes the escape check, and outside
-the fragment it postpones.
+`src/semantic/infer/unify.{h,cpp}`, tested by `//src/semantic:unify_test`.
+One `unify(expected, found, cause)` covering every `type_kind`, with the three
+rules above. Still called from nowhere.
 
-The existing 28 `unify_rigid` call sites enumerate the shapes it must handle;
-that list *is* the test plan.
+**Zonk first, and the rules become exhaustive.** Each step zonks both sides
+before dispatching, so a metavariable reaching a rule is necessarily
+*unsolved* and an `F[A]` whose head is already solved has collapsed into the
+application it denotes. Neither needs a case, which is what keeps one function
+covering every kind.
+
+**Two things the old matcher did not do**, and they are the phase's point:
+
+- **An array's length is unified along with its element.** `unify_rigid`
+  descended into `result` only for `array_kind`, skipping `args[0]` — which is
+  exactly why an `n` in `array[T, n]` came back looking unsolved and needed
+  `solve_value_params` standing beside it (`check.cpp:10062`).
+- **An undecidable constraint is kept.** The old matcher's contract was
+  "a failed match simply binds nothing", so a constraint it could not decide
+  vanished. `unify` postpones it into `deferred_constraint`s that
+  `retry_deferred` re-runs to fixpoint; phase 4's queue takes them over.
+
+**Where ch. 37's letter is refined.** "Fails" covers two different situations
+and they must not be conflated. A flex head against something that can never
+be an application (`F[A] ~ int32`) is a real failure — `out_of_scope`. Two
+flexible heads (`F[A] ~ G[B]`) are merely undecided, and postpone. So does a
+*rigid* `F[A]` met inside a generic body, which stands for whatever the
+instantiation supplies and can neither match nor refute anything yet.
+
+**Errors carry both pairs.** `unify_error` records the outermost pair the
+caller asked about *and* the innermost pair that actually clashed:
+`fn(int32) -> list[str]` against `fn(int32) -> list[int32]` reports the
+function types and `str`/`int32`. Reporting only the outer buries the fault;
+only the inner loses the context. Phase 5 chooses which to lead with.
+
+**Refinements strip; mutability does not.** A refinement is its base for every
+shape question — comparing predicates here would make every narrowing site a
+type mismatch and the solver would never get to prove anything. Mutability is
+the opposite: `&mut T` and `&T` are different types, and whether one *coerces*
+to the other is a call-site question, not unification's. The old matcher
+crossed references freely in both directions; that allowance moves to
+coercion in phase 7.
+
+**Failability, verified.** Seven mechanisms broken in turn, each caught alone:
+
+| Broken | Failure reported |
+|---|---|
+| `array_kind` stops unifying the length | `expected the length to solve` |
+| mutability check removed | `expected mutability to matter` |
+| `equation_satisfiable` ignored | `expected an unsolvable equation to refuse` |
+| inner pair reported as the outer | `expected the inner pair to be where it actually went wrong` |
+| flex head not bound | ``expected the head to solve to the `option` constructor`` |
+| postponements dropped | `expected the undecided constraint to be kept` |
+| `retry_deferred` always claims progress | `expected no progress while both heads are unsolved` |
+
+Full suite after reverting: 31/31.
 
 ### Phase 3 — value solving
 
