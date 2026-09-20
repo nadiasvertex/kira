@@ -1006,6 +1006,8 @@ public:
         .interp_dispatches = std::move(interp_dispatches_),
         .type_param_reflections = std::move(type_param_reflections_),
         .for_iterator_dispatches = std::move(for_iterator_dispatches_),
+        .comprehension_iterator_dispatches =
+            std::move(comprehension_iterator_dispatches_),
         .drop_plans = std::move(drop_plans_),
         .comprehension_dispatches = std::move(comprehension_dispatches_),
         .runtime_fill_dispatches = std::move(runtime_fill_dispatches_),
@@ -1246,6 +1248,10 @@ private:
   /// `for_stmt` case, handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
       for_iterator_dispatches_;
+  /// Comprehension clauses' iterator dispatches — see
+  /// `checked_types::comprehension_iterator_dispatches`.
+  std::unordered_map<const ast::node *, iterator_loop_dispatch>
+      comprehension_iterator_dispatches_;
   /// Every struct/sum type found droppable — see `drop_plan` in types.h.
   /// Populated once by `resolve_drop_plans`, after the main per-function
   /// walk. Handed to the caller via `take_checked_types`.
@@ -8309,6 +8315,12 @@ private:
   /// trait that takes none).
   struct coherence_record {
     source_location location;
+    /// The trait's *declaration*, not its spelling. Two different traits can
+    /// share a name — a module defining its own `trait from_iter` alongside
+    /// `std.iter`'s — and implementing both for one type is no conflict at
+    /// all. The key below carries only the name, so this is what actually
+    /// decides identity.
+    const ast::trait_decl *trait_decl = nullptr;
     type_id target = k_unknown_type;
     type_id trait_arg = k_unknown_type;
   };
@@ -8558,6 +8570,30 @@ private:
     return std::nullopt;
   }
 
+  /// The declaration a trait name refers to from inside `home`: that module
+  /// first, then anywhere else in the session. Null for an empty name or a
+  /// trait the session does not declare.
+  auto resolve_trait_decl_from(const std::string &trait_name,
+                               const module_members *home)
+      -> const ast::trait_decl * {
+    if (trait_name.empty()) {
+      return nullptr;
+    }
+    if (home != nullptr) {
+      if (const auto it = home->traits.find(trait_name);
+          it != home->traits.end()) {
+        return it->second.decl;
+      }
+    }
+    for (const auto &[module_name, other] : index_.modules) {
+      if (const auto it = other.traits.find(trait_name);
+          it != other.traits.end()) {
+        return it->second.decl;
+      }
+    }
+    return nullptr;
+  }
+
   /// The arity of the trait's constructor parameter when `impl`'s trait
   /// abstracts over a type constructor (`trait monad[M[_]]`) — the fact
   /// that makes a *bare* generic name legal as the impl's `for` target
@@ -8568,26 +8604,8 @@ private:
   auto impl_expected_ctor_arity(const ast::impl_decl &impl,
                                 const module_members *home)
       -> std::optional<size_t> {
-    const auto trait_name = trait_name_of_impl(impl);
-    if (trait_name.empty()) {
-      return std::nullopt;
-    }
-    const ast::trait_decl *trait_decl = nullptr;
-    if (home != nullptr) {
-      if (const auto it = home->traits.find(trait_name);
-          it != home->traits.end()) {
-        trait_decl = it->second.decl;
-      }
-    }
-    if (trait_decl == nullptr) {
-      for (const auto &[module_name, other] : index_.modules) {
-        if (const auto it = other.traits.find(trait_name);
-            it != other.traits.end()) {
-          trait_decl = it->second.decl;
-          break;
-        }
-      }
-    }
+    const auto *trait_decl =
+        resolve_trait_decl_from(trait_name_of_impl(impl), home);
     if (trait_decl == nullptr || trait_decl->type_params.empty()) {
       return std::nullopt;
     }
@@ -8637,8 +8655,8 @@ private:
     if (named.type_args.size() != 1) {
       return k_unknown_type;
     }
-    const auto *argument =
-        dynamic_cast<const ast::type_expr *>(named.type_args.front().value.get());
+    const auto *argument = dynamic_cast<const ast::type_expr *>(
+        named.type_args.front().value.get());
     if (argument == nullptr) {
       return k_unknown_type;
     }
@@ -8919,9 +8937,9 @@ private:
 
     for (const auto &deferred : deferred_defaults) {
       monomorphize_trait_default(*deferred.decl, deferred.target,
-                                 deferred.target_type_name,
-                                 deferred.trait_decl, deferred.trait_module,
-                                 deferred.trait_file_id, *deferred.methods);
+                                 deferred.target_type_name, deferred.trait_decl,
+                                 deferred.trait_module, deferred.trait_file_id,
+                                 *deferred.methods);
     }
   }
 
@@ -10439,10 +10457,21 @@ private:
   // ==========================================================================
 
   /// One free function that `recv.f(...)` might mean.
+  /// Where a UFCS candidate was found, lowest number = highest precedence.
+  /// Mirrors the order `infer_call` resolves a bare `name(...)` in, which is
+  /// what makes `x.f()` and `f(x)` agree on which `f` they mean.
+  enum class ufcs_origin : uint8_t {
+    this_module = 0,     ///< Declared right here.
+    explicit_import = 1, ///< Named by a `use` of its own.
+    wildcard_import = 2, ///< Reached through a `use pkg.*`.
+    prelude = 3,         ///< Implicitly in scope everywhere.
+  };
+
   struct ufcs_candidate {
     const ast::func_decl *decl = nullptr;
     const module_members *owner = nullptr;
     file_id_type file_id = 0;
+    ufcs_origin origin = ufcs_origin::this_module;
   };
 
   /// Whether `decl` may be reached by method syntax at all (§3.3): it takes
@@ -10473,9 +10502,9 @@ private:
       -> std::vector<ufcs_candidate> {
     auto found = std::vector<ufcs_candidate>{};
     const auto add = [&](const func_decl_ref &fn, const module_members *owner,
-                         bool same_module) -> void {
+                         ufcs_origin origin) -> void {
       if (fn.decl == nullptr || owner == nullptr ||
-          !is_ufcs_eligible(*fn.decl, same_module)) {
+          !is_ufcs_eligible(*fn.decl, origin == ufcs_origin::this_module)) {
         return;
       }
       if (std::ranges::any_of(found, [&](const ufcs_candidate &seen) -> bool {
@@ -10483,14 +10512,16 @@ private:
           })) {
         return;
       }
-      found.push_back(ufcs_candidate{
-          .decl = fn.decl, .owner = owner, .file_id = fn.file_id});
+      found.push_back(ufcs_candidate{.decl = fn.decl,
+                                     .owner = owner,
+                                     .file_id = fn.file_id,
+                                     .origin = origin});
     };
 
     if (module_ != nullptr) {
       if (const auto it = module_->functions.find(name);
           it != module_->functions.end()) {
-        add(it->second, module_, /*same_module=*/true);
+        add(it->second, module_, ufcs_origin::this_module);
       }
     }
     if (const auto *import = find_import(name)) {
@@ -10498,18 +10529,18 @@ private:
         if (const auto it =
                 source->functions.find(imported_member_name(*import));
             it != source->functions.end()) {
-          add(it->second, source, /*same_module=*/false);
+          add(it->second, source, ufcs_origin::explicit_import);
         }
       }
     }
     for (const auto *source : wildcard_import_sources()) {
       if (const auto it = source->functions.find(name);
           it != source->functions.end()) {
-        add(it->second, source, /*same_module=*/false);
+        add(it->second, source, ufcs_origin::wildcard_import);
       }
     }
     if (const auto prelude = find_prelude_function(name)) {
-      add(prelude->first, prelude->second, /*same_module=*/false);
+      add(prelude->first, prelude->second, ufcs_origin::prelude);
     }
     return found;
   }
@@ -10704,6 +10735,23 @@ private:
       case receiver_fit::does_not_fit:
         break;
       }
+    }
+
+    // Several candidates fit, but they are not all equally visible: a `map`
+    // declared in this module beats `std.algo.map` from the prelude, exactly
+    // as it does for a bare `map(...)` call — `collect_ufcs_candidates`
+    // gathers them in that precedence order for this reason. Without the
+    // narrowing, defining a function whose name the standard library also
+    // uses made `x.map(...)` ambiguous while `map(x, ...)` kept working,
+    // which is not a distinction the reader can be expected to predict.
+    // Two candidates at the *same* level genuinely are ambiguous and still
+    // report below.
+    if (viable.size() > 1) {
+      const auto best = std::ranges::min(
+          viable, {}, [](const ufcs_candidate &c) { return c.origin; });
+      std::erase_if(viable, [&](const ufcs_candidate &c) -> bool {
+        return c.origin != best.origin;
+      });
     }
 
     if (viable.size() == 1) {
@@ -11043,10 +11091,10 @@ private:
       // The note and help stay on `entry.name` — an `impl` block is written
       // against the constructor, so that is the right spelling there.
       const auto display = types_.display(object);
-      auto diag = diagnostic(diagnostic_level::error,
-                             std::format("no method `{}` on type `{}`",
-                                         field.field_name, display),
-                             file_id_);
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("no method `{}` on type `{}`", field.field_name, display),
+          file_id_);
       diag.with_label(field.span, "method not found");
       // A near-miss gets named outright rather than leaving the reader to
       // spot it in the list: `nums.pusk(4)` should say "did you mean
@@ -12171,18 +12219,17 @@ private:
   /// method or free call, and a plain description when the callee is some
   /// other expression (a call through a stored function value, say) and has
   /// no name worth quoting.
-  [[nodiscard]] static auto called_name_for_diagnostic(
-      const ast::call_expr &call) -> std::string {
+  [[nodiscard]] static auto
+  called_name_for_diagnostic(const ast::call_expr &call) -> std::string {
     if (call.callee != nullptr) {
       if (call.callee->kind == ast::node_kind::field_expr) {
         return std::format(
-            "`{}`", dynamic_cast<const ast::field_expr &>(*call.callee)
-                        .field_name);
+            "`{}`",
+            dynamic_cast<const ast::field_expr &>(*call.callee).field_name);
       }
       if (call.callee->kind == ast::node_kind::ident_expr) {
         return std::format(
-            "`{}`",
-            dynamic_cast<const ast::ident_expr &>(*call.callee).name);
+            "`{}`", dynamic_cast<const ast::ident_expr &>(*call.callee).name);
       }
     }
     return "handing out a raw pointer";
@@ -14618,6 +14665,59 @@ private:
     return result;
   }
 
+  /// Types a loop head's iterable and, when it is a user type that
+  /// implements `std.iter`'s protocol, records the `next`-method dispatch
+  /// lowering needs to desugar the loop into
+  /// `while let @some(x) = it.next(): ...`. Returns the element type one
+  /// pass of the loop yields.
+  ///
+  /// Shared by the statement `for` and by each clause of a `for ... =>
+  /// yield` comprehension: the two reach the identical loop lowerers, so
+  /// resolving the iterable differently for them is how a comprehension
+  /// over a `list` ended up with no route at all once `list` stopped being
+  /// a builtin.
+  ///
+  /// `site` is the node instantiation diagnostics point at; `out` is filled
+  /// in only when a dispatch was found, and left untouched otherwise.
+  auto resolve_loop_iterable(const ast::expr &iterable_expr,
+                             const ast::node &site, iterator_loop_dispatch &out)
+      -> type_id {
+    const auto iterable = infer_expr(iterable_expr, k_unknown_type);
+    auto element = element_type_of(iterable, iterable_expr.span);
+
+    // A bare `&`/`&mut` as the *whole* iterable (`for x in &v`) asks for
+    // the non-consuming `iter`/`iter_mut` route, tried before anything
+    // else so it never falls back to `into_iterator`'s always-consuming
+    // `into_iter` for a collection the caller explicitly did not want
+    // moved (spec/todo.md #20).
+    const auto *borrow = dynamic_cast<const ast::unary_expr *>(&iterable_expr);
+    const auto is_top_level_borrow = borrow != nullptr &&
+                                     borrow->operand != nullptr &&
+                                     (borrow->op == ast::unary_op::addr_of ||
+                                      borrow->op == ast::unary_op::addr_of_mut);
+    auto borrowed = is_top_level_borrow
+                        ? try_resolve_iter_borrow(
+                              strip_refs(iterable),
+                              borrow->op == ast::unary_op::addr_of_mut, &site)
+                        : std::nullopt;
+
+    // `into_iterator` next: a type that both *is* an iterator and can
+    // *hand back* one should hand it back, since being consumed by a
+    // loop is the more surprising of the two readings. A collection
+    // reaches a loop only through this path — it has no `next` of its
+    // own (`spec/list-migration-design.md` phase 2).
+    if (borrowed) {
+      element = borrowed->element_type;
+      out = std::move(*borrowed);
+    } else if (auto into = try_resolve_into_iterator(iterable, &site)) {
+      element = into->element_type;
+      out = std::move(*into);
+    } else if (auto iter = try_resolve_iterator(iterable, &site)) {
+      out = std::move(*iter);
+    }
+    return element;
+  }
+
   /// Types a `for ... => yield` comprehension expression: each clause's
   /// iterable is unwrapped to its element type via `element_type_of` and
   /// bound to that clause's pattern(s), the optional guard must be `bool`,
@@ -14627,8 +14727,13 @@ private:
     for (const auto &clause : expr.clauses) {
       auto element = k_unknown_type;
       if (clause.iterable != nullptr) {
-        const auto iterable = infer_expr(*clause.iterable, k_unknown_type);
-        element = element_type_of(iterable, clause.iterable->span);
+        const auto *key = static_cast<const ast::node *>(clause.iterable.get());
+        element =
+            resolve_loop_iterable(*clause.iterable, *clause.iterable,
+                                  comprehension_iterator_dispatches_[key]);
+        if (comprehension_iterator_dispatches_[key].decl == nullptr) {
+          comprehension_iterator_dispatches_.erase(key);
+        }
       }
       auto patterns = std::vector<const ast::pattern *>{};
       patterns.reserve(clause.patterns.size());
@@ -17109,43 +17214,10 @@ private:
       const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
       auto element = k_unknown_type;
       if (stmt.iterable != nullptr) {
-        const auto iterable = infer_expr(*stmt.iterable, k_unknown_type);
-        element = element_type_of(iterable, stmt.iterable->span);
-
-        // A bare `&`/`&mut` as the *whole* iterable (`for x in &v`) asks for
-        // the non-consuming `iter`/`iter_mut` route, tried before anything
-        // else so it never falls back to `into_iterator`'s always-consuming
-        // `into_iter` for a collection the caller explicitly did not want
-        // moved (spec/todo.md #20).
-        const auto *borrow =
-            dynamic_cast<const ast::unary_expr *>(stmt.iterable.get());
-        const auto is_top_level_borrow =
-            borrow != nullptr && borrow->operand != nullptr &&
-            (borrow->op == ast::unary_op::addr_of ||
-             borrow->op == ast::unary_op::addr_of_mut);
-        auto borrowed =
-            is_top_level_borrow
-                ? try_resolve_iter_borrow(
-                      strip_refs(iterable),
-                      borrow->op == ast::unary_op::addr_of_mut, &stmt)
-                : std::nullopt;
-
-        // Record the `next`-method dispatch so lowering can desugar a
-        // user-iterator loop into `while let @some(x) = it.next(): ...`.
-        //
-        // `into_iterator` next: a type that both *is* an iterator and can
-        // *hand back* one should hand it back, since being consumed by a
-        // loop is the more surprising of the two readings. A collection
-        // reaches a loop only through this path — it has no `next` of its
-        // own (`spec/list-migration-design.md` phase 2).
-        if (borrowed) {
-          element = borrowed->element_type;
-          for_iterator_dispatches_[&stmt] = std::move(*borrowed);
-        } else if (auto into = try_resolve_into_iterator(iterable, &stmt)) {
-          element = into->element_type;
-          for_iterator_dispatches_[&stmt] = std::move(*into);
-        } else if (auto iter = try_resolve_iterator(iterable, &stmt)) {
-          for_iterator_dispatches_[&stmt] = std::move(*iter);
+        element = resolve_loop_iterable(*stmt.iterable, stmt,
+                                        for_iterator_dispatches_[&stmt]);
+        if (for_iterator_dispatches_[&stmt].decl == nullptr) {
+          for_iterator_dispatches_.erase(&stmt);
         }
       }
       push_scope();
@@ -19740,17 +19812,22 @@ private:
         }
 
         const auto trait_arg = resolve_impl_trait_argument(impl);
+        const auto *trait_decl = resolve_trait_decl_from(
+            trait_name, index_.find_module(impl.module_name));
         auto &recorded = impl_coherence_records_[bare_key];
         const auto found = std::ranges::find_if(
             recorded, [&](const coherence_record &seen) -> bool {
-              return impl_targets_overlap(seen.target, target) &&
+              return seen.trait_decl == trait_decl &&
+                     impl_targets_overlap(seen.target, target) &&
                      impl_targets_overlap(seen.trait_arg, trait_arg);
             });
         const auto clash = found == recorded.end()
                                ? std::optional<coherence_record>{}
                                : std::optional<coherence_record>{*found};
-        recorded.push_back(coherence_record{
-            .location = location, .target = target, .trait_arg = trait_arg});
+        recorded.push_back(coherence_record{.location = location,
+                                            .trait_decl = trait_decl,
+                                            .target = target,
+                                            .trait_arg = trait_arg});
         if (!clash.has_value()) {
           // Either the first impl for this pair, or two impls for two
           // different instantiations of one generic declaration — legal.

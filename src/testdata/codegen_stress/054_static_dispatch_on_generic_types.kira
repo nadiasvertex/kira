@@ -66,7 +66,7 @@ trait from_iter[T]:
 # arithmetic rather than merely in the type.
 impl from_iter[int32] for list[int32]:
     static def from_iter[I](it: I) -> list[int32] where I: iterator[int32]:
-        var out = []
+        var out: list[int32] = []
         var cursor = it
         while let @some(x) = cursor.next():
             out.push(x)

@@ -1659,7 +1659,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
     // named/typed as `cell[T]` rather than `&T`. No dedicated node: reuse
     // `hir_unary(addr_of, hir_index(...))` verbatim.
     if (field.object != nullptr && field.field_name == "cell" &&
-        call.args.size() == 1 && call.args.front().value != nullptr) {
+        call.args.size() == 1 && call.args.front().value != nullptr &&
+        !checked_.resolved_callees.contains(&call)) {
       const auto element_type = checked_.types.entry(*type).args.front();
       auto object = lower_expr(*field.object);
       if (!object.has_value()) {
@@ -1677,7 +1678,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
     // `xs.mutable_cell(i)`: the checked, non-panicking sibling — see
     // `hir_mutable_cell`.
     if (field.object != nullptr && field.field_name == "mutable_cell" &&
-        call.args.size() == 1 && call.args.front().value != nullptr) {
+        call.args.size() == 1 && call.args.front().value != nullptr &&
+        !checked_.resolved_callees.contains(&call)) {
       auto object = lower_expr(*field.object);
       if (!object.has_value()) {
         return std::unexpected(object.error());
@@ -2310,9 +2312,9 @@ auto lowerer::lower_array(const ast::array_expr &array)
 /// `n` and `v` are each evaluated exactly once — `n` before the loop so the
 /// bound cannot change under it, and `v` once per iteration only because the
 /// value has to be pushed once per slot.
-auto lowerer::lower_runtime_fill(const ast::array_expr &array, type_id type,
-                                 const semantic::comprehension_dispatch
-                                     &dispatch)
+auto lowerer::lower_runtime_fill(
+    const ast::array_expr &array, type_id type,
+    const semantic::comprehension_dispatch &dispatch)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   if (array.fill_value == nullptr || array.fill_count == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, array.span,
@@ -2332,8 +2334,8 @@ auto lowerer::lower_runtime_fill(const ast::array_expr &array, type_id type,
     const auto symbol = resolve_reference(local_name);
     auto callee = ptr<hir_expr>(make<hir_local_ref>(
         span, k_unknown_type, symbol, local_name, resolved.owner_module));
-    return ptr<hir_expr>(hir::make<hir_call>(span, result, std::move(callee),
-                                             std::move(args)));
+    return ptr<hir_expr>(
+        hir::make<hir_call>(span, result, std::move(callee), std::move(args)));
   };
 
   auto count = lower_expr(*array.fill_count);
@@ -2350,19 +2352,18 @@ auto lowerer::lower_runtime_fill(const ast::array_expr &array, type_id type,
   const auto index_symbol = mint_symbol();
 
   auto stmts = ptr_vec<hir_node>{};
-  stmts.push_back(ptr<hir_node>(
-      make<hir_let>(span, acc_symbol, std::string("<fill result>"),
-                    call_from_resolved(type, dispatch.new_callee,
-                                       ptr_vec<hir_expr>{}),
-                    /*mut=*/true)));
+  stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, acc_symbol, std::string("<fill result>"),
+      call_from_resolved(type, dispatch.new_callee, ptr_vec<hir_expr>{}),
+      /*mut=*/true)));
   stmts.push_back(ptr<hir_node>(
       make<hir_let>(span, count_symbol, std::string("<fill count>"),
                     std::move(*count), /*mut=*/false)));
-  stmts.push_back(ptr<hir_node>(make<hir_let>(
-      span, index_symbol, std::string("<fill index>"),
-      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
-                                      "0")),
-      /*mut=*/true)));
+  stmts.push_back(ptr<hir_node>(
+      make<hir_let>(span, index_symbol, std::string("<fill index>"),
+                    ptr<hir_expr>(make<hir_literal>(span, usize_type,
+                                                    token_kind::int_lit, "0")),
+                    /*mut=*/true)));
 
   auto condition = ptr<hir_expr>(hir::make<hir_binary>(
       span, checked_.types.bool_type(), ast::binary_op::lt,
@@ -2397,8 +2398,8 @@ auto lowerer::lower_runtime_fill(const ast::array_expr &array, type_id type,
       span, std::move(condition), std::move(body),
       make<hir_block>(span, k_unknown_type, std::move(step_stmts)))));
   stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span, ptr<hir_expr>(make<hir_local_ref>(
-                span, type, acc_symbol, std::string("<fill result>"))))));
+      span, ptr<hir_expr>(make<hir_local_ref>(span, type, acc_symbol,
+                                              std::string("<fill result>"))))));
   return ok_expr(make<hir_block>(span, type, std::move(stmts)));
 }
 
@@ -4847,6 +4848,21 @@ auto lowerer::lower_comprehension_clause(
   if (entry.kind == type_kind::builtin_generic_kind && entry.name == "option") {
     return lower_option_loop(span, *clause.iterable, *iterable_type, loop_var,
                              nested);
+  }
+  if (entry.kind == type_kind::builtin_generic_kind &&
+      entry.name == "generator") {
+    return lower_generator_loop(span, *clause.iterable, *iterable_type,
+                                loop_var, nested);
+  }
+  // The same iterator-protocol route the statement `for` takes. A clause
+  // over a `list` reaches this and not the indexed-loop fallback below,
+  // because `list` is an ordinary stdlib type with an `into_iterator` impl
+  // rather than a shape the loop lowerers know by name.
+  if (const auto it = checked_.comprehension_iterator_dispatches.find(
+          static_cast<const ast::node *>(clause.iterable.get()));
+      it != checked_.comprehension_iterator_dispatches.end()) {
+    return lower_iterator_loop(span, *clause.iterable, *iterable_type, loop_var,
+                               it->second, nested);
   }
   {
     auto stripped = *iterable_type;

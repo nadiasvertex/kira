@@ -876,6 +876,15 @@ struct checked_types {
   /// indexable iterables, which lower through their own dedicated shapes.
   std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
       for_iterator_dispatches;
+  /// The same, for a `for ... => yield` comprehension's iteration clauses.
+  /// A clause reaches the identical loop lowerers a statement `for` does, so
+  /// it needs the identical dispatch record — without one, `for (k, v) in
+  /// pairs => k * v` over a `list` fell through to the indexed-loop shape,
+  /// which stopped applying when `list` became an ordinary stdlib type.
+  /// Keyed by the clause's own `iterable` expression node, which is unique
+  /// per clause. Absent for range/option/indexable iterables.
+  std::unordered_map<const ast::node *, iterator_loop_dispatch>
+      comprehension_iterator_dispatches;
   /// Every struct/sum type found droppable — see `drop_plan`'s doc comment.
   /// Populated once, after the main per-function walk, by
   /// `checker::resolve_drop_plans` (`check.cpp`) over every type interned in

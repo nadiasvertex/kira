@@ -1251,6 +1251,78 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 #endif
 }
 
+/// A `list` index out of range aborts the built program with a panic
+/// message on stderr.
+///
+/// This is the only level at which that is observable. `list` is an
+/// ordinary stdlib type, so `xs[i]` out of range reaches
+/// `src/std/list.kira`'s `panic("index out of range")` -> `rt_panic`, which
+/// writes to stderr and aborts the process on both tiers by design (see
+/// `intrinsic_rt_panic`, `src/bytecode/vm.cpp`). A harness running either
+/// tier in-process cannot catch an abort, so
+/// `bytecode_compiler/compile_test.cpp` and `llvm_codegen/codegen_test.cpp`
+/// assert the bounds *decision* via `mutable_cell` instead, and the panic
+/// itself is checked here by running a real child process.
+///
+/// `array[T, N]` is unaffected and still raises a catchable
+/// `panic_reason::index_out_of_bounds` from a bounds-checked opcode; its
+/// in-process tests are unchanged.
+auto test_built_program_panics_on_list_index_out_of_bounds() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "oob.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "oob_bin";
+
+  write_file(source_path, "module sample\n"
+                          "def main() -> int32:\n"
+                          "  let xs = [1, 2, 3]\n"
+                          "  return xs[5]\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  // `xs[i]` on a `list` dispatches into `src/std/list.kira`, so the session
+  // needs the stdlib the real driver (`main.cpp`) always injects.
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected an out-of-range index to be a runtime error, not a "
+         "compile-time one: " +
+             report->diagnostics);
+  expect(report->build.has_value(), "expected a build outcome to be recorded");
+  expect(report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     report->build->message));
+
+  // stderr is where `rt_panic` writes; redirect it into the pipe so the
+  // message can be read, and so the test's own output stays clean.
+  const auto command = std::format("{} 2>&1", output_path.string());
+  auto *pipe = popen(command.c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+
+  expect(close_status != 0,
+         "expected an out-of-range `xs[5]` to abort the program, not to "
+         "return normally");
+  expect(
+      output.find("index out of range") != std::string::npos,
+      std::format("expected the panic message on stderr, got: `{}`", output));
+}
+
 /// `&mut v[i]` on a user type implementing `std.traits.index_mut`
 /// (spec/todo.md item 19) — dispatches to `at_mut`, whose body returns
 /// `&mut self.a` where its signature promises a `cell_mut[T]`. That return
@@ -1346,20 +1418,19 @@ auto test_run_index_ref_dispatches_to_cell() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_index_ref_bin";
 
-  write_file(source_path,
-             "module sample\n"
-             "type readable = { a: int32 }\n"
-             "impl index[usize] for readable:\n"
-             "  type output = int32\n"
-             "  def at(self, i: usize) -> int32:\n"
-             "    return self.a\n"
-             "impl index_ref[usize] for readable:\n"
-             "  def at_ref(self, i: usize) -> cell[int32]:\n"
-             "    return &self.a\n"
-             "def main() -> int32:\n"
-             "  let r = readable{ a: 7 }\n"
-             "  let c = &r[0]\n"
-             "  return c.get() * 5\n");
+  write_file(source_path, "module sample\n"
+                          "type readable = { a: int32 }\n"
+                          "impl index[usize] for readable:\n"
+                          "  type output = int32\n"
+                          "  def at(self, i: usize) -> int32:\n"
+                          "    return self.a\n"
+                          "impl index_ref[usize] for readable:\n"
+                          "  def at_ref(self, i: usize) -> cell[int32]:\n"
+                          "    return &self.a\n"
+                          "def main() -> int32:\n"
+                          "  let r = readable{ a: 7 }\n"
+                          "  let c = &r[0]\n"
+                          "  return c.get() * 5\n");
 
   kira::driver::cli_config run_cfg{
       .program_name = "kira",
@@ -4066,6 +4137,7 @@ auto main() -> int {
     test_compile_sources_reports_unresolved_session_import();
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
+    test_built_program_panics_on_list_index_out_of_bounds();
     test_run_index_mut_dispatches_to_cell_mut();
     test_run_index_ref_dispatches_to_cell();
     test_cross_module_function_used_as_a_value();

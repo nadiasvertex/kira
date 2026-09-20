@@ -163,35 +163,34 @@ auto analyze_test_data_directory(std::string_view dirname) -> analyzed_session {
 auto test_accepts_typed_core_program() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_typed_core_program.kira");
-  expect_clean(analyzed,
-         "expected typed core program to check cleanly");
+  expect_clean(analyzed, "expected typed core program to check cleanly");
 }
 
 auto test_accepts_try_from_conversion() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_try_from_conversion.kira");
-  expect_clean(analyzed,
-         "expected `?` with a matching `impl from[...]` to check cleanly");
+  expect_clean(
+      analyzed,
+      "expected `?` with a matching `impl from[...]` to check cleanly");
 }
 
 auto test_accepts_structs_and_methods() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_structs_and_methods.kira");
-  expect_clean(analyzed,
-         "expected struct/impl program to check cleanly");
+  expect_clean(analyzed, "expected struct/impl program to check cleanly");
 }
 
 auto test_accepts_packed_struct() -> void {
   const auto analyzed = analyze_test_data_file("accept_packed_struct.kira");
   expect_clean(analyzed,
-         "expected a packed struct declaration to check cleanly");
+               "expected a packed struct declaration to check cleanly");
 }
 
 auto test_accepts_capture_lists() -> void {
   const auto analyzed = analyze_test_data_file("accept_capture_lists.kira");
   expect_clean(analyzed,
-         std::string("expected capture lists to check cleanly:\n") +
-             analyzed.diagnostics);
+               std::string("expected capture lists to check cleanly:\n") +
+                   analyzed.diagnostics);
   // Every capture in the fixture is read by its body; a stray "captured but
   // never used" warning here would mean use-tracking has stopped following
   // some reference shape.
@@ -272,71 +271,72 @@ auto test_reports_ref_capture_through_by_value_capture() -> void {
 auto test_accepts_collections_and_lambdas() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_collections_and_lambdas.kira");
-  expect_clean(analyzed,
-         "expected collection/lambda program to check cleanly");
+  expect_clean(analyzed, "expected collection/lambda program to check cleanly");
 }
 
 auto test_accepts_option_result_flow() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_option_result_flow.kira");
-  expect_clean(analyzed,
-         "expected option/result program to check cleanly");
+  expect_clean(analyzed, "expected option/result program to check cleanly");
 }
 
 auto test_accepts_cross_module_qualified_types() -> void {
   const auto analyzed =
       analyze_test_data_directory("accept_cross_module_qualified_types");
-  expect_clean(analyzed,
-         "expected qualified types from other session modules to resolve");
+  expect_clean(
+      analyzed,
+      "expected qualified types from other session modules to resolve");
 }
 
 auto test_accepts_module_qualified_call() -> void {
   const auto analyzed =
       analyze_test_data_directory("accept_module_qualified_call");
-  expect_clean(analyzed,
-         "expected a call through a whole-module `use` import to resolve");
+  expect_clean(
+      analyzed,
+      "expected a call through a whole-module `use` import to resolve");
 }
 
 auto test_accepts_member_import_call() -> void {
   const auto analyzed =
       analyze_test_data_directory("accept_member_import_call");
-  expect_clean(analyzed,
-         "expected `use module.member` / `use module.{a, b as c}` imports "
-         "to resolve unqualified");
+  expect_clean(
+      analyzed,
+      "expected `use module.member` / `use module.{a, b as c}` imports "
+      "to resolve unqualified");
 }
 
 auto test_accepts_wildcard_import() -> void {
   const auto analyzed = analyze_test_data_directory("accept_wildcard_import");
-  expect_clean(analyzed,
-         "expected a session-owned `use module.*` wildcard import to bring "
-         "functions, types, traits, statics, and variants into scope");
+  expect_clean(
+      analyzed,
+      "expected a session-owned `use module.*` wildcard import to bring "
+      "functions, types, traits, statics, and variants into scope");
 }
 
 auto test_accepts_fully_qualified_call() -> void {
   const auto analyzed =
       analyze_test_data_directory("accept_fully_qualified_call");
-  expect_clean(analyzed,
-         "expected a fully module-qualified call to resolve");
+  expect_clean(analyzed, "expected a fully module-qualified call to resolve");
 }
 
 auto test_accepts_type_qualified_associated_call() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_type_qualified_associated_call.kira");
   expect_clean(analyzed,
-         "expected a type-qualified associated-function call to resolve");
+               "expected a type-qualified associated-function call to resolve");
 }
 
 auto test_accepts_indexing_local_bindings() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_indexing_local_bindings.kira");
   expect_clean(analyzed,
-         "expected indexing a local list binding to check cleanly");
+               "expected indexing a local list binding to check cleanly");
 }
 
 auto test_accepts_str_byte_index() -> void {
   const auto analyzed = analyze_test_data_file("accept_str_byte_index.kira");
   expect_clean(analyzed,
-         "expected a scalar `str` index to check cleanly as a `byte`");
+               "expected a scalar `str` index to check cleanly as a `byte`");
 }
 
 auto test_reports_str_index_non_integer() -> void {
@@ -349,18 +349,20 @@ auto test_reports_str_index_non_integer() -> void {
 auto test_accepts_for_over_user_iterator() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_for_over_user_iterator.kira");
-  expect_clean(analyzed,
-         "expected a `for` loop over a user type implementing "
-         "`std.iter.iterator[T]` to check cleanly (the loop variable typed "
-         "as the iterator's element type)");
+  expect_clean(
+      analyzed,
+      "expected a `for` loop over a user type implementing "
+      "`std.iter.iterator[T]` to check cleanly (the loop variable typed "
+      "as the iterator's element type)");
 }
 
 auto test_accepts_type_generic_free_function() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_type_generic_free_function.kira");
-  expect_clean(analyzed,
-         "expected a type-generic free function to check cleanly, each call "
-         "typed at the concrete type its arguments solve for");
+  expect_clean(
+      analyzed,
+      "expected a type-generic free function to check cleanly, each call "
+      "typed at the concrete type its arguments solve for");
 }
 
 auto test_reports_type_generic_unsolved() -> void {
@@ -374,22 +376,23 @@ auto test_reports_type_generic_unsolved() -> void {
 auto test_accepts_associated_type_self_output() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_associated_type_self_output.kira");
-  expect_clean(analyzed,
-         "expected `self.output` associated-type return to check cleanly");
+  expect_clean(
+      analyzed,
+      "expected `self.output` associated-type return to check cleanly");
 }
 
 auto test_accepts_extend_on_builtin_type() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_extend_on_builtin_type.kira");
   expect_clean(analyzed,
-         "expected an extend block on a builtin type to check cleanly");
+               "expected an extend block on a builtin type to check cleanly");
 }
 
 auto test_accepts_extend_on_user_type() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_extend_on_user_type.kira");
   expect_clean(analyzed,
-         "expected an extend block on a user type to check cleanly");
+               "expected an extend block on a user type to check cleanly");
 }
 
 auto test_reports_extend_method_arity_mismatch() -> void {
@@ -445,8 +448,9 @@ auto test_finds_static_on_primitive_through_impl() -> void {
               "    let xs = [1, 2]\n"
               "    return start(xs.into_iter())\n",
   }});
-  expect_clean(analyzed,
-         "expected `impl <trait> for int32` to provide a reachable static");
+  expect_clean(
+      analyzed,
+      "expected `impl <trait> for int32` to provide a reachable static");
 }
 
 auto test_finds_static_on_primitive_through_extend() -> void {
@@ -471,8 +475,8 @@ auto test_finds_static_on_primitive_through_extend() -> void {
               "    return start(xs.into_iter())\n",
   }});
   expect_clean(analyzed,
-         "expected `extend int32:` to provide a reachable static, as the "
-         "missing-static diagnostic's help text promises");
+               "expected `extend int32:` to provide a reachable static, as the "
+               "missing-static diagnostic's help text promises");
 }
 
 auto test_derived_cmp_returns_the_ordering_sum_type() -> void {
@@ -527,8 +531,9 @@ auto test_ordering_variants_are_prelude_reachable() -> void {
               "        @equal => 2\n"
               "        @greater => 3\n",
   }});
-  expect_clean(analyzed,
-         "expected `ordering` and its variants to resolve without a `use`");
+  expect_clean(
+      analyzed,
+      "expected `ordering` and its variants to resolve without a `use`");
 }
 
 auto test_reports_extend_on_unapplied_generic() -> void {
@@ -595,8 +600,8 @@ auto test_generic_method_body_sees_its_own_imports() -> void {
       },
   });
   expect_clean(analyzed,
-         "expected a generic method to resolve a name its own module "
-         "imported");
+               "expected a generic method to resolve a name its own module "
+               "imported");
 }
 
 /// A qualified type path may lead with a name a `use` bound (spec/todo.md
@@ -623,7 +628,7 @@ auto test_qualified_type_path_through_import() -> void {
       },
   });
   expect_clean(analyzed,
-         "expected a qualified type path through an import to resolve");
+               "expected a qualified type path through an import to resolve");
 
   // Resolving *through* the import must not make the path check permissive:
   // a member the imported module does not declare is still an error, and
@@ -686,8 +691,8 @@ auto test_inline_submodule_paths_resolve() -> void {
       },
   });
   expect_clean(analyzed,
-         "expected an inline submodule to resolve both qualified and "
-         "relative, in type, struct-literal, and call position");
+               "expected an inline submodule to resolve both qualified and "
+               "relative, in type, struct-literal, and call position");
 
   // The relative reading must not become a way to reach anything at all: a
   // member the submodule does not declare is still an error, and one that
@@ -763,7 +768,7 @@ auto test_import_wins_over_inline_submodule() -> void {
       },
   });
   expect_clean(analyzed,
-         "expected an import to win over a same-named inline submodule");
+               "expected an import to win over a same-named inline submodule");
 }
 
 auto test_accepts_parameterized_extend() -> void {
@@ -783,7 +788,7 @@ auto test_accepts_parameterized_extend() -> void {
               "    return n\n",
   }});
   expect_clean(analyzed,
-         "expected a parameterized extend block to check cleanly");
+               "expected a parameterized extend block to check cleanly");
 
   // The clean check above cannot, on its own, show that `-> T` *solved*:
   // an unsolved `T` stays `k_unknown_type`, which unifies with everything, so
@@ -834,17 +839,17 @@ auto test_reports_missing_return_on_if_without_else() -> void {
 auto test_accepts_all_paths_returning() -> void {
   const auto analyzed = analyze_test_data_file("accept_all_paths_return.kira");
   expect_clean(analyzed,
-         "expected functions returning on every path (tail expressions, "
-         "if/else, match arms, `while true`) to check cleanly: " +
-             analyzed.diagnostics);
+               "expected functions returning on every path (tail expressions, "
+               "if/else, match arms, `while true`) to check cleanly: " +
+                   analyzed.diagnostics);
 }
 
 auto test_impl_method_takes_priority_over_extend() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_impl_method_priority_over_extend.kira");
   expect_clean(analyzed,
-         "expected impl/extend method name collision to check cleanly, "
-         "with the impl method winning");
+               "expected impl/extend method name collision to check cleanly, "
+               "with the impl method winning");
 }
 
 auto test_reports_associated_type_output_mismatch() -> void {
@@ -860,8 +865,8 @@ auto test_accepts_string_interpolation() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_string_interpolation.kira");
   expect_clean(analyzed,
-         "expected string interpolation program to check cleanly: " +
-             analyzed.diagnostics);
+               "expected string interpolation program to check cleanly: " +
+                   analyzed.diagnostics);
 }
 
 // ==========================================================================
@@ -919,89 +924,92 @@ auto test_accepts_quote_expr_typed_by_fragment_kind() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_quote_expr_typed_by_fragment_kind.kira");
   expect_clean(analyzed,
-         std::string("expected each quote to type-check against the "
-                     "quote-value type matching its own classified "
-                     "`fragment_kind` (`expr`/`stmt`/`def_expr`), not a "
-                     "hardcoded `expr`:\n") +
-             analyzed.diagnostics);
+               std::string("expected each quote to type-check against the "
+                           "quote-value type matching its own classified "
+                           "`fragment_kind` (`expr`/`stmt`/`def_expr`), not a "
+                           "hardcoded `expr`:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_accepts_splice_expr_reifies_quoted_value() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_splice_expr_reifies_quoted_value.kira");
   expect_clean(analyzed,
-         std::string("expected `~doubled` to graft the quoted `21 + 21` "
-                     "fragment in as `run`'s real return expression:\n") +
-             analyzed.diagnostics);
+               std::string("expected `~doubled` to graft the quoted `21 + 21` "
+                           "fragment in as `run`'s real return expression:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_accepts_splice_stmt_reifies_quoted_statement() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_splice_stmt_reifies_quoted_statement.kira");
   expect_clean(analyzed,
-         std::string("expected `~make_binding` to graft the quoted `if "
-                     "true: let y = 10 return y` statement into `run`'s "
-                     "body, with `y`'s declaration and its own reference "
-                     "both inside the same quote resolving consistently "
-                     "under M5 hygiene renaming:\n") +
-             analyzed.diagnostics);
+               std::string("expected `~make_binding` to graft the quoted `if "
+                           "true: let y = 10 return y` statement into `run`'s "
+                           "body, with `y`'s declaration and its own reference "
+                           "both inside the same quote resolving consistently "
+                           "under M5 hygiene renaming:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_accepts_expr_builder_constructs_fragment() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_expr_builder_constructs_fragment.kira");
   expect_clean(analyzed,
-         std::string("expected `expr.lit(42)` to construct a real `expr` "
-                     "quote value, spliceable via `~built`:\n") +
-             analyzed.diagnostics);
+               std::string("expected `expr.lit(42)` to construct a real `expr` "
+                           "quote value, spliceable via `~built`:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_accepts_item_splice_injects_impl() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_item_splice_injects_impl.kira");
-  expect_clean(analyzed,
-         std::string("expected `~make_show_impl()` at module top level to "
-                     "inject a real `impl show for point`, callable as "
-                     "`p.show()`:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `~make_show_impl()` at module top level to "
+                  "inject a real `impl show for point`, callable as "
+                  "`p.show()`:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_type_reflection_primitives() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_type_reflection_primitives.kira");
-  expect_clean(analyzed,
-         std::string("expected `point.field_count()`/`.name()`/`.fields()` "
-                     "to reflect over `point`'s own declaration at compile "
-                     "time:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `point.field_count()`/`.name()`/`.fields()` "
+                  "to reflect over `point`'s own declaration at compile "
+                  "time:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_module_reflection() -> void {
   const auto analyzed = analyze_test_data_file("accept_module_reflection.kira");
-  expect_clean(analyzed,
-         std::string("expected `sample.name()`/`.type_count()`/"
-                     "`.function_count()`/`.types()`/`.functions()` to reflect "
-                     "over the module's surface at compile time:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `sample.name()`/`.type_count()`/"
+                  "`.function_count()`/`.types()`/`.functions()` to reflect "
+                  "over the module's surface at compile time:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_expr_keyword_usable_as_identifier() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_expr_keyword_usable_as_identifier.kira");
   expect_clean(analyzed,
-         std::string("expected `expr`/`stmt` to be usable as ordinary "
-                     "identifiers outside type position (contextual "
-                     "keywords, M4.5):\n") +
-             analyzed.diagnostics);
+               std::string("expected `expr`/`stmt` to be usable as ordinary "
+                           "identifiers outside type position (contextual "
+                           "keywords, M4.5):\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_accepts_splice_type_reifies_quoted_type() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_splice_type_reifies_quoted_type.kira");
   expect_clean(analyzed,
-         std::string("expected `~(int_type)` in return-type position to "
-                     "resolve to the quoted `int32` type:\n") +
-             analyzed.diagnostics);
+               std::string("expected `~(int_type)` in return-type position to "
+                           "resolve to the quoted `int32` type:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_reports_splice_expr_wrong_fragment_kind() -> void {
@@ -1043,10 +1051,11 @@ auto test_reports_splice_requires_quote_value() -> void {
 auto test_accepts_static_let_evaluates() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_static_let_evaluates.kira");
-  expect_clean(analyzed,
-         std::string("expected `static limit: int32 = 2 + 3 * 4` to check "
-                     "cleanly:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `static limit: int32 = 2 + 3 * 4` to check "
+                  "cleanly:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_reports_static_assert_evaluates_false() -> void {
@@ -1064,9 +1073,9 @@ auto test_accepts_static_def_call_evaluates() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_static_def_call_evaluates.kira");
   expect_clean(analyzed,
-         std::string("expected `static def square` to be callable from "
-                     "`static let nine: int32 = square(3)`:\n") +
-             analyzed.diagnostics);
+               std::string("expected `static def square` to be callable from "
+                           "`static let nine: int32 = square(3)`:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_accepts_static_generic_call_casts_to_bound_type_param() -> void {
@@ -1077,10 +1086,11 @@ auto test_accepts_static_generic_call_casts_to_bound_type_param() -> void {
   // compile-time evaluation".
   const auto analyzed = analyze_test_data_file(
       "accept_static_generic_call_casts_to_bound_type_param.kira");
-  expect_clean(analyzed,
-         std::string("expected `v as T` to cast a compile-time value down "
-                     "to the type parameter `T` was bound to:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `v as T` to cast a compile-time value down "
+                  "to the type parameter `T` was bound to:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_reports_static_for_evaluates_each_iteration() -> void {
@@ -1103,122 +1113,129 @@ auto test_accepts_static_for_inline_as_function_tail() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_static_for_inline_as_function_tail.kira");
   expect_clean(analyzed,
-         std::string("expected an inline `static for ... => ...` as a "
-                     "function's tail statement to be recognized as "
-                     "returning a value:\n") +
-             analyzed.diagnostics);
+               std::string("expected an inline `static for ... => ...` as a "
+                           "function's tail statement to be recognized as "
+                           "returning a value:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_accepts_static_struct_value_evaluates() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_static_struct_value_evaluates.kira");
   expect_clean(analyzed,
-         std::string("expected a compile-time struct literal and field "
-                     "access to evaluate:\n") +
-             analyzed.diagnostics);
+               std::string("expected a compile-time struct literal and field "
+                           "access to evaluate:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_accepts_static_let_forward_reference() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_static_let_forward_reference.kira");
   expect_clean(analyzed,
-         std::string("expected `static let doubled` to forward-reference "
-                     "`static let base` declared later in the file:\n") +
-             analyzed.diagnostics);
+               std::string("expected `static let doubled` to forward-reference "
+                           "`static let base` declared later in the file:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_accepts_static_if_selects_taken_branch() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_static_if_selects_taken_branch.kira");
-  expect_clean(analyzed,
-         std::string("expected only the `else` branch (condition `false`) "
-                     "to be checked, so the `if` branch's undefined-name "
-                     "reference is never reached:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected only the `else` branch (condition `false`) "
+                  "to be checked, so the `if` branch's undefined-name "
+                  "reference is never reached:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_static_if_selects_branch_by_sum_type_equality() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_if_selects_branch_by_sum_type_equality.kira");
-  expect_clean(analyzed,
-         std::string("expected `static if CURRENT == @unix` to evaluate the "
-                     "sum-type equality at compile time and select the `if` "
-                     "branch, so the `else` branch's undefined-name "
-                     "reference is never reached:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `static if CURRENT == @unix` to evaluate the "
+                  "sum-type equality at compile time and select the `if` "
+                  "branch, so the `else` branch's undefined-name "
+                  "reference is never reached:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_static_if_variant_equality_selects_else_branch() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_if_variant_equality_selects_else_branch.kira");
-  expect_clean(analyzed,
-         std::string("expected `static if CURRENT == @unix` (CURRENT bound "
-                     "to `@windows`) to evaluate false at compile time and "
-                     "select the `else` branch, so the `if` branch's "
-                     "undefined-name reference is never reached:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `static if CURRENT == @unix` (CURRENT bound "
+                  "to `@windows`) to evaluate false at compile time and "
+                  "select the `else` branch, so the `if` branch's "
+                  "undefined-name reference is never reached:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_static_if_statement_body_in_generic_static_def() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_if_statement_body_in_generic_static_def.kira");
-  expect_clean(analyzed,
-         std::string("expected a `static if`/`else` branch inside a generic "
-                     "`static def` to accept `return` statements (not just "
-                     "declarations), select the `if` branch once `T` is "
-                     "concretely bound to `int32` by `zero_or_one[int32]()`, "
-                     "and pass the `static assert` on the result:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected a `static if`/`else` branch inside a generic "
+                  "`static def` to accept `return` statements (not just "
+                  "declarations), select the `if` branch once `T` is "
+                  "concretely bound to `int32` by `zero_or_one[int32]()`, "
+                  "and pass the `static assert` on the result:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_static_if_narrows_in_bound_generic_instance() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_if_narrows_in_bound_generic_instance.kira");
-  expect_clean(analyzed,
-         std::string("expected `min_of[int32]()`'s recheck (with `T` bound "
-                     "to `int32`) to narrow `static if T.name() == "
-                     "\"int64\"` to its `else` branch, not spuriously "
-                     "bounds-check the `if` branch's int64-only literal "
-                     "against the bound `int32`:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `min_of[int32]()`'s recheck (with `T` bound "
+                  "to `int32`) to narrow `static if T.name() == "
+                  "\"int64\"` to its `else` branch, not spuriously "
+                  "bounds-check the `if` branch's int64-only literal "
+                  "against the bound `int32`:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_static_if_narrows_through_let_bound_name() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_if_narrows_through_let_bound_name.kira");
-  expect_clean(analyzed,
-         std::string("expected `min_of[int8]()`'s recheck to narrow `static "
-                     "if n == \"int16\"` (where `n` is a plain `let n = "
-                     "T.name()` local, not `T` itself) to its implicit "
-                     "`else`, not spuriously bounds-check the `int16`-sized "
-                     "literal against the bound `int8`:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `min_of[int8]()`'s recheck to narrow `static "
+                  "if n == \"int16\"` (where `n` is a plain `let n = "
+                  "T.name()` local, not `T` itself) to its implicit "
+                  "`else`, not spuriously bounds-check the `int16`-sized "
+                  "literal against the bound `int8`:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_static_if_chain_with_trailing_static_assert() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_if_chain_with_trailing_static_assert.kira");
-  expect_clean(analyzed,
-         std::string("expected a trailing `static assert false` after a "
-                     "chain of independent `static if n == \"...\": return "
-                     "...` statements (`std.limits.max`'s shape) to never be "
-                     "judged reachable — neither in the un-instantiated "
-                     "template pass (where `T` is still abstract, so no "
-                     "`static if` can be folded) nor in `max_of[int8]`'s own "
-                     "instantiation (where the first `static if` resolves "
-                     "and returns, leaving the assert an unreachable sibling "
-                     "statement):\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected a trailing `static assert false` after a "
+                  "chain of independent `static if n == \"...\": return "
+                  "...` statements (`std.limits.max`'s shape) to never be "
+                  "judged reachable — neither in the un-instantiated "
+                  "template pass (where `T` is still abstract, so no "
+                  "`static if` can be folded) nor in `max_of[int8]`'s own "
+                  "instantiation (where the first `static if` resolves "
+                  "and returns, leaving the assert an unreachable sibling "
+                  "statement):\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_static_assert_compares_variant_payloads() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_static_assert_compares_variant_payloads.kira");
   expect_clean(analyzed,
-         std::string("expected `@other(\"bsd\") == @other(\"bsd\")` to "
-                     "compare equal, differing payloads/tags to compare "
-                     "unequal, all at compile time:\n") +
-             analyzed.diagnostics);
+               std::string("expected `@other(\"bsd\") == @other(\"bsd\")` to "
+                           "compare equal, differing payloads/tags to compare "
+                           "unequal, all at compile time:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_reports_integer_literal_overflow() -> void {
@@ -1233,10 +1250,10 @@ auto test_accepts_negative_min_integer_literals() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_negative_min_integer_literals.kira");
   expect_clean(analyzed,
-         std::string("expected `-128`/`-32768`/`-2147483648`/"
-                     "`-9223372036854775808` to type-check directly as "
-                     "each width's minimum value:\n") +
-             analyzed.diagnostics);
+               std::string("expected `-128`/`-32768`/`-2147483648`/"
+                           "`-9223372036854775808` to type-check directly as "
+                           "each width's minimum value:\n") +
+                   analyzed.diagnostics);
 }
 
 auto test_reports_negated_integer_literal_still_too_large() -> void {
@@ -1263,24 +1280,26 @@ auto test_reports_int64_positive_literal_still_too_large() -> void {
 auto test_accepts_negative_min_literal_through_cast() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_negative_min_literal_through_cast.kira");
-  expect_clean(analyzed,
-         std::string("expected `-2147483648 as int32` and "
-                     "`-9223372036854775808 as int64` to type-check: `as` "
-                     "binds tighter than unary `-`, so the cast's operand "
-                     "must see its target width, not default to `int32`:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected `-2147483648 as int32` and "
+                  "`-9223372036854775808 as int64` to type-check: `as` "
+                  "binds tighter than unary `-`, so the cast's operand "
+                  "must see its target width, not default to `int32`:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_accepts_wide_literal_in_generic_return() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_wide_literal_in_generic_return.kira");
-  expect_clean(analyzed,
-         std::string("expected a wide literal return (`int64::min`) inside a "
-                     "`def f[T]() -> T` to type-check: the template pass "
-                     "checks the body with `T` still unbound and must not "
-                     "bounds-check the literal against a hardcoded `int32` "
-                     "fallback:\n") +
-             analyzed.diagnostics);
+  expect_clean(
+      analyzed,
+      std::string("expected a wide literal return (`int64::min`) inside a "
+                  "`def f[T]() -> T` to type-check: the template pass "
+                  "checks the body with `T` still unbound and must not "
+                  "bounds-check the literal against a hardcoded `int32` "
+                  "fallback:\n") +
+          analyzed.diagnostics);
 }
 
 auto test_reports_generic_return_literal_overflow() -> void {
@@ -1322,8 +1341,7 @@ auto test_reports_assignment_to_immutable() -> void {
 auto test_accepts_let_mut_reassignment() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_let_mut_reassignment.kira");
-  expect_clean(analyzed,
-         "expected `let mut` to allow reassignment");
+  expect_clean(analyzed, "expected `let mut` to allow reassignment");
 }
 
 auto test_reports_return_type_mismatch() -> void {
@@ -1449,7 +1467,7 @@ auto test_reports_incomplete_trait_impl() -> void {
 auto test_accepts_drop_impl() -> void {
   const auto analyzed = analyze_test_data_file("accept_drop_impl.kira");
   expect_clean(analyzed,
-         "expected a well-formed `impl drop for T` to typecheck");
+               "expected a well-formed `impl drop for T` to typecheck");
 }
 
 auto test_reports_duplicate_drop_impl() -> void {
@@ -1537,7 +1555,7 @@ auto test_accepts_dependent_length_arithmetic() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_dependent_length_arithmetic.kira");
   expect_clean(analyzed,
-         "expected symbolic const-generic arithmetic to check cleanly");
+               "expected symbolic const-generic arithmetic to check cleanly");
 }
 
 auto test_reports_dependent_length_refuted() -> void {
@@ -1554,7 +1572,7 @@ auto test_reports_dependent_length_refuted() -> void {
 auto test_accepts_proved_refinements() -> void {
   const auto analyzed = analyze_test_data_file("accept_refinement_proved.kira");
   expect_clean(analyzed,
-         "expected provable refinement obligations to check cleanly");
+               "expected provable refinement obligations to check cleanly");
 }
 
 auto test_reports_unproven_refinement() -> void {
@@ -1587,8 +1605,9 @@ auto test_reports_refuted_refinement() -> void {
 
 auto test_accepts_flow_narrowed_refinement() -> void {
   const auto analyzed = analyze_test_data_file("accept_refinement_flow.kira");
-  expect_clean(analyzed,
-         "expected a path condition to discharge a refinement obligation");
+  expect_clean(
+      analyzed,
+      "expected a path condition to discharge a refinement obligation");
 }
 
 auto test_reports_refinement_outside_narrowed_path() -> void {
@@ -1607,8 +1626,9 @@ auto test_reports_refinement_outside_narrowed_path() -> void {
 
 auto test_accepts_proved_contracts() -> void {
   const auto analyzed = analyze_test_data_file("accept_contract_proved.kira");
-  expect_clean(analyzed,
-         "expected provable and unprovable contracts alike to check cleanly");
+  expect_clean(
+      analyzed,
+      "expected provable and unprovable contracts alike to check cleanly");
 }
 
 auto test_reports_refuted_precondition() -> void {
@@ -1711,8 +1731,8 @@ auto test_bare_literal_never_forces_a_concrete_param_type() -> void {
   const auto analyzed = analyze_test_data_file(
       "bare_literal_never_forces_concrete_param_type.kira");
   expect_clean(analyzed,
-         "expected `double` to stay generic over every numeric type, not "
-         "collapse to whichever type the literal `2` defaults to");
+               "expected `double` to stay generic over every numeric type, not "
+               "collapse to whichever type the literal `2` defaults to");
 }
 
 auto test_infers_param_type_from_annotated_sibling() -> void {
@@ -1741,9 +1761,9 @@ auto test_pass_through_param_stays_unannotated() -> void {
   const auto analyzed =
       analyze_test_data_file("pass_through_param_stays_unannotated.kira");
   expect_clean(analyzed,
-         "a parameter with no recognizable usage constraint must stay "
-         "compatible with any argument type, exactly as it was before "
-         "inference existed");
+               "a parameter with no recognizable usage constraint must stay "
+               "compatible with any argument type, exactly as it was before "
+               "inference existed");
 }
 
 auto test_infers_param_type_from_struct_field_type() -> void {
@@ -1836,9 +1856,10 @@ auto test_recursive_function_param_inference_terminates() -> void {
   // that `n` gets pinned to one type.
   const auto analyzed =
       analyze_test_data_file("infer_param_recursive_function.kira");
-  expect_clean(analyzed,
-         "expected self-recursive parameter inference to terminate cleanly "
-         "without wrongly narrowing `n`");
+  expect_clean(
+      analyzed,
+      "expected self-recursive parameter inference to terminate cleanly "
+      "without wrongly narrowing `n`");
 }
 
 auto test_reports_const_generic_value_mismatch() -> void {
@@ -1855,15 +1876,16 @@ auto test_accepts_const_generic_value_match() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_const_generic_value_match.kira");
   expect_clean(analyzed,
-         "expected matching const-generic arguments to check cleanly");
+               "expected matching const-generic arguments to check cleanly");
 }
 
 auto test_accepts_const_generic_try_from() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_const_generic_try_from.kira");
-  expect_clean(analyzed,
-         "expected `index[n].try_from` inside a function generic over `n` to "
-         "check cleanly — each call site monomorphizes it against a constant");
+  expect_clean(
+      analyzed,
+      "expected `index[n].try_from` inside a function generic over `n` to "
+      "check cleanly — each call site monomorphizes it against a constant");
 }
 
 auto test_reports_unsolved_const_generic_value_param() -> void {
@@ -1896,16 +1918,18 @@ auto test_reports_unsolved_impl_const_generic_value_param() -> void {
 auto test_accepts_explicit_generic_args() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_explicit_generic_args.kira");
-  expect_clean(analyzed,
-         "expected a call to give its callee's compile-time arguments in "
-         "brackets, including for a parameter no argument could determine");
+  expect_clean(
+      analyzed,
+      "expected a call to give its callee's compile-time arguments in "
+      "brackets, including for a parameter no argument could determine");
 }
 
 auto test_accepts_generic_methods() -> void {
   const auto analyzed = analyze_test_data_file("accept_generic_methods.kira");
-  expect_clean(analyzed,
-         "expected const-generic, type-generic, and mixed generic methods on "
-         "an `extend` target to monomorphize like generic free functions");
+  expect_clean(
+      analyzed,
+      "expected const-generic, type-generic, and mixed generic methods on "
+      "an `extend` target to monomorphize like generic free functions");
 }
 
 auto test_reports_bad_explicit_generic_args() -> void {
@@ -1928,10 +1952,11 @@ auto test_reports_bad_explicit_generic_args() -> void {
 auto test_accepts_return_position_inference() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_return_position_inference.kira");
-  expect_clean(analyzed,
-         "expected a type parameter appearing only in the return type to be "
-         "solved from the type each call site expects, in every position the "
-         "checker knows one");
+  expect_clean(
+      analyzed,
+      "expected a type parameter appearing only in the return type to be "
+      "solved from the type each call site expects, in every position the "
+      "checker knows one");
 }
 
 auto test_reports_unsolved_return_position_type_param() -> void {
@@ -1953,8 +1978,8 @@ auto test_accepts_method_explicit_generic_args() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_method_explicit_generic_args.kira");
   expect_clean(analyzed,
-         "expected brackets on a method call to be honored, and a nested "
-         "generic to be usable as an explicit type argument");
+               "expected brackets on a method call to be honored, and a nested "
+               "generic to be usable as an explicit type argument");
 }
 
 auto test_reports_bad_method_explicit_generic_args() -> void {
@@ -1974,9 +1999,10 @@ auto test_reports_bad_method_explicit_generic_args() -> void {
 auto test_accepts_type_param_static_dispatch() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_type_param_static_dispatch.kira");
-  expect_clean(analyzed,
-         "expected a static member reached through a solved type parameter to "
-         "resolve against the type that parameter was solved to");
+  expect_clean(
+      analyzed,
+      "expected a static member reached through a solved type parameter to "
+      "resolve against the type that parameter was solved to");
 }
 
 auto test_reports_type_param_static_not_found() -> void {
@@ -2011,14 +2037,15 @@ auto test_accepts_refinement_predicate() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_refinement_predicate.kira");
   expect_clean(analyzed,
-         "expected a well-formed refinement predicate to check cleanly");
+               "expected a well-formed refinement predicate to check cleanly");
 }
 
 auto test_accepts_concept_bound() -> void {
   const auto analyzed = analyze_test_data_file("accept_concept_bound.kira");
-  expect_clean(analyzed,
-         "expected a concept composing trait and value constraints, used as "
-         "a function bound, to check cleanly");
+  expect_clean(
+      analyzed,
+      "expected a concept composing trait and value constraints, used as "
+      "a function bound, to check cleanly");
 }
 
 auto test_reports_state_machine_mismatch() -> void {
@@ -2036,8 +2063,8 @@ auto test_accepts_state_machine_match() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_state_machine_match.kira");
   expect_clean(analyzed,
-         "expected a connection[open] argument where connection[open] is "
-         "required to check cleanly");
+               "expected a connection[open] argument where connection[open] is "
+               "required to check cleanly");
 }
 
 // ==========================================================================
@@ -2069,9 +2096,10 @@ auto test_reports_raw_pointer_outside_machine() -> void {
 auto test_accepts_machine_pointer_ops() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_machine_pointer_ops.kira");
-  expect_clean(analyzed,
-         "expected the same raw-memory operations to check cleanly inside a "
-         "`machine` function");
+  expect_clean(
+      analyzed,
+      "expected the same raw-memory operations to check cleanly inside a "
+      "`machine` function");
 }
 
 auto test_reports_write_through_const_pointer() -> void {
@@ -2101,9 +2129,8 @@ auto test_reports_index_without_impl() -> void {
 auto test_dispatches_index_by_key_type() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_index_range_dispatch.kira");
-  expect_clean(analyzed,
-         "expected a type with both an `index[usize]` and an "
-         "`index[range[usize]]` impl to check cleanly");
+  expect_clean(analyzed, "expected a type with both an `index[usize]` and an "
+                         "`index[range[usize]]` impl to check cleanly");
 }
 
 auto test_reports_index_wrong_key_type() -> void {
@@ -2252,8 +2279,8 @@ auto test_dispatches_index_mut_borrow() -> void {
 auto test_accepts_intrinsic_decl() -> void {
   const auto analyzed = analyze_test_data_file("accept_intrinsic_decl.kira");
   expect_clean(analyzed,
-         "expected recognized, fully-annotated intrinsic decls to check "
-         "cleanly");
+               "expected recognized, fully-annotated intrinsic decls to check "
+               "cleanly");
 }
 
 auto test_reports_unknown_intrinsic() -> void {
@@ -2277,16 +2304,16 @@ auto test_reports_unannotated_intrinsic() -> void {
 auto test_accepts_generator_yields_typed_values() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_generator_yields_typed_values.kira");
-  expect_clean(analyzed,
-         "expected a well-typed generator to check cleanly");
+  expect_clean(analyzed, "expected a well-typed generator to check cleanly");
 }
 
 auto test_accepts_for_loop_over_generator() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_for_loop_over_generator.kira");
-  expect_clean(analyzed,
-         "expected `for x in <generator>` to check cleanly, binding `x` to "
-         "the generator's item type");
+  expect_clean(
+      analyzed,
+      "expected `for x in <generator>` to check cleanly, binding `x` to "
+      "the generator's item type");
 }
 
 auto test_reports_yield_outside_generator() -> void {
@@ -2366,16 +2393,17 @@ auto test_accepts_existential_return_type() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_existential_return_type.kira");
   expect_clean(analyzed,
-         "expected a general `some Trait` return type, backed by a real "
-         "impl, to check cleanly");
+               "expected a general `some Trait` return type, backed by a real "
+               "impl, to check cleanly");
 }
 
 auto test_accepts_existential_return_type_combined_bounds() -> void {
   const auto analyzed = analyze_test_data_file(
       "accept_existential_return_type_combined_bounds.kira");
-  expect_clean(analyzed,
-         "expected `some A + B` and a chained call staying opaque to check "
-         "cleanly");
+  expect_clean(
+      analyzed,
+      "expected `some A + B` and a chained call staying opaque to check "
+      "cleanly");
 }
 
 auto test_reports_existential_return_type_in_parameter() -> void {
@@ -2426,8 +2454,8 @@ auto test_accepts_higher_kinded_functor_monad() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_higher_kinded_functor_monad.kira");
   expect_clean(analyzed,
-         "expected the spec functor/monad program (HK traits, impls for "
-         "`option`, and calls through them) to check cleanly");
+               "expected the spec functor/monad program (HK traits, impls for "
+               "`option`, and calls through them) to check cleanly");
 }
 
 auto test_reports_hk_impl_target_wrong_kind() -> void {
@@ -2504,8 +2532,8 @@ auto test_accepts_wellformed_signature_and_functor() -> void {
               "        DB.connect(url)\n",
   }});
   expect_clean(analyzed,
-         "expected a well-formed signature + satisfying module + functor "
-         "declaration to check cleanly");
+               "expected a well-formed signature + satisfying module + functor "
+               "declaration to check cleanly");
 }
 
 auto test_reports_module_missing_signature_member() -> void {
@@ -2661,9 +2689,10 @@ auto test_materializes_functor_and_resolves_alias() -> void {
               "def go() -> int32:\n"
               "    db.connect(\"x\")\n",
   }});
-  expect_clean(analyzed,
-         "expected a materialized functor instantiation and a call through "
-         "its alias to check cleanly");
+  expect_clean(
+      analyzed,
+      "expected a materialized functor instantiation and a call through "
+      "its alias to check cleanly");
 }
 
 auto test_functor_body_impl_and_extend_members_check() -> void {
@@ -2704,9 +2733,10 @@ auto test_functor_body_impl_and_extend_members_check() -> void {
               "def go() -> int32:\n"
               "    w.run()\n",
   }});
-  expect_clean(analyzed,
-         "expected a functor body with `impl`/`extend` on a local type to "
-         "materialize and check cleanly");
+  expect_clean(
+      analyzed,
+      "expected a functor body with `impl`/`extend` on a local type to "
+      "materialize and check cleanly");
 }
 
 auto test_functor_body_impl_coherence_across_instantiations() -> void {
@@ -2745,9 +2775,10 @@ auto test_functor_body_impl_coherence_across_instantiations() -> void {
               "use main.wrap[main.postgres] as wp\n"
               "use main.wrap[main.sqlite] as ws\n",
   }});
-  expect_clean(analyzed,
-         "expected two functor instantiations each implementing a trait for "
-         "their own local type to be coherent (no false duplicate)");
+  expect_clean(
+      analyzed,
+      "expected two functor instantiations each implementing a trait for "
+      "their own local type to be coherent (no false duplicate)");
 }
 
 auto test_impl_type_param_substituted_at_call_site() -> void {
@@ -2808,10 +2839,11 @@ auto test_impls_on_distinct_instantiations_are_coherent() -> void {
               "    def get(self) -> int64:\n"
               "        return self.item\n",
   }});
-  expect_clean(analyzed,
-         std::format("expected impls for `boxed[int32]` and `boxed[int64]` to "
-                     "coexist — they are different concrete types, got: {}",
-                     analyzed.diagnostics));
+  expect_clean(
+      analyzed,
+      std::format("expected impls for `boxed[int32]` and `boxed[int64]` to "
+                  "coexist — they are different concrete types, got: {}",
+                  analyzed.diagnostics));
 }
 
 auto test_overlapping_generic_impl_still_conflicts() -> void {
@@ -2905,8 +2937,9 @@ auto test_functor_body_type_and_static_members_check() -> void {
               "def go() -> int32:\n"
               "    db.open(\"x\")\n",
   }});
-  expect_clean(analyzed,
-         "expected a functor with `type`/`static` members to check cleanly");
+  expect_clean(
+      analyzed,
+      "expected a functor with `type`/`static` members to check cleanly");
 }
 
 auto test_functor_instantiation_arity_mismatch() -> void {
@@ -3013,8 +3046,7 @@ auto test_free_function_callable_as_method() -> void {
               "    let s: str = t.label(\"n=\")\n"
               "    return 0\n",
   }});
-  expect_clean(analyzed,
-         "expected a free function to be callable as a method");
+  expect_clean(analyzed, "expected a free function to be callable as a method");
 }
 
 /// The safety property the whole feature rests on: UFCS is the last arm, so
@@ -3042,7 +3074,7 @@ auto test_method_wins_over_ufcs() -> void {
               "    return n\n",
   }});
   expect_clean(analyzed,
-         "expected the inherent method to win over the UFCS candidate");
+               "expected the inherent method to win over the UFCS candidate");
 }
 
 /// Two visible free functions both accepting the receiver is the user's to
@@ -3275,9 +3307,10 @@ auto test_nested_def_resolves_as_a_value() -> void {
               "def main() -> int32:\n"
               "    return compute()\n",
   }});
-  expect_clean(analyzed,
-         "expected a nested `def` to resolve when referenced by name in its "
-         "enclosing block");
+  expect_clean(
+      analyzed,
+      "expected a nested `def` to resolve when referenced by name in its "
+      "enclosing block");
 }
 
 /// spec/todo.md item 7: `box[int32] { cur: @none }` — a struct literal whose
@@ -3321,8 +3354,7 @@ auto test_generic_struct_literal_explicit_type_args_accepted() -> void {
               "    let h = holder[int32] { cur: 5 }\n"
               "    return h.cur\n",
   }});
-  expect_clean(analyzed,
-         analyzed.diagnostics);
+  expect_clean(analyzed, analyzed.diagnostics);
 }
 
 /// A wrong number of explicit type arguments on a struct-literal head must

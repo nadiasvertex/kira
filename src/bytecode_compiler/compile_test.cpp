@@ -1255,20 +1255,39 @@ auto test_list_literal_construction_and_indexing() -> void {
   expect(main_result->value.i == 30, "expected main()'s third(2) == 30");
 }
 
-auto test_list_index_out_of_bounds_panics() -> void {
+/// A `list` index out of range is refused, not read past the end.
+///
+/// Asserts the bounds *decision* rather than the panic: `list` is an
+/// ordinary stdlib type now, so `xs[i]` out of range reaches
+/// `src/std/list.kira`'s `panic("index out of range")`, which aborts the
+/// process instead of raising a catchable `panic_reason` the way the
+/// bounds-checked VM/IR opcode behind `array[T, N]` still does. An aborting
+/// panic cannot be observed by a harness running either tier in-process;
+/// it is covered by running a built binary, in `src/cli_test.cpp`'s
+/// `test_built_program_panics_on_list_index_out_of_bounds`.
+///
+/// `mutable_cell` reports the same decision without taking it — `@none` for
+/// exactly the indices `xs[i]` would refuse — so the comparison itself is
+/// still checked here, in both tiers, against a computed value.
+auto test_list_index_out_of_bounds_is_refused() -> void {
   auto module = compile_fixture(load_fixture("list_out_of_bounds.kira"));
   const auto vm = bc::vm{module};
-  auto result = vm.run(function_index(module, "get"),
-                       std::array{bc::slot_value{uint64_t{5}}});
-  expect(!result.has_value(), "expected xs[5] on a 3-element list to panic");
-  expect(result.error() == bc::panic_reason::index_out_of_bounds,
-         "expected the panic reason to be index_out_of_bounds");
+
+  auto in_bounds = vm.run(function_index(module, "at_or_sentinel"),
+                          std::array{bc::slot_value{uint64_t{2}}});
+  expect(in_bounds.has_value(), "expected at_or_sentinel(2) to succeed");
+  expect(in_bounds->value.i == 30, "expected xs[2] == 30");
+
+  auto past_end = vm.run(function_index(module, "at_or_sentinel"),
+                         std::array{bc::slot_value{uint64_t{3}}});
+  expect(past_end.has_value(), "expected at_or_sentinel(3) to succeed");
+  expect(past_end->value.i == -1,
+         "expected index 3 on a 3-element list to be refused, not read");
 
   auto main_result = run_main(module);
-  expect(!main_result.has_value(),
-         "expected main()'s xs[5] on a 3-element list to panic");
-  expect(main_result.error() == bc::panic_reason::index_out_of_bounds,
-         "expected the panic reason to be index_out_of_bounds");
+  expect(main_result.has_value(), "expected main() to succeed");
+  expect(main_result->value.i == 28,
+         "expected xs[2] plus two out-of-range sentinels: 30 - 1 - 1 == 28");
 }
 
 auto test_list_fill_form_grows_to_a_runtime_count() -> void {
@@ -1652,7 +1671,7 @@ auto main() -> int {
     test_match_constructor_pattern_over_a_sum_type();
     test_match_struct_pattern_destructures_named_fields();
     test_list_literal_construction_and_indexing();
-    test_list_index_out_of_bounds_panics();
+    test_list_index_out_of_bounds_is_refused();
     test_list_fill_form_grows_to_a_runtime_count();
     test_list_for_loop_sums_every_element();
     test_while_let_loops_until_the_pattern_stops_matching();

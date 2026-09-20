@@ -63,6 +63,27 @@ extend[T] list[T]:
             return @none
         return @some(self[self.len - 1])
 
+    #: A single-element view of `v[i]`, unchecked at the type level.
+    #:
+    #: The same address `&v[i]` computes, named `cell[T]` rather than `&T`
+    #: (`spec/specification/02-intermediate/15-views.md`). Out of range
+    #: panics, exactly as `v[i]` does; `mutable_cell` is the sibling that
+    #: answers `@none` instead.
+    pub machine def cell(self, i: usize) -> cell[T]:
+        if i >= self.len:
+            panic("index out of range")
+        return &self.data[i]
+
+    #: A writable single-element view of `v[i]`, or `@none` when `i` is out
+    #: of range.
+    #:
+    #: The checked, non-panicking sibling of `cell` above: a caller that does
+    #: not already know `i` is in bounds gets to ask rather than guess.
+    pub machine def mutable_cell(mut self, i: usize) -> option[cell_mut[T]]:
+        if i >= self.len:
+            return @none
+        return @some(&mut self.data[i])
+
     #: Ensures room for at least `n` elements without reallocating again.
     #:
     #: Never shrinks: a smaller `n` than the current capacity is a no-op.

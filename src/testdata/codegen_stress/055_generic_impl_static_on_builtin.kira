@@ -48,7 +48,7 @@ trait from_iter[T]:
 # The builtin generic target. Both the impl and the method are generic.
 impl[T] from_iter[T] for list[T]:
     static def from_iter[I](it: I) -> list[T] where I: iterator[T]:
-        var out = []
+        var out: list[T] = []
         var cursor = it
         while let @some(x) = cursor.next():
             out.push(x)

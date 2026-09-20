@@ -77,19 +77,32 @@ inline auto find_std_dir() -> fs::path {
 /// driver (`src/cli_test.cpp`) instead.
 inline auto stdlib_filenames() -> std::span<const char *const> {
   static constexpr std::array names = {
-      "intrinsics.kira",      "traits.kira",
-      "traits.ord.kira",      "traits.show.kira",
-      "traits.numeric.kira",  "traits.conversion.kira",
-      "traits.category.kira", "traits.index.kira",
-      "traits.hash.kira",     "limits.kira",
-      "iter.kira",            "prelude.kira",
-      "panic.kira",           "option.kira",
-      "result.kira",          "mem.kira",
-      "list.kira",            "io.kira",
-      "console.kira",         "algo.kira",
-      "fmt.kira",             "unicode_tables.kira",
-      "unicode.kira",         "string.kira",
-      "deriving.kira",        "test.kira",
+      "intrinsics.kira",
+      "traits.kira",
+      "traits.ord.kira",
+      "traits.show.kira",
+      "traits.numeric.kira",
+      "traits.conversion.kira",
+      "traits.category.kira",
+      "traits.index.kira",
+      "traits.hash.kira",
+      "limits.kira",
+      "iter.kira",
+      "prelude.kira",
+      "panic.kira",
+      "option.kira",
+      "result.kira",
+      "mem.kira",
+      "list.kira",
+      "io.kira",
+      "console.kira",
+      "algo.kira",
+      "fmt.kira",
+      "unicode_tables.kira",
+      "unicode.kira",
+      "string.kira",
+      "deriving.kira",
+      "test.kira",
   };
   return names;
 }
@@ -184,9 +197,8 @@ inline auto lower_stdlib_modules(const parsed_stdlib &stdlib,
     expect(lowered.has_value(), "expected a stdlib module to lower");
     modules.push_back(std::move(*lowered));
 
-    auto submodules =
-        hir::lower_inline_submodules(*ast_file, module_name_of(*ast_file),
-                                     checked);
+    auto submodules = hir::lower_inline_submodules(
+        *ast_file, module_name_of(*ast_file), checked);
     expect(submodules.has_value(),
            "expected a stdlib module's inline submodules to lower");
     for (auto &submodule : *submodules) {

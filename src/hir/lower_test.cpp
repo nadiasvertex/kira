@@ -124,8 +124,8 @@ auto check_fixture_multi(
         .file_id = file_ids[i], .ast_file = fixture.ast_files[i].get()});
   }
 
-  auto file_has_errors = std::vector<bool>(
-      static_cast<size_t>(file_ids.back()) + 1, false);
+  auto file_has_errors =
+      std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
   fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
   expect_checked_cleanly(fixture.sources, fixture.diag);
@@ -2264,8 +2264,8 @@ auto test_lowers_comprehension_with_guard() -> void {
   expect(guarded.branches[0].body->stmts[0]->kind ==
              hir::hir_node_kind::hir_expr_stmt,
          "expected the guarded statement to be the `push` call");
-  const auto &guarded_push =
-      dynamic_cast<const hir::hir_expr_stmt &>(*guarded.branches[0].body->stmts[0]);
+  const auto &guarded_push = dynamic_cast<const hir::hir_expr_stmt &>(
+      *guarded.branches[0].body->stmts[0]);
   expect(guarded_push.expr->kind == hir::hir_node_kind::hir_call,
          "expected the guarded statement to be the `push` call");
 }
