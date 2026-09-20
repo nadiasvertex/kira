@@ -1,11 +1,12 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phase 0 done. Nothing else in `src/semantic/` has moved yet.
+**Status:** Phases 0 and 1 done. Nothing in `src/semantic/check.cpp` has moved
+yet — the store exists and is tested, but nothing calls it.
 
 | Phase | What it makes possible | Status |
 |---|---|---|
 | 0 | A golden snapshot of every elaboration decision, so the rewrite is falsifiable | **Done** — `src/semantic/snapshot.{h,cpp}`, `snapshot_test.cpp`, golden at `src/testdata/inference_snapshot/session.snapshot` |
-| 1 | `infer_ctxt`: one metavariable store over three sorts, with causes | Not started |
+| 1 | `infer_ctxt`: one metavariable store over three sorts, with causes | **Done** — `src/semantic/infer/infer_ctxt.{h,cpp}`, `infer_ctxt_test.cpp` |
 | 2 | One `unify`: rigid-rigid, pattern fragment, value slots | Not started |
 | 3 | Value slots genuinely *solved*, not merely checked satisfiable | Not started |
 | 4 | An obligation queue: methods, trait bounds, refinements, defaulting | Not started |
@@ -254,16 +255,60 @@ fixture exercises them), but they are *not* currently protected. Phase 8
 touches `runtime_fill_dispatches` and phase 7 the comprehension path
 directly — add a fixture for each before starting the phase that moves it.
 
-### Phase 1 — `infer_ctxt`
+### Phase 1 — `infer_ctxt` *(done)*
 
-New directory `src/semantic/infer/`, own tests, nothing calls it yet.
+`src/semantic/infer/infer_ctxt.{h,cpp}`, tested by
+`//src/semantic:infer_ctxt_test`. Compiled into `:semantic` but called from
+nowhere, so it can be an algorithm under test before phase 6 puts it on the
+critical path.
 
-- Union-find with path compression over `type_id`, sorted metavariables
-  (type / constructor-of-arity-k / value), occurs check across sorts.
-- `zonk`, memoized, substituting **through `type_table` constructors** so
-  canonicity holds. Its test asserts that a zonked type is id-equal to the
-  same type written directly.
-- `cause`: span, reason, both sides' descriptions, parent link.
+- Union-find with path compression over `type_id`; metavariables sorted
+  type / constructor-of-arity-k / value; occurs check across sorts.
+- `zonk`, memoized, substituting **through `type_table` constructors**.
+- `cause`: `source_location`, reason, both sides' descriptions, parent link,
+  in an arena whose index 0 is `k_no_cause` so lookup is total.
+
+**The canonicity assertion.** `test_zonk_is_canonical` requires a zonked type
+to be *id-equal* to the same type written directly — for a nested generic, for
+a composite of `fn`/`ref`/`tuple`, and for the higher-kinded case. The last is
+the one with teeth: zonking `F[A]` under `F := option` must collapse to the
+ordinary interned `option[int32]`, not leave a `param_app` carrying a solved
+head, or one type has two ids and id-equality stops being type-equality.
+
+**Failability, verified.** Each of four mechanisms was broken in turn and the
+assertion that should catch it did, alone:
+
+| Broken | Failure reported |
+|---|---|
+| `param_app` no longer collapses a solved head | ``expected `F[A]` to zonk to the interned `option[int32]`` |
+| occurs check disabled | `expected the occurs check to refuse the bind` |
+| `zonk_memo_.clear()` removed from `bind` | ``expected `list[?a]` to zonk to the interned `list[int32]`` |
+| sort check disabled | `expected a value not to solve a type var` |
+
+Full suite after reverting: 30/30.
+
+Three decisions worth keeping:
+
+**Sorts are checked, arities are the kinds.** `check_sort` refuses a value
+standing for a type, and a constructor of the wrong arity standing for `F[_]`
+— which is where ch. 37's kind errors get folded in rather than duplicated.
+`unknown` and `error` are accepted for every sort, because one gap in
+knowledge must not cascade, and that rule outranks sorts.
+
+**One genuinely ambiguous case, resolved explicitly.** An arity-0
+`type_param_kind` is how the table spells *both* an ordinary `T` and a value
+parameter `n`, so it is accepted for both `type_sort` and `value_sort` and
+refused only for `ctor_sort`, where the arity settles it.
+
+**Two kinds deliberately zonk to themselves.** `existential_kind` is nominal
+— minted fresh per `some Trait` and never interned — so rebuilding one would
+mint a second distinct type for the same declaration. `symbolic_value_kind`'s
+polynomial is over *named* parameters rather than `type_id`s, so substituting
+into it is value solving, which is phase 3.
+
+Also unlike a per-kind switch: the occurs check walks `args`/`result`
+generically, since a kind added later would otherwise silently stop being
+checked and let an infinite type through.
 
 ### Phase 2 — the unifier
 

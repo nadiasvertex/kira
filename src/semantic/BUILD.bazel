@@ -7,6 +7,7 @@ cc_library(
         "binding_walk.cpp",
         "borrow_check.cpp",
         "check.cpp",
+        "infer/infer_ctxt.cpp",
         "linear_poly.cpp",
         "module_index.cpp",
         "move_check.cpp",
@@ -24,6 +25,7 @@ cc_library(
         "borrow_check.h",
         "check.h",
         "ids.h",
+        "infer/infer_ctxt.h",
         "linear_poly.h",
         "module_index.h",
         "move_check.h",
@@ -128,6 +130,15 @@ cc_test(
         "//src/parser:parser",
         "//src/testing",
         "//src/testing:stdlib_fixtures",
+    ],
+)
+
+cc_test(
+    name = "infer_ctxt_test",
+    srcs = ["infer/infer_ctxt_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/testing",
     ],
 )
 
