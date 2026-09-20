@@ -1451,6 +1451,15 @@ auto test_reports_unknown_field_and_method() -> void {
                     "expected unknown-method diagnostic");
 }
 
+auto test_reports_unknown_field_on_builtin_generic() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_unknown_field_on_builtin_generic.kira");
+  expect(analyzed.error_count > 0,
+         "expected unknown field on option[T] to fail");
+  expect_diagnostic(analyzed, "no field `nonsense` on type `option[int32]`",
+                    "expected unknown-field diagnostic on a builtin generic");
+}
+
 auto test_reports_non_exhaustive_match() -> void {
   const auto analyzed =
       analyze_test_data_file("report_non_exhaustive_match.kira");
@@ -3527,6 +3536,7 @@ auto main() -> int {
     test_reports_call_argument_problems();
     test_reports_struct_literal_problems();
     test_reports_unknown_field_and_method();
+    test_reports_unknown_field_on_builtin_generic();
     test_reports_non_exhaustive_match();
     test_reports_unknown_variant_in_pattern();
     test_reports_try_in_plain_function();

@@ -12326,10 +12326,82 @@ private:
         if (const auto *method = find_extend_method_for_builtin(entry, name)) {
           return fn_type_of(*method->decl, method->owner);
         }
+        if (const auto reported =
+                report_unknown_builtin_field(name, span, entry, object)) {
+          return *reported;
+        }
       }
       return builtin_result;
     }
     }
+  }
+
+  /// Reports plain (non-call) field access `object.name` naming nothing on a
+  /// *builtin* receiver, once every lookup — builtin inherent method,
+  /// `extend` — has failed.
+  ///
+  /// This case used to fall through silently, returning `k_unknown_type`
+  /// with no diagnostic at all: `s.nonsense` on a `slice[T]`/`option[T]`/
+  /// `cell[T]` type-checked, and `k_unknown_type` unified with whatever the
+  /// caller expected, so the mistake only surfaced later at lowering as
+  /// "no concrete checked type is available for this node ... this is a gap
+  /// in the compiler, not a mistake in your code" — a confidently wrong
+  /// diagnostic for a misspelled field. `field_access_type`'s `struct_kind`
+  /// and `sum_kind` arms have always reported "no field `x` on ..." here;
+  /// the builtin-generic default arm did not.
+  ///
+  /// Returns `nullopt` rather than reporting when the receiver's method set
+  /// is not actually known (see `report_unknown_builtin_method`'s doc
+  /// comment for why that matters).
+  [[nodiscard]] auto report_unknown_builtin_field(std::string_view name,
+                                                  source_span span,
+                                                  const type_entry &entry,
+                                                  type_id object)
+      -> std::optional<type_id> {
+    if (entry.kind != type_kind::builtin_kind &&
+        entry.kind != type_kind::builtin_generic_kind) {
+      return std::nullopt;
+    }
+
+    build_method_table();
+    auto candidates = builtin_method_names(entry);
+    if (const auto found = extend_methods_by_builtin_.find(entry.name);
+        found != extend_methods_by_builtin_.end()) {
+      for (const auto &method : found->second) {
+        candidates.push_back(method.decl->name);
+      }
+    }
+    std::ranges::sort(candidates);
+    candidates.erase(std::ranges::unique(candidates).begin(), candidates.end());
+
+    const auto display = types_.display(object);
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("no field `{}` on type `{}`", name, display), file_id_);
+    diag.with_label(span, "unknown field");
+    if (const auto suggestion = best_suggestion(name, candidates)) {
+      diag.with_help(std::format("did you mean `{}`?", *suggestion));
+    } else if (!candidates.empty()) {
+      auto listed = std::string{};
+      for (const auto &candidate : candidates) {
+        if (!listed.empty()) {
+          listed += ", ";
+        }
+        listed += std::format("`{}`", candidate);
+      }
+      diag.with_note(
+          std::format("`{}` provides the methods {}", display, listed));
+      diag.with_help(std::format(
+          "`{}` has no field named `{}` — did you mean to call one of its "
+          "methods instead?",
+          display, name));
+    } else {
+      diag.with_help(
+          std::format("`{}` has no fields or methods.", display));
+    }
+    emit_diag(diag);
+    mark_error();
+    return k_error_type;
   }
 
   /// Types a plain (non-call) field access `object.name`.
