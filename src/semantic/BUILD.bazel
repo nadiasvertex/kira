@@ -66,6 +66,7 @@ cc_test(
         ":semantic",
         "//src/parser:parser",
         "//src/testing",
+        "//src/testing:stdlib_fixtures",
     ],
 )
 

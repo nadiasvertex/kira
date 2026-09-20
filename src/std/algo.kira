@@ -1215,8 +1215,8 @@ pub def max_by_key[I, T, K](it: I, key: fn(T) -> K) -> option[T] where I: iterat
 #:   a pair of lists: the elements satisfying `pred`, then the rest.
 pub def partition[I, T](it: I, pred: fn(T) -> bool) -> (list[T], list[T]) where I: iterator[T]:
     var cursor = it
-    var yes = []
-    var no = []
+    var yes: list[T] = []
+    var no: list[T] = []
     while let @some(x) = cursor.next():
         if pred(x):
             yes.push(x)

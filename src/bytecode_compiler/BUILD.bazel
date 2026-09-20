@@ -33,7 +33,10 @@ cc_test(
 cc_test(
     name = "compile_test",
     srcs = ["compile_test.cpp"],
-    data = ["//src:codegen_test_corpus"],
+    data = [
+        "//src:codegen_test_corpus",
+        "//src:std_sources",
+    ],
     tags = ["no-sandbox"],
     deps = [
         ":bytecode_compiler",
@@ -43,5 +46,6 @@ cc_test(
         "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/testing",
+        "//src/testing:stdlib_fixtures",
     ],
 )

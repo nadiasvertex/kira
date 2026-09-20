@@ -194,7 +194,7 @@ impl[T] exact_size[T] for list_into_iter[T]:
 #: Builds a list by draining an iterator.
 impl[T] from_iter[T] for list[T]:
     static def from_iter[I](it: I) -> list[T] where I: iterator[T]:
-        var out = []
+        var out: list[T] = []
         var cursor = it
         while let @some(x) = cursor.next():
             out.push(x)

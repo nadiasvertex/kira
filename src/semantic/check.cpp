@@ -1008,6 +1008,7 @@ public:
         .for_iterator_dispatches = std::move(for_iterator_dispatches_),
         .drop_plans = std::move(drop_plans_),
         .comprehension_dispatches = std::move(comprehension_dispatches_),
+        .runtime_fill_dispatches = std::move(runtime_fill_dispatches_),
         .try_conversions = std::move(try_conversions_),
         .try_conversion_types = std::move(try_conversion_types_),
         .fmt_types = fmt_types,
@@ -1254,6 +1255,10 @@ private:
   /// `infer_for_expr`.
   std::unordered_map<const ast::for_expr *, comprehension_dispatch>
       comprehension_dispatches_;
+  /// `[v; n]` literals with a runtime repeat count — see
+  /// `checked_types::runtime_fill_dispatches`.
+  std::unordered_map<const ast::array_expr *, comprehension_dispatch>
+      runtime_fill_dispatches_;
   /// Every `?` whose operand's error type needed a `from`-conversion to the
   /// enclosing function's declared error type, recorded by `infer_try`.
   /// Handed to the caller via `take_checked_types`.
@@ -8299,6 +8304,32 @@ private:
   };
   std::unordered_map<std::string, recorded_impl> impl_trait_index_;
 
+  /// One impl as conflict detection sees it: where it is, what it targets,
+  /// and which single trait argument it supplies (`k_unknown_type` for a
+  /// trait that takes none).
+  struct coherence_record {
+    source_location location;
+    type_id target = k_unknown_type;
+    type_id trait_arg = k_unknown_type;
+  };
+
+  /// Every impl seen, grouped by `"{trait_name}:{type_key}"` — the *bare*
+  /// key, with no trait arguments in it.
+  ///
+  /// Conflict detection cannot key on the instantiated trait
+  /// (`"index[usize]:list"`) the way `impl_trait_index_` does: two impls
+  /// that key differently may still both apply. `impl get_it[T] for
+  /// boxed[T]` and `impl get_it[int32] for boxed[int32]` key as
+  /// `get_it[T]:boxed` and `get_it[int32]:boxed`, and both answer
+  /// `boxed[int32].get()`. So every impl for a (trait, type declaration)
+  /// pair is kept here and compared pairwise on *both* halves — the target
+  /// and the trait argument — which keeps `index[usize]` and
+  /// `index[range[usize]]` on one `list[T]` legal (their arguments are
+  /// disjoint concrete types) without letting a blanket impl slip past a
+  /// concrete sibling.
+  std::unordered_map<std::string, std::vector<coherence_record>>
+      impl_coherence_records_;
+
   /// Reverse of `impl_trait_index_`, keyed by `type_key_of` alone (not
   /// `"{trait_name}:{type_key}"`): every trait name a type has a kind-`*`
   /// impl for. Built alongside `impl_trait_index_` in `validate_impl_
@@ -8587,6 +8618,43 @@ private:
                                  .use_type_param_stack = false,
                                  .quiet = true};
     return impl_trait_arguments_key(*impl.decl, trait_name, ctx);
+  }
+
+  /// The single trait argument an impl supplies, as a type rather than as a
+  /// key fragment — `usize` for `impl index[usize] for list[T]`, and
+  /// `k_unknown_type` for a trait taking no arguments (or taking more than
+  /// the one `impl_trait_arguments_key` keys on). Resolved in exactly the
+  /// context `resolve_impl_trait_key` uses, so a block parameter comes back
+  /// as a rigid `type_param` and `impl_targets_overlap` can see it for what
+  /// it is.
+  auto resolve_impl_trait_argument(const impl_ref &impl) -> type_id {
+    if (impl.decl->trait_type == nullptr ||
+        impl.decl->trait_type->kind != ast::node_kind::named_type) {
+      return k_unknown_type;
+    }
+    const auto &named =
+        dynamic_cast<const ast::named_type &>(*impl.decl->trait_type);
+    if (named.type_args.size() != 1) {
+      return k_unknown_type;
+    }
+    const auto *argument =
+        dynamic_cast<const ast::type_expr *>(named.type_args.front().value.get());
+    if (argument == nullptr) {
+      return k_unknown_type;
+    }
+    auto param_bindings = std::unordered_map<std::string, type_id>{};
+    for (const auto &param : impl.decl->type_params) {
+      if (!param.name.empty()) {
+        param_bindings.emplace(
+            param.name,
+            types_.type_param(param.name, param.higher_kinded_arity));
+      }
+    }
+    const auto ctx = resolve_ctx{.module = index_.find_module(impl.module_name),
+                                 .param_bindings = &param_bindings,
+                                 .use_type_param_stack = false,
+                                 .quiet = true};
+    return resolve_type(*argument, ctx);
   }
 
   auto resolve_impl_target(const impl_ref &impl) -> type_id {
@@ -9767,9 +9835,11 @@ private:
     return names;
   }
 
-  /// Builds the comma-separated, sorted, deduplicated method-name list
-  /// used in the "provides the methods ..." note on an unknown-method error.
-  auto available_method_names(const type_entry &instance) -> std::string {
+  /// Every method name a user type declares, sorted and deduplicated — the
+  /// pool both the "provides the methods ..." note and the "did you mean"
+  /// suggestion on an unknown-method error are drawn from.
+  auto available_method_name_list(const type_entry &instance)
+      -> std::vector<std::string> {
     build_method_table();
     auto names = std::vector<std::string>{};
     if (instance.decl != nullptr) {
@@ -9781,6 +9851,13 @@ private:
     }
     std::ranges::sort(names);
     names.erase(std::ranges::unique(names).begin(), names.end());
+    return names;
+  }
+
+  /// Builds the comma-separated, sorted, deduplicated method-name list
+  /// used in the "provides the methods ..." note on an unknown-method error.
+  auto available_method_names(const type_entry &instance) -> std::string {
+    const auto names = available_method_name_list(instance);
     auto out = std::string{};
     for (const auto &name : names) {
       if (!out.empty()) {
@@ -10583,6 +10660,24 @@ private:
     if (field.object == nullptr) {
       return std::nullopt;
     }
+    // A receiver that is still a type parameter has no method set yet, so it
+    // cannot be matched against a free function's first parameter: a type
+    // param unifies with anything, which means *every* visible free function
+    // of the right name "fits". That is how `self.peek()` inside a trait
+    // default (`self` is `Self` there, a type param) was captured by
+    // `std.algo.peek(it: &mut peekable_iter[I, T])` — a free function
+    // shadowing a method of the very trait being defined, which the UFCS
+    // rule ("reached only after every method lookup above has failed, so a
+    // free function can never shadow a method") exists to forbid.
+    //
+    // Nothing is lost by declining: a generic body is checked again per
+    // instantiation with the parameter bound to a concrete type
+    // (`instantiate_generic_function`, and the deferred monomorphization
+    // `build_method_table` runs for trait defaults), and UFCS resolves there
+    // against a receiver that actually has a type.
+    if (types_.entry(receiver_type).kind == type_kind::type_param_kind) {
+      return std::nullopt;
+    }
     const auto candidates = collect_ufcs_candidates(field.field_name);
     if (candidates.empty()) {
       return std::nullopt;
@@ -10940,11 +11035,29 @@ private:
       if (const auto ufcs = try_ufcs_call(call, field, object)) {
         return *ufcs;
       }
+      // The header names the receiver's *applied* type (`list[int32]`), not
+      // the bare constructor `entry.name` holds: "no method `pusk` on type
+      // `list`" leaves the reader to guess which `list`, and since `list`
+      // stopped being a builtin and became an ordinary generic user type
+      // (`src/std/list.kira`) this arm is the one every `list` typo reaches.
+      // The note and help stay on `entry.name` — an `impl` block is written
+      // against the constructor, so that is the right spelling there.
+      const auto display = types_.display(object);
       auto diag = diagnostic(diagnostic_level::error,
                              std::format("no method `{}` on type `{}`",
-                                         field.field_name, entry.name),
+                                         field.field_name, display),
                              file_id_);
       diag.with_label(field.span, "method not found");
+      // A near-miss gets named outright rather than leaving the reader to
+      // spot it in the list: `nums.pusk(4)` should say "did you mean
+      // `push`?". The builtin arm (`report_unknown_builtin_method`) has
+      // always done this; this arm did not, which stopped being a rarity the
+      // moment `list` became an ordinary user type.
+      const auto candidates = available_method_name_list(entry);
+      if (const auto suggestion =
+              best_suggestion(field.field_name, candidates)) {
+        diag.with_help(std::format("did you mean `{}`?", *suggestion));
+      }
       if (const auto methods = available_method_names(entry);
           !methods.empty()) {
         diag.with_note(
@@ -11011,17 +11124,14 @@ private:
       // Builtin inherent methods take priority; an impl on the builtin's
       // constructor (`impl monad for option`) or an `extend` block fills in
       // only when the name isn't one of the hardcoded builtin methods.
+      // Handing out a raw pointer into a container's storage escapes every
+      // guarantee the container makes about its own memory, so it is gated
+      // the same as any other raw-pointer operation — but by `infer_call`,
+      // uniformly on the result type, so builtin `as_ptr`/`as_mut_ptr` and a
+      // user type's `machine def` equivalents are treated alike. Reading or
+      // indexing the container itself stays unrestricted.
       const auto builtin_result =
           builtin_method_result(entry, field.field_name);
-      if (!types_.is_unknown(builtin_result) &&
-          (field.field_name == "as_ptr" || field.field_name == "as_mut_ptr")) {
-        // Handing out a raw pointer into a container's storage escapes every
-        // guarantee the container makes about its own memory, so it is gated
-        // the same as any other raw-pointer operation. Reading or indexing
-        // the container itself stays unrestricted.
-        require_machine_context(call.span,
-                                std::format("`{}`", field.field_name));
-      }
       if (types_.is_unknown(builtin_result)) {
         if (const auto *method =
                 find_builtin_impl_method(entry.name, field.field_name)) {
@@ -12037,7 +12147,49 @@ private:
     return types_.builtin("bool");
   }
 
+  /// Checks a call, then gates the result if it hands a raw pointer back.
+  ///
+  /// A `*T`/`*mut T` escaping into an ordinary function is a raw-memory
+  /// operation no matter which call produced it, so the gate lives here
+  /// rather than on a list of blessed method names. It has to: since `list`
+  /// became an ordinary stdlib type (`src/std/list.kira`), its `as_ptr`/
+  /// `as_mut_ptr` are `pub machine def`s like any other user method, and a
+  /// name-based gate over the *builtin* method table no longer sees them.
+  /// Calling a `machine def` from safe code stays legal — that is how the
+  /// whole stdlib is written, `list.push` included — so it is the pointer in
+  /// the result type, not the callee's modifier, that draws the line.
   auto infer_call(const ast::call_expr &call, type_id expected) -> type_id {
+    const auto result = infer_call_unguarded(call, expected);
+    if (!in_machine_function_ &&
+        types_.entry(result).kind == type_kind::ptr_kind) {
+      require_machine_context(call.span, called_name_for_diagnostic(call));
+    }
+    return result;
+  }
+
+  /// Names the callee of `call` for a diagnostic — ``` `as_mut_ptr` ``` for a
+  /// method or free call, and a plain description when the callee is some
+  /// other expression (a call through a stored function value, say) and has
+  /// no name worth quoting.
+  [[nodiscard]] static auto called_name_for_diagnostic(
+      const ast::call_expr &call) -> std::string {
+    if (call.callee != nullptr) {
+      if (call.callee->kind == ast::node_kind::field_expr) {
+        return std::format(
+            "`{}`", dynamic_cast<const ast::field_expr &>(*call.callee)
+                        .field_name);
+      }
+      if (call.callee->kind == ast::node_kind::ident_expr) {
+        return std::format(
+            "`{}`",
+            dynamic_cast<const ast::ident_expr &>(*call.callee).name);
+      }
+    }
+    return "handing out a raw pointer";
+  }
+
+  auto infer_call_unguarded(const ast::call_expr &call, type_id expected)
+      -> type_id {
     // Before anything else, including argument checking: every
     // instantiation path below reaches back for this by call node.
     if (!types_.is_unknown(expected) && expected != k_error_type) {
@@ -15645,28 +15797,39 @@ private:
   /// not (the static `new`).
   auto resolve_comprehension_dispatch(const ast::for_expr &expr,
                                       type_id list_type) -> void {
+    if (const auto dispatch = resolve_new_push_dispatch(expr, list_type)) {
+      comprehension_dispatches_[&expr] = *dispatch;
+    }
+  }
+
+  /// Resolves (and instantiates) the `new`/`push` pair for `list_type`,
+  /// attributing the instantiation to `site`. Shared by the two desugarings
+  /// that build a list by repeated appending with nothing in the source
+  /// naming either call: a `for ... => yield` comprehension, and a `[v; n]`
+  /// fill whose count is only known at runtime.
+  auto resolve_new_push_dispatch(const ast::node &site, type_id list_type)
+      -> std::optional<comprehension_dispatch> {
     if (in_const_generic_template_ || in_type_generic_template_) {
-      return;
+      return std::nullopt;
     }
     const auto &entry = types_.entry(list_type);
     const auto *new_method = find_method(entry, "new", list_type);
     const auto *push_method = find_method(entry, "push", list_type);
     if (new_method == nullptr || push_method == nullptr) {
-      return;
+      return std::nullopt;
     }
     const auto build_callee =
         [&](const method_entry &method) -> resolved_callee {
       const auto *instance =
-          instantiate_impl_method_for(expr, method, entry, list_type);
+          instantiate_impl_method_for(site, method, entry, list_type);
       return resolved_callee{
           .decl = instance != nullptr ? instance : method.decl,
           .owner_module = method.owner->module_name,
           .impl_target_type = instance != nullptr ? "" : entry.name};
     };
-    comprehension_dispatches_[&expr] =
-        comprehension_dispatch{.new_callee = build_callee(*new_method),
-                               .push_callee = build_callee(*push_method),
-                               .list_type = list_type};
+    return comprehension_dispatch{.new_callee = build_callee(*new_method),
+                                  .push_callee = build_callee(*push_method),
+                                  .list_type = list_type};
   }
 
   /// Records the `from_array` conversion for a literal whose elements have
@@ -15678,6 +15841,19 @@ private:
   auto wire_default_list(const ast::array_expr &array, type_id element,
                          std::optional<uint64_t> count) -> type_id {
     const auto target = resolve_list_type(element);
+    // `[v; n]` with a count only known at runtime. `from_array` takes an
+    // `array[T, n]`, which has no meaning without a compile-time `n` — so
+    // there is nothing for the constructor to be handed, and wiring one
+    // anyway left lowering naming an instance that was never compiled
+    // ("call to `list::from_array` could not be resolved to a function in
+    // this compiled module"). Fill it the way a comprehension builds its
+    // result instead: `new()`, then `push(v)` `n` times.
+    if (array.fill_value != nullptr && !count.has_value()) {
+      if (const auto dispatch = resolve_new_push_dispatch(array, target)) {
+        runtime_fill_dispatches_[&array] = *dispatch;
+      }
+      return target;
+    }
     if (!resolve_array_literal_conversion(array, target).has_value()) {
       return target; // `list[T]` always has `from_array` — see std.list.
     }
@@ -15713,6 +15889,31 @@ private:
       const auto count = array.fill_value != nullptr
                              ? fill_count_of(array)
                              : std::optional<uint64_t>{array.elements.size()};
+      // `[v; n]` for a runtime `n` has no `array[T, n]` to be: `from_array`
+      // takes one, and there is no compile-time length to give it. Fill by
+      // repeated appending instead, the same way a comprehension builds its
+      // result — see `checked_types::runtime_fill_dispatches`.
+      if (array.fill_value != nullptr && !count.has_value()) {
+        array_literal_conversions_.erase(&array);
+        if (const auto dispatch =
+                resolve_new_push_dispatch(array, strip_refs(expected))) {
+          runtime_fill_dispatches_[&array] = *dispatch;
+        } else if (!in_const_generic_template_ && !in_type_generic_template_) {
+          error_with_help(
+              array.span,
+              std::format("`{}` cannot be built from a fill whose count is "
+                          "only known at runtime",
+                          types_.display(strip_refs(expected))),
+              "no way to fill this collection",
+              "A `[value; count]` literal with a constant count becomes an "
+              "`array`, which `from_array` accepts. With a runtime count "
+              "there is no sized array to hand it, so the collection is "
+              "filled by appending instead — which needs a `new()` and a "
+              "`push(value)`. Add those, or use a constant count.");
+          return k_error_type;
+        }
+        return strip_refs(expected);
+      }
       array_literal_conversions_[&array].array_type = array_with_length(
           *from_array_element,
           count.has_value() ? types_.const_value(types_.usize_type(), *count)
@@ -15804,6 +16005,23 @@ private:
       return array_with_length(
           element,
           types_.const_value(types_.usize_type(), array.elements.size()));
+    }
+    // `[]` with nothing to infer from. There is no element to type it by and
+    // no expected type to adopt, and inference does not run backwards from a
+    // later `xs.push(v)` — so without this the literal would build a
+    // `list[?]`, instantiate `list::from_array` with an unsolved `T`, and
+    // surface as "cannot tell which `T` this call to `push` means" pointing
+    // into `src/std/list.kira`: a diagnostic about the standard library's
+    // internals for a mistake in the user's own line.
+    if (array.elements.empty() && types_.is_unknown(element)) {
+      error_with_help(
+          array.span, "cannot tell what an empty `[]` is a list of",
+          "element type is unknown here",
+          "Nothing here says what this list holds: it has no elements to "
+          "read a type from, and the element type is not inferred from a "
+          "later `push`. Annotate the binding — `var xs: list[int32] = []` — "
+          "or start the list with the elements it should hold.");
+      return k_error_type;
     }
     return wire_default_list(array, element, array.elements.size());
   }
@@ -19508,23 +19726,34 @@ private:
         const auto bare_key = std::format("{}:{}", trait_name, type_key);
         const auto location =
             source_location{.file_id = impl.file_id, .span = impl.decl->span};
-        const auto [it, inserted] = impl_trait_index_.emplace(
+        // Both keys are filed first-wins: they answer "does this type
+        // implement the trait at all" (`type_has_trait`, and the `requires`
+        // check behind it), which two impls of one parameterized trait both
+        // satisfy. Conflict detection is a separate question, decided below
+        // against every impl already recorded rather than against whichever
+        // one happened to claim the key.
+        impl_trait_index_.emplace(
             key, recorded_impl{.location = location, .target = target});
-        // The bare key answers "does this type implement the trait at all"
-        // (`type_has_trait`, and the `requires` check behind it), which two
-        // impls of one parameterized trait both satisfy — so it is filed
-        // first-wins and never treated as a conflict.
         if (key != bare_key) {
           impl_trait_index_.emplace(
               bare_key, recorded_impl{.location = location, .target = target});
         }
-        if (inserted) {
-          continue;
-        }
-        if (!impl_targets_overlap(it->second.target, target)) {
-          // Two impls for two different instantiations of one generic
-          // declaration. Legal, and the key stays pointing at the first —
-          // `type_has_trait` only asks whether *some* impl exists.
+
+        const auto trait_arg = resolve_impl_trait_argument(impl);
+        auto &recorded = impl_coherence_records_[bare_key];
+        const auto found = std::ranges::find_if(
+            recorded, [&](const coherence_record &seen) -> bool {
+              return impl_targets_overlap(seen.target, target) &&
+                     impl_targets_overlap(seen.trait_arg, trait_arg);
+            });
+        const auto clash = found == recorded.end()
+                               ? std::optional<coherence_record>{}
+                               : std::optional<coherence_record>{*found};
+        recorded.push_back(coherence_record{
+            .location = location, .target = target, .trait_arg = trait_arg});
+        if (!clash.has_value()) {
+          // Either the first impl for this pair, or two impls for two
+          // different instantiations of one generic declaration — legal.
           continue;
         }
         auto duplicate = diagnostic(
@@ -19536,11 +19765,9 @@ private:
         duplicate.children.push_back(
             diagnostic(diagnostic_level::note,
                        std::format("`{}` was first implemented for `{}` here",
-                                   trait_name,
-                                   types_.display(it->second.target)),
-                       it->second.location.file_id)
-                .with_label(it->second.location.span,
-                            "previous implementation"));
+                                   trait_name, types_.display(clash->target)),
+                       clash->location.file_id)
+                .with_label(clash->location.span, "previous implementation"));
         duplicate.with_help(
             "A program contains at most one implementation of a trait for a "
             "type; remove or merge one of these.");

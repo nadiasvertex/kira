@@ -8,3 +8,20 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+# Separate from `:testing` because it needs the front end: a harness that
+# drives `check_program` directly has to inject the stdlib (`list`, `option`
+# and friends are ordinary Kira types, not builtins), and injecting it means
+# parsing it. Harnesses that only need `expect`/`fail` keep depending on the
+# dependency-free `:testing` above.
+cc_library(
+    name = "stdlib_fixtures",
+    hdrs = ["stdlib_fixtures.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":testing",
+        "//src/hir",
+        "//src/parser",
+        "//src/semantic",
+    ],
+)

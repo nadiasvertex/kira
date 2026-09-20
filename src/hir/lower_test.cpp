@@ -16,6 +16,7 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
+#include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
 
 namespace {
@@ -30,12 +31,35 @@ namespace hir = kira::hir;
 struct checked_fixture {
   kira::source_manager sources;
   kira::diagnostic_bag diag{};
+  kira::testing::parsed_stdlib stdlib;
   kira::ast::ptr<kira::ast::file> ast_file;
   kira::semantic::checked_types checked;
 };
 
+/// Fails with the rendered diagnostics when a fixture did not check cleanly.
+/// Without the dump the failure reads only as "expected fixture to check
+/// cleanly", which says nothing about what went wrong.
+auto expect_checked_cleanly(const kira::source_manager &sources,
+                            const kira::diagnostic_bag &diag) -> void {
+  if (diag.error_count() != 0) {
+    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+    fail("expected fixture to check cleanly");
+  }
+}
+
+// Parses and checks one fixture source, returning the AST root, the checked
+// types, and the requested function's declaration for the caller to feed
+// into `hir::lower_function`/`hir::lower_module`.
+//
+// The stdlib is injected alongside the fixture, exactly as the driver
+// injects it: `list`, `option` and friends are ordinary Kira types declared
+// in `src/std/*.kira`, so a fixture as plain as `-> list[int32]` does not
+// resolve without them. `stdlib` is held in the fixture because
+// `parsed_module` borrows the ASTs it points at.
 auto check_fixture(const std::string &text) -> checked_fixture {
   auto fixture = checked_fixture{};
+  fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
+
   const auto file_id = fixture.sources.add_file("sample.kira", text);
   expect(file_id.has_value(), "expected fixture source to register");
 
@@ -50,13 +74,12 @@ auto check_fixture(const std::string &text) -> checked_fixture {
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
-  const auto parsed_modules = std::vector<kira::semantic::parsed_module>{
-      kira::semantic::parsed_module{.file_id = *file_id,
-                                    .ast_file = fixture.ast_file.get()},
-  };
+  auto parsed_modules = fixture.stdlib.modules;
+  parsed_modules.push_back(kira::semantic::parsed_module{
+      .file_id = *file_id, .ast_file = fixture.ast_file.get()});
   fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
-  expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
+  expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
 }
 
@@ -66,6 +89,7 @@ auto check_fixture(const std::string &text) -> checked_fixture {
 struct multi_checked_fixture {
   kira::source_manager sources;
   kira::diagnostic_bag diag{};
+  kira::testing::parsed_stdlib stdlib;
   std::vector<kira::ast::ptr<kira::ast::file>> ast_files;
   kira::semantic::checked_types checked;
 };
@@ -74,7 +98,8 @@ auto check_fixture_multi(
     const std::vector<std::pair<std::string, std::string>> &files)
     -> multi_checked_fixture {
   auto fixture = multi_checked_fixture{};
-  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
+  auto parsed_modules = fixture.stdlib.modules;
   auto file_ids = std::vector<kira::file_id_type>{};
 
   for (const auto &[path, text] : files) {
@@ -99,10 +124,11 @@ auto check_fixture_multi(
         .file_id = file_ids[i], .ast_file = fixture.ast_files[i].get()});
   }
 
-  auto file_has_errors = std::vector<bool>(file_ids.size(), false);
+  auto file_has_errors = std::vector<bool>(
+      static_cast<size_t>(file_ids.back()) + 1, false);
   fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
-  expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
+  expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
 }
 
@@ -1916,6 +1942,17 @@ auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
          "expected no else branch on the guard conditional");
 }
 
+/// `for x in xs` over a `list[T]` desugars through the *iterator* protocol,
+/// not a counting loop over `xs[i]`.
+///
+/// This used to lower to `<for container>`/`<for index>` lets around a
+/// `while i < len(xs)`, because `list` was a compiler builtin and `for` knew
+/// its shape. It is an ordinary stdlib type now (`src/std/list.kira`), with
+/// `impl[T] into_iterator[T] for list[T]`, so `for` reaches it the same way
+/// it reaches any user collection: bind the iterator once, then
+/// `while let @some(x) = it.next()`. Asserting the node kinds is what keeps
+/// that honest — a regression to the builtin path would still compute the
+/// right sum, and a test that only checked the sum would not notice.
 auto test_lowers_list_for_loop() -> void {
   auto fixture = check_fixture("module sample\n"
                                "def sum_list(xs: list[int32]) -> int32:\n"
@@ -1929,46 +1966,34 @@ auto test_lowers_list_for_loop() -> void {
   expect(result.has_value(), "expected a `for` loop over a list to lower");
 
   const auto &function = **result;
-  expect(function.body->stmts.size() == 5,
-         "expected total-let, container-let, index-let, while, return");
-
-  const auto &container_let =
-      dynamic_cast<const hir::hir_let &>(*function.body->stmts[1]);
-  expect(container_let.name == "<for container>",
-         "expected the iterable to be bound to a synthetic let");
-  expect(container_let.initializer->kind == hir::hir_node_kind::hir_local_ref,
-         "expected the iterable to be a reference to `xs`");
-
-  const auto &index_let =
-      dynamic_cast<const hir::hir_let &>(*function.body->stmts[2]);
-  expect(index_let.name == "<for index>", "expected a synthetic index let");
-  expect(index_let.is_mut, "expected the index to be mutable");
-  const auto usize_type = fixture.checked.types.usize_type();
-  expect(index_let.initializer->type == usize_type,
-         "expected the index to start at a `usize` literal `0`");
+  expect(function.body->stmts.size() == 4,
+         "expected total-let, the iterator let, the desugared while_let, and "
+         "the return");
+  expect(function.body->stmts[1]->kind == hir::hir_node_kind::hir_let,
+         "expected the iterator to be bound once, ahead of the loop");
+  expect(function.body->stmts[2]->kind == hir::hir_node_kind::hir_while_let,
+         "expected list iteration to desugar to a hir_while_let, not a "
+         "counting loop over `xs[i]`");
 
   const auto &loop =
-      dynamic_cast<const hir::hir_while &>(*function.body->stmts[3]);
-  const auto &condition =
-      dynamic_cast<const hir::hir_binary &>(*loop.condition);
-  expect(condition.op == kira::ast::binary_op::lt,
-         "expected the bound check to be `<`");
-  expect(condition.rhs->kind == hir::hir_node_kind::hir_container_len,
-         "expected the bound to be the list's runtime length");
-  const auto &len =
-      dynamic_cast<const hir::hir_container_len &>(*condition.rhs);
-  expect(len.object->kind == hir::hir_node_kind::hir_local_ref,
-         "expected the length projection to read the synthetic container");
+      dynamic_cast<const hir::hir_while_let &>(*function.body->stmts[2]);
+  expect(loop.subject->kind == hir::hir_node_kind::hir_call,
+         "expected the while_let subject to be a `.next()` call, "
+         "re-evaluated every pass");
+  const auto &pattern =
+      dynamic_cast<const hir::hir_constructor_pattern &>(*loop.pattern);
+  expect(pattern.variant_name == "some",
+         "expected the while_let pattern to match `some`");
 
+  expect(loop.body->stmts.size() == 2,
+         "expected the synthesized `let x = <payload>` plus the loop body");
   const auto &loop_var_let =
       dynamic_cast<const hir::hir_let &>(*loop.body->stmts[0]);
   expect(loop_var_let.name == "x", "expected the loop variable to be `x`");
-  expect(loop_var_let.initializer->kind == hir::hir_node_kind::hir_index,
-         "expected the loop variable to be indexed out of the container");
-  const auto &index_expr =
-      dynamic_cast<const hir::hir_index &>(*loop_var_let.initializer);
-  expect(index_expr.object->kind == hir::hir_node_kind::hir_local_ref,
-         "expected the index expression's object to be the container");
+  expect(loop_var_let.initializer->kind ==
+             hir::hir_node_kind::hir_variant_payload,
+         "expected `x` to be bound from the `some` payload, not indexed out "
+         "of the container");
 }
 
 auto test_lowers_array_for_loop_with_static_length() -> void {
@@ -2158,13 +2183,20 @@ auto test_lowers_simple_comprehension() -> void {
   expect(acc_let.name == "<comprehension result>",
          "expected a synthetic accumulator let");
   expect(acc_let.is_mut, "expected the accumulator to be mutable");
-  expect(acc_let.initializer->kind == hir::hir_node_kind::hir_array_init,
-         "expected the accumulator to start from an empty array/list "
-         "literal");
-  const auto &empty_list =
-      dynamic_cast<const hir::hir_array_init &>(*acc_let.initializer);
-  expect(empty_list.elements.empty(),
-         "expected the initial accumulator literal to have no elements");
+  // A call, not a `hir_array_init`: `[]` is no longer a primitive literal
+  // the backends know how to build. `list` is a stdlib type, and an empty
+  // list literal lowers to a call to its constructor
+  // (`impl[T] from_array[T] for list[T]`, `src/std/list.kira`).
+  expect(acc_let.initializer->kind == hir::hir_node_kind::hir_call,
+         "expected the accumulator to start from a call building an empty "
+         "list");
+  const auto &acc_init =
+      dynamic_cast<const hir::hir_call &>(*acc_let.initializer);
+  expect(acc_init.callee->kind == hir::hir_node_kind::hir_local_ref,
+         "expected the constructor call to name a real function");
+  expect(acc_init.args.empty() ||
+             acc_init.args.front()->kind == hir::hir_node_kind::hir_array_init,
+         "expected the constructor to be handed an empty array, if anything");
 
   expect(comprehension.stmts[4]->kind == hir::hir_node_kind::hir_while,
          "expected the range clause to lower to a hir_while loop");
@@ -2173,17 +2205,25 @@ auto test_lowers_simple_comprehension() -> void {
   expect(loop.body->stmts.size() == 2,
          "expected the loop-var let and the push (the increment is the step)");
   expect(loop.step != nullptr, "expected a desugared `for` to carry a step");
-  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_list_push,
-         "expected the yielded value to be appended via hir_list_push");
-  const auto &push =
-      dynamic_cast<const hir::hir_list_push &>(*loop.body->stmts[1]);
-  expect(push.target->kind == hir::hir_node_kind::hir_local_ref,
-         "expected the push target to reference the accumulator");
+  // A real call to `list.push`, not the `hir_list_push` primitive. That
+  // node only fires for a `push` with no resolved callee behind it
+  // (`lower_stmt`'s `expr_stmt` case); `list` now declares `push` itself
+  // (`src/std/list.kira`), so the comprehension appends through the same
+  // method any hand-written `xs.push(v)` would.
+  expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_expr_stmt,
+         "expected the yielded value to be appended by a `push` call");
+  const auto &push_stmt =
+      dynamic_cast<const hir::hir_expr_stmt &>(*loop.body->stmts[1]);
+  expect(push_stmt.expr->kind == hir::hir_node_kind::hir_call,
+         "expected the append to be a call");
+  const auto &push = dynamic_cast<const hir::hir_call &>(*push_stmt.expr);
+  expect(push.args.size() == 2,
+         "expected `push(acc, value)` — the receiver plus the yielded value");
   const auto &push_target =
-      dynamic_cast<const hir::hir_local_ref &>(*push.target);
+      dynamic_cast<const hir::hir_local_ref &>(*push.args[0]);
   expect(push_target.symbol == acc_let.symbol,
-         "expected the push target to be the same accumulator symbol");
-  expect(push.value->kind == hir::hir_node_kind::hir_binary,
+         "expected the push receiver to be the same accumulator symbol");
+  expect(push.args[1]->kind == hir::hir_node_kind::hir_binary,
          "expected the pushed value to be the yielded `x * x`");
 
   expect(comprehension.stmts[5]->kind == hir::hir_node_kind::hir_expr_stmt,
@@ -2222,8 +2262,12 @@ auto test_lowers_comprehension_with_guard() -> void {
   expect(guarded.branches[0].body->stmts.size() == 1,
          "expected the guarded branch to contain just the push");
   expect(guarded.branches[0].body->stmts[0]->kind ==
-             hir::hir_node_kind::hir_list_push,
-         "expected the guarded statement to be the push");
+             hir::hir_node_kind::hir_expr_stmt,
+         "expected the guarded statement to be the `push` call");
+  const auto &guarded_push =
+      dynamic_cast<const hir::hir_expr_stmt &>(*guarded.branches[0].body->stmts[0]);
+  expect(guarded_push.expr->kind == hir::hir_node_kind::hir_call,
+         "expected the guarded statement to be the `push` call");
 }
 
 auto test_lowers_nested_comprehension() -> void {
@@ -2260,8 +2304,12 @@ auto test_lowers_nested_comprehension() -> void {
          "expected the inner loop-var let and the push");
   expect(inner_loop.step != nullptr,
          "expected the inner desugared `for` to carry a step");
-  expect(inner_loop.body->stmts[1]->kind == hir::hir_node_kind::hir_list_push,
+  expect(inner_loop.body->stmts[1]->kind == hir::hir_node_kind::hir_expr_stmt,
          "expected the push to happen only at the innermost level");
+  const auto &inner_push =
+      dynamic_cast<const hir::hir_expr_stmt &>(*inner_loop.body->stmts[1]);
+  expect(inner_push.expr->kind == hir::hir_node_kind::hir_call,
+         "expected the innermost statement to be the `push` call");
 }
 
 auto test_rejects_comprehension_over_user_defined_type() -> void {

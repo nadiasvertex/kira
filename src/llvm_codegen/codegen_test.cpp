@@ -23,6 +23,7 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
+#include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
 
@@ -47,12 +48,30 @@ auto load_fixture(std::string_view filename) -> std::string {
 struct checked_fixture {
   kira::source_manager sources;
   kira::diagnostic_bag diag{};
+  kira::testing::parsed_stdlib stdlib;
   kira::ast::ptr<kira::ast::file> ast_file;
   kira::semantic::checked_types checked;
 };
 
+/// Fails with the rendered diagnostics when a fixture did not check cleanly,
+/// rather than with a bare "expected fixture to check cleanly" that says
+/// nothing about what went wrong.
+auto expect_checked_cleanly(const kira::source_manager &sources,
+                            const kira::diagnostic_bag &diag) -> void {
+  if (diag.error_count() != 0) {
+    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+    fail("expected fixture to check cleanly");
+  }
+}
+
+// The stdlib is injected alongside the fixture, exactly as the driver
+// injects it: `list`, `option` and friends are ordinary Kira types declared
+// in `src/std/*.kira`, so a fixture as plain as `-> list[int32]` does not
+// resolve without them. `stdlib` is held in the fixture because
+// `parsed_module` borrows the ASTs it points at.
 auto check_fixture(const std::string &text) -> checked_fixture {
   auto fixture = checked_fixture{};
+  fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
   const auto file_id = fixture.sources.add_file("sample.kira", text);
   expect(file_id.has_value(), "expected fixture source to register");
 
@@ -67,13 +86,12 @@ auto check_fixture(const std::string &text) -> checked_fixture {
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
-  const auto parsed_modules = std::vector<kira::semantic::parsed_module>{
-      kira::semantic::parsed_module{.file_id = *file_id,
-                                    .ast_file = fixture.ast_file.get()},
-  };
+  auto parsed_modules = fixture.stdlib.modules;
+  parsed_modules.push_back(kira::semantic::parsed_module{
+      .file_id = *file_id, .ast_file = fixture.ast_file.get()});
   fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
-  expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
+  expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
 }
 
@@ -82,11 +100,20 @@ struct jit_fixture {
   lc::jit_module jit;
 };
 
+// Compiles the fixture together with every stdlib module it actually
+// reaches: `xs.push(x)` on a `list[T]` is a real call into
+// `src/std/list.kira`, so the callee has to be in the compiled set for the
+// JIT to have anything to call.
 auto jit_fixture_for(const std::string &text) -> jit_fixture {
   auto fixture = check_fixture(text);
-  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
-  expect(module.has_value(), "expected fixture to lower to HIR");
-  auto compiled = lc::compile_module(**module, fixture.checked.types);
+  auto entry = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(entry.has_value(), "expected fixture to lower to HIR");
+  auto modules = hir::ptr_vec<hir::hir_module>{};
+  modules.push_back(std::move(*entry));
+  const auto *entry_module = modules.front().get();
+  kira::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked, modules);
+  const auto reachable = hir::find_reachable_modules(*entry_module, modules);
+  auto compiled = lc::compile_module(reachable, fixture.checked.types);
   expect(compiled.has_value(),
          "expected fixture to compile to an llvm::Module");
   auto jit = lc::jit_module::create(std::move(*compiled));
@@ -102,8 +129,9 @@ auto jit_fixture_for_multi(
     const std::vector<std::pair<std::string, std::string>> &files,
     std::string_view entry_module_name) -> jit_fixture {
   auto fixture = checked_fixture{};
+  fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
   auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
-  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  auto parsed_modules = fixture.stdlib.modules;
   auto file_ids = std::vector<kira::file_id_type>{};
 
   for (const auto &[path, text] : files) {
@@ -127,10 +155,11 @@ auto jit_fixture_for_multi(
         .file_id = file_ids[i], .ast_file = ast_files[i].get()});
   }
 
-  auto file_has_errors = std::vector<bool>(file_ids.size(), false);
+  auto file_has_errors =
+      std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
   fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
-  expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
+  expect_checked_cleanly(fixture.sources, fixture.diag);
 
   auto modules = hir::ptr_vec<hir::hir_module>{};
   for (size_t i = 0; i < files.size(); ++i) {
@@ -143,6 +172,8 @@ auto jit_fixture_for_multi(
   // lower them into standalone modules just as `driver::lower_and_emit_
   // modules` does, so a `use m[args] as db` fixture's `db.f(...)` calls
   // resolve.
+  kira::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked, modules);
+
   auto functor_modules = hir::lower_functor_modules(fixture.checked);
   expect(functor_modules.has_value(),
          "expected functor instantiations to lower");

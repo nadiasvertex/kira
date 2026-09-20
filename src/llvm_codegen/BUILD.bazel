@@ -91,7 +91,10 @@ cc_test(
 cc_test(
     name = "codegen_test",
     srcs = ["codegen_test.cpp"],
-    data = ["//src:codegen_test_corpus"],
+    data = [
+        "//src:codegen_test_corpus",
+        "//src:std_sources",
+    ],
     tags = ["no-sandbox"],
     deps = [
         ":codegen",
@@ -101,5 +104,6 @@ cc_test(
         "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/testing",
+        "//src/testing:stdlib_fixtures",
     ],
 )

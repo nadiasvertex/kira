@@ -46,11 +46,13 @@ cc_test(
 cc_test(
     name = "lower_test",
     srcs = ["lower_test.cpp"],
+    data = ["//src:std_sources"],
     deps = [
         ":hir",
         "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/testing",
+        "//src/testing:stdlib_fixtures",
     ],
 )
 

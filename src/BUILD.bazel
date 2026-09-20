@@ -167,7 +167,10 @@ cc_test(
     name = "codegen_stress_test",
     size = "medium",
     srcs = ["codegen_stress_test.cpp"],
-    data = [":codegen_stress_corpus"],
+    data = [
+        ":codegen_stress_corpus",
+        ":std_sources",
+    ],
     tags = ["no-sandbox"],
     deps = [
         "//src/bytecode:bytecode",
@@ -178,5 +181,7 @@ cc_test(
         "//src/llvm_codegen:codegen",
         "//src/llvm_codegen:jit_support",
         "//src/semantic:semantic",
+        "//src/testing",
+        "//src/testing:stdlib_fixtures",
     ],
 )

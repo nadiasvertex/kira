@@ -30,6 +30,7 @@
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/compile.h"
+#include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
 #include "src/llvm_codegen/codegen.h"
@@ -42,6 +43,7 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
+#include "src/testing/stdlib_fixtures.h"
 
 namespace {
 
@@ -118,13 +120,20 @@ auto read_file(const fs::path &path) -> std::string {
 struct checked_fixture {
   kira::source_manager sources;
   kira::diagnostic_bag diag{};
+  kira::testing::parsed_stdlib stdlib;
   kira::ast::ptr<kira::ast::file> ast_file;
   kira::semantic::checked_types checked;
 };
 
+// The stdlib is injected alongside the corpus file, exactly as the driver
+// injects it: `list`, `option` and friends are ordinary Kira types declared
+// in `src/std/*.kira`, so a corpus file as plain as `-> list[int32]` does
+// not resolve without them. `stdlib` is held in the fixture because
+// `parsed_module` borrows the ASTs it points at.
 auto check_source(const std::string &text, const fs::path &path)
     -> checked_fixture {
   auto fixture = checked_fixture{};
+  fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
   const auto file_id = fixture.sources.add_file(path.string(), text);
   expect(file_id.has_value(),
          std::format("`{}`: expected source to register", path.string()));
@@ -140,12 +149,15 @@ auto check_source(const std::string &text, const fs::path &path)
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
-  const auto parsed_modules = std::vector<kira::semantic::parsed_module>{
-      kira::semantic::parsed_module{.file_id = *file_id,
-                                    .ast_file = fixture.ast_file.get()},
-  };
+  auto parsed_modules = fixture.stdlib.modules;
+  parsed_modules.push_back(kira::semantic::parsed_module{
+      .file_id = *file_id, .ast_file = fixture.ast_file.get()});
   fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
+  if (fixture.diag.error_count() != 0) {
+    std::cerr << kira::diagnostic_renderer(fixture.sources, false)
+                     .render_all(fixture.diag);
+  }
   expect(fixture.diag.error_count() == 0,
          std::format("`{}`: expected corpus file to check cleanly",
                      path.string()));
@@ -333,18 +345,29 @@ auto run_llvm(const fs::path &path,
   }
 }
 
+// `list[T]`. It used to be a compiler builtin (`builtin_generic_kind`) and
+// is now an ordinary stdlib struct (`src/std/list.kira`), so both spellings
+// have to be recognized — the header it lays out, `{ len, cap, data }`, is
+// the same either way, which is what the readers below depend on.
+[[nodiscard]] auto is_list_type(const kira::semantic::type_entry &entry)
+    -> bool {
+  return (entry.kind == kira::semantic::type_kind::builtin_generic_kind ||
+          entry.kind == kira::semantic::type_kind::struct_kind) &&
+         entry.name == "list" && entry.args.size() == 1;
+}
+
 [[nodiscard]] auto is_deep_comparable(const kira::semantic::type_table &types,
                                       kira::semantic::type_id id) -> bool {
   if (bc::numeric_kind_of(types, id).has_value()) {
     return true;
   }
   const auto &entry = types.entry(id);
+  if (is_list_type(entry)) {
+    return is_deep_comparable(types, entry.args.front());
+  }
   switch (entry.kind) {
   case kira::semantic::type_kind::builtin_kind:
     return entry.name == "str";
-  case kira::semantic::type_kind::builtin_generic_kind:
-    return entry.name == "list" && entry.args.size() == 1 &&
-           is_deep_comparable(types, entry.args.front());
   case kira::semantic::type_kind::tuple_kind:
     return std::ranges::all_of(entry.args,
                                [&](kira::semantic::type_id arg) -> bool {
@@ -365,23 +388,9 @@ auto run_llvm(const fs::path &path,
     return a_bits == b_bits;
   }
   const auto &entry = types.entry(id);
-  switch (entry.kind) {
-  case kira::semantic::type_kind::builtin_kind: {
-    // `str`: { u64 len; u8* data; } — compare length, then raw bytes.
-    const auto len_a = read_slot(a_bits, 0);
-    const auto len_b = read_slot(b_bits, 0);
-    if (len_a != len_b) {
-      return false;
-    }
-    const auto *data_a = reinterpret_cast<const char *>(
-        static_cast<uintptr_t>(read_slot(a_bits, 1)));
-    const auto *data_b = reinterpret_cast<const char *>(
-        static_cast<uintptr_t>(read_slot(b_bits, 1)));
-    return std::memcmp(data_a, data_b, len_a) == 0;
-  }
-  case kira::semantic::type_kind::builtin_generic_kind: {
+  if (is_list_type(entry)) {
     // `list[T]`: { u64 len; u64 cap; T* data; } — compare length, then
-    // every element (each one slot, per this file's own top comment).
+    // every element (each at its own natural stride).
     const auto len_a = read_slot(a_bits, 0);
     const auto len_b = read_slot(b_bits, 0);
     if (len_a != len_b) {
@@ -398,6 +407,20 @@ auto run_llvm(const fs::path &path,
       }
     }
     return true;
+  }
+  switch (entry.kind) {
+  case kira::semantic::type_kind::builtin_kind: {
+    // `str`: { u64 len; u8* data; } — compare length, then raw bytes.
+    const auto len_a = read_slot(a_bits, 0);
+    const auto len_b = read_slot(b_bits, 0);
+    if (len_a != len_b) {
+      return false;
+    }
+    const auto *data_a = reinterpret_cast<const char *>(
+        static_cast<uintptr_t>(read_slot(a_bits, 1)));
+    const auto *data_b = reinterpret_cast<const char *>(
+        static_cast<uintptr_t>(read_slot(b_bits, 1)));
+    return std::memcmp(data_a, data_b, len_a) == 0;
   }
   case kira::semantic::type_kind::tuple_kind:
     // A tuple packs its elements at their own natural width/offset
@@ -510,13 +533,23 @@ auto run_one(const fs::path &path) -> void {
   expect(submodules.has_value(),
          std::format("`{}`: expected inline submodules to lower to HIR: {}",
                      path.string(), submodules.error().message));
-  auto module_set = std::vector<const hir::hir_module *>{lowered->get()};
-  for (const auto &submodule : *submodules) {
-    module_set.push_back(submodule.get());
+  // Both tiers also need every stdlib function the corpus file actually
+  // calls: `list` is an ordinary stdlib type now, so `xs.push(x)` is a real
+  // cross-module call. `find_reachable_modules` keeps the set to what this
+  // file uses rather than the whole standard library.
+  auto owned_modules = hir::ptr_vec<hir::hir_module>{};
+  owned_modules.push_back(std::move(*lowered));
+  const auto *entry_module = owned_modules.front().get();
+  for (auto &submodule : *submodules) {
+    owned_modules.push_back(std::move(submodule));
   }
+  kira::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
+                                      owned_modules);
+  const auto module_set =
+      hir::find_reachable_modules(*entry_module, owned_modules);
 
   const auto *main_fn = static_cast<const hir::hir_function *>(nullptr);
-  for (const auto &fn : (*lowered)->functions) {
+  for (const auto &fn : entry_module->functions) {
     if (fn != nullptr && fn->name == "main") {
       main_fn = fn.get();
       break;

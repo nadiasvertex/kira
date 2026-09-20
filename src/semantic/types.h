@@ -887,6 +887,15 @@ struct checked_types {
   /// Keyed by the `ast::for_expr` node.
   std::unordered_map<const ast::for_expr *, comprehension_dispatch>
       comprehension_dispatches;
+  /// Every fill literal whose repeat count is only known at runtime
+  /// (`[v; n]` for a non-constant `n`), with the same `list[T]::new`/
+  /// `list[T]::push` pair a comprehension uses. A constant count builds an
+  /// `array[T, n]` and goes through `from_array`
+  /// (`array_literal_conversions`) instead; a runtime count has no
+  /// compile-time-sized array to hand it, so it is filled by a counting loop
+  /// — see `hir::lower_array`. Keyed by the `ast::array_expr` node.
+  std::unordered_map<const ast::array_expr *, comprehension_dispatch>
+      runtime_fill_dispatches;
   /// Every `?` (`try_expr`) whose operand's `result[_, E1]` error type
   /// differs from the enclosing function's declared `result[_, E2]` error
   /// type and resolved against a real `impl from[E1] for E2` — see

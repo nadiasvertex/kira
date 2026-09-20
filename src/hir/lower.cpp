@@ -469,6 +469,10 @@ private:
   [[nodiscard]] auto lower_array_value(const ast::array_expr &array,
                                        type_id type)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto
+  lower_runtime_fill(const ast::array_expr &array, type_id type,
+                     const semantic::comprehension_dispatch &dispatch)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_struct(const ast::struct_expr &literal)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_cast(const ast::cast_expr &cast)
@@ -2252,6 +2256,15 @@ auto lowerer::lower_array(const ast::array_expr &array)
   if (!type.has_value()) {
     return std::unexpected(type.error());
   }
+  // `[v; n]` with a count only known at runtime. There is no
+  // compile-time-sized `array[T, n]` to build and hand to `from_array`, so
+  // the list is filled the way a comprehension builds its result: bind
+  // `new()`, then `push(v)` in a counting loop. See
+  // `checked_types::runtime_fill_dispatches`.
+  if (const auto fill = checked_.runtime_fill_dispatches.find(&array);
+      fill != checked_.runtime_fill_dispatches.end()) {
+    return lower_runtime_fill(array, *type, fill->second);
+  }
   // A literal written where a user collection was expected: build the
   // `array[T, n]` exactly as before, then hand it to that collection's
   // `from_array`. The array type comes from the recorded conversion rather
@@ -2283,6 +2296,110 @@ auto lowerer::lower_array(const ast::array_expr &array)
                                        std::move(args)));
   }
   return lower_array_value(array, *type);
+}
+
+/// Lowers `[v; n]` for a runtime `n` into a block that evaluates to a
+/// freshly filled list:
+///
+/// ```text
+/// { var acc = list::new(); var i: usize = 0
+///   while i < n: acc.push(v); i = i + 1
+///   acc }
+/// ```
+///
+/// `n` and `v` are each evaluated exactly once — `n` before the loop so the
+/// bound cannot change under it, and `v` once per iteration only because the
+/// value has to be pushed once per slot.
+auto lowerer::lower_runtime_fill(const ast::array_expr &array, type_id type,
+                                 const semantic::comprehension_dispatch
+                                     &dispatch)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  if (array.fill_value == nullptr || array.fill_count == nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, array.span,
+                "a fill literal needs both a value and a count");
+  }
+  const auto span = array.span;
+  const auto usize_type = checked_.types.usize_type();
+
+  const auto call_from_resolved =
+      [this, span](type_id result, const semantic::resolved_callee &resolved,
+                   ptr_vec<hir_expr> args) -> ptr<hir_expr> {
+    const auto local_name =
+        resolved.impl_target_type.empty()
+            ? resolved.decl->name
+            : std::format("{}::{}", resolved.impl_target_type,
+                          resolved.decl->name);
+    const auto symbol = resolve_reference(local_name);
+    auto callee = ptr<hir_expr>(make<hir_local_ref>(
+        span, k_unknown_type, symbol, local_name, resolved.owner_module));
+    return ptr<hir_expr>(hir::make<hir_call>(span, result, std::move(callee),
+                                             std::move(args)));
+  };
+
+  auto count = lower_expr(*array.fill_count);
+  if (!count.has_value()) {
+    return std::unexpected(count.error());
+  }
+  auto fill_value = lower_expr(*array.fill_value);
+  if (!fill_value.has_value()) {
+    return std::unexpected(fill_value.error());
+  }
+
+  const auto acc_symbol = mint_symbol();
+  const auto count_symbol = mint_symbol();
+  const auto index_symbol = mint_symbol();
+
+  auto stmts = ptr_vec<hir_node>{};
+  stmts.push_back(ptr<hir_node>(
+      make<hir_let>(span, acc_symbol, std::string("<fill result>"),
+                    call_from_resolved(type, dispatch.new_callee,
+                                       ptr_vec<hir_expr>{}),
+                    /*mut=*/true)));
+  stmts.push_back(ptr<hir_node>(
+      make<hir_let>(span, count_symbol, std::string("<fill count>"),
+                    std::move(*count), /*mut=*/false)));
+  stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, index_symbol, std::string("<fill index>"),
+      ptr<hir_expr>(make<hir_literal>(span, usize_type, token_kind::int_lit,
+                                      "0")),
+      /*mut=*/true)));
+
+  auto condition = ptr<hir_expr>(hir::make<hir_binary>(
+      span, checked_.types.bool_type(), ast::binary_op::lt,
+      ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
+                                        std::string("<fill index>"))),
+      ptr<hir_expr>(make<hir_local_ref>(span, usize_type, count_symbol,
+                                        std::string("<fill count>")))));
+
+  auto push_args = ptr_vec<hir_expr>{};
+  push_args.push_back(ptr<hir_expr>(make<hir_local_ref>(
+      span, type, acc_symbol, std::string("<fill result>"))));
+  push_args.push_back(std::move(*fill_value));
+  auto body_stmts = ptr_vec<hir_node>{};
+  body_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span, call_from_resolved(
+                drop_call_result_type(checked_, *dispatch.push_callee.decl),
+                dispatch.push_callee, std::move(push_args)))));
+  auto body = make<hir_block>(span, k_unknown_type, std::move(body_stmts));
+
+  // The increment lives in the loop's *step*, not the body, for the same
+  // reason every other desugared counting loop here does: a `continue` must
+  // still advance the index rather than spin on it.
+  auto step_stmts = ptr_vec<hir_node>{};
+  step_stmts.push_back(ptr<hir_node>(hir::make<hir_assign>(
+      span, ast::assign_op::add_assign,
+      ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
+                                        std::string("<fill index>"))),
+      ptr<hir_expr>(
+          make<hir_literal>(span, usize_type, token_kind::int_lit, "1")))));
+
+  stmts.push_back(ptr<hir_node>(make<hir_while>(
+      span, std::move(condition), std::move(body),
+      make<hir_block>(span, k_unknown_type, std::move(step_stmts)))));
+  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span, ptr<hir_expr>(make<hir_local_ref>(
+                span, type, acc_symbol, std::string("<fill result>"))))));
+  return ok_expr(make<hir_block>(span, type, std::move(stmts)));
 }
 
 /// Builds the `array[T, n]` value a sequence literal denotes, at the type
