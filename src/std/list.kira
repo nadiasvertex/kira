@@ -182,6 +182,15 @@ impl[T] index_mut[usize] for list[T]:
             panic("index out of range")
         return &mut self.data[i]
 
+#: Borrowing `&v[i]`, with the same bounds check. The read-only sibling of
+#: `index_mut` above: same address, but a `cell[T]` rather than `cell_mut[T]`
+#: so only `.get()` is offered, not `.set()`.
+impl[T] index_ref[usize] for list[T]:
+    machine def at_ref(self, i: usize) -> cell[T]:
+        if i >= self.len:
+            panic("index out of range")
+        return &self.data[i]
+
 #: Reading `v[a..b]` — a read-only sub-view over the same storage, no copy.
 #: A separate `index` impl from the element one above, with its own
 #: `output`: indexing by a range means something different from indexing by

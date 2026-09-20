@@ -1001,6 +1001,7 @@ public:
         .index_dispatches = std::move(index_dispatches_),
         .index_set_dispatches = std::move(index_set_dispatches_),
         .index_mut_dispatches = std::move(index_mut_dispatches_),
+        .index_ref_dispatches = std::move(index_ref_dispatches_),
         .array_literal_conversions = std::move(array_literal_conversions_),
         .interp_dispatches = std::move(interp_dispatches_),
         .type_param_reflections = std::move(type_param_reflections_),
@@ -1198,6 +1199,11 @@ private:
   /// `hir::lower_unary`.
   std::unordered_map<const ast::index_expr *, resolved_callee>
       index_mut_dispatches_;
+  /// Every `&v[i]` resolved against a user type's `index_ref` impl —
+  /// recorded by `require_index_ref_trait`, consulted by
+  /// `hir::lower_unary`.
+  std::unordered_map<const ast::index_expr *, resolved_callee>
+      index_ref_dispatches_;
   /// Sequence literals that construct a user collection through its
   /// `from_array` impl, recorded by `try_wire_from_array`.
   std::unordered_map<const ast::array_expr *, array_literal_conversion>
@@ -8077,6 +8083,75 @@ private:
       if (const auto offset = raw_pointer_element_address(unary, expected)) {
         return *offset;
       }
+      // `&v[i]` on a user type: `v[i]` alone already dispatched to `index`'s
+      // `at` (an ordinary read) by the `infer_expr` call above — but an
+      // enclosing `&` means a read-only interior reference was wanted
+      // instead, which only `index_ref`'s `at_ref` can hand out (a user
+      // type has no directly addressable element the way a list/array/slice
+      // does). Re-dispatch here rather than in `infer_index`, which has no
+      // way to know about this enclosing `&` at the point it runs — the
+      // mirror of `addr_of_mut`'s identical `index_mut` re-dispatch below
+      // (spec/todo.md item 17).
+      //
+      // Guarded to skip a range-index read (`v[a..b]`, already typed
+      // `slice[T]` by the plain read above): a sub-view is already a
+      // complete, already-immutable value with nothing to re-borrow, the
+      // same reason `index_ref` documents no impl exists for a range key —
+      // `&v[a..b]` should stay a plain `&slice[T]`, not misfire into
+      // `index_ref`'s single-element `at_ref` and report a bogus key-type
+      // mismatch.
+      const auto &stripped_entry_for_index = types_.entry(stripped);
+      if (unary.operand != nullptr &&
+          unary.operand->kind == ast::node_kind::index_expr &&
+          !(stripped_entry_for_index.kind == type_kind::builtin_generic_kind &&
+            stripped_entry_for_index.name == "slice")) {
+        const auto &index =
+            dynamic_cast<const ast::index_expr &>(*unary.operand);
+        if (index.object != nullptr) {
+          const auto object_type =
+              base_shape(infer_expr(*index.object, k_unknown_type));
+          const auto &object_entry = types_.entry(strip_refs(object_type));
+          if (object_entry.kind == type_kind::struct_kind ||
+              object_entry.kind == type_kind::sum_kind ||
+              object_entry.kind == type_kind::opaque_kind) {
+            if (stripped == k_error_type) {
+              // The read dispatch this `&` sits on top of already rejected
+              // the key (`check_index_key`); re-dispatching against
+              // `index_ref` would report the same mismatch a second time in
+              // the trait's own words.
+              return k_error_type;
+            }
+            if (type_has_trait(object_entry, "index_ref")) {
+              const auto result = require_index_ref_trait(
+                  index, object_type, object_entry, recorded_key_type(index));
+              if (!types_.is_unknown(result)) {
+                record_expr_type(index, result);
+                // A `cell[T]` *is* the address of the element, so it stands
+                // as the whole `&v[i]` — matching `&mut v[i]`'s `cell_mut[T]`
+                // result above.
+                return result;
+              }
+            } else if (type_has_trait(object_entry, "index")) {
+              error_with_help(
+                  unary.span,
+                  std::format("cannot borrow `{}[...]` this way",
+                              types_.display(strip_refs(object_type))),
+                  std::format(
+                      "`{}` can be read at an index but has no `index_ref` "
+                      "impl",
+                      types_.display(strip_refs(object_type))),
+                  std::format(
+                      "Taking an interior reference is a separate capability "
+                      "from reading by value. Add:\n\n    impl "
+                      "index_ref[usize] for {}:\n"
+                      "        def at_ref(self, i: usize) -> cell[...]:\n"
+                      "            ...",
+                      object_entry.name));
+              return k_error_type;
+            }
+          }
+        }
+      }
       // `&expr` where a `cell[T]` is expected (an `index_mut`-style trait
       // method's body handing back the single-element view its signature
       // promises) types directly as the `cell[T]` rather than `&T`: the two
@@ -13219,6 +13294,60 @@ private:
         target,
         parameterized_trait_key(
             "index", resolve_index_key_type(target, "index", *method)),
+        *method);
+  }
+
+  /// The read-borrow half: `&v[i]` on a user receiver, against `index_ref`.
+  /// Called from `infer_unary`'s `addr_of` case rather than from
+  /// `infer_index` itself, since only the enclosing `&` decides whether a
+  /// read (`at`) or a read-borrow (`at_ref`) is meant — the two share syntax
+  /// up to that point (mirrors `require_index_mut_trait`'s relationship to
+  /// `addr_of_mut`).
+  ///
+  /// Unlike `index_mut`'s `output_mut`, `index_ref`'s `at_ref` has no
+  /// associated type of its own to resolve here: its return type is written
+  /// directly against `index`'s own `output`, but `self.output` inside
+  /// `index_ref`'s trait declaration resolves to `unknown` (no code path
+  /// threads an assoc type through a `requires` bound) — harmlessly, since
+  /// every real impl states its own concrete `cell[T]` return type in the
+  /// signature `find_method` hands back, exactly as `require_index_trait`'s
+  /// `at` does. So this reuses `resolve_index_output`, not a `index_ref`
+  /// counterpart of `resolve_index_mut_output`.
+  ///
+  /// Returns `k_unknown_type` when the receiver has no `index_ref` impl at
+  /// all, so the caller can fall back to its own diagnostic (mirroring the
+  /// missing-method hush in `require_index_trait`).
+  auto require_index_ref_trait(const ast::index_expr &index, type_id object,
+                               const type_entry &entry, type_id key)
+      -> type_id {
+    const auto target = strip_refs(object);
+    if (!type_has_trait(entry, "index_ref")) {
+      return k_unknown_type;
+    }
+    const auto *method = find_method(
+        entry, "at_ref", target, index_key_filter(target, "index_ref", key));
+    const auto *any =
+        method != nullptr ? method : find_method(entry, "at_ref", target);
+    if (any == nullptr || any->decl->params.empty() ||
+        param_name_of(any->decl->params.front()) != "self") {
+      return k_unknown_type;
+    }
+    if (method == nullptr) {
+      check_index_key(index, target, "index_ref", *any, key);
+      return k_error_type;
+    }
+    const auto *callee = instantiate_impl_method_for(
+        index, *method, entry, target,
+        index_instance_discriminator(target, "index_ref", *method));
+    index_ref_dispatches_[&index] =
+        resolved_callee{.decl = callee != nullptr ? callee : method->decl,
+                        .owner_module = method->owner->module_name,
+                        .impl_target_type = callee != nullptr ? "" : entry.name,
+                        .receiver = index.object.get()};
+    return resolve_index_output(
+        target,
+        parameterized_trait_key(
+            "index_ref", resolve_index_key_type(target, "index_ref", *method)),
         *method);
   }
 

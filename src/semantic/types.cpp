@@ -654,6 +654,22 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
          (expected_entry.name == "cell_mut" && found_entry.is_mut))) {
       return compatible(expected_entry.args.front(), found_entry.result);
     }
+    // The reverse direction of the rule above: a `cell[T]`/`cell_mut[T]`
+    // view fits wherever a `&T`/`&mut T` place is expected, since they are
+    // the same bare address — needed for `index_ref`/`index_mut` dispatch
+    // results (typed as bare `cell[T]`/`cell_mut[T]`, see `checker::
+    // require_index_ref_trait`/`require_index_mut_trait`) to satisfy an
+    // ordinary reference-typed context, e.g. `std.iter`'s borrowing
+    // iterators returning `option[&T]`/`option[&mut T]` around a `let slot =
+    // &self.src[self.at]`. An expected `&mut T` still demands `cell_mut`,
+    // for the same write-through-an-unlent-borrow reason as above.
+    if (found_entry.kind == type_kind::builtin_generic_kind &&
+        expected_entry.kind == type_kind::ref_kind &&
+        found_entry.args.size() == 1 &&
+        (found_entry.name == "cell" || found_entry.name == "cell_mut") &&
+        (!expected_entry.is_mut || found_entry.name == "cell_mut")) {
+      return compatible(expected_entry.result, found_entry.args.front());
+    }
     // A `&T` argument position accepts a lent `T`; the borrow checker owns
     // the deeper rules, so typing treats the reference as its target here.
     if (expected_entry.kind == type_kind::ref_kind) {

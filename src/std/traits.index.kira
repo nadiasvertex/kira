@@ -81,6 +81,24 @@ pub trait index_mut[I] requires index[I]:
     #:   a mutable view of the value at that index.
     def at_mut(mut self, i: I) -> self.output_mut
 
+#: Borrowing `&self[i]`.
+#:
+#: Separate from `index` for the same reason `index_mut` is: handing out an
+#: interior reference (even a read-only one) is a promise about the
+#: collection's storage, not just about what value `self[i]` holds. Unlike
+#: `index_mut`, the borrowed view is always `cell[self.output]` — never
+#: something like `slice[T]`, which is already immutable and needs no cell
+#: around it, so a range-index impl has no reason to implement `index_ref`
+#: at all; only element access does.
+pub trait index_ref[I] requires index[I]:
+    #: Returns a read-only view of the value at `i`.
+    #: Args:
+    #:   self: the collection.
+    #:   i: the index.
+    #: Returns:
+    #:   a read-only view of the value at that index.
+    def at_ref(self, i: I) -> cell[self.output]
+
 #: Writing `self[i] = value`.
 pub trait index_set[I]:
     #: The type `self[i] = value` accepts.

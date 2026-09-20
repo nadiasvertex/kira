@@ -1389,6 +1389,32 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
                                   std::move(*object), std::move(*idx));
     }
   }
+  // `&v[i]` on a user type resolved to `index_ref` (see check.cpp's
+  // `require_index_ref_trait`) — the read-only mirror of the `addr_of_mut`
+  // case above: `at_ref`'s `cell[T]` result already *is* the value `&v[i]`
+  // evaluates to, so this lowers straight to the call rather than wrapping
+  // it in a `hir_unary(addr_of, ...)` with no place behind it.
+  if (un.op == ast::unary_op::addr_of &&
+      un.operand->kind == ast::node_kind::index_expr) {
+    const auto &index = dynamic_cast<const ast::index_expr &>(*un.operand);
+    if (const auto found = checked_.index_ref_dispatches.find(&index);
+        found != checked_.index_ref_dispatches.end()) {
+      if (index.object == nullptr || index.index == nullptr) {
+        return fail(lowering_error_kind::unsupported_construct, index.span,
+                    "index expression is missing its target or index");
+      }
+      auto object = lower_expr(*index.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      auto idx = lower_expr(*index.index);
+      if (!idx.has_value()) {
+        return std::unexpected(idx.error());
+      }
+      return lower_index_dispatch(index.span, *type, found->second,
+                                  std::move(*object), std::move(*idx));
+    }
+  }
   auto operand = lower_expr(*un.operand);
   if (!operand.has_value()) {
     return std::unexpected(operand.error());

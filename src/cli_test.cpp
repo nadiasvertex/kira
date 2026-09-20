@@ -1332,6 +1332,81 @@ auto test_run_index_mut_dispatches_to_cell_mut() -> void {
 #endif
 }
 
+/// `&v[i]` on a user type implementing `std.traits.index_ref`
+/// (spec/todo.md item 17) — the read-only mirror of
+/// `test_run_index_mut_dispatches_to_cell_mut` above. Dispatches to
+/// `at_ref`, whose body returns `&self.a` where its signature promises a
+/// `cell[T]`; `c.get()` on the result exercises `cell`'s actual runtime
+/// representation on both tiers. Needs the full driver for the same reason
+/// as the `index_mut` test: `codegen_stress_test`'s corpus has no stdlib
+/// injected, so no `index`/`index_ref` traits to dispatch against.
+auto test_run_index_ref_dispatches_to_cell() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_index_ref.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_index_ref_bin";
+
+  write_file(source_path,
+             "module sample\n"
+             "type readable = { a: int32 }\n"
+             "impl index[usize] for readable:\n"
+             "  type output = int32\n"
+             "  def at(self, i: usize) -> int32:\n"
+             "    return self.a\n"
+             "impl index_ref[usize] for readable:\n"
+             "  def at_ref(self, i: usize) -> cell[int32]:\n"
+             "    return &self.a\n"
+             "def main() -> int32:\n"
+             "  let r = readable{ a: 7 }\n"
+             "  let c = &r[0]\n"
+             "  return c.get() * 5\n");
+
+  kira::driver::cli_config run_cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected the index_ref program to compile cleanly");
+  expect(run_report->run.has_value(), "expected a run outcome to be recorded");
+  expect(run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == 35,
+         "expected the bytecode VM's exit code to be 7 * 5 == 35");
+
+  kira::driver::cli_config build_cfg{
+      .program_name = "kira",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value(),
+         "expected compile driver to return a report");
+  expect(build_report->build.has_value(),
+         "expected a build outcome to be recorded");
+  expect(build_report->build->succeeded,
+         std::format("expected `--build` to link successfully: {}",
+                     build_report->build->message));
+
+  const auto exit_status = std::system(output_path.string().c_str());
+  expect(exit_status != -1, "expected the linked executable to launch");
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(exit_status) == 35,
+         "expected the linked executable's exit code to be 7 * 5 == 35");
+#endif
+}
+
 /// A function imported from another module and used as a *plain value* —
 /// bound to a `let` of `fn` type, and passed as a call argument — rather
 /// than called directly. Both uses used to type-check and then fail in
@@ -3992,6 +4067,7 @@ auto main() -> int {
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
     test_run_index_mut_dispatches_to_cell_mut();
+    test_run_index_ref_dispatches_to_cell();
     test_cross_module_function_used_as_a_value();
     test_module_qualified_function_used_as_a_value();
     test_build_at_o2_still_links_and_runs_correctly();
