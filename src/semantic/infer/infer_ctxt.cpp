@@ -81,6 +81,24 @@ auto infer_ctxt::fresh_value(type_id underlying, std::string origin,
   return id;
 }
 
+/// Minted on first use and remembered, so every mention of `n` in every
+/// polynomial in the session refers to one variable in one union-find.
+auto infer_ctxt::value_param(std::string name, type_id underlying,
+                             source_location where) -> type_id {
+  if (const auto it = value_params_.find(name); it != value_params_.end()) {
+    return it->second;
+  }
+  const auto id = fresh_value(underlying, name, where);
+  value_params_.emplace(std::move(name), id);
+  return id;
+}
+
+auto infer_ctxt::value_param_named(std::string_view name) const
+    -> std::optional<type_id> {
+  const auto it = value_params_.find(std::string(name));
+  return it == value_params_.end() ? std::nullopt : std::optional(it->second);
+}
+
 auto infer_ctxt::is_meta(type_id id) const -> bool {
   return vars_.contains(id);
 }
@@ -286,7 +304,12 @@ auto infer_ctxt::zonk(type_id id) -> type_id {
   if (const auto it = zonk_memo_.find(resolved); it != zonk_memo_.end()) {
     return it->second;
   }
+  if (zonking_.contains(resolved)) {
+    return resolved; // Already being rebuilt; see `zonking_`.
+  }
+  zonking_.insert(resolved);
   const auto rebuilt = rebuild(resolved);
+  zonking_.erase(resolved);
   zonk_memo_[resolved] = rebuilt;
   return rebuilt;
 }
@@ -294,12 +317,10 @@ auto infer_ctxt::zonk(type_id id) -> type_id {
 /// Rebuilds one level through the table's constructors, with children
 /// already zonked.
 ///
-/// Two kinds are deliberately returned untouched. `existential_kind` is
-/// *nominal* — minted fresh per `some Trait` written in source and never
-/// interned — so rebuilding one would mint a second, distinct type for the
-/// same declaration. `symbolic_value_kind`'s polynomial is over *named* value
-/// parameters rather than `type_id`s, so substituting into it is value
-/// solving, which is phase 3; until then a symbolic value zonks to itself.
+/// `existential_kind` is deliberately returned untouched: it is *nominal* —
+/// minted fresh per `some Trait` written in source and never interned — so
+/// rebuilding one would mint a second, distinct type for the same
+/// declaration.
 auto infer_ctxt::rebuild(type_id id) -> type_id {
   const auto &entry = table_->entry(id);
   auto zonk_args = [&] {
@@ -319,10 +340,33 @@ auto infer_ctxt::rebuild(type_id id) -> type_id {
   case type_kind::ctor_ref_kind:
   case type_kind::type_var_kind:
   case type_kind::const_value_kind:
-  case type_kind::symbolic_value_kind:
   case type_kind::const_variant_kind:
   case type_kind::existential_kind:
     return id;
+  case type_kind::symbolic_value_kind: {
+    // A polynomial's unknowns are *named*, so substituting into one means
+    // looking each name up in the store and asking what it was solved to.
+    // Re-interning through `symbolic_value` is what keeps the result
+    // canonical: a polynomial that closes degrades to a `const_value`, so
+    // `n + 1` with `n := 2` becomes the very id that `3` has.
+    auto bindings = std::unordered_map<std::string, linear_poly>{};
+    for (const auto &term : entry.value.terms) {
+      const auto var = value_param_named(term.var);
+      if (!var.has_value()) {
+        continue;
+      }
+      const auto solved = zonk(*var);
+      if (solved == *var) {
+        continue; // Still open: leave the term as it stands.
+      }
+      bindings.emplace(term.var, table_->entry(solved).value);
+    }
+    if (bindings.empty()) {
+      return id;
+    }
+    return table_->symbolic_value(entry.result,
+                                  poly_substitute(entry.value, bindings));
+  }
   case type_kind::builtin_generic_kind:
     return table_->builtin_generic(entry.name, zonk_args());
   case type_kind::tuple_kind:

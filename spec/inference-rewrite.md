@@ -1,14 +1,14 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phases 0-2 done. Nothing in `src/semantic/check.cpp` has moved yet
-— the store and the unifier exist and are tested, but nothing calls them.
+**Status:** Phases 0-3 done. Nothing in `src/semantic/check.cpp` has moved yet
+— the engine exists and is tested, but nothing calls it.
 
 | Phase | What it makes possible | Status |
 |---|---|---|
 | 0 | A golden snapshot of every elaboration decision, so the rewrite is falsifiable | **Done** — `src/semantic/snapshot.{h,cpp}`, `snapshot_test.cpp`, golden at `src/testdata/inference_snapshot/session.snapshot` |
 | 1 | `infer_ctxt`: one metavariable store over three sorts, with causes | **Done** — `src/semantic/infer/infer_ctxt.{h,cpp}`, `infer_ctxt_test.cpp` |
 | 2 | One `unify`: rigid-rigid, pattern fragment, value slots | **Done** — `src/semantic/infer/unify.{h,cpp}`, `unify_test.cpp` |
-| 3 | Value slots genuinely *solved*, not merely checked satisfiable | Not started |
+| 3 | Value slots genuinely *solved*, not merely checked satisfiable | **Done** — `src/semantic/infer/value_solver.{h,cpp}`, `value_solver_test.cpp` |
 | 4 | An obligation queue: methods, trait bounds, refinements, defaulting | Not started |
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | Not started |
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | Not started |
@@ -368,15 +368,55 @@ coercion in phase 7.
 
 Full suite after reverting: 31/31.
 
-### Phase 3 — value solving
+### Phase 3 — value solving *(done)*
 
-Extended Euclid over `linear_poly.h`'s canonical polynomials, replacing
-satisfiability-only matching. Independently testable, and it closes ch. 33's
-"does not solve for `n`" gap on its own.
+`src/semantic/infer/value_solver.{h,cpp}`, tested by
+`//src/semantic:value_solver_test`, and called from `unify_values`. Ch. 33's
+"the compiler does not *solve for* `n` and propagate it" is now false:
+`vec[T, n + 1] ~ vec[T, 3]` yields `n := 2`, and every type mentioning `n`
+sees it.
 
 Ch. 33's domain rules survive unchanged: `usize` and the unsigned family
 constrain `v >= 0`, so `n + 1 ~ 0` is still rejected — the difference is that
 `n + 1 ~ 3` now *answers* rather than shrugging.
+
+**Names are keys into the one store, not a binding map beside it.** A
+polynomial's unknowns are *named* rather than numbered, because both of
+`linear_poly`'s users already had stable names for them. So a solved `n`
+could easily have become a 68th ad-hoc `string -> type_id` map. Instead,
+`infer_ctxt::value_param(name)` mints-or-returns the *value metavariable*
+for that name: the name is a lookup key into the one union-find, and `n := 2`
+is an ordinary `bind` that the occurs check, the sort check and `zonk` all
+see. This is the test of whether the rewrite actually holds its line, and the
+answer had to be one mechanism.
+
+`zonk` now substitutes into a `symbolic_value_kind`'s polynomial and
+re-interns through `type_table::symbolic_value`, which degrades a closed
+polynomial to a `const_value` — so `n + 1` with `n := 2` zonks to the very id
+that `3` has. Canonicity, again, by construction rather than by care. The one
+cycle the occurs check cannot see is a value parameter solved in terms of
+itself (the cycle is through polynomial *names*, not `type_id`s), so `zonk`
+carries an in-progress set.
+
+**How far it solves, and why it stops there.** Extended Euclid is used for the
+exact refutation: an equation has an integer solution only if the gcd of its
+coefficients divides its constant. That is a complete criterion and catches
+`2n = 5` and `2m + 4n = 5` without enumerating anything. Solving proper stops
+at one unknown, because the general two-unknown equation has a parametric
+*family* rather than an answer, and ch. 33 already takes the position that a
+site which does not pin a value down uniquely should leave it open rather
+than guess — `m + n ~ 5` postpones.
+
+**Failability, verified.** Four mechanisms broken in turn:
+
+| Broken | Failure reported |
+|---|---|
+| gcd criterion removed | ``expected `2n = 5` to be refused`` |
+| unsigned negativity ignored | ``expected `n + 1 = 0` to have no unsigned solution`` (and the unifier's own value test) |
+| multi-unknown guesses the first | ``expected `m + n = 5` to determine neither unknown`` |
+| polynomial substitution dropped from `zonk` | ``expected `n + 1` to zonk to the interned `3``` |
+
+Full suite after reverting: 32/32.
 
 ### Phase 4 — obligations
 

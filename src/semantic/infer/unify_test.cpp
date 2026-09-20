@@ -201,16 +201,23 @@ auto test_value_slots() -> void {
   expect(impossible.error().failure == unify_failure::value,
          "expected a value failure");
 
-  // `n + 1 ~ 3` is satisfiable but not yet solved, so it waits. Phase 3
-  // replaces this postponement with `n := 2`.
+  // `n + 1 ~ 3` is *solved*, not merely accepted: `n := 2`, and every type
+  // mentioning `n` sees it. This is the gap ch. 33 records — "the compiler
+  // does not solve for `n` and propagate it" — closed.
   auto g = fixture{};
   const auto g_usize = g.table.usize_type();
   const auto g_pattern = g.table.symbolic_value(
       g_usize, poly_add(poly_variable("n"), poly_constant(1)));
   expect(g.unify(g_pattern, g.table.const_value(g_usize, 3)).has_value(),
-         "expected a satisfiable equation to be accepted");
-  expect(g.engine.deferred().size() == 1,
-         "expected the unsolved equation to be kept for later");
+         "expected a solvable equation to be accepted");
+  expect(g.engine.deferred().empty(),
+         "expected the equation to be solved rather than deferred");
+  const auto n = g.ctx.value_param_named("n");
+  expect(n.has_value(), "expected `n` to have entered the store");
+  expect(g.ctx.zonk(*n) == g.table.const_value(g_usize, 2),
+         "expected `n` to have been solved to 2");
+  expect(g.ctx.zonk(g_pattern) == g.table.const_value(g_usize, 3),
+         "expected `n + 1` to zonk to the interned `3`");
 
   // Variants are identities, not quantities.
   auto h = fixture{};

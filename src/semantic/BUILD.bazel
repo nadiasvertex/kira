@@ -9,6 +9,7 @@ cc_library(
         "check.cpp",
         "infer/infer_ctxt.cpp",
         "infer/unify.cpp",
+        "infer/value_solver.cpp",
         "linear_poly.cpp",
         "module_index.cpp",
         "move_check.cpp",
@@ -28,6 +29,7 @@ cc_library(
         "ids.h",
         "infer/infer_ctxt.h",
         "infer/unify.h",
+        "infer/value_solver.h",
         "linear_poly.h",
         "module_index.h",
         "move_check.h",
@@ -147,6 +149,15 @@ cc_test(
 cc_test(
     name = "unify_test",
     srcs = ["infer/unify_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "value_solver_test",
+    srcs = ["infer/value_solver_test.cpp"],
     deps = [
         ":semantic",
         "//src/testing",

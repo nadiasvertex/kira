@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "src/parser/source_location.h"
@@ -139,6 +140,22 @@ public:
   [[nodiscard]] auto fresh_value(type_id underlying, std::string origin,
                                  source_location where) -> type_id;
 
+  /// The variable standing for the value parameter spelled `name` — the `n`
+  /// of a `vec[T, n]` — minting it on first use and returning the same one
+  /// afterwards.
+  ///
+  /// Value parameters reach the store by *name* rather than by id because
+  /// that is how `linear_poly` refers to them: a polynomial's terms are
+  /// named, since both of its users already had stable names for their
+  /// unknowns (`linear_poly.h`). Keying the same store by name for this one
+  /// sort is not a second mechanism — the name is a lookup key into the one
+  /// union-find, not a parallel binding map.
+  [[nodiscard]] auto value_param(std::string name, type_id underlying,
+                                 source_location where) -> type_id;
+  /// The variable for `name`, if one has been minted.
+  [[nodiscard]] auto value_param_named(std::string_view name) const
+      -> std::optional<type_id>;
+
   /// Whether `id` is one of this store's variables (solved or not).
   [[nodiscard]] auto is_meta(type_id id) const -> bool;
   /// The variable record behind `id`, or `nullptr` when `id` is not one.
@@ -215,6 +232,8 @@ private:
   std::unordered_map<type_id, meta_var> vars_;
   /// Mint order, so `unsolved` is deterministic.
   std::vector<type_id> mint_order_;
+  /// Value parameters by the name their polynomials use; see `value_param`.
+  std::unordered_map<std::string, type_id> value_params_;
   /// Union-find parent links between variables. Mutable so `find` can
   /// compress a path without being a mutation in the caller's eyes.
   mutable std::unordered_map<type_id, type_id> parent_;
@@ -222,6 +241,11 @@ private:
   std::unordered_map<type_id, type_id> solution_;
   /// `zonk` memo, dropped on every successful `bind`.
   std::unordered_map<type_id, type_id> zonk_memo_;
+  /// Ids currently being rebuilt, so a value parameter solved in terms of
+  /// itself cannot send `zonk` round forever. The occurs check guards the
+  /// `type_id` graph but not the *names* inside a polynomial, so this is
+  /// the one cycle it cannot see.
+  std::unordered_set<type_id> zonking_;
   std::vector<cause> causes_;
 };
 

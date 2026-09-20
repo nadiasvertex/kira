@@ -3,7 +3,7 @@
 #include <format>
 #include <utility>
 
-#include "src/semantic/linear_poly.h"
+#include "src/semantic/infer/value_solver.h"
 
 namespace kira::semantic::infer {
 
@@ -398,18 +398,39 @@ auto unifier::unify_values(type_id expected, type_id found, cause_id why,
 
   const auto unsigned_domain = value_is_unsigned(*table_, expected_entry) ||
                                value_is_unsigned(*table_, found_entry);
-  if (!equation_satisfiable(expected_entry.value, found_entry.value,
-                            unsigned_domain)) {
-    return std::unexpected(refuse(
-        unify_failure::value, expected, found, root_expected, root_found, why,
-        std::format("`{} = {}` has no solution{}",
-                    expected_entry.value.display(), found_entry.value.display(),
-                    unsigned_domain ? " for a non-negative value" : "")));
-  }
-  if (expected_entry.value == found_entry.value) {
+  const auto solution = solve_value_equation(
+      expected_entry.value, found_entry.value, unsigned_domain);
+  switch (solution.answer) {
+  case value_answer::agreed:
     return {};
+  case value_answer::unsatisfiable:
+    return std::unexpected(refuse(unify_failure::value, expected, found,
+                                  root_expected, root_found, why,
+                                  solution.detail));
+  case value_answer::underdetermined:
+    // `m + n ~ 5` determines neither unknown; another constraint may yet.
+    postpone(expected, found, why, "a value equation is not yet determined");
+    return {};
+  case value_answer::solved:
+    break;
   }
-  postpone(expected, found, why, "a value equation is not yet solved");
+
+  // The unknown is now known. It is recorded in the *same* store as every
+  // other solution — a polynomial's name is a lookup key into the one
+  // union-find, not a binding map of its own — so zonking any type that
+  // mentions it sees the answer with no second substitution pass.
+  const auto underlying = expected_entry.result != k_unknown_type
+                              ? expected_entry.result
+                              : found_entry.result;
+  const auto var =
+      ctx_->value_param(solution.var, underlying, ctx_->cause_at(why).where);
+  const auto value = table_->symbolic_value(underlying, solution.value);
+  auto bound = ctx_->bind(var, value, why);
+  if (!bound.has_value()) {
+    return std::unexpected(refuse(unify_failure::variable, expected, found,
+                                  root_expected, root_found, why,
+                                  std::move(bound.error().detail)));
+  }
   return {};
 }
 
