@@ -1199,7 +1199,7 @@ A ledger, not a feeling:
 | Ad-hoc `string -> type_id` binding maps | 67 | 0 |
 | `in_*_template_` gates | 6 | 0 |
 | Distinct inference solvers | 4 | 1 |
-| `param_usage_inferrer` | 385 lines | deleted |
+| `param_usage_inferrer` | deleted (unannotated params are leaves; each call copies a still-open one) | deleted |
 | Value slots solved rather than checked | no | yes |
 
 If a phase ends without moving one of those counts toward its target, it was

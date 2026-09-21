@@ -1107,6 +1107,8 @@ private:
   /// confluence requirement.
   comptime::evaluator comptime_eval_;
   std::unordered_set<const ast::type_decl *> aliases_in_progress_;
+  std::vector<type_id> param_leaves_;
+
   /// Cache of `param_types_for`'s result, so `check_function`'s own body
   /// check and `signature_params`'s call-site view agree on the same
   /// inferred types instead of independently guessing. Indices align 1:1
@@ -4676,8 +4678,17 @@ private:
       stored[i] = leaf_ctxt_.fresh_type(
           std::format("the type of parameter `{}`", name),
           source_location{.file_id = file_id_, .span = param.span});
+      param_leaves_.push_back(stored[i]);
     }
     return stored;
+  }
+
+  /// Whether `id` is (or has been tied to) an unannotated parameter's leaf.
+  auto is_param_leaf(type_id id) -> bool {
+    const auto settled = leaf_ctxt_.zonk(id);
+    return std::ranges::any_of(param_leaves_, [&](type_id leaf) -> bool {
+      return leaf_ctxt_.zonk(leaf) == settled;
+    });
   }
 
   /// Whether `decl` has an unannotated, non-`self` parameter to infer from
@@ -4765,6 +4776,17 @@ private:
         type = resolve_type(*param.type_annotation, ctx);
       } else if (i < inferred.size()) {
         type = inferred[i];
+        // A caller gets its own copy of an unannotated parameter's leaf, so
+        // `double(3)` and `double(3.5)` each choose at their own call rather
+        // than the first pinning the shared one the body is checked against.
+        if (type != k_unknown_type && !name.empty()) {
+          const auto settled = leaf_ctxt_.zonk(type);
+          type = !mentions_type_var(settled)
+                     ? settled
+                     : leaf_ctxt_.fresh_type(
+              std::format("the type of parameter `{}` at this call", name),
+              source_location{.file_id = file_id_, .span = param.span});
+        }
       }
       params.push_back(fn_param_info{
           .name = name,
@@ -7937,8 +7959,16 @@ private:
     auto lhs_settled = lhs;
     if (leaf_ctxt_.meta_count() != 0) {
       solve_leaves(lhs_settled, rhs);
-      lhs_settled = demand(lhs_settled);
-      rhs = demand(rhs);
+      // An operand tied to an unannotated parameter is not defaulted here:
+      // `x * 2` says `x` is numeric, not that it is `int32`, and each call
+      // chooses. Whatever is still open is settled with the rest.
+      if (!is_param_leaf(lhs_settled) && !is_param_leaf(rhs)) {
+        lhs_settled = demand(lhs_settled);
+        rhs = demand(rhs);
+      } else {
+        lhs_settled = leaf_ctxt_.zonk(lhs_settled);
+        rhs = leaf_ctxt_.zonk(rhs);
+      }
     }
     const auto lhs_final = lhs_settled;
     const auto op_name = ast::binary_op_name(binary.op);
