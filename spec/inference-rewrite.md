@@ -1,7 +1,8 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phases 0-5 done. Nothing in `src/semantic/check.cpp` has moved yet
-— the engine exists and is tested, but nothing calls it.
+**Status:** Phases 0-6 done. The engine (phases 1-5) exists and is tested but
+is not yet called; phase 6 is the first change inside
+`src/semantic/check.cpp` itself, and it is behavior-preserving.
 
 | Phase | What it makes possible | Status |
 |---|---|---|
@@ -11,7 +12,7 @@
 | 3 | Value slots genuinely *solved*, not merely checked satisfiable | **Done** — `src/semantic/infer/value_solver.{h,cpp}`, `value_solver_test.cpp` |
 | 4 | An obligation queue: methods, trait bounds, refinements, defaulting | **Done** — `src/semantic/infer/obligations.{h,cpp}`, `obligations_test.cpp` |
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | **Done** — `src/semantic/infer/blame.{h,cpp}`, `blame_test.cpp`, golden corpus at `src/testdata/inference_diagnostics/` |
-| 6 | Elaboration split out of checking — decisions recorded, flushed after solving | Not started |
+| 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.kira` |
 | 7 | Constraint generation migrated onto the one unifier | Not started |
 | 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | Not started |
 | 9 | Generic bodies checked once, abstractly | Not started |
@@ -552,18 +553,93 @@ last one being the shape a golden test fails silently in.
 
 Full suite after reverting: 35/35.
 
-### Phase 6 — the elaboration split
+### Phase 6 — the elaboration split *(done)*
 
-Call sites record a *decision* keyed by AST node instead of a resolved
-callee; the 11 instantiation sites move behind a flush that runs after the
-fixpoint. No deferred types yet, so this is behavior-preserving by
-construction and verified against phase 0.
+`find_or_check_generic_instance` is split in half in `src/semantic/check.cpp`.
+The clone is still made at the site and the pointer still returned there, so
+every caller keeps getting a real declaration to record in its dispatch map
+exactly as before. What moved is the *checking* of the cloned body, which now
+happens in `flush_pending_instances` after the walk.
 
-This is the enabling move and the dangerous one: it touches every elaboration
-site at once, and its only safety net is the phase 0 golden file. It is also
-what would have prevented the defect recorded at
-`src/testdata/codegen_stress/054_static_dispatch_on_generic_types.kira:18` —
-a static call that type-checked while nothing was ever compiled for it.
+Checking an instance body in the middle of the expression that asked for it is
+what forces every type to be final the instant it is first observed — the
+structural reason the checker grew 28 `unify_rigid` sites and four solvers.
+Breaking that is the enabling move for phases 7-9.
+
+**Verified behavior-preserving by the strongest evidence available**: the
+phase 0 golden is byte-identical before and after, across 28,436 lines and
+~28,000 recorded decisions.
+
+**A pending instance carries its own context.** By flush time the walk has
+moved on and nothing the deferred half reads is still standing, so module,
+file, parameter slots, `self`, the enclosing type-parameter scopes, the
+instantiation chain and the depth are all captured at request time. Two of
+those changed shape rather than merely moving:
+
+- **Depth** was the C++ call stack's own depth, because bodies were checked by
+  recursive calls. It is now a field each pending instance carries, or
+  `climb[n]` requesting `climb[n + 1]` never bottoms out — verified: zeroing
+  it does not fail a test, it *hangs the compiler*.
+- **The instantiation chain** was read off a live stack. A deferred body has
+  no such stack, so the whole chain is captured. "instantiated from here, as
+  `biggest$point`" is often the only line in a monomorphization diagnostic
+  that points at code the user wrote.
+
+**One thing cannot wait: a compile-time-only function.** Its body is not code
+to compile later, it is the answer to a call being checked right now, and the
+fold that consumes it happens in that very expression. Those are still checked
+eagerly. Deferring them leaves the call unfolded and it reaches the backends as
+a call to a function no module compiles — which is how `is_signed_integer$int32`
+turned up missing the first time this split was tried.
+
+**Drop resolution needed its own flush.** `resolve_drop_plans` runs after
+`run_impl` has finished, so it is the one requester with no walk left behind
+it. Without a flush there, every `list[T]::drop` and the `mem::free[T]` each
+one calls was cloned, named, and never checked — a function the backends are
+told to compile and nothing ever compiled. That is precisely the defect phase
+0 existed to catch, and it caught it.
+
+#### The net was extended first
+
+Phase 0 recorded which `checked_types` maps its fixtures left empty. Four of
+them are written by the sites this phase moves, so
+`src/testdata/codegen_stress/089_elaboration_snapshot_gaps.kira` was added
+before any code moved, covering `try_conversions`/`try_conversion_types`,
+`ord_dispatch_result_types`, `runtime_fill_dispatches`,
+`comprehension_iterator_dispatches` and `resolved_fn_values`. Moving code whose
+only safety net has zero coverage over it was the whole risk.
+
+Writing that fixture found a real bug, unrelated to the rewrite and older than
+it: **`[v; n]` with a non-`usize` runtime count was accepted and then
+miscompiled.** The counting loop it lowers to compares a real `usize` index
+against the count, so an `int32` count produced an `icmp` over an `i64` and an
+`i32` and tripped an assertion inside LLVM itself — while the bytecode VM, whose
+values are all tagged 64-bit words, ran the same program and gave the right
+answer. Cross-tier agreement could not have found it; only one tier was ever
+wrong. The checker now requires the count to be a `usize`, phrased to match the
+diagnostic a non-`usize` *subscript* already got, since a repeat count and a
+subscript are the same requirement wearing different syntax
+(`src/testdata/inference_diagnostics/010_fill_count_not_usize.kira`).
+
+#### Failability, verified
+
+| Broken | What caught it |
+|---|---|
+| drop-plan flush removed | snapshot (16 instances missing) **and** `std_test` |
+| comptime-only instances deferred like the rest | `std_test` — `is_signed_integer$int32` unresolvable |
+| worklist drains a snapshot instead of to fixpoint | all four: snapshot, `std_test`, `codegen_stress_test`, the diagnostics corpus |
+| instantiation chain not carried | the diagnostics corpus **alone** — nothing else in the suite sees a `note:` |
+| depth not carried | the compiler does not terminate (corpus case 011) |
+
+One field is **captured but not distinguished by any test**:
+`enclosing_type_params`. It is non-empty at request time on the order of fifty
+times per fixture, yet zeroing it changes nothing the suite can see. It is kept
+because the eager code checked instance bodies with those scopes live, and
+reproducing that exactly is what "behavior-preserving" means here — but the
+honest status is that no test tells the two apart, and this note is the record
+of that.
+
+Full suite: 35/35.
 
 ### Phase 7 — constraint generation
 

@@ -1,0 +1,6 @@
+error: a repeat count must be a `usize`, but this one is `int32`
+  --> 010_fill_count_not_usize.kira:11:22
+   11 |     let filled = [7; n]
+      |                      ^ expected a count of type `usize`
+  help: `[v; n]` repeats `v` exactly `n` times, and a count of things is a `usize` here the same way a subscript is. Give `n` type `usize`, or convert it at the literal.
+

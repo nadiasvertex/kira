@@ -185,7 +185,7 @@ auto main(int argc, char *argv[]) -> int {
     const auto cases = list_cases(corpus_dir);
     expect(!cases.empty(),
            "expected the inference diagnostics corpus to contain .kira files");
-    expect(cases.size() >= 9,
+    expect(cases.size() >= 11,
            std::format("expected the acceptance-bar corpus to be intact, "
                        "found only {} cases",
                        cases.size()));

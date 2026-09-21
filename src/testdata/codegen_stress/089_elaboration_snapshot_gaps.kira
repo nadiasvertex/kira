@@ -1,0 +1,131 @@
+module codegen_stress.elaboration_snapshot_gaps
+
+# expect: 96
+
+# Five elaboration decisions that no snapshot fixture reached.
+#
+# `spec/inference-rewrite.md` phase 0 recorded which `checked_types` maps its
+# fixtures left empty, and phase 6 moves the instantiation sites that write
+# four of them. Moving code whose only safety net has zero coverage over it is
+# the whole risk of that phase, so this file closes the gap first. The maps it
+# fills:
+#
+#   - `try_conversions` / `try_conversion_types` — `?` across two different
+#     error types, resolved through an `impl from`.
+#   - `ord_dispatch_result_types` — `<` on a user type, which dispatches to
+#     `ord::cmp` and needs the `ordering` return type recorded.
+#   - `runtime_fill_dispatches` — `[v; n]` for a non-constant `n`, which has
+#     no compile-time-sized array and is filled by a counting loop.
+#   - `comprehension_iterator_dispatches` — a comprehension clause iterating a
+#     user `iterator` impl, which needs the same dispatch record a statement
+#     `for` does.
+#   - `resolved_fn_values` — a module-level function named in value position
+#     rather than called.
+#
+# The value is asserted with `# expect:` and not only by cross-tier agreement:
+# both tiers read the same dispatch records, so a decision recorded wrongly
+# would be recorded wrongly for both and they would agree on the wrong answer.
+
+use std.traits.from
+use std.traits.ord
+use std.iter.iterator
+
+# --- try conversion across two error types -------------------------------
+
+type parse_error = @bad_digit | @empty
+type app_error = @parse(int32) | @other
+
+impl from[parse_error] for app_error:
+    def from(e: parse_error) -> app_error:
+        match e:
+            @bad_digit => @parse(1)
+            @empty     => @parse(2)
+
+def parse_num(raw: int32) -> result[int32, parse_error]:
+    if raw < 0:
+        return @err(@empty)
+    return @ok(raw * 2)
+
+# The `?` operand is `result[int32, parse_error]`; the function returns
+# `result[int32, app_error]`. That difference is what wires `from`.
+def convert(raw: int32) -> result[int32, app_error]:
+    let n = parse_num(raw)?
+    return @ok(n + 1)
+
+# --- `<` on a user type, through `ord::cmp` -------------------------------
+
+type weight = { grams: int32 }
+
+impl eq for weight:
+    def eq(self, other: &self) -> bool:
+        return self.grams == other.grams
+
+impl ord for weight:
+    def cmp(self, other: &self) -> ordering:
+        if self.grams < other.grams:
+            return @less
+        if self.grams > other.grams:
+            return @greater
+        return @equal
+
+def lighter(a: weight, b: weight) -> int32:
+    if a < b:
+        return a.grams
+    return b.grams
+
+# --- a user iterator, driven from a comprehension clause ------------------
+
+type countdown = { remaining: int32 }
+
+impl iterator[int32] for countdown:
+    def next(mut self) -> option[int32]:
+        if self.remaining <= 0:
+            return @none
+        self.remaining = self.remaining - 1
+        return @some(self.remaining)
+
+def comprehend() -> int32:
+    let squares = for n in countdown { remaining: 5 } => n * n
+    var total = 0
+    for s in squares:
+        total = total + s
+    return total
+
+# --- a fill literal whose count is only known at runtime ------------------
+
+def runtime_fill(n: usize) -> int32:
+    let filled = [7; n]
+    var total = 0
+    for v in filled:
+        total = total + v
+    return total
+
+# --- a function named in value position rather than called ----------------
+
+def triple(x: int32) -> int32:
+    return x * 3
+
+def apply(f: fn(int32) -> int32, x: int32) -> int32:
+    return f(x)
+
+def through_value() -> int32:
+    let g = triple
+    return apply(g, 4) + apply(triple, 2)
+
+def main() -> int32:
+    var total = 0
+
+    total = total + match convert(10):
+        @ok(v)  => v
+        @err(_) => 100
+
+    total = total + match convert(-1):
+        @ok(_)          => 1000
+        @err(@parse(c)) => c
+        @err(@other)    => 2000
+
+    total = total + lighter(weight { grams: 9 }, weight { grams: 4 })
+    total = total + comprehend()
+    total = total + runtime_fill(3)
+    total = total + through_value()
+    return total

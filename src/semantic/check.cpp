@@ -988,6 +988,13 @@ public:
     // out below — the borrow checker reads this to track view-borrow lifetimes.
     auto view_bearing = compute_view_bearing_types();
     resolve_drop_plans();
+    // Drop resolution runs after `run_impl` has finished, so it is the one
+    // requester with no walk left to flush behind it. Without this, every
+    // `list[T]::drop` and the `mem::free[T]` each one calls was cloned and
+    // named and then never checked — a function the backends are told to
+    // compile and nothing ever compiled, which is the exact defect the phase
+    // 0 snapshot was built to catch. It caught it.
+    flush_pending_instances();
     return checked_types{
         .types = std::move(types_),
         .node_types = std::move(node_types_),
@@ -5499,6 +5506,55 @@ private:
   /// it needs a compiled copy of is reached from the `for` statement itself
   /// (`try_resolve_iterator`). Only the span and the map identity are used,
   /// both of which every node has.
+  /// An instance that has been cloned and named but whose body has not been
+  /// checked yet — see `find_or_check_generic_instance` and
+  /// `flush_pending_instances`.
+  ///
+  /// Everything the deferred half reads out of the checker is captured here
+  /// at *request* time, because by flush time the walk has moved on and none
+  /// of it is still standing. The one that matters most is
+  /// `enclosing_type_params`: an instance body is checked with the requester's
+  /// type-parameter scopes in place, and re-deriving them later is not
+  /// possible.
+  struct pending_instance {
+    const ast::func_decl *instance = nullptr;
+    /// The template it was cloned from, for `comptime_only_functions_`.
+    const ast::func_decl *tmpl = nullptr;
+    const module_members *owner = nullptr;
+    std::optional<file_id_type> decl_file;
+    generic_solution solution;
+    std::optional<std::unordered_map<std::string, type_id>> fixed_type_params;
+    type_id self_type = k_unknown_type;
+    const std::vector<ast::type_param> *block_type_params = nullptr;
+    /// The whole chain of frames, not just this one: the "instantiated from
+    /// here" note walks it, and a deferred body has no enclosing stack left
+    /// to read it off.
+    std::vector<instantiation_frame> sites;
+    /// This instance's own depth in that chain, so `f[n]` requesting `f[n+1]`
+    /// still bottoms out once the recursion is a worklist rather than a C++
+    /// call stack.
+    size_t depth = 0;
+    std::vector<std::unordered_map<std::string, type_id>> enclosing_type_params;
+  };
+  /// Instances cloned but not yet checked — see `flush_pending_instances`.
+  std::vector<pending_instance> pending_instances_;
+
+  /// Clones and names a generic instance, and queues its body to be checked.
+  ///
+  /// Phase 6 of `spec/inference-rewrite.md` splits this function in half. The
+  /// clone is still made here and the pointer still returned here, so every
+  /// caller keeps getting a real declaration to record in its dispatch map
+  /// exactly as before. What moved is the *checking* of the cloned body,
+  /// which now happens in `flush_pending_instances` after the walk.
+  ///
+  /// That split is the enabling move for everything after it. Checking an
+  /// instance body in the middle of the expression that asked for it is what
+  /// forces every type to be final the instant it is first observed, which is
+  /// the structural reason the checker grew 28 `unify_rigid` sites and four
+  /// solvers. Nothing is deferred *type*-wise yet — the instance's signature
+  /// is the template's, substituted, and no caller reads anything else off
+  /// the returned pointer — so this step is behavior-preserving, and the
+  /// phase 0 snapshot is what says so.
   auto find_or_check_generic_instance(
       const ast::node &call, const ast::func_decl &decl,
       const module_members *owner, std::optional<file_id_type> decl_file,
@@ -5557,74 +5613,142 @@ private:
     synthesized_decls_.push_back(std::move(*cloned));
     hk_instance_cache_.emplace(key, instance);
 
-    const auto saved_module = module_;
-    const auto saved_file_id = file_id_;
-    auto saved_const_slots = std::move(const_param_slots_);
-    auto saved_values = std::move(const_param_values_);
-    auto saved_type_slots = std::move(type_param_slots_);
-    const auto saved_contract = in_contract_;
-    const auto saved_postcondition = in_postcondition_;
-    const auto saved_self_type = self_type_;
-    const auto saved_block_type_params = enclosing_block_type_params_;
-    enclosing_block_type_params_ = block_type_params;
-    module_ = owner;
-    if (!types_.is_unknown(self_type)) {
-      self_type_ = self_type;
-    }
-    if (decl_file.has_value()) {
-      file_id_ = *decl_file;
-    }
-    // Both kinds of binding go in together: `push_type_params` consults the
-    // two maps side by side, so a mixed template's `n` interns as its
-    // constant and its `T` as its concrete type in the same scope.
-    const_param_slots_ = solution.const_slots;
-    const_param_values_ = solution.values;
-    type_param_slots_ = solution.type_slots;
-    in_contract_ = false;
-    in_postcondition_ = false;
-    if (fixed_type_params != nullptr && !fixed_type_params->empty()) {
-      type_params_.push_back(*fixed_type_params);
-    }
-    // Recorded against the *caller's* file, captured before `file_id_` is
-    // swapped to the declaring one above — the whole point of the note is to
-    // name a line the user actually wrote.
-    auto frame = instantiation_frame{.call_span = call.span,
-                                     .call_file = saved_file_id,
-                                     .instance_name = name};
+    // Recorded against the *caller's* file — the whole point of the note is
+    // to name a line the user actually wrote, and by flush time `file_id_`
+    // is somewhere else entirely.
+    auto frame = instantiation_frame{
+        .call_span = call.span, .call_file = file_id_, .instance_name = name};
     if (const auto solved = expected_solved_params_.find(&call);
         solved != expected_solved_params_.end()) {
       frame.context_solutions = solved->second;
     }
-    instantiation_sites_.push_back(std::move(frame));
-    ++instantiation_depth_;
-    check_function(*instance, /*at_module_scope=*/false);
-    --instantiation_depth_;
-    instantiation_sites_.pop_back();
-    if (fixed_type_params != nullptr && !fixed_type_params->empty()) {
-      pop_type_params();
-    }
-    self_type_ = saved_self_type;
-    enclosing_block_type_params_ = saved_block_type_params;
-    in_postcondition_ = saved_postcondition;
-    in_contract_ = saved_contract;
-    type_param_slots_ = std::move(saved_type_slots);
-    const_param_values_ = std::move(saved_values);
-    const_param_slots_ = std::move(saved_const_slots);
-    file_id_ = saved_file_id;
-    module_ = saved_module;
+    auto sites = instantiation_sites_;
+    sites.push_back(std::move(frame));
 
-    const_generic_instances_.push_back(const_generic_instance{
-        .decl = instance, .owner_module = owner->module_name});
-    // The clone is a distinct `func_decl` from the template it came from
-    // (`decl`), so membership has to be propagated explicitly — see
-    // `comptime_only_functions_`'s doc comment; without this, `hir::lower`
-    // would try to lower every instantiation of a compile-time-only
-    // `static def` (e.g. `is_integer[int32]`) as if it were ordinary
-    // runtime code, exactly the failure this set exists to prevent.
+    auto queued = pending_instance{.instance = instance,
+                                   .tmpl = &decl,
+                                   .owner = owner,
+                                   .decl_file = decl_file,
+                                   .solution = solution,
+                                   .fixed_type_params =
+                                       fixed_type_params != nullptr &&
+                                               !fixed_type_params->empty()
+                                           ? std::optional(*fixed_type_params)
+                                           : std::nullopt,
+                                   .self_type = self_type,
+                                   .block_type_params = block_type_params,
+                                   .sites = std::move(sites),
+                                   .depth = instantiation_depth_ + 1,
+                                   .enclosing_type_params = type_params_};
+
+    // A compile-time-only function is the one thing that cannot wait. Its
+    // body is not code to compile later; it is the answer to a call being
+    // checked right now, and the fold that consumes it happens in this very
+    // expression. Deferring it leaves the call unfolded, and it reaches the
+    // backends as a call to a function no module compiles — which is how
+    // `is_signed_integer$int32` turned up missing the first time this split
+    // was tried.
     if (comptime_only_functions_.contains(&decl)) {
-      comptime_only_functions_.insert(instance);
+      check_instance(queued);
+      return instance;
     }
+
+    pending_instances_.push_back(std::move(queued));
     return instance;
+  }
+
+  /// Checks every queued instance body, including the ones those bodies ask
+  /// for.
+  ///
+  /// A worklist rather than a loop over a snapshot of the queue: checking an
+  /// instance can request further instances (a generic calling a generic),
+  /// and those must be checked too. Draining until empty is what makes this
+  /// equivalent to the recursion it replaced.
+  ///
+  /// Each item restores the checker context captured at its request — module,
+  /// file, parameter slots, `self`, the enclosing type-parameter scopes, and
+  /// the instantiation chain its diagnostics are reported under. Restoring
+  /// the chain is not cosmetic: "instantiated from here, as `biggest$point`"
+  /// is often the only line in the message that points at code the user
+  /// wrote.
+  auto flush_pending_instances() -> void {
+    auto processed = size_t{0};
+    while (processed < pending_instances_.size()) {
+      // By index, not by iterator or reference: checking this body appends to
+      // `pending_instances_`, which reallocates.
+      auto item = pending_instances_[processed];
+      ++processed;
+      check_instance(item);
+    }
+    pending_instances_.clear();
+  }
+
+  /// Checks one instance body under the context captured at its request.
+  auto check_instance(pending_instance &item) -> void {
+    {
+      const auto saved_module = module_;
+      const auto saved_file_id = file_id_;
+      auto saved_const_slots = std::move(const_param_slots_);
+      auto saved_values = std::move(const_param_values_);
+      auto saved_type_slots = std::move(type_param_slots_);
+      const auto saved_contract = in_contract_;
+      const auto saved_postcondition = in_postcondition_;
+      const auto saved_self_type = self_type_;
+      const auto saved_block_type_params = enclosing_block_type_params_;
+      auto saved_type_params = std::move(type_params_);
+      auto saved_sites = std::move(instantiation_sites_);
+      const auto saved_depth = instantiation_depth_;
+
+      enclosing_block_type_params_ = item.block_type_params;
+      module_ = item.owner;
+      if (!types_.is_unknown(item.self_type)) {
+        self_type_ = item.self_type;
+      }
+      if (item.decl_file.has_value()) {
+        file_id_ = *item.decl_file;
+      }
+      // Both kinds of binding go in together: `push_type_params` consults the
+      // two maps side by side, so a mixed template's `n` interns as its
+      // constant and its `T` as its concrete type in the same scope.
+      const_param_slots_ = item.solution.const_slots;
+      const_param_values_ = item.solution.values;
+      type_param_slots_ = item.solution.type_slots;
+      in_contract_ = false;
+      in_postcondition_ = false;
+      type_params_ = std::move(item.enclosing_type_params);
+      if (item.fixed_type_params.has_value()) {
+        type_params_.push_back(*item.fixed_type_params);
+      }
+      instantiation_sites_ = std::move(item.sites);
+      instantiation_depth_ = item.depth;
+
+      check_function(*item.instance, /*at_module_scope=*/false);
+
+      instantiation_depth_ = saved_depth;
+      instantiation_sites_ = std::move(saved_sites);
+      type_params_ = std::move(saved_type_params);
+      self_type_ = saved_self_type;
+      enclosing_block_type_params_ = saved_block_type_params;
+      in_postcondition_ = saved_postcondition;
+      in_contract_ = saved_contract;
+      type_param_slots_ = std::move(saved_type_slots);
+      const_param_values_ = std::move(saved_values);
+      const_param_slots_ = std::move(saved_const_slots);
+      file_id_ = saved_file_id;
+      module_ = saved_module;
+
+      const_generic_instances_.push_back(const_generic_instance{
+          .decl = item.instance, .owner_module = item.owner->module_name});
+      // The clone is a distinct `func_decl` from the template it came from,
+      // so membership has to be propagated explicitly — see
+      // `comptime_only_functions_`'s doc comment; without this, `hir::lower`
+      // would try to lower every instantiation of a compile-time-only
+      // `static def` (e.g. `is_integer[int32]`) as if it were ordinary
+      // runtime code, exactly the failure this set exists to prevent.
+      if (comptime_only_functions_.contains(item.tmpl)) {
+        comptime_only_functions_.insert(item.instance);
+      }
+    }
   }
 
   /// Reads the explicit compile-time arguments out of a call's callee, and
@@ -15982,6 +16106,36 @@ private:
     return target;
   }
 
+  /// Checks `[v; n]`'s repeat count, which must be a `usize`.
+  ///
+  /// The expected type alone does not enforce this: it is a hint a literal
+  /// adopts, and a binding that already has a type simply ignores it. Before
+  /// this check, `[7; n]` for an `n: int32` type-checked silently and then
+  /// lowered to a counting loop whose index is a real `usize`, so the LLVM
+  /// tier built an `icmp` over an `i64` and an `i32` and tripped an assertion
+  /// inside LLVM itself — while the bytecode VM, whose values are all tagged
+  /// 64-bit words, ran it and produced the right answer. Cross-tier agreement
+  /// could not have caught it; only one tier was ever wrong.
+  ///
+  /// Phrased to match the diagnostic a non-`usize` *index* already gets
+  /// (`cannot index ... expected an index of type `usize``), because a repeat
+  /// count and a subscript are the same requirement wearing different syntax.
+  auto check_fill_count(const ast::expr &count) -> void {
+    const auto found = strip_refs(infer_expr(count, types_.builtin("usize")));
+    const auto usize = types_.usize_type();
+    if (found == usize || types_.is_unknown(found) || found == k_error_type) {
+      return;
+    }
+    error_with_help(
+        count.span,
+        std::format("a repeat count must be a `usize`, but this one is `{}`",
+                    types_.display(found)),
+        "expected a count of type `usize`",
+        std::format("`[v; n]` repeats `v` exactly `n` times, and a count of "
+                    "things is a `usize` here the same way a subscript is. "
+                    "Give `n` type `usize`, or convert it at the literal."));
+  }
+
   auto infer_array(const ast::array_expr &array, type_id expected) -> type_id {
     // A user collection that says what a literal of it means: check the
     // elements against its element type, then answer with the collection.
@@ -15991,7 +16145,7 @@ private:
       if (array.fill_value != nullptr) {
         infer_expr(*array.fill_value, *from_array_element);
         if (array.fill_count != nullptr) {
-          infer_expr(*array.fill_count, types_.builtin("usize"));
+          check_fill_count(*array.fill_count);
         }
       }
       for (const auto &item : array.elements) {
@@ -16054,7 +16208,7 @@ private:
       const auto element = infer_expr(*array.fill_value, element_expected);
       auto count = std::optional<uint64_t>{};
       if (array.fill_count != nullptr) {
-        infer_expr(*array.fill_count, types_.builtin("usize"));
+        check_fill_count(*array.fill_count);
         if (array.fill_count->kind == ast::node_kind::literal_expr) {
           const auto &lit =
               dynamic_cast<const ast::literal_expr &>(*array.fill_count);
@@ -20599,7 +20753,17 @@ public:
       module_ = index_.find_module(module_name_);
       file_no_prelude_ = input.ast_file->no_prelude;
       check_file(*input.ast_file);
+      // Per file rather than once at the end. The instances this file asked
+      // for are checked before the next file starts, which keeps a
+      // monomorphization diagnostic next to the file that caused it instead
+      // of at the end of the session — the ordering users read messages in,
+      // and the one the golden corpus records.
+      flush_pending_instances();
     }
+
+    // Anything requested outside a file's own walk — a functor body, an
+    // item-level splice — has nothing left to flush it.
+    flush_pending_instances();
   }
 };
 

@@ -1,7 +1,7 @@
 # inference snapshot
-# 673 interned types
+# 688 interned types
 
-## node_types (26622)
+## node_types (26807)
 003_collections_lambdas.kira:3:14 [named_type] unit
 003_collections_lambdas.kira:4:9 [binding_pat] list[int32]
 003_collections_lambdas.kira:4:19 [array] list[int32]
@@ -2003,6 +2003,191 @@
 087_list_cell_and_mutable_cell.kira:35:52 [ident] int32
 087_list_cell_and_mutable_cell.kira:35:52 [binary] int32
 087_list_cell_and_mutable_cell.kira:35:63 [literal] int32
+089_elaboration_snapshot_gaps.kira:39:14 [binding_pat] parse_error
+089_elaboration_snapshot_gaps.kira:39:33 [named_type] app_error
+089_elaboration_snapshot_gaps.kira:40:15 [ident] parse_error
+089_elaboration_snapshot_gaps.kira:41:13 [ctor_pat] parse_error
+089_elaboration_snapshot_gaps.kira:41:27 [call] app_error
+089_elaboration_snapshot_gaps.kira:41:34 [literal] int32
+089_elaboration_snapshot_gaps.kira:42:13 [ctor_pat] parse_error
+089_elaboration_snapshot_gaps.kira:42:27 [call] app_error
+089_elaboration_snapshot_gaps.kira:42:34 [literal] int32
+089_elaboration_snapshot_gaps.kira:44:15 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:44:30 [named_type] result[int32, parse_error]
+089_elaboration_snapshot_gaps.kira:45:8 [ident] int32
+089_elaboration_snapshot_gaps.kira:45:8 [binary] bool
+089_elaboration_snapshot_gaps.kira:45:14 [literal] int32
+089_elaboration_snapshot_gaps.kira:46:16 [call] result[int32, parse_error]
+089_elaboration_snapshot_gaps.kira:46:21 [ident] parse_error
+089_elaboration_snapshot_gaps.kira:47:12 [call] result[int32, parse_error]
+089_elaboration_snapshot_gaps.kira:47:16 [ident] int32
+089_elaboration_snapshot_gaps.kira:47:16 [binary] int32
+089_elaboration_snapshot_gaps.kira:47:22 [literal] int32
+089_elaboration_snapshot_gaps.kira:51:13 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:51:28 [named_type] result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:52:9 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:52:13 [ident] fn(int32) -> result[int32, parse_error]
+089_elaboration_snapshot_gaps.kira:52:13 [call] result[int32, parse_error]
+089_elaboration_snapshot_gaps.kira:52:13 [try] int32
+089_elaboration_snapshot_gaps.kira:52:23 [ident] int32
+089_elaboration_snapshot_gaps.kira:53:12 [call] result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:53:16 [ident] int32
+089_elaboration_snapshot_gaps.kira:53:16 [binary] int32
+089_elaboration_snapshot_gaps.kira:53:20 [literal] int32
+089_elaboration_snapshot_gaps.kira:60:12 [binding_pat] weight
+089_elaboration_snapshot_gaps.kira:60:18 [binding_pat] &weight
+089_elaboration_snapshot_gaps.kira:60:35 [named_type] bool
+089_elaboration_snapshot_gaps.kira:61:16 [module_path] int32
+089_elaboration_snapshot_gaps.kira:61:16 [binary] bool
+089_elaboration_snapshot_gaps.kira:61:30 [module_path] int32
+089_elaboration_snapshot_gaps.kira:64:13 [binding_pat] weight
+089_elaboration_snapshot_gaps.kira:64:19 [binding_pat] &weight
+089_elaboration_snapshot_gaps.kira:64:36 [named_type] ordering
+089_elaboration_snapshot_gaps.kira:65:12 [module_path] int32
+089_elaboration_snapshot_gaps.kira:65:12 [binary] bool
+089_elaboration_snapshot_gaps.kira:65:25 [module_path] int32
+089_elaboration_snapshot_gaps.kira:66:20 [ident] ordering
+089_elaboration_snapshot_gaps.kira:67:12 [module_path] int32
+089_elaboration_snapshot_gaps.kira:67:12 [binary] bool
+089_elaboration_snapshot_gaps.kira:67:25 [module_path] int32
+089_elaboration_snapshot_gaps.kira:68:20 [ident] ordering
+089_elaboration_snapshot_gaps.kira:69:16 [ident] ordering
+089_elaboration_snapshot_gaps.kira:71:13 [binding_pat] weight
+089_elaboration_snapshot_gaps.kira:71:24 [binding_pat] weight
+089_elaboration_snapshot_gaps.kira:71:38 [named_type] int32
+089_elaboration_snapshot_gaps.kira:72:8 [ident] weight
+089_elaboration_snapshot_gaps.kira:72:8 [binary] bool
+089_elaboration_snapshot_gaps.kira:72:12 [ident] weight
+089_elaboration_snapshot_gaps.kira:73:16 [module_path] int32
+089_elaboration_snapshot_gaps.kira:74:12 [module_path] int32
+089_elaboration_snapshot_gaps.kira:81:14 [binding_pat] countdown
+089_elaboration_snapshot_gaps.kira:81:27 [named_type] option[int32]
+089_elaboration_snapshot_gaps.kira:82:12 [module_path] int32
+089_elaboration_snapshot_gaps.kira:82:12 [binary] bool
+089_elaboration_snapshot_gaps.kira:82:30 [literal] int32
+089_elaboration_snapshot_gaps.kira:83:20 [ident] option[int32]
+089_elaboration_snapshot_gaps.kira:84:9 [module_path] int32
+089_elaboration_snapshot_gaps.kira:84:26 [module_path] int32
+089_elaboration_snapshot_gaps.kira:84:26 [binary] int32
+089_elaboration_snapshot_gaps.kira:84:43 [literal] int32
+089_elaboration_snapshot_gaps.kira:85:16 [call] option[int32]
+089_elaboration_snapshot_gaps.kira:85:22 [module_path] int32
+089_elaboration_snapshot_gaps.kira:87:21 [named_type] int32
+089_elaboration_snapshot_gaps.kira:88:9 [binding_pat] list[int32]
+089_elaboration_snapshot_gaps.kira:88:19 [for_expr] list[int32]
+089_elaboration_snapshot_gaps.kira:88:23 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:88:28 [struct_literal] countdown
+089_elaboration_snapshot_gaps.kira:88:51 [literal] int32
+089_elaboration_snapshot_gaps.kira:88:58 [ident] int32
+089_elaboration_snapshot_gaps.kira:88:58 [binary] int32
+089_elaboration_snapshot_gaps.kira:88:62 [ident] int32
+089_elaboration_snapshot_gaps.kira:89:5 [var_stmt] int32
+089_elaboration_snapshot_gaps.kira:89:17 [literal] int32
+089_elaboration_snapshot_gaps.kira:90:9 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:90:14 [ident] list[int32]
+089_elaboration_snapshot_gaps.kira:91:9 [ident] int32
+089_elaboration_snapshot_gaps.kira:91:17 [ident] int32
+089_elaboration_snapshot_gaps.kira:91:17 [binary] int32
+089_elaboration_snapshot_gaps.kira:91:25 [ident] int32
+089_elaboration_snapshot_gaps.kira:92:12 [ident] int32
+089_elaboration_snapshot_gaps.kira:96:18 [binding_pat] usize
+089_elaboration_snapshot_gaps.kira:96:31 [named_type] int32
+089_elaboration_snapshot_gaps.kira:97:9 [binding_pat] list[int32]
+089_elaboration_snapshot_gaps.kira:97:18 [array] list[int32]
+089_elaboration_snapshot_gaps.kira:97:19 [literal] int32
+089_elaboration_snapshot_gaps.kira:97:22 [ident] usize
+089_elaboration_snapshot_gaps.kira:98:5 [var_stmt] int32
+089_elaboration_snapshot_gaps.kira:98:17 [literal] int32
+089_elaboration_snapshot_gaps.kira:99:9 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:99:14 [ident] list[int32]
+089_elaboration_snapshot_gaps.kira:100:9 [ident] int32
+089_elaboration_snapshot_gaps.kira:100:17 [ident] int32
+089_elaboration_snapshot_gaps.kira:100:17 [binary] int32
+089_elaboration_snapshot_gaps.kira:100:25 [ident] int32
+089_elaboration_snapshot_gaps.kira:101:12 [ident] int32
+089_elaboration_snapshot_gaps.kira:105:12 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:105:25 [named_type] int32
+089_elaboration_snapshot_gaps.kira:106:12 [ident] int32
+089_elaboration_snapshot_gaps.kira:106:12 [binary] int32
+089_elaboration_snapshot_gaps.kira:106:16 [literal] int32
+089_elaboration_snapshot_gaps.kira:108:11 [binding_pat] fn(int32) -> int32
+089_elaboration_snapshot_gaps.kira:108:34 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:108:47 [named_type] int32
+089_elaboration_snapshot_gaps.kira:109:12 [ident] fn(int32) -> int32
+089_elaboration_snapshot_gaps.kira:109:12 [call] int32
+089_elaboration_snapshot_gaps.kira:109:14 [ident] int32
+089_elaboration_snapshot_gaps.kira:111:24 [named_type] int32
+089_elaboration_snapshot_gaps.kira:112:9 [binding_pat] fn(int32) -> int32
+089_elaboration_snapshot_gaps.kira:112:13 [ident] fn(int32) -> int32
+089_elaboration_snapshot_gaps.kira:113:12 [ident] fn(fn(int32) -> int32, int32) -> int32
+089_elaboration_snapshot_gaps.kira:113:12 [call] int32
+089_elaboration_snapshot_gaps.kira:113:12 [binary] int32
+089_elaboration_snapshot_gaps.kira:113:18 [ident] fn(int32) -> int32
+089_elaboration_snapshot_gaps.kira:113:21 [literal] int32
+089_elaboration_snapshot_gaps.kira:113:26 [ident] fn(fn(int32) -> int32, int32) -> int32
+089_elaboration_snapshot_gaps.kira:113:26 [call] int32
+089_elaboration_snapshot_gaps.kira:113:32 [ident] fn(int32) -> int32
+089_elaboration_snapshot_gaps.kira:113:40 [literal] int32
+089_elaboration_snapshot_gaps.kira:115:15 [named_type] int32
+089_elaboration_snapshot_gaps.kira:116:5 [var_stmt] int32
+089_elaboration_snapshot_gaps.kira:116:17 [literal] int32
+089_elaboration_snapshot_gaps.kira:118:5 [ident] int32
+089_elaboration_snapshot_gaps.kira:118:13 [ident] int32
+089_elaboration_snapshot_gaps.kira:118:13 [binary] int32
+089_elaboration_snapshot_gaps.kira:118:21 [match] int32
+089_elaboration_snapshot_gaps.kira:118:27 [ident] fn(int32) -> result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:118:27 [call] result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:118:35 [literal] int32
+089_elaboration_snapshot_gaps.kira:119:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:119:13 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:119:20 [ident] int32
+089_elaboration_snapshot_gaps.kira:120:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:120:14 [wildcard_pat] app_error
+089_elaboration_snapshot_gaps.kira:120:20 [literal] int32
+089_elaboration_snapshot_gaps.kira:122:5 [ident] int32
+089_elaboration_snapshot_gaps.kira:122:13 [ident] int32
+089_elaboration_snapshot_gaps.kira:122:13 [binary] int32
+089_elaboration_snapshot_gaps.kira:122:21 [match] int32
+089_elaboration_snapshot_gaps.kira:122:27 [ident] fn(int32) -> result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:122:27 [call] result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:122:35 [unary] int32
+089_elaboration_snapshot_gaps.kira:122:36 [literal] int32
+089_elaboration_snapshot_gaps.kira:123:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:123:13 [wildcard_pat] int32
+089_elaboration_snapshot_gaps.kira:123:28 [literal] int32
+089_elaboration_snapshot_gaps.kira:124:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:124:14 [ctor_pat] app_error
+089_elaboration_snapshot_gaps.kira:124:21 [binding_pat] int32
+089_elaboration_snapshot_gaps.kira:124:28 [ident] int32
+089_elaboration_snapshot_gaps.kira:125:9 [result_pat] result[int32, app_error]
+089_elaboration_snapshot_gaps.kira:125:14 [ctor_pat] app_error
+089_elaboration_snapshot_gaps.kira:125:28 [literal] int32
+089_elaboration_snapshot_gaps.kira:127:5 [ident] int32
+089_elaboration_snapshot_gaps.kira:127:13 [ident] int32
+089_elaboration_snapshot_gaps.kira:127:13 [binary] int32
+089_elaboration_snapshot_gaps.kira:127:21 [ident] fn(weight, weight) -> int32
+089_elaboration_snapshot_gaps.kira:127:21 [call] int32
+089_elaboration_snapshot_gaps.kira:127:29 [struct_literal] weight
+089_elaboration_snapshot_gaps.kira:127:45 [literal] int32
+089_elaboration_snapshot_gaps.kira:127:50 [struct_literal] weight
+089_elaboration_snapshot_gaps.kira:127:66 [literal] int32
+089_elaboration_snapshot_gaps.kira:128:5 [ident] int32
+089_elaboration_snapshot_gaps.kira:128:13 [ident] int32
+089_elaboration_snapshot_gaps.kira:128:13 [binary] int32
+089_elaboration_snapshot_gaps.kira:128:21 [ident] fn() -> int32
+089_elaboration_snapshot_gaps.kira:128:21 [call] int32
+089_elaboration_snapshot_gaps.kira:129:5 [ident] int32
+089_elaboration_snapshot_gaps.kira:129:13 [ident] int32
+089_elaboration_snapshot_gaps.kira:129:13 [binary] int32
+089_elaboration_snapshot_gaps.kira:129:21 [ident] fn(usize) -> int32
+089_elaboration_snapshot_gaps.kira:129:21 [call] int32
+089_elaboration_snapshot_gaps.kira:129:34 [literal] usize
+089_elaboration_snapshot_gaps.kira:130:5 [ident] int32
+089_elaboration_snapshot_gaps.kira:130:13 [ident] int32
+089_elaboration_snapshot_gaps.kira:130:13 [binary] int32
+089_elaboration_snapshot_gaps.kira:130:21 [ident] fn() -> int32
+089_elaboration_snapshot_gaps.kira:130:21 [call] int32
+089_elaboration_snapshot_gaps.kira:131:12 [ident] int32
 std/algo.kira:41:14 [binding_pat] map_iter[I, T, U]
 std/algo.kira:41:27 [named_type] option[U]
 std/algo.kira:42:15 [module_path] I
@@ -26627,7 +26812,7 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 
 ## struct_pattern_field_types (0)
 
-## struct_literal_field_types (203)
+## struct_literal_field_types (206)
 ?:750 data array[T, m]
 ?:882 current int32
 ?:894 limit int32
@@ -26708,6 +26893,7 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:2920 v usize
 ?:3064 at int32
 ?:3071 stop int32
+?:3076 remaining int32
 ?:3148 name str
 ?:3168 cases list[test_case]
 ?:3182 inner map_iter[counter, int32, int32]
@@ -26719,6 +26905,8 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:3378 stop int32
 ?:3489 at int32
 ?:3496 stop int32
+?:3989 grams int32
+?:4010 grams int32
 ?:4042 inner I
 ?:4053 f fn(T) -> U
 ?:4064 seen int32
@@ -26832,7 +27020,7 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:55992 inner I
 ?:56003 f fn(&T) -> T
 
-## call_argument_mappings (495)
+## call_argument_mappings (504)
 003_collections_lambdas.kira:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.kira:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.kira:26:5 [call] (a=arg, b=arg)
@@ -26951,6 +27139,15 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 087_list_cell_and_mutable_cell.kira:24:19 [call] (xs=arg, i=arg)
 087_list_cell_and_mutable_cell.kira:25:15 [call] (xs=arg, i=arg)
 087_list_cell_and_mutable_cell.kira:27:13 [call] (i=arg)
+089_elaboration_snapshot_gaps.kira:52:13 [call] (raw=arg)
+089_elaboration_snapshot_gaps.kira:113:12 [call] (f=arg, x=arg)
+089_elaboration_snapshot_gaps.kira:113:26 [call] (f=arg, x=arg)
+089_elaboration_snapshot_gaps.kira:118:27 [call] (raw=arg)
+089_elaboration_snapshot_gaps.kira:122:27 [call] (raw=arg)
+089_elaboration_snapshot_gaps.kira:127:21 [call] (a=arg, b=arg)
+089_elaboration_snapshot_gaps.kira:128:21 [call] ()
+089_elaboration_snapshot_gaps.kira:129:21 [call] (n=arg)
+089_elaboration_snapshot_gaps.kira:130:21 [call] ()
 std/algo.kira:1222:13 [call] (value=arg)
 std/algo.kira:1224:13 [call] (value=arg)
 std/algo.kira:1320:22 [call] (o=arg)
@@ -27584,9 +27781,12 @@ std/unicode.kira:242:13 [call] std.list::list::len$list_uint32_ recv
 std/unicode.kira:259:13 [call] std.list::list::len$list_uint32_ recv
 std/unicode.kira:280:13 [call] std.list::list::len$list_uint32_ recv
 
-## resolved_fn_values (0)
+## resolved_fn_values (2)
+089_elaboration_snapshot_gaps.kira:112:13 [ident] codegen_stress.elaboration_snapshot_gaps::triple
+089_elaboration_snapshot_gaps.kira:113:32 [ident] codegen_stress.elaboration_snapshot_gaps::triple
 
-## operator_dispatches (82)
+## operator_dispatches (83)
+089_elaboration_snapshot_gaps.kira:72:8 [binary] codegen_stress.elaboration_snapshot_gaps::weight::cmp recv
 std/limits.kira:37:15 [binary] std.string::str::eq recv
 std/limits.kira:39:15 [binary] std.string::str::eq recv
 std/limits.kira:41:15 [binary] std.string::str::eq recv
@@ -27670,7 +27870,8 @@ std/unicode.kira:267:19 [binary] std.string::str::add recv
 std/unicode.kira:289:23 [binary] std.string::str::add recv
 std/unicode.kira:291:23 [binary] std.string::str::add recv
 
-## ord_dispatch_result_types (0)
+## ord_dispatch_result_types (1)
+089_elaboration_snapshot_gaps.kira:72:8 [binary] ordering
 
 ## index_dispatches (53)
 003_collections_lambdas.kira:11:23 [index] std.list::list::at$list_int32_$usize recv
@@ -27744,9 +27945,11 @@ std/iter.kira:153:25 [index] std.list::list::at_mut recv
 std/iter.kira:142:21 [index] std.list::list::at_ref recv
 std/iter.kira:176:21 [index] std.list::list::at_ref recv
 
-## try_conversions (0)
+## try_conversions (1)
+089_elaboration_snapshot_gaps.kira:52:13 [try] codegen_stress.elaboration_snapshot_gaps::app_error::from
 
-## try_conversion_types (0)
+## try_conversion_types (1)
+089_elaboration_snapshot_gaps.kira:52:13 [try] result[int32, app_error]
 
 ## array_literal_conversions (25)
 003_collections_lambdas.kira:4:19 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
@@ -27800,23 +28003,28 @@ std/test.kira:181:49 [ident] show spec=' ' value=int32
 
 ## type_param_reflections (0)
 
-## for_iterator_dispatches (9)
+## for_iterator_dispatches (11)
 ?:517 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:927 [for_stmt] next=counter::next elem=int32 owner=codegen_stress.user_iterator_for_loop
 ?:2391 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:2940 [for_stmt] next=::map_iter::next$map_iter_counter__int32__int32_ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter
+?:3122 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:3221 [for_stmt] next=::doubler::next$doubler_map_iter_counter__int32__int32__ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter
 ?:3276 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
+?:3345 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:4426 [for_stmt] next=::list_into_iter::next$list_into_iter_test_suite_ elem=test_suite owner=std.iter adapter=::list::into_iter$list_test_suite_ -> list_into_iter[test_suite]
 ?:4935 [for_stmt] next=::list_into_iter::next$list_into_iter_test_case_ elem=test_case owner=std.iter adapter=::list::into_iter$list_test_case_ -> list_into_iter[test_case]
 ?:5105 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 
-## comprehension_iterator_dispatches (0)
+## comprehension_iterator_dispatches (1)
+089_elaboration_snapshot_gaps.kira:88:28 [struct_literal] next=countdown::next elem=int32 owner=codegen_stress.elaboration_snapshot_gaps
 
-## comprehension_dispatches (1)
+## comprehension_dispatches (2)
 003_collections_lambdas.kira:15:19 [for_expr] list=list[int32] new=std.list::list::new$list_int32_ push=std.list::list::push$list_int32_
+089_elaboration_snapshot_gaps.kira:88:19 [for_expr] list=list[int32] new=std.list::list::new$list_int32_ push=std.list::list::push$list_int32_
 
-## runtime_fill_dispatches (0)
+## runtime_fill_dispatches (1)
+089_elaboration_snapshot_gaps.kira:97:18 [array] list=list[int32] new=std.list::list::new$list_int32_ push=std.list::list::push$list_int32_
 
 ## layout_queries (26)
 std/mem.kira:30:47 [call] size of _

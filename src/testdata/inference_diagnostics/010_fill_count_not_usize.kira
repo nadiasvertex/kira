@@ -1,0 +1,12 @@
+# A repeat count that is not a `usize`. Before this was diagnosed, the
+# program type-checked and then tripped an assertion inside LLVM itself: the
+# counting loop `[v; n]` lowers to compares a real `usize` index against the
+# count, so an `int32` count produced an `icmp` over an `i64` and an `i32`.
+# The bytecode VM, whose values are all tagged 64-bit words, ran the same
+# program and gave the right answer — so cross-tier agreement could not have
+# found it either.
+module infer_diag.fill_count_not_usize
+
+def wrong(n: int32) -> unit:
+    let filled = [7; n]
+    ()
