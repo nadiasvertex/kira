@@ -993,6 +993,75 @@ and that is the remaining work of this phase:
 
 Those two together are also what unblocks phase 8's other two leaves.
 
+#### Integer-literal defaulting, attempted again — and what it taught
+
+Parked on `wip/literal-defaulting-demand-points`, six of thirty-six targets
+red. Worth reading before it is picked up again, because the mechanism is
+settled and only the list of sites is unfinished.
+
+The literal mints a leaf and raises a `defaulting` obligation carrying
+`int32`, rather than answering `int32` at the leaf from no evidence. The
+candidate is spent by **`demand(id)`**: zonk, and only if still open run the
+queue, whose `flush` attempts defaults one at a time once everything else has
+stalled. Where `demand` is called is the entire design — not at the leaf,
+which is what the old inline answer did and why it was wrong so often, and at
+a call only *after* the arguments are checked, since checking them is what
+usually supplies the answer. Wired so far: a call's generic-parameter solve,
+method resolution, arithmetic operand selection, indexing. Still to wire:
+higher-kinded static/trait dispatch (`option.pure(20)`, `.map(f)`), comptime
+splice operands, and two lowering paths that still see an abstract parameter.
+
+That this is a list of sites rather than one rule is not a defect in the
+approach. A consumer that must choose an impl, an instruction, or an
+instance genuinely needs a type; Rust forces its own integer fallback at the
+same kind of boundary.
+
+Two rules fell out, and both are fixes in their own right. **The first is
+landed on master**; the second is meaningless without a defaulting resolver
+and stays on the branch.
+
+**Landed: an open leaf is not an answer.** Three pieces, each independently
+covered:
+
+- A call's argument solve reads the *settled* type. Reading the raw recorded
+  one matched `list[T]` against `list[?a]` for a `?a` a `push` had already
+  pinned — a stale read, nothing more.
+- An argument still carrying an open leaf after that answers *nothing*.
+  Binding anyway records the parameter as solved **to a variable**; the
+  binding map cannot tell that apart from a real answer, so the later
+  argument that could have said something is never consulted and the call
+  reports `T` unsolved having discarded the one thing that would have solved
+  it. `sum_from(out, 0)` is exactly that shape, and the parameter order was
+  the whole difference — `sum_from(0, out)` worked.
+- `solve_leaves` refuses a declared type mentioning a type parameter not in
+  scope. Without it the leaf is bound to the *callee's* `T`, which
+  type-checks and then asks lowering for `list::from_array$0$list_T_`, an
+  instance of a type no value has.
+
+`codegen_stress/092_open_leaf_is_not_an_answer.kira` (`# expect: 46`) holds
+the positive case; `inference_diagnostics/013_open_leaf_at_a_generic_call`
+holds the refusal, where declining to answer produces a message on the
+reader's own `var out = []` instead of a capture that reaches the backend.
+That case also forced a wording fix: the old help asserted "Nothing in this
+function does any of those", which is false when the literal *is* passed as
+an argument — it now says "an argument whose type is already known", which is
+the clause that makes the sentence true.
+
+Both rules as originally stated:
+
+- **A leaf must not be bound to a type mentioning a type parameter that is
+  not in scope.** That parameter is the *callee's pattern*, not a declared
+  type, and binding a leaf to it captures it: `pick(1, 2)` answered "the
+  literal's type is `T`" and then "`T` is unsolved" — the checker blaming
+  the call for a circle it drew itself. Scope is the whole distinction, and
+  it is a fact rather than a mode: inside `from_iter`'s own body `T` is rigid
+  and `return out` against `-> list[T]` is exactly how that leaf is meant to
+  solve. This alone removed fifteen of twenty-three failures.
+- **A default that will not bind has lost, not failed.** It is a last
+  resort, so "does not apply here" is a discharge. Reported as a failure it
+  aborted the whole flush, and one leaf's refusal left every later literal
+  open.
+
 #### Failability, verified
 
 | Broken | What caught it |

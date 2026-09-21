@@ -1851,6 +1851,38 @@ private:
     return leaf_ctxt_.meta_count() == 0 ? id : leaf_ctxt_.zonk(id);
   }
 
+  /// Whether every type parameter `id` mentions is one the body currently
+  /// being checked has in scope.
+  ///
+  /// `type_params_` is that scope stack, so this is a lookup rather than a
+  /// guess: the `T` of the function being checked is in it, and the `T` of a
+  /// callee whose signature is merely being matched against is not.
+  auto type_params_in_scope(type_id id) -> bool {
+    auto seen = std::unordered_set<type_id>{};
+    return type_params_in_scope_impl(id, seen);
+  }
+  auto type_params_in_scope_impl(type_id id, std::unordered_set<type_id> &seen)
+      -> bool {
+    if (!seen.insert(id).second) {
+      return true;
+    }
+    const auto &entry = types_.entry(id);
+    if (entry.kind == type_kind::type_param_kind &&
+        !std::ranges::any_of(type_params_, [id](const auto &scope) -> bool {
+          return std::ranges::any_of(scope, [id](const auto &pair) -> bool {
+            return pair.second == id;
+          });
+        })) {
+      return false;
+    }
+    for (const auto arg : entry.args) {
+      if (!type_params_in_scope_impl(arg, seen)) {
+        return false;
+      }
+    }
+    return entry.result == id || type_params_in_scope_impl(entry.result, seen);
+  }
+
   /// Teaches the leaf unknowns what a value flowing into a declared type says
   /// about them.
   ///
@@ -1878,6 +1910,20 @@ private:
       if (!mentions_type_var(found, seen)) {
         return;
       }
+    }
+    // A declared type mentioning a type parameter that is *not in scope
+    // here* is not a declared type at all — it is the callee's pattern, and
+    // the very thing the call is trying to solve. Binding a leaf to it
+    // captures the parameter, and the call then answers "this value's type
+    // is `T`" followed by "`T` is unsolved": the checker blaming the call
+    // for a circle it drew itself.
+    //
+    // Scope is the whole distinction, and it is a fact rather than a mode.
+    // Inside `from_iter`'s own body `T` *is* in scope — rigid there, and
+    // `return out` against `-> list[T]` is exactly how that leaf is meant to
+    // solve. At a call site in another function it is not.
+    if (!type_params_in_scope(expected) || !type_params_in_scope(found)) {
+      return;
     }
     (void)leaf_engine_.unify(expected, found, infer::k_no_cause);
   }
@@ -5854,10 +5900,10 @@ private:
             leaf.span, "cannot tell what an empty `[]` is a list of",
             "nothing here ever says what this list holds",
             "An empty `[]` takes its element type from what is later done "
-            "with it — a `push`, a return, an argument. Nothing in this "
-            "function does any of those. Annotate the binding — "
-            "`var xs: list[int32] = []` — or start the list with the "
-            "elements it should hold.");
+            "with it — a `push`, a return, an argument whose type is "
+            "already known. Nothing here pinned it down. Annotate the "
+            "binding — `var xs: list[int32] = []` — or start the list with "
+            "the elements it should hold.");
         continue;
       }
       wire_default_list(*leaf.literal, element, /*count=*/0);
@@ -6359,10 +6405,23 @@ private:
       if (argument == nullptr) {
         continue;
       }
-      if (const auto found = node_types_.find(argument);
-          found != node_types_.end()) {
-        unify_rigid(params[i].type, found->second, bindings);
+      const auto found = node_types_.find(argument);
+      if (found == node_types_.end()) {
+        continue;
       }
+      // Through the leaf store: a `list[?a]` whose `?a` a `push` already
+      // pinned is a `list[int32]` here, and reading the raw recorded type
+      // instead binds `T := ?a` — a parameter recorded as *solved to a
+      // variable*. Nothing is solved by that, but the binding map cannot
+      // tell the difference, so the later argument that would have answered
+      // it is never consulted and the call reports `T` unsolved having
+      // discarded the one thing that would have solved it.
+      const auto arg_type = settle(found->second);
+      auto seen = std::unordered_set<type_id>{};
+      if (mentions_type_var(arg_type, seen)) {
+        continue;
+      }
+      unify_rigid(params[i].type, arg_type, bindings);
     }
   }
 

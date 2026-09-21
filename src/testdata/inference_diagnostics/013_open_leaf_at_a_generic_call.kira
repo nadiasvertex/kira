@@ -1,0 +1,23 @@
+# bar: AT BAR for placement, SHORT OF BAR for completeness. The message names
+# the line the reader has to change, and "an argument whose type is already
+# known" is the clause that makes it true here — `first_or`'s `fallback: T`
+# is not, at the moment this argument is checked, because a callee's `T` is
+# solved after its arguments are. What the message does not say is that this
+# particular call *could* have answered a moment later. Phase 5's
+# `explain_stall` is the piece that should say so.
+#
+# What this case exists to hold is the *refusal*. Before it, `list[?]` was
+# allowed to answer `T` with the metavariable itself, and the checker then
+# had a leaf bound to a type parameter belonging to a function it was only
+# calling. That captured `T`: it type-checked, and lowering asked for
+# `list::from_array$0$list_T_`, an instance of a type no value has. Declining
+# to answer, and saying so here, is the better of the two failures by a wide
+# margin.
+module infer_diag.open_leaf_at_a_generic_call
+
+def first_or[T](xs: list[T], fallback: T) -> T:
+    return fallback
+
+def wrong() -> int32:
+    var out = []
+    return first_or(out, 0)

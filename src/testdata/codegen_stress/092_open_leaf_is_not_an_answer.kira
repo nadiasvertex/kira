@@ -1,0 +1,36 @@
+module codegen_stress.open_leaf_is_not_an_answer
+
+# expect: 46
+
+# A list whose element type is still open, passed to a generic function that
+# a *later* argument could solve.
+#
+# `sum_from(out, 0)` matches `xs: list[T]` against `list[?a]` and gets back
+# `T := ?a` — a parameter recorded as solved to a variable. Nothing is solved
+# by that, but the binding map cannot tell the difference, so `zero: T` given
+# an `int32` was never consulted and the call reported "`T` is a type
+# parameter this call leaves unsolved" having discarded the one argument that
+# would have answered it. The order of the parameters was the whole
+# difference: `sum_from(0, out)` worked.
+#
+# An argument still carrying an open leaf now answers nothing, and the leaf
+# is pinned afterwards by the same constraint that always pinned it.
+#
+# The sum is asserted with `# expect:` rather than left to cross-tier
+# agreement: an element type inferred wrongly is inferred wrongly for both
+# tiers, and they would agree on the wrong answer.
+
+def sum_from[T](xs: list[T], zero: T) -> T:
+    var total = zero
+    var i: usize = 0
+    while i < xs.len():
+        total = total + xs[i]
+        i = i + 1
+    return total
+
+def main() -> int32:
+    var out = []
+    out.push(7)
+    out.push(14)
+    out.push(25)
+    return sum_from(out, 0)
