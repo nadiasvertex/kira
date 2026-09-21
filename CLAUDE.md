@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Kira is an early-stage language and compiler project written in C++26 (Clang 22.1+), built with Bazel/bzlmod. The implemented surface is: a hand-written lexer + recursive-descent parser, a semantic analysis pipeline (module graph, name resolution, type checking), and a CLI compile driver that emits protobuf-backed module metadata. There is no typed IR, LLVM lowering, or executable linker yet.
+Kira is an early-stage language and compiler project written in C++26 (Clang 23.1+), built with Bazel/bzlmod. The implemented surface is: a hand-written lexer + recursive-descent parser, a semantic analysis pipeline (module graph, name resolution, type checking), and a CLI compile driver that emits protobuf-backed module metadata. There is no typed IR, LLVM lowering, or executable linker yet.
 
 - Language and standard library specification: spec/specification/ (start at spec/specification/00-overview.md)
 - Language grammar: spec/kira-grammar.ebnf

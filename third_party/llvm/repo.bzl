@@ -2,8 +2,8 @@
 Decision 2): there is no Bazel Central Registry module for the LLVM C++
 libraries, so this repository rule shells out to `llvm-config` on the host
 to find the headers/static archives already installed by the pinned
-toolchain (CLAUDE.md requires Clang 22.1+; this pins to the matching LLVM
-22 release for the same reason C++ ABI stability is not guaranteed across
+toolchain (CLAUDE.md requires Clang 23.1+; this pins to the matching LLVM
+23 release for the same reason C++ ABI stability is not guaranteed across
 LLVM major versions), rather than vendoring or building llvm-project from
 source under Bazel.
 """
@@ -17,8 +17,8 @@ _COMPONENTS = ["core", "native", "orcjit", "irreader"]
 _CANDIDATE_LLVM_CONFIGS = [
     "/opt/homebrew/opt/llvm/bin/llvm-config",
     "/usr/local/opt/llvm/bin/llvm-config",
-    "/usr/lib/llvm-22/bin/llvm-config",
-    "/usr/bin/llvm-config-22",
+    "/usr/lib/llvm-23/bin/llvm-config",
+    "/usr/bin/llvm-config-23",
 ]
 
 def _run(repo_ctx, llvm_config, args):
@@ -46,8 +46,8 @@ def _find_llvm_config(repo_ctx):
             return candidate
 
     fail(
-        "llvm-config not found. Install LLVM 22.1+ (e.g. `brew install " +
-        "llvm` on macOS, or your distro's llvm-22 package on Linux) and " +
+        "llvm-config not found. Install LLVM 23.1+ (e.g. `brew install " +
+        "llvm` on macOS, or your distro's llvm-23 package on Linux) and " +
         "ensure `llvm-config` is on PATH, or set the LLVM_CONFIG " +
         "environment variable to its full path. See spec/codegen-design.md " +
         "Decision 2.",
@@ -60,10 +60,10 @@ def _llvm_repository_impl(repo_ctx):
     llvm_config = _find_llvm_config(repo_ctx)
 
     version = _run(repo_ctx, llvm_config, ["--version"])
-    if not version.startswith("22."):
+    if not version.startswith("23."):
         fail((
-            "kira's llvm_codegen requires LLVM 22.x, matching CLAUDE.md's " +
-            "Clang 22.1+ toolchain pin (spec/codegen-design.md Decision 2 " +
+            "kira's llvm_codegen requires LLVM 23.x, matching CLAUDE.md's " +
+            "Clang 23.1+ toolchain pin (spec/codegen-design.md Decision 2 " +
             "explains why this project pins rather than floats across LLVM " +
             "major versions) -- llvm-config at {} reports version {}."
         ).format(llvm_config, version))

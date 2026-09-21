@@ -6,8 +6,13 @@ build --cxxopt=-std=c++26
 build --host_cxxopt=-std=c++26
 
 # Use clang as the compiler
-build --action_env=CC=clang
-build --action_env=CXX=clang++
+build --repo_env=CC=/opt/homebrew/opt/llvm/bin/clang
+build --repo_env=CXX=/opt/homebrew/opt/llvm/bin/clang++
+build --action_env=CC=/opt/homebrew/opt/llvm/bin/clang
+build --action_env=CXX=/opt/homebrew/opt/llvm/bin/clang++
+# Homebrew clang 23 reads SDKSettings.json from its default (CommandLineTools) SDK;
+# listing the SDK root here makes Bazel treat that dependency as builtin.
+build --repo_env=CPLUS_INCLUDE_PATH=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk
 
 # Set macOS deployment target (26.0 for current system compatibility)
 build --apple_platform_type=macos

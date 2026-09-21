@@ -260,7 +260,7 @@
   "moduleExtensions": {
     "//third_party/llvm:repo.bzl%llvm_extension": {
       "general": {
-        "bzlTransitiveDigest": "VzUL2AZxvJm3LRpEMLCnyaGnORQXUz6+Z16VHqiDdmw=",
+        "bzlTransitiveDigest": "Xz0AVrKwUk+mNtTxb04W69725nhdx404j4IOt8ln+8M=",
         "usagesDigest": "fvR9Qx/tmGsQsULeY7MPkqMuPvRdqqkoZY8SvZrgPhk=",
         "recordedInputs": [],
         "generatedRepoSpecs": {

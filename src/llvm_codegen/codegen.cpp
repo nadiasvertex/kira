@@ -752,7 +752,7 @@ public:
     // edge is real but provably never taken at runtime; `unreachable` is
     // the correct terminator for it.
     for (auto *block : generator_resume_blocks_) {
-      if (block->getTerminator() == nullptr) {
+      if (!block->hasTerminator()) {
         builder_.SetInsertPoint(block);
         builder_.CreateUnreachable();
       }
@@ -872,7 +872,7 @@ private:
           // that case nothing reaches here, and adding another terminator
           // (`ret`) would insert an instruction after one, which LLVM's
           // verifier rejects.
-          if (builder_.GetInsertBlock()->getTerminator() == nullptr) {
+          if (!builder_.GetInsertBlock()->hasTerminator()) {
             if (return_is_unit_) {
               builder_.CreateRetVoid();
             } else {
@@ -3819,7 +3819,7 @@ private:
         // `if`/`match`/block whose every branch/arm diverges already
         // terminated this block itself, so storing into `want_result` (and
         // reporting "not terminated" to the caller) would be wrong.
-        if (builder_.GetInsertBlock()->getTerminator() != nullptr) {
+        if (builder_.GetInsertBlock()->hasTerminator()) {
           return true;
         }
         // A tail call whose declared result is `unit` (e.g. `println(...)`)
