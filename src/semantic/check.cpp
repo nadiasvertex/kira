@@ -5779,6 +5779,9 @@ private:
     std::vector<type_id> call_params;
     file_id_type file = 0;
     const module_members *module = nullptr;
+    /// The receiver of a UFCS call (`x.probe()`), which is the callee's
+    /// first argument; `nullptr` for an ordinary call.
+    const ast::expr *receiver = nullptr;
   };
   std::vector<pending_open_param_call> pending_open_param_calls_;
   /// Whether each probed function's body left a parameter open — an
@@ -5951,7 +5954,7 @@ private:
         resolved_callee{.decl = instance,
                         .owner_module = item.owner->module_name,
                         .impl_target_type = "",
-                        .receiver = nullptr};
+                        .receiver = item.receiver};
   }
 
   /// One annotated parameter's declared type, resolved as `signature_params`
@@ -11336,6 +11339,29 @@ private:
         source_location{.file_id = candidate.file_id, .span = decl.span},
         &solved, is_generic_template(decl) ? &generic : nullptr);
     check_call_preconditions(call, decl, params, field.object.get());
+
+    // The receiver is the callee's first argument, so it has to be tied to
+    // that parameter's leaf like any other argument was by
+    // `check_call_args_against`; the rest of the record is the same as for an
+    // ordinary call (`check_call_against_decl`).
+    if (!in_const_generic_template_ && !in_type_generic_template_ &&
+        has_unannotated_params(decl) && is_free_function(decl, candidate.owner)) {
+      solve_leaves(params.front().type, receiver_type);
+      auto param_types = std::vector<type_id>{};
+      param_types.reserve(params.size());
+      for (const auto &param : params) {
+        param_types.push_back(param.type);
+      }
+      pending_open_param_calls_.push_back(
+          pending_open_param_call{.call = &call,
+                                  .decl = &decl,
+                                  .owner = candidate.owner,
+                                  .decl_file = candidate.file_id,
+                                  .call_params = std::move(param_types),
+                                  .file = file_id_,
+                                  .module = module_,
+                                  .receiver = field.object.get()});
+    }
 
     if (!in_const_generic_template_ && !in_type_generic_template_ &&
         is_generic_template(decl) && is_free_function(decl, candidate.owner)) {

@@ -947,9 +947,9 @@ cases. Verified failing without: the instance-name suffix, the literal skip,
 and the diagnostic hold.
 
 **Not done, deliberately:**
-- Only plain free-function calls are elaborated. A UFCS call
-  (`x.probe()`) or method on an open-param function still resolves to the
-  template.
+- Free-function calls, including UFCS (`x.probe()`, whose receiver is the
+  first argument), are elaborated. A *method* in an `impl`/`extend` block
+  with an unannotated parameter still resolves to the template.
 - An unannotated *return* type: lowering refuses it (it no longer crashes).
 - A generic template that is never called is not checked for errors, as with
   explicit generics, since its first check's diagnostics are discarded.

@@ -1,6 +1,6 @@
 module codegen_stress.unannotated_param_is_a_leaf
 
-# expect: 12800000017
+# expect: 19200000026
 
 # `probe`'s parameter has no annotation and its body only hands it to a
 # generic, which says nothing about its type: `x` is an implicit type
@@ -15,6 +15,9 @@ module codegen_stress.unannotated_param_is_a_leaf
 # `fill_bits`'s `[]` is constrained only by the unannotated parameter, so it
 # is an implicit generic too, and its list is an `int32` list in one instance
 # and an `int64` list in the other.
+#
+# `tag` is reached by UFCS (`3.tag(1)`, `big.tag(2)`): the receiver is the
+# unannotated parameter's argument, so the two calls are two instances.
 #
 # `# expect:` because both tiers would agree on a width decided too early.
 
@@ -31,6 +34,9 @@ def fill_bits(n) -> int64:
     out.push(n)
     return bits(n) + int64(out.len())
 
+def tag(x, y: int32) -> int64:
+    return bits(x) + wide(int64(y))
+
 def probe(x) -> int64:
     return bits(x)
 
@@ -39,7 +45,9 @@ def main() -> int64:
     let big = probe(wide(2500000000))
     let pinned = narrow(3)
     let filled = fill_bits(wide(1)) + fill_bits(1)
-    return small + big + pinned + filled
+    let wide_recv = wide(2500000000)
+    let ufcs = 3.tag(1) + wide_recv.tag(2)
+    return small + big + pinned + filled + ufcs
 
 # Declared after its caller on purpose: `main` is checked before `narrow`'s
 # body has said `int64`, so the literal can only be pinned once it has.
