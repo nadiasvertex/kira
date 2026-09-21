@@ -9383,8 +9383,7 @@ private:
     if (pattern == concrete || types_.is_unknown(concrete)) {
       return;
     }
-    const auto matched = infer::match_pattern(
-        types_, pattern, concrete, infer::legacy_compat{.ref_coercion = true});
+    const auto matched = infer::match_pattern(types_, pattern, concrete);
     // The failure is deliberately dropped for now. Reporting it is a real
     // change in what the compiler says — several call sites match
     // speculatively and expect a miss to be silent — so it belongs to its own

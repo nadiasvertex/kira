@@ -1,8 +1,7 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phases 0-6 done. Phase 7's swap has landed — all 28 matcher
-sites run the one unifier — with the reference-coercion allowance the only
-piece left. The engine (phases 1-5) exists and is tested but
+**Status:** Phases 0-7 done. All 28 matcher sites run the one unifier, with
+no compatibility shims left anywhere. The engine (phases 1-5) exists and is tested but
 is not yet called; phase 6 is the first change inside
 `src/semantic/check.cpp` itself, and it is behavior-preserving.
 
@@ -15,7 +14,7 @@ is not yet called; phase 6 is the first change inside
 | 4 | An obligation queue: methods, trait bounds, refinements, defaulting | **Done** — `src/semantic/infer/obligations.{h,cpp}`, `obligations_test.cpp` |
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | **Done** — `src/semantic/infer/blame.{h,cpp}`, `blame_test.cpp`, golden corpus at `src/testdata/inference_diagnostics/` |
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.kira` |
-| 7 | Constraint generation migrated onto the one unifier | **Mostly done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; `ref_coercion` allowance still to retire |
+| 7 | Constraint generation migrated onto the one unifier | **Done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; all three allowances retired |
 | 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | Not started |
 | 9 | Generic bodies checked once, abstractly | Not started |
 
@@ -643,7 +642,7 @@ of that.
 
 Full suite: 35/35.
 
-### Phase 7 — constraint generation *(the swap is done; coercion remains)*
+### Phase 7 — constraint generation *(done)*
 
 `checker::unify_rigid` no longer contains a matcher. It calls
 `infer::match_pattern` (`src/semantic/infer/rigid_match.{h,cpp}`, tested by
@@ -683,31 +682,40 @@ appears once per declaration in the two walks that enumerate *every* interned
 type. No instantiated type is affected, and `array[slice[T], n]` — the entry
 whose loss is what proved the capture was real — is back.
 
-#### Two of the three allowances are already retired
+#### All three allowances are retired
 
 The swap landed behind a `legacy_compat` struct reproducing each of
-`unify_rigid`'s defects, so that one step changed one thing. Two came off
-immediately, each verified on its own:
+`unify_rigid`'s defects, so that one step changed one thing. Each then came
+off on its own:
 
 | Retired | Effect on the golden |
 |---|---|
 | `ignore_array_length` — an array's length now solves from an argument (todo 20, in the dependent fragment) | none beyond the interned-type count |
 | `ignore_mutability` — `&T` no longer matches `&mut T` | none; it *removed* interning noise |
+| `ref_coercion` — replaced by the rule it stood in for | none at all |
 
-The third, `ref_coercion`, is load-bearing and stays: switching it off fails
-`cli_test`, `std_test` **and** `move_check_test`, because the checker leans on
-this matcher to absorb the auto-borrow at call sites that nothing else
-performs. Retiring it means writing the explicit coercion step it stands in
-for — the next piece of phase 7, and the one the plan always said belonged
-here.
+The third was not a defect. It was a real rule of the language wearing a
+matcher's blindness: a call site **borrows** when a `&T` parameter is given a
+value, and **dereferences** when a by-value parameter is given a reference.
+`nums.iter()` depends on the first — `iter`'s receiver is declared `&list[T]`
+and `nums` is a `list[int32]` — and without it `T` never solves.
 
-It also could not be emulated by normalizing the matcher's *inputs*, which is
-where the other two lived. The allowance is position-dependent: a bare
-parameter pattern swallows a whole `&int32`, so erasing references everywhere
-binds `T := int32` where the old walk bound `T := &int32`, and `std.mem`'s
-view queries read the difference. It is therefore the one migration shim
-inside `unify.cpp` (`unifier::set_legacy_ref_coercion`), deleted with its last
-caller.
+That rule is now written out as `infer::coerce_at_call_site` and applied at
+the **outermost position only**, which is the whole difference between a
+coercion and a blind spot: `list[&T]` against `list[int32]` is a real
+disagreement and stays one, where the old allowance fired at every depth and
+could not tell the two apart. `unify.cpp` carries no migration shim.
+
+Two things had to be got right, and the suite refused both wrong versions:
+
+- **It cannot be a rewrite of the inputs.** Erasing references everywhere
+  binds `T := int32` where the rule binds `T := &int32`. That was the first
+  attempt, and `std_test`'s `is_view_through_nested_call` caught it.
+- **A type parameter is not a by-value parameter.** It is willing to *be* a
+  reference, so dereferencing on its behalf discards what the call site said.
+  `describe_view[T](x: T)` given `&n` must infer `T = &int32`, and
+  `std.traits.is_view[T]()` inside it reads exactly that. The second attempt
+  missed this, and the same test caught it again.
 
 #### The matcher interns nothing
 
@@ -736,9 +744,10 @@ there. Adopting the parameter ids in place is what avoids that, and it is why
 | Broken | What caught it |
 |---|---|
 | `type_param` scoping ignored (back to by-name) | the snapshot — `array[slice[T], 0]` disappears from `node_types` and `view_bearing_types` drops to 61 |
-| the ref-coercion shim not applied | `cli_test`, `std_test` **and** `move_check_test` |
+| the implicit borrow removed | `std_test`, `move_check_test`, and the unit tests |
+| a type parameter dereferenced anyway | `std_test` — `is_view_through_nested_call` — and the unit tests |
+| the coercion applied at every depth instead of the outermost | `std_test`, `move_check_test`, and the unit tests |
 | `ignore_array_length` made a no-op | ``expected compat to reproduce the old behavior of leaving `n` open`` (before retirement) |
-| reference erasure not applied | ``expected compat to allow it`` |
 | `ignore_mutability` made a no-op | ``expected compat to reproduce the old permissiveness`` (before retirement) |
 | absence no longer outranks binding | ``expected the unpinned one to be absent, not bound to `unknown``` |
 | sort ambiguity not recorded | ``expected the length to solve — the gap this replaces`` |

@@ -110,17 +110,6 @@ public:
   [[nodiscard]] auto deferred() const
       -> const std::vector<deferred_constraint> &;
 
-  /// Restores `checker::unify_rigid`'s allowance that a reference meets its
-  /// target at a kind mismatch.
-  ///
-  /// The one migration shim in this engine, and it is here rather than in
-  /// `rigid_match`'s input normalization because it is position-dependent: a
-  /// bare-parameter pattern swallows a whole `&int32`, so erasing references
-  /// everywhere gives `T := int32` where the old walk gave `T := &int32`.
-  /// Deleted with the last caller that sets it — `spec/inference-rewrite.md`
-  /// phase 7.
-  auto set_legacy_ref_coercion(bool on) -> void { legacy_ref_coercion_ = on; }
-
 private:
   /// The recursive step. `root_expected`/`root_found` are carried untouched
   /// so an error reports both the outer pair and the inner one.
@@ -147,7 +136,6 @@ private:
   type_table *table_;
   infer_ctxt *ctx_;
   std::vector<deferred_constraint> deferred_;
-  bool legacy_ref_coercion_ = false;
 };
 
 } // namespace kira::semantic::infer

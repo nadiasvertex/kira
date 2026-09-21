@@ -38,29 +38,45 @@ namespace kira::semantic::infer {
 //  under the names the call sites expect.
 //
 //  The differences were gated rather than sprung, because the phase 0 golden
-//  has to stay readable while 28 sites move: `legacy_compat` reproduced
-//  `unify_rigid`'s permissiveness so the swap itself was verifiable as a
-//  no-op, and each allowance was then retired on its own. Two are already
-//  gone. The one that remains is documented on the field.
+//  has to stay readable while 28 sites move: a `legacy_compat` struct
+//  reproduced `unify_rigid`'s permissiveness so the swap itself was verifiable
+//  as a no-op, and each allowance was then retired on its own. All three are
+//  now gone. The reference allowance was the only one that was not simply a
+//  defect: it was standing in for a real rule of the language, which is now
+//  written out as `coerce_at_call_site` rather than emulated by a matcher
+//  that cannot see references.
 // ==========================================================================
 
-/// Which of `unify_rigid`'s allowances to keep for now.
+/// Applies the adjustments the language itself performs at a call site, so
+/// the matcher does not have to be blind to see past them.
 ///
-/// Every field here is a known defect being held in place deliberately so
-/// that one migration step changes one thing. A field that reaches zero call
-/// sites should be deleted, not defaulted.
-struct legacy_compat {
-  /// A `&T` pattern matches a bare `T`, and a bare `T` pattern matches `&T`.
-  ///
-  /// The last one standing. `ignore_mutability` and `ignore_array_length`
-  /// were retired the moment the swap landed — neither changed a recorded
-  /// decision — but this one is load-bearing: the checker leans on the
-  /// matcher to absorb the auto-borrow at call sites that nothing else
-  /// performs, and switching it off fails `cli_test`, `std_test` and
-  /// `move_check_test`. Retiring it means writing the explicit coercion step
-  /// it stands in for.
-  bool ref_coercion = false;
+/// Two, and only at the outermost position:
+///
+///   - **Implicit borrow.** A `&self`/`&T` parameter accepts a value. This is
+///     what `nums.iter()` relies on: `iter`'s receiver is declared `&list[T]`
+///     and `nums` is a `list[int32]`, and without the borrow `T` never solves.
+///   - **Implicit deref.** A by-value parameter accepts a reference, the
+///     mirror of the same rule.
+///
+/// Outermost only, which is the difference between a coercion and a blind
+/// spot. `list[&T]` against `list[int32]` is a real disagreement and stays
+/// one; the old matcher's allowance fired at *every* depth and could not tell
+/// the two apart. It also could not be expressed as a rewrite of the inputs:
+/// a bare-parameter pattern swallows a whole `&int32`, so erasing references
+/// everywhere binds `T := int32` where the rule binds `T := &int32`, and
+/// `std.mem`'s view queries read the difference.
+///
+/// Returns the adjusted pair. Unchanged when no adjustment applies — the two
+/// are both references, or neither is.
+struct coerced_pair {
+  type_id expected = k_unknown_type;
+  type_id found = k_unknown_type;
+  /// Whether an adjustment was applied at all.
+  bool adjusted = false;
 };
+[[nodiscard]] auto coerce_at_call_site(const type_table &table,
+                                       type_id expected, type_id found)
+    -> coerced_pair;
 
 /// What a match produced.
 struct rigid_match_result {
@@ -87,8 +103,6 @@ struct rigid_match_result {
 /// is local, which is what makes adopting interned parameter ids safe — see
 /// `infer_ctxt::adopt`.
 [[nodiscard]] auto match_pattern(type_table &table, type_id pattern,
-                                 type_id concrete,
-                                 const legacy_compat &compat = {})
-    -> rigid_match_result;
+                                 type_id concrete) -> rigid_match_result;
 
 } // namespace kira::semantic::infer

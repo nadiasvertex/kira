@@ -4,9 +4,10 @@
 // a concrete type through the one unifier produces the bindings the 28
 // `unify_rigid` sites expect — otherwise the migration is not a migration.
 // Second, and more important, that each of `unify_rigid`'s four defects is
-// *fixed* by default and *reproduced* under `legacy_compat`. The compat flags
-// are the migration's ratchet: a step that cannot demonstrate both halves
-// cannot be reviewed.
+// gone: array lengths solve, mutability is read, a mismatch is reported, and
+// the reference allowance that stood in for a real rule of the language has
+// been replaced by that rule written out (`coerce_at_call_site`) rather than
+// by a matcher that cannot see references.
 
 #include <iostream>
 #include <string>
@@ -19,7 +20,6 @@ namespace {
 
 using kira::semantic::type_id;
 using kira::semantic::type_table;
-using kira::semantic::infer::legacy_compat;
 using kira::semantic::infer::match_pattern;
 using kira::testing::expect;
 
@@ -117,23 +117,78 @@ auto test_mutability_now_matters() -> void {
   expect(strict.failure.has_value(), "expected `&mut T` not to match `&int32`");
 }
 
-/// Defect 3, still gated. A reference pattern meets a bare type, an allowance
-/// copied out of `compatible` into a function whose job is solving rather than
-/// coercion — and the checker leans on it to absorb the auto-borrow at call
-/// sites that nothing else performs, so it cannot simply be switched off.
-auto test_ref_coercion_is_gone() -> void {
+/// Defect 3, retired. A reference pattern met a bare type at *any* depth,
+/// which is a blind spot rather than a rule. What it was standing in for is a
+/// real rule — the call site borrows or dereferences — and that is now
+/// `coerce_at_call_site`, applied at the outermost position only.
+auto test_the_call_site_borrows() -> void {
   auto f = fixture{};
   const auto int32 = f.table.builtin("int32");
-  const auto pattern = f.table.ref_to(f.param("T"), /*is_mut=*/false);
+  const auto list_int32 = f.table.builtin_generic("list", {int32});
 
-  const auto strict = match_pattern(f.table, pattern, int32);
-  expect(strict.failure.has_value(), "expected `&T` not to match a bare type");
+  // `def iter[T](self: &list[T])` called on a `list[int32]` value.
+  const auto pattern =
+      f.table.ref_to(f.table.builtin_generic("list", {f.param("T")}),
+                     /*is_mut=*/false);
+  const auto result = match_pattern(f.table, pattern, list_int32);
+  expect(!result.failure.has_value(),
+         "expected the receiver to be borrowed for a `&self` method");
+  expect(bound(result, "T") == int32,
+         "expected `T` to solve through the implicit borrow");
+}
 
-  const auto legacy = match_pattern(f.table, pattern, int32,
-                                    legacy_compat{.ref_coercion = true});
-  expect(!legacy.failure.has_value(), "expected compat to allow it");
-  expect(bound(legacy, "T") == int32,
-         "expected compat to bind through the stripped reference");
+/// The mirror: a by-value parameter given a reference.
+auto test_the_call_site_dereferences() -> void {
+  auto f = fixture{};
+  const auto int32 = f.table.builtin("int32");
+  const auto pattern = f.table.builtin_generic("list", {f.param("T")});
+  const auto concrete = f.table.ref_to(f.table.builtin_generic("list", {int32}),
+                                       /*is_mut=*/false);
+
+  const auto result = match_pattern(f.table, pattern, concrete);
+  expect(!result.failure.has_value(),
+         "expected the reference to be read through");
+  expect(bound(result, "T") == int32, "expected `T` to solve through it");
+}
+
+/// The line between a coercion and a blind spot. The old allowance fired at
+/// every depth, so `list[&T]` matched `list[int32]` and nobody noticed; the
+/// rule applies at the outermost position and nowhere else.
+auto test_a_nested_reference_is_still_a_mismatch() -> void {
+  auto f = fixture{};
+  const auto int32 = f.table.builtin("int32");
+  const auto pattern = f.table.builtin_generic(
+      "list", {f.table.ref_to(f.param("T"), /*is_mut=*/false)});
+  const auto concrete = f.table.builtin_generic("list", {int32});
+
+  const auto result = match_pattern(f.table, pattern, concrete);
+  expect(result.failure.has_value(),
+         "expected `list[&T]` against `list[int32]` to stay a disagreement");
+}
+
+/// A bare parameter meeting a reference keeps the reference — at the top
+/// level and nested alike.
+///
+/// A type parameter is not a by-value parameter: it is willing to *be* a
+/// reference, so dereferencing on its behalf discards what the call site
+/// said. `describe_view[T](x: T)` given `&n` must infer `T = &int32`, and
+/// `std.traits.is_view[T]()` inside it reads exactly that. This is also the
+/// case that cannot be expressed by erasing references from the inputs, which
+/// is how the first attempt at retiring the old allowance broke `std_test`.
+auto test_a_bare_parameter_keeps_the_reference() -> void {
+  auto f = fixture{};
+  const auto int32 = f.table.builtin("int32");
+  const auto ref_int32 = f.table.ref_to(int32, /*is_mut=*/false);
+
+  const auto top = match_pattern(f.table, f.param("T"), ref_int32);
+  expect(bound(top, "T") == ref_int32,
+         "expected a bare `T` to solve to `&int32`, not to `int32`");
+
+  const auto nested =
+      match_pattern(f.table, f.table.builtin_generic("list", {f.param("T")}),
+                    f.table.builtin_generic("list", {ref_int32}));
+  expect(bound(nested, "T") == ref_int32,
+         "expected the same nested, where no coercion applies at all");
 }
 
 /// A real disagreement is reported rather than dropped. `unify_rigid` had
@@ -209,7 +264,10 @@ auto main() -> int {
   test_solves_a_constructor_head();
   test_array_length_now_solves();
   test_mutability_now_matters();
-  test_ref_coercion_is_gone();
+  test_the_call_site_borrows();
+  test_the_call_site_dereferences();
+  test_a_nested_reference_is_still_a_mismatch();
+  test_a_bare_parameter_keeps_the_reference();
   test_a_mismatch_is_reported();
   test_unpinned_parameters_stay_absent();
   test_a_value_parameter_binds_to_a_value();

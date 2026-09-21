@@ -36,15 +36,42 @@ auto collect_params(const type_table &table, type_id id,
 
 } // namespace
 
-auto match_pattern(type_table &table, type_id pattern, type_id concrete,
-                   const legacy_compat &compat) -> rigid_match_result {
+auto coerce_at_call_site(const type_table &table, type_id expected,
+                         type_id found) -> coerced_pair {
+  const auto expected_ref = table.entry(expected).kind == type_kind::ref_kind;
+  const auto found_ref = table.entry(found).kind == type_kind::ref_kind;
+  if (expected_ref == found_ref) {
+    return {.expected = expected, .found = found, .adjusted = false};
+  }
+  if (expected_ref) {
+    // `&T` parameter, value argument: the call site borrows.
+    return {.expected = table.entry(expected).result,
+            .found = found,
+            .adjusted = true};
+  }
+  // A *type parameter* is not a by-value parameter — it is willing to be a
+  // reference, and binding it to the referent throws that away. `describe_
+  // view[T](x: T)` called with `&n` must infer `T = &int32`, or the nested
+  // `is_view[T]()` answers about the referent instead of the argument.
+  if (table.entry(expected).kind == type_kind::type_param_kind) {
+    return {.expected = expected, .found = found, .adjusted = false};
+  }
+  // By-value parameter, reference argument: the call site dereferences.
+  return {.expected = expected,
+          .found = table.entry(found).result,
+          .adjusted = true};
+}
+
+auto match_pattern(type_table &table, type_id pattern, type_id concrete)
+    -> rigid_match_result {
+  const auto coerced = coerce_at_call_site(table, pattern, concrete);
   // Nothing is rewritten: the pattern's parameters are adopted in place, so
   // this matcher interns nothing at all. That is not a micro-optimization —
   // every rebuilt type would be permanently in the session's one table, and
   // `resolve_drop_plans` and `compute_view_bearing_types` walk every interned
   // type. A matcher running at tens of thousands of sites must leave no trail.
-  const auto left = pattern;
-  const auto right = concrete;
+  const auto left = coerced.expected;
+  const auto right = coerced.found;
 
   auto params = std::vector<type_id>{};
   auto seen = std::unordered_set<type_id>{};
@@ -56,7 +83,6 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete,
   // unknowns the same unknown.
   auto ctx = infer_ctxt{table};
   auto engine = unifier{table, ctx};
-  engine.set_legacy_ref_coercion(compat.ref_coercion);
 
   for (const auto param : params) {
     const auto &entry = table.entry(param);

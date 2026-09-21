@@ -216,23 +216,6 @@ auto unifier::step(type_id expected, type_id found, cause_id why,
 
   // Rule 1: rigid-rigid.
   if (left_entry.kind != right_entry.kind) {
-    // A migration shim, and the only one in this file. `checker::unify_rigid`
-    // let a reference meet its target at a kind mismatch — an allowance
-    // copied from `compatible` into a function whose job is solving rather
-    // than coercion. It cannot be emulated by normalizing the inputs, because
-    // it is position-dependent: a *bare parameter* pattern still swallows a
-    // whole `&int32`, so erasing references everywhere binds `T := int32`
-    // where the old walk bound `T := &int32`, and `std.mem::is_view` reads
-    // the difference. Retired with the last caller that sets it — see
-    // `legacy_ref_coercion`.
-    if (legacy_ref_coercion_) {
-      if (left_entry.kind == type_kind::ref_kind) {
-        return step(left_entry.result, right, why, root_expected, root_found);
-      }
-      if (right_entry.kind == type_kind::ref_kind) {
-        return step(left, right_entry.result, why, root_expected, root_found);
-      }
-    }
     return std::unexpected(refuse(
         unify_failure::mismatch, left, right, root_expected, root_found, why,
         std::format("expected `{}`, found `{}`", table_->display(left),
