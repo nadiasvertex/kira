@@ -951,7 +951,7 @@ public:
     // for or which leaf asked — which is what keeps "an unconstrained
     // integer literal is `int32`" a statement about the language rather than
     // a branch in the unifier.
-    leaf_goals_.set_resolver(
+    leaf_queue_.set_resolver(
         infer::obligation_kind::defaulting,
         [this](const infer::obligation &goal) -> infer::obligation_report {
           const auto leaf = goal.watches.front();
@@ -1033,6 +1033,16 @@ public:
     }
     for (auto &[field, type] : struct_literal_field_types_) {
       type = types_.erase_refinements(settle(type));
+    }
+    for (auto &[node, dispatch] : for_iterator_dispatches_) {
+      dispatch.element_type = types_.erase_refinements(settle(dispatch.element_type));
+      dispatch.adapter_result_type =
+          types_.erase_refinements(settle(dispatch.adapter_result_type));
+    }
+    for (auto &[node, dispatch] : comprehension_iterator_dispatches_) {
+      dispatch.element_type = types_.erase_refinements(settle(dispatch.element_type));
+      dispatch.adapter_result_type =
+          types_.erase_refinements(settle(dispatch.adapter_result_type));
     }
     for (auto &[node, dispatch] : interp_dispatches_) {
       dispatch.value_type = types_.erase_refinements(settle(dispatch.value_type));
@@ -1976,6 +1986,32 @@ private:
     // `return out` against `-> list[T]` is exactly how that leaf is meant to
     // solve. At a call site in another function it is not.
     if (!type_params_in_scope(expected) || !type_params_in_scope(found)) {
+      return;
+    }
+    // An integer literal can only be a number. Handed a concrete type that
+    // is not one, it is not evidence about the literal — it is the mistake
+    // about to be reported — so the literal takes its default now and the
+    // ordinary mismatch says what is wrong (`let s: str = 10`).
+    const auto refuses_number = [this](type_id literal, type_id other) -> bool {
+      const auto root = leaf_ctxt_.find(literal);
+      if (!integer_literal_leaves_.contains(root)) {
+        return false;
+      }
+      const auto settled = settle(other);
+      auto vars = std::unordered_set<type_id>{};
+      if (mentions_type_var(settled, vars) || types_.is_unknown(settled)) {
+        return false;
+      }
+      const auto shape = strip_refs(settled);
+      return !types_.is_numeric(shape) &&
+             types_.entry(shape).kind != type_kind::type_param_kind;
+    };
+    if (refuses_number(expected, found)) {
+      (void)demand(expected);
+      return;
+    }
+    if (refuses_number(found, expected)) {
+      (void)demand(found);
       return;
     }
     (void)leaf_engine_.unify(expected, found, infer::k_no_cause);
@@ -5529,7 +5565,14 @@ private:
     }
     auto bindings = std::unordered_map<std::string, type_id>{};
     if (generic != nullptr) {
-      bindings = preliminary_type_bindings(call, params, *generic);
+      // The lambda is about to be checked against these, so a parameter its
+      // type hangs on is a point of demand — but only if there *is* a lambda
+      // waiting, or a default would be spent for nothing.
+      const auto has_lambda = std::ranges::any_of(
+          pending, [](const auto &item) -> bool {
+            return item.value->kind == ast::node_kind::lambda_expr;
+          });
+      bindings = preliminary_type_bindings(call, params, *generic, has_lambda);
     }
     for (const auto &item : pending) {
       if (item.value->kind == ast::node_kind::lambda_expr) {
@@ -5945,6 +5988,10 @@ private:
     file_id_type file = 0;
   };
   std::vector<pending_leaf_literal_value> pending_leaf_values_;
+  /// The leaves standing for an integer literal. Such a leaf can only ever
+  /// be a number, which is a fact about the *literal*, not something the
+  /// unifier can see.
+  std::unordered_set<type_id> integer_literal_leaves_;
 
   /// Clones and names a generic instance, and queues its body to be checked.
   ///
@@ -6840,7 +6887,8 @@ private:
   /// existed.
   auto preliminary_type_bindings(const ast::call_expr &call,
                                  const std::vector<fn_param_info> &params,
-                                 const generic_call_context &generic)
+                                 const generic_call_context &generic,
+                                 bool may_default)
       -> std::unordered_map<std::string, type_id> {
     auto bindings = generic.seed != nullptr
                         ? *generic.seed
@@ -6860,7 +6908,8 @@ private:
         }
       }
     }
-    solve_from_argument_types(call, params, bindings, generic.ufcs_receiver);
+    solve_from_argument_types(call, params, bindings, generic.ufcs_receiver,
+                              may_default);
     solve_from_bounds(decl, generic.owner, bindings);
     return bindings;
   }
@@ -8171,12 +8220,13 @@ private:
     const auto leaf = leaf_ctxt_.fresh_type(
         "the type of this integer literal",
         source_location{.file_id = file_id_, .span = lit.span});
+    integer_literal_leaves_.insert(leaf);
     pending_leaf_values_.push_back(
         pending_leaf_literal_value{.literal = &lit,
                                    .leaf = leaf,
                                    .negated = negated,
                                    .file = file_id_});
-    leaf_goals_.add(infer::obligation{
+    leaf_queue_.add(infer::obligation{
         .kind = infer::obligation_kind::defaulting,
         .watches = {leaf},
         .goal = std::format("a type for the integer literal `{}`", lit.value),
@@ -8696,8 +8746,11 @@ private:
     }
   }
 
-  auto require_quote_value(type_id found, source_span span,
+  auto require_quote_value(type_id raw_found, source_span span,
                            std::string_view context) -> void {
+    // A splice operand has to be a type: `~(42)` is an integer literal that
+    // nothing else constrains, so its default is owed here.
+    const auto found = demand(raw_found);
     if (types_.is_unknown(found)) {
       return;
     }
@@ -8812,9 +8865,20 @@ private:
               ? strip_refs(infer_expr(*binary.rhs,
                                       types_.is_unknown(hint) ? lhs : hint))
               : k_unknown_type;
+      // Both bounds name the one element type, so tie them before choosing:
+      // `0..10` is two literal leaves that must agree, and the range is a
+      // `range[?a]` whose `?a` a use of the loop variable (or, failing
+      // that, the last resort) settles.
+      solve_leaves(lhs, rhs);
+      const auto open = [this](type_id type) -> bool {
+        auto seen = std::unordered_set<type_id>{};
+        return mentions_type_var(settle(type), seen);
+      };
       const auto element = types_.is_integer(hint)  ? hint
                            : types_.is_integer(lhs) ? lhs
                            : types_.is_integer(rhs) ? rhs
+                           : open(lhs)              ? settle(lhs)
+                           : open(rhs)              ? settle(rhs)
                                                     : k_unknown_type;
       return resolve_range_type(element);
     }
@@ -11264,19 +11328,8 @@ private:
     // arrives with the function argument): read each argument's recorded
     // type back and unify it too, then state the return type under the
     // full solution.
-    if (const auto mapping = call_argument_mappings_.find(&call);
-        mapping != call_argument_mappings_.end()) {
-      const auto &args_by_param = mapping->second.args_by_param;
-      for (size_t i = 0; i < rest.size() && i < args_by_param.size(); ++i) {
-        if (args_by_param[i] == nullptr) {
-          continue;
-        }
-        if (const auto found = node_types_.find(args_by_param[i]);
-            found != node_types_.end()) {
-          unify_rigid(rest[i].type, found->second, bindings);
-        }
-      }
-    }
+    solve_from_argument_types(call, rest, bindings, /*ufcs_receiver=*/nullptr,
+                              /*may_default=*/true);
 
     // A generic method has no compiled form of its own — resolve the call
     // against a monomorphized instance (`option::bind$int32$str`) so both
@@ -11576,6 +11629,25 @@ private:
 
     if (!in_const_generic_template_ && !in_type_generic_template_ &&
         is_generic_template(decl) && is_free_function(decl, candidate.owner)) {
+      // A receiver still open after the arguments have had their say —
+      // `xs.iter()` on a `list[?a]` that a later statement will pin. There
+      // is no instance to name yet (`iter$list___` is a function nothing
+      // compiles), and defaulting the receiver now would answer before the
+      // statement that was about to say otherwise. The call's *type* is
+      // already known in terms of the leaf (`T := ?a`, so the result is
+      // `iter[?a]`), so only the elaboration waits.
+      if (mentions_type_var(settle(receiver_type))) {
+        defer_method_call(
+            decl.name, settle(receiver_type),
+            [this, &call, &decl, candidate, solved, params,
+             &field](type_id /*settled*/) -> void {
+              (void)instantiate_generic_function(
+                  call, decl, candidate.owner, candidate.file_id, solved,
+                  params, /*explicit_args=*/{}, field.object.get());
+            });
+        return substitute_solved(signature_return_type(decl, candidate.owner),
+                                 bindings);
+      }
       if (const auto result = instantiate_generic_function(
               call, decl, candidate.owner, candidate.file_id, solved, params,
               /*explicit_args=*/{}, field.object.get())) {
@@ -11912,13 +11984,28 @@ private:
       return *qualified;
     }
 
-    // A method lookup is a point of demand: the impl is chosen by the
-    // receiver's type, so `b32.get()` on a `boxed[?a]` has to know what `?a`
-    // is before it can know which `get` it means. No argument is going to
-    // say — a receiver is not solved by the call's arguments the way a
-    // generic parameter is — so this is where the last resort is owed.
-    const auto object =
-        demand(strip_refs(infer_expr(*field.object, k_unknown_type)));
+    // Deliberately *not* a point of demand. A receiver still open here is
+    // waited on rather than defaulted: the dispatch registers a `method_call`
+    // obligation over the receiver's leaves and runs once a later statement
+    // (`xs.push(big)`) has said what they are.
+    auto object = strip_refs(infer_expr(*field.object, k_unknown_type));
+    // The exception is a call nothing can wait for: no method by this name
+    // and no free function that could be reached by UFCS. There the impl is
+    // chosen by the receiver's type — `b32.get()` on a `boxed[?a]` with one
+    // `get` per element type — so the last resort is owed now, and the
+    // lookup below runs against the answer.
+    // A receiver that is a bare leaf (`5.total_of()`) has no shape to match a
+    // free function's first parameter against — a variable fits everything —
+    // so it is owed its default too.
+    if (leaf_ctxt_.meta_count() != 0 &&
+        mentions_type_var(settle(object)) &&
+        find_method(types_.entry(object), field.field_name, object) ==
+            nullptr &&
+        (types_.entry(settle(object)).kind == type_kind::type_var_kind ||
+         field.object->kind != ast::node_kind::ident_expr ||
+         collect_ufcs_candidates(field.field_name).empty())) {
+      object = strip_refs(demand(object));
+    }
     const auto &entry = types_.entry(object);
     // `b.take[int64](5)`: the grammar's `"." IDENT "[" type_arg_list "]"`
     // suffix, which the parser has always built and the checker used to
@@ -12518,20 +12605,9 @@ private:
                                                     .span = method->decl->span},
                                     &solved);
             auto bindings = std::unordered_map<std::string, type_id>{};
-            if (const auto mapping = call_argument_mappings_.find(&call);
-                mapping != call_argument_mappings_.end()) {
-              const auto &args_by_param = mapping->second.args_by_param;
-              for (size_t i = 0; i < params.size() && i < args_by_param.size();
-                   ++i) {
-                if (args_by_param[i] == nullptr) {
-                  continue;
-                }
-                if (const auto found = node_types_.find(args_by_param[i]);
-                    found != node_types_.end()) {
-                  unify_rigid(params[i].type, found->second, bindings);
-                }
-              }
-            }
+            solve_from_argument_types(call, params, bindings,
+                                      /*ufcs_receiver=*/nullptr,
+                                      /*may_default=*/true);
             // Same instance discipline as `check_receiver_call`: a generic
             // associated function resolves to its monomorphized copy.
             if (!method->decl->type_params.empty()) {
@@ -15608,7 +15684,9 @@ private:
   auto resolve_loop_iterable(const ast::expr &iterable_expr,
                              const ast::node &site, iterator_loop_dispatch &out)
       -> type_id {
-    const auto iterable = infer_expr(iterable_expr, k_unknown_type);
+    // Choosing the iteration route selects an impl and names an instance
+    // from the iterable's type, so this is a point of demand.
+    const auto iterable = demand(infer_expr(iterable_expr, k_unknown_type));
     auto element = element_type_of(iterable, iterable_expr.span);
 
     // A bare `&`/`&mut` as the *whole* iterable (`for x in &v`) asks for
@@ -16414,8 +16492,10 @@ private:
       if (seg.is_literal || seg.value == nullptr) {
         continue;
       }
+      // An interpolated value is a point of demand: its capability check
+      // needs a type, so an unconstrained literal defaults here.
       const auto value_type =
-          strip_refs(infer_expr(*seg.value, k_unknown_type));
+          strip_refs(demand(infer_expr(*seg.value, k_unknown_type)));
 
       if (seg.has_spec) {
         check_dynamic_size(seg.spec.width);
@@ -17078,7 +17158,11 @@ private:
         continue;
       }
       const auto found = infer_expr(*item, element);
-      if (types_.is_unknown(element)) {
+      // A leaf element is not "nothing known yet": it is a variable the
+      // remaining elements must agree with, so it is kept and unified with
+      // rather than replaced by the last element's own.
+      if (types_.is_unknown(element) &&
+          types_.entry(element).kind != type_kind::type_var_kind) {
         element = found;
       } else {
         type_mismatch(item->span, element, found, "for this element",
@@ -17164,17 +17248,20 @@ private:
   /// worth naming rather than papering over.
   auto
   check_loop_head_patterns(const std::vector<const ast::pattern *> &patterns,
-                           type_id element) -> void {
+                           type_id raw_element) -> void {
     if (patterns.empty()) {
       return;
     }
     if (patterns.size() == 1) {
       if (patterns.front() != nullptr) {
-        check_pattern(*patterns.front(), element);
+        check_pattern(*patterns.front(), raw_element);
       }
       return;
     }
 
+    // Splitting an element is a point of demand: whether it *is* a tuple has
+    // to be known to say so.
+    const auto element = demand(raw_element);
     const auto element_entry = types_.entry(element);
     const auto is_tuple = element_entry.kind == type_kind::tuple_kind;
     // Point at the loop variables. The enclosing statement's span runs to
@@ -17220,10 +17307,18 @@ private:
     }
   }
 
-  auto check_pattern(const ast::pattern &pattern, type_id subject) -> void {
+  auto check_pattern(const ast::pattern &pattern, type_id raw_subject)
+      -> void {
     if (pattern.has_error) {
       return;
     }
+    // A structural pattern has to know the shape it destructures, so it is a
+    // point of demand; a binding or wildcard names the value whatever it is
+    // and leaves the type open for a later use to say.
+    const auto subject = pattern.kind == ast::node_kind::binding_pattern ||
+                                 pattern.kind == ast::node_kind::wildcard_pattern
+                             ? raw_subject
+                             : demand(raw_subject);
     const auto stripped = strip_refs(subject);
     const auto &entry = types_.entry(stripped);
     // Every pattern kind below matches against `stripped` — recording it

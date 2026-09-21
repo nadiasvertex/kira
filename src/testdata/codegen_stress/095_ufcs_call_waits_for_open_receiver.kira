@@ -1,0 +1,32 @@
+module codegen_stress.ufcs_call_waits_for_open_receiver
+
+# expect: 6000000006
+
+# `[3000000000, 1, 2]` is a list of integer-literal leaves: nothing has said
+# what they are. `xs.iter()` reaches the free `def iter[T](xs: &list[T])` by
+# UFCS, and `wide_sum(&xs)` a line later is the statement that says `int64`.
+#
+# Defaulting the receiver at `xs.iter()` would answer `int32` before that
+# statement is read, and `wide_sum(&xs)` would then be refused (and
+# 3000000000 does not fit an `int32`). Instead the call is registered as a
+# `method_call` obligation over the receiver's leaf and elaborated after
+# `wide_sum` has pinned it, so the iterator is an `int64` one.
+#
+# `# expect:` rather than cross-tier agreement: an element type decided too
+# early is decided identically by both tiers. The total is only right if the
+# elements really were `int64`.
+
+def wide_sum(v: &list[int64]) -> int64:
+    var total: int64 = 0
+    for x in v.iter():
+        total = total + *x
+    return total
+
+def main() -> int64:
+    let xs = [3000000000, 1, 2]
+    let it = xs.iter()
+    let direct = wide_sum(&xs)
+    var total: int64 = 0
+    for v in it:
+        total = total + *v
+    return direct + total

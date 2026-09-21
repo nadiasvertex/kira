@@ -1089,6 +1089,20 @@ rows against the same line.
 
 ### Phase 10 — `method_call` as an obligation *(in progress)*
 
+**Update, literal defaulting landed with the UFCS deferral.** An integer
+literal now mints a leaf and a `defaulting` obligation; `demand(id)` spends
+the default at points that need a type (generic solve, arithmetic, indexing,
+`for` iterable, structural patterns, splice operands, interpolation, a lambda's
+expected parameter types). A method call on a *named* open receiver with no
+method of that name reaches UFCS and is deferred rather than defaulted
+(`codegen_stress/095`, `# expect: 6000000006`; verified failing without the
+deferral). Temporaries in a chain are still demanded, since nothing later can
+pin them. Also fixed on the way: an array literal's leaf element was replaced
+by the next element instead of unified with it, and `for`/comprehension
+dispatch maps were not zonked at the boundary. Known limit: `demand` flushes
+*every* pending default, not only those inside `id`.
+
+
 Phase 8's two remaining leaves and phase 9's gates both wait on the same
 missing thing: a call on a receiver that is not concrete *yet* is currently
 **decided anyway**, or **suppressed**, and never *postponed*. The queue for

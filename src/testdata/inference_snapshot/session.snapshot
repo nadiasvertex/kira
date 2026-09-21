@@ -1,5 +1,5 @@
 # inference snapshot
-# 1621 interned types
+# 1761 interned types
 
 ## node_types (27178)
 003_collections_lambdas.kira:3:14 [named_type] unit
