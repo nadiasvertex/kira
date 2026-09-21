@@ -107,6 +107,10 @@ constexpr auto k_inputs = std::array{
     // names a function nothing compiles.
     snapshot_input{.corpus = "codegen_stress",
                    .filename = "091_unannotated_accumulator_in_generic.kira"},
+    // Indexing an unannotated `[]`: the one dispatch site that read its
+    // receiver unsettled, so the `index` impl was chosen against a variable.
+    snapshot_input{.corpus = "codegen_stress",
+                   .filename = "093_index_settles_its_receiver.kira"},
     snapshot_input{.corpus = "semantic_stress",
                    .filename = "003_collections_lambdas.kira"},
     snapshot_input{.corpus = "semantic_stress",

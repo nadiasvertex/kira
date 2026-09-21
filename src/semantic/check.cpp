@@ -14153,7 +14153,14 @@ private:
       return k_unknown_type;
     }
 
-    const auto object = base_shape(infer_expr(*index.object, k_unknown_type));
+    // Settled, like every other dispatch site reads its receiver. `var xs =
+    // []` records `xs` as `list[?a]` and a later `xs.push(7)` solves `?a`
+    // into the leaf store — not into the recorded `type_id`, which stays
+    // `list[?a]`. Without this the `index` impl is chosen against a
+    // variable, the program type-checks, and lowering is handed a node with
+    // no concrete type (`codegen_stress/093`).
+    const auto object =
+        settle(base_shape(infer_expr(*index.object, k_unknown_type)));
     const auto &entry = types_.entry(object);
     const auto key =
         index.index != nullptr

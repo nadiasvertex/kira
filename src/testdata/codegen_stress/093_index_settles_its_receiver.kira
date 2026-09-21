@@ -1,0 +1,49 @@
+module codegen_stress.index_settles_its_receiver
+
+# expect: 44
+
+# Indexing reads the receiver's type *settled*, like every other dispatch.
+#
+# `var xs = []` gives `xs` the type `list[?a]`, and `xs.push(7)` solves
+# `?a := int32`. But solving writes into the leaf store, not into the
+# interned `type_id` recorded for `xs` — that stays `list[?a]` forever, and
+# `settle` is what reads the answer back out.
+#
+# Method calls already settled their receiver (`check_impl_generic_method_
+# call`). `infer_index` did not, so `xs[0]` dispatched `index`'s `at`
+# against `list[?a]`: the program type-checked, then lowering was handed a
+# node whose type was still a variable and reported "no concrete checked
+# type is available for this node". An unannotated list was indexable only
+# if it was never indexed.
+#
+# `xs.len()` before any `push` is here on purpose: it is the case where the
+# receiver is genuinely open at the call, which settling cannot help — there
+# is nothing yet to settle to. It runs only because `len` needs nothing from
+# the element type, and the golden records what it costs:
+#
+#     std.list::list::len$list___
+#
+# an instance named for a variable, alongside the `len$list_int32_` the same
+# method gets everywhere else. Harmless here and wrong in general; the fix is
+# for that call to *wait* for `?a` rather than dispatch against it, which is
+# `method_call` as an obligation (`spec/inference-rewrite.md` phase 8/9).
+# When that lands, this fixture's snapshot rows are the acceptance test.
+#
+# `# expect:` rather than cross-tier agreement: an element type read from
+# an unsettled receiver is read wrongly by both tiers, which would agree on
+# the same wrong answer.
+
+def main() -> int32:
+    var xs = []
+    var before = xs.len()
+    xs.push(7)
+    xs.push(15)
+    xs.push(22)
+    var total = 0
+    # `before` is 0, so this starts at the front — and reading it back here
+    # is what makes the open-receiver `len()` above load-bearing.
+    var i: usize = before
+    while i < xs.len():
+        total = total + xs[i]
+        i = i + 1
+    return total

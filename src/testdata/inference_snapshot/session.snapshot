@@ -1,7 +1,7 @@
 # inference snapshot
-# 1618 interned types
+# 1621 interned types
 
-## node_types (27139)
+## node_types (27181)
 003_collections_lambdas.kira:3:14 [named_type] unit
 003_collections_lambdas.kira:4:9 [binding_pat] list[int32]
 003_collections_lambdas.kira:4:19 [array] list[int32]
@@ -2345,6 +2345,45 @@
 091_unannotated_accumulator_in_generic.kira:58:47 [field] fn(_) -> usize
 091_unannotated_accumulator_in_generic.kira:58:47 [call] usize
 091_unannotated_accumulator_in_generic.kira:58:58 [literal] int32
+093_index_settles_its_receiver.kira:36:15 [named_type] int32
+093_index_settles_its_receiver.kira:37:5 [var_stmt] list[int32]
+093_index_settles_its_receiver.kira:37:14 [array] list[int32]
+093_index_settles_its_receiver.kira:38:5 [var_stmt] usize
+093_index_settles_its_receiver.kira:38:18 [ident] list[int32]
+093_index_settles_its_receiver.kira:38:18 [field] fn(_) -> usize
+093_index_settles_its_receiver.kira:38:18 [call] usize
+093_index_settles_its_receiver.kira:39:5 [ident] list[int32]
+093_index_settles_its_receiver.kira:39:5 [field] fn(_, _) -> unit
+093_index_settles_its_receiver.kira:39:5 [call] unit
+093_index_settles_its_receiver.kira:39:13 [literal] int32
+093_index_settles_its_receiver.kira:40:5 [ident] list[int32]
+093_index_settles_its_receiver.kira:40:5 [field] fn(_, _) -> unit
+093_index_settles_its_receiver.kira:40:5 [call] unit
+093_index_settles_its_receiver.kira:40:13 [literal] int32
+093_index_settles_its_receiver.kira:41:5 [ident] list[int32]
+093_index_settles_its_receiver.kira:41:5 [field] fn(_, _) -> unit
+093_index_settles_its_receiver.kira:41:5 [call] unit
+093_index_settles_its_receiver.kira:41:13 [literal] int32
+093_index_settles_its_receiver.kira:42:5 [var_stmt] int32
+093_index_settles_its_receiver.kira:42:17 [literal] int32
+093_index_settles_its_receiver.kira:45:5 [var_stmt] usize
+093_index_settles_its_receiver.kira:45:20 [ident] usize
+093_index_settles_its_receiver.kira:46:11 [ident] usize
+093_index_settles_its_receiver.kira:46:11 [binary] bool
+093_index_settles_its_receiver.kira:46:15 [ident] list[int32]
+093_index_settles_its_receiver.kira:46:15 [field] fn(_) -> usize
+093_index_settles_its_receiver.kira:46:15 [call] usize
+093_index_settles_its_receiver.kira:47:9 [ident] int32
+093_index_settles_its_receiver.kira:47:17 [ident] int32
+093_index_settles_its_receiver.kira:47:17 [binary] int32
+093_index_settles_its_receiver.kira:47:25 [ident] list[int32]
+093_index_settles_its_receiver.kira:47:25 [index] int32
+093_index_settles_its_receiver.kira:47:28 [ident] usize
+093_index_settles_its_receiver.kira:48:9 [ident] usize
+093_index_settles_its_receiver.kira:48:13 [ident] usize
+093_index_settles_its_receiver.kira:48:13 [binary] usize
+093_index_settles_its_receiver.kira:48:17 [literal] usize
+093_index_settles_its_receiver.kira:49:12 [ident] int32
 std/algo.kira:41:14 [binding_pat] map_iter[I, T, U]
 std/algo.kira:41:27 [named_type] option[U]
 std/algo.kira:42:15 [module_path] I
@@ -6594,12 +6633,15 @@ std/list.kira:40:57 [literal] usize
 std/list.kira:40:57 [literal] usize
 std/list.kira:43:17 [binding_pat] list[T]
 std/list.kira:43:17 [binding_pat] list[int32]
+std/list.kira:43:17 [binding_pat] list[int32]
 std/list.kira:43:17 [binding_pat] list[int64]
 std/list.kira:43:17 [binding_pat] list[uint32]
 std/list.kira:43:26 [named_type] usize
 std/list.kira:43:26 [named_type] usize
 std/list.kira:43:26 [named_type] usize
 std/list.kira:43:26 [named_type] usize
+std/list.kira:43:26 [named_type] usize
+std/list.kira:44:16 [module_path] usize
 std/list.kira:44:16 [module_path] usize
 std/list.kira:44:16 [module_path] usize
 std/list.kira:44:16 [module_path] usize
@@ -27359,7 +27401,7 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:55974 inner I
 ?:55985 f fn(&T) -> T
 
-## call_argument_mappings (530)
+## call_argument_mappings (535)
 003_collections_lambdas.kira:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.kira:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.kira:26:5 [call] (a=arg, b=arg)
@@ -27499,6 +27541,11 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 091_unannotated_accumulator_in_generic.kira:52:15 [call] ()
 091_unannotated_accumulator_in_generic.kira:58:26 [call] ()
 091_unannotated_accumulator_in_generic.kira:58:47 [call] ()
+093_index_settles_its_receiver.kira:38:18 [call] ()
+093_index_settles_its_receiver.kira:39:5 [call] (value=arg)
+093_index_settles_its_receiver.kira:40:5 [call] (value=arg)
+093_index_settles_its_receiver.kira:41:5 [call] (value=arg)
+093_index_settles_its_receiver.kira:46:15 [call] ()
 std/algo.kira:1222:13 [call] (value=arg)
 std/algo.kira:1224:13 [call] (value=arg)
 std/algo.kira:1320:22 [call] (o=arg)
@@ -27891,7 +27938,7 @@ std/unicode.kira:280:13 [call] ()
 std/unicode.kira:285:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.kira:291:29 [call] (cp=arg)
 
-## resolved_callees (279)
+## resolved_callees (284)
 003_collections_lambdas.kira:18:5 [call] std.console::println
 027_dependent_and_refinement_types.kira:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.kira:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -27976,6 +28023,11 @@ std/unicode.kira:291:29 [call] (cp=arg)
 091_unannotated_accumulator_in_generic.kira:52:15 [call] std.list::list::len$list_int64_ recv
 091_unannotated_accumulator_in_generic.kira:58:26 [call] std.list::list::len$list_int32_ recv
 091_unannotated_accumulator_in_generic.kira:58:47 [call] std.list::list::len$list_int64_ recv
+093_index_settles_its_receiver.kira:38:18 [call] std.list::list::len$list___ recv
+093_index_settles_its_receiver.kira:39:5 [call] std.list::list::push$list_int32_ recv
+093_index_settles_its_receiver.kira:40:5 [call] std.list::list::push$list_int32_ recv
+093_index_settles_its_receiver.kira:41:5 [call] std.list::list::push$list_int32_ recv
+093_index_settles_its_receiver.kira:46:15 [call] std.list::list::len$list_int32_ recv
 std/algo.kira:1222:13 [call] std.list::list::push recv
 std/algo.kira:1224:13 [call] std.list::list::push recv
 std/algo.kira:1733:9 [call] std.list::list::push recv
@@ -28266,7 +28318,7 @@ std/unicode.kira:291:23 [binary] std.string::str::add recv
 ## ord_dispatch_result_types (1)
 089_elaboration_snapshot_gaps.kira:72:8 [binary] ordering
 
-## index_dispatches (58)
+## index_dispatches (59)
 003_collections_lambdas.kira:11:23 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.kira:42:17 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.kira:58:19 [index] std.list::list::at$list_int32_$usize recv
@@ -28293,6 +28345,7 @@ std/unicode.kira:291:23 [binary] std.string::str::add recv
 091_unannotated_accumulator_in_generic.kira:28:20 [index] std.list::list::at$list_int64_$usize recv
 091_unannotated_accumulator_in_generic.kira:48:25 [index] std.list::list::at$list_int32_$usize recv
 091_unannotated_accumulator_in_generic.kira:53:31 [index] std.list::list::at$list_int64_$usize recv
+093_index_settles_its_receiver.kira:47:25 [index] std.list::list::at$list_int32_$usize recv
 std/algo.kira:1747:37 [index] std.list::list::at recv
 std/algo.kira:1748:30 [index] std.list::list::at recv
 std/algo.kira:1753:21 [index] std.list::list::at recv
@@ -28349,7 +28402,7 @@ std/iter.kira:176:21 [index] std.list::list::at_ref recv
 ## try_conversion_types (1)
 089_elaboration_snapshot_gaps.kira:52:13 [try] result[int32, app_error]
 
-## array_literal_conversions (30)
+## array_literal_conversions (31)
 003_collections_lambdas.kira:4:19 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
 045_ufcs.kira:104:16 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
 045_ufcs.kira:106:18 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
@@ -28364,6 +28417,7 @@ std/iter.kira:176:21 [index] std.list::list::at_ref recv
 091_unannotated_accumulator_in_generic.kira:25:15 [array] std.list::list::from_array$0$list_int64_ from array[int64, 0]
 091_unannotated_accumulator_in_generic.kira:39:30 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
 091_unannotated_accumulator_in_generic.kira:40:29 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
+093_index_settles_its_receiver.kira:37:14 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
 std/algo.kira:1218:15 [array] std.list::list::from_array from array[T, 0]
 std/algo.kira:1219:14 [array] std.list::list::from_array from array[T, 0]
 std/algo.kira:1730:24 [array] std.list::list::from_array from array[T, 0]
@@ -28914,7 +28968,7 @@ std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
 
-## const_generic_instances (122)
+## const_generic_instances (123)
 codegen_stress.bound_driven_inference::filter$counter$int32
 codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_
 codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32
@@ -28993,6 +29047,7 @@ std.list::list::from_array$5$list_int32_
 std.list::list::into_iter$list_int32_
 std.list::list::into_iter$list_test_case_
 std.list::list::into_iter$list_test_suite_
+std.list::list::len$list___
 std.list::list::len$list_int32_
 std.list::list::len$list_int64_
 std.list::list::len$list_uint32_
@@ -29042,7 +29097,7 @@ stress.dependent_types::safe_get$int32$8
 
 ## synthesized_item_splices (0)
 
-## synthesized_decls (125)
+## synthesized_decls (126)
 alloc$int32
 alloc$int64
 alloc$str
@@ -29118,6 +29173,7 @@ list::from_array$5$list_int32_
 list::into_iter$list_int32_
 list::into_iter$list_test_case_
 list::into_iter$list_test_suite_
+list::len$list___
 list::len$list_int32_
 list::len$list_int64_
 list::len$list_uint32_
