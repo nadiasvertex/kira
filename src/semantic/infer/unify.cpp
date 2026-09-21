@@ -111,6 +111,22 @@ auto unifier::step(type_id expected, type_id found, cause_id why,
     return {};
   }
 
+  const auto left_entry = table_->entry(left);   // copies: recursion interns
+  const auto right_entry = table_->entry(right); // and the deque rule is easy
+                                                 // to lose track of.
+
+  // Absence outranks binding. `unknown` already unifies with everything, so
+  // solving `?a := unknown` buys nothing and costs the variable: it is now
+  // answered, and no later constraint can teach it anything. Leaving it open
+  // is strictly more informative, and it is what the matcher this replaces
+  // did by bailing out on an unknown right-hand side.
+  //
+  // A metavariable's own id is a `type_var_kind`, not `unknown`, so this
+  // cannot swallow rule 0 below.
+  if (is_absent(left_entry) || is_absent(right_entry)) {
+    return {};
+  }
+
   // Rule 0: a variable on either side takes the other side as its solution.
   // Sorts, arities and the occurs check are the store's business.
   auto bind_side = [&](type_id var,
@@ -128,14 +144,6 @@ auto unifier::step(type_id expected, type_id found, cause_id why,
   }
   if (ctx_->is_meta(right)) {
     return bind_side(right, left);
-  }
-
-  const auto left_entry = table_->entry(left);   // copies: recursion interns
-  const auto right_entry = table_->entry(right); // and the deque rule is easy
-                                                 // to lose track of.
-
-  if (is_absent(left_entry) || is_absent(right_entry)) {
-    return {};
   }
   // A `type_var_kind` that this store never minted belongs to the old
   // engine; it means exactly as much as `unknown` does here.
@@ -208,6 +216,23 @@ auto unifier::step(type_id expected, type_id found, cause_id why,
 
   // Rule 1: rigid-rigid.
   if (left_entry.kind != right_entry.kind) {
+    // A migration shim, and the only one in this file. `checker::unify_rigid`
+    // let a reference meet its target at a kind mismatch — an allowance
+    // copied from `compatible` into a function whose job is solving rather
+    // than coercion. It cannot be emulated by normalizing the inputs, because
+    // it is position-dependent: a *bare parameter* pattern still swallows a
+    // whole `&int32`, so erasing references everywhere binds `T := int32`
+    // where the old walk bound `T := &int32`, and `std.mem::is_view` reads
+    // the difference. Retired with the last caller that sets it — see
+    // `legacy_ref_coercion`.
+    if (legacy_ref_coercion_) {
+      if (left_entry.kind == type_kind::ref_kind) {
+        return step(left_entry.result, right, why, root_expected, root_found);
+      }
+      if (right_entry.kind == type_kind::ref_kind) {
+        return step(left, right_entry.result, why, root_expected, root_found);
+      }
+    }
     return std::unexpected(refuse(
         unify_failure::mismatch, left, right, root_expected, root_found, why,
         std::format("expected `{}`, found `{}`", table_->display(left),

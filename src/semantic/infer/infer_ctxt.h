@@ -91,6 +91,13 @@ struct meta_var {
   /// For `value_sort`, the scalar type the value inhabits (`usize` for an
   /// array length). `k_unknown_type` for the other sorts.
   type_id underlying = k_unknown_type;
+  /// Set only by `adopt`, for a parameter whose own spelling does not say
+  /// which sort it is: an arity-0 `type_param_kind` is how both an ordinary
+  /// `T` and a value parameter `n` are written (`concrete_sort` refuses to
+  /// guess for exactly this reason). Such a variable accepts a solution of
+  /// any sort, because the alternative is to guess and be wrong half the
+  /// time.
+  bool sort_is_ambiguous = false;
   /// What this variable stands for, for diagnostics: "`T` of `push`".
   std::string origin;
   /// Where it was introduced.
@@ -139,6 +146,30 @@ public:
                                 source_location where) -> type_id;
   [[nodiscard]] auto fresh_value(type_id underlying, std::string origin,
                                  source_location where) -> type_id;
+
+  /// Treats an id the table already holds as an unsolved variable of this
+  /// store.
+  ///
+  /// The one caller is `rigid_match` (`rigid_match.h`), which solves a
+  /// declared signature's type parameters against a concrete type. Those
+  /// parameters are already interned as `type_param_kind` ids, and this is
+  /// what lets them be solved *without interning anything*: substituting
+  /// fresh variables into the pattern would mean rebuilding it through the
+  /// table's constructors, and every rebuilt type is permanently interned in
+  /// the session's one table. A matcher that runs at tens of thousands of
+  /// sites must not leave a trail of `list[?a]` behind it — anything that
+  /// walks the interned set afterwards (drop-plan resolution does) would then
+  /// be walking the matcher's scratch work.
+  ///
+  /// Scoped by the store's own lifetime, which is what makes this safe: a
+  /// `type_param` id is interned *by name*, so the `T` of one function is the
+  /// same id as the `T` of another. Adopting one in a long-lived store would
+  /// make those two the same unknown. Every caller therefore uses a store
+  /// that lives no longer than the one match it is performing.
+  ///
+  /// Returns false when `id` is already a variable here, leaving it alone.
+  auto adopt(type_id id, meta_sort sort, size_t arity, std::string origin,
+             source_location where) -> bool;
 
   /// The variable standing for the value parameter spelled `name` — the `n`
   /// of a `vec[T, n]` — minting it on first use and returning the same one

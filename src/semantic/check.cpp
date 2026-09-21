@@ -19,6 +19,7 @@
 #include "src/comptime/eval.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast_clone.h"
+#include "src/semantic/infer/rigid_match.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/types.h"
@@ -2025,8 +2026,9 @@ private:
         scope.emplace(param.name, bound->second);
         continue;
       }
-      scope.emplace(param.name,
-                    types_.type_param(param.name, param.higher_kinded_arity));
+      scope.emplace(
+          param.name,
+          types_.type_param(param.name, param.higher_kinded_arity, &param));
     }
     type_params_.push_back(std::move(scope));
   }
@@ -4965,9 +4967,10 @@ private:
     auto bindings = std::unordered_map<std::string, type_id>{};
     const auto seed = [&](const ast::type_param &type_param) -> void {
       if (!type_param.name.empty()) {
-        bindings.emplace(
-            type_param.name,
-            types_.type_param(type_param.name, type_param.higher_kinded_arity));
+        bindings.emplace(type_param.name,
+                         types_.type_param(type_param.name,
+                                           type_param.higher_kinded_arity,
+                                           &type_param));
       }
     };
     if (enclosing_block_params != nullptr) {
@@ -8756,7 +8759,7 @@ private:
       if (!param.name.empty()) {
         param_bindings.emplace(
             param.name,
-            types_.type_param(param.name, param.higher_kinded_arity));
+            types_.type_param(param.name, param.higher_kinded_arity, &param));
       }
     }
     const auto ctx = resolve_ctx{.module = index_.find_module(impl.module_name),
@@ -8793,7 +8796,7 @@ private:
       if (!param.name.empty()) {
         param_bindings.emplace(
             param.name,
-            types_.type_param(param.name, param.higher_kinded_arity));
+            types_.type_param(param.name, param.higher_kinded_arity, &param));
       }
     }
     const auto ctx = resolve_ctx{.module = index_.find_module(impl.module_name),
@@ -8812,7 +8815,7 @@ private:
       if (!param.name.empty()) {
         param_bindings.emplace(
             param.name,
-            types_.type_param(param.name, param.higher_kinded_arity));
+            types_.type_param(param.name, param.higher_kinded_arity, &param));
       }
     }
     const auto *home = index_.find_module(impl.module_name);
@@ -8839,7 +8842,7 @@ private:
       if (!param.name.empty()) {
         param_bindings.emplace(
             param.name,
-            types_.type_param(param.name, param.higher_kinded_arity));
+            types_.type_param(param.name, param.higher_kinded_arity, &param));
       }
     }
     const auto ctx = resolve_ctx{.module = index_.find_module(ext.module_name),
@@ -9354,89 +9357,44 @@ private:
   /// type some argument's shape happens to suggest. A prior argument-derived
   /// guess for the same name is replaced rather than left to silently win —
   /// see the `&int32`-vs-`int32` `max_by`/`min_by` bug this was added for.
+  /// Solves `pattern`'s type parameters against `concrete`, adding what it
+  /// learns to `bindings`.
+  ///
+  /// Phase 7 of `spec/inference-rewrite.md`: the structural walk this used to
+  /// be is gone, and the work is done by the one unifier
+  /// (`infer/rigid_match.h`). Every call site keeps the same
+  /// name-keyed-map interface, so this step swaps the algorithm and nothing
+  /// else — which the phase 0 golden is what verifies.
+  ///
+  /// Two of the old walk's three defects are already gone with the swap:
+  /// an array's length now solves, and `&T` no longer matches `&mut T`.
+  /// Neither changed a single recorded decision, which is what the phase 0
+  /// golden was for.
+  ///
+  /// The third — a reference meeting its target — is still switched on, and
+  /// is not a defect that can simply be turned off: `cli_test`, `std_test`
+  /// and `move_check_test` all depend on it, because the checker relies on
+  /// this matcher to absorb the auto-borrow at call sites that nothing else
+  /// performs. Removing it means giving that job to an explicit coercion
+  /// step, which is its own piece of work.
   auto unify_rigid(type_id pattern, type_id concrete,
                    std::unordered_map<std::string, type_id> &bindings,
                    bool allow_override = false) -> void {
     if (pattern == concrete || types_.is_unknown(concrete)) {
       return;
     }
-    // Copies, not references: recursion can intern (nothing here does today,
-    // but the entries are cheap and the deque discipline is easy to lose).
-    const auto pattern_entry = types_.entry(pattern);
-    if (pattern_entry.kind == type_kind::type_param_kind &&
-        pattern_entry.ctor_arity == 0) {
+    const auto matched = infer::match_pattern(
+        types_, pattern, concrete, infer::legacy_compat{.ref_coercion = true});
+    // The failure is deliberately dropped for now. Reporting it is a real
+    // change in what the compiler says — several call sites match
+    // speculatively and expect a miss to be silent — so it belongs to its own
+    // step, not to this one.
+    for (const auto &[name, solved] : matched.bindings) {
       if (allow_override) {
-        bindings.insert_or_assign(pattern_entry.name, concrete);
+        bindings.insert_or_assign(name, solved);
       } else {
-        bindings.try_emplace(pattern_entry.name, concrete);
+        bindings.try_emplace(name, solved);
       }
-      return;
-    }
-    const auto concrete_entry = types_.entry(concrete);
-    if (pattern_entry.kind == type_kind::param_app_kind) {
-      // `F[A]` against `option[int32]`: the head solves from the outermost
-      // nominal constructor, the arguments recurse positionally.
-      const auto &head = types_.entry(pattern_entry.result);
-      const auto arg_count_matches =
-          concrete_entry.args.size() == pattern_entry.args.size();
-      if (arg_count_matches &&
-          (concrete_entry.kind == type_kind::builtin_generic_kind ||
-           concrete_entry.kind == type_kind::struct_kind ||
-           concrete_entry.kind == type_kind::sum_kind ||
-           concrete_entry.kind == type_kind::opaque_kind)) {
-        if (allow_override) {
-          bindings.insert_or_assign(
-              head.name,
-              types_.ctor_ref(concrete_entry.name, concrete_entry.module_name,
-                              concrete_entry.decl, concrete_entry.args.size()));
-        } else {
-          bindings.try_emplace(
-              head.name,
-              types_.ctor_ref(concrete_entry.name, concrete_entry.module_name,
-                              concrete_entry.decl, concrete_entry.args.size()));
-        }
-        for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
-          unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings,
-                      allow_override);
-        }
-      }
-      return;
-    }
-    if (pattern_entry.kind != concrete_entry.kind) {
-      // One structural allowance mirrors `compatible`: a reference pattern
-      // meets its target, and vice versa.
-      if (pattern_entry.kind == type_kind::ref_kind) {
-        unify_rigid(pattern_entry.result, concrete, bindings, allow_override);
-      } else if (concrete_entry.kind == type_kind::ref_kind) {
-        unify_rigid(pattern, concrete_entry.result, bindings, allow_override);
-      }
-      return;
-    }
-    switch (pattern_entry.kind) {
-    case type_kind::builtin_generic_kind:
-    case type_kind::struct_kind:
-    case type_kind::sum_kind:
-    case type_kind::opaque_kind:
-    case type_kind::tuple_kind:
-    case type_kind::fn_kind: {
-      if (pattern_entry.args.size() == concrete_entry.args.size()) {
-        for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
-          unify_rigid(pattern_entry.args[i], concrete_entry.args[i], bindings,
-                      allow_override);
-        }
-      }
-      unify_rigid(pattern_entry.result, concrete_entry.result, bindings,
-                  allow_override);
-      return;
-    }
-    case type_kind::ref_kind:
-    case type_kind::ptr_kind:
-    case type_kind::array_kind:
-      unify_rigid(pattern_entry.result, concrete_entry.result, bindings,
-                  allow_override);
-      return;
-    default:
-      return;
     }
   }
 
@@ -9649,8 +9607,8 @@ private:
         for (const auto &param : impl.decl->type_params) {
           if (!param.name.empty()) {
             param_bindings.emplace(
-                param.name,
-                types_.type_param(param.name, param.higher_kinded_arity));
+                param.name, types_.type_param(
+                                param.name, param.higher_kinded_arity, &param));
           }
         }
         const auto ctx = resolve_ctx{.module = &members,
@@ -18711,6 +18669,8 @@ private:
     auto param_scope = std::unordered_map<std::string, type_id>{};
     for (const auto &param : decl.params) {
       if (!param.name.empty()) {
+        // A concept parameter is its own node kind with no `ast::type_param`
+        // to key on, so these keep the by-name identity.
         param_scope.emplace(
             param.name,
             types_.type_param(param.name, param.higher_kinded_arity));

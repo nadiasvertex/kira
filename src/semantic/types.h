@@ -186,12 +186,28 @@ public:
   [[nodiscard]] auto user_type(const ast::type_decl &decl,
                                std::string_view module_name,
                                std::vector<type_id> args) -> type_id;
-  /// Interns an in-scope generic type/value parameter, identified by name
-  /// and kind. `arity` is 0 for an ordinary parameter and n for a declared
-  /// n-argument constructor parameter (`F[_]` is 1) — the same name declared
-  /// at two different kinds interns to two distinct ids, since the kind is
-  /// part of what the parameter *is*.
-  [[nodiscard]] auto type_param(std::string_view name, size_t arity = 0)
+  /// Interns an in-scope generic type/value parameter.
+  ///
+  /// `arity` is 0 for an ordinary parameter and n for a declared n-argument
+  /// constructor parameter (`F[_]` is 1) — the same name declared at two
+  /// different kinds interns to two distinct ids, since the kind is part of
+  /// what the parameter *is*.
+  ///
+  /// `decl` is the `[T]` that declared it, and when given it is what the
+  /// parameter is keyed on. Without it, parameters are keyed by name alone
+  /// and the `T` of one declaration is the *same id* as the `T` of every
+  /// other — which is not a nuisance but a soundness hole: matching a
+  /// callee's `list[T]` against a caller's `list[slice[T]]` then asks for
+  /// `T := slice[T]`, an infinite type, and any matcher with an occurs check
+  /// must either refuse it or be wrong. Scoping is how
+  /// `spec/inference-rewrite.md` phase 7 gets a real unifier onto these
+  /// matches at all.
+  ///
+  /// Passing `nullptr` is for parameters with no declaration node to name
+  /// them — `self` inside a trait, an associated type — which keep the old
+  /// by-name identity because there is nothing else to key them on.
+  [[nodiscard]] auto type_param(std::string_view name, size_t arity = 0,
+                                const ast::type_param *decl = nullptr)
       -> type_id;
   /// Interns an *unapplied* nominal type constructor of the given arity —
   /// `option` as a value of kind `[_]`, passable where a higher-kinded

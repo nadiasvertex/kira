@@ -83,6 +83,26 @@ auto infer_ctxt::fresh_value(type_id underlying, std::string origin,
 
 /// Minted on first use and remembered, so every mention of `n` in every
 /// polynomial in the session refers to one variable in one union-find.
+auto infer_ctxt::adopt(type_id id, meta_sort sort, size_t arity,
+                       std::string origin, source_location where) -> bool {
+  if (vars_.contains(id)) {
+    return false;
+  }
+  const auto &entry = table_->entry(id);
+  vars_.emplace(id, meta_var{.sort = sort,
+                             .arity = arity,
+                             .sort_is_ambiguous =
+                                 entry.kind == type_kind::type_param_kind &&
+                                 entry.ctor_arity == 0,
+                             .origin = std::move(origin),
+                             .where = where});
+  mint_order_.push_back(id);
+  // An adopted id may already be sitting inside a memoized zonk result from
+  // before it was a variable, where it stood for itself.
+  zonk_memo_.clear();
+  return true;
+}
+
 auto infer_ctxt::value_param(std::string name, type_id underlying,
                              source_location where) -> type_id {
   if (const auto it = value_params_.find(name); it != value_params_.end()) {
@@ -153,6 +173,13 @@ auto infer_ctxt::check_sort(const meta_var &var, type_id value) const
     return bind_error{
         .failure = failure, .value = value, .detail = std::move(detail)};
   };
+
+  // A parameter whose spelling does not say its sort accepts any solution —
+  // the mirror of the latitude already given below to a *value* spelled that
+  // way. See `meta_var::sort_is_ambiguous`.
+  if (var.sort_is_ambiguous) {
+    return std::nullopt;
+  }
 
   if (const auto *other = meta(value); other != nullptr) {
     if (other->sort != var.sort) {

@@ -207,9 +207,16 @@ auto type_table::user_type(const ast::type_decl &decl,
 /// parameters of the same kind collapse to one id while `T` and a
 /// (pathological) constructor parameter `T[_]` stay distinct. Arity 0 keeps
 /// the historical bare key so ordinary parameters intern exactly as before.
-auto type_table::type_param(std::string_view name, size_t arity) -> type_id {
-  auto key = arity == 0 ? std::format("v:{}", name)
-                        : std::format("v:{}/{}", name, arity);
+auto type_table::type_param(std::string_view name, size_t arity,
+                            const ast::type_param *decl) -> type_id {
+  // Keyed on the declaration when there is one, so two parameters that happen
+  // to share a spelling are two parameters. See the header for why that is
+  // load-bearing rather than tidy.
+  auto key =
+      decl != nullptr
+          ? std::format("vd:{}/{}", static_cast<const void *>(decl), arity)
+      : arity == 0 ? std::format("v:{}", name)
+                   : std::format("v:{}/{}", name, arity);
   return intern(std::move(key), type_entry{.kind = type_kind::type_param_kind,
                                            .name = std::string(name),
                                            .ctor_arity = arity});

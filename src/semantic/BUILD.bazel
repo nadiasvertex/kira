@@ -10,6 +10,7 @@ cc_library(
         "infer/infer_ctxt.cpp",
         "infer/blame.cpp",
         "infer/obligations.cpp",
+        "infer/rigid_match.cpp",
         "infer/unify.cpp",
         "infer/value_solver.cpp",
         "linear_poly.cpp",
@@ -32,6 +33,7 @@ cc_library(
         "infer/infer_ctxt.h",
         "infer/blame.h",
         "infer/obligations.h",
+        "infer/rigid_match.h",
         "infer/unify.h",
         "infer/value_solver.h",
         "linear_poly.h",
@@ -172,6 +174,16 @@ cc_test(
     name = "blame_test",
     size = "small",
     srcs = ["infer/blame_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "rigid_match_test",
+    size = "small",
+    srcs = ["infer/rigid_match_test.cpp"],
     deps = [
         ":semantic",
         "//src/testing",

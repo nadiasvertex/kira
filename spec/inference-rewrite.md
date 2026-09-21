@@ -1,6 +1,8 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phases 0-6 done. The engine (phases 1-5) exists and is tested but
+**Status:** Phases 0-6 done. Phase 7's swap has landed — all 28 matcher
+sites run the one unifier — with the reference-coercion allowance the only
+piece left. The engine (phases 1-5) exists and is tested but
 is not yet called; phase 6 is the first change inside
 `src/semantic/check.cpp` itself, and it is behavior-preserving.
 
@@ -13,7 +15,7 @@ is not yet called; phase 6 is the first change inside
 | 4 | An obligation queue: methods, trait bounds, refinements, defaulting | **Done** — `src/semantic/infer/obligations.{h,cpp}`, `obligations_test.cpp` |
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | **Done** — `src/semantic/infer/blame.{h,cpp}`, `blame_test.cpp`, golden corpus at `src/testdata/inference_diagnostics/` |
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.kira` |
-| 7 | Constraint generation migrated onto the one unifier | Not started |
+| 7 | Constraint generation migrated onto the one unifier | **Mostly done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; `ref_coercion` allowance still to retire |
 | 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | Not started |
 | 9 | Generic bodies checked once, abstractly | Not started |
 
@@ -641,10 +643,107 @@ of that.
 
 Full suite: 35/35.
 
-### Phase 7 — constraint generation
+### Phase 7 — constraint generation *(the swap is done; coercion remains)*
 
-Replace the 28 `unify_rigid` sites and 67 binding maps with the one unifier,
-a function body at a time, golden file green throughout.
+`checker::unify_rigid` no longer contains a matcher. It calls
+`infer::match_pattern` (`src/semantic/infer/rigid_match.{h,cpp}`, tested by
+`//src/semantic:rigid_match_test`), which hands the pattern and the concrete
+type to the phase-2 `unifier` and translates at the edges: the declared
+parameters are adopted as metavariables of a *local* store
+(`infer_ctxt::adopt`) and the solutions are read back under the names all 67
+binding maps expect. All 28 call sites keep their interface and run the one
+unifier.
+
+**Zero recorded decisions changed.** Across the phase 0 golden, `node_types`,
+`resolved_callees`, every dispatch map, `const_generic_instances` and
+`synthesized_decls` are identical before and after. Only `drop_plans` (19 →
+52) and `view_bearing_types` (63 → 137) move, and both only grow, for the
+reason below.
+
+#### Type parameters are now scoped
+
+`type_table::type_param` interned by *name*, with no scope, so the `T` of a
+callee's signature and the `T` of the caller being checked were the **same
+`type_id`**. That is not untidiness, it is a soundness hole: matching
+`list[T]` against `list[slice[T]]` asks for `T := slice[T]`, an infinite type
+that any matcher with an occurs check must refuse — and the old walk had no
+occurs check, so it recorded it and `std.algo::windows` depended on the
+answer.
+
+`type_param` now takes the `ast::type_param` that declared it and keys on it,
+exactly as `ctor_ref` has always keyed on its declaration. Ten call sites, all
+of them declaration sites with the node already in hand. Parameters with no
+declaration node to name them (`self` inside a trait, an associated type, a
+concept parameter) keep the by-name identity, because there is nothing else to
+key them on.
+
+The two growing sections are the whole visible cost: same-named parameters
+from different declarations are now different types, so an abstract `list[T]`
+appears once per declaration in the two walks that enumerate *every* interned
+type. No instantiated type is affected, and `array[slice[T], n]` — the entry
+whose loss is what proved the capture was real — is back.
+
+#### Two of the three allowances are already retired
+
+The swap landed behind a `legacy_compat` struct reproducing each of
+`unify_rigid`'s defects, so that one step changed one thing. Two came off
+immediately, each verified on its own:
+
+| Retired | Effect on the golden |
+|---|---|
+| `ignore_array_length` — an array's length now solves from an argument (todo 20, in the dependent fragment) | none beyond the interned-type count |
+| `ignore_mutability` — `&T` no longer matches `&mut T` | none; it *removed* interning noise |
+
+The third, `ref_coercion`, is load-bearing and stays: switching it off fails
+`cli_test`, `std_test` **and** `move_check_test`, because the checker leans on
+this matcher to absorb the auto-borrow at call sites that nothing else
+performs. Retiring it means writing the explicit coercion step it stands in
+for — the next piece of phase 7, and the one the plan always said belonged
+here.
+
+It also could not be emulated by normalizing the matcher's *inputs*, which is
+where the other two lived. The allowance is position-dependent: a bare
+parameter pattern swallows a whole `&int32`, so erasing references everywhere
+binds `T := int32` where the old walk bound `T := &int32`, and `std.mem`'s
+view queries read the difference. It is therefore the one migration shim
+inside `unify.cpp` (`unifier::set_legacy_ref_coercion`), deleted with its last
+caller.
+
+#### The matcher interns nothing
+
+Not a micro-optimization. Every type built through the table's constructors is
+permanently in the session's one table, and both `resolve_drop_plans` and
+`compute_view_bearing_types` walk every interned type. An earlier version that
+rewrote the pattern left scratch `list[?a]` behind, which reached drop
+resolution and produced an instance named `list::drop$list___` — a
+monomorphization of a type that existed only because the matcher had been
+there. Adopting the parameter ids in place is what avoids that, and it is why
+`infer_ctxt::adopt` exists.
+
+#### Smaller results that stand on their own
+
+- **`unify::step` checks absence before binding.** Solving `?a := unknown`
+  buys nothing and costs the variable: it is answered, and no later constraint
+  can teach it anything.
+- **`meta_var::sort_is_ambiguous`.** An arity-0 `type_param_kind` is how both
+  an ordinary `T` and a value parameter `n` are spelled, so a variable adopted
+  from one accepts a solution of either sort — the mirror of the latitude
+  `check_sort` already gave a *value* spelled that way. Without it every const
+  generic is rejected while ordinary generics stay green.
+
+#### Failability, verified
+
+| Broken | What caught it |
+|---|---|
+| `type_param` scoping ignored (back to by-name) | the snapshot — `array[slice[T], 0]` disappears from `node_types` and `view_bearing_types` drops to 61 |
+| the ref-coercion shim not applied | `cli_test`, `std_test` **and** `move_check_test` |
+| `ignore_array_length` made a no-op | ``expected compat to reproduce the old behavior of leaving `n` open`` (before retirement) |
+| reference erasure not applied | ``expected compat to allow it`` |
+| `ignore_mutability` made a no-op | ``expected compat to reproduce the old permissiveness`` (before retirement) |
+| absence no longer outranks binding | ``expected the unpinned one to be absent, not bound to `unknown``` |
+| sort ambiguity not recorded | ``expected the length to solve — the gap this replaces`` |
+
+Full suite: 36/36.
 
 ### Phase 8 — metavariables at the leaves
 
