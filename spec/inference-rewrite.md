@@ -1,7 +1,8 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phases 0-7 done. All 28 matcher sites run the one unifier, with
-no compatibility shims left anywhere. The engine (phases 1-5) exists and is tested but
+**Status:** Phases 0-7 done; phase 8 has closed todo item 20 for concrete
+code. All 28 matcher sites run the one unifier, with no compatibility shims
+left anywhere. The engine (phases 1-5) exists and is tested but
 is not yet called; phase 6 is the first change inside
 `src/semantic/check.cpp` itself, and it is behavior-preserving.
 
@@ -15,7 +16,7 @@ is not yet called; phase 6 is the first change inside
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | **Done** — `src/semantic/infer/blame.{h,cpp}`, `blame_test.cpp`, golden corpus at `src/testdata/inference_diagnostics/` |
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.kira` |
 | 7 | Constraint generation migrated onto the one unifier | **Done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; all three allowances retired |
-| 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | Not started |
+| 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **In progress** — empty `[]` done (todo 20 closed for concrete code); unannotated params and literal defaulting remain |
 | 9 | Generic bodies checked once, abstractly | Not started |
 
 ## Why
@@ -754,16 +755,98 @@ there. Adopting the parameter ids in place is what avoids that, and it is why
 
 Full suite: 36/36.
 
-### Phase 8 — metavariables at the leaves
+### Phase 8 — metavariables at the leaves *(in progress — the empty literal is done)*
 
-Empty `[]`, unannotated parameters, unsuffixed integer literals. Delete
-`param_usage_inferrer` rather than extend it; delete the ad-hoc defaulting at
-`check.cpp:7589`. **Todo item 20 closes here as a consequence, not as a
-feature** — which is the whole argument for this document.
+**`spec/todo.md` item 20 is closed for concrete code**, which is the result
+this whole document was written to get. An empty `[]` with nothing to read a
+type from is now pinned by a later use:
 
-The acceptance test is the standard library itself: remove the annotations on
-`partition`'s `yes`/`no` (`src/std/algo.kira`) and `from_iter`'s `out`
-(`src/std/iter.kira`) and confirm the tree still builds.
+```kira
+def collect_evens(n: int32) -> list[int32]:
+    var out = []            # list[?a]
+    ...
+        out.push(i)         # ?a := int32
+    return out
+```
+
+Both tiers agree on the answer, asserted as a computed value rather than as a
+clean compile
+(`src/testdata/codegen_stress/090_empty_literal_inferred_from_use.kira`).
+
+It closed **as a consequence, not as a feature**. Nothing here re-solves
+anything: the literal mints one leaf unknown, and the solving happens in the
+places a value already met a declared type.
+
+#### The three pieces
+
+- **One session-level store.** `checker::leaf_ctxt_` plus the one unifier. A
+  leaf minted in one function can be pinned by a constraint in another, so a
+  per-body store would need a protocol to say so.
+- **`type_mismatch` is where leaves learn.** It is already the single place a
+  value meets a declared type — argument, initializer, assignment, field,
+  element, return — which is why phase 8 needs no second walk and why a
+  `push` a hundred lines away can pin the literal. Several callers ask
+  `compatible` themselves and only reach `type_mismatch` when the answer is
+  no; `list[?a]` is compatible with everything, so those paths get `agrees`
+  instead. `return out` in `std.iter::from_iter` is exactly one of them.
+- **The wiring is deferred.** `flush_leaf_literals` runs the literal's
+  `from_array` wiring per file, once the element is known and before phase
+  6's instance flush, which wiring requests instances of its own. Doing it at
+  the literal would name `list[?]::from_array` — an instance of a type no
+  value has.
+
+#### Three things that had to be got right
+
+- **Re-name the instance after the arguments pin the receiver.** `out.push(i)`
+  is instantiated from the receiver's type, but it is *checking the arguments*
+  that solves the receiver. Naming the instance first produces
+  `list::push$list___`, a function the backends are told to compile and
+  nothing ever compiles — phase 6's defect, arriving from the other
+  direction.
+- **Whole-table walks must skip types carrying an inference variable.** A
+  `list[?a]` stays interned after `?a` is solved, and `resolve_drop_plans`
+  enumerates every interned type. Without the guard it asks for the drop plan
+  of a type no value ever has and mints `list::drop$list___`.
+- **The solver must only run when a leaf is involved.** Running the unifier on
+  every pair also solves *value* parameters, and those are keyed by name in
+  the store — so `at[n: usize]` called at `n = 3` and then at `n = 5` measured
+  the second call against the first's answer. `check_test` caught it.
+
+#### The diagnostic changed, and had to
+
+`src/testdata/inference_diagnostics/001_empty_list_literal` was phase 5's
+acceptance bar, and its text said "the element type is not inferred from a
+later `push`". That is now false. The message names the uses that *would*
+have pinned it and says none of them happen in this function — the difference
+between a rule and a fact about the code in front of the reader. The corpus
+caught the change and required it to be read before it was accepted, which is
+the whole reason it was written first.
+
+#### What is not done
+
+The plan's stated acceptance test — removing the annotations on `partition`'s
+`yes`/`no` and `from_iter`'s `out` — **does not pass yet**, and the reason is
+phase 9's, not a gap in this mechanism. Those bodies are *generic templates*:
+the leaf's solution there is a type *parameter*, not a type, and the template
+is checked abstractly before any instance exists. Removing the annotations
+type-checks and then fails in lowering, because the instance the abstract pass
+named was never the one compiled. Phase 9 — generic bodies checked once,
+abstractly — is where that is addressed.
+
+Unannotated parameters and integer-literal defaulting (`param_usage_inferrer`,
+`check.cpp`'s inline defaulting) are also still to move; the obligation
+queue's `defaulting` kind is already built and waiting for them.
+
+#### Failability, verified
+
+| Broken | What caught it |
+|---|---|
+| `type_mismatch` no longer solves leaves | `codegen_stress_test` |
+| the instance not re-named after the arguments pin it | `codegen_stress_test` |
+| whole-table walks see scratch types again | `codegen_stress_test` **and** the diagnostics corpus |
+| leaf literals never flushed | `codegen_stress_test` **and** the diagnostics corpus |
+
+Full suite: 36/36.
 
 ### Phase 9 — abstract generic bodies
 

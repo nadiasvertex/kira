@@ -1,0 +1,12 @@
+# bar: BELOW BAR TODAY — but for a new reason, which is progress worth
+# recording. Phase 8 makes an empty `[]` wait to be pinned by a later use, so
+# this message is no longer "inference does not run backwards"; it is "nothing
+# in this function ever does". What it still does not say is *which* uses
+# would have worked here, or point at the binding that stayed open. Phase 5's
+# `explain_stall` exists to say exactly that and is not wired in yet.
+module infer_diag.empty_literal_never_pinned
+
+def wrong() -> unit:
+    var xs = []
+    var ys = xs
+    ()

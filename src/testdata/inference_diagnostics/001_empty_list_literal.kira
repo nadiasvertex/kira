@@ -1,6 +1,12 @@
 # bar: at least as readable as the hand-written diagnostic this replaces.
 # The user's mistake is on this line; the message must not point into
 # `src/std/list.kira` or talk about `list::from_array`'s `T`.
+#
+# Phase 8 changed what this message can honestly say. `[]` is now pinned by
+# a later use, so the old text — "the element type is not inferred from a
+# later `push`" — became false. The message now names the uses that would
+# have pinned it and says none of them happen here, which is the difference
+# between a rule and a fact about this function.
 module infer_diag.empty_list_literal
 
 def wrong() -> unit:

@@ -1,6 +1,6 @@
 module codegen_stress.empty_literal_inferred_from_use
 
-# expect: 30
+# expect: 20
 
 # `spec/inference-rewrite.md` phase 8, and `spec/todo.md` item 20: an empty
 # `[]` with nothing to read a type from, pinned by a later `push`.

@@ -1,6 +1,6 @@
 error: cannot tell what an empty `[]` is a list of
-  --> 001_empty_list_literal.kira:13:14
-   13 |     var xs = []
+  --> 012_empty_literal_never_pinned.kira:10:14
+   10 |     var xs = []
       |              ^^ nothing here ever says what this list holds
   help: An empty `[]` takes its element type from what is later done with it — a `push`, a return, an argument. Nothing in this function does any of those. Annotate the binding — `var xs: list[int32] = []` — or start the list with the elements it should hold.
 

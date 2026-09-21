@@ -19,7 +19,9 @@
 #include "src/comptime/eval.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast_clone.h"
+#include "src/semantic/infer/infer_ctxt.h"
 #include "src/semantic/infer/rigid_match.h"
+#include "src/semantic/infer/unify.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/types.h"
@@ -1824,9 +1826,65 @@ private:
   /// value flows into a declared type (argument, initializer, assignment,
   /// field, element, return). Passing `nullptr` simply forgoes that check —
   /// used where there is no expression, such as a pattern's implied type.
+  /// `id` with every solved leaf unknown substituted in.
+  ///
+  /// Guarded on there being any, because zonking rebuilds a type through the
+  /// table's constructors, and a session that has minted no leaves must not
+  /// pay that — nor risk it — on every type the checker looks at.
+  [[nodiscard]] auto settle(type_id id) -> type_id {
+    return leaf_ctxt_.meta_count() == 0 ? id : leaf_ctxt_.zonk(id);
+  }
+
+  /// Teaches the leaf unknowns what a value flowing into a declared type says
+  /// about them.
+  ///
+  /// `type_mismatch` is the single place a value meets a declared type —
+  /// argument, initializer, assignment, field, element, return — so it is the
+  /// one place this has to be, and the reason phase 8 needs no second walk.
+  /// Solving here rather than at each of those sites is also why an empty
+  /// `[]` can be pinned by a `push` that is a hundred lines away.
+  ///
+  /// A failure is deliberately ignored: the mismatch about to be reported
+  /// below is the better message, and the unifier's own wording would be a
+  /// second diagnostic for one mistake.
+  auto solve_leaves(type_id expected, type_id found) -> void {
+    if (leaf_ctxt_.meta_count() == 0) {
+      return;
+    }
+    // Only when a leaf is actually involved. Running the unifier on every
+    // pair would also solve *value* parameters, and those are keyed by name
+    // in the store: `at[n: usize]` called at `n = 3` and then at `n = 5`
+    // would have the second call measured against the first's answer. Value
+    // slots have their own path and are not phase 8's business.
+    auto seen = std::unordered_set<type_id>{};
+    if (!mentions_type_var(expected, seen)) {
+      seen.clear();
+      if (!mentions_type_var(found, seen)) {
+        return;
+      }
+    }
+    (void)leaf_engine_.unify(expected, found, infer::k_no_cause);
+  }
+
+  /// `compatible`, but teaching the leaf unknowns first.
+  ///
+  /// `type_mismatch` is the chokepoint for a value meeting a declared type,
+  /// but several callers ask `compatible` themselves and only reach it when
+  /// the answer is no — and `list[?a]` is *compatible* with everything, so
+  /// those paths would never solve `?a`. `return out` in
+  /// `std.iter::from_iter` is exactly one: it is the only thing in that
+  /// function that says what `out` holds.
+  auto agrees(type_id expected, type_id found) -> bool {
+    solve_leaves(expected, found);
+    return types_.compatible(settle(expected), settle(found));
+  }
+
   auto type_mismatch(source_span span, type_id expected, type_id found,
                      std::string_view context, const ast::expr *value = nullptr)
       -> void {
+    solve_leaves(expected, found);
+    expected = settle(expected);
+    found = settle(found);
     if (types_.compatible(expected, found)) {
       check_narrowing(expected, found, value, span, context);
       return;
@@ -4865,10 +4923,40 @@ private:
   /// depends on its fields' resolved types, which needs the same per-
   /// instance generic substitution `struct_field_type` does, so this can't
   /// run any earlier than the type table being essentially final.
+  /// Whether `id` mentions an inference variable anywhere inside it.
+  ///
+  /// Such a type is not a type of the program. It is a `list[?a]` the checker
+  /// built while an empty `[]` was waiting to be pinned (phase 8), and it
+  /// stays interned afterwards even though the variable it names has since
+  /// been solved. Anything that enumerates *every* interned type has to skip
+  /// it, or it asks for the drop plan of a type no value ever has — which
+  /// mints `list::drop$list___`, a function the backends are told to compile
+  /// and nothing ever compiles.
+  auto mentions_type_var(type_id id, std::unordered_set<type_id> &seen)
+      -> bool {
+    if (!seen.insert(id).second) {
+      return false;
+    }
+    const auto entry = types_.entry(id); // copy: recursion may intern
+    if (entry.kind == type_kind::type_var_kind) {
+      return true;
+    }
+    for (const auto arg : entry.args) {
+      if (mentions_type_var(arg, seen)) {
+        return true;
+      }
+    }
+    return entry.result != id && mentions_type_var(entry.result, seen);
+  }
+
   auto resolve_drop_plans() -> void {
     const auto snapshot = types_.count();
     for (std::size_t raw = 0; raw < snapshot; ++raw) {
       const auto id = static_cast<type_id>(raw);
+      auto scratch = std::unordered_set<type_id>{};
+      if (mentions_type_var(id, scratch)) {
+        continue;
+      }
       auto visiting = std::unordered_set<type_id>{};
       if (auto plan = resolve_drop_plan(id, visiting); plan.has_value()) {
         drop_plans_.emplace(id, std::move(*plan));
@@ -5542,6 +5630,36 @@ private:
   /// Instances cloned but not yet checked — see `flush_pending_instances`.
   std::vector<pending_instance> pending_instances_;
 
+  // ------------------------------------------------------------------------
+  //  Leaf unknowns (`spec/inference-rewrite.md` phase 8)
+  //
+  //  An empty `[]` with nothing to read a type from used to be rejected
+  //  outright, because a `list[?]` reaching elaboration would mint an
+  //  instance that nothing ever compiled (`spec/todo.md` item 20). Phase 6
+  //  moved instantiation behind a flush, so the literal can now stand for a
+  //  metavariable and be pinned by a later use.
+  //
+  //  One store for the whole session rather than one per body: a leaf minted
+  //  in one function can be solved by a constraint in another (a returned
+  //  `[]` pinned by its caller), and two stores would need a protocol to say
+  //  so.
+  // ------------------------------------------------------------------------
+
+  /// The leaf unknowns and their solutions.
+  infer::infer_ctxt leaf_ctxt_{types_};
+  /// The one unifier, used to solve them where a value meets a declared type.
+  infer::unifier leaf_engine_{types_, leaf_ctxt_};
+  /// Empty literals whose element type is still open, with the leaf standing
+  /// for it. Their `from_array` wiring is deferred to `flush_leaf_literals`,
+  /// because wiring it now would name an instance of `list[?]`.
+  struct pending_leaf_literal {
+    const ast::array_expr *literal = nullptr;
+    type_id element = k_unknown_type;
+    source_span span;
+    file_id_type file = 0;
+  };
+  std::vector<pending_leaf_literal> pending_leaf_literals_;
+
   /// Clones and names a generic instance, and queues its body to be checked.
   ///
   /// Phase 6 of `spec/inference-rewrite.md` splits this function in half. The
@@ -5674,6 +5792,43 @@ private:
   /// the chain is not cosmetic: "instantiated from here, as `biggest$point`"
   /// is often the only line in the message that points at code the user
   /// wrote.
+  /// Wires every empty `[]` whose element type is now known, and reports the
+  /// ones still open.
+  ///
+  /// Deferred rather than done at the literal, because wiring it there would
+  /// name `list[?]::from_array` — an instance of a type no value has. Run
+  /// before `flush_pending_instances`, since wiring requests instances of its
+  /// own.
+  ///
+  /// A leaf that is still open is reported *here*, against the literal's own
+  /// line. That placement is the point: before phase 8 the alternative was a
+  /// `list[?]` reaching the standard library and being reported from inside
+  /// `src/std/list.kira`, which is a diagnostic about the compiler's
+  /// internals for a mistake in the user's own line.
+  auto flush_leaf_literals() -> void {
+    auto pending = std::vector<pending_leaf_literal>{};
+    pending.swap(pending_leaf_literals_);
+    for (const auto &leaf : pending) {
+      const auto element = leaf_ctxt_.zonk(leaf.element);
+      const auto saved_file = file_id_;
+      file_id_ = leaf.file;
+      if (element == leaf.element) {
+        error_with_help(
+            leaf.span, "cannot tell what an empty `[]` is a list of",
+            "nothing here ever says what this list holds",
+            "An empty `[]` takes its element type from what is later done "
+            "with it — a `push`, a return, an argument. Nothing in this "
+            "function does any of those. Annotate the binding — "
+            "`var xs: list[int32] = []` — or start the list with the "
+            "elements it should hold.");
+        file_id_ = saved_file;
+        continue;
+      }
+      wire_default_list(*leaf.literal, element, /*count=*/0);
+      file_id_ = saved_file;
+    }
+  }
+
   auto flush_pending_instances() -> void {
     auto processed = size_t{0};
     while (processed < pending_instances_.size()) {
@@ -10226,6 +10381,7 @@ private:
                                       const ast::expr &receiver,
                                       type_id receiver_type)
       -> std::optional<type_id> {
+    receiver_type = settle(receiver_type);
     if (!impl_needs_instance(method, receiver_entry) ||
         in_const_generic_template_ || in_type_generic_template_) {
       return std::nullopt;
@@ -10299,6 +10455,32 @@ private:
         call, params, method.decl->name,
         source_location{.file_id = file_id_, .span = method.decl->span});
     check_call_preconditions(call, *method.decl, params);
+
+    // Phase 8: the arguments above are what pin a receiver that was still
+    // open — `out.push(i)` on a `list[?a]` solves `?a` from `i`. Checking the
+    // arguments is what ran the solver, so everything named from the receiver
+    // has to be recomputed now: an instance named `list___` is a function
+    // nothing ever compiles, which is precisely the split phase 6 exists to
+    // prevent, arriving from the other direction.
+    if (const auto settled = settle(receiver_type); settled != receiver_type) {
+      receiver_type = settled;
+      // Solving may have pinned the receiver to something still abstract —
+      // `list[?a]` becoming `list[T]` inside a generic body. That is the
+      // template case the guard above exists for, arriving late; there is
+      // still nothing concrete to compile for.
+      if (mentions_type_param(receiver_type)) {
+        return std::nullopt;
+      }
+      bindings.clear();
+      unify_rigid(method.impl_target_pattern, receiver_type, bindings);
+      solve_impl_value_params(method, receiver_type, bindings);
+      scoped_params = method.fixed_type_params;
+      scoped_params.insert(bindings.begin(), bindings.end());
+      solution = generic_solution{};
+      carry_impl_value_slots(method, bindings, solution);
+      solution.suffix =
+          std::format("${}", mangle_type_for_instance(receiver_type));
+    }
 
     const auto name = std::format("{}::{}{}", receiver_entry.name,
                                   method.decl->name, solution.suffix);
@@ -16240,14 +16422,20 @@ private:
     // into `src/std/list.kira`: a diagnostic about the standard library's
     // internals for a mistake in the user's own line.
     if (array.elements.empty() && types_.is_unknown(element)) {
-      error_with_help(
-          array.span, "cannot tell what an empty `[]` is a list of",
-          "element type is unknown here",
-          "Nothing here says what this list holds: it has no elements to "
-          "read a type from, and the element type is not inferred from a "
-          "later `push`. Annotate the binding — `var xs: list[int32] = []` — "
-          "or start the list with the elements it should hold.");
-      return k_error_type;
+      // Phase 8: the literal stands for `list[?a]` and waits. Whatever the
+      // binding later flows into — a `push`, a return, an argument — meets
+      // its declared type in `type_mismatch`, which is where `?a` is solved.
+      // If nothing ever does, `flush_leaf_literals` reports it against *this*
+      // line rather than letting a `list[?]` reach the standard library's
+      // internals and be reported there.
+      const auto leaf = leaf_ctxt_.fresh_type(
+          "the element type of this `[]`",
+          source_location{.file_id = file_id_, .span = array.span});
+      pending_leaf_literals_.push_back(pending_leaf_literal{.literal = &array,
+                                                            .element = leaf,
+                                                            .span = array.span,
+                                                            .file = file_id_});
+      return resolve_list_type(leaf);
     }
     return wire_default_list(array, element, array.elements.size());
   }
@@ -17191,8 +17379,7 @@ private:
           existential_underlying_ =
               join_branch_type(existential_underlying_, found, stmt.value->span,
                                "existential return");
-        } else if (return_annotated_ &&
-                   !types_.compatible(return_type_, found)) {
+        } else if (return_annotated_ && !agrees(return_type_, found)) {
           auto diag = diagnostic(
               diagnostic_level::error,
               std::format("return type mismatch: expected `{}`, found `{}`",
@@ -17936,7 +18123,7 @@ private:
         const auto tail_span = decl.body_stmts.back() != nullptr
                                    ? decl.body_stmts.back()->span
                                    : decl.span;
-        if (!types_.is_unit(tail) && !types_.compatible(return_type_, tail)) {
+        if (!types_.is_unit(tail) && !agrees(return_type_, tail)) {
           error(tail_span,
                 std::format("function `{}` returns `{}`, but its final "
                             "expression has type `{}`",
@@ -20712,6 +20899,10 @@ public:
       module_ = index_.find_module(module_name_);
       file_no_prelude_ = input.ast_file->no_prelude;
       check_file(*input.ast_file);
+      // Leaf literals first: wiring one requests instances of its own, and
+      // a leaf minted in one function can be pinned by another in the same
+      // file, so both have to be settled before the file is left.
+      flush_leaf_literals();
       // Per file rather than once at the end. The instances this file asked
       // for are checked before the next file starts, which keeps a
       // monomorphization diagnostic next to the file that caused it instead
