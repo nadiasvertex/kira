@@ -5776,22 +5776,32 @@ private:
   /// available in a member initializer.
   bool leaf_queue_wired_ = false;
 
-  /// A method call reached while its receiver was still an open leaf.
+  /// A call reached while its receiver was still an open leaf.
   ///
-  /// Everything the *elaboration* half needs, plus the context it was
-  /// deferred from — the same discipline `pending_leaf_literal` and
-  /// `pending_instance` follow, and for the same reason: deferred work that
-  /// does not carry its context does something other than what it would have
-  /// done in place. Here the receiver's entry is deliberately *not* carried:
-  /// it is looked up again from the settled receiver, because `list[?a]` and
-  /// `list[int32]` are different entries with different method tables, and
-  /// the settled one is the one the call actually means.
+  /// The two paths that need this — a method through a generic `impl`, and a
+  /// free generic function reached by UFCS — differ only in what running the
+  /// call *does*, so that is the only thing held as a closure. Everything
+  /// else is shared: the receiver being waited on, and the context the work
+  /// was deferred from. Carrying that context is the same discipline
+  /// `pending_leaf_literal` and `pending_instance` follow, for the same
+  /// reason — deferred work that does not carry its context does something
+  /// other than what it would have done in place.
+  ///
+  /// One record and one resolver rather than two of each: `obligations.h`
+  /// says outright that a queue which grows a `method_obligation` beside a
+  /// `trait_obligation` has rebuilt the state the rewrite set out to
+  /// replace, and two pending tables for one `method_call` kind is that
+  /// mistake one level down.
   struct pending_method_call {
-    const ast::call_expr *call = nullptr;
-    const ast::expr *receiver = nullptr;
-    std::string method_name;
+    /// Runs the call against the now-concrete receiver.
+    std::function<void(type_id settled_receiver)> finish;
+    /// The receiver whose metavariables this is waiting on. Deliberately not
+    /// its `type_entry`: `list[?a]` and `list[int32]` are different entries
+    /// with different method tables, and the settled one is the one the call
+    /// actually means, so every lookup is redone from it.
     type_id receiver_type = k_unknown_type;
-    source_span span;
+    /// How the obligation describes itself in a stall.
+    std::string goal;
     file_id_type file = 0;
     const module_members *module = nullptr;
     bool in_const_generic_template = false;
@@ -5984,17 +5994,16 @@ private:
   /// one of them is solved. Registering it does not check the arguments
   /// again — those have already been checked, and are what may solve the
   /// receiver in the first place. Only the elaboration waits.
-  auto defer_method_call(const ast::call_expr &call, const method_entry &method,
-                         const ast::expr &receiver, type_id receiver_type)
-      -> void {
+  auto defer_method_call(std::string_view name, type_id receiver_type,
+                         std::function<void(type_id)> finish) -> void {
     wire_leaf_queue();
+    auto goal =
+        std::format("`{}` on `{}`", name, types_.display(receiver_type));
     const auto payload = pending_method_calls_.size();
     pending_method_calls_.push_back(pending_method_call{
-        .call = &call,
-        .receiver = &receiver,
-        .method_name = method.decl->name,
+        .finish = std::move(finish),
         .receiver_type = receiver_type,
-        .span = call.span,
+        .goal = goal,
         .file = file_id_,
         .module = module_,
         .in_const_generic_template = in_const_generic_template_,
@@ -6005,8 +6014,7 @@ private:
     leaf_queue_.add(infer::obligation{
         .kind = infer::obligation_kind::method_call,
         .watches = std::move(watches),
-        .goal = std::format("`{}` on `{}`", method.decl->name,
-                            types_.display(receiver_type)),
+        .goal = std::move(goal),
         .why = infer::k_no_cause,
         .payload = payload});
   }
@@ -6025,16 +6033,15 @@ private:
         });
   }
 
-  /// Runs one deferred method call, under the context it was deferred from.
+  /// Runs one deferred call, under the context it was deferred from.
   auto resolve_deferred_method_call(const pending_method_call &deferred)
       -> infer::obligation_report {
     const auto settled = settle(deferred.receiver_type);
     if (mentions_type_var(settled)) {
       return infer::obligation_report{
           .outcome = infer::obligation_outcome::waiting,
-          .detail =
-              std::format("the receiver of `{}` is still `{}`",
-                          deferred.method_name, types_.display(settled))};
+          .detail = std::format("the receiver of {} is still `{}`",
+                                deferred.goal, types_.display(settled))};
     }
 
     const auto saved_file = file_id_;
@@ -6046,24 +6053,7 @@ private:
     in_const_generic_template_ = deferred.in_const_generic_template;
     in_type_generic_template_ = deferred.in_type_generic_template;
 
-    // The settled receiver's own entry, not the open one's: `list[?a]` and
-    // `list[int32]` are different entries with different method tables, and
-    // the settled one is the one the call actually means.
-    const auto &entry = types_.entry(settled);
-    if (const auto *method = find_method(entry, deferred.method_name, settled);
-        method != nullptr && !mentions_type_param(settled)) {
-      auto bindings = std::unordered_map<std::string, type_id>{};
-      unify_rigid(method->impl_target_pattern, settled, bindings);
-      solve_impl_value_params(*method, settled, bindings);
-      auto scoped_params = method->fixed_type_params;
-      scoped_params.insert(bindings.begin(), bindings.end());
-      auto solution = generic_solution{};
-      carry_impl_value_slots(*method, bindings, solution);
-      solution.suffix = std::format("${}", mangle_type_for_instance(settled));
-      (void)finish_impl_generic_method_call(*deferred.call, *method, entry.name,
-                                            *deferred.receiver, settled,
-                                            bindings, scoped_params, solution);
-    }
+    deferred.finish(settled);
 
     file_id_ = saved_file;
     module_ = saved_module;
@@ -10779,7 +10769,30 @@ private:
     // in the body may still answer. The decision waits (phase 4's queue),
     // and `flush_deferred` runs it once `?a` is solved.
     if (mentions_type_var(receiver_type)) {
-      defer_method_call(call, method, receiver, receiver_type);
+      defer_method_call(
+          method.decl->name, receiver_type,
+          [this, &call, &method, &receiver](type_id settled) -> void {
+            // The settled receiver's own entry and method, not the open
+            // one's: `list[?a]` and `list[int32]` are different entries with
+            // different method tables.
+            const auto &entry = types_.entry(settled);
+            const auto *found = find_method(entry, method.decl->name, settled);
+            if (found == nullptr || mentions_type_param(settled)) {
+              return;
+            }
+            auto bindings = std::unordered_map<std::string, type_id>{};
+            unify_rigid(found->impl_target_pattern, settled, bindings);
+            solve_impl_value_params(*found, settled, bindings);
+            auto scoped = found->fixed_type_params;
+            scoped.insert(bindings.begin(), bindings.end());
+            auto solution = generic_solution{};
+            carry_impl_value_slots(*found, bindings, solution);
+            solution.suffix =
+                std::format("${}", mangle_type_for_instance(settled));
+            (void)finish_impl_generic_method_call(call, *found, entry.name,
+                                                  receiver, settled, bindings,
+                                                  scoped, solution);
+          });
       return substitute_solved(signature_return_type(*method.decl, method.owner,
                                                      method.block_type_params),
                                bindings);

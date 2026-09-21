@@ -24,3 +24,20 @@
     Fixing this surfaced a second, distinct bug: `//src:cli_test`'s `test_run_index_mut_dispatches_to_cell_mut` is stale (still declares `index_mut`'s old `type output = int32` shape), and once corrected fails only when run after enough other tests in the same process — something order- or allocation-history-dependent makes `require_index_mut_trait`'s dispatch entry go unseen by `hir::lower_unary`, falling through to "cannot take the address of this expression". Needs isolating what state leaks across `compile_sources` calls within one process.
 
 20. **Empty `[]` needs an annotation — closed.** `var xs = []` is now pinned by a later use (`xs.push(v)`, a return, an argument), in concrete code and in generic bodies alike: the standard library's `partition` and `from_iter` build their lists from an unannotated `[]`. Done by `spec/inference-rewrite.md` phases 8 and 9 — the literal mints a metavariable and the solving happens where a value already meets a declared type, so nothing re-solves anything. A literal nothing ever says anything about is still refused, now against its own line rather than against `src/std/list.kira`'s internals. Still open in one place: an unannotated `[]` in a body whose *only* constraint is an unannotated parameter, since parameter types are still inferred by a separate pre-pass (`param_usage_inferrer`).
+
+21. **`for v in xs.iter()` computes a wrong answer, on fully annotated code.** Six lines reproduce it:
+
+    ```kira
+    def main() -> int32:
+        var xs: list[int32] = [7, 9]
+        var total = 0
+        for v in xs.iter():
+            total = total + v
+        return total
+    ```
+
+    This panics with "integer overflow" rather than returning 16, and variants of it return plausible wrong sums (4, 68, 100) instead — a *silently* wrong answer, which is worse than the panic. `for v in xs` over the same list returns 16 correctly, so the fault is in `std.iter`'s `iter[T](xs: &list[T]) -> list_iter[T]` (`src/std/iter.kira:117`) or in how the `for` desugaring drives an explicit iterator value, not in `list` itself or in inference: the receiver here is annotated and concrete, and the same shape fails identically with an unannotated `var xs = []`.
+
+    Both backends agree on the wrong answer, which is why `codegen_stress_test` never saw it — the differential check is exactly the one that cannot catch this (see CLAUDE.md, "Differential tests are blind to shared bugs"). A regression test for it must assert the sum with `# expect:`.
+
+    Found while wiring `method_call` obligations (`spec/inference-rewrite.md` phase 10): it is the only shape in the language today that reaches a UFCS generic call on a still-open receiver, so that half of the phase cannot be tested until this is fixed.

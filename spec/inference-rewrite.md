@@ -1127,7 +1127,34 @@ this change that program compiled, with a `len$list___` in it.
 through UFCS to the free `def iter[T](xs: &list[T])`, where
 `solve_from_argument_types` refuses an argument still carrying an open leaf
 (correctly — "an open leaf is not an answer") and `solve_generic_params` then
-reports `T` unsolved. That one is not yet wired, and is the next step.
+reports `T` unsolved.
+
+That half is **written and then reverted**, because it cannot be tested. The
+deferral is easy — the same `defer_method_call`, closing over
+`instantiate_generic_function` instead — but a probe on every shape that
+could exercise it found only one that reaches it at all:
+
+| Shape | Deferrals |
+|---|---|
+| `var it = xs.iter()` before any `push` | 1 |
+| `xs.iter()` after the `push`es | 0 |
+| a user generic reached by UFCS, `xs.sum_or(5)` | 0 |
+
+The last two are zero for a good reason: `check_ufcs_call` checks the
+arguments *before* it instantiates, and checking them is what solves the
+receiver, so by the time the deferral point is reached there is nothing left
+to wait for. Only a receiver solved by something strictly *after* the call
+reaches it — and the one way to write that in the language today is
+`xs.iter()`, which is independently broken (`spec/todo.md` item 21: `for v in
+xs.iter()` computes a wrong answer on fully annotated code, so no test built
+on it can distinguish a fixed inference from a broken one).
+
+So the branch was reverted rather than landed untested. What stayed is the
+generalization it forced: the pending record holds a `std::function` for the
+work and nothing path-specific, so the second caller is a closure at the call
+site rather than a second table and a second resolver — which `obligations.h`
+names as the way this queue gets rebuilt into the state it replaced. Item 21
+is the gate.
 
 #### Failability, verified
 
