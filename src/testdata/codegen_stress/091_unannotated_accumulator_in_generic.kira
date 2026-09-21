@@ -1,0 +1,58 @@
+module codegen_stress.unannotated_accumulator_in_generic
+
+# expect: 116
+
+# `spec/inference-rewrite.md` phase 9: an unannotated `[]` accumulator inside
+# a *generic* body, instantiated at two different element types.
+#
+# This is the shape phase 8 could not do, and the reason is the phase
+# boundary rather than the leaf. A generic body is checked twice — once
+# abstractly as the template, then once per instance — and the template's
+# `[]` defers its `from_array` wiring to a flush that runs after the walk is
+# over. By then the template flags read false, so the deferred wiring
+# instantiated `list::new` for an abstract `T` and named a function nothing
+# ever compiles (`list::new$list___`). Deferred work has to carry the context
+# it was deferred from; `pending_leaf_literal` now does, exactly as
+# `pending_instance` carries its site chain and its depth.
+#
+# Two instantiations, not one, and at different widths: an element type
+# leaking from the first instance into the second would produce a plausible
+# wrong answer rather than a crash. The total is asserted with `# expect:`
+# because both tiers read their layout from the same rules and would agree on
+# that wrong answer.
+
+def doubled[T](xs: list[T], f: fn(T) -> T) -> list[T]:
+    var out = []
+    var i: usize = 0
+    while i < xs.len():
+        out.push(f(xs[i]))
+        i = i + 1
+    return out
+
+def twice_i32(v: int32) -> int32:
+    return v * 2
+
+def twice_i64(v: int64) -> int64:
+    return v * 2
+
+def main() -> int32:
+    let small: list[int32] = [1, 2, 3]
+    let wide: list[int64] = [10, 20]
+
+    let a = doubled(small, twice_i32)
+    let b = doubled(wide, twice_i64)
+
+    var total: int32 = 0
+    var i: usize = 0
+    while i < a.len():
+        total = total + a[i]
+        i = i + 1
+
+    var j: usize = 0
+    while j < b.len():
+        total = total + int32(b[j])
+        j = j + 1
+
+    # (1+2+3)*2 = 12, (10+20)*2 = 60 ... plus a length check so a silently
+    # empty accumulator cannot pass by summing to the same number.
+    return total + int32(a.len()) * 8 + int32(b.len()) * 10

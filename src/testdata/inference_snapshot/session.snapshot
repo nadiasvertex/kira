@@ -1,7 +1,7 @@
 # inference snapshot
-# 1560 interned types
+# 1618 interned types
 
-## node_types (26807)
+## node_types (27139)
 003_collections_lambdas.kira:3:14 [named_type] unit
 003_collections_lambdas.kira:4:9 [binding_pat] list[int32]
 003_collections_lambdas.kira:4:19 [array] list[int32]
@@ -2188,6 +2188,163 @@
 089_elaboration_snapshot_gaps.kira:130:21 [ident] fn() -> int32
 089_elaboration_snapshot_gaps.kira:130:21 [call] int32
 089_elaboration_snapshot_gaps.kira:131:12 [ident] int32
+091_unannotated_accumulator_in_generic.kira:24:16 [binding_pat] list[T]
+091_unannotated_accumulator_in_generic.kira:24:16 [binding_pat] list[int32]
+091_unannotated_accumulator_in_generic.kira:24:16 [binding_pat] list[int64]
+091_unannotated_accumulator_in_generic.kira:24:29 [binding_pat] fn(T) -> T
+091_unannotated_accumulator_in_generic.kira:24:29 [binding_pat] fn(int32) -> int32
+091_unannotated_accumulator_in_generic.kira:24:29 [binding_pat] fn(int64) -> int64
+091_unannotated_accumulator_in_generic.kira:24:47 [named_type] list[T]
+091_unannotated_accumulator_in_generic.kira:24:47 [named_type] list[int32]
+091_unannotated_accumulator_in_generic.kira:24:47 [named_type] list[int64]
+091_unannotated_accumulator_in_generic.kira:25:5 [var_stmt] list[T]
+091_unannotated_accumulator_in_generic.kira:25:5 [var_stmt] list[int32]
+091_unannotated_accumulator_in_generic.kira:25:5 [var_stmt] list[int64]
+091_unannotated_accumulator_in_generic.kira:25:15 [array] list[T]
+091_unannotated_accumulator_in_generic.kira:25:15 [array] list[int32]
+091_unannotated_accumulator_in_generic.kira:25:15 [array] list[int64]
+091_unannotated_accumulator_in_generic.kira:26:5 [var_stmt] usize
+091_unannotated_accumulator_in_generic.kira:26:5 [var_stmt] usize
+091_unannotated_accumulator_in_generic.kira:26:5 [var_stmt] usize
+091_unannotated_accumulator_in_generic.kira:26:20 [literal] usize
+091_unannotated_accumulator_in_generic.kira:26:20 [literal] usize
+091_unannotated_accumulator_in_generic.kira:26:20 [literal] usize
+091_unannotated_accumulator_in_generic.kira:27:11 [ident] usize
+091_unannotated_accumulator_in_generic.kira:27:11 [ident] usize
+091_unannotated_accumulator_in_generic.kira:27:11 [ident] usize
+091_unannotated_accumulator_in_generic.kira:27:11 [binary] bool
+091_unannotated_accumulator_in_generic.kira:27:11 [binary] bool
+091_unannotated_accumulator_in_generic.kira:27:11 [binary] bool
+091_unannotated_accumulator_in_generic.kira:27:15 [ident] list[T]
+091_unannotated_accumulator_in_generic.kira:27:15 [ident] list[int32]
+091_unannotated_accumulator_in_generic.kira:27:15 [ident] list[int64]
+091_unannotated_accumulator_in_generic.kira:27:15 [field] fn(_) -> usize
+091_unannotated_accumulator_in_generic.kira:27:15 [field] fn(_) -> usize
+091_unannotated_accumulator_in_generic.kira:27:15 [field] fn(_) -> usize
+091_unannotated_accumulator_in_generic.kira:27:15 [call] usize
+091_unannotated_accumulator_in_generic.kira:27:15 [call] usize
+091_unannotated_accumulator_in_generic.kira:27:15 [call] usize
+091_unannotated_accumulator_in_generic.kira:28:9 [ident] list[T]
+091_unannotated_accumulator_in_generic.kira:28:9 [ident] list[int32]
+091_unannotated_accumulator_in_generic.kira:28:9 [ident] list[int64]
+091_unannotated_accumulator_in_generic.kira:28:9 [field] fn(_, _) -> unit
+091_unannotated_accumulator_in_generic.kira:28:9 [field] fn(_, _) -> unit
+091_unannotated_accumulator_in_generic.kira:28:9 [field] fn(_, _) -> unit
+091_unannotated_accumulator_in_generic.kira:28:9 [call] unit
+091_unannotated_accumulator_in_generic.kira:28:9 [call] unit
+091_unannotated_accumulator_in_generic.kira:28:9 [call] unit
+091_unannotated_accumulator_in_generic.kira:28:18 [ident] fn(T) -> T
+091_unannotated_accumulator_in_generic.kira:28:18 [ident] fn(int32) -> int32
+091_unannotated_accumulator_in_generic.kira:28:18 [ident] fn(int64) -> int64
+091_unannotated_accumulator_in_generic.kira:28:18 [call] T
+091_unannotated_accumulator_in_generic.kira:28:18 [call] int32
+091_unannotated_accumulator_in_generic.kira:28:18 [call] int64
+091_unannotated_accumulator_in_generic.kira:28:20 [ident] list[T]
+091_unannotated_accumulator_in_generic.kira:28:20 [ident] list[int32]
+091_unannotated_accumulator_in_generic.kira:28:20 [ident] list[int64]
+091_unannotated_accumulator_in_generic.kira:28:20 [index] _
+091_unannotated_accumulator_in_generic.kira:28:20 [index] int32
+091_unannotated_accumulator_in_generic.kira:28:20 [index] int64
+091_unannotated_accumulator_in_generic.kira:28:23 [ident] usize
+091_unannotated_accumulator_in_generic.kira:28:23 [ident] usize
+091_unannotated_accumulator_in_generic.kira:28:23 [ident] usize
+091_unannotated_accumulator_in_generic.kira:29:9 [ident] usize
+091_unannotated_accumulator_in_generic.kira:29:9 [ident] usize
+091_unannotated_accumulator_in_generic.kira:29:9 [ident] usize
+091_unannotated_accumulator_in_generic.kira:29:13 [ident] usize
+091_unannotated_accumulator_in_generic.kira:29:13 [ident] usize
+091_unannotated_accumulator_in_generic.kira:29:13 [ident] usize
+091_unannotated_accumulator_in_generic.kira:29:13 [binary] usize
+091_unannotated_accumulator_in_generic.kira:29:13 [binary] usize
+091_unannotated_accumulator_in_generic.kira:29:13 [binary] usize
+091_unannotated_accumulator_in_generic.kira:29:17 [literal] usize
+091_unannotated_accumulator_in_generic.kira:29:17 [literal] usize
+091_unannotated_accumulator_in_generic.kira:29:17 [literal] usize
+091_unannotated_accumulator_in_generic.kira:30:12 [ident] list[T]
+091_unannotated_accumulator_in_generic.kira:30:12 [ident] list[int32]
+091_unannotated_accumulator_in_generic.kira:30:12 [ident] list[int64]
+091_unannotated_accumulator_in_generic.kira:32:15 [binding_pat] int32
+091_unannotated_accumulator_in_generic.kira:32:28 [named_type] int32
+091_unannotated_accumulator_in_generic.kira:33:12 [ident] int32
+091_unannotated_accumulator_in_generic.kira:33:12 [binary] int32
+091_unannotated_accumulator_in_generic.kira:33:16 [literal] int32
+091_unannotated_accumulator_in_generic.kira:35:15 [binding_pat] int64
+091_unannotated_accumulator_in_generic.kira:35:28 [named_type] int64
+091_unannotated_accumulator_in_generic.kira:36:12 [ident] int64
+091_unannotated_accumulator_in_generic.kira:36:12 [binary] int64
+091_unannotated_accumulator_in_generic.kira:36:16 [literal] int64
+091_unannotated_accumulator_in_generic.kira:38:15 [named_type] int32
+091_unannotated_accumulator_in_generic.kira:39:9 [binding_pat] list[int32]
+091_unannotated_accumulator_in_generic.kira:39:30 [array] list[int32]
+091_unannotated_accumulator_in_generic.kira:39:31 [literal] int32
+091_unannotated_accumulator_in_generic.kira:39:34 [literal] int32
+091_unannotated_accumulator_in_generic.kira:39:37 [literal] int32
+091_unannotated_accumulator_in_generic.kira:40:9 [binding_pat] list[int64]
+091_unannotated_accumulator_in_generic.kira:40:29 [array] list[int64]
+091_unannotated_accumulator_in_generic.kira:40:30 [literal] int64
+091_unannotated_accumulator_in_generic.kira:40:34 [literal] int64
+091_unannotated_accumulator_in_generic.kira:42:9 [binding_pat] list[int32]
+091_unannotated_accumulator_in_generic.kira:42:13 [ident] fn(list[int32], fn(int32) -> int32) -> list[int32]
+091_unannotated_accumulator_in_generic.kira:42:13 [call] list[int32]
+091_unannotated_accumulator_in_generic.kira:42:21 [ident] list[int32]
+091_unannotated_accumulator_in_generic.kira:42:28 [ident] fn(int32) -> int32
+091_unannotated_accumulator_in_generic.kira:43:9 [binding_pat] list[int64]
+091_unannotated_accumulator_in_generic.kira:43:13 [ident] fn(list[int64], fn(int64) -> int64) -> list[int64]
+091_unannotated_accumulator_in_generic.kira:43:13 [call] list[int64]
+091_unannotated_accumulator_in_generic.kira:43:21 [ident] list[int64]
+091_unannotated_accumulator_in_generic.kira:43:27 [ident] fn(int64) -> int64
+091_unannotated_accumulator_in_generic.kira:45:5 [var_stmt] int32
+091_unannotated_accumulator_in_generic.kira:45:24 [literal] int32
+091_unannotated_accumulator_in_generic.kira:46:5 [var_stmt] usize
+091_unannotated_accumulator_in_generic.kira:46:20 [literal] usize
+091_unannotated_accumulator_in_generic.kira:47:11 [ident] usize
+091_unannotated_accumulator_in_generic.kira:47:11 [binary] bool
+091_unannotated_accumulator_in_generic.kira:47:15 [ident] list[int32]
+091_unannotated_accumulator_in_generic.kira:47:15 [field] fn(_) -> usize
+091_unannotated_accumulator_in_generic.kira:47:15 [call] usize
+091_unannotated_accumulator_in_generic.kira:48:9 [ident] int32
+091_unannotated_accumulator_in_generic.kira:48:17 [ident] int32
+091_unannotated_accumulator_in_generic.kira:48:17 [binary] int32
+091_unannotated_accumulator_in_generic.kira:48:25 [ident] list[int32]
+091_unannotated_accumulator_in_generic.kira:48:25 [index] int32
+091_unannotated_accumulator_in_generic.kira:48:27 [ident] usize
+091_unannotated_accumulator_in_generic.kira:49:9 [ident] usize
+091_unannotated_accumulator_in_generic.kira:49:13 [ident] usize
+091_unannotated_accumulator_in_generic.kira:49:13 [binary] usize
+091_unannotated_accumulator_in_generic.kira:49:17 [literal] usize
+091_unannotated_accumulator_in_generic.kira:51:5 [var_stmt] usize
+091_unannotated_accumulator_in_generic.kira:51:20 [literal] usize
+091_unannotated_accumulator_in_generic.kira:52:11 [ident] usize
+091_unannotated_accumulator_in_generic.kira:52:11 [binary] bool
+091_unannotated_accumulator_in_generic.kira:52:15 [ident] list[int64]
+091_unannotated_accumulator_in_generic.kira:52:15 [field] fn(_) -> usize
+091_unannotated_accumulator_in_generic.kira:52:15 [call] usize
+091_unannotated_accumulator_in_generic.kira:53:9 [ident] int32
+091_unannotated_accumulator_in_generic.kira:53:17 [ident] int32
+091_unannotated_accumulator_in_generic.kira:53:17 [binary] int32
+091_unannotated_accumulator_in_generic.kira:53:25 [call] int32
+091_unannotated_accumulator_in_generic.kira:53:31 [ident] list[int64]
+091_unannotated_accumulator_in_generic.kira:53:31 [index] int64
+091_unannotated_accumulator_in_generic.kira:53:33 [ident] usize
+091_unannotated_accumulator_in_generic.kira:54:9 [ident] usize
+091_unannotated_accumulator_in_generic.kira:54:13 [ident] usize
+091_unannotated_accumulator_in_generic.kira:54:13 [binary] usize
+091_unannotated_accumulator_in_generic.kira:54:17 [literal] usize
+091_unannotated_accumulator_in_generic.kira:58:12 [ident] int32
+091_unannotated_accumulator_in_generic.kira:58:12 [binary] int32
+091_unannotated_accumulator_in_generic.kira:58:12 [binary] int32
+091_unannotated_accumulator_in_generic.kira:58:20 [call] int32
+091_unannotated_accumulator_in_generic.kira:58:20 [binary] int32
+091_unannotated_accumulator_in_generic.kira:58:26 [ident] list[int32]
+091_unannotated_accumulator_in_generic.kira:58:26 [field] fn(_) -> usize
+091_unannotated_accumulator_in_generic.kira:58:26 [call] usize
+091_unannotated_accumulator_in_generic.kira:58:37 [literal] int32
+091_unannotated_accumulator_in_generic.kira:58:41 [call] int32
+091_unannotated_accumulator_in_generic.kira:58:41 [binary] int32
+091_unannotated_accumulator_in_generic.kira:58:47 [ident] list[int64]
+091_unannotated_accumulator_in_generic.kira:58:47 [field] fn(_) -> usize
+091_unannotated_accumulator_in_generic.kira:58:47 [call] usize
+091_unannotated_accumulator_in_generic.kira:58:58 [literal] int32
 std/algo.kira:41:14 [binding_pat] map_iter[I, T, U]
 std/algo.kira:41:27 [named_type] option[U]
 std/algo.kira:42:15 [module_path] I
@@ -2976,9 +3133,9 @@ std/algo.kira:1216:56 [tuple_type] (list[T], list[T])
 std/algo.kira:1217:5 [var_stmt] I
 std/algo.kira:1217:18 [ident] I
 std/algo.kira:1218:5 [var_stmt] list[T]
-std/algo.kira:1218:24 [array] list[T]
+std/algo.kira:1218:15 [array] list[T]
 std/algo.kira:1219:5 [var_stmt] list[T]
-std/algo.kira:1219:23 [array] list[T]
+std/algo.kira:1219:14 [array] list[T]
 std/algo.kira:1220:15 [option_pat] _
 std/algo.kira:1220:21 [binding_pat] _
 std/algo.kira:1220:26 [ident] I
@@ -6219,7 +6376,7 @@ std/iter.kira:192:27 [module_path] usize
 std/iter.kira:196:29 [binding_pat] I
 std/iter.kira:196:39 [named_type] list[T]
 std/iter.kira:197:9 [var_stmt] list[T]
-std/iter.kira:197:28 [array] list[T]
+std/iter.kira:197:19 [array] list[T]
 std/iter.kira:198:9 [var_stmt] I
 std/iter.kira:198:22 [ident] I
 std/iter.kira:199:19 [option_pat] _
@@ -6390,6 +6547,7 @@ std/limits.kira:94:28 [literal] usize
 std/limits.kira:95:12 [call] usize
 std/list.kira:39:30 [named_type] list[T]
 std/list.kira:39:30 [named_type] list[int32]
+std/list.kira:39:30 [named_type] list[int64]
 std/list.kira:39:30 [named_type] list[str]
 std/list.kira:39:30 [named_type] list[test_suite]
 std/list.kira:39:30 [named_type] list[uint32]
@@ -6398,6 +6556,8 @@ std/list.kira:40:16 [struct_literal] list[_]
 std/list.kira:40:16 [struct_literal] list[_]
 std/list.kira:40:16 [struct_literal] list[_]
 std/list.kira:40:16 [struct_literal] list[_]
+std/list.kira:40:16 [struct_literal] list[_]
+std/list.kira:40:31 [literal] usize
 std/list.kira:40:31 [literal] usize
 std/list.kira:40:31 [literal] usize
 std/list.kira:40:31 [literal] usize
@@ -6408,17 +6568,21 @@ std/list.kira:40:39 [literal] usize
 std/list.kira:40:39 [literal] usize
 std/list.kira:40:39 [literal] usize
 std/list.kira:40:39 [literal] usize
+std/list.kira:40:39 [literal] usize
+std/list.kira:40:48 [ident] _
 std/list.kira:40:48 [ident] _
 std/list.kira:40:48 [ident] _
 std/list.kira:40:48 [ident] _
 std/list.kira:40:48 [ident] _
 std/list.kira:40:48 [ident] _
 std/list.kira:40:48 [index] fn(usize) -> *mut int32
+std/list.kira:40:48 [index] fn(usize) -> *mut int64
 std/list.kira:40:48 [index] fn(usize) -> *mut str
 std/list.kira:40:48 [index] fn(usize) -> *mut test_suite
 std/list.kira:40:48 [index] fn(usize) -> *mut uint32
 std/list.kira:40:48 [call] *mut T
 std/list.kira:40:48 [call] *mut int32
+std/list.kira:40:48 [call] *mut int64
 std/list.kira:40:48 [call] *mut str
 std/list.kira:40:48 [call] *mut test_suite
 std/list.kira:40:48 [call] *mut uint32
@@ -6427,12 +6591,16 @@ std/list.kira:40:57 [literal] usize
 std/list.kira:40:57 [literal] usize
 std/list.kira:40:57 [literal] usize
 std/list.kira:40:57 [literal] usize
+std/list.kira:40:57 [literal] usize
 std/list.kira:43:17 [binding_pat] list[T]
 std/list.kira:43:17 [binding_pat] list[int32]
+std/list.kira:43:17 [binding_pat] list[int64]
 std/list.kira:43:17 [binding_pat] list[uint32]
 std/list.kira:43:26 [named_type] usize
 std/list.kira:43:26 [named_type] usize
 std/list.kira:43:26 [named_type] usize
+std/list.kira:43:26 [named_type] usize
+std/list.kira:44:16 [module_path] usize
 std/list.kira:44:16 [module_path] usize
 std/list.kira:44:16 [module_path] usize
 std/list.kira:44:16 [module_path] usize
@@ -6523,6 +6691,7 @@ std/list.kira:85:37 [ident] usize
 std/list.kira:90:29 [binding_pat] list[T]
 std/list.kira:90:29 [binding_pat] list[byte]
 std/list.kira:90:29 [binding_pat] list[int32]
+std/list.kira:90:29 [binding_pat] list[int64]
 std/list.kira:90:29 [binding_pat] list[str]
 std/list.kira:90:29 [binding_pat] list[test_suite]
 std/list.kira:90:29 [binding_pat] list[uint32]
@@ -6532,6 +6701,8 @@ std/list.kira:90:39 [binding_pat] usize
 std/list.kira:90:39 [binding_pat] usize
 std/list.kira:90:39 [binding_pat] usize
 std/list.kira:90:39 [binding_pat] usize
+std/list.kira:90:39 [binding_pat] usize
+std/list.kira:90:52 [named_type] unit
 std/list.kira:90:52 [named_type] unit
 std/list.kira:90:52 [named_type] unit
 std/list.kira:90:52 [named_type] unit
@@ -6544,12 +6715,15 @@ std/list.kira:91:12 [ident] usize
 std/list.kira:91:12 [ident] usize
 std/list.kira:91:12 [ident] usize
 std/list.kira:91:12 [ident] usize
+std/list.kira:91:12 [ident] usize
 std/list.kira:91:12 [binary] bool
 std/list.kira:91:12 [binary] bool
 std/list.kira:91:12 [binary] bool
 std/list.kira:91:12 [binary] bool
 std/list.kira:91:12 [binary] bool
 std/list.kira:91:12 [binary] bool
+std/list.kira:91:12 [binary] bool
+std/list.kira:91:17 [module_path] usize
 std/list.kira:91:17 [module_path] usize
 std/list.kira:91:17 [module_path] usize
 std/list.kira:91:17 [module_path] usize
@@ -6559,24 +6733,28 @@ std/list.kira:91:17 [module_path] usize
 std/list.kira:93:9 [module_path] *mut T
 std/list.kira:93:9 [module_path] *mut byte
 std/list.kira:93:9 [module_path] *mut int32
+std/list.kira:93:9 [module_path] *mut int64
 std/list.kira:93:9 [module_path] *mut str
 std/list.kira:93:9 [module_path] *mut test_suite
 std/list.kira:93:9 [module_path] *mut uint32
 std/list.kira:93:21 [ident] fn(*mut T, usize, usize) -> *mut T
 std/list.kira:93:21 [ident] fn(*mut byte, usize, usize) -> *mut byte
 std/list.kira:93:21 [ident] fn(*mut int32, usize, usize) -> *mut int32
+std/list.kira:93:21 [ident] fn(*mut int64, usize, usize) -> *mut int64
 std/list.kira:93:21 [ident] fn(*mut str, usize, usize) -> *mut str
 std/list.kira:93:21 [ident] fn(*mut test_suite, usize, usize) -> *mut test_suite
 std/list.kira:93:21 [ident] fn(*mut uint32, usize, usize) -> *mut uint32
 std/list.kira:93:21 [call] *mut T
 std/list.kira:93:21 [call] *mut byte
 std/list.kira:93:21 [call] *mut int32
+std/list.kira:93:21 [call] *mut int64
 std/list.kira:93:21 [call] *mut str
 std/list.kira:93:21 [call] *mut test_suite
 std/list.kira:93:21 [call] *mut uint32
 std/list.kira:93:28 [module_path] *mut T
 std/list.kira:93:28 [module_path] *mut byte
 std/list.kira:93:28 [module_path] *mut int32
+std/list.kira:93:28 [module_path] *mut int64
 std/list.kira:93:28 [module_path] *mut str
 std/list.kira:93:28 [module_path] *mut test_suite
 std/list.kira:93:28 [module_path] *mut uint32
@@ -6586,6 +6764,8 @@ std/list.kira:93:39 [module_path] usize
 std/list.kira:93:39 [module_path] usize
 std/list.kira:93:39 [module_path] usize
 std/list.kira:93:39 [module_path] usize
+std/list.kira:93:39 [module_path] usize
+std/list.kira:93:49 [ident] usize
 std/list.kira:93:49 [ident] usize
 std/list.kira:93:49 [ident] usize
 std/list.kira:93:49 [ident] usize
@@ -6598,6 +6778,8 @@ std/list.kira:94:9 [module_path] usize
 std/list.kira:94:9 [module_path] usize
 std/list.kira:94:9 [module_path] usize
 std/list.kira:94:9 [module_path] usize
+std/list.kira:94:9 [module_path] usize
+std/list.kira:94:20 [ident] usize
 std/list.kira:94:20 [ident] usize
 std/list.kira:94:20 [ident] usize
 std/list.kira:94:20 [ident] usize
@@ -6607,12 +6789,14 @@ std/list.kira:94:20 [ident] usize
 std/list.kira:101:26 [binding_pat] list[T]
 std/list.kira:101:26 [binding_pat] list[byte]
 std/list.kira:101:26 [binding_pat] list[int32]
+std/list.kira:101:26 [binding_pat] list[int64]
 std/list.kira:101:26 [binding_pat] list[str]
 std/list.kira:101:26 [binding_pat] list[test_suite]
 std/list.kira:101:26 [binding_pat] list[uint32]
 std/list.kira:101:36 [binding_pat] T
 std/list.kira:101:36 [binding_pat] byte
 std/list.kira:101:36 [binding_pat] int32
+std/list.kira:101:36 [binding_pat] int64
 std/list.kira:101:36 [binding_pat] str
 std/list.kira:101:36 [binding_pat] test_suite
 std/list.kira:101:36 [binding_pat] uint32
@@ -6622,6 +6806,8 @@ std/list.kira:101:49 [named_type] unit
 std/list.kira:101:49 [named_type] unit
 std/list.kira:101:49 [named_type] unit
 std/list.kira:101:49 [named_type] unit
+std/list.kira:101:49 [named_type] unit
+std/list.kira:102:12 [module_path] usize
 std/list.kira:102:12 [module_path] usize
 std/list.kira:102:12 [module_path] usize
 std/list.kira:102:12 [module_path] usize
@@ -6634,6 +6820,8 @@ std/list.kira:102:12 [binary] bool
 std/list.kira:102:12 [binary] bool
 std/list.kira:102:12 [binary] bool
 std/list.kira:102:12 [binary] bool
+std/list.kira:102:12 [binary] bool
+std/list.kira:102:24 [module_path] usize
 std/list.kira:102:24 [module_path] usize
 std/list.kira:102:24 [module_path] usize
 std/list.kira:102:24 [module_path] usize
@@ -6646,6 +6834,8 @@ std/list.kira:103:13 [var_stmt] usize
 std/list.kira:103:13 [var_stmt] usize
 std/list.kira:103:13 [var_stmt] usize
 std/list.kira:103:13 [var_stmt] usize
+std/list.kira:103:13 [var_stmt] usize
+std/list.kira:103:25 [module_path] usize
 std/list.kira:103:25 [module_path] usize
 std/list.kira:103:25 [module_path] usize
 std/list.kira:103:25 [module_path] usize
@@ -6658,6 +6848,8 @@ std/list.kira:103:25 [binary] usize
 std/list.kira:103:25 [binary] usize
 std/list.kira:103:25 [binary] usize
 std/list.kira:103:25 [binary] usize
+std/list.kira:103:25 [binary] usize
+std/list.kira:103:36 [literal] usize
 std/list.kira:103:36 [literal] usize
 std/list.kira:103:36 [literal] usize
 std/list.kira:103:36 [literal] usize
@@ -6670,6 +6862,8 @@ std/list.kira:104:16 [ident] usize
 std/list.kira:104:16 [ident] usize
 std/list.kira:104:16 [ident] usize
 std/list.kira:104:16 [ident] usize
+std/list.kira:104:16 [ident] usize
+std/list.kira:104:16 [binary] bool
 std/list.kira:104:16 [binary] bool
 std/list.kira:104:16 [binary] bool
 std/list.kira:104:16 [binary] bool
@@ -6682,12 +6876,15 @@ std/list.kira:104:25 [literal] usize
 std/list.kira:104:25 [literal] usize
 std/list.kira:104:25 [literal] usize
 std/list.kira:104:25 [literal] usize
+std/list.kira:104:25 [literal] usize
 std/list.kira:105:17 [ident] usize
 std/list.kira:105:17 [ident] usize
 std/list.kira:105:17 [ident] usize
 std/list.kira:105:17 [ident] usize
 std/list.kira:105:17 [ident] usize
 std/list.kira:105:17 [ident] usize
+std/list.kira:105:17 [ident] usize
+std/list.kira:105:25 [literal] usize
 std/list.kira:105:25 [literal] usize
 std/list.kira:105:25 [literal] usize
 std/list.kira:105:25 [literal] usize
@@ -6697,6 +6894,7 @@ std/list.kira:105:25 [literal] usize
 std/list.kira:106:13 [ident] list[T]
 std/list.kira:106:13 [ident] list[byte]
 std/list.kira:106:13 [ident] list[int32]
+std/list.kira:106:13 [ident] list[int64]
 std/list.kira:106:13 [ident] list[str]
 std/list.kira:106:13 [ident] list[test_suite]
 std/list.kira:106:13 [ident] list[uint32]
@@ -6706,12 +6904,15 @@ std/list.kira:106:13 [field] fn(_, usize) -> unit
 std/list.kira:106:13 [field] fn(_, usize) -> unit
 std/list.kira:106:13 [field] fn(_, usize) -> unit
 std/list.kira:106:13 [field] fn(_, usize) -> unit
+std/list.kira:106:13 [field] fn(_, usize) -> unit
 std/list.kira:106:13 [call] unit
 std/list.kira:106:13 [call] unit
 std/list.kira:106:13 [call] unit
 std/list.kira:106:13 [call] unit
 std/list.kira:106:13 [call] unit
 std/list.kira:106:13 [call] unit
+std/list.kira:106:13 [call] unit
+std/list.kira:106:26 [ident] usize
 std/list.kira:106:26 [ident] usize
 std/list.kira:106:26 [ident] usize
 std/list.kira:106:26 [ident] usize
@@ -6721,18 +6922,21 @@ std/list.kira:106:26 [ident] usize
 std/list.kira:107:9 [ident] list[T]
 std/list.kira:107:9 [ident] list[byte]
 std/list.kira:107:9 [ident] list[int32]
+std/list.kira:107:9 [ident] list[int64]
 std/list.kira:107:9 [ident] list[str]
 std/list.kira:107:9 [ident] list[test_suite]
 std/list.kira:107:9 [ident] list[uint32]
 std/list.kira:107:9 [field] *mut T
 std/list.kira:107:9 [field] *mut byte
 std/list.kira:107:9 [field] *mut int32
+std/list.kira:107:9 [field] *mut int64
 std/list.kira:107:9 [field] *mut str
 std/list.kira:107:9 [field] *mut test_suite
 std/list.kira:107:9 [field] *mut uint32
 std/list.kira:107:9 [index] T
 std/list.kira:107:9 [index] byte
 std/list.kira:107:9 [index] int32
+std/list.kira:107:9 [index] int64
 std/list.kira:107:9 [index] str
 std/list.kira:107:9 [index] test_suite
 std/list.kira:107:9 [index] uint32
@@ -6742,9 +6946,11 @@ std/list.kira:107:19 [module_path] usize
 std/list.kira:107:19 [module_path] usize
 std/list.kira:107:19 [module_path] usize
 std/list.kira:107:19 [module_path] usize
+std/list.kira:107:19 [module_path] usize
 std/list.kira:107:31 [ident] T
 std/list.kira:107:31 [ident] byte
 std/list.kira:107:31 [ident] int32
+std/list.kira:107:31 [ident] int64
 std/list.kira:107:31 [ident] str
 std/list.kira:107:31 [ident] test_suite
 std/list.kira:107:31 [ident] uint32
@@ -6754,6 +6960,8 @@ std/list.kira:108:9 [module_path] usize
 std/list.kira:108:9 [module_path] usize
 std/list.kira:108:9 [module_path] usize
 std/list.kira:108:9 [module_path] usize
+std/list.kira:108:9 [module_path] usize
+std/list.kira:108:20 [module_path] usize
 std/list.kira:108:20 [module_path] usize
 std/list.kira:108:20 [module_path] usize
 std/list.kira:108:20 [module_path] usize
@@ -6766,6 +6974,8 @@ std/list.kira:108:20 [binary] usize
 std/list.kira:108:20 [binary] usize
 std/list.kira:108:20 [binary] usize
 std/list.kira:108:20 [binary] usize
+std/list.kira:108:20 [binary] usize
+std/list.kira:108:31 [literal] usize
 std/list.kira:108:31 [literal] usize
 std/list.kira:108:31 [literal] usize
 std/list.kira:108:31 [literal] usize
@@ -6853,6 +7063,7 @@ std/list.kira:186:22 [binding_pat] list[(usize, usize)]
 std/list.kira:186:22 [binding_pat] list[T]
 std/list.kira:186:22 [binding_pat] list[byte]
 std/list.kira:186:22 [binding_pat] list[int32]
+std/list.kira:186:22 [binding_pat] list[int64]
 std/list.kira:186:22 [binding_pat] list[str]
 std/list.kira:186:22 [binding_pat] list[test_case]
 std/list.kira:186:22 [binding_pat] list[test_suite]
@@ -6867,10 +7078,12 @@ std/list.kira:186:35 [named_type] unit
 std/list.kira:186:35 [named_type] unit
 std/list.kira:186:35 [named_type] unit
 std/list.kira:186:35 [named_type] unit
+std/list.kira:186:35 [named_type] unit
 std/list.kira:187:9 [ident] fn(*mut (usize, usize), usize) -> unit
 std/list.kira:187:9 [ident] fn(*mut T, usize) -> unit
 std/list.kira:187:9 [ident] fn(*mut byte, usize) -> unit
 std/list.kira:187:9 [ident] fn(*mut int32, usize) -> unit
+std/list.kira:187:9 [ident] fn(*mut int64, usize) -> unit
 std/list.kira:187:9 [ident] fn(*mut str, usize) -> unit
 std/list.kira:187:9 [ident] fn(*mut test_case, usize) -> unit
 std/list.kira:187:9 [ident] fn(*mut test_suite, usize) -> unit
@@ -6885,10 +7098,12 @@ std/list.kira:187:9 [call] unit
 std/list.kira:187:9 [call] unit
 std/list.kira:187:9 [call] unit
 std/list.kira:187:9 [call] unit
+std/list.kira:187:9 [call] unit
 std/list.kira:187:18 [module_path] *mut (usize, usize)
 std/list.kira:187:18 [module_path] *mut T
 std/list.kira:187:18 [module_path] *mut byte
 std/list.kira:187:18 [module_path] *mut int32
+std/list.kira:187:18 [module_path] *mut int64
 std/list.kira:187:18 [module_path] *mut str
 std/list.kira:187:18 [module_path] *mut test_case
 std/list.kira:187:18 [module_path] *mut test_suite
@@ -6903,8 +7118,10 @@ std/list.kira:187:29 [module_path] usize
 std/list.kira:187:29 [module_path] usize
 std/list.kira:187:29 [module_path] usize
 std/list.kira:187:29 [module_path] usize
+std/list.kira:187:29 [module_path] usize
 std/list.kira:193:20 [binding_pat] list[T]
 std/list.kira:193:20 [binding_pat] list[int32]
+std/list.kira:193:20 [binding_pat] list[int64]
 std/list.kira:193:20 [binding_pat] list[test_case]
 std/list.kira:193:20 [binding_pat] list[test_suite]
 std/list.kira:193:20 [binding_pat] list[uint32]
@@ -6913,8 +7130,10 @@ std/list.kira:193:26 [binding_pat] usize
 std/list.kira:193:26 [binding_pat] usize
 std/list.kira:193:26 [binding_pat] usize
 std/list.kira:193:26 [binding_pat] usize
+std/list.kira:193:26 [binding_pat] usize
 std/list.kira:193:39 [named_type] T
 std/list.kira:193:39 [named_type] int32
+std/list.kira:193:39 [named_type] int64
 std/list.kira:193:39 [named_type] test_case
 std/list.kira:193:39 [named_type] test_suite
 std/list.kira:193:39 [named_type] uint32
@@ -6923,6 +7142,8 @@ std/list.kira:194:12 [ident] usize
 std/list.kira:194:12 [ident] usize
 std/list.kira:194:12 [ident] usize
 std/list.kira:194:12 [ident] usize
+std/list.kira:194:12 [ident] usize
+std/list.kira:194:12 [binary] bool
 std/list.kira:194:12 [binary] bool
 std/list.kira:194:12 [binary] bool
 std/list.kira:194:12 [binary] bool
@@ -6933,6 +7154,8 @@ std/list.kira:194:17 [module_path] usize
 std/list.kira:194:17 [module_path] usize
 std/list.kira:194:17 [module_path] usize
 std/list.kira:194:17 [module_path] usize
+std/list.kira:194:17 [module_path] usize
+std/list.kira:195:13 [ident] fn(str) -> never
 std/list.kira:195:13 [ident] fn(str) -> never
 std/list.kira:195:13 [ident] fn(str) -> never
 std/list.kira:195:13 [ident] fn(str) -> never
@@ -6943,6 +7166,8 @@ std/list.kira:195:13 [call] never
 std/list.kira:195:13 [call] never
 std/list.kira:195:13 [call] never
 std/list.kira:195:13 [call] never
+std/list.kira:195:13 [call] never
+std/list.kira:195:19 [literal] str
 std/list.kira:195:19 [literal] str
 std/list.kira:195:19 [literal] str
 std/list.kira:195:19 [literal] str
@@ -6950,19 +7175,23 @@ std/list.kira:195:19 [literal] str
 std/list.kira:195:19 [literal] str
 std/list.kira:196:16 [ident] list[T]
 std/list.kira:196:16 [ident] list[int32]
+std/list.kira:196:16 [ident] list[int64]
 std/list.kira:196:16 [ident] list[test_case]
 std/list.kira:196:16 [ident] list[test_suite]
 std/list.kira:196:16 [ident] list[uint32]
 std/list.kira:196:16 [field] *mut T
 std/list.kira:196:16 [field] *mut int32
+std/list.kira:196:16 [field] *mut int64
 std/list.kira:196:16 [field] *mut test_case
 std/list.kira:196:16 [field] *mut test_suite
 std/list.kira:196:16 [field] *mut uint32
 std/list.kira:196:16 [index] T
 std/list.kira:196:16 [index] int32
+std/list.kira:196:16 [index] int64
 std/list.kira:196:16 [index] test_case
 std/list.kira:196:16 [index] test_suite
 std/list.kira:196:16 [index] uint32
+std/list.kira:196:26 [ident] usize
 std/list.kira:196:26 [ident] usize
 std/list.kira:196:26 [ident] usize
 std/list.kira:196:26 [ident] usize
@@ -7155,6 +7384,8 @@ std/list.kira:266:45 [binding_pat] array[int32, 0]
 std/list.kira:266:45 [binding_pat] array[int32, 3]
 std/list.kira:266:45 [binding_pat] array[int32, 4]
 std/list.kira:266:45 [binding_pat] array[int32, 5]
+std/list.kira:266:45 [binding_pat] array[int64, 0]
+std/list.kira:266:45 [binding_pat] array[int64, 2]
 std/list.kira:266:45 [binding_pat] array[str, 0]
 std/list.kira:266:45 [binding_pat] array[test_suite, 1]
 std/list.kira:266:45 [binding_pat] array[uint32, 0]
@@ -7163,6 +7394,8 @@ std/list.kira:266:68 [named_type] list[int32]
 std/list.kira:266:68 [named_type] list[int32]
 std/list.kira:266:68 [named_type] list[int32]
 std/list.kira:266:68 [named_type] list[int32]
+std/list.kira:266:68 [named_type] list[int64]
+std/list.kira:266:68 [named_type] list[int64]
 std/list.kira:266:68 [named_type] list[str]
 std/list.kira:266:68 [named_type] list[test_suite]
 std/list.kira:266:68 [named_type] list[uint32]
@@ -7171,9 +7404,13 @@ std/list.kira:267:9 [var_stmt] list[int32]
 std/list.kira:267:9 [var_stmt] list[int32]
 std/list.kira:267:9 [var_stmt] list[int32]
 std/list.kira:267:9 [var_stmt] list[int32]
+std/list.kira:267:9 [var_stmt] list[int64]
+std/list.kira:267:9 [var_stmt] list[int64]
 std/list.kira:267:9 [var_stmt] list[str]
 std/list.kira:267:9 [var_stmt] list[test_suite]
 std/list.kira:267:9 [var_stmt] list[uint32]
+std/list.kira:267:19 [field] fn() -> list[_]
+std/list.kira:267:19 [field] fn() -> list[_]
 std/list.kira:267:19 [field] fn() -> list[_]
 std/list.kira:267:19 [field] fn() -> list[_]
 std/list.kira:267:19 [field] fn() -> list[_]
@@ -7187,6 +7424,8 @@ std/list.kira:267:19 [call] list[int32]
 std/list.kira:267:19 [call] list[int32]
 std/list.kira:267:19 [call] list[int32]
 std/list.kira:267:19 [call] list[int32]
+std/list.kira:267:19 [call] list[int64]
+std/list.kira:267:19 [call] list[int64]
 std/list.kira:267:19 [call] list[str]
 std/list.kira:267:19 [call] list[test_suite]
 std/list.kira:267:19 [call] list[uint32]
@@ -7195,6 +7434,8 @@ std/list.kira:268:9 [ident] list[int32]
 std/list.kira:268:9 [ident] list[int32]
 std/list.kira:268:9 [ident] list[int32]
 std/list.kira:268:9 [ident] list[int32]
+std/list.kira:268:9 [ident] list[int64]
+std/list.kira:268:9 [ident] list[int64]
 std/list.kira:268:9 [ident] list[str]
 std/list.kira:268:9 [ident] list[test_suite]
 std/list.kira:268:9 [ident] list[uint32]
@@ -7206,6 +7447,8 @@ std/list.kira:268:9 [field] fn(_, usize) -> unit
 std/list.kira:268:9 [field] fn(_, usize) -> unit
 std/list.kira:268:9 [field] fn(_, usize) -> unit
 std/list.kira:268:9 [field] fn(_, usize) -> unit
+std/list.kira:268:9 [field] fn(_, usize) -> unit
+std/list.kira:268:9 [field] fn(_, usize) -> unit
 std/list.kira:268:9 [call] unit
 std/list.kira:268:9 [call] unit
 std/list.kira:268:9 [call] unit
@@ -7214,6 +7457,10 @@ std/list.kira:268:9 [call] unit
 std/list.kira:268:9 [call] unit
 std/list.kira:268:9 [call] unit
 std/list.kira:268:9 [call] unit
+std/list.kira:268:9 [call] unit
+std/list.kira:268:9 [call] unit
+std/list.kira:268:21 [ident] usize
+std/list.kira:268:21 [ident] usize
 std/list.kira:268:21 [ident] usize
 std/list.kira:268:21 [ident] usize
 std/list.kira:268:21 [ident] usize
@@ -7229,6 +7476,10 @@ std/list.kira:268:21 [literal] usize
 std/list.kira:268:21 [literal] usize
 std/list.kira:268:21 [literal] usize
 std/list.kira:268:21 [literal] usize
+std/list.kira:268:21 [literal] usize
+std/list.kira:268:21 [literal] usize
+std/list.kira:269:9 [var_stmt] usize
+std/list.kira:269:9 [var_stmt] usize
 std/list.kira:269:9 [var_stmt] usize
 std/list.kira:269:9 [var_stmt] usize
 std/list.kira:269:9 [var_stmt] usize
@@ -7245,6 +7496,10 @@ std/list.kira:269:24 [literal] usize
 std/list.kira:269:24 [literal] usize
 std/list.kira:269:24 [literal] usize
 std/list.kira:269:24 [literal] usize
+std/list.kira:269:24 [literal] usize
+std/list.kira:269:24 [literal] usize
+std/list.kira:270:15 [ident] usize
+std/list.kira:270:15 [ident] usize
 std/list.kira:270:15 [ident] usize
 std/list.kira:270:15 [ident] usize
 std/list.kira:270:15 [ident] usize
@@ -7261,6 +7516,8 @@ std/list.kira:270:15 [binary] bool
 std/list.kira:270:15 [binary] bool
 std/list.kira:270:15 [binary] bool
 std/list.kira:270:15 [binary] bool
+std/list.kira:270:15 [binary] bool
+std/list.kira:270:15 [binary] bool
 std/list.kira:270:19 [ident] usize
 std/list.kira:270:19 [ident] usize
 std/list.kira:270:19 [ident] usize
@@ -7269,6 +7526,10 @@ std/list.kira:270:19 [ident] usize
 std/list.kira:270:19 [ident] usize
 std/list.kira:270:19 [ident] usize
 std/list.kira:270:19 [ident] usize
+std/list.kira:270:19 [ident] usize
+std/list.kira:270:19 [ident] usize
+std/list.kira:270:19 [literal] usize
+std/list.kira:270:19 [literal] usize
 std/list.kira:270:19 [literal] usize
 std/list.kira:270:19 [literal] usize
 std/list.kira:270:19 [literal] usize
@@ -7281,6 +7542,8 @@ std/list.kira:271:13 [ident] list[int32]
 std/list.kira:271:13 [ident] list[int32]
 std/list.kira:271:13 [ident] list[int32]
 std/list.kira:271:13 [ident] list[int32]
+std/list.kira:271:13 [ident] list[int64]
+std/list.kira:271:13 [ident] list[int64]
 std/list.kira:271:13 [ident] list[str]
 std/list.kira:271:13 [ident] list[test_suite]
 std/list.kira:271:13 [ident] list[uint32]
@@ -7292,6 +7555,10 @@ std/list.kira:271:13 [field] fn(_, _) -> unit
 std/list.kira:271:13 [field] fn(_, _) -> unit
 std/list.kira:271:13 [field] fn(_, _) -> unit
 std/list.kira:271:13 [field] fn(_, _) -> unit
+std/list.kira:271:13 [field] fn(_, _) -> unit
+std/list.kira:271:13 [field] fn(_, _) -> unit
+std/list.kira:271:13 [call] unit
+std/list.kira:271:13 [call] unit
 std/list.kira:271:13 [call] unit
 std/list.kira:271:13 [call] unit
 std/list.kira:271:13 [call] unit
@@ -7305,6 +7572,8 @@ std/list.kira:271:22 [ident] array[int32, 0]
 std/list.kira:271:22 [ident] array[int32, 3]
 std/list.kira:271:22 [ident] array[int32, 4]
 std/list.kira:271:22 [ident] array[int32, 5]
+std/list.kira:271:22 [ident] array[int64, 0]
+std/list.kira:271:22 [ident] array[int64, 2]
 std/list.kira:271:22 [ident] array[str, 0]
 std/list.kira:271:22 [ident] array[test_suite, 1]
 std/list.kira:271:22 [ident] array[uint32, 0]
@@ -7313,6 +7582,8 @@ std/list.kira:271:22 [index] int32
 std/list.kira:271:22 [index] int32
 std/list.kira:271:22 [index] int32
 std/list.kira:271:22 [index] int32
+std/list.kira:271:22 [index] int64
+std/list.kira:271:22 [index] int64
 std/list.kira:271:22 [index] str
 std/list.kira:271:22 [index] test_suite
 std/list.kira:271:22 [index] uint32
@@ -7324,6 +7595,10 @@ std/list.kira:271:28 [ident] usize
 std/list.kira:271:28 [ident] usize
 std/list.kira:271:28 [ident] usize
 std/list.kira:271:28 [ident] usize
+std/list.kira:271:28 [ident] usize
+std/list.kira:271:28 [ident] usize
+std/list.kira:272:13 [ident] usize
+std/list.kira:272:13 [ident] usize
 std/list.kira:272:13 [ident] usize
 std/list.kira:272:13 [ident] usize
 std/list.kira:272:13 [ident] usize
@@ -7340,6 +7615,8 @@ std/list.kira:272:17 [ident] usize
 std/list.kira:272:17 [ident] usize
 std/list.kira:272:17 [ident] usize
 std/list.kira:272:17 [ident] usize
+std/list.kira:272:17 [ident] usize
+std/list.kira:272:17 [ident] usize
 std/list.kira:272:17 [binary] usize
 std/list.kira:272:17 [binary] usize
 std/list.kira:272:17 [binary] usize
@@ -7348,6 +7625,10 @@ std/list.kira:272:17 [binary] usize
 std/list.kira:272:17 [binary] usize
 std/list.kira:272:17 [binary] usize
 std/list.kira:272:17 [binary] usize
+std/list.kira:272:17 [binary] usize
+std/list.kira:272:17 [binary] usize
+std/list.kira:272:21 [literal] usize
+std/list.kira:272:21 [literal] usize
 std/list.kira:272:21 [literal] usize
 std/list.kira:272:21 [literal] usize
 std/list.kira:272:21 [literal] usize
@@ -7361,6 +7642,8 @@ std/list.kira:273:16 [ident] list[int32]
 std/list.kira:273:16 [ident] list[int32]
 std/list.kira:273:16 [ident] list[int32]
 std/list.kira:273:16 [ident] list[int32]
+std/list.kira:273:16 [ident] list[int64]
+std/list.kira:273:16 [ident] list[int64]
 std/list.kira:273:16 [ident] list[str]
 std/list.kira:273:16 [ident] list[test_suite]
 std/list.kira:273:16 [ident] list[uint32]
@@ -7369,8 +7652,10 @@ std/mem.kira:29:26 [binding_pat] usize
 std/mem.kira:29:26 [binding_pat] usize
 std/mem.kira:29:26 [binding_pat] usize
 std/mem.kira:29:26 [binding_pat] usize
+std/mem.kira:29:26 [binding_pat] usize
 std/mem.kira:29:43 [ptr_type] *mut T
 std/mem.kira:29:43 [ptr_type] *mut int32
+std/mem.kira:29:43 [ptr_type] *mut int64
 std/mem.kira:29:43 [ptr_type] *mut str
 std/mem.kira:29:43 [ptr_type] *mut test_suite
 std/mem.kira:29:43 [ptr_type] *mut uint32
@@ -7379,6 +7664,8 @@ std/mem.kira:30:9 [binding_pat] *mut byte
 std/mem.kira:30:9 [binding_pat] *mut byte
 std/mem.kira:30:9 [binding_pat] *mut byte
 std/mem.kira:30:9 [binding_pat] *mut byte
+std/mem.kira:30:9 [binding_pat] *mut byte
+std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
 std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
 std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
 std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
@@ -7389,6 +7676,8 @@ std/mem.kira:30:15 [call] *mut byte
 std/mem.kira:30:15 [call] *mut byte
 std/mem.kira:30:15 [call] *mut byte
 std/mem.kira:30:15 [call] *mut byte
+std/mem.kira:30:15 [call] *mut byte
+std/mem.kira:30:24 [struct_literal] box_usize
 std/mem.kira:30:24 [struct_literal] box_usize
 std/mem.kira:30:24 [struct_literal] box_usize
 std/mem.kira:30:24 [struct_literal] box_usize
@@ -7399,6 +7688,8 @@ std/mem.kira:30:39 [ident] usize
 std/mem.kira:30:39 [ident] usize
 std/mem.kira:30:39 [ident] usize
 std/mem.kira:30:39 [ident] usize
+std/mem.kira:30:39 [ident] usize
+std/mem.kira:30:39 [binary] usize
 std/mem.kira:30:39 [binary] usize
 std/mem.kira:30:39 [binary] usize
 std/mem.kira:30:39 [binary] usize
@@ -7409,11 +7700,14 @@ std/mem.kira:30:47 [ident] _
 std/mem.kira:30:47 [ident] _
 std/mem.kira:30:47 [ident] _
 std/mem.kira:30:47 [ident] _
+std/mem.kira:30:47 [ident] _
 std/mem.kira:30:47 [call] usize
 std/mem.kira:30:47 [call] usize
 std/mem.kira:30:47 [call] usize
 std/mem.kira:30:47 [call] usize
 std/mem.kira:30:47 [call] usize
+std/mem.kira:30:47 [call] usize
+std/mem.kira:31:12 [ident] _
 std/mem.kira:31:12 [ident] _
 std/mem.kira:31:12 [ident] _
 std/mem.kira:31:12 [ident] _
@@ -7421,6 +7715,7 @@ std/mem.kira:31:12 [ident] _
 std/mem.kira:31:12 [ident] _
 std/mem.kira:31:12 [call] *mut _
 std/mem.kira:31:12 [call] *mut int32
+std/mem.kira:31:12 [call] *mut int64
 std/mem.kira:31:12 [call] *mut str
 std/mem.kira:31:12 [call] *mut test_suite
 std/mem.kira:31:12 [call] *mut uint32
@@ -7429,9 +7724,11 @@ std/mem.kira:31:24 [ident] *mut byte
 std/mem.kira:31:24 [ident] *mut byte
 std/mem.kira:31:24 [ident] *mut byte
 std/mem.kira:31:24 [ident] *mut byte
+std/mem.kira:31:24 [ident] *mut byte
 std/mem.kira:41:27 [binding_pat] *mut T
 std/mem.kira:41:27 [binding_pat] *mut byte
 std/mem.kira:41:27 [binding_pat] *mut int32
+std/mem.kira:41:27 [binding_pat] *mut int64
 std/mem.kira:41:27 [binding_pat] *mut str
 std/mem.kira:41:27 [binding_pat] *mut test_suite
 std/mem.kira:41:27 [binding_pat] *mut uint32
@@ -7441,6 +7738,8 @@ std/mem.kira:41:38 [binding_pat] usize
 std/mem.kira:41:38 [binding_pat] usize
 std/mem.kira:41:38 [binding_pat] usize
 std/mem.kira:41:38 [binding_pat] usize
+std/mem.kira:41:38 [binding_pat] usize
+std/mem.kira:41:56 [binding_pat] usize
 std/mem.kira:41:56 [binding_pat] usize
 std/mem.kira:41:56 [binding_pat] usize
 std/mem.kira:41:56 [binding_pat] usize
@@ -7450,6 +7749,7 @@ std/mem.kira:41:56 [binding_pat] usize
 std/mem.kira:41:77 [ptr_type] *mut T
 std/mem.kira:41:77 [ptr_type] *mut byte
 std/mem.kira:41:77 [ptr_type] *mut int32
+std/mem.kira:41:77 [ptr_type] *mut int64
 std/mem.kira:41:77 [ptr_type] *mut str
 std/mem.kira:41:77 [ptr_type] *mut test_suite
 std/mem.kira:41:77 [ptr_type] *mut uint32
@@ -7459,6 +7759,8 @@ std/mem.kira:42:9 [binding_pat] *mut byte
 std/mem.kira:42:9 [binding_pat] *mut byte
 std/mem.kira:42:9 [binding_pat] *mut byte
 std/mem.kira:42:9 [binding_pat] *mut byte
+std/mem.kira:42:9 [binding_pat] *mut byte
+std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
 std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
 std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
 std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
@@ -7471,12 +7773,15 @@ std/mem.kira:42:15 [call] *mut byte
 std/mem.kira:42:15 [call] *mut byte
 std/mem.kira:42:15 [call] *mut byte
 std/mem.kira:42:15 [call] *mut byte
+std/mem.kira:42:15 [call] *mut byte
 std/mem.kira:42:26 [ident] _
 std/mem.kira:42:26 [ident] _
 std/mem.kira:42:26 [ident] _
 std/mem.kira:42:26 [ident] _
 std/mem.kira:42:26 [ident] _
 std/mem.kira:42:26 [ident] _
+std/mem.kira:42:26 [ident] _
+std/mem.kira:42:26 [call] *mut byte
 std/mem.kira:42:26 [call] *mut byte
 std/mem.kira:42:26 [call] *mut byte
 std/mem.kira:42:26 [call] *mut byte
@@ -7486,6 +7791,7 @@ std/mem.kira:42:26 [call] *mut byte
 std/mem.kira:42:41 [ident] *mut T
 std/mem.kira:42:41 [ident] *mut byte
 std/mem.kira:42:41 [ident] *mut int32
+std/mem.kira:42:41 [ident] *mut int64
 std/mem.kira:42:41 [ident] *mut str
 std/mem.kira:42:41 [ident] *mut test_suite
 std/mem.kira:42:41 [ident] *mut uint32
@@ -7495,6 +7801,8 @@ std/mem.kira:43:26 [struct_literal] box_usize
 std/mem.kira:43:26 [struct_literal] box_usize
 std/mem.kira:43:26 [struct_literal] box_usize
 std/mem.kira:43:26 [struct_literal] box_usize
+std/mem.kira:43:26 [struct_literal] box_usize
+std/mem.kira:43:41 [ident] usize
 std/mem.kira:43:41 [ident] usize
 std/mem.kira:43:41 [ident] usize
 std/mem.kira:43:41 [ident] usize
@@ -7507,6 +7815,8 @@ std/mem.kira:43:41 [binary] usize
 std/mem.kira:43:41 [binary] usize
 std/mem.kira:43:41 [binary] usize
 std/mem.kira:43:41 [binary] usize
+std/mem.kira:43:41 [binary] usize
+std/mem.kira:43:53 [ident] _
 std/mem.kira:43:53 [ident] _
 std/mem.kira:43:53 [ident] _
 std/mem.kira:43:53 [ident] _
@@ -7519,6 +7829,8 @@ std/mem.kira:43:53 [call] usize
 std/mem.kira:43:53 [call] usize
 std/mem.kira:43:53 [call] usize
 std/mem.kira:43:53 [call] usize
+std/mem.kira:43:53 [call] usize
+std/mem.kira:44:26 [struct_literal] box_usize
 std/mem.kira:44:26 [struct_literal] box_usize
 std/mem.kira:44:26 [struct_literal] box_usize
 std/mem.kira:44:26 [struct_literal] box_usize
@@ -7531,6 +7843,8 @@ std/mem.kira:44:41 [ident] usize
 std/mem.kira:44:41 [ident] usize
 std/mem.kira:44:41 [ident] usize
 std/mem.kira:44:41 [ident] usize
+std/mem.kira:44:41 [ident] usize
+std/mem.kira:44:41 [binary] usize
 std/mem.kira:44:41 [binary] usize
 std/mem.kira:44:41 [binary] usize
 std/mem.kira:44:41 [binary] usize
@@ -7543,12 +7857,15 @@ std/mem.kira:44:53 [ident] _
 std/mem.kira:44:53 [ident] _
 std/mem.kira:44:53 [ident] _
 std/mem.kira:44:53 [ident] _
+std/mem.kira:44:53 [ident] _
 std/mem.kira:44:53 [call] usize
 std/mem.kira:44:53 [call] usize
 std/mem.kira:44:53 [call] usize
 std/mem.kira:44:53 [call] usize
 std/mem.kira:44:53 [call] usize
 std/mem.kira:44:53 [call] usize
+std/mem.kira:44:53 [call] usize
+std/mem.kira:45:12 [ident] _
 std/mem.kira:45:12 [ident] _
 std/mem.kira:45:12 [ident] _
 std/mem.kira:45:12 [ident] _
@@ -7558,9 +7875,11 @@ std/mem.kira:45:12 [ident] _
 std/mem.kira:45:12 [call] *mut _
 std/mem.kira:45:12 [call] *mut byte
 std/mem.kira:45:12 [call] *mut int32
+std/mem.kira:45:12 [call] *mut int64
 std/mem.kira:45:12 [call] *mut str
 std/mem.kira:45:12 [call] *mut test_suite
 std/mem.kira:45:12 [call] *mut uint32
+std/mem.kira:45:24 [ident] *mut byte
 std/mem.kira:45:24 [ident] *mut byte
 std/mem.kira:45:24 [ident] *mut byte
 std/mem.kira:45:24 [ident] *mut byte
@@ -7571,6 +7890,7 @@ std/mem.kira:54:25 [binding_pat] *mut (usize, usize)
 std/mem.kira:54:25 [binding_pat] *mut T
 std/mem.kira:54:25 [binding_pat] *mut byte
 std/mem.kira:54:25 [binding_pat] *mut int32
+std/mem.kira:54:25 [binding_pat] *mut int64
 std/mem.kira:54:25 [binding_pat] *mut str
 std/mem.kira:54:25 [binding_pat] *mut test_case
 std/mem.kira:54:25 [binding_pat] *mut test_suite
@@ -7585,6 +7905,8 @@ std/mem.kira:54:36 [binding_pat] usize
 std/mem.kira:54:36 [binding_pat] usize
 std/mem.kira:54:36 [binding_pat] usize
 std/mem.kira:54:36 [binding_pat] usize
+std/mem.kira:54:36 [binding_pat] usize
+std/mem.kira:54:53 [named_type] unit
 std/mem.kira:54:53 [named_type] unit
 std/mem.kira:54:53 [named_type] unit
 std/mem.kira:54:53 [named_type] unit
@@ -7603,6 +7925,8 @@ std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
 std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
 std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
 std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
+std/mem.kira:55:5 [call] unit
 std/mem.kira:55:5 [call] unit
 std/mem.kira:55:5 [call] unit
 std/mem.kira:55:5 [call] unit
@@ -7621,6 +7945,8 @@ std/mem.kira:55:13 [ident] _
 std/mem.kira:55:13 [ident] _
 std/mem.kira:55:13 [ident] _
 std/mem.kira:55:13 [ident] _
+std/mem.kira:55:13 [ident] _
+std/mem.kira:55:13 [call] *mut byte
 std/mem.kira:55:13 [call] *mut byte
 std/mem.kira:55:13 [call] *mut byte
 std/mem.kira:55:13 [call] *mut byte
@@ -7634,6 +7960,7 @@ std/mem.kira:55:28 [ident] *mut (usize, usize)
 std/mem.kira:55:28 [ident] *mut T
 std/mem.kira:55:28 [ident] *mut byte
 std/mem.kira:55:28 [ident] *mut int32
+std/mem.kira:55:28 [ident] *mut int64
 std/mem.kira:55:28 [ident] *mut str
 std/mem.kira:55:28 [ident] *mut test_case
 std/mem.kira:55:28 [ident] *mut test_suite
@@ -7648,6 +7975,8 @@ std/mem.kira:55:32 [struct_literal] box_usize
 std/mem.kira:55:32 [struct_literal] box_usize
 std/mem.kira:55:32 [struct_literal] box_usize
 std/mem.kira:55:32 [struct_literal] box_usize
+std/mem.kira:55:32 [struct_literal] box_usize
+std/mem.kira:55:47 [ident] usize
 std/mem.kira:55:47 [ident] usize
 std/mem.kira:55:47 [ident] usize
 std/mem.kira:55:47 [ident] usize
@@ -7666,6 +7995,7 @@ std/mem.kira:55:47 [binary] usize
 std/mem.kira:55:47 [binary] usize
 std/mem.kira:55:47 [binary] usize
 std/mem.kira:55:47 [binary] usize
+std/mem.kira:55:47 [binary] usize
 std/mem.kira:55:55 [ident] _
 std/mem.kira:55:55 [ident] _
 std/mem.kira:55:55 [ident] _
@@ -7675,6 +8005,8 @@ std/mem.kira:55:55 [ident] _
 std/mem.kira:55:55 [ident] _
 std/mem.kira:55:55 [ident] _
 std/mem.kira:55:55 [ident] _
+std/mem.kira:55:55 [ident] _
+std/mem.kira:55:55 [call] usize
 std/mem.kira:55:55 [call] usize
 std/mem.kira:55:55 [call] usize
 std/mem.kira:55:55 [call] usize
@@ -26812,7 +27144,7 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 
 ## struct_pattern_field_types (0)
 
-## struct_literal_field_types (206)
+## struct_literal_field_types (213)
 ?:750 data array[T, m]
 ?:882 current int32
 ?:894 limit int32
@@ -26826,11 +27158,14 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:1376 v usize
 ?:1376 v usize
 ?:1376 v usize
+?:1376 v usize
 ?:1718 len usize
 ?:1718 len usize
 ?:1718 len usize
 ?:1718 len usize
 ?:1718 len usize
+?:1718 len usize
+?:1726 cap usize
 ?:1726 cap usize
 ?:1726 cap usize
 ?:1726 cap usize
@@ -26838,6 +27173,7 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:1726 cap usize
 ?:1734 data *mut T
 ?:1734 data *mut int32
+?:1734 data *mut int64
 ?:1734 data *mut str
 ?:1734 data *mut test_suite
 ?:1734 data *mut uint32
@@ -26851,6 +27187,8 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:1985 v usize
 ?:1985 v usize
 ?:1985 v usize
+?:1985 v usize
+?:2053 v usize
 ?:2053 v usize
 ?:2053 v usize
 ?:2053 v usize
@@ -26870,6 +27208,7 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:2619 inner filter_iter[counter, int32]
 ?:2630 f fn(T) -> U
 ?:2630 f fn(int32) -> int32
+?:2647 v usize
 ?:2647 v usize
 ?:2647 v usize
 ?:2647 v usize
@@ -27017,10 +27356,10 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:35397 outer I
 ?:35408 f fn(T) -> J
 ?:35414 cur option[_]
-?:55992 inner I
-?:56003 f fn(&T) -> T
+?:55974 inner I
+?:55985 f fn(&T) -> T
 
-## call_argument_mappings (504)
+## call_argument_mappings (530)
 003_collections_lambdas.kira:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.kira:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.kira:26:5 [call] (a=arg, b=arg)
@@ -27148,6 +27487,18 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 089_elaboration_snapshot_gaps.kira:128:21 [call] ()
 089_elaboration_snapshot_gaps.kira:129:21 [call] (n=arg)
 089_elaboration_snapshot_gaps.kira:130:21 [call] ()
+091_unannotated_accumulator_in_generic.kira:27:15 [call] ()
+091_unannotated_accumulator_in_generic.kira:27:15 [call] ()
+091_unannotated_accumulator_in_generic.kira:27:15 [call] ()
+091_unannotated_accumulator_in_generic.kira:28:9 [call] (value=arg)
+091_unannotated_accumulator_in_generic.kira:28:9 [call] (value=arg)
+091_unannotated_accumulator_in_generic.kira:28:9 [call] (value=arg)
+091_unannotated_accumulator_in_generic.kira:42:13 [call] (xs=arg, f=arg)
+091_unannotated_accumulator_in_generic.kira:43:13 [call] (xs=arg, f=arg)
+091_unannotated_accumulator_in_generic.kira:47:15 [call] ()
+091_unannotated_accumulator_in_generic.kira:52:15 [call] ()
+091_unannotated_accumulator_in_generic.kira:58:26 [call] ()
+091_unannotated_accumulator_in_generic.kira:58:47 [call] ()
 std/algo.kira:1222:13 [call] (value=arg)
 std/algo.kira:1224:13 [call] (value=arg)
 std/algo.kira:1320:22 [call] (o=arg)
@@ -27320,6 +27671,7 @@ std/list.kira:40:48 [call] (count=arg)
 std/list.kira:40:48 [call] (count=arg)
 std/list.kira:40:48 [call] (count=arg)
 std/list.kira:40:48 [call] (count=arg)
+std/list.kira:40:48 [call] (count=arg)
 std/list.kira:74:13 [call] (message=arg)
 std/list.kira:74:13 [call] (message=arg)
 std/list.kira:93:21 [call] (p=arg, old_count=arg, new_count=arg)
@@ -27328,6 +27680,8 @@ std/list.kira:93:21 [call] (p=arg, old_count=arg, new_count=arg)
 std/list.kira:93:21 [call] (p=arg, old_count=arg, new_count=arg)
 std/list.kira:93:21 [call] (p=arg, old_count=arg, new_count=arg)
 std/list.kira:93:21 [call] (p=arg, old_count=arg, new_count=arg)
+std/list.kira:93:21 [call] (p=arg, old_count=arg, new_count=arg)
+std/list.kira:106:13 [call] (n=arg)
 std/list.kira:106:13 [call] (n=arg)
 std/list.kira:106:13 [call] (n=arg)
 std/list.kira:106:13 [call] (n=arg)
@@ -27345,6 +27699,8 @@ std/list.kira:187:9 [call] (p=arg, count=arg)
 std/list.kira:187:9 [call] (p=arg, count=arg)
 std/list.kira:187:9 [call] (p=arg, count=arg)
 std/list.kira:187:9 [call] (p=arg, count=arg)
+std/list.kira:187:9 [call] (p=arg, count=arg)
+std/list.kira:195:13 [call] (message=arg)
 std/list.kira:195:13 [call] (message=arg)
 std/list.kira:195:13 [call] (message=arg)
 std/list.kira:195:13 [call] (message=arg)
@@ -27366,6 +27722,8 @@ std/list.kira:267:19 [call] ()
 std/list.kira:267:19 [call] ()
 std/list.kira:267:19 [call] ()
 std/list.kira:267:19 [call] ()
+std/list.kira:267:19 [call] ()
+std/list.kira:267:19 [call] ()
 std/list.kira:268:9 [call] (n=arg)
 std/list.kira:268:9 [call] (n=arg)
 std/list.kira:268:9 [call] (n=arg)
@@ -27374,6 +27732,10 @@ std/list.kira:268:9 [call] (n=arg)
 std/list.kira:268:9 [call] (n=arg)
 std/list.kira:268:9 [call] (n=arg)
 std/list.kira:268:9 [call] (n=arg)
+std/list.kira:268:9 [call] (n=arg)
+std/list.kira:268:9 [call] (n=arg)
+std/list.kira:271:13 [call] (value=arg)
+std/list.kira:271:13 [call] (value=arg)
 std/list.kira:271:13 [call] (value=arg)
 std/list.kira:271:13 [call] (value=arg)
 std/list.kira:271:13 [call] (value=arg)
@@ -27387,12 +27749,15 @@ std/mem.kira:30:15 [call] (bytes=arg)
 std/mem.kira:30:15 [call] (bytes=arg)
 std/mem.kira:30:15 [call] (bytes=arg)
 std/mem.kira:30:15 [call] (bytes=arg)
+std/mem.kira:30:15 [call] (bytes=arg)
 std/mem.kira:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.kira:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.kira:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.kira:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.kira:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.kira:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
+std/mem.kira:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
+std/mem.kira:55:5 [call] (p=arg, bytes=arg)
 std/mem.kira:55:5 [call] (p=arg, bytes=arg)
 std/mem.kira:55:5 [call] (p=arg, bytes=arg)
 std/mem.kira:55:5 [call] (p=arg, bytes=arg)
@@ -27526,7 +27891,7 @@ std/unicode.kira:280:13 [call] ()
 std/unicode.kira:285:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.kira:291:29 [call] (cp=arg)
 
-## resolved_callees (253)
+## resolved_callees (279)
 003_collections_lambdas.kira:18:5 [call] std.console::println
 027_dependent_and_refinement_types.kira:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.kira:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -27599,6 +27964,18 @@ std/unicode.kira:291:29 [call] (cp=arg)
 082_default_parameter_values.kira:34:13 [call] codegen_stress.default_parameter_values::counter::bumped recv
 087_list_cell_and_mutable_cell.kira:16:23 [call] std.list::list::mutable_cell$list_int32_ recv
 087_list_cell_and_mutable_cell.kira:27:13 [call] std.list::list::cell$list_int32_ recv
+091_unannotated_accumulator_in_generic.kira:27:15 [call] std.list::list::len recv
+091_unannotated_accumulator_in_generic.kira:27:15 [call] std.list::list::len$list_int32_ recv
+091_unannotated_accumulator_in_generic.kira:27:15 [call] std.list::list::len$list_int64_ recv
+091_unannotated_accumulator_in_generic.kira:28:9 [call] std.list::list::push recv
+091_unannotated_accumulator_in_generic.kira:28:9 [call] std.list::list::push$list_int32_ recv
+091_unannotated_accumulator_in_generic.kira:28:9 [call] std.list::list::push$list_int64_ recv
+091_unannotated_accumulator_in_generic.kira:42:13 [call] codegen_stress.unannotated_accumulator_in_generic::doubled$int32
+091_unannotated_accumulator_in_generic.kira:43:13 [call] codegen_stress.unannotated_accumulator_in_generic::doubled$int64
+091_unannotated_accumulator_in_generic.kira:47:15 [call] std.list::list::len$list_int32_ recv
+091_unannotated_accumulator_in_generic.kira:52:15 [call] std.list::list::len$list_int64_ recv
+091_unannotated_accumulator_in_generic.kira:58:26 [call] std.list::list::len$list_int32_ recv
+091_unannotated_accumulator_in_generic.kira:58:47 [call] std.list::list::len$list_int64_ recv
 std/algo.kira:1222:13 [call] std.list::list::push recv
 std/algo.kira:1224:13 [call] std.list::list::push recv
 std/algo.kira:1733:9 [call] std.list::list::push recv
@@ -27670,6 +28047,7 @@ std/iter.kira:127:49 [call] std.list::list::len recv
 std/iter.kira:135:13 [call] std.list::list::len recv
 std/iter.kira:200:13 [call] std.list::list::push recv
 std/list.kira:40:48 [call] std.mem::alloc$int32
+std/list.kira:40:48 [call] std.mem::alloc$int64
 std/list.kira:40:48 [call] std.mem::alloc$str
 std/list.kira:40:48 [call] std.mem::alloc$test_suite
 std/list.kira:40:48 [call] std.mem::alloc$uint32
@@ -27678,12 +28056,14 @@ std/list.kira:74:13 [call] std.panic::panic
 std/list.kira:93:21 [call] std.mem::resize
 std/list.kira:93:21 [call] std.mem::resize$byte
 std/list.kira:93:21 [call] std.mem::resize$int32
+std/list.kira:93:21 [call] std.mem::resize$int64
 std/list.kira:93:21 [call] std.mem::resize$str
 std/list.kira:93:21 [call] std.mem::resize$test_suite
 std/list.kira:93:21 [call] std.mem::resize$uint32
 std/list.kira:106:13 [call] std.list::list::reserve recv
 std/list.kira:106:13 [call] std.list::list::reserve$list_byte_ recv
 std/list.kira:106:13 [call] std.list::list::reserve$list_int32_ recv
+std/list.kira:106:13 [call] std.list::list::reserve$list_int64_ recv
 std/list.kira:106:13 [call] std.list::list::reserve$list_str_ recv
 std/list.kira:106:13 [call] std.list::list::reserve$list_test_suite_ recv
 std/list.kira:106:13 [call] std.list::list::reserve$list_uint32_ recv
@@ -27692,11 +28072,13 @@ std/list.kira:187:9 [call] std.mem::free
 std/list.kira:187:9 [call] std.mem::free$_usize__usize_
 std/list.kira:187:9 [call] std.mem::free$byte
 std/list.kira:187:9 [call] std.mem::free$int32
+std/list.kira:187:9 [call] std.mem::free$int64
 std/list.kira:187:9 [call] std.mem::free$str
 std/list.kira:187:9 [call] std.mem::free$test_case
 std/list.kira:187:9 [call] std.mem::free$test_suite
 std/list.kira:187:9 [call] std.mem::free$uint32
 std/list.kira:187:9 [call] std.mem::free$usize
+std/list.kira:195:13 [call] std.panic::panic
 std/list.kira:195:13 [call] std.panic::panic
 std/list.kira:195:13 [call] std.panic::panic
 std/list.kira:195:13 [call] std.panic::panic
@@ -27714,6 +28096,8 @@ std/list.kira:267:19 [call] std.list::list::new$list_int32_
 std/list.kira:267:19 [call] std.list::list::new$list_int32_
 std/list.kira:267:19 [call] std.list::list::new$list_int32_
 std/list.kira:267:19 [call] std.list::list::new$list_int32_
+std/list.kira:267:19 [call] std.list::list::new$list_int64_
+std/list.kira:267:19 [call] std.list::list::new$list_int64_
 std/list.kira:267:19 [call] std.list::list::new$list_str_
 std/list.kira:267:19 [call] std.list::list::new$list_test_suite_
 std/list.kira:267:19 [call] std.list::list::new$list_uint32_
@@ -27723,6 +28107,8 @@ std/list.kira:268:9 [call] std.list::list::reserve$list_int32_ recv
 std/list.kira:268:9 [call] std.list::list::reserve$list_int32_ recv
 std/list.kira:268:9 [call] std.list::list::reserve$list_int32_ recv
 std/list.kira:268:9 [call] std.list::list::reserve$list_int32_ recv
+std/list.kira:268:9 [call] std.list::list::reserve$list_int64_ recv
+std/list.kira:268:9 [call] std.list::list::reserve$list_int64_ recv
 std/list.kira:268:9 [call] std.list::list::reserve$list_str_ recv
 std/list.kira:268:9 [call] std.list::list::reserve$list_test_suite_ recv
 std/list.kira:268:9 [call] std.list::list::reserve$list_uint32_ recv
@@ -27731,6 +28117,8 @@ std/list.kira:271:13 [call] std.list::list::push$list_int32_ recv
 std/list.kira:271:13 [call] std.list::list::push$list_int32_ recv
 std/list.kira:271:13 [call] std.list::list::push$list_int32_ recv
 std/list.kira:271:13 [call] std.list::list::push$list_int32_ recv
+std/list.kira:271:13 [call] std.list::list::push$list_int64_ recv
+std/list.kira:271:13 [call] std.list::list::push$list_int64_ recv
 std/list.kira:271:13 [call] std.list::list::push$list_str_ recv
 std/list.kira:271:13 [call] std.list::list::push$list_test_suite_ recv
 std/list.kira:271:13 [call] std.list::list::push$list_uint32_ recv
@@ -27739,12 +28127,15 @@ std/mem.kira:30:15 [call] std.intrinsics::rt_alloc
 std/mem.kira:30:15 [call] std.intrinsics::rt_alloc
 std/mem.kira:30:15 [call] std.intrinsics::rt_alloc
 std/mem.kira:30:15 [call] std.intrinsics::rt_alloc
+std/mem.kira:30:15 [call] std.intrinsics::rt_alloc
 std/mem.kira:42:15 [call] std.intrinsics::rt_realloc
 std/mem.kira:42:15 [call] std.intrinsics::rt_realloc
 std/mem.kira:42:15 [call] std.intrinsics::rt_realloc
 std/mem.kira:42:15 [call] std.intrinsics::rt_realloc
 std/mem.kira:42:15 [call] std.intrinsics::rt_realloc
 std/mem.kira:42:15 [call] std.intrinsics::rt_realloc
+std/mem.kira:42:15 [call] std.intrinsics::rt_realloc
+std/mem.kira:55:5 [call] std.intrinsics::rt_free
 std/mem.kira:55:5 [call] std.intrinsics::rt_free
 std/mem.kira:55:5 [call] std.intrinsics::rt_free
 std/mem.kira:55:5 [call] std.intrinsics::rt_free
@@ -27781,9 +28172,11 @@ std/unicode.kira:242:13 [call] std.list::list::len$list_uint32_ recv
 std/unicode.kira:259:13 [call] std.list::list::len$list_uint32_ recv
 std/unicode.kira:280:13 [call] std.list::list::len$list_uint32_ recv
 
-## resolved_fn_values (2)
+## resolved_fn_values (4)
 089_elaboration_snapshot_gaps.kira:112:13 [ident] codegen_stress.elaboration_snapshot_gaps::triple
 089_elaboration_snapshot_gaps.kira:113:32 [ident] codegen_stress.elaboration_snapshot_gaps::triple
+091_unannotated_accumulator_in_generic.kira:42:28 [ident] codegen_stress.unannotated_accumulator_in_generic::twice_i32
+091_unannotated_accumulator_in_generic.kira:43:27 [ident] codegen_stress.unannotated_accumulator_in_generic::twice_i64
 
 ## operator_dispatches (83)
 089_elaboration_snapshot_gaps.kira:72:8 [binary] codegen_stress.elaboration_snapshot_gaps::weight::cmp recv
@@ -27873,7 +28266,7 @@ std/unicode.kira:291:23 [binary] std.string::str::add recv
 ## ord_dispatch_result_types (1)
 089_elaboration_snapshot_gaps.kira:72:8 [binary] ordering
 
-## index_dispatches (53)
+## index_dispatches (58)
 003_collections_lambdas.kira:11:23 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.kira:42:17 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.kira:58:19 [index] std.list::list::at$list_int32_$usize recv
@@ -27895,6 +28288,11 @@ std/unicode.kira:291:23 [binary] std.string::str::add recv
 087_list_cell_and_mutable_cell.kira:30:31 [index] std.list::list::at$list_int32_$usize recv
 087_list_cell_and_mutable_cell.kira:30:39 [index] std.list::list::at$list_int32_$usize recv
 087_list_cell_and_mutable_cell.kira:30:47 [index] std.list::list::at$list_int32_$usize recv
+091_unannotated_accumulator_in_generic.kira:28:20 [index] std.list::list::at recv
+091_unannotated_accumulator_in_generic.kira:28:20 [index] std.list::list::at$list_int32_$usize recv
+091_unannotated_accumulator_in_generic.kira:28:20 [index] std.list::list::at$list_int64_$usize recv
+091_unannotated_accumulator_in_generic.kira:48:25 [index] std.list::list::at$list_int32_$usize recv
+091_unannotated_accumulator_in_generic.kira:53:31 [index] std.list::list::at$list_int64_$usize recv
 std/algo.kira:1747:37 [index] std.list::list::at recv
 std/algo.kira:1748:30 [index] std.list::list::at recv
 std/algo.kira:1753:21 [index] std.list::list::at recv
@@ -27951,7 +28349,7 @@ std/iter.kira:176:21 [index] std.list::list::at_ref recv
 ## try_conversion_types (1)
 089_elaboration_snapshot_gaps.kira:52:13 [try] result[int32, app_error]
 
-## array_literal_conversions (25)
+## array_literal_conversions (30)
 003_collections_lambdas.kira:4:19 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
 045_ufcs.kira:104:16 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
 045_ufcs.kira:106:18 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
@@ -27961,8 +28359,13 @@ std/iter.kira:176:21 [index] std.list::list::at_ref recv
 054_static_dispatch_on_generic_types.kira:69:32 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
 074_range_index_general_stride.kira:44:27 [array] std.list::list::from_array$4$list_int32_ from array[int32, 4]
 087_list_cell_and_mutable_cell.kira:22:18 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
-std/algo.kira:1218:24 [array] std.list::list::from_array from array[T, 0]
-std/algo.kira:1219:23 [array] std.list::list::from_array from array[T, 0]
+091_unannotated_accumulator_in_generic.kira:25:15 [array] std.list::list::from_array from array[T, 0]
+091_unannotated_accumulator_in_generic.kira:25:15 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
+091_unannotated_accumulator_in_generic.kira:25:15 [array] std.list::list::from_array$0$list_int64_ from array[int64, 0]
+091_unannotated_accumulator_in_generic.kira:39:30 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
+091_unannotated_accumulator_in_generic.kira:40:29 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
+std/algo.kira:1218:15 [array] std.list::list::from_array from array[T, 0]
+std/algo.kira:1219:14 [array] std.list::list::from_array from array[T, 0]
 std/algo.kira:1730:24 [array] std.list::list::from_array from array[T, 0]
 std/algo.kira:1735:24 [array] std.list::list::from_array from array[T, 0]
 std/algo.kira:1744:35 [array] std.list::list::from_array from array[usize, 256]
@@ -27973,7 +28376,7 @@ std/algo.kira:1936:38 [array] std.list::list::from_array from array[(usize, usiz
 std/algo.kira:1948:47 [array] std.list::list::from_array from array[(usize, usize), 0]
 std/algo.kira:2108:31 [array] std.list::list::from_array from array[slice[T], 0]
 std/algo.kira:2128:31 [array] std.list::list::from_array from array[slice[T], 0]
-std/iter.kira:197:28 [array] std.list::list::from_array from array[T, 0]
+std/iter.kira:197:19 [array] std.list::list::from_array from array[T, 0]
 std/string.kira:209:33 [array] std.list::list::from_array$0$list_str_ from array[str, 0]
 std/test.kira:108:23 [array] std.list::list::from_array$1$list_test_suite_ from array[test_suite, 1]
 std/unicode.kira:61:29 [array] std.list::list::from_array$0$list_uint32_ from array[uint32, 0]
@@ -28026,21 +28429,24 @@ std/test.kira:181:49 [ident] show spec=' ' value=int32
 ## runtime_fill_dispatches (1)
 089_elaboration_snapshot_gaps.kira:97:18 [array] list=list[int32] new=std.list::list::new$list_int32_ push=std.list::list::push$list_int32_
 
-## layout_queries (26)
+## layout_queries (30)
 std/mem.kira:30:47 [call] size of _
 std/mem.kira:30:47 [call] size of int32
+std/mem.kira:30:47 [call] size of int64
 std/mem.kira:30:47 [call] size of str
 std/mem.kira:30:47 [call] size of test_suite
 std/mem.kira:30:47 [call] size of uint32
 std/mem.kira:43:53 [call] size of _
 std/mem.kira:43:53 [call] size of byte
 std/mem.kira:43:53 [call] size of int32
+std/mem.kira:43:53 [call] size of int64
 std/mem.kira:43:53 [call] size of str
 std/mem.kira:43:53 [call] size of test_suite
 std/mem.kira:43:53 [call] size of uint32
 std/mem.kira:44:53 [call] size of _
 std/mem.kira:44:53 [call] size of byte
 std/mem.kira:44:53 [call] size of int32
+std/mem.kira:44:53 [call] size of int64
 std/mem.kira:44:53 [call] size of str
 std/mem.kira:44:53 [call] size of test_suite
 std/mem.kira:44:53 [call] size of uint32
@@ -28048,14 +28454,16 @@ std/mem.kira:55:55 [call] size of (usize, usize)
 std/mem.kira:55:55 [call] size of _
 std/mem.kira:55:55 [call] size of byte
 std/mem.kira:55:55 [call] size of int32
+std/mem.kira:55:55 [call] size of int64
 std/mem.kira:55:55 [call] size of str
 std/mem.kira:55:55 [call] size of test_case
 std/mem.kira:55:55 [call] size of test_suite
 std/mem.kira:55:55 [call] size of uint32
 std/mem.kira:55:55 [call] size of usize
 
-## ptr_casts (24)
+## ptr_casts (28)
 std/mem.kira:31:12 [call] *mut int32
+std/mem.kira:31:12 [call] *mut int64
 std/mem.kira:31:12 [call] *mut str
 std/mem.kira:31:12 [call] *mut test_suite
 std/mem.kira:31:12 [call] *mut uint32
@@ -28065,11 +28473,14 @@ std/mem.kira:42:26 [call] *mut byte
 std/mem.kira:42:26 [call] *mut byte
 std/mem.kira:42:26 [call] *mut byte
 std/mem.kira:42:26 [call] *mut byte
+std/mem.kira:42:26 [call] *mut byte
 std/mem.kira:45:12 [call] *mut byte
 std/mem.kira:45:12 [call] *mut int32
+std/mem.kira:45:12 [call] *mut int64
 std/mem.kira:45:12 [call] *mut str
 std/mem.kira:45:12 [call] *mut test_suite
 std/mem.kira:45:12 [call] *mut uint32
+std/mem.kira:55:13 [call] *mut byte
 std/mem.kira:55:13 [call] *mut byte
 std/mem.kira:55:13 [call] *mut byte
 std/mem.kira:55:13 [call] *mut byte
@@ -28108,7 +28519,7 @@ std/list.kira:237:16 [call]
 074_range_index_general_stride.kira:50:31 [index] 
 074_range_index_general_stride.kira:50:40 [index] 
 
-## static_const_values (50)
+## static_const_values (54)
 033_const_generic_monomorphization.kira:18:13 [ident] 5
 033_const_generic_monomorphization.kira:23:13 [ident] 3
 033_const_generic_monomorphization.kira:23:13 [ident] 5
@@ -28120,14 +28531,18 @@ std/list.kira:237:16 [call]
 std/list.kira:268:21 [ident] 0
 std/list.kira:268:21 [ident] 0
 std/list.kira:268:21 [ident] 0
+std/list.kira:268:21 [ident] 0
 std/list.kira:268:21 [ident] 1
+std/list.kira:268:21 [ident] 2
 std/list.kira:268:21 [ident] 3
 std/list.kira:268:21 [ident] 4
 std/list.kira:268:21 [ident] 5
 std/list.kira:270:19 [ident] 0
 std/list.kira:270:19 [ident] 0
 std/list.kira:270:19 [ident] 0
+std/list.kira:270:19 [ident] 0
 std/list.kira:270:19 [ident] 1
+std/list.kira:270:19 [ident] 2
 std/list.kira:270:19 [ident] 3
 std/list.kira:270:19 [ident] 4
 std/list.kira:270:19 [ident] 5
@@ -28230,9 +28645,10 @@ std/unicode.kira:287:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.kira:13:41 [ident] ident
 033_const_generic_monomorphization.kira:13:41 [ident] ident
 
-## drop_plans (52)
+## drop_plans (54)
 file_handle own=std.io::file_handle::drop fields=[]
 list[(usize, usize)] own=std.list::list::drop$list__usize__usize__ fields=[]
+list[T] own=std.list::list::drop fields=[]
 list[T] own=std.list::list::drop fields=[]
 list[T] own=std.list::list::drop fields=[]
 list[T] own=std.list::list::drop fields=[]
@@ -28265,6 +28681,7 @@ list[T] own=std.list::list::drop fields=[]
 list[_] own=std.list::list::drop fields=[]
 list[byte] own=std.list::list::drop$list_byte_ fields=[]
 list[int32] own=std.list::list::drop$list_int32_ fields=[]
+list[int64] own=std.list::list::drop$list_int64_ fields=[]
 list[slice[T]] own=std.list::list::drop fields=[]
 list[slice[T]] own=std.list::list::drop fields=[]
 list[str] own=std.list::list::drop$list_str_ fields=[]
@@ -28284,7 +28701,7 @@ list_into_iter[test_case] own=- fields=[src: list[test_case]]
 list_into_iter[test_suite] own=- fields=[src: list[test_suite]]
 test_suite own=- fields=[cases: list[test_case]]
 
-## view_bearing_types (137)
+## view_bearing_types (139)
 &mut slice_mut[T]
 &mut slice_mut[T]
 &mut slice_mut[T]
@@ -28320,6 +28737,8 @@ test_suite own=- fields=[cases: list[test_case]]
 &slice[int32]
 &slice[uint32]
 &slice[uint8]
+*mut slice[T]
+*mut slice[T]
 array[slice[T], 0]
 array[slice[T], 0]
 array[slice[T], n]
@@ -28495,7 +28914,7 @@ std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
 
-## const_generic_instances (109)
+## const_generic_instances (122)
 codegen_stress.bound_driven_inference::filter$counter$int32
 codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_
 codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32
@@ -28536,6 +28955,8 @@ codegen_stress.static_dispatch_on_generic_types::crate::make$crate_int32_
 codegen_stress.static_dispatch_on_generic_types::doubler::from_iter$upto
 codegen_stress.static_dispatch_on_generic_types::list[int32]::from_iter$upto
 codegen_stress.ufcs::identity$int32
+codegen_stress.unannotated_accumulator_in_generic::doubled$int32
+codegen_stress.unannotated_accumulator_in_generic::doubled$int64
 main::apply$int32$int32
 std.algo::binary_search$uint32
 std.algo::lower_bound$uint32
@@ -28545,6 +28966,7 @@ std.iter::list_into_iter::next$list_into_iter_test_case_
 std.iter::list_into_iter::next$list_into_iter_test_suite_
 std.list::list::at$list_int32_$range_usize_
 std.list::list::at$list_int32_$usize
+std.list::list::at$list_int64_$usize
 std.list::list::at$list_test_case_$usize
 std.list::list::at$list_test_suite_$usize
 std.list::list::at$list_uint32_$range_usize_
@@ -28553,15 +28975,18 @@ std.list::list::cell$list_int32_
 std.list::list::drop$list__usize__usize__
 std.list::list::drop$list_byte_
 std.list::list::drop$list_int32_
+std.list::list::drop$list_int64_
 std.list::list::drop$list_str_
 std.list::list::drop$list_test_case_
 std.list::list::drop$list_test_suite_
 std.list::list::drop$list_uint32_
 std.list::list::drop$list_usize_
 std.list::list::from_array$0$list_int32_
+std.list::list::from_array$0$list_int64_
 std.list::list::from_array$0$list_str_
 std.list::list::from_array$0$list_uint32_
 std.list::list::from_array$1$list_test_suite_
+std.list::list::from_array$2$list_int64_
 std.list::list::from_array$3$list_int32_
 std.list::list::from_array$4$list_int32_
 std.list::list::from_array$5$list_int32_
@@ -28569,30 +28994,36 @@ std.list::list::into_iter$list_int32_
 std.list::list::into_iter$list_test_case_
 std.list::list::into_iter$list_test_suite_
 std.list::list::len$list_int32_
+std.list::list::len$list_int64_
 std.list::list::len$list_uint32_
 std.list::list::mutable_cell$list_int32_
 std.list::list::new$list_int32_
+std.list::list::new$list_int64_
 std.list::list::new$list_str_
 std.list::list::new$list_test_suite_
 std.list::list::new$list_uint32_
 std.list::list::push$list_byte_
 std.list::list::push$list_int32_
+std.list::list::push$list_int64_
 std.list::list::push$list_str_
 std.list::list::push$list_test_suite_
 std.list::list::push$list_uint32_
 std.list::list::reserve$list_byte_
 std.list::list::reserve$list_int32_
+std.list::list::reserve$list_int64_
 std.list::list::reserve$list_str_
 std.list::list::reserve$list_test_suite_
 std.list::list::reserve$list_uint32_
 std.list::list::set_at$list_int32_$usize
 std.mem::alloc$int32
+std.mem::alloc$int64
 std.mem::alloc$str
 std.mem::alloc$test_suite
 std.mem::alloc$uint32
 std.mem::free$_usize__usize_
 std.mem::free$byte
 std.mem::free$int32
+std.mem::free$int64
 std.mem::free$str
 std.mem::free$test_case
 std.mem::free$test_suite
@@ -28600,6 +29031,7 @@ std.mem::free$uint32
 std.mem::free$usize
 std.mem::resize$byte
 std.mem::resize$int32
+std.mem::resize$int64
 std.mem::resize$str
 std.mem::resize$test_suite
 std.mem::resize$uint32
@@ -28610,8 +29042,9 @@ stress.dependent_types::safe_get$int32$8
 
 ## synthesized_item_splices (0)
 
-## synthesized_decls (112)
+## synthesized_decls (125)
 alloc$int32
+alloc$int64
 alloc$str
 alloc$test_suite
 alloc$uint32
@@ -28629,6 +29062,8 @@ collect$upto$doubler
 collect$upto$list_int32_
 counter::from_iter$upto
 crate::make$crate_int32_
+doubled$int32
+doubled$int64
 doubler::from_iter$upto
 doubler::next$doubler_map_iter_counter__int32__int32__
 filled$4$int32
@@ -28638,6 +29073,7 @@ first$4$int32
 free$_usize__usize_
 free$byte
 free$int32
+free$int64
 free$str
 free$test_case
 free$test_suite
@@ -28655,6 +29091,7 @@ holder::scale$holder_int64_
 identity$int32
 list::at$list_int32_$range_usize_
 list::at$list_int32_$usize
+list::at$list_int64_$usize
 list::at$list_test_case_$usize
 list::at$list_test_suite_$usize
 list::at$list_uint32_$range_usize_
@@ -28663,15 +29100,18 @@ list::cell$list_int32_
 list::drop$list__usize__usize__
 list::drop$list_byte_
 list::drop$list_int32_
+list::drop$list_int64_
 list::drop$list_str_
 list::drop$list_test_case_
 list::drop$list_test_suite_
 list::drop$list_uint32_
 list::drop$list_usize_
 list::from_array$0$list_int32_
+list::from_array$0$list_int64_
 list::from_array$0$list_str_
 list::from_array$0$list_uint32_
 list::from_array$1$list_test_suite_
+list::from_array$2$list_int64_
 list::from_array$3$list_int32_
 list::from_array$4$list_int32_
 list::from_array$5$list_int32_
@@ -28679,19 +29119,23 @@ list::into_iter$list_int32_
 list::into_iter$list_test_case_
 list::into_iter$list_test_suite_
 list::len$list_int32_
+list::len$list_int64_
 list::len$list_uint32_
 list::mutable_cell$list_int32_
 list::new$list_int32_
+list::new$list_int64_
 list::new$list_str_
 list::new$list_test_suite_
 list::new$list_uint32_
 list::push$list_byte_
 list::push$list_int32_
+list::push$list_int64_
 list::push$list_str_
 list::push$list_test_suite_
 list::push$list_uint32_
 list::reserve$list_byte_
 list::reserve$list_int32_
+list::reserve$list_int64_
 list::reserve$list_str_
 list::reserve$list_test_suite_
 list::reserve$list_uint32_
@@ -28713,6 +29157,7 @@ read_exact
 read_to_end
 resize$byte
 resize$int32
+resize$int64
 resize$str
 resize$test_suite
 resize$uint32
@@ -28726,9 +29171,9 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 104
+synthesized_types 116
 synthesized_fragments 8
-synthesized_const_literals 50
+synthesized_const_literals 54
 elided_contracts 0
 
 ## fmt_runtime_types

@@ -968,28 +968,6 @@ public:
 
   auto take_checked_types() -> checked_types {
     const auto fmt_types = resolve_fmt_runtime_types();
-    // Refinements have done their work by now — every obligation is raised
-    // and discharged during checking, and a predicate has no runtime
-    // existence. Erase them here, once, at the boundary, so no downstream
-    // pass (HIR, layout, either backend) ever has to know they existed. This
-    // is the same trick `resolve_opaque` plays for existential types, applied
-    // one layer earlier because a refinement can hide *inside* a type
-    // (`option[index[n]]`) where an unwrap at the use site wouldn't reach it.
-    for (auto &[node, type] : node_types_) {
-      type = types_.erase_refinements(type);
-    }
-    for (auto &[field, type] : struct_pattern_field_types_) {
-      type = types_.erase_refinements(type);
-    }
-    for (auto &[field, type] : struct_literal_field_types_) {
-      type = types_.erase_refinements(type);
-    }
-    for (auto &[node, dispatch] : interp_dispatches_) {
-      dispatch.value_type = types_.erase_refinements(dispatch.value_type);
-    }
-    // Precompute which interned types carry a view, before `types_` is moved
-    // out below — the borrow checker reads this to track view-borrow lifetimes.
-    auto view_bearing = compute_view_bearing_types();
     resolve_drop_plans();
     // Drop resolution runs after `run_impl` has finished, so it is the one
     // requester with no walk left to flush behind it. Without this, every
@@ -997,7 +975,45 @@ public:
     // named and then never checked — a function the backends are told to
     // compile and nothing ever compiled, which is the exact defect the phase
     // 0 snapshot was built to catch. It caught it.
-    flush_pending_instances();
+    //
+    // Before the sweeps below, not after, because checking those bodies is
+    // itself a walk: it records types of its own, and any leaf it mints has
+    // to be settled by the same pass that settles every other.
+    flush_deferred();
+    // Refinements have done their work by now — every obligation is raised
+    // and discharged during checking, and a predicate has no runtime
+    // existence. Erase them here, once, at the boundary, so no downstream
+    // pass (HIR, layout, either backend) ever has to know they existed. This
+    // is the same trick `resolve_opaque` plays for existential types, applied
+    // one layer earlier because a refinement can hide *inside* a type
+    // (`option[index[n]]`) where an unwrap at the use site wouldn't reach it.
+    // A leaf unknown is recorded at the node that minted it, which is before
+    // anything has said what it is — so the recorded type is the variable and
+    // not the answer, even long after the answer arrived. Substitute the
+    // solutions in here, at the boundary, for the same reason refinements are
+    // erased here: nothing downstream should have to know an inference
+    // variable ever existed. Without it `var out = []` in an annotated
+    // function records `list[_]` and hands a type containing a metavariable
+    // to lowering, which survives only as long as nothing lowers it.
+    //
+    // Guarded on there having been any leaves, since zonking rebuilds a type
+    // through the table's constructors and a session with none must not pay
+    // that on every node it typed.
+    for (auto &[node, type] : node_types_) {
+      type = types_.erase_refinements(settle(type));
+    }
+    for (auto &[field, type] : struct_pattern_field_types_) {
+      type = types_.erase_refinements(settle(type));
+    }
+    for (auto &[field, type] : struct_literal_field_types_) {
+      type = types_.erase_refinements(settle(type));
+    }
+    for (auto &[node, dispatch] : interp_dispatches_) {
+      dispatch.value_type = types_.erase_refinements(dispatch.value_type);
+    }
+    // Precompute which interned types carry a view, before `types_` is moved
+    // out below — the borrow checker reads this to track view-borrow lifetimes.
+    auto view_bearing = compute_view_bearing_types();
     return checked_types{
         .types = std::move(types_),
         .node_types = std::move(node_types_),
@@ -5657,6 +5673,21 @@ private:
     type_id element = k_unknown_type;
     source_span span;
     file_id_type file = 0;
+    /// The context the wiring was deferred *from*, restored before it runs.
+    ///
+    /// Deferred work has to carry the context it was deferred from, or it
+    /// does something different from what it would have done in place —
+    /// which is the same lesson `pending_instance` learned about its site
+    /// chain and its depth. Here the flags are the whole difference between
+    /// wiring and instantiating: a generic template's `[]` records its
+    /// conversion and stops, because the only `from_array` it could name
+    /// would be one for an abstract `T` that no backend ever compiles. At
+    /// flush time the walk is long over and both flags read false, so
+    /// without carrying them the template's literal instantiates for real
+    /// and produces `list::new$list___`.
+    const module_members *module = nullptr;
+    bool in_const_generic_template = false;
+    bool in_type_generic_template = false;
   };
   std::vector<pending_leaf_literal> pending_leaf_literals_;
 
@@ -5808,10 +5839,16 @@ private:
   auto flush_leaf_literals() -> void {
     auto pending = std::vector<pending_leaf_literal>{};
     pending.swap(pending_leaf_literals_);
+    const auto saved_file = file_id_;
+    const auto *saved_module = module_;
+    const auto saved_const_template = in_const_generic_template_;
+    const auto saved_type_template = in_type_generic_template_;
     for (const auto &leaf : pending) {
       const auto element = leaf_ctxt_.zonk(leaf.element);
-      const auto saved_file = file_id_;
       file_id_ = leaf.file;
+      module_ = leaf.module;
+      in_const_generic_template_ = leaf.in_const_generic_template;
+      in_type_generic_template_ = leaf.in_type_generic_template;
       if (element == leaf.element) {
         error_with_help(
             leaf.span, "cannot tell what an empty `[]` is a list of",
@@ -5821,11 +5858,33 @@ private:
             "function does any of those. Annotate the binding — "
             "`var xs: list[int32] = []` — or start the list with the "
             "elements it should hold.");
-        file_id_ = saved_file;
         continue;
       }
       wire_default_list(*leaf.literal, element, /*count=*/0);
-      file_id_ = saved_file;
+    }
+    file_id_ = saved_file;
+    module_ = saved_module;
+    in_const_generic_template_ = saved_const_template;
+    in_type_generic_template_ = saved_type_template;
+  }
+
+  /// Drains both deferred queues until neither has anything left.
+  ///
+  /// They feed each other, so neither can be drained once. Wiring a leaf
+  /// literal requests instances of its own, and checking an instance walks a
+  /// *cloned* body — whose `[]` is a different AST node from the template's
+  /// and mints a leaf of its own. Flushing leaves and then instances leaves
+  /// every instance's leaf queued behind the walk that is already over,
+  /// which surfaces as "this array literal's element count is not statically
+  /// known": the conversion was recorded for the template's node and never
+  /// for the clone's.
+  auto flush_deferred() -> void {
+    // Leaf literals first, because a leaf minted in one function can be
+    // pinned by a constraint in another in the same file, so they have to be
+    // settled before anything reads a type off them.
+    while (!pending_leaf_literals_.empty() || !pending_instances_.empty()) {
+      flush_leaf_literals();
+      flush_pending_instances();
     }
   }
 
@@ -16431,10 +16490,14 @@ private:
       const auto leaf = leaf_ctxt_.fresh_type(
           "the element type of this `[]`",
           source_location{.file_id = file_id_, .span = array.span});
-      pending_leaf_literals_.push_back(pending_leaf_literal{.literal = &array,
-                                                            .element = leaf,
-                                                            .span = array.span,
-                                                            .file = file_id_});
+      pending_leaf_literals_.push_back(pending_leaf_literal{
+          .literal = &array,
+          .element = leaf,
+          .span = array.span,
+          .file = file_id_,
+          .module = module_,
+          .in_const_generic_template = in_const_generic_template_,
+          .in_type_generic_template = in_type_generic_template_});
       return resolve_list_type(leaf);
     }
     return wire_default_list(array, element, array.elements.size());
@@ -20899,21 +20962,17 @@ public:
       module_ = index_.find_module(module_name_);
       file_no_prelude_ = input.ast_file->no_prelude;
       check_file(*input.ast_file);
-      // Leaf literals first: wiring one requests instances of its own, and
-      // a leaf minted in one function can be pinned by another in the same
-      // file, so both have to be settled before the file is left.
-      flush_leaf_literals();
       // Per file rather than once at the end. The instances this file asked
       // for are checked before the next file starts, which keeps a
       // monomorphization diagnostic next to the file that caused it instead
       // of at the end of the session — the ordering users read messages in,
       // and the one the golden corpus records.
-      flush_pending_instances();
+      flush_deferred();
     }
 
     // Anything requested outside a file's own walk — a functor body, an
     // item-level splice — has nothing left to flush it.
-    flush_pending_instances();
+    flush_deferred();
   }
 };
 

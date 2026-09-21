@@ -101,6 +101,12 @@ constexpr auto k_inputs = std::array{
                    .filename = "087_list_cell_and_mutable_cell.kira"},
     snapshot_input{.corpus = "codegen_stress",
                    .filename = "089_elaboration_snapshot_gaps.kira"},
+    // An unannotated `[]` accumulator inside a generic body, instantiated at
+    // two element types — the one shape where the template's elaboration and
+    // its instances' must be told apart, and where telling them apart wrong
+    // names a function nothing compiles.
+    snapshot_input{.corpus = "codegen_stress",
+                   .filename = "091_unannotated_accumulator_in_generic.kira"},
     snapshot_input{.corpus = "semantic_stress",
                    .filename = "003_collections_lambdas.kira"},
     snapshot_input{.corpus = "semantic_stress",

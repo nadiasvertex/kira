@@ -1,10 +1,13 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phases 0-7 done; phase 8 has closed todo item 20 for concrete
-code. All 28 matcher sites run the one unifier, with no compatibility shims
-left anywhere. The engine (phases 1-5) exists and is tested but
-is not yet called; phase 6 is the first change inside
-`src/semantic/check.cpp` itself, and it is behavior-preserving.
+**Status:** Phases 0-7 done. Phase 8 closed todo item 20 for concrete code;
+phase 9 has since made its stated acceptance test pass — the standard
+library's `partition` and `from_iter` build their lists from an unannotated
+`[]` — with byte-identical elaboration. Phase 8's other two leaves and phase
+9's gate deletion both remain, and both wait on the same two things: one pass
+over a generic body, and `method_call` as an obligation.
+All 28 matcher sites run the one unifier, with no compatibility shims left
+anywhere.
 
 | Phase | What it makes possible | Status |
 |---|---|---|
@@ -16,8 +19,8 @@ is not yet called; phase 6 is the first change inside
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | **Done** — `src/semantic/infer/blame.{h,cpp}`, `blame_test.cpp`, golden corpus at `src/testdata/inference_diagnostics/` |
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.kira` |
 | 7 | Constraint generation migrated onto the one unifier | **Done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; all three allowances retired |
-| 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **In progress** — empty `[]` done (todo 20 closed for concrete code); unannotated params and literal defaulting remain |
-| 9 | Generic bodies checked once, abstractly | Not started |
+| 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **Partly done** — empty `[]` done (todo 20 closed for concrete code); unannotated params and literal defaulting are blocked on phase 9 and on wiring `method_call` obligations, and should be reattempted after them |
+| 9 | Generic bodies checked once, abstractly | **Partly done** — the template/instance boundary is fixed and phase 8's acceptance test passes; the `in_*_template_` gates cannot come out until the second pass does (experiment recorded below) |
 
 ## Why
 
@@ -755,7 +758,7 @@ there. Adopting the parameter ids in place is what avoids that, and it is why
 
 Full suite: 36/36.
 
-### Phase 8 — metavariables at the leaves *(in progress — the empty literal is done)*
+### Phase 8 — metavariables at the leaves *(the empty literal is done; the other two are blocked)*
 
 **`spec/todo.md` item 20 is closed for concrete code**, which is the result
 this whole document was written to get. An empty `[]` with nothing to read a
@@ -833,9 +836,66 @@ type-checks and then fails in lowering, because the instance the abstract pass
 named was never the one compiled. Phase 9 — generic bodies checked once,
 abstractly — is where that is addressed.
 
-Unannotated parameters and integer-literal defaulting (`param_usage_inferrer`,
-`check.cpp`'s inline defaulting) are also still to move; the obligation
-queue's `defaulting` kind is already built and waiting for them.
+#### The other two leaves are blocked, and by the same thing
+
+Unannotated parameters and integer-literal defaulting were meant to follow
+the empty literal through the same door. They do not, and the reason is worth
+recording because it reorders what is left rather than adding to it.
+
+**Integer-literal defaulting was built and reverted.** The change is small and
+reads correctly: `infer_literal` mints a leaf instead of answering `int32`,
+raises a `defaulting` obligation carrying `int32` as its candidate, and
+`flush_leaf_literals` runs `obligation_queue::flush` — which applies defaults
+only once the fixpoint has stalled, one at a time, each followed by another
+full fixpoint. The range check moves with the type, since a range is a fact
+about a type and `let x = 300` is only too large once something has said
+`int8`. Fourteen of thirty-six targets failed, and every failure was one
+sentence:
+
+```
+error: `alloc`'s compile-time argument `T` is not a type this call can name
+  note: instantiated from here, as `list::from_array$5$list___`
+      3 |     let numbers = [1, 2, 3, 4, 5]
+```
+
+An array literal's elements are inferred against no expectation, so each is a
+leaf, so the literal's element type is a leaf, so `list::from_array` is
+instantiated on a `T` nothing has solved — `list___`, phase 6's defect
+arriving for the third time. Deferring the wiring the way the empty literal
+defers it handles that one. It does not handle the next one:
+
+```
+error: cannot tell what `T` is in this call to `iter`
+   10 |     let nv = nums.iter().values()
+```
+
+A method call on a `list[?a]` receiver cannot wait, because method dispatch is
+not an obligation yet — it is a lookup performed during the walk, which must
+have a concrete receiver to perform. **That is the blocker, and it is the
+`method_call` obligation kind: built in `infer/obligations.h`, never wired.**
+
+**Unannotated parameters are blocked on the adjacent half of the same thing.**
+`param_usage_inferrer` (`check.cpp`, ~540 lines) is a second inference engine
+with its own union-find, its own environment, its own AST walk, and its own
+deliberately-partial type resolver — the clearest instance in the compiler of
+the duplication this document exists to end. Replacing it with a leaf is one
+line of minting. What is not one line is *when the leaf is solved*:
+`param_types_for` is asked for a callee's parameter types at the call site,
+which may be checked before the callee's body, and the private walk exists
+precisely so an answer is available on demand. A leaf solved only by the body
+check makes the answer depend on the order files and functions are walked in
+— the same order-dependence that phase 8's value-parameter bug already
+demonstrated is not survivable. The regular answer is to check the body on
+demand, quietly, and read the leaf afterwards; the checker has no quiet mode
+for a body (only `resolve_ctx{.quiet = true}` for types), so that is a piece
+of work, not a call.
+
+So both remaining leaves want the same thing, and it is not more leaves: the
+walk still *decides* eagerly — dispatch, instantiation, parameter types — and
+any leaf that survives to a consumer meets one of those decisions. Phase 9
+(generic bodies checked once, abstractly) and wiring `method_call` through the
+obligation queue are what unblock them. The two leaves should be reattempted
+after, not before.
 
 #### Failability, verified
 
@@ -848,9 +908,115 @@ queue's `defaulting` kind is already built and waiting for them.
 
 Full suite: 36/36.
 
-### Phase 9 — abstract generic bodies
+### Phase 9 — abstract generic bodies *(the boundary is fixed; the gates are not)*
 
-Delete the double check and the six `in_*_template_` gates.
+**Phase 8's acceptance test passes.** The annotations are off `partition`'s
+`yes`/`no` (`src/std/algo.kira`) and `from_iter`'s `out`
+(`src/std/iter.kira`), and the whole suite is green:
+
+```kira
+pub def partition[I, T](it: I, pred: fn(T) -> bool) -> (list[T], list[T]) where I: iterator[T]:
+    var yes = []
+    var no = []
+```
+
+The snapshot is the evidence, and it is stronger than "it compiles": every
+recorded type at those lines is **byte-identical to the annotated version**
+— `list[T]`, and `from_array from array[T, 0]` — with the only differences
+being the column numbers the removed annotations moved, and ten more interned
+types. Removing an annotation changed no elaboration decision anywhere.
+
+#### It was never the leaf. It was the phase boundary.
+
+Phase 8 assumed the stdlib case failed because a leaf's solution there is a
+type *parameter*. It is not. A generic body is checked twice — abstractly as
+the template, then once per instance — and the template's `[]` **defers** its
+`from_array` wiring to a flush that runs after the walk is over. By then
+`in_type_generic_template_` reads false, so the deferred wiring instantiated
+`list::new` for an abstract `T` and named `list::new$list___`: a function the
+backends are told to compile and nothing ever compiles. Phase 6's defect, for
+the third time, and from a third direction.
+
+Three fixes, all of them the same shape.
+
+- **Deferred work carries the context it was deferred from.**
+  `pending_leaf_literal` now records the module and both template flags and
+  restores them around the wiring, exactly as `pending_instance` carries its
+  site chain and its depth. A deferral that does not carry its context does
+  something different from what it would have done in place, which is not a
+  deferral.
+- **The two queues are one fixpoint.** Wiring a leaf requests instances;
+  checking an instance walks a *cloned* body whose `[]` is a different AST
+  node and mints a leaf of its own. `flush_deferred` drains both until
+  neither has anything left, for the same reason `obligation_queue`
+  interleaves resolvers and postponed constraints.
+- **Solutions are substituted at the boundary.** A leaf is recorded at the
+  node that minted it, before anything has said what it is, so the recorded
+  type stayed the *variable* however long ago the answer arrived.
+  `take_checked_types` now zonks `node_types` alongside erasing refinements —
+  same place, same reason: nothing downstream should have to know an
+  inference variable ever existed. Without it the template recorded
+  `list[_]` and handed a type containing a metavariable to lowering.
+
+`resolve_drop_plans` and its flush also moved *above* those sweeps, since
+checking those bodies is itself a walk that records types and can mint leaves
+of its own. That dropped two abstract `list[T]` drop plans (52 → 50) — plans
+for a type no value ever has — and added two `*mut slice[T]` view-bearing
+types (137 → 139), the conservative direction for the borrow checker.
+
+#### The gates are not deletable yet, and the experiment says why
+
+The plan's line for this phase was "delete the double check and the six
+`in_*_template_` gates". The natural first move is to turn each gate from a
+*mode* ("which pass am I in") into a *fact* ("is this type concrete"), since
+a mode is precisely what deferred work loses — that is the bug above. So
+`instantiate_from_array_for`'s gate was tried as `mentions_type_param(target)`
+instead of the two flags.
+
+**Refuted, and informatively.** Thirty-five targets stayed green and the
+snapshot moved 537 lines: the fact-gate instantiates from *inside* template
+bodies whenever the target happens to be concrete — extra `list[usize]` and
+`list[(usize, usize)]` instances the mode-gate suppressed, two of them
+recording `list[_]`. The gate is not an approximation of a property of the
+type. It means what it says: the template pass must instantiate *nothing*,
+concrete things included, because the instance pass will do it under the
+right names.
+
+So the distinction the gates draw **is** the double check. They cannot be
+deleted one at a time as a cleanup; they come out when the second pass does,
+and that is the remaining work of this phase:
+
+- Checking a generic body once and obtaining each instance's types by
+  substitution rather than by re-walking the clone.
+- Wiring `method_call` through the obligation queue, so a call on a
+  not-yet-concrete receiver waits instead of being suppressed.
+
+Those two together are also what unblocks phase 8's other two leaves.
+
+#### Failability, verified
+
+| Broken | What caught it |
+|---|---|
+| deferred wiring does not restore the template flags | `std_test` — `alloc[T]` "no concrete checked type", and `snapshot_test` |
+| solutions not substituted at the boundary | `snapshot_test` — `list[_]` for `list[T]`, at **identical byte size**, which a size-only comparison would have missed entirely |
+| `091`'s expected value | `codegen_stress_test` — "returned 116, but `# expect:` says 115" |
+
+One invariant is *not* covered: `flush_deferred`'s loop. At the corpus's
+current nesting depth a single pass happens to suffice, because two more
+flush points follow it. It stays a loop because it is the correct invariant
+— a leaf minted while checking the last instance of the last flush has
+nothing behind it — but this is an assertion the suite does not yet test, and
+it is recorded as such rather than claimed.
+
+`src/testdata/codegen_stress/091_unannotated_accumulator_in_generic.kira`
+(`# expect: 116`) is the local reproduction: an unannotated `[]` accumulator
+in a generic body, instantiated at `int32` and at `int64`. Two
+instantiations at different widths, so an element type leaking from the first
+into the second gives a plausible wrong answer rather than a crash, and the
+total is asserted rather than left to cross-tier agreement, which would agree
+on that wrong answer. It is in the snapshot corpus too, where the template's
+`list[T]` and the instances' `list[int32]`/`list[int64]` now appear as three
+rows against the same line.
 
 ## Definition of done
 
