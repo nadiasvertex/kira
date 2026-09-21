@@ -72,5 +72,33 @@ auto compute_stats(std::string_view path) -> file_stats {
 }
 ```
 
+### Code Comments
+
+Write comments to explain **why the code exists or why it is implemented in a non-obvious way**, not to document the history of the conversation.
+
+* Comments should describe the current code and its rationale.
+* Do not mention previous designs, previous implementations, earlier attempts, discussions, prompts, or decisions made during the session.
+* Do not write comments such as "We originally..." or "Previously we..." unless the historical detail is essential to understanding the current code.
+* Do not use comments to preserve a narrative of how the code evolved.
+* Prefer a short explanation of the invariant, constraint, tradeoff, or reason for the implementation.
+* If the code is self-explanatory, do not add a comment merely to describe what it does.
+
+**Good:**
+
+```cpp
+// Keep this allocation outside the loop because the buffer is reused for
+// every frame.
+```
+
+**Bad:**
+
+```cpp
+// We originally allocated this inside the loop, but during an earlier
+// discussion we decided to move it here because we discovered that...
+```
+
+The code should explain itself where possible. Comments should add information that cannot be readily inferred from the code.
+
+
 ---
 **One‑liner for code‑gen**: target Clang 22.1 with `-std=c++2c`; functional‑first; type & function names snake_case; prefer values/immutability/RAII; `std::move` only when consuming; `std::forward` only for forwarding refs; rely on copy elision; feature‑test‑gate C++26; compile warning‑free; optimize last.

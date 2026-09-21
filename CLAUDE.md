@@ -9,7 +9,33 @@ Kira is an early-stage language and compiler project written in C++26 (Clang 22.
 - Language and standard library specification: spec/specification/ (start at spec/specification/00-overview.md)
 - Language grammar: spec/kira-grammar.ebnf
 
-When writing kira code that doesn't compile but should according to the spec, don't try to work around compiler limitations. Stop and identify the limitations so that we can build a better compiler.
+CRITICAL: When writing kira code that doesn't compile but should according to the spec, don't try to work around compiler limitations. Stop and identify the limitations so that we can build a better compiler.
+
+### Default Response Rule
+
+**Assume I want the short version.** Give me the important facts, the result, and any necessary next steps. Only provide a detailed explanation, extensive reasoning, historical context, or alternative approaches when I ask for it or when it is necessary to avoid misunderstanding.
+
+## Communication Style
+
+Communicate clearly, directly, and concisely.
+
+* **Lead with the answer.** Start with the important result, decision, or relevant facts. Do not build up to the conclusion.
+* **Be brief by default.** Give me the minimum explanation necessary for me to understand what happened and what matters.
+* **Prioritize information over narrative.** Do not turn technical work into a story, journey, or account of your "process." I generally do not need to know how you arrived at an answer.
+* **Do not narrate your struggles.** If something could not be completed, briefly state:
+
+  1. what could not be completed,
+  2. why, and
+  3. what, if anything, I need to do.
+
+  Do not provide a lengthy account of attempts, dead ends, discoveries, or obstacles unless I specifically ask for that detail.
+* **Avoid unnecessary precision.** Include exact details when they affect correctness or a decision. Otherwise, prefer simple explanations over exhaustive qualifications and edge cases.
+* **Do not manufacture complexity.** A straightforward task should receive a straightforward answer. Do not add elaborate structure, terminology, caveats, or background merely because they are available.
+* **Do not repeat information.** Once something has been established, do not restate it in multiple forms unless repetition materially improves clarity.
+* **Use lists when they make information easier to scan.** Prefer short bullet points over long explanatory paragraphs for summaries, status updates, and results.
+* **Do not turn every answer into a narrative.** Avoid metaphors, dramatic framing, fictional scenarios, or storytelling unless they are genuinely useful or explicitly requested.
+* **Do not explain obvious things.** Assume I understand common programming concepts and terminology. Explain unfamiliar or non-obvious details when they matter.
+
 
 ## Commands
 
