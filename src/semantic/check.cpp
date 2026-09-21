@@ -468,17 +468,20 @@ public:
       type = types_.erase_refinements(settle(type));
     }
     for (auto &[node, dispatch] : for_iterator_dispatches_) {
-      dispatch.element_type = types_.erase_refinements(settle(dispatch.element_type));
+      dispatch.element_type =
+          types_.erase_refinements(settle(dispatch.element_type));
       dispatch.adapter_result_type =
           types_.erase_refinements(settle(dispatch.adapter_result_type));
     }
     for (auto &[node, dispatch] : comprehension_iterator_dispatches_) {
-      dispatch.element_type = types_.erase_refinements(settle(dispatch.element_type));
+      dispatch.element_type =
+          types_.erase_refinements(settle(dispatch.element_type));
       dispatch.adapter_result_type =
           types_.erase_refinements(settle(dispatch.adapter_result_type));
     }
     for (auto &[node, dispatch] : interp_dispatches_) {
-      dispatch.value_type = types_.erase_refinements(settle(dispatch.value_type));
+      dispatch.value_type =
+          types_.erase_refinements(settle(dispatch.value_type));
     }
     // Precompute which interned types carry a view, before `types_` is moved
     // out below — the borrow checker reads this to track view-borrow lifetimes.
@@ -4800,8 +4803,10 @@ private:
           type = !mentions_type_var(settled)
                      ? settled
                      : leaf_ctxt_.fresh_type(
-              std::format("the type of parameter `{}` at this call", name),
-              source_location{.file_id = file_id_, .span = param.span});
+                           std::format(
+                               "the type of parameter `{}` at this call", name),
+                           source_location{.file_id = file_id_,
+                                           .span = param.span});
         }
       }
       params.push_back(fn_param_info{
@@ -5025,8 +5030,8 @@ private:
       // The lambda is about to be checked against these, so a parameter its
       // type hangs on is a point of demand — but only if there *is* a lambda
       // waiting, or a default would be spent for nothing.
-      const auto has_lambda = std::ranges::any_of(
-          pending, [](const auto &item) -> bool {
+      const auto has_lambda =
+          std::ranges::any_of(pending, [](const auto &item) -> bool {
             return item.value->kind == ast::node_kind::lambda_expr;
           });
       bindings = preliminary_type_bindings(call, params, *generic, has_lambda);
@@ -5698,12 +5703,12 @@ private:
     auto watches = std::vector<type_id>{};
     auto seen = std::unordered_set<type_id>{};
     collect_type_vars(receiver_type, watches, seen);
-    leaf_queue_.add(infer::obligation{
-        .kind = infer::obligation_kind::method_call,
-        .watches = std::move(watches),
-        .goal = std::move(goal),
-        .why = infer::k_no_cause,
-        .payload = payload});
+    leaf_queue_.add(
+        infer::obligation{.kind = infer::obligation_kind::method_call,
+                          .watches = std::move(watches),
+                          .goal = std::move(goal),
+                          .why = infer::k_no_cause,
+                          .payload = payload});
   }
 
   /// Registers the resolvers. Lazy because they close over `this`.
@@ -5857,17 +5862,17 @@ private:
       file_id_ = item.file;
       module_ = item.module;
       if (!open) {
-        for (size_t i = 0; i < item.decl->params.size() &&
-                           i < item.call_params.size() &&
-                           i < callee_types.size();
+        for (size_t i = 0;
+             i < item.decl->params.size() && i < item.call_params.size() &&
+             i < callee_types.size();
              ++i) {
           if (item.decl->params[i].type_annotation != nullptr ||
               callee_types[i] == k_unknown_type) {
             continue;
           }
           const auto pinned = settle(callee_types[i]);
-          if (!leaf_engine_.unify(pinned, item.call_params[i],
-                                  infer::k_no_cause)
+          if (!leaf_engine_
+                   .unify(pinned, item.call_params[i], infer::k_no_cause)
                    .has_value()) {
             error_with_help(
                 item.call->span,
@@ -7923,11 +7928,8 @@ private:
         "the type of this integer literal",
         source_location{.file_id = file_id_, .span = lit.span});
     integer_literal_leaves_.insert(leaf);
-    pending_leaf_values_.push_back(
-        pending_leaf_literal_value{.literal = &lit,
-                                   .leaf = leaf,
-                                   .negated = negated,
-                                   .file = file_id_});
+    pending_leaf_values_.push_back(pending_leaf_literal_value{
+        .literal = &lit, .leaf = leaf, .negated = negated, .file = file_id_});
     leaf_queue_.add(infer::obligation{
         .kind = infer::obligation_kind::defaulting,
         .watches = {leaf},
@@ -8242,7 +8244,6 @@ private:
       return k_error_type;
     }
 
-
     const auto is_deferred_type_param = [this](type_id id) -> bool {
       return in_type_generic_template_ &&
              types_.entry(id).kind == type_kind::type_param_kind;
@@ -8255,10 +8256,10 @@ private:
       // an operator-overload trait has to wait for a concrete instantiation
       // the same way the literal bounds-check does.
       return types_.is_numeric(lhs_final)        ? lhs_final
-             : types_.is_numeric(rhs)      ? rhs
+             : types_.is_numeric(rhs)            ? rhs
              : is_deferred_type_param(lhs_final) ? lhs_final
-             : is_deferred_type_param(rhs) ? rhs
-                                           : k_unknown_type;
+             : is_deferred_type_param(rhs)       ? rhs
+                                                 : k_unknown_type;
     }
 
     const auto trait_name = operator_trait_for(binary.op);
@@ -10899,9 +10900,8 @@ private:
       const std::unordered_map<std::string, type_id> &bindings,
       const std::unordered_map<std::string, type_id> &scoped_params,
       const generic_solution &solution) -> std::optional<type_id> {
-    const auto name =
-        std::format("{}::{}{}", receiver_name, method.decl->name,
-                    solution.suffix);
+    const auto name = std::format("{}::{}{}", receiver_name, method.decl->name,
+                                  solution.suffix);
     const auto *instance = find_or_check_generic_instance(
         call, *method.decl, method.owner, method.file_id, solution, name,
         &scoped_params, receiver_type, method.block_type_params);
@@ -11347,14 +11347,14 @@ private:
       // already known in terms of the leaf (`T := ?a`, so the result is
       // `iter[?a]`), so only the elaboration waits.
       if (mentions_type_var(settle(receiver_type))) {
-        defer_method_call(
-            decl.name, settle(receiver_type),
-            [this, &call, &decl, candidate, solved, params,
-             &field](type_id /*settled*/) -> void {
-              (void)instantiate_generic_function(
-                  call, decl, candidate.owner, candidate.file_id, solved,
-                  params, /*explicit_args=*/{}, field.object.get());
-            });
+        defer_method_call(decl.name, settle(receiver_type),
+                          [this, &call, &decl, candidate, solved, params,
+                           &field](type_id /*settled*/) -> void {
+                            (void)instantiate_generic_function(
+                                call, decl, candidate.owner, candidate.file_id,
+                                solved, params, /*explicit_args=*/{},
+                                field.object.get());
+                          });
         return substitute_solved(signature_return_type(decl, candidate.owner),
                                  bindings);
       }
@@ -11441,7 +11441,8 @@ private:
     // report below.
     if (viable.size() > 1) {
       const auto best = std::ranges::min(
-          viable, {}, [](const ufcs_candidate &c) -> ufcs_origin { return c.origin; });
+          viable, {},
+          [](const ufcs_candidate &c) -> ufcs_origin { return c.origin; });
       std::erase_if(viable, [&](const ufcs_candidate &c) -> bool {
         return c.origin != best.origin;
       });
@@ -11707,8 +11708,7 @@ private:
     // A receiver that is a bare leaf (`5.total_of()`) has no shape to match a
     // free function's first parameter against — a variable fits everything —
     // so it is owed its default too.
-    if (leaf_ctxt_.meta_count() != 0 &&
-        mentions_type_var(settle(object)) &&
+    if (leaf_ctxt_.meta_count() != 0 && mentions_type_var(settle(object)) &&
         find_method(types_.entry(object), field.field_name, object) ==
             nullptr &&
         (types_.entry(settle(object)).kind == type_kind::type_var_kind ||
@@ -17017,18 +17017,18 @@ private:
     }
   }
 
-  auto check_pattern(const ast::pattern &pattern, type_id raw_subject)
-      -> void {
+  auto check_pattern(const ast::pattern &pattern, type_id raw_subject) -> void {
     if (pattern.has_error) {
       return;
     }
     // A structural pattern has to know the shape it destructures, so it is a
     // point of demand; a binding or wildcard names the value whatever it is
     // and leaves the type open for a later use to say.
-    const auto subject = pattern.kind == ast::node_kind::binding_pattern ||
-                                 pattern.kind == ast::node_kind::wildcard_pattern
-                             ? raw_subject
-                             : demand(raw_subject);
+    const auto subject =
+        pattern.kind == ast::node_kind::binding_pattern ||
+                pattern.kind == ast::node_kind::wildcard_pattern
+            ? raw_subject
+            : demand(raw_subject);
     const auto stripped = strip_refs(subject);
     const auto &entry = types_.entry(stripped);
     // Every pattern kind below matches against `stripped` — recording it
@@ -18362,10 +18362,10 @@ private:
       return;
     }
     auto held = std::vector<diagnostic>{};
-    auto mark = unclassified_param_decl{
-        .decl = &decl,
-        .literal_begin = pending_leaf_literals_.size(),
-        .call_begin = pending_method_calls_.size()};
+    auto mark =
+        unclassified_param_decl{.decl = &decl,
+                                .literal_begin = pending_leaf_literals_.size(),
+                                .call_begin = pending_method_calls_.size()};
     probe_capture_ = &held;
     check_function_impl(decl, at_module_scope);
     probe_capture_ = nullptr;
