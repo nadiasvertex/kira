@@ -1,0 +1,35 @@
+module codegen_stress.empty_literal_inferred_from_use
+
+# expect: 30
+
+# `spec/inference-rewrite.md` phase 8, and `spec/todo.md` item 20: an empty
+# `[]` with nothing to read a type from, pinned by a later `push`.
+#
+# Before phase 8 this was rejected outright — "cannot tell what an empty `[]`
+# is a list of" — because elaboration happened during the walk, so a `push`
+# on a `list[?]` would mint an instance that nothing ever compiled. Phase 6
+# moved instantiation behind a flush, which is what makes the deferral
+# possible at all.
+#
+# The value is asserted with `# expect:`, not only by cross-tier agreement:
+# an element type inferred wrongly would be inferred wrongly for both tiers,
+# and they would agree on the wrong answer.
+
+def collect_evens(n: int32) -> list[int32]:
+    var out = []
+    var i = 0
+    while i < n:
+        if i % 2 == 0:
+            out.push(i)
+        i = i + 1
+    return out
+
+def sum_of(xs: list[int32]) -> int32:
+    var total = 0
+    for x in xs:
+        total = total + x
+    return total
+
+def main() -> int32:
+    let evens = collect_evens(10)
+    return sum_of(evens)
