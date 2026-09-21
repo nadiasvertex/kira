@@ -1,0 +1,6 @@
+error: cannot tell what an empty `[]` is a list of
+  --> 001_empty_list_literal.kira:7:14
+    7 |     var xs = []
+      |              ^^ element type is unknown here
+  help: Nothing here says what this list holds: it has no elements to read a type from, and the element type is not inferred from a later `push`. Annotate the binding — `var xs: list[int32] = []` — or start the list with the elements it should hold.
+

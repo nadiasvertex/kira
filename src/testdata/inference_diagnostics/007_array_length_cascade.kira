@@ -1,0 +1,10 @@
+# bar: BELOW BAR TODAY. One mistake, two errors: the literal's length is
+# reported, and then the same disagreement is reported again as a type
+# mismatch. Phase 5 must report the cause once.
+module infer_diag.array_length_cascade
+
+def take_four(a: array[int32, 4]) -> unit:
+    ()
+
+def wrong() -> unit:
+    take_four([1, 2, 3])

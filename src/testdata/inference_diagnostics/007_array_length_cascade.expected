@@ -1,0 +1,10 @@
+error: array literal has 3 elements, but `array[int32, 4]` holds exactly 4
+  --> 007_array_length_cascade.kira:10:15
+   10 |     take_four([1, 2, 3])
+      |               ^^^^^^^^^ wrong number of elements
+
+error: type mismatch: expected `array[int32, 4]`, found `array[int32, 3]`
+  --> 007_array_length_cascade.kira:10:15
+   10 |     take_four([1, 2, 3])
+      |               ^^^^^^^^^ expected `array[int32, 4]` for this argument
+

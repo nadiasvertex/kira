@@ -1,0 +1,5 @@
+error: type mismatch: expected `&mut point`, found `&point`
+  --> 009_ref_mutability.kira:12:11
+   12 |     shift(p)
+      |           ^ expected `&mut point` for this argument
+

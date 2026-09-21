@@ -1,0 +1,7 @@
+# bar: at least as readable as the hand-written diagnostic this replaces.
+# The user's mistake is on this line; the message must not point into
+# `src/std/list.kira` or talk about `list::from_array`'s `T`.
+module infer_diag.empty_list_literal
+
+def wrong() -> unit:
+    var xs = []

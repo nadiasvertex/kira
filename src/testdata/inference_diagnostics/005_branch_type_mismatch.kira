@@ -1,0 +1,9 @@
+# Two branches, neither of which is privileged. Phase 5's outlier heuristic
+# must pick the minority branch to point at, not simply the last one.
+module infer_diag.branch_mismatch
+
+def wrong(flag: bool) -> int32:
+    if flag:
+        1
+    else:
+        "two"

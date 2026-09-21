@@ -1,0 +1,13 @@
+# The disagreement is between a declared return type and a type that only
+# exists after an instantiation. The blame must land on the final
+# expression, not inside `unwrap`.
+module infer_diag.generic_return_mismatch
+
+type holder[T] = { item: T }
+
+def unwrap[T](h: holder[T]) -> T:
+    h.item
+
+def wrong() -> int32:
+    let h = holder { item: "text" }
+    unwrap(h)

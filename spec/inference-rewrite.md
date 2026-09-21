@@ -1,6 +1,6 @@
 # Rewriting inference: one unifier, one queue, one blame pass
 
-**Status:** Phases 0-4 done. Nothing in `src/semantic/check.cpp` has moved yet
+**Status:** Phases 0-5 done. Nothing in `src/semantic/check.cpp` has moved yet
 — the engine exists and is tested, but nothing calls it.
 
 | Phase | What it makes possible | Status |
@@ -10,7 +10,7 @@
 | 2 | One `unify`: rigid-rigid, pattern fragment, value slots | **Done** — `src/semantic/infer/unify.{h,cpp}`, `unify_test.cpp` |
 | 3 | Value slots genuinely *solved*, not merely checked satisfiable | **Done** — `src/semantic/infer/value_solver.{h,cpp}`, `value_solver_test.cpp` |
 | 4 | An obligation queue: methods, trait bounds, refinements, defaulting | **Done** — `src/semantic/infer/obligations.{h,cpp}`, `obligations_test.cpp` |
-| 5 | Blame over a retained constraint graph, and the diagnostics it enables | Not started |
+| 5 | Blame over a retained constraint graph, and the diagnostics it enables | **Done** — `src/semantic/infer/blame.{h,cpp}`, `blame_test.cpp`, golden corpus at `src/testdata/inference_diagnostics/` |
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | Not started |
 | 7 | Constraint generation migrated onto the one unifier | Not started |
 | 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | Not started |
@@ -459,25 +459,98 @@ obligations along with everything else, and a default could beat a constraint
 that was one pass away. That is the real fix in this phase, and nothing else
 in the suite would have found it.
 
-### Phase 5 — blame and diagnostics
+**Failability, verified.** Five mechanisms broken in turn:
 
-The graph, the outlier heuristics, the renderer. A golden corpus of *wrong*
-programs asserting exact message text, written **before** the heuristics.
+| Broken | Failure reported |
+|---|---|
+| wake index ignored (every obligation retried every pass) | ``expected an unrelated solution not to wake it`` |
+| watches not re-indexed after a merge | ``expected the merged-away watch to still wake it`` |
+| defaulting attempted in the main fixpoint | ``expected the real constraint to decide, not the default`` |
+| `retry_deferred` not driven by the fixpoint | ``expected the postponed constraint to have been retried and resolved`` |
+| a resolver's failure swallowed | ``expected the failure to stop the flush`` |
 
-Acceptance bar: no message may be worse than what the same program produces
-today. Specifically:
+Full suite after reverting: 33/33.
 
-- `var xs = []` with nothing to infer from must read at least as well as the
-  current hand-written diagnostic at `check.cpp:16121`.
-- `head[T, n: usize](v: vec[T, n + 1])` called on a `vec[T, 0]` must still
-  explain that `n = -1` is required and that `usize` forbids it — ch. 33's
-  own bar ("rejected with the arithmetic explained").
-- A failed trait obligation must name the goal, the facts in scope, and both
-  ways out, per ch. 33's refinement rule.
+### Phase 5 — blame and diagnostics *(done)*
 
-"Type annotations needed" is not an acceptable message in this compiler, and
-it is a constraint solver's natural output. Designing against it is the point
-of this phase existing separately and early.
+`src/semantic/infer/blame.{h,cpp}`, tested by `//src/semantic:blame_test`;
+the golden corpus in `src/testdata/inference_diagnostics/`, exercised by
+`//src:inference_diagnostics_test`.
+
+**The corpus came first, and that is the point.** The acceptance bar is "no
+message may be worse than what the same program produces today", and a bar
+like that can only be enforced if *today* was written down before anything
+started changing it. Nine wrong programs, each with its rendered diagnostics
+captured byte for byte. A corpus captured after the heuristics would record
+whatever the new code happens to say, which is not a bar at all.
+
+Three entries are marked `bar: BELOW BAR TODAY` in their own leading
+comments. Their goldens are a floor, not a target, and phase 5 is not
+finished on them until the wiring in phase 7 lets the new message replace the
+old one:
+
+| Case | What is wrong with today's message |
+|---|---|
+| `003_unmet_trait_bound` | An unsatisfied `T: ordering` surfaces as a missing *method* inside the generic body. It names neither the goal (`point: ordering`) nor the bound that required it. |
+| `007_array_length_cascade` | One mistake, two errors: the literal's length, then the same disagreement again as a type mismatch. |
+| `009_ref_mutability` | `&point` versus `&mut point` is printed but never explained, with no `help:` line at all. |
+
+Two entries already meet their bar and must not regress:
+`001_empty_list_literal` keeps the hand-written text that avoids pointing
+into `src/std/list.kira`, and `002_dependent_length_unsatisfiable` already
+explains that `n + 1` can never equal `0` for `n: usize` — ch. 33's own
+standard.
+
+**The retained constraint graph.** `constraint_graph::record` keeps every
+constraint *including the ones that succeeded*, because a constraint that
+succeeded is precisely the evidence that makes a later one an outlier.
+`demands_on` asks what each constraint required of one variable, resolving
+through `find` rather than by id — a constraint recorded against a variable
+that was later merged still counts, or the evidence silently shrinks after a
+merge and the majority can flip.
+
+**The outlier rule.** When four branches say `int32` and one says `str`, the
+`str` one is the mistake and the other four are why: the caret goes on the
+minority and the agreeing sites are shown as the reason it is one. Pointing
+at whichever constraint came last is a coin flip that reads as
+authoritative.
+
+**An even split blames neither**, deliberately. One against one genuinely
+does not say which side is wrong, so `outliers` returns nothing and the
+message shows both sides and admits it will not guess. A heuristic that
+invents a winner from a tie is worse than no heuristic: the reader has no way
+to tell that is what happened.
+
+**`explain_stall` exists so that "type annotations needed" never has to be
+printed.** It names the variable as the source wrote it, where it came from,
+what is already known about it, and which decision is blocked on it. A stall
+with facts in scope and a stall with none are different mistakes and read
+differently — collapsing them is exactly how a compiler ends up telling
+someone who wrote five constraints to add an annotation.
+
+`blame.h` deliberately does not include `diagnostic.h`. It produces the
+*content* of a message — where to point, what to say, what else to show — and
+the checker renders it, which keeps the heuristics testable as functions of a
+constraint graph rather than of a whole compiler session.
+
+**Failability, verified.** Seven mechanisms broken in turn:
+
+| Broken | Failure reported |
+|---|---|
+| `outliers` returns the majority | ``expected exactly one outlier`` |
+| tie detection removed | ``expected a tie to produce no outlier`` |
+| `demands_on` compares ids instead of `find` | ``expected constraints on both halves of the merged class`` |
+| a reflexive `var ~ var` counted as a demand | ``expected the reflexive constraint to be ignored`` |
+| the cause's own wording ignored | ``unexpected headline: expected `int32`, found `str``` |
+| stall help identical with and without facts | ``expected a stall with facts to read differently from one without`` |
+| a report fabricated where everything agrees | ``expected no report where there is no disagreement`` |
+
+And three on the corpus harness itself: a perturbed golden (reported as a
+diff), a deleted golden (refused rather than skipped), and a corpus program
+edited until it compiles (``expected the program to be rejected``) — that
+last one being the shape a golden test fails silently in.
+
+Full suite after reverting: 35/35.
 
 ### Phase 6 — the elaboration split
 

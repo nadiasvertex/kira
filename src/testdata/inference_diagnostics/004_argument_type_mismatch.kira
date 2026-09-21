@@ -1,0 +1,9 @@
+# The plainest shape there is: one argument, one wrong type. The blame must
+# stay on the argument, never on the parameter or the callee.
+module infer_diag.argument_mismatch
+
+def add_one(x: int32) -> int32:
+    x + 1
+
+def wrong() -> int32:
+    add_one("hello")

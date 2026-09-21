@@ -1,0 +1,12 @@
+# bar: must explain that `n = -1` is what agreement would require and that
+# `usize` has no such value — ch. 33's "rejected with the arithmetic
+# explained". Today's message meets this; phase 5 may not regress it.
+module infer_diag.dependent_length
+
+type vec[T, n: usize] = { data: array[T, n] }
+
+def head[T, n: usize](v: vec[T, n + 1]) -> unit:
+    ()
+
+def wrong(v: vec[int32, 0]) -> unit:
+    head(v)

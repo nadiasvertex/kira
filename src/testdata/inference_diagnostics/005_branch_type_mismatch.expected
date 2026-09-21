@@ -1,0 +1,6 @@
+error: `if` branches have mismatched types: `int32` vs `str`
+  --> 005_branch_type_mismatch.kira:9:9
+    9 |         "two"
+      |         ^^^^^ this branch produces `str`
+  help: Every branch of a value-producing conditional must produce the same type.
+

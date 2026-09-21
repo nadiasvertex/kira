@@ -1,0 +1,20 @@
+# bar: BELOW BAR TODAY. A failed trait obligation must name the goal
+# (`point: ordering`), the facts in scope (none), and both ways out
+# (implement `ordering` for `point`, or drop the bound). Today the failure
+# surfaces as a missing *method* inside the generic body, which names
+# neither the goal nor the bound that required it.
+module infer_diag.unmet_trait_bound
+
+type point = { x: int32 }
+
+trait ordering:
+    def less(self, other: self) -> bool
+
+def biggest[T](a: T, b: T) -> T where T: ordering:
+    if a.less(b):
+        b
+    else:
+        a
+
+def wrong(p: point, q: point) -> point:
+    biggest(p, q)

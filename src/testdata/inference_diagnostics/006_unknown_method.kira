@@ -1,0 +1,6 @@
+# A method obligation that no candidate discharges. The receiver type is
+# fully known, so this must never degrade into "type annotations needed".
+module infer_diag.unknown_method
+
+def wrong(x: int32) -> int32:
+    x.frobnicate()

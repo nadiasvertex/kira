@@ -15,6 +15,15 @@ filegroup(
 )
 
 filegroup(
+    name = "inference_diagnostics_corpus",
+    srcs = glob([
+        "testdata/inference_diagnostics/*.kira",
+        "testdata/inference_diagnostics/*.expected",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
     name = "codegen_stress_corpus",
     srcs = glob(["testdata/codegen_stress/*.kira"]),
     visibility = ["//visibility:public"],
@@ -154,6 +163,18 @@ cc_test(
     size = "medium",
     srcs = ["semantic_stress_test.cpp"],
     data = [":semantic_stress_corpus"],
+    tags = ["no-sandbox"],
+    deps = ["//src/driver:driver"],
+)
+
+cc_test(
+    name = "inference_diagnostics_test",
+    size = "medium",
+    srcs = ["inference_diagnostics_test.cpp"],
+    data = [
+        ":inference_diagnostics_corpus",
+        ":std_sources",
+    ],
     tags = ["no-sandbox"],
     deps = ["//src/driver:driver"],
 )

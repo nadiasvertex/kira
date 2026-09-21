@@ -1,0 +1,12 @@
+# bar: BELOW BAR TODAY. `&point` and `&mut point` differ only in a flag the
+# message prints but never explains. A reader who does not already know the
+# rule learns nothing; there is no help line at all.
+module infer_diag.ref_mutability
+
+type point = { x: float64, y: float64 }
+
+def shift(p: &mut point) -> unit:
+    p.x = p.x + 1.0
+
+def wrong(p: &point) -> unit:
+    shift(p)
