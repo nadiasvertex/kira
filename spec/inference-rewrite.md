@@ -1087,6 +1087,61 @@ on that wrong answer. It is in the snapshot corpus too, where the template's
 `list[T]` and the instances' `list[int32]`/`list[int64]` now appear as three
 rows against the same line.
 
+### Phase 10 — `method_call` as an obligation *(in progress)*
+
+Phase 8's two remaining leaves and phase 9's gates both wait on the same
+missing thing: a call on a receiver that is not concrete *yet* is currently
+**decided anyway**, or **suppressed**, and never *postponed*. The queue for
+postponing it has existed since phase 4 and had no caller.
+
+Two shapes, with the same cause.
+
+**A dispatch that decides anyway.** `var xs = []` then `xs.len()` before any
+`push`: `check_impl_generic_method_call` had a `mentions_type_param` guard
+for a receiver still written in a *type parameter*, and nothing at all for a
+receiver still written in a *metavariable*. So it named an instance after
+one — `std.list::list::len$list___` — which is a function nothing ever
+compiles. It happened to run only because `len` never touches the element
+type; the snapshot is what made it visible, since the program's answer was
+right.
+
+Now the elaboration half is split out (`finish_impl_generic_method_call`) and
+the call is registered as a `method_call` obligation watching the receiver's
+own metavariables, carrying the file, module and both template flags it was
+deferred from — the same discipline `pending_leaf_literal` and
+`pending_instance` follow, for the same reason. `flush_deferred` runs the
+queue after the leaves have settled, then drains the leaves again, because
+running a call requests instances and wires literals of its own.
+
+The arguments are deliberately *not* deferred with it. They have already been
+checked, and they are frequently the thing that solves the receiver:
+`out.push(7)` on a `list[?a]` is how `?a` becomes `int32` at all. Only the
+decision waits.
+
+A call still waiting when the queue stalls reports nothing from the queue:
+the receiver's own literal has already said "cannot tell what an empty `[]`
+is a list of", which is the same mistake in words the user can act on. Before
+this change that program compiled, with a `len$list___` in it.
+
+**A dispatch that is suppressed.** `xs.iter()` on the same open `xs` goes
+through UFCS to the free `def iter[T](xs: &list[T])`, where
+`solve_from_argument_types` refuses an argument still carrying an open leaf
+(correctly — "an open leaf is not an answer") and `solve_generic_params` then
+reports `T` unsolved. That one is not yet wired, and is the next step.
+
+#### Failability, verified
+
+| Broken | What caught it |
+|---|---|
+| the resolver always answers `waiting` | `snapshot_test` — the call loses its resolved callee; `codegen_stress_test` does **not** catch it, because `len` lowers anyway |
+| no deferral at all (the state before this phase) | `snapshot_test` — `len$list___` returns, in both instance tables |
+
+Note which test did the work. `codegen_stress/093` passes with the wrong
+instance name *and* with no instance at all: the value it computes is right
+either way. Only the golden records which function the call resolved to,
+which is the thing `snapshot_test.cpp`'s own header says nothing else in the
+suite can see.
+
 ## Definition of done
 
 A ledger, not a feeling:

@@ -18,16 +18,12 @@ module codegen_stress.index_settles_its_receiver
 #
 # `xs.len()` before any `push` is here on purpose: it is the case where the
 # receiver is genuinely open at the call, which settling cannot help — there
-# is nothing yet to settle to. It runs only because `len` needs nothing from
-# the element type, and the golden records what it costs:
-#
-#     std.list::list::len$list___
-#
-# an instance named for a variable, alongside the `len$list_int32_` the same
-# method gets everywhere else. Harmless here and wrong in general; the fix is
-# for that call to *wait* for `?a` rather than dispatch against it, which is
-# `method_call` as an obligation (`spec/inference-rewrite.md` phase 8/9).
-# When that lands, this fixture's snapshot rows are the acceptance test.
+# is nothing yet to settle to. That call does not dispatch; it waits, as a
+# `method_call` obligation watching `?a`, and is run by `flush_deferred` once
+# the `push`es below have answered. The golden is where that is visible: the
+# `var before` call resolves to `std.list::list::len$list_int32_`, the same
+# instance every other `len` in the session gets — and not to a
+# `len$list___` named for a variable, which is a function nothing compiles.
 #
 # `# expect:` rather than cross-tier agreement: an element type read from
 # an unsettled receiver is read wrongly by both tiers, which would agree on

@@ -20,6 +20,7 @@
 #include "src/intrinsics.h"
 #include "src/parser/ast_clone.h"
 #include "src/semantic/infer/infer_ctxt.h"
+#include "src/semantic/infer/obligations.h"
 #include "src/semantic/infer/rigid_match.h"
 #include "src/semantic/infer/unify.h"
 #include "src/semantic/module_index.h"
@@ -5011,6 +5012,33 @@ private:
     return entry.result != id && mentions_type_var(entry.result, seen);
   }
 
+  /// `mentions_type_var` without the caller having to supply the scratch set.
+  auto mentions_type_var(type_id id) -> bool {
+    auto seen = std::unordered_set<type_id>{};
+    return mentions_type_var(id, seen);
+  }
+
+  /// Every metavariable `id` mentions, in first-seen order — what an
+  /// obligation watches, so it is retried exactly when one of them gains a
+  /// solution and never otherwise.
+  auto collect_type_vars(type_id id, std::vector<type_id> &out,
+                         std::unordered_set<type_id> &seen) -> void {
+    if (!seen.insert(id).second) {
+      return;
+    }
+    const auto entry = types_.entry(id); // copy: recursion may intern
+    if (entry.kind == type_kind::type_var_kind &&
+        std::ranges::find(out, id) == out.end()) {
+      out.push_back(id);
+    }
+    for (const auto arg : entry.args) {
+      collect_type_vars(arg, out, seen);
+    }
+    if (entry.result != id) {
+      collect_type_vars(entry.result, out, seen);
+    }
+  }
+
   auto resolve_drop_plans() -> void {
     const auto snapshot = types_.count();
     for (std::size_t raw = 0; raw < snapshot; ++raw) {
@@ -5737,6 +5765,40 @@ private:
   };
   std::vector<pending_leaf_literal> pending_leaf_literals_;
 
+  /// The one queue for decisions that cannot be made yet (phase 4).
+  ///
+  /// It borrows the leaf store and the unifier because their postponed
+  /// constraints are part of the same fixpoint: a deferred method call and a
+  /// deferred `F[A] ~ G[B]` can unblock each other, and draining them in
+  /// separate loops is what makes inference depend on which drained first.
+  infer::obligation_queue leaf_queue_{leaf_ctxt_, leaf_engine_};
+  /// Set once, lazily: the resolvers close over `this`, which is not
+  /// available in a member initializer.
+  bool leaf_queue_wired_ = false;
+
+  /// A method call reached while its receiver was still an open leaf.
+  ///
+  /// Everything the *elaboration* half needs, plus the context it was
+  /// deferred from — the same discipline `pending_leaf_literal` and
+  /// `pending_instance` follow, and for the same reason: deferred work that
+  /// does not carry its context does something other than what it would have
+  /// done in place. Here the receiver's entry is deliberately *not* carried:
+  /// it is looked up again from the settled receiver, because `list[?a]` and
+  /// `list[int32]` are different entries with different method tables, and
+  /// the settled one is the one the call actually means.
+  struct pending_method_call {
+    const ast::call_expr *call = nullptr;
+    const ast::expr *receiver = nullptr;
+    std::string method_name;
+    type_id receiver_type = k_unknown_type;
+    source_span span;
+    file_id_type file = 0;
+    const module_members *module = nullptr;
+    bool in_const_generic_template = false;
+    bool in_type_generic_template = false;
+  };
+  std::vector<pending_method_call> pending_method_calls_;
+
   /// Clones and names a generic instance, and queues its body to be checked.
   ///
   /// Phase 6 of `spec/inference-rewrite.md` splits this function in half. The
@@ -5914,6 +5976,103 @@ private:
     in_type_generic_template_ = saved_type_template;
   }
 
+  /// Records a method call whose receiver is still open, and the obligation
+  /// that will run it.
+  ///
+  /// The payload is an index into `pending_method_calls_`; the watches are
+  /// the receiver's own metavariables, so the call is retried exactly when
+  /// one of them is solved. Registering it does not check the arguments
+  /// again — those have already been checked, and are what may solve the
+  /// receiver in the first place. Only the elaboration waits.
+  auto defer_method_call(const ast::call_expr &call, const method_entry &method,
+                         const ast::expr &receiver, type_id receiver_type)
+      -> void {
+    wire_leaf_queue();
+    const auto payload = pending_method_calls_.size();
+    pending_method_calls_.push_back(pending_method_call{
+        .call = &call,
+        .receiver = &receiver,
+        .method_name = method.decl->name,
+        .receiver_type = receiver_type,
+        .span = call.span,
+        .file = file_id_,
+        .module = module_,
+        .in_const_generic_template = in_const_generic_template_,
+        .in_type_generic_template = in_type_generic_template_});
+    auto watches = std::vector<type_id>{};
+    auto seen = std::unordered_set<type_id>{};
+    collect_type_vars(receiver_type, watches, seen);
+    leaf_queue_.add(infer::obligation{
+        .kind = infer::obligation_kind::method_call,
+        .watches = std::move(watches),
+        .goal = std::format("`{}` on `{}`", method.decl->name,
+                            types_.display(receiver_type)),
+        .why = infer::k_no_cause,
+        .payload = payload});
+  }
+
+  /// Registers the resolvers. Lazy because they close over `this`.
+  auto wire_leaf_queue() -> void {
+    if (leaf_queue_wired_) {
+      return;
+    }
+    leaf_queue_wired_ = true;
+    leaf_queue_.set_resolver(
+        infer::obligation_kind::method_call,
+        [this](const infer::obligation &goal) -> infer::obligation_report {
+          return resolve_deferred_method_call(
+              pending_method_calls_[goal.payload]);
+        });
+  }
+
+  /// Runs one deferred method call, under the context it was deferred from.
+  auto resolve_deferred_method_call(const pending_method_call &deferred)
+      -> infer::obligation_report {
+    const auto settled = settle(deferred.receiver_type);
+    if (mentions_type_var(settled)) {
+      return infer::obligation_report{
+          .outcome = infer::obligation_outcome::waiting,
+          .detail =
+              std::format("the receiver of `{}` is still `{}`",
+                          deferred.method_name, types_.display(settled))};
+    }
+
+    const auto saved_file = file_id_;
+    const auto *saved_module = module_;
+    const auto saved_const_template = in_const_generic_template_;
+    const auto saved_type_template = in_type_generic_template_;
+    file_id_ = deferred.file;
+    module_ = deferred.module;
+    in_const_generic_template_ = deferred.in_const_generic_template;
+    in_type_generic_template_ = deferred.in_type_generic_template;
+
+    // The settled receiver's own entry, not the open one's: `list[?a]` and
+    // `list[int32]` are different entries with different method tables, and
+    // the settled one is the one the call actually means.
+    const auto &entry = types_.entry(settled);
+    if (const auto *method = find_method(entry, deferred.method_name, settled);
+        method != nullptr && !mentions_type_param(settled)) {
+      auto bindings = std::unordered_map<std::string, type_id>{};
+      unify_rigid(method->impl_target_pattern, settled, bindings);
+      solve_impl_value_params(*method, settled, bindings);
+      auto scoped_params = method->fixed_type_params;
+      scoped_params.insert(bindings.begin(), bindings.end());
+      auto solution = generic_solution{};
+      carry_impl_value_slots(*method, bindings, solution);
+      solution.suffix = std::format("${}", mangle_type_for_instance(settled));
+      (void)finish_impl_generic_method_call(*deferred.call, *method, entry.name,
+                                            *deferred.receiver, settled,
+                                            bindings, scoped_params, solution);
+    }
+
+    file_id_ = saved_file;
+    module_ = saved_module;
+    in_const_generic_template_ = saved_const_template;
+    in_type_generic_template_ = saved_type_template;
+    return infer::obligation_report{
+        .outcome = infer::obligation_outcome::discharged, .detail = {}};
+  }
+
   /// Drains both deferred queues until neither has anything left.
   ///
   /// They feed each other, so neither can be drained once. Wiring a leaf
@@ -5931,6 +6090,19 @@ private:
     while (!pending_leaf_literals_.empty() || !pending_instances_.empty()) {
       flush_leaf_literals();
       flush_pending_instances();
+    }
+    // Deferred method calls last: every leaf that is ever going to be solved
+    // has been by now, so a call still waiting here is one nothing answers.
+    // A failure is not reported from here — the receiver's own literal has
+    // already said "cannot tell what an empty `[]` is a list of", which is
+    // the same mistake in the words the user can act on.
+    if (leaf_queue_wired_) {
+      (void)leaf_queue_.flush();
+      // Running a call can request instances and wire literals of its own.
+      while (!pending_leaf_literals_.empty() || !pending_instances_.empty()) {
+        flush_leaf_literals();
+        flush_pending_instances();
+      }
     }
   }
 
@@ -10600,8 +10772,38 @@ private:
           std::format("${}", mangle_type_for_instance(receiver_type));
     }
 
-    const auto name = std::format("{}::{}{}", receiver_entry.name,
-                                  method.decl->name, solution.suffix);
+    // Still open after the arguments have had their say: `xs.len()` on a
+    // `list[?a]` that nothing has pinned *yet*. There is no instance to name
+    // — `len$list___` is named for a variable, and is a function nothing
+    // ever compiles — but there is no error either, because a `push` later
+    // in the body may still answer. The decision waits (phase 4's queue),
+    // and `flush_deferred` runs it once `?a` is solved.
+    if (mentions_type_var(receiver_type)) {
+      defer_method_call(call, method, receiver, receiver_type);
+      return substitute_solved(signature_return_type(*method.decl, method.owner,
+                                                     method.block_type_params),
+                               bindings);
+    }
+
+    return finish_impl_generic_method_call(call, method, receiver_entry.name,
+                                           receiver, receiver_type, bindings,
+                                           scoped_params, solution);
+  }
+
+  /// Names the instance and records the callee — the *elaboration* half of
+  /// `check_impl_generic_method_call`, split out because it is exactly the
+  /// half that has to wait when the receiver is still open, and is therefore
+  /// what the `method_call` obligation's resolver runs.
+  auto finish_impl_generic_method_call(
+      const ast::call_expr &call, const method_entry &method,
+      std::string_view receiver_name, const ast::expr &receiver,
+      type_id receiver_type,
+      const std::unordered_map<std::string, type_id> &bindings,
+      const std::unordered_map<std::string, type_id> &scoped_params,
+      const generic_solution &solution) -> std::optional<type_id> {
+    const auto name =
+        std::format("{}::{}{}", receiver_name, method.decl->name,
+                    solution.suffix);
     const auto *instance = find_or_check_generic_instance(
         call, *method.decl, method.owner, method.file_id, solution, name,
         &scoped_params, receiver_type, method.block_type_params);
