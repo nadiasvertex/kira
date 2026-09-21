@@ -945,6 +945,31 @@ public:
             -> std::optional<std::pair<std::string, std::string>> {
           return resolve_variant_tag(node);
         });
+    // A default is a candidate the queue offers once everything else has
+    // stalled, not a rule inside the solver. The candidate travels in the
+    // obligation's payload, so this resolver does not know what `int32` is
+    // for or which leaf asked — which is what keeps "an unconstrained
+    // integer literal is `int32`" a statement about the language rather than
+    // a branch in the unifier.
+    leaf_goals_.set_resolver(
+        infer::obligation_kind::defaulting,
+        [this](const infer::obligation &goal) -> infer::obligation_report {
+          const auto leaf = goal.watches.front();
+          if (leaf_ctxt_.find(leaf) != leaf) {
+            // Something real arrived while this was waiting. The default
+            // loses, which is the only reason it is last.
+            return {.outcome = infer::obligation_outcome::discharged};
+          }
+          const auto candidate = static_cast<type_id>(goal.payload);
+          // A candidate that will not bind has simply lost — it is a *last
+          // resort*, not a requirement, so "this default does not apply
+          // here" is a discharge and not a failure. Reporting it as a
+          // failure aborts the whole flush, and every later literal that
+          // would have taken `int32` is left open by the one that could
+          // not: one leaf's refusal became every leaf's.
+          (void)leaf_ctxt_.bind(leaf, candidate, infer::k_no_cause);
+          return {.outcome = infer::obligation_outcome::discharged};
+        });
   }
 
   /// Entry point: validates impl coherence session-wide, then checks every
@@ -1010,7 +1035,7 @@ public:
       type = types_.erase_refinements(settle(type));
     }
     for (auto &[node, dispatch] : interp_dispatches_) {
-      dispatch.value_type = types_.erase_refinements(dispatch.value_type);
+      dispatch.value_type = types_.erase_refinements(settle(dispatch.value_type));
     }
     // Precompute which interned types carry a view, before `types_` is moved
     // out below — the borrow checker reads this to track view-borrow lifetimes.
@@ -1882,6 +1907,33 @@ private:
       }
     }
     return entry.result == id || type_params_in_scope_impl(entry.result, seen);
+  }
+
+  /// The type `id` has, at a point where it has to be a type.
+  ///
+  /// Zonk first, so a leaf a real constraint already solved reads as that
+  /// answer. Only if one is *still* open is the queue run, and defaulting
+  /// inside it is attempted only once every other obligation has stalled,
+  /// one candidate at a time — so this is a last resort being spent, not a
+  /// guess being made.
+  ///
+  /// Where to call it is the whole design. Not at the leaf, which is what
+  /// the old inline `int32` did and why it was wrong so often; at each point
+  /// the checker genuinely cannot proceed without a type — solving a call's
+  /// generic parameters, resolving a method on a receiver — and, at a call,
+  /// only *after* the arguments have been checked, since checking them is
+  /// what usually supplies the answer.
+  auto demand(type_id id) -> type_id {
+    if (leaf_ctxt_.meta_count() == 0) {
+      return id;
+    }
+    const auto settled = leaf_ctxt_.zonk(id);
+    auto seen = std::unordered_set<type_id>{};
+    if (!mentions_type_var(settled, seen)) {
+      return settled;
+    }
+    (void)leaf_queue_.flush();
+    return leaf_ctxt_.zonk(settled);
   }
 
   /// Teaches the leaf unknowns what a value flowing into a declared type says
@@ -5802,6 +5854,9 @@ private:
   struct pending_leaf_literal {
     const ast::array_expr *literal = nullptr;
     type_id element = k_unknown_type;
+    /// `nullopt` for `[v; n]` with a count only known at runtime, which is
+    /// what `wire_default_list` distinguishes on. An empty `[]` is `0`.
+    std::optional<uint64_t> count = 0;
     source_span span;
     file_id_type file = 0;
     /// The context the wiring was deferred *from*, restored before it runs.
@@ -5865,6 +5920,31 @@ private:
     bool in_type_generic_template = false;
   };
   std::vector<pending_method_call> pending_method_calls_;
+
+  /// The obligations the leaves raise, and the fixpoint that discharges them.
+  ///
+  /// Only `defaulting` is wired today. The queue is still the right home for
+  /// it rather than a list of "unsolved literals, bind them at the end":
+  /// `flush` runs defaults *one at a time, each followed by another full
+  /// fixpoint*, which is the difference between a last resort and a race. An
+  /// integer literal defaulted to `int32` can be the thing that solves the
+  /// variable a second literal was waiting on, and that second literal must
+  /// then take the answer it was given rather than its own default.
+
+  /// An integer literal whose type nothing has said yet, with the leaf
+  /// standing for it.
+  ///
+  /// The fit check travels with it because it can no longer run at the
+  /// literal: `let x = 300` is only too large for an `int8` once something
+  /// has said `int8`, and until the fixpoint settles nothing has said
+  /// anything.
+  struct pending_leaf_literal_value {
+    const ast::literal_expr *literal = nullptr;
+    type_id leaf = k_unknown_type;
+    bool negated = false;
+    file_id_type file = 0;
+  };
+  std::vector<pending_leaf_literal_value> pending_leaf_values_;
 
   /// Clones and names a generic instance, and queues its body to be checked.
   ///
@@ -6012,6 +6092,18 @@ private:
   /// `src/std/list.kira`, which is a diagnostic about the compiler's
   /// internals for a mistake in the user's own line.
   auto flush_leaf_literals() -> void {
+    // Everything else first, then the defaults, one at a time. A literal
+    // that gets its type from a real constraint must never have been
+    // answered by `int32` before that constraint arrived.
+    //
+    // The failure case is deliberately ignored: `defaulting` is the only
+    // kind wired, and its candidate is refused only when the leaf already
+    // holds an incompatible solution — in which case the mismatch was
+    // reported where the value met the declared type, and this would be a
+    // second diagnostic for one mistake.
+    (void)leaf_queue_.flush();
+    flush_leaf_values();
+
     auto pending = std::vector<pending_leaf_literal>{};
     pending.swap(pending_leaf_literals_);
     const auto saved_file = file_id_;
@@ -6035,7 +6127,7 @@ private:
             "the elements it should hold.");
         continue;
       }
-      wire_default_list(*leaf.literal, element, /*count=*/0);
+      wire_default_list(*leaf.literal, element, leaf.count);
     }
     file_id_ = saved_file;
     module_ = saved_module;
@@ -6134,6 +6226,13 @@ private:
     // Leaf literals first, because a leaf minted in one function can be
     // pinned by a constraint in another in the same file, so they have to be
     // settled before anything reads a type off them.
+    // Unconditionally, and before the loop: most leaves belong to no
+    // deferred literal at all — an integer literal in an ordinary statement
+    // is one — so gating the queue on there being a pending literal leaves
+    // every one of them open, to be discovered by lowering as "no concrete
+    // checked type is available for this node".
+    (void)leaf_queue_.flush();
+    flush_leaf_values();
     while (!pending_leaf_literals_.empty() || !pending_instances_.empty()) {
       flush_leaf_literals();
       flush_pending_instances();
@@ -6151,6 +6250,27 @@ private:
         flush_pending_instances();
       }
     }
+  }
+
+  /// Runs the range check on every integer literal whose type was still open
+  /// at the literal itself.
+  ///
+  /// This is the half of literal checking that had to move with the type. A
+  /// range is a fact about a *type*, so `let x = 300` is a mistake only once
+  /// something says `int8`, and before the fixpoint has settled nothing has
+  /// said anything. Checking eagerly against the default is how a literal
+  /// about to be given a wider type got refused for not fitting one nobody
+  /// asked for.
+  auto flush_leaf_values() -> void {
+    auto pending = std::vector<pending_leaf_literal_value>{};
+    pending.swap(pending_leaf_values_);
+    const auto saved_file = file_id_;
+    for (const auto &value : pending) {
+      file_id_ = value.file;
+      check_integer_fit(*value.literal, leaf_ctxt_.zonk(value.leaf),
+                        value.negated);
+    }
+    file_id_ = saved_file;
   }
 
   auto flush_pending_instances() -> void {
@@ -6421,6 +6541,33 @@ private:
                                          : std::nullopt;
   }
 
+  /// Substitutes leaf solutions into a call's solved bindings, applying the
+  /// queue's last resort to any that are still open.
+  ///
+  /// Two steps, and the order is the point. Zonk first, so a leaf a real
+  /// constraint already solved reads as that answer. Only if one is *still*
+  /// open is the fixpoint run — and defaulting inside it is attempted only
+  /// after every other obligation has stalled, one candidate at a time.
+  auto settle_bindings(std::unordered_map<std::string, type_id> &bindings)
+      -> void {
+    if (leaf_ctxt_.meta_count() == 0) {
+      return;
+    }
+    auto still_open = false;
+    for (auto &[name, bound] : bindings) {
+      bound = leaf_ctxt_.zonk(bound);
+      auto seen = std::unordered_set<type_id>{};
+      still_open = still_open || mentions_type_var(bound, seen);
+    }
+    if (!still_open) {
+      return;
+    }
+    (void)leaf_queue_.flush();
+    for (auto &[name, bound] : bindings) {
+      bound = leaf_ctxt_.zonk(bound);
+    }
+  }
+
   /// Solves every one of `decl`'s compile-time parameters for one call.
   ///
   /// There are three places an answer can come from, tried in this order
@@ -6459,6 +6606,20 @@ private:
                       decl.name));
       return std::nullopt;
     }
+
+    // A call is a point of *demand*: this is where a type has to be a type,
+    // because the answer names an instance to compile. If the arguments
+    // solved a parameter to a leaf that is still open, the constraints that
+    // were going to arrive have all arrived — so this is the moment the
+    // queue's last resort is owed, and `flush` is what decides whether there
+    // is one. An open `[]`'s element leaf has no candidate and stays open,
+    // which is right: nothing about this call says what it holds either.
+    //
+    // Running the fixpoint *here* rather than at the literal is the whole
+    // difference. `binary_search(&haystack[0..5], 5)` solves `T` from the
+    // slice, and the `5` takes the answer; only a literal that reaches a
+    // demand with nothing else to say falls back to `int32`.
+    settle_bindings(type_bindings);
 
     auto solution = generic_solution{};
     for (size_t i = 0; i < decl.type_params.size(); ++i) {
@@ -6609,16 +6770,26 @@ private:
   /// int32`, and a `v: array[int32, n]` parameter given an `array[int32, 3]`
   /// solves `n := 3`. Shared by the free-function and receiver-call paths,
   /// which differ only in which parameters they hand it.
+  ///
+  /// `may_default` marks this as the *authoritative* solve — the one whose
+  /// answer names an instance and whose failure is reported. Only there may
+  /// a still-open leaf be handed to the obligation queue's last resort; the
+  /// preliminary pass runs partway through checking the arguments, where a
+  /// default would answer before the argument that was about to say
+  /// otherwise.
   auto
   solve_from_argument_types(const ast::call_expr &call,
                             const std::vector<fn_param_info> &params,
                             std::unordered_map<std::string, type_id> &bindings,
-                            const ast::expr *ufcs_receiver = nullptr) -> void {
+                            const ast::expr *ufcs_receiver = nullptr,
+                            bool may_default = false) -> void {
     const auto mapping = call_argument_mappings_.find(&call);
     if (mapping == call_argument_mappings_.end()) {
       return;
     }
     const auto &args_by_param = mapping->second.args_by_param;
+    auto arg_types = std::vector<type_id>(params.size(), k_unknown_type);
+    auto open_leaf = false;
     for (size_t i = 0; i < params.size(); ++i) {
       const auto *argument = ufcs_argument_for(i, args_by_param, ufcs_receiver);
       if (argument == nullptr) {
@@ -6629,18 +6800,30 @@ private:
         continue;
       }
       // Through the leaf store: a `list[?a]` whose `?a` a `push` already
-      // pinned is a `list[int32]` here, and reading the raw recorded type
-      // instead binds `T := ?a` — a parameter recorded as *solved to a
-      // variable*. Nothing is solved by that, but the binding map cannot
-      // tell the difference, so the later argument that would have answered
-      // it is never consulted and the call reports `T` unsolved having
-      // discarded the one thing that would have solved it.
-      const auto arg_type = settle(found->second);
+      // pinned is a `list[int32]` here. Reading the raw recorded type binds
+      // `T := ?a`, a parameter recorded as *solved to a variable*, which the
+      // binding map cannot tell from a real answer.
+      arg_types[i] = settle(found->second);
       auto seen = std::unordered_set<type_id>{};
-      if (mentions_type_var(arg_type, seen)) {
+      open_leaf = open_leaf || mentions_type_var(arg_types[i], seen);
+    }
+    // A call is a point of *demand*: the answer names an instance to
+    // compile, so a type has to be a type here. Every constraint that was
+    // going to arrive has arrived, so the queue's last resort is owed.
+    // `pick(1, 2)` gets `int32` this way; an open `[]` has no candidate and
+    // stays open.
+    if (open_leaf && may_default) {
+      for (auto &arg : arg_types) {
+        arg = demand(arg);
+      }
+    }
+    for (size_t i = 0; i < params.size(); ++i) {
+      auto seen = std::unordered_set<type_id>{};
+      if (types_.is_unknown(arg_types[i]) ||
+          mentions_type_var(arg_types[i], seen)) {
         continue;
       }
-      unify_rigid(params[i].type, arg_type, bindings);
+      unify_rigid(params[i].type, arg_types[i], bindings);
     }
   }
 
@@ -6778,7 +6961,8 @@ private:
       const explicit_generic_args &explicit_args,
       const ast::expr *ufcs_receiver = nullptr) -> std::optional<type_id> {
     auto type_bindings = std::unordered_map<std::string, type_id>{};
-    solve_from_argument_types(call, params, type_bindings, ufcs_receiver);
+    solve_from_argument_types(call, params, type_bindings, ufcs_receiver,
+                              /*may_default=*/true);
     // Between the arguments and the expected type, because a bound is solved
     // *from* an argument-derived binding (`I` answers `T` via
     // `where I: iterator[T]`) and should still lose to an explicit annotation
@@ -7958,6 +8142,50 @@ private:
     mark_error();
   }
 
+  /// An integer literal nothing has yet said the type of.
+  ///
+  /// Phase 9 of `spec/inference-rewrite.md`. Before it, this returned
+  /// `int32` on the spot — a decision made at the leaf, from no evidence,
+  /// and irrevocable. `int32` is usually right, which is exactly what made
+  /// it expensive: every place it was wrong became its own repair, and the
+  /// `in_type_generic_template_` gate just above is one of them, still
+  /// needed only because the eager answer had to be suppressed somewhere.
+  ///
+  /// Now the literal mints a leaf and raises a `defaulting` obligation whose
+  /// candidate is `int32`. Real constraints — a later argument, a return, an
+  /// annotated binding — reach `type_mismatch` and solve it. `int32` is
+  /// applied only once the fixpoint has stalled, which is the whole meaning
+  /// of "last resort" and the reason the rule is now visible in a diagnostic
+  /// rather than implicit in the order the checker happened to walk.
+  ///
+  /// Only when `expected` says *nothing*. An expected type that is wrong for
+  /// an integer (a struct, say) is still evidence — it is the mistake about
+  /// to be reported — so it keeps the old answer and the old message.
+  auto open_integer_literal(const ast::literal_expr &lit, type_id expected,
+                            bool negated) -> type_id {
+    if (!types_.is_unknown(expected)) {
+      const auto fallback = types_.builtin("int32");
+      check_integer_fit(lit, fallback, negated);
+      return fallback;
+    }
+    const auto leaf = leaf_ctxt_.fresh_type(
+        "the type of this integer literal",
+        source_location{.file_id = file_id_, .span = lit.span});
+    pending_leaf_values_.push_back(
+        pending_leaf_literal_value{.literal = &lit,
+                                   .leaf = leaf,
+                                   .negated = negated,
+                                   .file = file_id_});
+    leaf_goals_.add(infer::obligation{
+        .kind = infer::obligation_kind::defaulting,
+        .watches = {leaf},
+        .goal = std::format("a type for the integer literal `{}`", lit.value),
+        .why = infer::k_no_cause,
+        .payload = static_cast<uint64_t>(types_.builtin("int32")),
+    });
+    return leaf;
+  }
+
   /// Types a literal expression. An integer or float literal adopts the
   /// expected numeric type when one is given (checking integer fit),
   /// otherwise defaults to `int32`/`float64` per the language's literal
@@ -7997,9 +8225,7 @@ private:
           types_.entry(stripped).kind == type_kind::type_param_kind) {
         return stripped;
       }
-      const auto fallback = types_.builtin("int32");
-      check_integer_fit(lit, fallback, negated);
-      return fallback;
+      return open_integer_literal(lit, stripped, negated);
     }
     case token_kind::float_lit: {
       const auto stripped = strip_refs(expected);
@@ -8235,7 +8461,17 @@ private:
     const auto raw_rhs = binary.rhs != nullptr
                              ? infer_expr(*binary.rhs, rhs_expected)
                              : k_unknown_type;
-    const auto rhs = base_shape(raw_rhs);
+    auto rhs = base_shape(raw_rhs);
+    // Arithmetic is a point of demand: the operator is selected from the
+    // operand type. The operands are tied together first (`a / b` says they
+    // agree), and only then is the last resort spent on what is left open.
+    auto lhs_settled = lhs;
+    if (leaf_ctxt_.meta_count() != 0) {
+      solve_leaves(lhs_settled, rhs);
+      lhs_settled = demand(lhs_settled);
+      rhs = demand(rhs);
+    }
+    const auto lhs_final = lhs_settled;
     const auto op_name = ast::binary_op_name(binary.op);
     if (binary.lhs != nullptr && needs_explicit_deref(raw_lhs)) {
       report_missing_deref(*binary.lhs, raw_lhs);
@@ -8251,29 +8487,29 @@ private:
       return in_type_generic_template_ &&
              types_.entry(id).kind == type_kind::type_param_kind;
     };
-    if (types_.is_unknown(lhs) || types_.is_unknown(rhs) ||
-        is_deferred_type_param(lhs) || is_deferred_type_param(rhs)) {
+    if (types_.is_unknown(lhs_final) || types_.is_unknown(rhs) ||
+        is_deferred_type_param(lhs_final) || is_deferred_type_param(rhs)) {
       // Same deferral as `infer_literal`'s type-param guard: an operand
       // still an unresolved type parameter (the generic template pass, `T`
       // unbound) isn't proven non-numeric — checking whether it implements
       // an operator-overload trait has to wait for a concrete instantiation
       // the same way the literal bounds-check does.
-      return types_.is_numeric(lhs)        ? lhs
+      return types_.is_numeric(lhs_final)        ? lhs_final
              : types_.is_numeric(rhs)      ? rhs
-             : is_deferred_type_param(lhs) ? lhs
+             : is_deferred_type_param(lhs_final) ? lhs_final
              : is_deferred_type_param(rhs) ? rhs
                                            : k_unknown_type;
     }
 
     const auto trait_name = operator_trait_for(binary.op);
-    if (!types_.is_numeric(lhs)) {
+    if (!types_.is_numeric(lhs_final)) {
       if (!trait_name.empty()) {
-        return require_operand_trait(binary, lhs, trait_name, op_name,
+        return require_operand_trait(binary, lhs_final, trait_name, op_name,
                                      /*wire_dispatch=*/true);
       }
       error(binary.span,
             std::format("operator `{}` requires numeric operands, found `{}`",
-                        op_name, types_.display(lhs)),
+                        op_name, types_.display(lhs_final)),
             "not a numeric value");
       return k_error_type;
     }
@@ -8284,23 +8520,23 @@ private:
             "not a numeric value");
       return k_error_type;
     }
-    if (lhs != rhs) {
+    if (lhs_final != rhs) {
       auto diag = diagnostic(
           diagnostic_level::error,
           std::format("mismatched numeric types `{}` and `{}` in `{}` "
                       "expression",
-                      types_.display(lhs), types_.display(rhs), op_name),
+                      types_.display(lhs_final), types_.display(rhs), op_name),
           file_id_);
       diag.with_label(binary.span, "operands must have the same numeric type");
       diag.with_help(std::format(
           "Kira never converts numbers implicitly; convert one side "
           "explicitly, e.g. `{}(...)`.",
-          types_.display(lhs)));
+          types_.display(lhs_final)));
       emit_diag(diag);
       mark_error();
       return k_error_type;
     }
-    return lhs;
+    return lhs_final;
   }
 
   /// Types `==`/`!=` (`is_equality`) or `<`/`<=`/`>`/`>=`: operands must be
@@ -10605,7 +10841,9 @@ private:
     check_call_preconditions(call, *method.decl, params);
 
     auto bindings = std::unordered_map<std::string, type_id>{};
-    solve_from_argument_types(call, params, bindings);
+    solve_from_argument_types(call, params, bindings,
+                              /*ufcs_receiver=*/nullptr,
+                              /*may_default=*/true);
 
     const auto *instance =
         instantiate_hk_method(call, method, target_type_name, bindings,
@@ -11674,7 +11912,13 @@ private:
       return *qualified;
     }
 
-    const auto object = strip_refs(infer_expr(*field.object, k_unknown_type));
+    // A method lookup is a point of demand: the impl is chosen by the
+    // receiver's type, so `b32.get()` on a `boxed[?a]` has to know what `?a`
+    // is before it can know which `get` it means. No argument is going to
+    // say — a receiver is not solved by the call's arguments the way a
+    // generic parameter is — so this is where the last resort is owed.
+    const auto object =
+        demand(strip_refs(infer_expr(*field.object, k_unknown_type)));
     const auto &entry = types_.entry(object);
     // `b.take[int64](5)`: the grammar's `"." IDENT "[" type_arg_list "]"`
     // suffix, which the parser has always built and the checker used to
@@ -12061,7 +12305,9 @@ private:
     check_call_preconditions(call, *method->decl, params);
 
     auto bindings = std::unordered_map<std::string, type_id>{};
-    solve_from_argument_types(call, params, bindings);
+    solve_from_argument_types(call, params, bindings,
+                              /*ufcs_receiver=*/nullptr,
+                              /*may_default=*/true);
 
     // A `static def` carried by a generic impl block. Checked before the
     // method's own `type_params` are consulted, because the parameter that
@@ -14448,7 +14694,7 @@ private:
     // variable, the program type-checks, and lowering is handed a node with
     // no concrete type (`codegen_stress/093`).
     const auto object =
-        settle(base_shape(infer_expr(*index.object, k_unknown_type)));
+        demand(base_shape(infer_expr(*index.object, k_unknown_type)));
     const auto &entry = types_.entry(object);
     const auto key =
         index.index != nullptr
@@ -16688,6 +16934,32 @@ private:
                     "Give `n` type `usize`, or convert it at the literal."));
   }
 
+  /// Defers a literal whose element type still carries an open leaf.
+  ///
+  /// `[1, 2, 3]` and `[7; n]` alike: wiring one now names
+  /// `list::from_array$3$list___` or `list::new$list___`, an instance of a
+  /// type no value has. The empty `[]` is the same situation with the leaf
+  /// minted here rather than inherited from an element, so one deferral
+  /// covers all three. `true` when it was deferred and the caller should
+  /// answer with the list type and stop.
+  auto defer_open_literal(const ast::array_expr &array, type_id element,
+                          std::optional<uint64_t> count) -> bool {
+    auto seen = std::unordered_set<type_id>{};
+    if (!mentions_type_var(element, seen)) {
+      return false;
+    }
+    pending_leaf_literals_.push_back(pending_leaf_literal{
+        .literal = &array,
+        .element = element,
+        .count = count,
+        .span = array.span,
+        .file = file_id_,
+        .module = module_,
+        .in_const_generic_template = in_const_generic_template_,
+        .in_type_generic_template = in_type_generic_template_});
+    return true;
+  }
+
   auto infer_array(const ast::array_expr &array, type_id expected) -> type_id {
     // A user collection that says what a literal of it means: check the
     // elements against its element type, then answer with the collection.
@@ -16789,6 +17061,9 @@ private:
       // `list` is the default choice"). An `array` is spelled by asking for
       // one, which is what `expected_is_array` below serves.
       if (!expected_is_array && types_.is_unknown(strip_refs(expected))) {
+        if (defer_open_literal(array, element, count)) {
+          return resolve_list_type(element);
+        }
         return wire_default_list(array, element, count);
       }
       const auto length = count.has_value()
@@ -16834,6 +17109,15 @@ private:
     // surface as "cannot tell which `T` this call to `push` means" pointing
     // into `src/std/list.kira`: a diagnostic about the standard library's
     // internals for a mistake in the user's own line.
+    // A literal whose element type still carries an open leaf — `[1, 2, 3]`
+    // with nothing yet saying what the `1` is. Wiring it now names
+    // `list::from_array$3$list___`, an instance of a type no value has; the
+    // empty `[]` below is the same situation with the leaf minted here
+    // rather than inherited from an element. One deferral covers both.
+    if (defer_open_literal(array, element,
+                           std::optional<uint64_t>{array.elements.size()})) {
+      return resolve_list_type(element);
+    }
     if (array.elements.empty() && types_.is_unknown(element)) {
       // Phase 8: the literal stands for `list[?a]` and waits. Whatever the
       // binding later flows into — a `push`, a return, an argument — meets
@@ -17513,7 +17797,10 @@ private:
     if (index.object == nullptr) {
       return std::nullopt;
     }
-    const auto object = base_shape(infer_expr(*index.object, k_unknown_type));
+    // Indexing selects an impl from the container's type, so it is a point
+    // of demand for the same reason a method call is.
+    const auto object =
+        demand(base_shape(infer_expr(*index.object, k_unknown_type)));
     const auto &entry = types_.entry(object);
     if (entry.kind != type_kind::struct_kind &&
         entry.kind != type_kind::sum_kind &&
