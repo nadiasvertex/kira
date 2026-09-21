@@ -1003,6 +1003,13 @@ struct checked_types {
   /// does a trait default, and skips the templates they came from (a template
   /// has no runtime form of its own).
   std::vector<const_generic_instance> const_generic_instances;
+  /// Functions with an unannotated parameter their own body leaves open
+  /// (`def double(x): return x + x`). Such a parameter is an implicit type
+  /// parameter, so the function has no runtime form of its own: the checker
+  /// monomorphized an instance per call type, registered in
+  /// `const_generic_instances`, and `hir::lower_module` skips these
+  /// templates exactly as it skips an explicit generic.
+  std::unordered_set<const ast::func_decl *> open_param_templates;
   /// Every free, module-level `static def` registered with `comptime::
   /// evaluator` for compile-time calling (`checker::register_comptime_
   /// globals`'s `register_pending_function` call) — as opposed to an

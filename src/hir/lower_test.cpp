@@ -192,21 +192,36 @@ auto test_lowers_fully_annotated_function() -> void {
 }
 
 auto test_rejects_unannotated_parameter_with_specific_error() -> void {
-  // Per spec/kira-reference.md, `x` here is legally unannotated and the
-  // checker infers its usage type locally — but the first lowering
-  // milestone explicitly only lowers *explicitly* annotated signatures
-  // (spec/typed-ir-design.md Decision 1), so this must be rejected, not
-  // silently skipped or lowered with a guessed type.
+  // `x` is legally unannotated, and `probe`'s body only hands it to a
+  // generic, so nothing pins its type: `probe` is an implicit generic. It has
+  // no single body to lower, only the per-call instances the checker makes,
+  // so lowering the template itself must be refused — not skipped, and not
+  // lowered with a guessed type.
   auto fixture = check_fixture("module sample\n"
-                               "def double(x) -> int32:\n"
-                               "    return x * 2\n");
-  const auto &decl = find_func(*fixture.ast_file, "double");
+                               "def width[T](v: T) -> int32:\n"
+                               "    return 4\n"
+                               "def probe(x) -> int32:\n"
+                               "    return width(x)\n");
+  const auto &decl = find_func(*fixture.ast_file, "probe");
 
   auto result = hir::lower_function(decl, fixture.checked);
   expect(!result.has_value(),
          "expected a function with an unannotated parameter to be rejected");
   expect(result.error().kind == hir::lowering_error_kind::unannotated_parameter,
          "expected the specific unannotated_parameter error kind");
+}
+
+auto test_lowers_unannotated_parameter_the_body_pins() -> void {
+  // Here the body pins `x`: `x * 2` is returned as an `int32`, so `x` is an
+  // `int32` and `double` is an ordinary function.
+  auto fixture = check_fixture("module sample\n"
+                               "def double(x) -> int32:\n"
+                               "    return x * 2\n");
+  const auto &decl = find_func(*fixture.ast_file, "double");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a parameter the body pins to lower like an annotated one");
 }
 
 auto test_rejects_function_without_declared_return_type() -> void {
@@ -2746,6 +2761,7 @@ auto main() -> int {
   try {
     test_lowers_fully_annotated_function();
     test_rejects_unannotated_parameter_with_specific_error();
+    test_lowers_unannotated_parameter_the_body_pins();
     test_rejects_function_without_declared_return_type();
     test_preserves_source_spans();
     test_lowers_compact_expression_body();

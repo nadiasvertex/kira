@@ -19,7 +19,7 @@ anywhere.
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | **Done** — `src/semantic/infer/blame.{h,cpp}`, `blame_test.cpp`, golden corpus at `src/testdata/inference_diagnostics/` |
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.kira` |
 | 7 | Constraint generation migrated onto the one unifier | **Done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; all three allowances retired |
-| 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **Partly done** — empty `[]` done (todo 20 closed for concrete code); unannotated params and literal defaulting are blocked on phase 9 and on wiring `method_call` obligations, and should be reattempted after them |
+| 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **Done** — empty `[]`, integer-literal defaulting, and unannotated parameters (implicit generics, phase 8b below) |
 | 9 | Generic bodies checked once, abstractly | **Partly done** — the template/instance boundary is fixed and phase 8's acceptance test passes; the `in_*_template_` gates cannot come out until the second pass does (experiment recorded below) |
 
 ## Why
@@ -908,6 +908,55 @@ after, not before.
 
 Full suite: 36/36.
 
+### Phase 8b — unannotated parameters as implicit generics *(done)*
+
+An unannotated parameter is a leaf (`param_types_for`), and its own body says
+what it is — never a caller (`04-functions.md`). Once the body has been
+checked the function is one of two things, decided **once, before the
+defaulting flush** (`classify_param_decls`): a literal in the body (`x * 2`)
+must not default `x` to `int32` and turn a function generic over every number
+into an `int32` one.
+
+- **Pinned** (`wide(x)`, or a return annotation): an ordinary function. Each
+  call's argument is unified with the pinned type
+  (`resolve_open_param_calls(false)`, before any literal defaults, so
+  `narrow(3)` makes the `3` an `int64`).
+- **Open**: an implicit type parameter. Each call is monomorphized for its
+  own argument types — a clone of the declaration whose `param_types_for` cache
+  is *seeded* with those types, so no synthesized AST or hidden type
+  parameter is needed (`instantiate_open_param_call`, instance `probe$int64`).
+  Lowering skips the template (`checked_types::open_param_templates`).
+
+**The callee's body is not checked on demand.** The call is recorded
+(`pending_open_param_call`) and decided after the walk, when the callee has
+been checked wherever it lives. That is what makes the answer independent of
+file and function order without a quiet mode for bodies.
+
+**The probe.** A function with an unannotated parameter is checked once
+against the leaf to find out which case it is. What a body says about a
+still-open leaf is not a mistake (`bits(x)` on an open `x` is a call waiting
+for its instance), so that check's diagnostics are *held* and replayed only
+if the function turned out pinned; the deferred literal wiring and method
+calls it queued are dropped if it turned out open. Each instance is checked
+against concrete types and reports for real.
+
+Tests: `codegen_stress/096_unannotated_param_is_a_leaf.kira`
+(`# expect: 12800000017`), `check_test`'s
+`test_pinned_param_rejects_wrong_argument`, `lower_test`'s two unannotated
+cases. Verified failing without: the instance-name suffix, the literal skip,
+and the diagnostic hold.
+
+**Not done, deliberately:**
+- Only plain free-function calls are elaborated. A UFCS call
+  (`x.probe()`) or method on an open-param function still resolves to the
+  template.
+- An unannotated *return* type: lowering refuses it (it no longer crashes).
+- A generic template that is never called is not checked for errors, as with
+  explicit generics, since its first check's diagnostics are discarded.
+- No trait bounds are inferred; an instance is simply checked per type.
+  "Widest type the body permits" as a declared `where` clause waits for
+  phase 9's single abstract check.
+
 ### Phase 9 — abstract generic bodies *(the boundary is fixed; the gates are not)*
 
 **Phase 8's acceptance test passes.** The annotations are off `partition`'s
@@ -1199,7 +1248,7 @@ A ledger, not a feeling:
 | Ad-hoc `string -> type_id` binding maps | 67 | 0 |
 | `in_*_template_` gates | 6 | 0 |
 | Distinct inference solvers | 4 | 1 |
-| `param_usage_inferrer` | deleted (unannotated params are leaves; each call copies a still-open one) | deleted |
+| `param_usage_inferrer` | deleted; unannotated params are leaves, open ones monomorphized per call (phase 8b) | deleted |
 | Value slots solved rather than checked | no | yes |
 
 If a phase ends without moving one of those counts toward its target, it was

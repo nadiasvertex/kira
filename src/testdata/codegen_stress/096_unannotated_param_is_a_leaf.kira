@@ -1,0 +1,47 @@
+module codegen_stress.unannotated_param_is_a_leaf
+
+# expect: 12800000017
+
+# `probe`'s parameter has no annotation and its body only hands it to a
+# generic, which says nothing about its type: `x` is an implicit type
+# parameter, so each call compiles `probe` for its own argument type.
+# `probe(3)` is an `int32` instance and `probe(wide(2500000000))` an `int64`
+# one; a single shared instance would report the same width for both.
+#
+# `narrow`'s body passes `x` to an `int64` parameter, so the body itself pins
+# `x`, and the literal at the call must become an `int64` rather than
+# defaulting to `int32`.
+#
+# `fill_bits`'s `[]` is constrained only by the unannotated parameter, so it
+# is an implicit generic too, and its list is an `int32` list in one instance
+# and an `int64` list in the other.
+#
+# `# expect:` because both tiers would agree on a width decided too early.
+
+def wide(v: int64) -> int64:
+    return v
+
+def bits[T](v: T) -> int64:
+    if T.name() == "int64":
+        return 6400000000
+    return 6
+
+def fill_bits(n) -> int64:
+    var out = []
+    out.push(n)
+    return bits(n) + int64(out.len())
+
+def probe(x) -> int64:
+    return bits(x)
+
+def main() -> int64:
+    let small = probe(3)
+    let big = probe(wide(2500000000))
+    let pinned = narrow(3)
+    let filled = fill_bits(wide(1)) + fill_bits(1)
+    return small + big + pinned + filled
+
+# Declared after its caller on purpose: `main` is checked before `narrow`'s
+# body has said `int64`, so the literal can only be pinned once it has.
+def narrow(x) -> int64:
+    return wide(x)

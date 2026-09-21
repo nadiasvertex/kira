@@ -455,6 +455,12 @@ public:
     for (auto &[node, type] : node_types_) {
       type = types_.erase_refinements(settle(type));
     }
+    auto open_param_templates = std::unordered_set<const ast::func_decl *>{};
+    for (const auto &[decl, open] : open_param_decls_) {
+      if (open) {
+        open_param_templates.insert(decl);
+      }
+    }
     for (auto &[field, type] : struct_pattern_field_types_) {
       type = types_.erase_refinements(settle(type));
     }
@@ -507,6 +513,7 @@ public:
         .synthesized_decls = std::move(synthesized_decls_),
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
         .const_generic_instances = std::move(const_generic_instances_),
+        .open_param_templates = std::move(open_param_templates),
         .comptime_only_functions = std::move(comptime_only_functions_),
         .synthesized_functor_nodes = std::move(synthetic_nodes_),
         .functor_instances = std::move(functor_instance_decls_),
@@ -1154,6 +1161,11 @@ private:
   /// Marks the file currently being checked (`file_id_`) as containing an
   /// error, so later driver phases skip emitting metadata for it.
   auto mark_error() -> void {
+    // Held with the diagnostics it belongs to: `finish_param_probes` marks
+    // the file if it replays them, and a discarded probe must not fail it.
+    if (probe_capture_ != nullptr) {
+      return;
+    }
     if (static_cast<size_t>(file_id_) < file_has_errors_.size()) {
       file_has_errors_[file_id_] = true;
     }
@@ -1172,6 +1184,10 @@ private:
   /// refuted at `n == 3`, an index provably out of bounds) reads differently
   /// and still comes through.
   auto emit_diag(const diagnostic &diag) -> void {
+    if (probe_capture_ != nullptr) {
+      probe_capture_->push_back(diag);
+      return;
+    }
     auto key = std::format("{}|{}|{}", static_cast<int>(diag.level),
                            diag.file_id, diag.message);
     for (const auto &label : diag.labels) {
@@ -2261,14 +2277,14 @@ private:
       }
       display_name += trait_name;
       if (!args.empty()) {
-        display_name += "[";
+        display_name += '[';
         for (size_t i = 0; i < args.size(); ++i) {
           if (i != 0) {
             display_name += ", ";
           }
           display_name += types_.display(args[i]);
         }
-        display_name += "]";
+        display_name += ']';
       }
       bound.push_back(bound_trait_ref{.trait_name = trait_name,
                                       .trait_args = std::move(args)});
@@ -2973,7 +2989,7 @@ private:
       -> std::string {
     switch (expr.kind) {
     case ast::node_kind::literal_expr:
-      return std::string(dynamic_cast<const ast::literal_expr &>(expr).value);
+      return {dynamic_cast<const ast::literal_expr &>(expr).value};
     case ast::node_kind::ident_expr: {
       const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
       if (const auto it = subst.spellings.find(ident.name);
@@ -5087,6 +5103,27 @@ private:
         source_location{.file_id = decl_file, .span = decl.span}, &solved,
         is_generic_template(decl) ? &generic : nullptr);
     check_call_preconditions(call, decl, params);
+    // A call to a function with an unannotated parameter is elaborated only
+    // once that function's own body has said what the parameter is — see
+    // `resolve_open_param_calls`. `params` carries this call's private copy
+    // of each still-open parameter leaf, already tied to the arguments.
+    if (!skip_self && !in_const_generic_template_ &&
+        !in_type_generic_template_ && has_unannotated_params(decl) &&
+        is_free_function(decl, owner)) {
+      auto param_types = std::vector<type_id>{};
+      param_types.reserve(params.size());
+      for (const auto &param : params) {
+        param_types.push_back(param.type);
+      }
+      pending_open_param_calls_.push_back(
+          pending_open_param_call{.call = &call,
+                                  .decl = &decl,
+                                  .owner = owner,
+                                  .decl_file = decl_file,
+                                  .call_params = std::move(param_types),
+                                  .file = file_id_,
+                                  .module = module_});
+    }
     // Not from inside a template: a call there is written in terms of
     // parameters that are still symbols (`get(v, i)` inside a function generic
     // over `n` passes an `array[int32, n]`; `wrap(x)` inside one generic over
@@ -5358,6 +5395,9 @@ private:
     const module_members *module = nullptr;
     bool in_const_generic_template = false;
     bool in_type_generic_template = false;
+    /// Set when the body this literal is in turned out to be an implicit
+    /// generic (`classify_param_decls`): its instances mint their own.
+    bool skip = false;
   };
   std::vector<pending_leaf_literal> pending_leaf_literals_;
 
@@ -5456,7 +5496,8 @@ private:
       const generic_solution &solution, const std::string &name,
       const std::unordered_map<std::string, type_id> *fixed_type_params,
       type_id self_type = k_unknown_type,
-      const std::vector<ast::type_param> *block_type_params = nullptr)
+      const std::vector<ast::type_param> *block_type_params = nullptr,
+      const std::vector<type_id> *param_types = nullptr)
       -> const ast::func_decl * {
     const auto key =
         std::format("{}#{}", static_cast<const void *>(&decl), name);
@@ -5507,6 +5548,12 @@ private:
     const auto *instance = cloned->get();
     synthesized_decls_.push_back(std::move(*cloned));
     hk_instance_cache_.emplace(key, instance);
+    // An instance of a function with unannotated parameters is checked
+    // against the concrete types its call chose, not against leaves: seeding
+    // `param_types_for`'s cache is all that takes.
+    if (param_types != nullptr) {
+      inferred_param_types_[instance] = *param_types;
+    }
 
     // Recorded against the *caller's* file — the whole point of the note is
     // to name a line the user actually wrote, and by flush time `file_id_`
@@ -5599,6 +5646,9 @@ private:
     const auto saved_const_template = in_const_generic_template_;
     const auto saved_type_template = in_type_generic_template_;
     for (const auto &leaf : pending) {
+      if (leaf.skip) {
+        continue;
+      }
       const auto element = leaf_ctxt_.zonk(leaf.element);
       file_id_ = leaf.file;
       module_ = leaf.module;
@@ -5700,6 +5750,213 @@ private:
         .outcome = infer::obligation_outcome::discharged, .detail = {}};
   }
 
+  /// A call to a function whose parameter has no annotation, waiting for that
+  /// function's body to say what the parameter is.
+  ///
+  /// The spec's rule is that an unannotated parameter is inferred from its
+  /// *own function's body, never from a call site*. So a call cannot decide
+  /// anything until the callee has been checked, and the callee may be in a
+  /// file not walked yet — which is why the decision is deferred rather than
+  /// made by checking the callee's body on demand in the middle of another
+  /// function's walk. Two outcomes once the body has spoken:
+  ///
+  ///   - the body pinned the parameter (`wide(x)`): the function is an
+  ///     ordinary concrete one, and this call's argument must simply agree;
+  ///   - the body left it open (`x + x`): the parameter is an implicit type
+  ///     parameter, and this call gets an instance compiled for its argument.
+  struct pending_open_param_call {
+    const ast::call_expr *call = nullptr;
+    const ast::func_decl *decl = nullptr;
+    const module_members *owner = nullptr;
+    file_id_type decl_file = 0;
+    /// The types this call checked its arguments against; an unannotated
+    /// parameter's entry is this call's private copy of its leaf.
+    std::vector<type_id> call_params;
+    file_id_type file = 0;
+    const module_members *module = nullptr;
+  };
+  std::vector<pending_open_param_call> pending_open_param_calls_;
+  /// Whether each probed function's body left a parameter open — an
+  /// implicit generic — or pinned them all. Decided once, right after the
+  /// body is checked and *before* the literal-defaulting flush: an integer
+  /// literal in the body (`x * 2`) would otherwise default `x` to `int32`
+  /// and turn a function generic over every number into an `int32` one. A
+  /// pending call is only resolved once its callee is in here.
+  std::unordered_map<const ast::func_decl *, bool> open_param_decls_;
+  /// A probed function not classified yet, and the deferred work its body
+  /// queued (as index ranges into the two queues), which has to be dropped
+  /// if the function turns out to be an implicit generic: that work is about
+  /// a body checked against an open leaf, and each instance queues its own.
+  struct unclassified_param_decl {
+    const ast::func_decl *decl = nullptr;
+    size_t literal_begin = 0;
+    size_t literal_end = 0;
+    size_t call_begin = 0;
+    size_t call_end = 0;
+  };
+  std::vector<unclassified_param_decl> unclassified_param_decls_;
+
+  auto classify_param_decls() -> void {
+    for (const auto &probe : unclassified_param_decls_) {
+      const auto open =
+          has_open_param(*probe.decl, param_types_for(*probe.decl, module_));
+      open_param_decls_[probe.decl] = open;
+      if (!open) {
+        continue;
+      }
+      for (auto i = probe.literal_begin;
+           i < probe.literal_end && i < pending_leaf_literals_.size(); ++i) {
+        pending_leaf_literals_[i].skip = true;
+      }
+      for (auto i = probe.call_begin;
+           i < probe.call_end && i < pending_method_calls_.size(); ++i) {
+        pending_method_calls_[i].finish = [](type_id) -> void {};
+      }
+    }
+    unclassified_param_decls_.clear();
+  }
+
+  /// Whether any unannotated parameter of `decl` is still an open leaf.
+  auto has_open_param(const ast::func_decl &decl,
+                      const std::vector<type_id> &types) -> bool {
+    for (size_t i = 0; i < decl.params.size() && i < types.size(); ++i) {
+      if (decl.params[i].type_annotation == nullptr &&
+          types[i] != k_unknown_type && mentions_type_var(settle(types[i]))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Classifies pending calls whose callee body has been checked.
+  ///
+  /// With `instantiate` false, only the calls whose callee turned out
+  /// *concrete* are resolved (their arguments unified with the pinned types),
+  /// and they run before any literal is defaulted — `f(3)` where `f`'s body
+  /// says `int64` must make the `3` an `int64`, not answer `int32` first.
+  /// With it true, the calls whose callee is an implicit generic are
+  /// monomorphized, after defaulting has had its say about their arguments.
+  auto resolve_open_param_calls(bool instantiate) -> void {
+    auto remaining = std::vector<pending_open_param_call>{};
+    auto pending = std::vector<pending_open_param_call>{};
+    pending.swap(pending_open_param_calls_);
+    const auto saved_file = file_id_;
+    const auto saved_module = module_;
+    for (auto &item : pending) {
+      const auto classified = open_param_decls_.find(item.decl);
+      if (classified == open_param_decls_.end()) {
+        remaining.push_back(std::move(item));
+        continue;
+      }
+      const auto &callee_types = param_types_for(*item.decl, item.owner);
+      const auto open = classified->second;
+      if (open != instantiate) {
+        remaining.push_back(std::move(item));
+        continue;
+      }
+      file_id_ = item.file;
+      module_ = item.module;
+      if (!open) {
+        for (size_t i = 0; i < item.decl->params.size() &&
+                           i < item.call_params.size() &&
+                           i < callee_types.size();
+             ++i) {
+          if (item.decl->params[i].type_annotation != nullptr ||
+              callee_types[i] == k_unknown_type) {
+            continue;
+          }
+          const auto pinned = settle(callee_types[i]);
+          if (!leaf_engine_.unify(pinned, item.call_params[i],
+                                  infer::k_no_cause)
+                   .has_value()) {
+            error_with_help(
+                item.call->span,
+                std::format("argument for `{}` has type `{}`, but `{}`'s "
+                            "body needs `{}`",
+                            param_name_of(item.decl->params[i]),
+                            types_.display(settle(item.call_params[i])),
+                            item.decl->name, types_.display(pinned)),
+                "wrong type for this parameter",
+                std::format("`{}` has no annotation, so its type comes from "
+                            "how `{}`'s own body uses it — never from a "
+                            "call. Here the body requires `{}`.",
+                            param_name_of(item.decl->params[i]),
+                            item.decl->name, types_.display(pinned)));
+          }
+        }
+        continue;
+      }
+      instantiate_open_param_call(item, callee_types);
+    }
+    file_id_ = saved_file;
+    module_ = saved_module;
+    // Anything queued while instantiating (there is nothing today, since the
+    // record is only made from a call walk) is kept alongside what waited.
+    for (auto &item : pending_open_param_calls_) {
+      remaining.push_back(std::move(item));
+    }
+    pending_open_param_calls_ = std::move(remaining);
+  }
+
+  /// Compiles `item.decl` for this call's argument types and points the call
+  /// at the instance.
+  auto instantiate_open_param_call(const pending_open_param_call &item,
+                                   const std::vector<type_id> &callee_types)
+      -> void {
+    const auto &decl = *item.decl;
+    auto seeds = std::vector<type_id>(decl.params.size(), k_unknown_type);
+    auto suffix = std::string{};
+    for (size_t i = 0; i < decl.params.size(); ++i) {
+      if (decl.params[i].type_annotation != nullptr ||
+          i >= callee_types.size() || callee_types[i] == k_unknown_type) {
+        continue;
+      }
+      // The callee's own leaf says nothing here — that is what made the
+      // function generic — so the parameter's type is this call's argument.
+      const auto type = settle(item.call_params[i]);
+      if (mentions_type_var(type)) {
+        // Still open: the argument is itself an unsolved leaf, which is
+        // either a parameter of an enclosing implicit generic (its own
+        // instances re-check this call with a concrete type) or a literal
+        // that already reported its own problem.
+        return;
+      }
+      seeds[i] = type;
+      suffix += "$" + mangle_type_for_instance(type);
+    }
+    const auto *instance = find_or_check_generic_instance(
+        *item.call, decl, item.owner, item.decl_file, generic_solution{},
+        decl.name + suffix, /*fixed_type_params=*/nullptr, k_unknown_type,
+        /*block_type_params=*/nullptr, &seeds);
+    if (instance == nullptr) {
+      return;
+    }
+    auto fn_params = std::vector<type_id>{};
+    for (size_t i = 0; i < decl.params.size(); ++i) {
+      fn_params.push_back(seeds[i] != k_unknown_type
+                              ? seeds[i]
+                              : signature_param_type(decl, item.owner, i));
+    }
+    if (item.call->callee != nullptr) {
+      record_expr_type(*item.call->callee,
+                       types_.fn_of(std::move(fn_params),
+                                    signature_return_type(decl, item.owner)));
+    }
+    resolved_callees_[item.call] =
+        resolved_callee{.decl = instance,
+                        .owner_module = item.owner->module_name,
+                        .impl_target_type = "",
+                        .receiver = nullptr};
+  }
+
+  /// One annotated parameter's declared type, resolved as `signature_params`
+  /// would.
+  auto signature_param_type(const ast::func_decl &decl,
+                            const module_members *owner, size_t index)
+      -> type_id {
+    return signature_params(decl, owner, /*skip_self=*/false)[index].type;
+  }
+
   /// Drains both deferred queues until neither has anything left.
   ///
   /// They feed each other, so neither can be drained once. Wiring a leaf
@@ -5711,6 +5968,8 @@ private:
   /// known": the conversion was recorded for the template's node and never
   /// for the clone's.
   auto flush_deferred() -> void {
+    classify_param_decls();
+    resolve_open_param_calls(/*instantiate=*/false);
     // Leaf literals first, because a leaf minted in one function can be
     // pinned by a constraint in another in the same file, so they have to be
     // settled before anything reads a type off them.
@@ -5721,6 +5980,7 @@ private:
     // checked type is available for this node".
     (void)leaf_queue_.flush();
     flush_leaf_values();
+    resolve_open_param_calls(/*instantiate=*/true);
     while (!pending_leaf_literals_.empty() || !pending_instances_.empty()) {
       flush_leaf_literals();
       flush_pending_instances();
@@ -5738,6 +5998,7 @@ private:
         flush_pending_instances();
       }
     }
+    finish_param_probes();
   }
 
   /// Runs the range check on every integer literal whose type was still open
@@ -11180,7 +11441,7 @@ private:
     // report below.
     if (viable.size() > 1) {
       const auto best = std::ranges::min(
-          viable, {}, [](const ufcs_candidate &c) { return c.origin; });
+          viable, {}, [](const ufcs_candidate &c) -> ufcs_origin { return c.origin; });
       std::erase_if(viable, [&](const ufcs_candidate &c) -> bool {
         return c.origin != best.origin;
       });
@@ -13833,7 +14094,7 @@ private:
   /// carries more than one (`index[usize]` *and* `index[range[usize]]`).
   auto index_key_filter(type_id target, std::string_view trait_name,
                         type_id key) -> method_filter {
-    return [this, target, trait_name, key](const method_entry &method) {
+    return [this, target, trait_name, key](const method_entry &method) -> bool {
       if (method.decl->params.size() < 2) {
         return false;
       }
@@ -18085,6 +18346,68 @@ private:
   /// (scopes, return type, undefined-name dedup) so nested/sibling checks
   /// don't see stale state.
   auto check_function(const ast::func_decl &decl, bool at_module_scope)
+      -> void {
+    // A function with an unannotated parameter is checked once against that
+    // parameter's leaf to find out whether the body pins it. The answer is
+    // only known afterwards, and what the body says about a still-open leaf
+    // is not evidence of a mistake — `bits(x)` on an open `x` is exactly a
+    // call waiting for its instance — so the diagnostics of that first check
+    // are held. If the body pinned every parameter the function is ordinary
+    // and they are emitted (`finish_param_probes`); if one stayed open, each
+    // instance is checked against a concrete type and reports for real.
+    if (decl.has_error || probe_capture_ != nullptr ||
+        decl.modifiers.is_intrinsic || inferred_param_types_.contains(&decl) ||
+        !has_unannotated_params(decl)) {
+      check_function_impl(decl, at_module_scope);
+      return;
+    }
+    auto held = std::vector<diagnostic>{};
+    auto mark = unclassified_param_decl{
+        .decl = &decl,
+        .literal_begin = pending_leaf_literals_.size(),
+        .call_begin = pending_method_calls_.size()};
+    probe_capture_ = &held;
+    check_function_impl(decl, at_module_scope);
+    probe_capture_ = nullptr;
+    mark.literal_end = pending_leaf_literals_.size();
+    mark.call_end = pending_method_calls_.size();
+    unclassified_param_decls_.push_back(mark);
+    if (!held.empty()) {
+      param_probes_.push_back(param_probe{
+          .decl = &decl, .diags = std::move(held), .file = file_id_});
+    }
+  }
+
+  /// Diagnostics held while probing a function with unannotated parameters.
+  struct param_probe {
+    const ast::func_decl *decl = nullptr;
+    std::vector<diagnostic> diags;
+    file_id_type file = 0;
+  };
+  std::vector<diagnostic> *probe_capture_ = nullptr;
+  std::vector<param_probe> param_probes_;
+
+  /// Emits the held diagnostics of every probed function whose parameters
+  /// the body fully determined, and drops the rest.
+  auto finish_param_probes() -> void {
+    auto pending = std::vector<param_probe>{};
+    pending.swap(param_probes_);
+    const auto saved_file = file_id_;
+    for (auto &probe : pending) {
+      const auto found = open_param_decls_.find(probe.decl);
+      if (found != open_param_decls_.end() && found->second) {
+        continue;
+      }
+      file_id_ = probe.file;
+      for (const auto &diag : probe.diags) {
+        emit_diag(diag);
+        mark_error();
+      }
+    }
+    file_id_ = saved_file;
+  }
+
+  auto check_function_impl(const ast::func_decl &decl, bool at_module_scope)
       -> void {
     if (decl.has_error) {
       return;

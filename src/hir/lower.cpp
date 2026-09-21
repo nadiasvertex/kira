@@ -5395,6 +5395,16 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     drop_schedule_ = compute_drop_schedule(decl, checked_);
   }
 
+  // An implicit generic has no body of its own to lower — only the instances
+  // the checker made for each call's argument types.
+  if (checked_.open_param_templates.contains(&decl)) {
+    return fail(lowering_error_kind::unannotated_parameter, decl.span,
+                std::format("function `{}` is generic over its unannotated "
+                            "parameters, so only its per-call instances can "
+                            "be lowered, not the function itself",
+                            decl.name));
+  }
+
   push_scope();
 
   auto params = std::vector<hir_param>{};
@@ -5410,12 +5420,18 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     // (`semantic/check.cpp`) already resolves and records its type from
     // `self_type_` regardless, so `checked_type_of` below has a real answer
     // even though there's no `type_annotation` node to point at.
-    if (param.type_annotation == nullptr && !(i == 0 && is_self_param(param))) {
+    // An unannotated parameter has a type all the same when the checker
+    // settled one: either its own body pinned it, or this is the instance
+    // of an implicit generic compiled for one call's argument type. A
+    // template the body left open is never lowered (`lower_module_items`).
+    if (param.type_annotation == nullptr && !(i == 0 && is_self_param(param)) &&
+        (param.pattern == nullptr ||
+         !checked_.node_types.contains(param.pattern.get()))) {
       pop_scope();
       return fail(lowering_error_kind::unannotated_parameter, param.span,
                   std::format("parameter in function `{}` has no explicit "
-                              "type annotation; the first lowering milestone "
-                              "only lowers explicitly annotated signatures",
+                              "type annotation, and its type could not be "
+                              "inferred from the function's body",
                               decl.name));
     }
     // A default value is a *call-site* construct: the callee still takes the
@@ -5467,6 +5483,13 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     }
   }
 
+  if (decl.return_type == nullptr) {
+    pop_scope();
+    return fail(lowering_error_kind::unsupported_construct, decl.span,
+                std::format("function `{}` has no declared return type; "
+                            "lowering does not yet infer one from the body",
+                            decl.name));
+  }
   auto return_type = checked_type_of(*decl.return_type);
   if (!return_type.has_value()) {
     pop_scope();
@@ -5849,6 +5872,12 @@ auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
+    if (checked.open_param_templates.contains(&decl)) {
+      // An unannotated parameter the body leaves open is an implicit type
+      // parameter: there is no single body that serves every argument type,
+      // so only the instances the checker made are lowered.
+      continue;
+    }
     if (is_generic_template(decl)) {
       // Compiled once per constant and concrete type it is called with, from
       // the instances loop below — never as itself. The instances the checker
