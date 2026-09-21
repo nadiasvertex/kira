@@ -1,0 +1,19 @@
+module check.borrowed_number_used_as_a_number
+
+# A `&int32` is an address. Using it as the number it points at, without the
+# `*` that does the load, is refused in both of the places it can happen:
+# flowing into a declared type, and as an operand.
+#
+# It used to be accepted in both, and the address was used as the number —
+# a silently wrong answer rather than a crash (`spec/todo.md` 21).
+
+def read_it(v: &int32) -> int32:
+    return v
+
+def add_it(v: &int32) -> int32:
+    return v + 1
+
+# The contrast: a borrow of something that *is* an address already needs no
+# `*`, and must keep working exactly as before.
+def len_of(xs: &list[int32]) -> usize:
+    return xs.len()

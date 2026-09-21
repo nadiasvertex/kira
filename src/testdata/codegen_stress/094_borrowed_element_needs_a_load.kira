@@ -1,0 +1,50 @@
+module codegen_stress.borrowed_element_needs_a_load
+
+# expect: 54
+
+# Reading a number through a borrow is a load, and `*` is how it is spelled.
+#
+# `xs.iter()` yields `&int32` — `list_iter`'s `next` hands back a reference
+# to the element, not a copy — so the loop body has to dereference. Without
+# the `*`, `total = total + v` used to *compile*, and added the element's
+# address to the running total. The answers it produced were plausible
+# integers (4, 68, 100, 196, one per run), which is why no test noticed:
+# nothing here crashes, the program just computes something else.
+#
+# Both backends did the same wrong thing — one reads the same types the
+# other does — so cross-tier agreement was perfectly satisfied on the wrong
+# answer. `# expect:` is the only check that can see it, which is exactly
+# the case CLAUDE.md's note on differential tests describes.
+#
+# The contrast is the point of the fixture. `sum_by_ref` iterates the
+# elements *as references* and must write `*v`. `sum_by_value` iterates the
+# container, whose elements arrive as `int32`, and must not. And `len_of`
+# takes the whole list by borrow — a `&list[int32]` is the same address as
+# the `list[int32]` it borrows, so nothing is spelled there at all. All
+# three are the same rule: a `&` is free when the value is already an
+# address, and a real load when it is not.
+#
+# 16 (by ref) + 16 (by value) + 20 (a borrowed local) + 2 (the length) = 54.
+
+def sum_by_ref(xs: &list[int32]) -> int32:
+    var total = 0
+    for v in xs.iter():
+        total = total + *v
+    return total
+
+def sum_by_value(xs: &list[int32]) -> int32:
+    var total = 0
+    for v in xs:
+        total = total + v
+    return total
+
+def len_of(xs: &list[int32]) -> int32:
+    return int32(xs.len())
+
+def read_one(v: &int32) -> int32:
+    return *v
+
+def main() -> int32:
+    var xs: list[int32] = [7, 9]
+    var n: int32 = 20
+    return sum_by_ref(&xs) + sum_by_value(&xs) + read_one(&n) + len_of(&xs)

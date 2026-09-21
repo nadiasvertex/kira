@@ -2162,6 +2162,29 @@ auto test_reports_direct_drop_call() -> void {
       "expected the diagnostic to explain the double-drop hazard");
 }
 
+auto test_reports_borrowed_number_used_as_a_number() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_borrowed_number_used_as_a_number.kira");
+  expect(analyzed.error_count > 0,
+         "expected a `&int32` used as an `int32` to be rejected");
+  // Both halves, because they are refused by different code: a value
+  // flowing into a declared type goes through `type_table::compatible`, and
+  // an operand goes through `infer_binary`. Only one of the two was enough
+  // to leave the other silently adding an address to a number.
+  expect_diagnostic(analyzed, "this is a borrow, not a number",
+                    "expected the diagnostic to say what the value actually "
+                    "is, not merely that two spellings differ");
+  expect_diagnostic(
+      analyzed, "reading the value back out through it is a load",
+      "expected the help to explain why a number differs from an aggregate");
+  expect_diagnostic(analyzed, "Write `*` in front of this",
+                    "expected the help to name the fix");
+  expect(analyzed.error_count == 2,
+         "expected exactly the two bad uses to be reported — `xs.len()` "
+         "through a `&list[int32]` is a borrow of something that is already "
+         "an address, and must stay free");
+}
+
 auto test_reports_index_write_without_index_set() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_index_write_without_index_set.kira");
@@ -3428,6 +3451,7 @@ auto main() -> int {
     test_reports_index_wrong_key_type();
     test_dispatches_index_by_key_type();
     test_reports_direct_drop_call();
+    test_reports_borrowed_number_used_as_a_number();
     test_reports_index_write_without_index_set();
     test_reports_index_mut_borrow_without_impl();
     test_dispatches_index_mut_borrow();

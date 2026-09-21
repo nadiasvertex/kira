@@ -1942,6 +1942,60 @@ private:
     return types_.compatible(settle(expected), settle(found));
   }
 
+  /// Whether `id` is a borrow of something a load has to be spelled for —
+  /// `&int32`, not `&list[T]`. The one shape where dropping the `&` silently
+  /// changes what the code computes.
+  [[nodiscard]] auto needs_explicit_deref(type_id id) -> bool {
+    const auto &entry = types_.entry(settle(id));
+    return entry.kind == type_kind::ref_kind &&
+           !types_.reference_is_transparent(entry.result);
+  }
+
+  /// Reports the missing `*` when that is what a mismatch really is, and
+  /// says whether it did.
+  ///
+  /// Called ahead of the generic "expected X, found Y" at each site rather
+  /// than folded into one, because the sites do not share a diagnostic —
+  /// a returned value, an argument and an operand each phrase their own —
+  /// and what they *do* share is this one question.
+  auto report_deref_if_missing(const ast::expr *value, type_id expected,
+                               type_id found) -> bool {
+    if (value == nullptr || !needs_explicit_deref(found)) {
+      return false;
+    }
+    // Only when the `*` is the whole story. A `&int32` where a `str` was
+    // wanted is a plain mismatch, and telling the user to dereference it
+    // would send them somewhere there is nothing to find.
+    const auto referent = types_.entry(settle(found)).result;
+    if (!types_.compatible(settle(expected), referent)) {
+      return false;
+    }
+    report_missing_deref(*value, found);
+    return true;
+  }
+
+  /// The missing `*`. Named as the fix rather than as the mismatch, because
+  /// "expected `int32`, found `&int32`" is a true sentence that teaches
+  /// nothing: the two spellings differ by one character and the user has to
+  /// be told which one and why.
+  auto report_missing_deref(const ast::expr &value, type_id found) -> void {
+    const auto settled = settle(found);
+    const auto referent = types_.entry(settled).result;
+    error_with_help(
+        value.span,
+        std::format("expected `{}`, found `{}` — this is a borrow, not a "
+                    "number",
+                    types_.display(referent), types_.display(settled)),
+        std::format("this is a `{}`", types_.display(settled)),
+        std::format(
+            "A borrow of a list, string, struct or tuple can be used as the "
+            "value directly — such a value already *is* an address, so the "
+            "`&` costs nothing. A value of type `{}` is not: `&` on one "
+            "makes an address, and reading the value back out through it is "
+            "a load. Write `*` in front of this to do that load.",
+            types_.display(referent)));
+  }
+
   auto type_mismatch(source_span span, type_id expected, type_id found,
                      std::string_view context, const ast::expr *value = nullptr)
       -> void {
@@ -1950,6 +2004,9 @@ private:
     found = settle(found);
     if (types_.compatible(expected, found)) {
       check_narrowing(expected, found, value, span, context);
+      return;
+    }
+    if (report_deref_if_missing(value, expected, found)) {
       return;
     }
     auto diag =
@@ -8165,14 +8222,30 @@ private:
                      type_kind::type_param_kind)
             ? base_shape(expected)
             : k_unknown_type;
-    const auto lhs = binary.lhs != nullptr
-                         ? base_shape(infer_expr(*binary.lhs, numeric_expected))
-                         : k_unknown_type;
+    // Kept undecorated as well as stripped. `base_shape` drops the `&`, and
+    // for an aggregate that is exactly right — its value already is the
+    // address, so `&p + &q` is `p + q`. For a number it is not: the `&` is a
+    // materialized address, and stripping it here compiles an add on the
+    // pointer. See `type_table::reference_is_transparent`.
+    const auto raw_lhs = binary.lhs != nullptr
+                             ? infer_expr(*binary.lhs, numeric_expected)
+                             : k_unknown_type;
+    const auto lhs = base_shape(raw_lhs);
     const auto rhs_expected = types_.is_numeric(lhs) ? lhs : numeric_expected;
-    const auto rhs = binary.rhs != nullptr
-                         ? base_shape(infer_expr(*binary.rhs, rhs_expected))
-                         : k_unknown_type;
+    const auto raw_rhs = binary.rhs != nullptr
+                             ? infer_expr(*binary.rhs, rhs_expected)
+                             : k_unknown_type;
+    const auto rhs = base_shape(raw_rhs);
     const auto op_name = ast::binary_op_name(binary.op);
+    if (binary.lhs != nullptr && needs_explicit_deref(raw_lhs)) {
+      report_missing_deref(*binary.lhs, raw_lhs);
+      return k_error_type;
+    }
+    if (binary.rhs != nullptr && needs_explicit_deref(raw_rhs)) {
+      report_missing_deref(*binary.rhs, raw_rhs);
+      return k_error_type;
+    }
+
 
     const auto is_deferred_type_param = [this](type_id id) -> bool {
       return in_type_generic_template_ &&
@@ -17724,6 +17797,10 @@ private:
               join_branch_type(existential_underlying_, found, stmt.value->span,
                                "existential return");
         } else if (return_annotated_ && !agrees(return_type_, found)) {
+          if (report_deref_if_missing(stmt.value.get(), return_type_, found)) {
+            mark_error();
+            return types_.builtin("never");
+          }
           auto diag = diagnostic(
               diagnostic_level::error,
               std::format("return type mismatch: expected `{}`, found `{}`",

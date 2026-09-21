@@ -331,6 +331,42 @@ public:
   /// place the predicate has to be discharged (`checker::check_narrowing`).
   [[nodiscard]] auto strip_refinement(type_id id) const -> type_id;
 
+  /// Whether a value of type `id` *is* a pointer at run time.
+  ///
+  /// The heap-backed set `src/runtime/layout.h` describes: `str`, the
+  /// prelude generics (`list`, `option`, `result`, ...), tuple, fixed
+  /// array, struct, sum, and `fn`/closure. Everything else — the numbers,
+  /// `bool`, `char`, `unit` — lives inline at its natural width.
+  ///
+  /// One definition, because two subsystems ask it and a disagreement
+  /// between them is not a cosmetic drift: `llvm_codegen`'s `is_heap_type`
+  /// decides whether a value is an opaque `ptr`, and the rule just below
+  /// decides whether typing may ignore a `&`. A backend that thought
+  /// `&int32` was a passthrough while typing thought it was an address is
+  /// exactly the silent arithmetic-on-a-pointer bug (`spec/todo.md` 21).
+  [[nodiscard]] auto is_heap_represented(type_id id) const -> bool;
+
+  /// Whether a `&` to `referent` has the same runtime representation as the
+  /// value itself, so typing may treat the two alike.
+  ///
+  /// True for everything `is_heap_represented` covers — `&xs` on a `list`
+  /// costs no instruction, which is why `xs.len()` through a `&list[T]`
+  /// parameter is the same code as through an owned one, the transparency
+  /// the borrowing chapter describes. A number is the other case: `&n`
+  /// *materializes* an address, and reading the number back out is a load,
+  /// spelled `*n` (`codegen_stress/042`).
+  ///
+  /// Typing has to know the difference. Treating a `&int32` as an `int32`
+  /// anyway is not a harmless shorthand — nothing emits the load, and the
+  /// address is used as the number.
+  ///
+  /// Also true for a still-abstract referent (`&T` in a generic body, or an
+  /// open leaf), which is the one place the two predicates differ. It is
+  /// not *known* to need a load, and refusing it would break every generic
+  /// that borrows; the instantiated copy is checked again with a real type,
+  /// which is where the question can be answered.
+  [[nodiscard]] auto reference_is_transparent(type_id referent) const -> bool;
+
   /// Rewrites `id` with every refinement inside it replaced by its base,
   /// however deeply nested — `option[index[n]]` becomes `option[usize]`,
   /// `array[positive, 4]` becomes `array[int32, 4]`.

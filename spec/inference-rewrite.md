@@ -1144,10 +1144,16 @@ The last two are zero for a good reason: `check_ufcs_call` checks the
 arguments *before* it instantiates, and checking them is what solves the
 receiver, so by the time the deferral point is reached there is nothing left
 to wait for. Only a receiver solved by something strictly *after* the call
-reaches it — and the one way to write that in the language today is
-`xs.iter()`, which is independently broken (`spec/todo.md` item 21: `for v in
-xs.iter()` computes a wrong answer on fully annotated code, so no test built
-on it can distinguish a fixed inference from a broken one).
+reaches it qualifies — and a program that calls a method on a list before the
+list has any elements is one whose call has nothing to do. The shape is
+reachable (it is what the parked defaulting branch hit, where array-literal
+elements are leaves too) but on master there is no leaf source that survives
+past a call, so there is no program that both exercises the deferral and
+computes anything.
+
+Probing this is what turned up `spec/todo.md` item 21 — since fixed, and
+unrelated to inference: a `&` to a number could be used *as* the number, and
+the address was used instead.
 
 So the branch was reverted rather than landed untested. What stayed is the
 generalization it forced: the pending record holds a `std::function` for the

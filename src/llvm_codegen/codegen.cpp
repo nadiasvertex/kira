@@ -222,21 +222,14 @@ using kira::decode_string_literal;
 /// `fn(...)` — a lambda/closure value, per increment 6) — every such value
 /// is a single opaque pointer, as opposed to the closed scalar set
 /// `numeric_kind_of` maps directly to an LLVM integer/float type.
+///
+/// Defined by the type table so typing and codegen cannot disagree: the
+/// checker's `reference_is_transparent` is built on the same answer. A
+/// backend that thought `&int32` was a passthrough while typing thought it
+/// was an address is the silent arithmetic-on-a-pointer bug that rule
+/// exists to stop (`spec/todo.md` 21).
 [[nodiscard]] auto is_heap_type(const type_table &types, type_id id) -> bool {
-  const auto &entry = types.entry(id);
-  switch (entry.kind) {
-  case semantic::type_kind::tuple_kind:
-  case semantic::type_kind::array_kind:
-  case semantic::type_kind::struct_kind:
-  case semantic::type_kind::sum_kind:
-  case semantic::type_kind::builtin_generic_kind:
-  case semantic::type_kind::fn_kind:
-    return true;
-  case semantic::type_kind::builtin_kind:
-    return entry.name == "str";
-  default:
-    return false;
-  }
+  return types.is_heap_represented(id);
 }
 
 // ==========================================================================

@@ -25,19 +25,12 @@
 
 20. **Empty `[]` needs an annotation — closed.** `var xs = []` is now pinned by a later use (`xs.push(v)`, a return, an argument), in concrete code and in generic bodies alike: the standard library's `partition` and `from_iter` build their lists from an unannotated `[]`. Done by `spec/inference-rewrite.md` phases 8 and 9 — the literal mints a metavariable and the solving happens where a value already meets a declared type, so nothing re-solves anything. A literal nothing ever says anything about is still refused, now against its own line rather than against `src/std/list.kira`'s internals. Still open in one place: an unannotated `[]` in a body whose *only* constraint is an unannotated parameter, since parameter types are still inferred by a separate pre-pass (`param_usage_inferrer`).
 
-21. **`for v in xs.iter()` computes a wrong answer, on fully annotated code.** Six lines reproduce it:
+21. ~~A borrow of a number could be used as the number, and the address was used instead.~~ *(Fixed.)* `def read(v: &int32) -> int32: return v` compiled, and returned the *address*. So did `v + 1`, and so did `for v in xs.iter(): total = total + v` — which is how this was found: that loop returned 4, 68, 100 or 196 depending on the run, never 16. A silently wrong answer on fully annotated, concrete code.
 
-    ```kira
-    def main() -> int32:
-        var xs: list[int32] = [7, 9]
-        var total = 0
-        for v in xs.iter():
-            total = total + v
-        return total
-    ```
+    The rule the compiler was missing is the one `codegen_stress/042` already states: a `&` to an aggregate is free, because a `list`/`str`/tuple/struct/sum/closure value *is* an address already and `xs.len()` through a `&list[T]` is the same code as through an owned one; a `&` to a number *materializes* an address, and reading the number back out is a load, spelled `*`. Typing knew only the first half — `type_table::compatible` accepted any `&T` wherever `T` was expected, and `infer_binary` ran `base_shape` over its operands — so nothing ever asked for the load.
 
-    This panics with "integer overflow" rather than returning 16, and variants of it return plausible wrong sums (4, 68, 100) instead — a *silently* wrong answer, which is worse than the panic. `for v in xs` over the same list returns 16 correctly, so the fault is in `std.iter`'s `iter[T](xs: &list[T]) -> list_iter[T]` (`src/std/iter.kira:117`) or in how the `for` desugaring drives an explicit iterator value, not in `list` itself or in inference: the receiver here is annotated and concrete, and the same shape fails identically with an unannotated `var xs = []`.
+    Now one predicate answers it in one place: `type_table::is_heap_represented` (what `llvm_codegen`'s `is_heap_type` is defined as) and `reference_is_transparent` on top of it, which adds the still-abstract referents — `&T` in a generic body — where the question cannot be answered until instantiation. A `&number` used as the number is refused at both sites, with a diagnostic that names the fix rather than observing that two spellings differ.
 
-    Both backends agree on the wrong answer, which is why `codegen_stress_test` never saw it — the differential check is exactly the one that cannot catch this (see CLAUDE.md, "Differential tests are blind to shared bugs"). A regression test for it must assert the sum with `# expect:`.
+    Both backends produced the same wrong answer, so `codegen_stress_test`'s cross-tier agreement was perfectly satisfied — the case CLAUDE.md's note on differential tests describes. The regression test (`codegen_stress/094_borrowed_element_needs_a_load.kira`) asserts the sum with `# expect:`, and contrasts all three forms: `for v in xs.iter()` needs the `*`, `for v in xs` does not, and `xs.len()` through a `&list[int32]` costs nothing.
 
-    Found while wiring `method_call` obligations (`spec/inference-rewrite.md` phase 10): it is the only shape in the language today that reaches a UFCS generic call on a still-open receiver, so that half of the phase cannot be tested until this is fixed.
+    Two things this does *not* do. `for x in &xs` still yields `&T` and so still needs `*x` — `std.iter`'s `values()` adapter exists precisely to spare a chain from spelling it — and `accept_for_over_ref_borrow.kira` was updated accordingly; that fixture asserts only the absence of borrow-check diagnostics, and the form does not lower end to end at all. And a `&T` whose `T` is still a type parameter is let through, so the same mistake inside a generic body is caught only when the body is instantiated.

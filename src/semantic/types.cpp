@@ -617,6 +617,33 @@ auto type_table::values_compatible(type_id expected, type_id found) const
 /// return) matches any expected type; a reference on either side compares
 /// against its target type; and same-kind types compare their
 /// declaration/name identity plus recursively-compatible arguments.
+/// See the header: the heap-backed set `src/runtime/layout.h` describes.
+auto type_table::is_heap_represented(type_id id) const -> bool {
+  const auto &target = entry(strip_refinement(id));
+  switch (target.kind) {
+  case type_kind::tuple_kind:
+  case type_kind::array_kind:
+  case type_kind::struct_kind:
+  case type_kind::sum_kind:
+  case type_kind::builtin_generic_kind:
+  case type_kind::fn_kind:
+    return true;
+  case type_kind::builtin_kind:
+    return target.name == "str";
+  default:
+    return false;
+  }
+}
+
+/// See the header: whether a `&` to this type is the same bits as the value.
+auto type_table::reference_is_transparent(type_id referent) const -> bool {
+  if (is_heap_represented(referent)) {
+    return true;
+  }
+  const auto kind = entry(strip_refinement(referent)).kind;
+  return kind == type_kind::type_param_kind || kind == type_kind::type_var_kind;
+}
+
 auto type_table::compatible(type_id expected, type_id found) const -> bool {
   if (expected == found || is_unknown(expected) || is_unknown(found)) {
     return true;
@@ -682,8 +709,14 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
     if (expected_entry.kind == type_kind::ref_kind) {
       return compatible(expected_entry.result, found);
     }
+    // A borrow used where the borrowed type is expected. Free for an
+    // aggregate, whose value already *is* the address — but a `&int32` is a
+    // materialized address and reading it back is a load, spelled `*n`. Let
+    // that through and nothing emits the load: the address is used as the
+    // number. See `reference_is_transparent`.
     if (found_entry.kind == type_kind::ref_kind) {
-      return compatible(expected, found_entry.result);
+      return reference_is_transparent(found_entry.result) &&
+             compatible(expected, found_entry.result);
     }
     return false;
   }

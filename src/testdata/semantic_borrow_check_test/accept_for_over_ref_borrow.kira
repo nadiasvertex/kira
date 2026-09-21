@@ -10,7 +10,16 @@ use std.list.vector
 def demo() -> int32:
     var xs: vector[int32] = [1, 2, 3]
     var sum = 0
+    # `*x`, not `x`: `for x in &xs` takes the non-consuming `iter` route, so
+    # `x` is a `&int32` — a materialized address, since a number is not one
+    # already. Reading the number back out of it is a load, and `*` is how
+    # that load is spelled (`codegen_stress/042`). It is also why `std.iter`
+    # has a `values()` adapter at all: it exists to turn a `&T`-yielding
+    # chain into a `T`-yielding one so the rest of the chain need not spell
+    # this out. Iterating the container itself — `for x in xs`, or `for x in
+    # data` for a `data: &list[int32]` parameter — yields `int32` by value
+    # and needs no `*`.
     for x in &xs:
-        sum = sum + x
+        sum = sum + *x
     xs.free()
     return sum
