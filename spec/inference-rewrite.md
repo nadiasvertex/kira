@@ -950,12 +950,35 @@ and the diagnostic hold.
 - Free-function calls, including UFCS (`x.probe()`, whose receiver is the
   first argument), are elaborated. A *method* in an `impl`/`extend` block
   with an unannotated parameter still resolves to the template.
-- An unannotated *return* type: lowering refuses it (it no longer crashes).
+- An unannotated *return* type is inferred (below) only for free functions and
+  implicit-generic instances; methods and explicit generics still have none.
 - A generic template that is never called is not checked for errors, as with
   explicit generics, since its first check's diagnostics are discarded.
 - No trait bounds are inferred; an instance is simply checked per type.
   "Widest type the body permits" as a declared `where` clause waits for
   phase 9's single abstract check.
+
+**Unannotated return types.** The checker takes the join of every
+`return <value>` and the tail (`note_inferred_return`; a `never` path says
+nothing) and stores it in `checked_types::inferred_return_types`, which lowering
+reads where it would read the annotation. A callee declared after its caller
+is checked on demand from `signature_return_type`, in its own module and file,
+and skipped when its turn comes; a call from inside its own body gets a leaf
+that the body's returns pin. A result still hanging on one of the function's
+own parameters is left open for each instance to answer, and a leaf open at
+the end (a bare literal) is defaulted then, since the body compiles once.
+A call to an open callee answers with a per-call leaf, solved once the
+instance's body has been checked (`finish_open_results`).
+
+Tests: `codegen_stress/097_unannotated_return_is_inferred.kira`
+(`# expect: 11000000332`), `check_test`'s
+`test_inferred_return_type_is_held_against_the_caller`, `lower_test`'s two
+return-type cases. Verified failing without: the on-demand check, the
+recursive-call solve, and the inferred-return lookup.
+
+Known hazard: the end-of-body default runs the leaf queue, which can default
+a caller's pending literal earlier than a later constraint would have pinned
+it.
 
 ### Phase 9 — abstract generic bodies *(the boundary is fixed; the gates are not)*
 

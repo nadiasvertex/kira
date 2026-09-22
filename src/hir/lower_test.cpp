@@ -224,15 +224,34 @@ auto test_lowers_unannotated_parameter_the_body_pins() -> void {
          "expected a parameter the body pins to lower like an annotated one");
 }
 
-auto test_rejects_function_without_declared_return_type() -> void {
+auto test_lowers_function_with_inferred_return_type() -> void {
   auto fixture = check_fixture("module sample\n"
-                               "def add(x: int32, y: int32):\n"
-                               "    return x + y\n");
+                               "def add(x: int32, y: int64):\n"
+                               "    return y\n");
   const auto &decl = find_func(*fixture.ast_file, "add");
 
   auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(),
+         "expected a return type inferred from the body to lower");
+  expect(fixture.checked.types.display((*result)->type) != "",
+         "expected the lowered function to carry a type");
+  const auto inferred = fixture.checked.inferred_return_types.find(&decl);
+  expect(inferred != fixture.checked.inferred_return_types.end() &&
+             fixture.checked.types.display(inferred->second) == "int64",
+         "expected the checker to infer `int64` from `return y`");
+}
+
+auto test_rejects_function_whose_return_type_cannot_be_inferred() -> void {
+  // Nothing but the function's own result feeds its return, so the body says
+  // nothing about what that result is.
+  auto fixture = check_fixture("module sample\n"
+                               "def forever():\n"
+                               "    return forever()\n");
+  const auto &decl = find_func(*fixture.ast_file, "forever");
+
+  auto result = hir::lower_function(decl, fixture.checked);
   expect(!result.has_value(),
-         "expected a function with no declared return type to be rejected");
+         "expected a function with no inferable return type to be rejected");
   expect(result.error().kind == hir::lowering_error_kind::missing_return_type,
          "expected the specific missing_return_type error kind");
 }
@@ -2762,7 +2781,8 @@ auto main() -> int {
     test_lowers_fully_annotated_function();
     test_rejects_unannotated_parameter_with_specific_error();
     test_lowers_unannotated_parameter_the_body_pins();
-    test_rejects_function_without_declared_return_type();
+    test_lowers_function_with_inferred_return_type();
+  test_rejects_function_whose_return_type_cannot_be_inferred();
     test_preserves_source_spans();
     test_lowers_compact_expression_body();
     test_lowers_if_expression_and_module();

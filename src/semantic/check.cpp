@@ -517,6 +517,7 @@ public:
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
         .const_generic_instances = std::move(const_generic_instances_),
         .open_param_templates = std::move(open_param_templates),
+        .inferred_return_types = std::move(inferred_returns_),
         .comptime_only_functions = std::move(comptime_only_functions_),
         .synthesized_functor_nodes = std::move(synthetic_nodes_),
         .functor_instances = std::move(functor_instance_decls_),
@@ -1008,6 +1009,11 @@ private:
   std::unordered_map<std::string, type_id> self_assoc_types_;
   type_id return_type_ = k_unknown_type;
   bool return_annotated_ = false;
+  /// While checking a function declared without a return type: the join of
+  /// every `return <value>` and the tail seen so far.
+  bool inferring_return_ = false;
+  bool inferred_return_seen_ = false;
+  type_id inferred_return_ = k_unknown_type;
   bool in_contract_ = false;
   /// Whether the contract condition currently being checked is a `post` —
   /// the only place `return` (the value the function returns, not the
@@ -4820,6 +4826,78 @@ private:
     return params;
   }
 
+  /// Folds one returned value's type into the inferred return type. The
+  /// first fixes it; each later one must agree, which also pins a literal's
+  /// leaf to the width an earlier `return` gave it. A `never` path says
+  /// nothing about the result.
+  auto note_inferred_return(type_id found, source_span span) -> void {
+    if (types_.entry(found).name == "never") {
+      return;
+    }
+    if (!inferred_return_seen_) {
+      inferred_return_seen_ = true;
+      inferred_return_ = found;
+      return;
+    }
+    type_mismatch(span, inferred_return_, found,
+                  "as a result of this function, like its other returns");
+  }
+
+  /// The return type of a function declared without one, taken from its
+  /// body (`spec/specification/01-core/04-functions.md`). A callee written
+  /// after its caller is checked now, in its own module and file, and skipped
+  /// when its turn comes; a call back into a body still being checked
+  /// (recursion) sees `unknown`, which unifies with everything.
+  auto inferred_return_of(const ast::func_decl &decl,
+                          const module_members *owner) -> type_id {
+    const auto found = inferred_returns_.find(&decl);
+    if (found != inferred_returns_.end()) {
+      return found->second;
+    }
+    if (owner == nullptr || !decl.type_params.empty() ||
+        decl.modifiers.is_generator || decl.modifiers.is_intrinsic ||
+        decl.has_error ||
+        (decl.body_expr == nullptr && decl.body_stmts.empty())) {
+      return k_unknown_type;
+    }
+    if (!return_inference_started_.insert(&decl).second) {
+      // A call from inside the body being checked: its result is whatever the
+      // body's own returns turn out to be, so it waits as a leaf that they
+      // pin (`return n * fact(n - 1)` beside `return 1`).
+      const auto [slot, added] = recursive_returns_.try_emplace(&decl, 0);
+      if (added) {
+        slot->second = leaf_ctxt_.fresh_type(
+            std::format("the result of `{}`, called from its own body",
+                        decl.name),
+            source_location{.file_id = file_id_, .span = decl.span});
+      }
+      return slot->second;
+    }
+    const auto listed = owner->functions.find(decl.name);
+    if (listed == owner->functions.end() || listed->second.decl != &decl) {
+      return k_unknown_type;
+    }
+    early_checked_.insert(&decl);
+    const auto saved_module = module_;
+    const auto saved_file = file_id_;
+    const auto saved_self = self_type_;
+    const auto saved_probe = std::exchange(probe_capture_, nullptr);
+    module_ = owner;
+    file_id_ = listed->second.file_id;
+    self_type_ = k_unknown_type;
+    check_function(decl, /*at_module_scope=*/true);
+    module_ = saved_module;
+    file_id_ = saved_file;
+    self_type_ = saved_self;
+    probe_capture_ = saved_probe;
+    const auto done = inferred_returns_.find(&decl);
+    return done != inferred_returns_.end() ? done->second : k_unknown_type;
+  }
+  std::unordered_map<const ast::func_decl *, type_id> inferred_returns_;
+  std::unordered_set<const ast::func_decl *> return_inference_started_;
+  std::unordered_map<const ast::func_decl *, type_id> recursive_returns_;
+  std::unordered_set<const ast::func_decl *> early_checked_;
+
   /// Resolves a function's declared return type against its own generic
   /// parameters; `unknown` for an unannotated return type (inferred from the
   /// body, never guessed from this signature alone).
@@ -4828,7 +4906,7 @@ private:
       const std::vector<ast::type_param> *enclosing_block_params = nullptr)
       -> type_id {
     if (decl.return_type == nullptr) {
-      return k_unknown_type;
+      return inferred_return_of(decl, owner);
     }
     auto param_bindings = generic_param_bindings(decl, enclosing_block_params);
     const auto ctx =
@@ -5128,6 +5206,7 @@ private:
                                   .call_params = std::move(param_types),
                                   .file = file_id_,
                                   .module = module_});
+      mint_open_result(decl, call.span);
     }
     // Not from inside a template: a call there is written in terms of
     // parameters that are still symbols (`get(v, i)` inside a function generic
@@ -5165,7 +5244,7 @@ private:
     file_id_ = decl_file;
     const auto result = signature_return_type(decl, owner);
     file_id_ = saved_signature_file;
-    return result;
+    return open_call_result(call, result);
   }
 
   // ==========================================================================
@@ -5782,8 +5861,34 @@ private:
     /// The receiver of a UFCS call (`x.probe()`), which is the callee's
     /// first argument; `nullptr` for an ordinary call.
     const ast::expr *receiver = nullptr;
+    /// The call's result when the callee declares no return type: a leaf that
+    /// waits for the callee's inferred one, which for an open callee is the
+    /// instance's, not the template's.
+    type_id result_leaf = k_unknown_type;
   };
   std::vector<pending_open_param_call> pending_open_param_calls_;
+
+  /// Gives the call just registered a result leaf if its callee declares no
+  /// return type.
+  auto mint_open_result(const ast::func_decl &decl, source_span span) -> void {
+    if (decl.return_type != nullptr) {
+      return;
+    }
+    pending_open_param_calls_.back().result_leaf = leaf_ctxt_.fresh_type(
+        std::format("the result of this call to `{}`", decl.name),
+        source_location{.file_id = file_id_, .span = span});
+  }
+
+  /// The type a call answers with: its result leaf if it has one.
+  [[nodiscard]] auto open_call_result(const ast::call_expr &call,
+                                      type_id declared) const -> type_id {
+    if (!pending_open_param_calls_.empty() &&
+        pending_open_param_calls_.back().call == &call &&
+        pending_open_param_calls_.back().result_leaf != k_unknown_type) {
+      return pending_open_param_calls_.back().result_leaf;
+    }
+    return declared;
+  }
   /// Whether each probed function's body left a parameter open — an
   /// implicit generic — or pinned them all. Decided once, right after the
   /// body is checked and *before* the literal-defaulting flush: an integer
@@ -5892,6 +5997,14 @@ private:
                             item.decl->name, types_.display(pinned)));
           }
         }
+        if (item.result_leaf != k_unknown_type) {
+          const auto found = inferred_returns_.find(item.decl);
+          if (found != inferred_returns_.end() &&
+              found->second != k_unknown_type) {
+            type_mismatch(item.call->span, item.result_leaf, found->second,
+                          "as the result of this call");
+          }
+        }
         continue;
       }
       instantiate_open_param_call(item, callee_types);
@@ -5945,16 +6058,59 @@ private:
                               ? seeds[i]
                               : signature_param_type(decl, item.owner, i));
     }
-    if (item.call->callee != nullptr) {
-      record_expr_type(*item.call->callee,
-                       types_.fn_of(std::move(fn_params),
-                                    signature_return_type(decl, item.owner)));
+    if (decl.return_type != nullptr) {
+      if (item.call->callee != nullptr) {
+        record_expr_type(*item.call->callee,
+                         types_.fn_of(std::move(fn_params),
+                                      signature_return_type(decl, item.owner)));
+      }
+    } else {
+      // The instance's body may not have been checked yet — it is queued —
+      // so its result is read once the queue has drained.
+      pending_open_results_.push_back(
+          pending_open_result{.call = item.call,
+                              .instance = instance,
+                              .leaf = item.result_leaf,
+                              .fn_params = std::move(fn_params),
+                              .file = item.file});
     }
     resolved_callees_[item.call] =
         resolved_callee{.decl = instance,
                         .owner_module = item.owner->module_name,
                         .impl_target_type = "",
                         .receiver = item.receiver};
+  }
+
+  struct pending_open_result {
+    const ast::call_expr *call = nullptr;
+    const ast::func_decl *instance = nullptr;
+    type_id leaf = k_unknown_type;
+    std::vector<type_id> fn_params;
+    file_id_type file = 0;
+  };
+  std::vector<pending_open_result> pending_open_results_;
+
+  /// Hands each instantiated call the return type its instance's body
+  /// inferred, which is what the call's result leaf was waiting for.
+  auto finish_open_results() -> void {
+    auto pending = std::vector<pending_open_result>{};
+    pending.swap(pending_open_results_);
+    const auto saved_file = file_id_;
+    for (auto &item : pending) {
+      const auto found = inferred_returns_.find(item.instance);
+      const auto result =
+          found != inferred_returns_.end() ? found->second : k_unknown_type;
+      file_id_ = item.file;
+      if (item.leaf != k_unknown_type && result != k_unknown_type) {
+        type_mismatch(item.call->span, item.leaf, result,
+                      "as the result of this call");
+      }
+      if (item.call->callee != nullptr) {
+        record_expr_type(*item.call->callee,
+                         types_.fn_of(std::move(item.fn_params), result));
+      }
+    }
+    file_id_ = saved_file;
   }
 
   /// One annotated parameter's declared type, resolved as `signature_params`
@@ -5993,6 +6149,7 @@ private:
       flush_leaf_literals();
       flush_pending_instances();
     }
+    finish_open_results();
     // Deferred method calls last: every leaf that is ever going to be solved
     // has been by now, so a call still waiting here is one nothing answers.
     // A failure is not reported from here — the receiver's own literal has
@@ -6005,6 +6162,7 @@ private:
         flush_leaf_literals();
         flush_pending_instances();
       }
+      finish_open_results();
     }
     finish_param_probes();
   }
@@ -11361,6 +11519,7 @@ private:
                                   .file = file_id_,
                                   .module = module_,
                                   .receiver = field.object.get()});
+      mint_open_result(decl, call.span);
     }
 
     if (!in_const_generic_template_ && !in_type_generic_template_ &&
@@ -11397,8 +11556,9 @@ private:
                         .owner_module = candidate.owner->module_name,
                         .impl_target_type = "",
                         .receiver = field.object.get()};
-    return substitute_solved(signature_return_type(decl, candidate.owner),
-                             bindings);
+    return open_call_result(
+        call, substitute_solved(signature_return_type(decl, candidate.owner),
+                                bindings));
   }
 
   /// The fourth and last arm of the method-call ladder. Returns `nullopt`
@@ -15276,9 +15436,11 @@ private:
     const auto saved_return = std::exchange(return_type_, declared_result);
     const auto saved_annotated =
         std::exchange(return_annotated_, declared_result != k_unknown_type);
+    const auto saved_inferring = std::exchange(inferring_return_, false);
     const auto restore_return = [&] -> void {
       return_type_ = saved_return;
       return_annotated_ = saved_annotated;
+      inferring_return_ = saved_inferring;
     };
 
     auto body_result = k_unknown_type;
@@ -17914,6 +18076,8 @@ private:
           existential_underlying_ =
               join_branch_type(existential_underlying_, found, stmt.value->span,
                                "existential return");
+        } else if (inferring_return_) {
+          note_inferred_return(found, stmt.value->span);
         } else if (return_annotated_ && !agrees(return_type_, found)) {
           if (report_deref_if_missing(stmt.value.get(), return_type_, found)) {
             mark_error();
@@ -18373,6 +18537,11 @@ private:
   /// don't see stale state.
   auto check_function(const ast::func_decl &decl, bool at_module_scope)
       -> void {
+    if (early_checked_.contains(&decl) &&
+        return_inference_started_.contains(&decl) &&
+        inferred_returns_.contains(&decl)) {
+      return;
+    }
     // A function with an unannotated parameter is checked once against that
     // parameter's leaf to find out whether the body pins it. The answer is
     // only known afterwards, and what the body says about a still-open leaf
@@ -18567,7 +18736,15 @@ private:
 
     const auto saved_return = return_type_;
     const auto saved_annotated = return_annotated_;
+    const auto saved_inferring = inferring_return_;
+    const auto saved_inferred = inferred_return_;
+    const auto saved_seen = inferred_return_seen_;
+    inferred_return_seen_ = false;
     return_annotated_ = decl.return_type != nullptr;
+    inferring_return_ = !return_annotated_ && decl.type_params.empty() &&
+                        !decl.modifiers.is_generator &&
+                        !decl.modifiers.is_intrinsic;
+    inferred_return_ = k_unknown_type;
     auto return_ctx = current_resolve_ctx();
     return_ctx.existential_allowed = true;
     return_ctx.is_generator_return = decl.modifiers.is_generator;
@@ -18703,6 +18880,8 @@ private:
       } else if (return_annotated_) {
         type_mismatch(decl.body_expr->span, return_type_, found,
                       "as the function result", decl.body_expr.get());
+      } else if (inferring_return_) {
+        note_inferred_return(found, decl.body_expr->span);
       }
     } else if (!decl.body_stmts.empty()) {
       const auto expected_for_body =
@@ -18710,6 +18889,11 @@ private:
               ? k_unknown_type
               : (return_annotated_ ? return_type_ : k_unknown_type);
       const auto tail = check_body_nodes(decl.body_stmts, expected_for_body);
+      if (inferring_return_ && !types_.is_unit(tail)) {
+        note_inferred_return(tail, decl.body_stmts.back() != nullptr
+                                       ? decl.body_stmts.back()->span
+                                       : decl.span);
+      }
       if (checking_existential_return_) {
         if (!types_.is_unit(tail) && !types_.is_unknown(tail)) {
           existential_underlying_ = join_branch_type(
@@ -18801,6 +18985,47 @@ private:
       }
     }
 
+    if (inferring_return_) {
+      // No value on any path means the function returns `unit`.
+      // A literal's leaf has to be settled here: the body compiles once, so
+      // nothing later can still choose its width.
+      if (const auto own = recursive_returns_.find(&decl);
+          own != recursive_returns_.end() && inferred_return_seen_) {
+        solve_leaves(own->second, inferred_return_);
+      }
+      auto result = types_.builtin("unit");
+      if (inferred_return_seen_) {
+        result = settle(inferred_return_);
+        // A result that still hangs on one of the function's own parameters
+        // (`x + x` over an open `x`) is not defaulted: the parameter is what
+        // makes the function generic, and each instance answers for itself.
+        // Anything else still open is a literal, which nothing later can pin.
+        auto vars = std::vector<type_id>{};
+        auto seen = std::unordered_set<type_id>{};
+        collect_type_vars(result, vars, seen);
+        const auto own = inferred_param_types_.find(&decl);
+        const auto hangs_on_param =
+            own != inferred_param_types_.end() &&
+            std::ranges::any_of(own->second, [&](type_id param) -> bool {
+              auto param_vars = std::vector<type_id>{};
+              auto param_seen = std::unordered_set<type_id>{};
+              collect_type_vars(settle(param), param_vars, param_seen);
+              return std::ranges::any_of(param_vars, [&](type_id v) -> bool {
+                return std::ranges::find(vars, v) != vars.end();
+              });
+            });
+        if (!vars.empty() && !hangs_on_param) {
+          result = demand(result);
+        }
+      }
+      // An answer still open (`return forever()`) is no answer: the function
+      // keeps no inferred return type, and lowering says so.
+      inferred_returns_[&decl] =
+          mentions_type_var(result) ? k_unknown_type : result;
+    }
+    inferring_return_ = saved_inferring;
+    inferred_return_ = saved_inferred;
+    inferred_return_seen_ = saved_seen;
     checking_existential_return_ = saved_checking_existential;
     existential_underlying_ = saved_existential_underlying;
     in_generator_ = saved_in_generator;

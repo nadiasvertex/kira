@@ -1010,6 +1010,11 @@ struct checked_types {
   /// `const_generic_instances`, and `hir::lower_module` skips these
   /// templates exactly as it skips an explicit generic.
   std::unordered_set<const ast::func_decl *> open_param_templates;
+
+  /// The return type the checker inferred from the body of each function
+  /// declared without one. Lowering reads it where it would read the
+  /// annotation.
+  std::unordered_map<const ast::func_decl *, type_id> inferred_return_types;
   /// Every free, module-level `static def` registered with `comptime::
   /// evaluator` for compile-time calling (`checker::register_comptime_
   /// globals`'s `register_pending_function` call) — as opposed to an

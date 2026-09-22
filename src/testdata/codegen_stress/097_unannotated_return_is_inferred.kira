@@ -1,0 +1,46 @@
+module codegen_stress.unannotated_return_is_inferred
+
+# expect: 11000000332
+
+# None of these functions declares a return type; each one's comes from its
+# body. `later` is declared after `main` and `chain` calls it, so a caller can
+# reach a callee whose body has not been checked yet. `wide_sum` returns an
+# `int64` — a shared default width would truncate its result — and `pick` and
+# `fact` return only from `return` statements, `fact` also from inside itself, and `depth` uses its own result only
+# through a binding that no return names.
+
+def main() -> int64:
+    let narrow = later(4) + chain(5) + lit() + pick(1) + fact(5) + depth(3)
+    let doubled = twice(wide_sum(1, 1)) + int64(twice(5))
+    return int64(narrow) + wide_sum(3, 4) + doubled
+
+# `twice` has no annotations at all: its parameter is an implicit type
+# parameter and its result type follows the instance, `int32` for `twice(5)`
+# and `int64` for `twice(wide_sum(1, 1))`.
+def twice(x): x + x
+
+def later(x: int32): x * 10
+
+def chain(x: int32): later(x) + 1
+
+def lit(): 7
+
+def wide_sum(x: int64, y: int64):
+    let s = x + y
+    return s * 1000000000
+
+def pick(n: int32):
+    if n > 0:
+        return 100
+    return 200
+
+def fact(n: int32):
+    if n <= 1:
+        return 1
+    return n * fact(n - 1)
+
+def depth(n: int32):
+    if n <= 0:
+        return 0
+    let below = depth(n - 1)
+    return n + 1

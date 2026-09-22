@@ -2120,6 +2120,14 @@ auto lowerer::lower_index_dispatch(source_span span, type_id result,
 /// checking, same as every other type this pass reads rather than
 /// re-derives) instead of interning a fresh "unit" here, which `checked_`
 /// (a `const checked_types&`) has no way to do.
+[[nodiscard]] auto has_inferred_return_type(const ast::func_decl &decl,
+                                            const checked_types &checked)
+    -> bool {
+  const auto found = checked.inferred_return_types.find(&decl);
+  return found != checked.inferred_return_types.end() &&
+         found->second != k_unknown_type;
+}
+
 [[nodiscard]] auto drop_call_result_type(const checked_types &checked,
                                          const ast::func_decl &decl)
     -> type_id {
@@ -5357,11 +5365,11 @@ auto lowerer::lower_function(const ast::func_decl &decl)
                     "per constant and concrete type it is called with",
                     decl.name));
   }
-  if (decl.return_type == nullptr) {
+  if (decl.return_type == nullptr &&
+      !has_inferred_return_type(decl, checked_)) {
     return fail(lowering_error_kind::missing_return_type, decl.span,
-                std::format("function `{}` has no declared return type; the "
-                            "first lowering milestone only lowers explicitly "
-                            "annotated signatures",
+                std::format("function `{}` has no declared return type, and "
+                            "none could be inferred from its body",
                             decl.name));
   }
   // A generator's body isn't a function body: it compiles into a step
@@ -5483,14 +5491,18 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     }
   }
 
-  if (decl.return_type == nullptr) {
+  auto return_type = std::expected<type_id, lowering_error>{k_unknown_type};
+  if (decl.return_type != nullptr) {
+    return_type = checked_type_of(*decl.return_type);
+  } else if (has_inferred_return_type(decl, checked_)) {
+    return_type = checked_.inferred_return_types.at(&decl);
+  } else {
     pop_scope();
     return fail(lowering_error_kind::unsupported_construct, decl.span,
-                std::format("function `{}` has no declared return type; "
-                            "lowering does not yet infer one from the body",
+                std::format("function `{}` has no declared return type, and "
+                            "none could be inferred from its body",
                             decl.name));
   }
-  auto return_type = checked_type_of(*decl.return_type);
   if (!return_type.has_value()) {
     pop_scope();
     return std::unexpected(return_type.error());

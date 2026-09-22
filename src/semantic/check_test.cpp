@@ -1770,6 +1770,19 @@ auto test_pinned_param_rejects_wrong_argument() -> void {
                     "the callee's body pins the parameter to");
 }
 
+auto test_inferred_return_type_is_held_against_the_caller() -> void {
+  // `count` declares no return type; its body returns an `int32`, and the
+  // caller — written earlier — must be measured against that.
+  const auto analyzed =
+      analyze_test_data_file("inferred_return_rejects_wrong_use.kira");
+  expect(analyzed.error_count > 0,
+         "expected `return count(2)` from a `-> str` function to be refused: "
+         "`count` returns an `int32`");
+  expect_diagnostic(analyzed, "expected `str`, found `int32`",
+                    "expected the call to be measured against the return type "
+                    "inferred from the callee's body");
+}
+
 auto test_pass_through_param_stays_unannotated() -> void {
   const auto analyzed =
       analyze_test_data_file("pass_through_param_stays_unannotated.kira");
@@ -3607,6 +3620,7 @@ auto main() -> int {
     test_infers_param_type_from_declared_return_type_on_expr_body();
     test_method_call_receiver_subexpr_still_inferred();
     test_pinned_param_rejects_wrong_argument();
+    test_inferred_return_type_is_held_against_the_caller();
     test_pass_through_param_stays_unannotated();
     test_recursive_function_param_inference_terminates();
 
