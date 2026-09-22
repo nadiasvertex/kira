@@ -11,7 +11,7 @@ Kira is an early-stage language and compiler project written in C++26 (Clang 23.
 
 CRITICAL: When writing kira code that doesn't compile but should according to the spec, don't try to work around compiler limitations. Stop and identify the limitations so that we can build a better compiler.
 
-### Default Response Rule
+## Default Response Rule
 
 **Assume I want the short version.** Give me the important facts, the result, and any necessary next steps. Only provide a detailed explanation, extensive reasoning, historical context, or alternative approaches when I ask for it or when it is necessary to avoid misunderstanding.
 
