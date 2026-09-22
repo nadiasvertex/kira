@@ -24,5 +24,3 @@
 18. `//src:cli_test`'s `test_run_index_mut_dispatches_to_cell_mut` is stale (still declares `index_mut`'s old `type output = int32` shape), and once corrected fails only when run after enough other tests in the same process — something order- or allocation-history-dependent makes `require_index_mut_trait`'s dispatch entry go unseen by `hir::lower_unary`, falling through to "cannot take the address of this expression". Needs isolating what state leaks across `compile_sources` calls within one process.
 
 20. Methods in `impl`/`extend` blocks with an unannotated parameter or return type, and unannotated returns on explicit generics (`def f[T](x: T)`).
-
-21. `for x in &xs` still yields `&T` and so still needs `*x` — `std.iter`'s `values()` adapter exists precisely to spare a chain from spelling it — and `accept_for_over_ref_borrow.kira` was updated accordingly; that fixture asserts only the absence of borrow-check diagnostics, and the form does not lower end to end at all. And a `&T` whose `T` is still a type parameter is let through, so the same mistake inside a generic body is caught only when the body is instantiated.

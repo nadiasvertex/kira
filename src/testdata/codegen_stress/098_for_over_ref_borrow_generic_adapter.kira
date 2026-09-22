@@ -1,0 +1,46 @@
+module codegen_stress.for_over_ref_borrow_generic_adapter
+
+# `for x in &xs` (spec/todo.md #21) dispatches to a non-consuming `iter`
+# free function (see `086_for_over_ref_borrow.kira`), but that fixture's
+# `iter` is not itself generic, so it never exercised the instance the
+# checker builds for a generic `iter[T]`. `try_resolve_iter_borrow`
+# (src/semantic/check.cpp) instantiated that template through the wrong
+# channel (`fixed_type_params` instead of `generic_solution.type_slots`),
+# so `T` stayed an abstract, uncompiled type parameter inside the
+# instantiated `iter[T]`'s own body: any `T`-dependent call inside it (here,
+# `c.get_tag()`) resolved against the abstract template rather than a real
+# instance and failed to link at compile time ("could not be resolved to a
+# function in this compiled module"). This forces `iter[T]`'s body to make
+# such a call so a regression reintroduces that failure.
+#
+# sum of a single tag(42) read through the borrowing loop = 42.
+# expect: 42
+
+type container[T] = { data: T, tag: int32 }
+
+extend[T] container[T]:
+    def get_tag(self) -> int32:
+        return self.tag
+
+type container_iter[T] = { cached: int32, done: bool }
+
+def iter[T](c: &container[T]) -> container_iter[T]:
+    let t = c.get_tag()
+    return container_iter[T] { cached: t, done: false }
+
+trait iterator[T]:
+    def next(mut self) -> option[T]
+
+impl[T] iterator[&int32] for container_iter[T]:
+    def next(mut self) -> option[&int32]:
+        if self.done:
+            return @none
+        self.done = true
+        return @some(&self.cached)
+
+def main() -> int32:
+    var c = container[int32] { data: 7, tag: 42 }
+    var sum = 0
+    for x in &c:
+        sum = sum + *x
+    return sum

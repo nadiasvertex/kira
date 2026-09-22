@@ -15884,6 +15884,7 @@ private:
       if (site != nullptr && is_generic_template(*candidate.decl) &&
           !in_const_generic_template_ && !in_type_generic_template_) {
         auto solution = generic_solution{};
+        solution.type_slots = bindings;
         solution.suffix = std::format("${}", mangle_type_for_instance(operand));
         const auto instance_name =
             std::format("{}{}", candidate.decl->name, solution.suffix);
