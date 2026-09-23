@@ -761,7 +761,10 @@ auto evaluator::eval_module_path(const ast::module_path_expr &path) -> value {
                     std::format("compile-time struct value has no field `{}`",
                                 path.segments[i]));
     }
-    current = it->second;
+    // Copy out before assigning: `it->second` lives inside `current.fields`,
+    // which `current`'s own assignment frees mid-copy.
+    auto field = it->second;
+    current = std::move(field);
   }
   return current;
 }
