@@ -6928,13 +6928,40 @@ private:
                                 ? resolve_type(*param.type_annotation, ctx)
                                 : k_unknown_type);
     }
-    const auto result = decl.return_type != nullptr
-                            ? resolve_type(*decl.return_type, ctx)
-                            : types_.builtin("unit");
+    // An omitted return type is inferred from `instance`'s own body
+    // (`check_function_impl`'s `inferring_return_`), but that body is
+    // usually still sitting in `pending_instances_` at this point — this
+    // call is what requested the instance, not what checks it. Read
+    // `inferred_returns_` for the rare case it was already checked (a
+    // repeat call to the same instantiation, after the queue drained
+    // between the two calls); otherwise mint a leaf and let
+    // `finish_open_results` pin it once `flush_pending_instances` has run,
+    // the same way `instantiate_open_param_call` resolves an implicit
+    // generic's open-parameter call result.
+    auto result_pending = false;
+    type_id result = k_unknown_type;
+    if (decl.return_type != nullptr) {
+      result = resolve_type(*decl.return_type, ctx);
+    } else if (const auto found = inferred_returns_.find(instance);
+              found != inferred_returns_.end()) {
+      result = found->second;
+    } else {
+      result = leaf_ctxt_.fresh_type(
+          std::format("the result of this call to `{}`", decl.name),
+          source_location{.file_id = file_id_, .span = call.span});
+      result_pending = true;
+    }
     file_id_ = saved_signature_file;
     if (call.callee != nullptr) {
-      record_expr_type(*call.callee,
-                       types_.fn_of(std::move(param_types), result));
+      record_expr_type(*call.callee, types_.fn_of(param_types, result));
+    }
+    if (result_pending) {
+      pending_open_results_.push_back(
+          pending_open_result{.call = &call,
+                              .instance = instance,
+                              .leaf = result,
+                              .fn_params = std::move(param_types),
+                              .file = file_id_});
     }
     // A comptime-only instance (todo item 8) has no compiled function for an
     // ordinary call site to reach — `hir::lower_module` deliberately never
@@ -18742,7 +18769,15 @@ private:
     const auto saved_seen = inferred_return_seen_;
     inferred_return_seen_ = false;
     return_annotated_ = decl.return_type != nullptr;
-    inferring_return_ = !return_annotated_ && decl.type_params.empty() &&
+    // Gated on the template/instance distinction (`in_type_generic_template_`
+    // / `in_const_generic_template_`, set just above), not on
+    // `decl.type_params.empty()`: an explicit generic's instantiated clone
+    // still carries its (now-bound) `type_params` (`clone_func_decl`), so
+    // that emptiness check rejected inference for every concrete
+    // instantiation of `def f[T](x: T)`, not just the abstract template it
+    // was meant to exclude.
+    inferring_return_ = !return_annotated_ && !in_type_generic_template_ &&
+                        !in_const_generic_template_ &&
                         !decl.modifiers.is_generator &&
                         !decl.modifiers.is_intrinsic;
     inferred_return_ = k_unknown_type;

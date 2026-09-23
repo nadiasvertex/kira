@@ -1,0 +1,34 @@
+module codegen_stress.generic_and_method_return_inference
+
+# expect: 24
+
+# todo.md item 20: an explicit type-generic's omitted return type
+# (`def f[T](x: T)`) was silently typed `unit` at every call site, even
+# though its instance body itself infers `T` correctly — the call-site
+# typing (`instantiate_generic_function`) hardcoded `unit` for an
+# unannotated return instead of deferring to the instance's inferred
+# return the way `instantiate_open_param_call` already does for implicit
+# generics. `identity[T]` below exercises that path directly.
+#
+# Methods in `impl`/`extend` blocks with unannotated parameter or return
+# types already worked before this fix (they share `check_function_impl`
+# with free functions), so `sum`/`add_to` below just lock that in.
+
+type point = { x: int32, y: int32 }
+
+extend point:
+    def sum(self):
+        self.x + self.y
+    def add_to(self, n):
+        self.x + n
+
+def identity[T](x: T):
+    x
+
+def main():
+    let p = point{ x: 1, y: 2 }
+    let a: int32 = p.sum()
+    let b: int32 = p.add_to(3)
+    let c: int32 = identity(5)
+    let d: int64 = identity(int64(12))
+    return a + b + c + int32(d)
