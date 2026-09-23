@@ -1395,6 +1395,21 @@ private:
     if (!mentions_type_var(settled, seen)) {
       return settled;
     }
+    // A probed function's body may still be sitting in
+    // `unclassified_param_decls_`, its open-parameter verdict not yet
+    // recorded: `flush_leaf_literals`/`flush_pending_instances` normally
+    // classify it first (via `flush_deferred`), so its deferred obligations
+    // (an operator dispatch on the still-open parameter, say) are marked
+    // no-op before anything can default them. A `demand()` reached from
+    // outside that sequence — e.g. `check_interpolated_string` needing an
+    // interpolation segment's type right now — used to flush the queue
+    // without that guard, so `1 + g(5)` (for `def g(x): x + 1`) permanently
+    // defaulted `x` to `int32` while classifying `g`'s deferred `+`
+    // obligation, turning `g` into an ordinary `int32` function instead of
+    // the implicit generic its body actually makes it, and lowering then
+    // rejected the never-instantiated template as "no declared return type,
+    // and none could be inferred from its body" (spec/todo.md item 19).
+    classify_param_decls();
     (void)leaf_queue_.flush();
     return leaf_ctxt_.zonk(settled);
   }

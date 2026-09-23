@@ -10,7 +10,20 @@ module main
 def identity[T](x: T):
     x
 
+# The implicit-generic half of item 19: `add_one` has no `[T]` brackets at
+# all, so whether it is generic is only known once its own body has been
+# probed. `check_interpolated_string`'s `demand()` used to flush the leaf
+# queue before that probe's verdict (`classify_param_decls`) was recorded,
+# which permanently defaulted `x`'s still-open type while resolving
+# `add_one`'s own deferred `+` obligation — turning `add_one` into an
+# ordinary `int32` function instead of the implicit generic its body makes
+# it, so lowering rejected the never-instantiated template with "no declared
+# return type, and none could be inferred from its body".
+def add_one(x):
+    x + 1
+
 def main() -> int32:
     println("{identity(5)}")
     println("{identity(true)}")
+    println("{add_one(5)}")
     return 0
