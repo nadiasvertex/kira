@@ -563,13 +563,17 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     if (!object.has_value()) {
       return std::unexpected(object.error());
     }
-    if (!field.generic_args.empty()) {
-      return unsupported(e, "a method call with generic arguments");
-    }
     auto cloned = make<field_expr>();
     cloned->span = field.span;
     cloned->object = std::move(*object);
     cloned->field_name = field.field_name;
+    for (const auto &arg : field.generic_args) {
+      auto cloned_arg = clone_type_expr(*arg);
+      if (!cloned_arg.has_value()) {
+        return std::unexpected(cloned_arg.error());
+      }
+      cloned->generic_args.push_back(std::move(*cloned_arg));
+    }
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::index_expr: {

@@ -6150,6 +6150,7 @@ private:
       flush_pending_instances();
     }
     finish_open_results();
+    finish_pending_interp_segments();
     // Deferred method calls last: every leaf that is ever going to be solved
     // has been by now, so a call still waiting here is one nothing answers.
     // A failure is not reported from here — the receiver's own literal has
@@ -6163,6 +6164,7 @@ private:
         flush_pending_instances();
       }
       finish_open_results();
+      finish_pending_interp_segments();
     }
     finish_param_probes();
   }
@@ -16394,44 +16396,12 @@ private:
   /// style and dynamic-width/precision-must-be-`usize` rules, and records
   /// how `hir::lower` should render each segment in `interp_dispatches_`.
   /// The whole node always types as `str`.
-  auto check_interpolated_string(const ast::interpolated_string_expr &node)
-      -> type_id {
-    const auto usize_type = types_.builtin("usize");
-
-    const auto check_dynamic_size =
-        [&](const std::variant<std::monostate, size_t, ast::ptr<ast::expr>>
-                &slot) -> void {
-      const auto *dynamic_expr = std::get_if<ast::ptr<ast::expr>>(&slot);
-      if (dynamic_expr == nullptr || *dynamic_expr == nullptr) {
-        return;
-      }
-      const auto found = infer_expr(**dynamic_expr, usize_type);
-      if (!types_.is_unknown(found) && !types_.compatible(usize_type, found)) {
-        error((*dynamic_expr)->span,
-              std::format("format width must be `usize`, found `{}`",
-                          types_.display(found)),
-              "expected usize here");
-      }
-    };
-
-    for (const auto &seg : node.segments) {
-      if (seg.is_literal || seg.value == nullptr) {
-        continue;
-      }
-      // An interpolated value is a point of demand: its capability check
-      // needs a type, so an unconstrained literal defaults here.
-      const auto value_type =
-          strip_refs(demand(infer_expr(*seg.value, k_unknown_type)));
-
-      if (seg.has_spec) {
-        check_dynamic_size(seg.spec.width);
-        check_dynamic_size(seg.spec.precision);
-      }
-
-      if (types_.is_unknown(value_type)) {
-        continue;
-      }
-
+  /// Resolves one interpolation segment's format dispatch once its value
+  /// type is a concrete, settled type — either immediately (the common
+  /// case) or later, once a deferred call-result leaf (see
+  /// `pending_interp_segments_`) has been pinned by `finish_open_results`.
+  auto finish_interp_segment(const ast::interp_segment &seg, type_id value_type)
+      -> void {
       const char type_char = (seg.has_spec && seg.spec.type_char.has_value())
                                  ? *seg.spec.type_char
                                  : '\0';
@@ -16614,10 +16584,96 @@ private:
                         types_.display(value_type), describe_supported(),
                         trait_hint.empty() ? "show" : trait_hint,
                         types_.display(value_type)));
-        continue;
+        return;
       }
 
       interp_dispatches_[seg.value.get()] = dispatch;
+  }
+
+  /// An interpolation segment whose value type was still an open call-result
+  /// leaf (spec/todo.md item 19: an implicit-/explicit-generic call with an
+  /// omitted return type, used directly inside a `"{...}"` segment) when
+  /// `check_interpolated_string` first walked it. `demand` only flushes the
+  /// integer-literal queue, not `pending_open_results_`, so such a leaf comes
+  /// back unresolved; it is only pinned once `finish_open_results` runs.
+  struct pending_interp_segment {
+    const ast::interp_segment *seg = nullptr;
+    type_id leaf = k_unknown_type;
+  };
+  std::vector<pending_interp_segment> pending_interp_segments_;
+
+  /// Retries dispatch for every segment `check_interpolated_string` deferred.
+  /// Must run after `finish_open_results` has had a chance to pin each
+  /// segment's leaf — called right after it, both places `flush_deferred`
+  /// calls it. A leaf still open here (nothing ever solved it) is left
+  /// queued rather than dropped, so a later `flush_deferred` pass — e.g. the
+  /// whole-run one after every file's own — still gets a chance at it.
+  auto finish_pending_interp_segments() -> void {
+    auto pending = std::vector<pending_interp_segment>{};
+    pending.swap(pending_interp_segments_);
+    for (const auto &item : pending) {
+      const auto value_type = strip_refs(settle(item.leaf));
+      if (mentions_type_var(value_type)) {
+        pending_interp_segments_.push_back(item);
+        continue;
+      }
+      if (types_.is_unknown(value_type)) {
+        continue;
+      }
+      finish_interp_segment(*item.seg, value_type);
+    }
+  }
+
+  auto check_interpolated_string(const ast::interpolated_string_expr &node)
+      -> type_id {
+    const auto usize_type = types_.builtin("usize");
+
+    const auto check_dynamic_size =
+        [&](const std::variant<std::monostate, size_t, ast::ptr<ast::expr>>
+                &slot) -> void {
+      const auto *dynamic_expr = std::get_if<ast::ptr<ast::expr>>(&slot);
+      if (dynamic_expr == nullptr || *dynamic_expr == nullptr) {
+        return;
+      }
+      const auto found = infer_expr(**dynamic_expr, usize_type);
+      if (!types_.is_unknown(found) && !types_.compatible(usize_type, found)) {
+        error((*dynamic_expr)->span,
+              std::format("format width must be `usize`, found `{}`",
+                          types_.display(found)),
+              "expected usize here");
+      }
+    };
+
+    for (const auto &seg : node.segments) {
+      if (seg.is_literal || seg.value == nullptr) {
+        continue;
+      }
+      // An interpolated value is a point of demand: its capability check
+      // needs a type, so an unconstrained literal defaults here.
+      const auto value_type =
+          strip_refs(demand(infer_expr(*seg.value, k_unknown_type)));
+
+      if (seg.has_spec) {
+        check_dynamic_size(seg.spec.width);
+        check_dynamic_size(seg.spec.precision);
+      }
+
+      if (mentions_type_var(value_type)) {
+        // Real, but not solvable yet — e.g. an implicit/explicit generic
+        // whose instance body hasn't been checked. `finish_open_results`
+        // (inside `flush_deferred`) pins leaves like this later; come back
+        // then instead of reporting "unknown" against a type that is really
+        // just not ready.
+        pending_interp_segments_.push_back(
+            pending_interp_segment{.seg = &seg, .leaf = value_type});
+        continue;
+      }
+
+      if (types_.is_unknown(value_type)) {
+        continue;
+      }
+
+      finish_interp_segment(seg, value_type);
     }
 
     return types_.builtin("str");

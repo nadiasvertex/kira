@@ -2022,6 +2022,15 @@ auto test_reports_bad_method_explicit_generic_args() -> void {
                     "expected brackets on a non-generic method to be reported");
 }
 
+auto test_accepts_qualified_generic_call() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_qualified_generic_call.kira");
+  expect_clean(analyzed,
+               "expected a module-qualified generic call (`helper."
+               "identity[T](v)`) inside a generic function's body to "
+               "monomorphize just like the unqualified spelling does");
+}
+
 auto test_accepts_type_param_static_dispatch() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_type_param_static_dispatch.kira");
@@ -3588,6 +3597,7 @@ auto main() -> int {
     test_reports_unsolved_return_position_type_param();
     test_accepts_method_explicit_generic_args();
     test_reports_bad_method_explicit_generic_args();
+    test_accepts_qualified_generic_call();
     test_accepts_type_param_static_dispatch();
     test_reports_type_param_static_not_found();
     test_reports_refinement_predicate_not_bool();

@@ -1,0 +1,17 @@
+module sample
+
+# spec/todo.md item 19/12: a module-qualified generic call (`helper.identity[T](v)`)
+# used to fail cloning when the *enclosing* generic function's body was
+# monomorphized, because `ast_clone`'s `field_expr` case refused to clone any
+# node with non-empty `generic_args`. The unqualified spelling (`identity[T](v)`
+# after `use`) worked fine, so the two spellings must not differ.
+
+module helper:
+    pub def identity[T](v: T) -> T:
+        v
+
+def wrapper[T](v: T) -> T:
+    return helper.identity[T](v)
+
+def run() -> int32:
+    return wrapper[int32](5)

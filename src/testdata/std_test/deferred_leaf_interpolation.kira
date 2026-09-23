@@ -1,0 +1,16 @@
+module main
+
+# spec/todo.md item 19: a deferred-leaf result (an explicit-generic call with
+# an omitted return type) used directly inside a `"{...}"` interpolation
+# segment used to fail at lowering with "this interpolated expression was
+# never resolved by the capability check" instead of printing a value,
+# because `check_interpolated_string` demanded the segment's type before
+# `finish_open_results` had pinned the call's still-open result leaf.
+
+def identity[T](x: T):
+    x
+
+def main() -> int32:
+    println("{identity(5)}")
+    println("{identity(true)}")
+    return 0
