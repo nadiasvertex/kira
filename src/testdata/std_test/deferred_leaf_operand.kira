@@ -1,0 +1,17 @@
+module main
+
+# spec/todo.md item 20: an implicit-generic call's still-open result leaf
+# could only be resolved by `check_interpolated_string`'s own retry queue
+# (`pending_interp_segments_`), because `demand()` — the only way most
+# expression positions (a binary operand, an index, a match subject) ask a
+# subexpression for its concrete type — gave up on a leaf minted by
+# `mint_open_result` instead of running `resolve_open_param_calls`/
+# `finish_open_results` itself. `1 + add_one(5)` used to fail at lowering
+# with "no concrete checked type is available for this node" while the same
+# call under `"{add_one(5)}"` already worked.
+def add_one(x):
+    x + 1
+
+def main() -> int32:
+    println("{1 + add_one(5)}")
+    return 0

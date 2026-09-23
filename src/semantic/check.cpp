@@ -1411,8 +1411,57 @@ private:
     // and none could be inferred from its body" (spec/todo.md item 19).
     classify_param_decls();
     (void)leaf_queue_.flush();
-    return leaf_ctxt_.zonk(settled);
+    auto zonked = leaf_ctxt_.zonk(settled);
+    seen.clear();
+    if (!mentions_type_var(zonked, seen)) {
+      return zonked;
+    }
+    // Still open: `zonked` may be a call's result leaf minted by
+    // `mint_open_result`, which only `resolve_open_param_calls`/
+    // `finish_open_results` (normally run from `flush_deferred`) ever pin.
+    // `demand()` reached from outside that sequence — a binary operand, an
+    // index, a match subject, not just `check_interpolated_string`'s own
+    // retry path — used to hand back a type still naming a metavariable
+    // here, e.g. `1 + add_one(5)` for `def add_one(x): x + 1`
+    // (spec/todo.md item 20). Running the same sequence settles it the same
+    // way an interpolation segment's leaf already does.
+    //
+    // Only the `instantiate=true` half: the `false` half resolves *concrete*
+    // pending calls, which runs ordinarily at each `flush_deferred` and is
+    // not what a result leaf is waiting on — running it early here, before
+    // the statement it belongs to has finished being walked, reached calls
+    // nothing here needs yet. Likewise `flush_leaf_literals` is deliberately
+    // not run: it defaults every still-open literal leaf in the whole
+    // program, not just ones this call depends on, which is exactly the
+    // premature-defaulting mistake `demand()`'s own doc comment above
+    // describes for item 19 — just reached through this new path instead of
+    // the old unguarded flush. Draining `pending_instances_` alone is enough
+    // to let `check_instance` populate `inferred_returns_` for the instance
+    // `resolve_open_param_calls` just queued; any literal leaf that body
+    // touches stays queued for the real `flush_deferred` to default later.
+    //
+    // Guarded against reentrancy: `flush_pending_instances` below checks an
+    // instance body synchronously (`check_instance` walks it on this same
+    // C++ stack), and that body can itself reach `demand()` on a leaf of its
+    // own — e.g. an unannotated parameter whose open/concrete verdict is
+    // still being probed (`096_unannotated_param_is_a_leaf.kira`). Letting a
+    // nested call re-enter this sequence recursed the checker onto its own
+    // still-draining queues and blew the stack; the nested call instead
+    // falls back to the old give-up-for-now answer, and the outer call's own
+    // loop is what actually drains the queue to a fixed point.
+    if (!in_demand_open_resolve_) {
+      in_demand_open_resolve_ = true;
+      resolve_open_param_calls(/*instantiate=*/true);
+      flush_pending_instances();
+      finish_open_results();
+      in_demand_open_resolve_ = false;
+      zonked = leaf_ctxt_.zonk(zonked);
+    }
+    return zonked;
   }
+  /// Reentrancy guard for the `resolve_open_param_calls`/
+  /// `finish_open_results` retry inside `demand()`; see the comment there.
+  bool in_demand_open_resolve_ = false;
 
   /// Teaches the leaf unknowns what a value flowing into a declared type says
   /// about them.
