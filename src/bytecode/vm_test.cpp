@@ -74,14 +74,6 @@ auto emit_store_indexed(bc::chunk_writer &writer, uint8_t ptr,
   writer.emit_u8(elem_size);
 }
 
-auto emit_list_push(bc::chunk_writer &writer, uint8_t header, uint8_t value,
-                    uint8_t elem_size = 8) -> void {
-  writer.emit_opcode(bc::opcode::op_list_push);
-  writer.emit_register(header);
-  writer.emit_register(value);
-  writer.emit_u8(elem_size);
-}
-
 auto test_add_returns_sum() -> void {
   // fn(a: i32, b: i32) -> i32 { return a + b }
   auto writer = bc::chunk_writer{};
@@ -658,56 +650,6 @@ auto test_narrow_element_array_indexed_load_store_round_trip() -> void {
          "(byte offsets 0 and 8) without overlapping");
 }
 
-auto test_list_push_narrow_element_grows_and_stays_tightly_packed() -> void {
-  // A `list[int16]`-shaped push sequence (3-slot header, `op_list_push`'s
-  // generalized `elem_size` operand) — verifies pushed 2-byte elements
-  // don't waste the old hardcoded 8-bytes/element `data` block stride.
-  auto w = bc::chunk_writer{};
-  emit_alloc_slots(w, 0, 3); // list header: { len; cap; data }.
-
-  const auto c10 = w.add_constant(bc::slot_value{int64_t{10}});
-  const auto c20 = w.add_constant(bc::slot_value{int64_t{20}});
-  w.emit_opcode(bc::opcode::op_load_const);
-  w.emit_register(1);
-  w.emit_u16(c10);
-  emit_list_push(w, 0, 1, 2);
-  w.emit_opcode(bc::opcode::op_load_const);
-  w.emit_register(2);
-  w.emit_u16(c20);
-  emit_list_push(w, 0, 2, 2);
-
-  emit_load_slot(w, 3, 0, 2); // data pointer (slot 2 of the header).
-  const auto zero_idx = w.add_constant(bc::slot_value{uint64_t{0}});
-  w.emit_opcode(bc::opcode::op_load_const);
-  w.emit_register(5);
-  w.emit_u16(zero_idx);
-  emit_load_indexed(w, 6, 3, 5, 2);
-  const auto one_idx = w.add_constant(bc::slot_value{uint64_t{1}});
-  w.emit_opcode(bc::opcode::op_load_const);
-  w.emit_register(7);
-  w.emit_u16(one_idx);
-  emit_load_indexed(w, 8, 3, 7, 2);
-  w.emit_opcode(bc::opcode::op_add);
-  w.emit_register(9);
-  w.emit_register(6);
-  w.emit_register(8);
-  w.emit_numeric_kind(bc::numeric_kind::i64);
-  w.emit_opcode(bc::opcode::op_return_value);
-  w.emit_register(9);
-
-  auto function = std::move(w).finish("narrow_list_push", 0, 10);
-
-  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
-  module.functions.push_back(std::move(function));
-
-  auto result = bc::vm{module}.run(0, {});
-
-  expect(result.has_value(), "expected the narrow list_push test not to panic");
-  expect(result->value.i == 30,
-         "expected both pushed 2-byte elements to read back correctly at "
-         "their tightly-packed offsets");
-}
-
 auto test_load_str_const_produces_len_and_data_slots() -> void {
   // fn() -> u64 { return len("hi!") } — reads the heap `str` value's own
   // length slot (slot 0) directly, since increment 2 hasn't wired up a
@@ -1013,7 +955,6 @@ auto main() -> int {
     test_alloc_and_slot_roundtrip_a_two_field_heap_block();
     test_packed_struct_fields_round_trip_without_clobbering_neighbors();
     test_narrow_element_array_indexed_load_store_round_trip();
-    test_list_push_narrow_element_grows_and_stays_tightly_packed();
     test_load_str_const_produces_len_and_data_slots();
     test_return_unit_produces_no_value();
     test_intrinsic_rt_stdout_returns_fd_one();

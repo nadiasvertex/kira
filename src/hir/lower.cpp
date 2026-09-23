@@ -681,8 +681,8 @@ private:
   /// guard => expr`): builds a fresh `list[T]` accumulator, lowers the
   /// clause chain into nested loops (reusing the same three shape lowerers
   /// as `for` statements, one nested inside the next), and appends the
-  /// yielded value — filtered by `guard`, if present — via `hir_list_push`
-  /// at the innermost position. See spec/iterator-protocol-design.md.
+  /// yielded value — filtered by `guard`, if present — via the list's own
+  /// `push` method at the innermost position. See spec/iterator-protocol-design.md.
   [[nodiscard]] auto lower_for_expr(const ast::for_expr &for_expr)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   /// Recursively lowers `clauses[index:]` into nested loops, calling
@@ -1627,69 +1627,6 @@ auto lowerer::lower_call(const ast::call_expr &call)
               make<hir_generator_next>(call.span, *type, std::move(*object)));
         }
       }
-    }
-    // `list.push(x)` used as a *value*, not a bare statement — a lambda
-    // whose one-expression body is a push (`(x) => seen.push(x)`), or any
-    // other position that wants its (always-`unit`) result. The
-    // `expr_stmt` case in `lower_stmt` below intercepts the bare-statement
-    // form directly into a standalone `hir_list_push`, which has no
-    // expression form of its own; here the same push is wrapped in a block
-    // that tails with an explicit `unit` literal, so it can stand in for a
-    // value like any other expression.
-    if (field.object != nullptr && field.field_name == "push" &&
-        call.args.size() == 1 && call.args.front().value != nullptr) {
-      auto target = lower_expr(*field.object);
-      if (!target.has_value()) {
-        return std::unexpected(target.error());
-      }
-      auto value = lower_expr(*call.args.front().value);
-      if (!value.has_value()) {
-        return std::unexpected(value.error());
-      }
-      auto stmts = ptr_vec<hir_node>{};
-      stmts.push_back(ptr<hir_node>(make<hir_list_push>(
-          call.span, std::move(*target), std::move(*value))));
-      stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-          call.span, ptr<hir_expr>(make<hir_literal>(
-                         call.span, *type, token_kind::kw_unit, "")))));
-      return ok_expr(make<hir_block>(call.span, *type, std::move(stmts)));
-    }
-    // `xs.cell(i)`: an unchecked single-element view — same address a plain
-    // `&xs[i]` would compute (and the same panic on out-of-bounds), just
-    // named/typed as `cell[T]` rather than `&T`. No dedicated node: reuse
-    // `hir_unary(addr_of, hir_index(...))` verbatim.
-    if (field.object != nullptr && field.field_name == "cell" &&
-        call.args.size() == 1 && call.args.front().value != nullptr &&
-        !checked_.resolved_callees.contains(&call)) {
-      const auto element_type = checked_.types.entry(*type).args.front();
-      auto object = lower_expr(*field.object);
-      if (!object.has_value()) {
-        return std::unexpected(object.error());
-      }
-      auto idx = lower_expr(*call.args.front().value);
-      if (!idx.has_value()) {
-        return std::unexpected(idx.error());
-      }
-      auto index_node = ptr<hir_expr>(make<hir_index>(
-          call.span, element_type, std::move(*object), std::move(*idx)));
-      return ok_expr(hir::make<hir_unary>(
-          call.span, *type, ast::unary_op::addr_of, std::move(index_node)));
-    }
-    // `xs.mutable_cell(i)`: the checked, non-panicking sibling — see
-    // `hir_mutable_cell`.
-    if (field.object != nullptr && field.field_name == "mutable_cell" &&
-        call.args.size() == 1 && call.args.front().value != nullptr &&
-        !checked_.resolved_callees.contains(&call)) {
-      auto object = lower_expr(*field.object);
-      if (!object.has_value()) {
-        return std::unexpected(object.error());
-      }
-      auto idx = lower_expr(*call.args.front().value);
-      if (!idx.has_value()) {
-        return std::unexpected(idx.error());
-      }
-      return ok_expr(make<hir_mutable_cell>(
-          call.span, *type, std::move(*object), std::move(*idx)));
     }
     // `c.get()` on a `cell[T]`/`cell_mut[T]`: reading through the address `c`
     // already is. No dedicated node: reuse `hir_unary(deref, ...)` verbatim.
@@ -3421,36 +3358,6 @@ auto lowerer::lower_stmt(const ast::node &node)
       return fail(lowering_error_kind::unsupported_construct, expr_stmt.span,
                   "expression statement has no expression");
     }
-    // `list.push(x)` as a bare statement — like `.len()`/`.as_bytes()`
-    // (`lower_call`), `push` on a builtin `list[T]` has no `func_decl`
-    // backing it (`semantic::check.cpp`'s `builtin_method_result`), so it
-    // can't lower through the ordinary call path either. Unlike those two,
-    // it has no expression-shaped HIR node — `hir_list_push` is a
-    // statement, matching how it's actually written (`out.push(x)` on its
-    // own line, never as a value) — so it's intercepted here rather than in
-    // `lower_call`. Guarded on the absence of a `resolved_callees_` entry so
-    // a real user-defined `push` method still wins.
-    if (expr_stmt.expr->kind == ast::node_kind::call_expr) {
-      const auto &call = dynamic_cast<const ast::call_expr &>(*expr_stmt.expr);
-      if (call.callee != nullptr &&
-          call.callee->kind == ast::node_kind::field_expr &&
-          !checked_.resolved_callees.contains(&call)) {
-        const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
-        if (field.field_name == "push" && field.object != nullptr &&
-            call.args.size() == 1 && call.args.front().value != nullptr) {
-          auto target = lower_expr(*field.object);
-          if (!target.has_value()) {
-            return std::unexpected(target.error());
-          }
-          auto value = lower_expr(*call.args.front().value);
-          if (!value.has_value()) {
-            return std::unexpected(value.error());
-          }
-          return one_stmt(ptr<hir_node>(make<hir_list_push>(
-              expr_stmt.span, std::move(*target), std::move(*value))));
-        }
-      }
-    }
     // `yield expr` — a generator's suspension point. Lowered directly to
     // `hir_yield` (a statement peer of `hir_return`) rather than through
     // the ordinary `lower_expr`/`hir_expr_stmt` path, mirroring how
@@ -4208,8 +4115,7 @@ auto lowerer::lower_indexed_loop(
                   "is not lowered yet");
     }
   } else if (entry.kind == type_kind::builtin_generic_kind &&
-             (entry.name == "list" || entry.name == "slice" ||
-              entry.name == "slice_mut")) {
+             (entry.name == "slice" || entry.name == "slice_mut")) {
     element_type = entry.args.empty() ? k_unknown_type : entry.args[0];
   } else {
     return fail(lowering_error_kind::unsupported_construct, span,

@@ -77,12 +77,6 @@ auto collect_bound_symbols(const hir_node &node,
     collect_bound_symbols(*loop.body, bound);
     return;
   }
-  case hir_node_kind::hir_list_push: {
-    const auto &push = dynamic_cast<const hir_list_push &>(node);
-    collect_bound_symbols(*push.target, bound);
-    collect_bound_symbols(*push.value, bound);
-    return;
-  }
   case hir_node_kind::hir_contract_check: {
     collect_bound_symbols(
         *dynamic_cast<const hir_contract_check &>(node).condition, bound);
@@ -219,12 +213,6 @@ auto collect_bound_symbols(const hir_node &node,
   case hir_node_kind::hir_generator_next: {
     collect_bound_symbols(
         *dynamic_cast<const hir_generator_next &>(node).object, bound);
-    return;
-  }
-  case hir_node_kind::hir_mutable_cell: {
-    const auto &n = dynamic_cast<const hir_mutable_cell &>(node);
-    collect_bound_symbols(*n.object, bound);
-    collect_bound_symbols(*n.index, bound);
     return;
   }
   case hir_node_kind::hir_cell_set: {

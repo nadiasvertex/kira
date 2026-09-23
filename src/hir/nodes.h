@@ -68,9 +68,8 @@ using semantic::type_id;
 //  pattern every iteration and falling out on the first mismatch — see
 //  its own doc comment) came after that. `for` comprehensions came last,
 //  reusing every iterable shape above (nested when a comprehension has
-//  more than one clause) plus `hir_array_init` for the fresh accumulator
-//  and one new node — `hir_list_push` — to grow it, for the same reason
-//  `hir_container_len` isn't a synthesized `.len()` call. Still explicitly
+//  more than one clause), growing a `list[T]` accumulator through its
+//  ordinary `push` method. Still explicitly
 //  unsupported: the concurrency forms (`async`/`await`/`par`/`race`/
 //  `crew`/`on`) and compile-time forms (`quote`/`splice`/`static`),
 //  monomorphization (phase 5), and borrow/ownership metadata — all
@@ -119,8 +118,6 @@ enum class hir_node_kind : uint8_t {
   hir_str_scalar_width,  ///< Bytes consumed decoding the scalar at a byte
                          ///< offset into a `str` — companion to
                          ///< `hir_str_decode_scalar`.
-  hir_mutable_cell,      ///< `xs.mutable_cell(i)`: a bounds-checked
-                         ///< `option[cell_mut[T]]`; see `hir_mutable_cell`.
   hir_cell_set,          ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
   // patterns (match arms only)
   hir_wildcard_pattern,
@@ -144,7 +141,6 @@ enum class hir_node_kind : uint8_t {
   hir_while_let,
   hir_break,
   hir_continue,
-  hir_list_push,
   hir_contract_check, ///< A `pre`/`post`/`invariant` the checker could not
                       ///< discharge statically, reified as a runtime check.
   // items
@@ -527,8 +523,8 @@ struct hir_stack_buffer : hir_expr {
 
 /// The address of element 0 of `object`'s data block — what `xs.as_ptr()`
 /// and `xs.as_mut_ptr()` lower to, for any of the shapes
-/// `resolve_container_view` understands (a `list[T]`, a `slice`/
-/// `slice_mut[T]`, a `str`, or a fixed `array[T, N]`). `type` is the
+/// `resolve_container_view` understands (a `slice`/`slice_mut[T]`, a `str`,
+/// or a fixed `array[T, N]`). `type` is the
 /// resulting `*T`/`*mut T`.
 ///
 /// A distinct node rather than `&object[0]`, which would compute the same
@@ -614,29 +610,8 @@ struct hir_generator_next : hir_expr {
         object(std::move(obj)) {}
 };
 
-/// `xs.mutable_cell(i)`: bounds-checks `index` against `object`'s element
-/// count and evaluates to `@some(<address of element i>)` if in bounds,
-/// `@none` otherwise — a `cell_mut[T]` is a bare element address (see
-/// `hir_container_data`'s "runtime representation" rationale, which applies
-/// identically here), so the payload is the same address `&mut object[index]`
-/// would compute, just reached without `compile_element_address`'s
-/// unconditional panic on failure. `object.cell(i)` (the non-`option`,
-/// panic-on-failure sibling) needs no dedicated node: it lowers straight to
-/// `hir_unary(addr_of, hir_index(object, index))`, since that already panics
-/// on out-of-bounds the way plain indexing does. `type` is always
-/// `option[cell_mut[T]]`.
-struct hir_mutable_cell : hir_expr {
-  ptr<hir_expr> object;
-  ptr<hir_expr> index;
-
-  hir_mutable_cell(source_span s, type_id t, ptr<hir_expr> obj,
-                   ptr<hir_expr> idx)
-      : hir_expr(hir_node_kind::hir_mutable_cell, s, t), object(std::move(obj)),
-        index(std::move(idx)) {}
-};
-
 /// `c.set(v)` on a `cell_mut[T]`: stores `v` through the address `c` already
-/// is (see `hir_mutable_cell`) and evaluates to `unit`. A dedicated node
+/// is (a `cell_mut[T]` is a bare element address) and evaluates to `unit`. A dedicated node
 /// rather than reuse of `hir_assign` (`*c = v`), because `hir_assign` is a
 /// statement — it has no value of its own to plug into an expression
 /// position, and `c.set(v)` is a method call used as one. `cell.get()`/
@@ -966,22 +941,6 @@ struct hir_while_let : hir_stmt {
                 ptr<hir_pattern> pat, ptr<hir_block> b)
       : hir_stmt(hir_node_kind::hir_while_let, s), subject(std::move(subj)),
         subject_symbol(subj_sym), pattern(std::move(pat)), body(std::move(b)) {}
-};
-
-/// Appends `value` onto `target` (a `list[T]` place) — the counterpart of
-/// `hir_container_len` for `for`-comprehension lowering (see
-/// spec/iterator-protocol-design.md): a dedicated node rather than a
-/// synthesized `.push()` method call, for the same reason
-/// `hir_container_len` isn't a synthesized `.len()` call — there's no
-/// callee to resolve, just a well-defined mutating operation lowering
-/// needs to grow the comprehension's accumulator.
-struct hir_list_push : hir_stmt {
-  ptr<hir_expr> target;
-  ptr<hir_expr> value;
-
-  hir_list_push(source_span s, ptr<hir_expr> t, ptr<hir_expr> v)
-      : hir_stmt(hir_node_kind::hir_list_push, s), target(std::move(t)),
-        value(std::move(v)) {}
 };
 
 /// Which face of a contract a `hir_contract_check` enforces. Backends map

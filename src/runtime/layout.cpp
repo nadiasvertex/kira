@@ -534,29 +534,4 @@ auto tuple_element_offset(const type_table &types, semantic::type_id id,
   return found;
 }
 
-auto list_reserve_slot(uint64_t *header, size_t elem_size) -> void * {
-  const auto len = header[0];
-  auto cap = header[1];
-  if (len >= cap) {
-    const auto new_cap = cap == 0 ? uint64_t{4} : cap * 2;
-    auto *new_data =
-        static_cast<uint8_t *>(kira_heap_alloc(new_cap * elem_size));
-    if (cap > 0) {
-      const auto *old_data =
-          reinterpret_cast<const uint8_t *>(static_cast<uintptr_t>(header[2]));
-      std::copy(old_data, old_data + (len * elem_size), new_data);
-    }
-    header[1] = new_cap;
-    header[2] = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(new_data));
-  }
-  auto *data = reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(header[2]));
-  header[0] = len + 1;
-  return data + (len * elem_size);
-}
-
-extern "C" auto kira_rt_list_reserve_slot(uint64_t *header, uint64_t elem_size)
-    -> void * {
-  return list_reserve_slot(header, elem_size);
-}
-
 } // namespace kira::runtime

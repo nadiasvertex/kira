@@ -1,0 +1,30 @@
+# Sort 100k `int32` held in a `list[int32]`: push-fill, `sort` over the
+# list's range view, then an indexed sortedness check. The benchmark
+# spec/list-migration-design.md phase 4 asks for — it exercises `push`,
+# `v[a..b]`, and `v[i]`, each a real `list` method call since the flip.
+#
+# From the repo root (the stdlib is found relative to cwd):
+#   KIRA_ALLOCATOR=system|arena ./bazel-bin/src/kira bench/sort_100k_int32.kira
+#   ./bazel-bin/src/kira -c -O2 -o /tmp/sort bench/sort_100k_int32.kira
+module sort_100k_int32
+
+use std.algo
+
+def main() -> int32:
+    let n: usize = 100000
+    var xs: list[int32] = []
+    var seed: int64 = 12345
+    var i: usize = 0
+    while i < n:
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        xs.push(seed as int32)
+        i = i + 1
+    sort(&mut xs[0..n])
+    var j: usize = 1
+    var bad: int32 = 0
+    while j < n:
+        if xs[j - 1] > xs[j]:
+            bad = bad + 1
+        j = j + 1
+    println("bad={bad}")
+    return bad

@@ -497,13 +497,12 @@ public:
       llvm::LLVMContext &ctx, const type_table &types,
       const std::unordered_map<std::string, llvm::Function *> &functions,
       llvm::Function *panic_fn, llvm::Function *alloc_fn,
-      llvm::Function *list_reserve_slot_fn,
       const std::array<llvm::Function *, kira::known_intrinsic_names.size()>
           &intrinsic_fns,
       std::string entry_module_name, std::string current_module_name,
       const std::unordered_map<std::string, llvm::GlobalVariable *> &globals)
       : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
-        alloc_fn_(alloc_fn), list_reserve_slot_fn_(list_reserve_slot_fn),
+        alloc_fn_(alloc_fn),
         intrinsic_fns_(intrinsic_fns),
         entry_module_name_(std::move(entry_module_name)),
         current_module_name_(std::move(current_module_name)), globals_(globals),
@@ -614,7 +613,7 @@ public:
         current_fn_->getParent());
 
     auto nested = function_compiler(
-        ctx_, types_, functions_, panic_fn_, alloc_fn_, list_reserve_slot_fn_,
+        ctx_, types_, functions_, panic_fn_, alloc_fn_,
         intrinsic_fns_, entry_module_name_, current_module_name_, globals_);
     auto step_compiled =
         nested.compile_generator_step(fn, state_symbols, step_fn);
@@ -966,16 +965,6 @@ private:
     return *ty;
   }
 
-  /// Whether `id` is the prelude's growable `list[T]` container — as
-  /// opposed to a fixed `array[T, N]`, which shares construction/indexing
-  /// codegen for everything except sizing/length (see `compile_array_init`/
-  /// `compile_index`).
-  [[nodiscard]] auto is_list_type(type_id id) const -> bool {
-    const auto &entry = types_.entry(strip_refs(types_, id));
-    return entry.kind == semantic::type_kind::builtin_generic_kind &&
-           entry.name == "list";
-  }
-
   /// An element type's byte stride within a fixed `array[T,N]` or a
   /// `list[T]`'s growable backing store — `runtime::layout_of`'s size,
   /// clamped/defaulted to one of 1/2/4/8. Mirrors
@@ -1190,9 +1179,8 @@ private:
                 "error",
                 ref.name)});
       }
-      // Every reified global is a heap value (array/list), stored the same
-      // pointer-sized way `compile_array_init`/`compile_list_init` produce
-      // it — see `compile_static_global_value`.
+      // Every reified global is a heap value (an array), stored the same
+      // pointer-sized way `compile_array_init` produces it — see `compile_static_global_value`.
       return builder_.CreateLoad(llvm::PointerType::get(ctx_, 0), found->second,
                                  ref.name);
     }
@@ -1296,9 +1284,6 @@ private:
     case hir_node_kind::hir_str_scalar_width:
       return compile_str_scalar_width(
           dynamic_cast<const hir::hir_str_scalar_width &>(expr));
-    case hir_node_kind::hir_mutable_cell:
-      return compile_mutable_cell(
-          dynamic_cast<const hir::hir_mutable_cell &>(expr));
     case hir_node_kind::hir_cell_set:
       return compile_cell_set(dynamic_cast<const hir::hir_cell_set &>(expr));
     case hir_node_kind::hir_block: {
@@ -1675,8 +1660,8 @@ private:
     case semantic::type_kind::builtin_kind:
       return entry.name == "str";
     case semantic::type_kind::builtin_generic_kind:
-      return entry.name == "list" || entry.name == "slice" ||
-             entry.name == "slice_mut" || entry.name == "option" ||
+      return entry.name == "slice" || entry.name == "slice_mut" ||
+             entry.name == "option" ||
              entry.name == "result" || entry.name == "cell" ||
              entry.name == "cell_mut";
     default:
@@ -2129,7 +2114,7 @@ private:
         current_fn_->getParent());
 
     auto nested = function_compiler(
-        ctx_, types_, functions_, panic_fn_, alloc_fn_, list_reserve_slot_fn_,
+        ctx_, types_, functions_, panic_fn_, alloc_fn_,
         intrinsic_fns_, entry_module_name_, current_module_name_, globals_);
     auto compiled =
         nested.compile_lambda_body(lambda, plan, capture_types, lambda_fn);
@@ -2315,9 +2300,6 @@ private:
   /// `bytecode_compiler::compile.cpp`'s `compile_array_init` exactly.
   [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init)
       -> std::expected<llvm::Value *, codegen_error> {
-    if (is_list_type(init.type)) {
-      return compile_list_init(init);
-    }
     const auto &array_entry = types_.entry(init.type);
     const auto elem_size = element_stride(array_entry.result);
     if (init.fill_value == nullptr) {
@@ -2356,127 +2338,20 @@ private:
     return block;
   }
 
-  /// Constructs a growable `list[T]` heap value: an empty 3-slot header
-  /// `{ len; cap; data }` (`src/runtime/layout.h`) grown one element at a
-  /// time via `list_reserve_slot_fn_` (which returns the address to store
-  /// each pushed value at directly — see that function's own doc comment
-  /// for why the runtime never takes the value itself as a parameter). The
-  /// explicit-elements form pushes each literal element in turn; the fill
-  /// form `[val; count]` evaluates its value once and pushes it `count`
-  /// times in a runtime loop — unlike a fixed array's statically-required
-  /// `N`, a list's fill count may be an arbitrary runtime `usize`
-  /// expression (`infer_array` in `check.cpp` only requires the *element*
-  /// type, not the count, to be resolvable), so a loop is the only
-  /// construction strategy that works uniformly either way.
-  [[nodiscard]] auto compile_list_init(const hir::hir_array_init &init)
-      -> std::expected<llvm::Value *, codegen_error> {
-    auto *header = compile_heap_alloc(3);
-    const auto &list_entry = types_.entry(init.type);
-    const auto elem_size = list_entry.args.empty()
-                               ? uint8_t{8}
-                               : element_stride(list_entry.args.front());
-    auto *elem_size_const =
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), elem_size);
-
-    if (init.fill_value == nullptr) {
-      for (const auto &elem : init.elements) {
-        auto value = compile_expr(*elem);
-        if (!value.has_value()) {
-          return std::unexpected(value.error());
-        }
-        auto *slot = builder_.CreateCall(list_reserve_slot_fn_,
-                                         {header, elem_size_const});
-        builder_.CreateStore(*value, slot);
-      }
-      return header;
-    }
-
-    // Evaluated once, then pushed `count` times — see
-    // `compile_array_init`'s fixed-array fill form for why a
-    // side-effecting fill expression must only run once.
-    auto fill_value = compile_expr(*init.fill_value);
-    if (!fill_value.has_value()) {
-      return std::unexpected(fill_value.error());
-    }
-    auto count_kind = numeric_kind_for(init.fill_count->type, init.span);
-    if (!count_kind.has_value()) {
-      return std::unexpected(count_kind.error());
-    }
-    auto count_value = compile_expr(*init.fill_count);
-    if (!count_value.has_value()) {
-      return std::unexpected(count_value.error());
-    }
-    auto *count64 =
-        builder_.CreateIntCast(*count_value, llvm::Type::getInt64Ty(ctx_),
-                               is_signed_integer(*count_kind), "count.i64");
-
-    auto *idx_alloca =
-        create_local_alloca(llvm::Type::getInt64Ty(ctx_), "list.fill.idx");
-    builder_.CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0), idx_alloca);
-
-    auto *cond_bb =
-        llvm::BasicBlock::Create(ctx_, "list.fill.cond", current_fn_);
-    auto *body_bb =
-        llvm::BasicBlock::Create(ctx_, "list.fill.body", current_fn_);
-    auto *end_bb = llvm::BasicBlock::Create(ctx_, "list.fill.end", current_fn_);
-
-    builder_.CreateBr(cond_bb);
-    builder_.SetInsertPoint(cond_bb);
-    auto *idx = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_), idx_alloca);
-    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) - false positive:
-    // the analyzer's path-sensitive trace bottoms out in LLVM's own
-    // OperandTraits/User operand-accessor macros (vendored code we don't
-    // control), not in anything this call site does.
-    auto *cond = builder_.CreateICmpULT(idx, count64, "list.fill.test");
-    builder_.CreateCondBr(cond, body_bb, end_bb);
-
-    builder_.SetInsertPoint(body_bb);
-    auto *slot =
-        builder_.CreateCall(list_reserve_slot_fn_, {header, elem_size_const});
-    builder_.CreateStore(*fill_value, slot);
-    auto *next_idx = builder_.CreateAdd(
-        idx, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1));
-    builder_.CreateStore(next_idx, idx_alloca);
-    builder_.CreateBr(cond_bb);
-
-    builder_.SetInsertPoint(end_bb);
-    return header;
-  }
-
-  /// Builds a reified `static let` array/list global's backing heap value —
-  /// the explicit-elements branch of `compile_array_init`/`compile_list_init`
-  /// duplicated for a *borrowed* `hir::ptr_vec<hir::hir_expr>` (owned by the
-  /// module's `hir_static_global`, not an owned `hir_array_init` those two
-  /// take by reference), exactly mirroring
+  /// Builds a reified `static let` array global's backing heap value —
+  /// the explicit-elements branch of `compile_array_init` duplicated for a
+  /// *borrowed* `hir::ptr_vec<hir::hir_expr>` (owned by the module's
+  /// `hir_static_global`, not an owned `hir_array_init` it takes by
+  /// reference), exactly mirroring
   /// `bytecode_compiler::function_compiler::compile_static_global_value`'s
   /// own doc comment on why this is a deliberate duplicate rather than a
   /// shared helper. `checker::reify_static_global` only ever reifies a
   /// homogeneous-scalar literal-elements list (never a fill form), so unlike
-  /// the two originals this has just the one branch.
+  /// the original this has just the one branch.
   [[nodiscard]] auto
   compile_static_global_value(type_id container_type,
                               const hir::ptr_vec<hir::hir_expr> &elements)
       -> std::expected<llvm::Value *, codegen_error> {
-    if (is_list_type(container_type)) {
-      auto *header = compile_heap_alloc(3);
-      const auto &list_entry = types_.entry(container_type);
-      const auto elem_size = list_entry.args.empty()
-                                 ? uint8_t{8}
-                                 : element_stride(list_entry.args.front());
-      auto *elem_size_const =
-          llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), elem_size);
-      for (const auto &elem : elements) {
-        auto value = compile_expr(*elem);
-        if (!value.has_value()) {
-          return std::unexpected(value.error());
-        }
-        auto *slot = builder_.CreateCall(list_reserve_slot_fn_,
-                                         {header, elem_size_const});
-        builder_.CreateStore(*value, slot);
-      }
-      return header;
-    }
     const auto &array_entry = types_.entry(container_type);
     const auto elem_size = element_stride(array_entry.result);
     auto *block = compile_heap_alloc_bytes(elements.size() * elem_size);
@@ -2608,10 +2483,9 @@ private:
 
   /// The `{ len; data-block; elem_size }` triple shared by single-element
   /// access (`compile_element_address`) and range-indexing
-  /// (`compile_range_index`) for any of the four indexable container
-  /// shapes — a fixed `array[T, N]` (any `T`, not just `byte`: it is its
-  /// own data block, `len` the statically-known `N`), a `list[T]` (3-slot
-  /// `{ len; cap; data }` header), a `str` (2-slot `{ len; data }` header,
+  /// (`compile_range_index`) for every builtin indexable shape — a fixed
+  /// `array[T, N]` (any `T`, not just `byte`: it is its own data block,
+  /// `len` the statically-known `N`), a `str` (2-slot `{ len; data }` header,
   /// element type always `byte`), or a `slice`/`slice_mut[T]` (the same
   /// 2-slot header, element type `T`). Mirrors
   /// `bytecode_compiler::compile.cpp`'s identically-named/-shaped
@@ -2632,7 +2506,6 @@ private:
                                             source_span span)
       -> std::expected<container_view, codegen_error> {
     const auto &object_entry = types_.entry(strip_refs(types_, object_type));
-    const bool indexing_list = is_list_type(object_type);
     const bool indexing_str =
         object_entry.kind == semantic::type_kind::builtin_kind &&
         object_entry.name == "str";
@@ -2667,26 +2540,23 @@ private:
           .data = object,
           .elem_size = element_stride(object_entry.args.front())};
     }
-    if (!indexing_list && !indexing_view &&
+    if (!indexing_view &&
         (object_entry.kind != semantic::type_kind::array_kind ||
          !object_entry.array_size.has_value())) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = span,
           .message = "indexing is only supported for a fixed-size array "
-                     "with a statically known length, a list, a `str`, a "
+                     "with a statically known length, a `str`, a "
                      "`slice`/`slice_mut`, or a raw `*T`/`*mut T` yet"});
     }
 
     const auto elem_size =
         indexing_str     ? uint8_t{1}
         : indexing_slice ? element_stride(object_entry.args.front())
-        : indexing_list  ? (object_entry.args.empty()
-                                ? uint8_t{8}
-                                : element_stride(object_entry.args.front()))
                          : element_stride(object_entry.result);
 
-    if (!indexing_list && !indexing_view) {
+    if (!indexing_view) {
       auto *len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
                                          *object_entry.array_size);
       return container_view{.len = len, .data = object, .elem_size = elem_size};
@@ -2694,13 +2564,11 @@ private:
 
     auto *len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
                                     slot_address(object, size_t{0}),
-                                    indexing_list ? "list.len" : "view.len");
-    // The list header keeps its data pointer at slot 2; the 2-slot view
-    // header keeps it at slot 1.
-    auto *data = builder_.CreateLoad(
-        llvm::PointerType::get(ctx_, 0),
-        slot_address(object, indexing_list ? size_t{2} : size_t{1}),
-        indexing_list ? "list.data" : "view.data");
+                                    "view.len");
+    // A 2-slot `{ len; data }` view header keeps its data pointer at slot 1.
+    auto *data =
+        builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
+                            slot_address(object, size_t{1}), "view.data");
     return container_view{.len = len, .data = data, .elem_size = elem_size};
   }
 
@@ -2866,89 +2734,6 @@ private:
     return builder_.CreateLoad(*elem_ty, *address);
   }
 
-  /// `xs.mutable_cell(i)` — `@some(&xs[i])`/`@none` built by hand rather than
-  /// through `compile_variant_init`: the bounds check must branch to `@none`
-  /// on failure instead of `guard_panic`'s unconditional trap, so there is no
-  /// single `llvm::Value*` address to hand a generic variant-construction
-  /// path before the check has even run. Mirrors `compile_variant_init`'s
-  /// tag/payload-store shape once inside each arm.
-  [[nodiscard]] auto compile_mutable_cell(const hir::hir_mutable_cell &node)
-      -> std::expected<llvm::Value *, codegen_error> {
-    auto object = compile_expr(*node.object);
-    if (!object.has_value()) {
-      return std::unexpected(object.error());
-    }
-    auto index_kind = numeric_kind_for(node.index->type, node.span);
-    if (!index_kind.has_value()) {
-      return std::unexpected(index_kind.error());
-    }
-    auto index_value = compile_expr(*node.index);
-    if (!index_value.has_value()) {
-      return std::unexpected(index_value.error());
-    }
-    auto *index64 = builder_.CreateIntCast(
-        *index_value, llvm::Type::getInt64Ty(ctx_),
-        is_signed_integer(*index_kind), "cell.index.i64");
-
-    auto view = resolve_container_view(node.object->type, *object, node.span);
-    if (!view.has_value()) {
-      return std::unexpected(view.error());
-    }
-    const auto some_tag = runtime::sum_variant_tag(types_, node.type, "some");
-    const auto none_tag = runtime::sum_variant_tag(types_, node.type, "none");
-    if (!some_tag.has_value() || !none_tag.has_value()) {
-      return std::unexpected(codegen_error{
-          .kind = codegen_error_kind::unsupported_construct,
-          .span = node.span,
-          .message = "`mutable_cell`'s result does not resolve to "
-                     "`option`'s `some`/`none` variants — this should have "
-                     "been rejected by the type checker"});
-    }
-    const auto payload_slots =
-        runtime::sum_max_payload_slots(types_, node.type);
-    auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
-    auto *result_slot = create_local_alloca(ptr_ty, "mutable_cell.result");
-
-    auto *in_bounds =
-        view->len != nullptr
-            ? builder_.CreateICmpULT(index64, view->len, "cell.index.in_bounds")
-            : llvm::ConstantInt::getTrue(ctx_);
-    auto *some_bb =
-        llvm::BasicBlock::Create(ctx_, "mutable_cell.some", current_fn_);
-    auto *none_bb =
-        llvm::BasicBlock::Create(ctx_, "mutable_cell.none", current_fn_);
-    auto *merge_bb =
-        llvm::BasicBlock::Create(ctx_, "mutable_cell.merge", current_fn_);
-    builder_.CreateCondBr(in_bounds, some_bb, none_bb);
-
-    builder_.SetInsertPoint(some_bb);
-    auto *stride_const =
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), view->elem_size);
-    auto *byte_offset =
-        builder_.CreateMul(index64, stride_const, "cell.index.byte_offset");
-    auto *element_addr = byte_address(view->data, byte_offset);
-    auto *some_block = compile_heap_alloc(1 + payload_slots);
-    builder_.CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
-                               static_cast<uint64_t>(*some_tag)),
-        slot_address(some_block, size_t{0}));
-    builder_.CreateStore(element_addr, slot_address(some_block, size_t{1}));
-    builder_.CreateStore(some_block, result_slot);
-    builder_.CreateBr(merge_bb);
-
-    builder_.SetInsertPoint(none_bb);
-    auto *none_block = compile_heap_alloc(1 + payload_slots);
-    builder_.CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
-                               static_cast<uint64_t>(*none_tag)),
-        slot_address(none_block, size_t{0}));
-    builder_.CreateStore(none_block, result_slot);
-    builder_.CreateBr(merge_bb);
-
-    builder_.SetInsertPoint(merge_bb);
-    return builder_.CreateLoad(ptr_ty, result_slot);
-  }
-
   /// `c.set(v)` on a `cell_mut[T]` — stores through the address `c` already
   /// is (see `hir_cell_set`), then evaluates to `unit`. Shares the same
   /// deref-store logic `compile_assign` uses for `*c = v`.
@@ -3060,7 +2845,7 @@ private:
   /// `kira::runtime::str_scalar_at` decode (`src/runtime/string_ops.h`)
   /// through its raw-pointer `extern "C"` wrapper, `getOrInsertFunction`-
   /// declared on first use rather than pre-declared alongside `panic_fn_`/
-  /// `alloc_fn_`/`list_reserve_slot_fn_`: this call site is the only one
+  /// `alloc_fn_`: this call site is the only one
   /// that ever references it, so there's no forward-reference ordering
   /// concern a shared member would otherwise solve.
   [[nodiscard]] auto
@@ -4005,8 +3790,6 @@ private:
       return compile_continue(dynamic_cast<const hir::hir_continue &>(node));
     case hir_node_kind::hir_let_else:
       return compile_let_else(dynamic_cast<const hir::hir_let_else &>(node));
-    case hir_node_kind::hir_list_push:
-      return compile_list_push(dynamic_cast<const hir::hir_list_push &>(node));
     default:
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
@@ -4480,34 +4263,11 @@ private:
     return false;
   }
 
-  /// Appends `value` onto the `list[T]` place `target` (see
-  /// `hir_list_push`'s doc comment) — the comprehension accumulator's
-  /// growth statement.
-  [[nodiscard]] auto compile_list_push(const hir::hir_list_push &node)
-      -> std::expected<bool, codegen_error> {
-    auto target = compile_expr(*node.target);
-    if (!target.has_value()) {
-      return std::unexpected(target.error());
-    }
-    auto value = compile_expr(*node.value);
-    if (!value.has_value()) {
-      return std::unexpected(value.error());
-    }
-    const auto elem_size = element_stride(node.value->type);
-    auto *slot = builder_.CreateCall(
-        list_reserve_slot_fn_,
-        {*target,
-         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), elem_size)});
-    builder_.CreateStore(*value, slot);
-    return false;
-  }
-
   llvm::LLVMContext &ctx_;
   const type_table &types_;
   const std::unordered_map<std::string, llvm::Function *> &functions_;
   llvm::Function *panic_fn_;
   llvm::Function *alloc_fn_;
-  llvm::Function *list_reserve_slot_fn_;
   std::array<llvm::Function *, kira::known_intrinsic_names.size()>
       intrinsic_fns_;
   std::string entry_module_name_;
@@ -4568,21 +4328,6 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
                               {llvm::Type::getInt64Ty(ctx)},
                               /*isVarArg=*/false),
       llvm::Function::ExternalLinkage, kAllocSymbolName, llvm_module);
-
-  // `runtime::list_reserve_slot`/`kira_rt_list_reserve_slot` (layout.h) grew
-  // an `elem_size` parameter to generalize a `list[T]`'s push stride beyond
-  // a hardcoded 8 bytes/element — `function_compiler::compile_list_init`/
-  // `compile_list_push` (below) now pass each call site's own
-  // `element_stride`-computed value, matching the bytecode tier's own
-  // natural-stride `list[T]` storage. The parameter still has to be declared
-  // here to keep the real native function's ABI (2 args, not 1) correct
-  // across the JIT/AOT call boundary.
-  auto *list_reserve_slot_fn = llvm::Function::Create(
-      llvm::FunctionType::get(
-          llvm::PointerType::get(ctx, 0),
-          {llvm::PointerType::get(ctx, 0), llvm::Type::getInt64Ty(ctx)},
-          /*isVarArg=*/false),
-      llvm::Function::ExternalLinkage, kListReserveSlotSymbolName, llvm_module);
 
   // `intrinsic def` declarations (src/intrinsics.h): fixed native entry
   // points, each taking/returning opaque heap pointers (see
@@ -4688,7 +4433,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
                          : module->module_name + "::" + fn->name;
     auto *llvm_fn = functions.at(key);
     auto compiler = function_compiler(
-        ctx, types, functions, panic_fn, alloc_fn, list_reserve_slot_fn,
+        ctx, types, functions, panic_fn, alloc_fn,
         intrinsic_fns, entry_name, module->module_name, global_vars);
     auto compiled = compiler.compile(*fn, llvm_fn);
     if (!compiled.has_value()) {
@@ -4710,7 +4455,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
         llvm::Function::Create(init_fn_type, llvm::Function::InternalLinkage,
                                "__kira_static_init", llvm_module);
     auto init_compiler = function_compiler(
-        ctx, types, functions, panic_fn, alloc_fn, list_reserve_slot_fn,
+        ctx, types, functions, panic_fn, alloc_fn,
         intrinsic_fns, entry_name, entry_name, global_vars);
     auto compiled_init =
         init_compiler.compile_static_init(ordered_globals, init_fn);

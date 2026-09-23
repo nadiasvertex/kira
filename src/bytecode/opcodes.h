@@ -361,23 +361,6 @@ enum class opcode : uint8_t {
                    ///< = reg[ptr].u + reg[index].u * elem_size. The address
                    ///< counterpart of `op_load_indexed`: `&mut xs[i]`, and
                    ///< the opcode `iter_mut` over a container is built on.
-  op_list_push, ///< u16 header_ptr, u16 value, u8 elem_size — appends the low
-                ///< `elem_size` bytes of reg[value] onto the `list[T]`
-                ///< value at reg[header_ptr] (a 3-slot `{ len; cap; data }`
-                ///< header, `src/runtime/layout.h`, `data` itself a
-                ///< contiguous `elem_size`-byte-per-element block —
-                ///< `elem_size` generalizes what used to be a hardcoded
-                ///< 8-byte-per-element push), growing/copying to a larger
-                ///< `data` block when already at capacity. Unlike
-                ///< `op_load_slot`/`op_store_slot`, this is one
-                ///< opcode rather than several composed primitives:
-                ///< growth needs a real conditional allocate-and-copy
-                ///< that doesn't reduce to "one flat block of 8-byte
-                ///< slots," so this delegates to
-                ///< `kira::runtime::list_push` (the exact same
-                ///< function `llvm_codegen`'s generated IR calls via
-                ///< `kira_rt_list_push`) rather than reimplementing
-                ///< growth as a second copy of that logic here.
   op_panic_if,  ///< u16 cond, u8 panic_reason — panics with
                 ///< `static_cast<panic_reason>(panic_reason)` if
                 ///< reg[cond] (a `boolean` register) is true; otherwise
@@ -656,8 +639,6 @@ struct operand_signature {
     return sig({reg, reg, imm16});
   case opcode::op_addr_indexed:
     return sig({reg, reg, reg, imm8});
-  case opcode::op_list_push:
-    return sig({reg, reg, imm8});
   case opcode::op_panic_if:
     return sig({reg, imm8});
   case opcode::op_panic:

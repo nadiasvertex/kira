@@ -391,8 +391,8 @@ public:
 
   /// Compiles the synthesized `__kira_static_init` routine: builds every
   /// reified `static let`'s backing value exactly the way an ordinary
-  /// array/list literal builds one (`compile_static_global_value`, sharing
-  /// `compile_array_init`/`compile_list_init`'s own alloc-and-store
+  /// array literal builds one (`compile_static_global_value`, sharing
+  /// `compile_array_init`'s own alloc-and-store
   /// strategy), then stores each result into its global-table slot via
   /// `op_store_global`. Runs once, before the program's real entry point —
   /// see `bytecode_module::static_init_function`.
@@ -1018,16 +1018,6 @@ private:
     return *kind;
   }
 
-  /// Whether `id` is the prelude's growable `list[T]` container — as
-  /// opposed to a fixed `array[T, N]`, which shares construction/indexing
-  /// codegen for everything except sizing/length (see `compile_array_init`/
-  /// `compile_index`).
-  [[nodiscard]] auto is_list_type(type_id id) const -> bool {
-    const auto &entry = types_.entry(strip_refs(id));
-    return entry.kind == semantic::type_kind::builtin_generic_kind &&
-           entry.name == "list";
-  }
-
   /// Whether `id` is the builtin `str` — a `{ len; data }` header pointer,
   /// never a scalar, so equality on it needs `rt_str_eq` rather than
   /// `op_eq` (see `compile_string_pattern_test`).
@@ -1059,7 +1049,7 @@ private:
   // ------------------------------------------------------------------
   //  Byte-precise opcode emission helpers (`src/bytecode/opcodes.h`'s
   //  `op_alloc`/`op_load_slot`/`op_store_slot`/`op_load_indexed`/
-  //  `op_store_indexed`/`op_list_push`) — every call site below goes
+  //  `op_store_indexed`) — every call site below goes
   //  through these rather than emitting raw operand bytes directly, so the
   //  uniform-8-byte-slot convention (tuple/sum-payload/closure-env/list-
   //  header) and the byte-precise convention (struct fields, any array's
@@ -1167,16 +1157,6 @@ private:
     emit_register(ptr);
     emit_register(index_reg);
     emit_register(src);
-    writer_.emit_u8(elem_size);
-  }
-
-  /// Appends the low `elem_size` bytes of reg[value] onto the `list[T]`
-  /// value at reg[header].
-  auto emit_list_push(virtual_reg header, virtual_reg value, uint8_t elem_size)
-      -> void {
-    emit_op(opcode::op_list_push);
-    emit_register(header);
-    emit_register(value);
     writer_.emit_u8(elem_size);
   }
 
@@ -1333,9 +1313,6 @@ private:
     case hir_node_kind::hir_str_scalar_width:
       return compile_str_scalar_width(
           dynamic_cast<const hir::hir_str_scalar_width &>(expr), dst);
-    case hir_node_kind::hir_mutable_cell:
-      return compile_mutable_cell(
-          dynamic_cast<const hir::hir_mutable_cell &>(expr), dst);
     case hir_node_kind::hir_cell_set:
       return compile_cell_set(dynamic_cast<const hir::hir_cell_set &>(expr),
                               dst);
@@ -1426,8 +1403,8 @@ private:
     case semantic::type_kind::builtin_kind:
       return entry.name == "str";
     case semantic::type_kind::builtin_generic_kind:
-      return entry.name == "list" || entry.name == "slice" ||
-             entry.name == "slice_mut" || entry.name == "option" ||
+      return entry.name == "slice" || entry.name == "slice_mut" ||
+             entry.name == "option" ||
              entry.name == "result" || entry.name == "cell" ||
              entry.name == "cell_mut";
     default:
@@ -2012,8 +1989,8 @@ private:
   }
 
   /// Builds a reified static global's backing value into `dst` — the same
-  /// alloc-and-store-each-element strategy `compile_array_init`/
-  /// `compile_list_init` use for an ordinary literal, duplicated in
+  /// alloc-and-store-each-element strategy `compile_array_init` uses for
+  /// an ordinary literal, duplicated in
   /// miniature here rather than routed through those (which take an
   /// `hir::hir_array_init` whose `elements` they own outright — `elements`
   /// here is instead borrowed from a `const hir::hir_static_global` that
@@ -2025,21 +2002,6 @@ private:
   [[nodiscard]] auto compile_static_global_value(
       type_id container_type, const hir::ptr_vec<hir::hir_expr> &elements,
       virtual_reg dst) -> std::expected<void, compile_error> {
-    if (is_list_type(container_type)) {
-      const auto &list_entry = types_.entry(container_type);
-      const auto elem_size = list_entry.args.empty()
-                                 ? uint8_t{8}
-                                 : element_stride(list_entry.args.front());
-      emit_alloc_slots(dst, 3);
-      for (const auto &elem : elements) {
-        auto value_reg = compile_expr(*elem);
-        if (!value_reg.has_value()) {
-          return std::unexpected(value_reg.error());
-        }
-        emit_list_push(dst, *value_reg, elem_size);
-      }
-      return {};
-    }
     const auto &array_entry = types_.entry(container_type);
     const auto elem_size = element_stride(array_entry.result);
     const auto byte_size = elements.size() * elem_size;
@@ -2072,9 +2034,6 @@ private:
   [[nodiscard]] auto compile_array_init(const hir::hir_array_init &init,
                                         virtual_reg dst)
       -> std::expected<void, compile_error> {
-    if (is_list_type(init.type)) {
-      return compile_list_init(init, dst);
-    }
     const auto &array_entry = types_.entry(init.type);
     if (!array_entry.array_size.has_value()) {
       return std::unexpected(compile_error{
@@ -2119,110 +2078,6 @@ private:
       emit_store_field(dst, static_cast<uint16_t>(i * elem_size), *fill_reg,
                        elem_size);
     }
-    return {};
-  }
-
-  /// Constructs a growable `list[T]` heap value: a 3-slot header
-  /// `{ len; cap; data }` (`src/runtime/layout.h`), zero-initialized by
-  /// `op_alloc` into an empty list (`len == cap == 0`, `data == null`) and
-  /// then grown via `op_list_push` — for the explicit-elements form, one
-  /// push per literal element; for the fill form `[val; count]`, `count`
-  /// pushes of the same evaluated-once value in a runtime loop. Unlike a
-  /// fixed array's `[T, N]` (whose `N` the checker requires to be
-  /// statically known), a list's fill count may be an arbitrary runtime
-  /// `usize` expression (`infer_array` in `check.cpp` only requires the
-  /// *element* type, not the count, to be resolvable) — the push-loop
-  /// shape is the only construction strategy that works uniformly whether
-  /// `count` happens to be a literal or not.
-  [[nodiscard]] auto compile_list_init(const hir::hir_array_init &init,
-                                       virtual_reg dst)
-      -> std::expected<void, compile_error> {
-    const auto &list_entry = types_.entry(init.type);
-    const auto elem_size = list_entry.args.empty()
-                               ? uint8_t{8}
-                               : element_stride(list_entry.args.front());
-    emit_alloc_slots(dst, 3);
-
-    if (init.fill_value == nullptr) {
-      for (const auto &elem : init.elements) {
-        auto value_reg = compile_expr(*elem);
-        if (!value_reg.has_value()) {
-          return std::unexpected(value_reg.error());
-        }
-        emit_list_push(dst, *value_reg, elem_size);
-      }
-      return {};
-    }
-
-    // Evaluated once, then pushed `count` times — see
-    // `compile_array_init`'s fixed-array fill form for why a side-effecting
-    // fill expression must only run once.
-    auto fill_reg = compile_expr(*init.fill_value);
-    if (!fill_reg.has_value()) {
-      return std::unexpected(fill_reg.error());
-    }
-    auto count_kind = numeric_kind_for(init.fill_count->type, init.span);
-    if (!count_kind.has_value()) {
-      return std::unexpected(count_kind.error());
-    }
-    auto count_reg = compile_expr(*init.fill_count);
-    if (!count_reg.has_value()) {
-      return std::unexpected(count_reg.error());
-    }
-
-    auto idx_reg = alloc_register(init.span);
-    if (!idx_reg.has_value()) {
-      return std::unexpected(idx_reg.error());
-    }
-    const auto zero_const = writer_.add_constant(slot_value{uint64_t{0}});
-    emit_op(opcode::op_load_const);
-    emit_register(*idx_reg);
-    writer_.emit_u16(zero_const);
-
-    const auto loop_start = writer_.current_offset();
-    auto cmp_reg = alloc_register(init.span);
-    if (!cmp_reg.has_value()) {
-      return std::unexpected(cmp_reg.error());
-    }
-    emit_op(opcode::op_lt);
-    emit_register(*cmp_reg);
-    emit_register(*idx_reg);
-    emit_register(*count_reg);
-    writer_.emit_numeric_kind(*count_kind);
-    emit_op(opcode::op_jump_if_false);
-    emit_register(*cmp_reg);
-    const auto exit_placeholder = writer_.emit_jump_placeholder();
-
-    emit_list_push(dst, *fill_reg, elem_size);
-
-    const auto one_const = writer_.add_constant(slot_value{uint64_t{1}});
-    auto one_reg = alloc_register(init.span);
-    if (!one_reg.has_value()) {
-      return std::unexpected(one_reg.error());
-    }
-    emit_op(opcode::op_load_const);
-    emit_register(*one_reg);
-    writer_.emit_u16(one_const);
-    emit_op(opcode::op_add);
-    emit_register(*idx_reg);
-    emit_register(*idx_reg);
-    emit_register(*one_reg);
-    writer_.emit_numeric_kind(*count_kind);
-
-    // A backward jump closes a loop. Live intervals come from first and
-    // last mention in the linear instruction order, which is unsound across
-    // a back edge on its own: a value last mentioned early in this body is
-    // still read on the next iteration. Recording the loop lets the
-    // allocator extend those intervals to cover it.
-    note_loop(loop_start);
-    emit_op(opcode::op_jump);
-    const auto after_operand =
-        static_cast<int64_t>(writer_.current_offset()) + 4;
-    const auto back_offset =
-        static_cast<int32_t>(static_cast<int64_t>(loop_start) - after_operand);
-    writer_.emit_i32(back_offset);
-
-    writer_.patch_jump_to_here(exit_placeholder);
     return {};
   }
 
@@ -2703,10 +2558,9 @@ private:
 
   /// The `{ len; data-block; elem_size }` triple shared by single-element
   /// access (`compile_element_location`) and range-indexing
-  /// (`compile_range_index`) for any of the four indexable container
-  /// shapes — a fixed `array[T, N]` (any `T`, not just `byte`: it is its
-  /// own data block, `len` the statically-known `N`), a `list[T]` (3-slot
-  /// `{ len; cap; data }` header), a `str` (2-slot `{ len; data }` header,
+  /// (`compile_range_index`) for every builtin indexable shape — a fixed
+  /// `array[T, N]` (any `T`, not just `byte`: it is its own data block,
+  /// `len` the statically-known `N`), a `str` (2-slot `{ len; data }` header,
   /// element type always `byte`), or a `slice`/`slice_mut[T]` (the same
   /// 2-slot header, element type `T`). Factored out so the two call sites
   /// can't independently drift on where a given container's data pointer
@@ -2727,7 +2581,6 @@ private:
                                             source_span span)
       -> std::expected<container_view, compile_error> {
     const auto &object_entry = types_.entry(strip_refs(object_type));
-    const bool indexing_list = is_list_type(object_type);
     const bool indexing_str =
         object_entry.kind == semantic::type_kind::builtin_kind &&
         object_entry.name == "str";
@@ -2770,26 +2623,23 @@ private:
                             .elem_size =
                                 element_stride(object_entry.args.front())};
     }
-    if (!indexing_list && !indexing_view &&
+    if (!indexing_view &&
         (object_entry.kind != semantic::type_kind::array_kind ||
          !object_entry.array_size.has_value())) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
           .span = span,
           .message = "indexing is only supported for a fixed-size array "
-                     "with a statically known length, a list, a `str`, a "
+                     "with a statically known length, a `str`, a "
                      "`slice`/`slice_mut`, or a raw `*T`/`*mut T` yet"});
     }
 
     const auto elem_size =
         indexing_str     ? uint8_t{1}
         : indexing_slice ? element_stride(object_entry.args.front())
-        : indexing_list  ? (object_entry.args.empty()
-                                ? uint8_t{8}
-                                : element_stride(object_entry.args.front()))
                          : element_stride(object_entry.result);
 
-    if (!indexing_list && !indexing_view) {
+    if (!indexing_view) {
       const auto len_const = writer_.add_constant(
           slot_value{static_cast<uint64_t>(*object_entry.array_size)});
       auto len_reg_exp = alloc_register(span);
@@ -2814,9 +2664,8 @@ private:
     if (!data_reg_exp.has_value()) {
       return std::unexpected(data_reg_exp.error());
     }
-    // The list header keeps its data pointer at slot 2; the 2-slot view
-    // header keeps it at slot 1.
-    emit_load_slot(*data_reg_exp, object_reg, indexing_view ? 1 : 2);
+    // A 2-slot `{ len; data }` view header keeps its data pointer at slot 1.
+    emit_load_slot(*data_reg_exp, object_reg, 1);
     return container_view{.len_reg = *len_reg_exp,
                           .data_reg = *data_reg_exp,
                           .elem_size = elem_size};
@@ -2859,106 +2708,6 @@ private:
 
     return element_location{
         .data_reg = data_reg, .index_reg = *index_reg, .elem_size = elem_size};
-  }
-
-  /// `xs.mutable_cell(i)` — `@some(&xs[i])`/`@none` built by hand rather than
-  /// through `compile_variant_init`: the bounds check must branch to `@none`
-  /// on failure instead of `op_panic_if`'s unconditional trap, mirroring
-  /// `compile_if`'s own jump/patch shape. Only ever called with a `list[T]`
-  /// receiver (the sole `k_builtin_methods` owner of `mutable_cell`), which
-  /// always has a real length to check against.
-  [[nodiscard]] auto compile_mutable_cell(const hir::hir_mutable_cell &node,
-                                          virtual_reg dst)
-      -> std::expected<void, compile_error> {
-    auto object_reg = compile_expr(*node.object);
-    if (!object_reg.has_value()) {
-      return std::unexpected(object_reg.error());
-    }
-    auto index_reg = compile_expr(*node.index);
-    if (!index_reg.has_value()) {
-      return std::unexpected(index_reg.error());
-    }
-    auto view =
-        resolve_container_view(node.object->type, *object_reg, node.span);
-    if (!view.has_value()) {
-      return std::unexpected(view.error());
-    }
-    if (!view->len_reg.has_value()) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::unsupported_construct,
-          .span = node.span,
-          .message = "`mutable_cell` needs a receiver with a checkable "
-                     "length"});
-    }
-    const auto some_tag = runtime::sum_variant_tag(types_, node.type, "some");
-    const auto none_tag = runtime::sum_variant_tag(types_, node.type, "none");
-    if (!some_tag.has_value() || !none_tag.has_value()) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::unsupported_construct,
-          .span = node.span,
-          .message = "`mutable_cell`'s result does not resolve to "
-                     "`option`'s `some`/`none` variants — this should have "
-                     "been rejected by the type checker"});
-    }
-    const auto payload_slots =
-        runtime::sum_max_payload_slots(types_, node.type);
-
-    auto in_bounds_reg = alloc_register(node.span);
-    if (!in_bounds_reg.has_value()) {
-      return std::unexpected(in_bounds_reg.error());
-    }
-    emit_op(opcode::op_lt);
-    emit_register(*in_bounds_reg);
-    emit_register(*index_reg);
-    emit_register(*view->len_reg);
-    writer_.emit_numeric_kind(numeric_kind::u64);
-    emit_op(opcode::op_jump_if_false);
-    emit_register(*in_bounds_reg);
-    const auto none_placeholder = writer_.emit_jump_placeholder();
-
-    // In-bounds arm: `@some(&object[index])`.
-    auto addr_reg = alloc_register(node.span);
-    if (!addr_reg.has_value()) {
-      return std::unexpected(addr_reg.error());
-    }
-    emit_op(opcode::op_addr_indexed);
-    emit_register(*addr_reg);
-    emit_register(view->data_reg);
-    emit_register(*index_reg);
-    writer_.emit_u8(view->elem_size);
-
-    emit_alloc_slots(dst, static_cast<uint16_t>(1 + payload_slots));
-    const auto some_tag_const =
-        writer_.add_constant(slot_value{static_cast<int64_t>(*some_tag)});
-    auto some_tag_reg = alloc_register(node.span);
-    if (!some_tag_reg.has_value()) {
-      return std::unexpected(some_tag_reg.error());
-    }
-    emit_op(opcode::op_load_const);
-    emit_register(*some_tag_reg);
-    writer_.emit_u16(some_tag_const);
-    emit_store_slot(dst, 0, *some_tag_reg);
-    emit_store_slot(dst, 1, *addr_reg);
-
-    emit_op(opcode::op_jump);
-    const auto end_placeholder = writer_.emit_jump_placeholder();
-
-    // Out-of-bounds arm: `@none`.
-    writer_.patch_jump_to_here(none_placeholder);
-    emit_alloc_slots(dst, static_cast<uint16_t>(1 + payload_slots));
-    const auto none_tag_const =
-        writer_.add_constant(slot_value{static_cast<int64_t>(*none_tag)});
-    auto none_tag_reg = alloc_register(node.span);
-    if (!none_tag_reg.has_value()) {
-      return std::unexpected(none_tag_reg.error());
-    }
-    emit_op(opcode::op_load_const);
-    emit_register(*none_tag_reg);
-    writer_.emit_u16(none_tag_const);
-    emit_store_slot(dst, 0, *none_tag_reg);
-
-    writer_.patch_jump_to_here(end_placeholder);
-    return {};
   }
 
   /// `c.set(v)` on a `cell_mut[T]` — stores through the address `c` already
@@ -3787,8 +3536,6 @@ private:
       return compile_continue(dynamic_cast<const hir::hir_continue &>(node));
     case hir_node_kind::hir_let_else:
       return compile_let_else(dynamic_cast<const hir::hir_let_else &>(node));
-    case hir_node_kind::hir_list_push:
-      return compile_list_push(dynamic_cast<const hir::hir_list_push &>(node));
     default:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
@@ -4232,23 +3979,6 @@ private:
     }
 
     writer_.patch_jump_to_here(continue_placeholder);
-    return {};
-  }
-
-  /// Appends `value` onto the `list[T]` place `target` (see
-  /// `hir_list_push`'s doc comment) — the comprehension accumulator's
-  /// growth statement.
-  [[nodiscard]] auto compile_list_push(const hir::hir_list_push &node)
-      -> std::expected<void, compile_error> {
-    auto target_reg = compile_expr(*node.target);
-    if (!target_reg.has_value()) {
-      return std::unexpected(target_reg.error());
-    }
-    auto value_reg = compile_expr(*node.value);
-    if (!value_reg.has_value()) {
-      return std::unexpected(value_reg.error());
-    }
-    emit_list_push(*target_reg, *value_reg, element_stride(node.value->type));
     return {};
   }
 

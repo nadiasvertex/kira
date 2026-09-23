@@ -60,8 +60,7 @@ enum class trim_mode : uint8_t { both = 0, start = 1, end = 2 };
 /// `pos` doesn't start a valid UTF-8 sequence. Backs `for c in s` scalar
 /// iteration over a `str` (`hir::hir_str_decode_scalar`) — called directly
 /// by the bytecode VM; `kira_rt_str_scalar_at` below is the raw-pointer
-/// `extern "C"` wrapper generated IR calls instead (mirrors
-/// `kira_rt_list_reserve_slot`'s split in `layout.h`).
+/// `extern "C"` wrapper generated IR calls instead.
 [[nodiscard]] auto str_scalar_at(std::string_view s, size_t pos) -> uint32_t;
 
 /// Bytes consumed decoding the scalar at byte offset `pos` in `s` — 1 if

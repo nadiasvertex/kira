@@ -241,12 +241,6 @@ struct walker {
       walk_expr(*n.byte_offset);
       return;
     }
-    case hir_node_kind::hir_mutable_cell: {
-      const auto &n = dynamic_cast<const hir_mutable_cell &>(expr);
-      walk_expr(*n.object);
-      walk_expr(*n.index);
-      return;
-    }
     case hir_node_kind::hir_cell_set: {
       const auto &n = dynamic_cast<const hir_cell_set &>(expr);
       walk_expr(*n.cell);
@@ -377,12 +371,6 @@ struct walker {
       for (const auto &stmt : node2.body->stmts) {
         walk_stmt(*stmt);
       }
-      return;
-    }
-    case hir_node_kind::hir_list_push: {
-      const auto &node2 = dynamic_cast<const hir_list_push &>(node);
-      walk_expr(*node2.target);
-      walk_expr(*node2.value);
       return;
     }
     case hir_node_kind::hir_contract_check:

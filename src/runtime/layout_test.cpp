@@ -270,53 +270,6 @@ auto test_refinement_field_lays_out_as_its_base() -> void {
          "expected a refinement-typed field to lay out exactly as its base");
 }
 
-auto test_list_reserve_slot_grows_and_preserves_existing_elements() -> void {
-  uint64_t header[3] = {0, 0, 0};
-
-  auto *slot0 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
-  expect(header[0] == 1, "expected len to become 1 after the first reserve");
-  expect(header[1] == 4, "expected the first growth to start at capacity 4");
-  *slot0 = 10;
-
-  auto *slot1 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
-  auto *slot2 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
-  auto *slot3 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
-  *slot1 = 20;
-  *slot2 = 30;
-  *slot3 = 40;
-  expect(header[0] == 4, "expected len == 4 after four reserves");
-  expect(header[1] == 4, "expected cap to still be 4 (exactly filled)");
-
-  // A fifth reserve exceeds capacity 4, forcing growth to 8 and copying
-  // every existing element across.
-  auto *slot4 = static_cast<uint64_t *>(runtime::list_reserve_slot(header, 8));
-  *slot4 = 50;
-  expect(header[0] == 5, "expected len == 5 after the growth-triggering push");
-  expect(header[1] == 8, "expected capacity to double to 8");
-  auto *data = reinterpret_cast<uint64_t *>(static_cast<uintptr_t>(header[2]));
-  expect(data[0] == 10 && data[1] == 20 && data[2] == 30 && data[3] == 40 &&
-             data[4] == 50,
-         "expected every element to survive the growth copy in order");
-}
-
-auto test_list_reserve_slot_narrow_elements() -> void {
-  // A `list[bool]`/`list[int16]`-shaped push sequence — verifies
-  // `list_reserve_slot`'s generalized `elem_size` keeps elements tightly
-  // packed (2 bytes/element here) rather than the old hardcoded 8.
-  uint64_t header[3] = {0, 0, 0};
-  for (uint16_t i = 0; i < 5; ++i) {
-    auto *slot = static_cast<uint16_t *>(runtime::list_reserve_slot(header, 2));
-    *slot = static_cast<uint16_t>(i * 10);
-  }
-  expect(header[0] == 5, "expected len == 5 after five narrow pushes");
-  expect(header[1] == 8, "expected capacity to have doubled 4 -> 8");
-  const auto *data =
-      reinterpret_cast<const uint16_t *>(static_cast<uintptr_t>(header[2]));
-  expect(data[0] == 0 && data[1] == 10 && data[2] == 20 && data[3] == 30 &&
-             data[4] == 40,
-         "expected every 2-byte element to survive growth in order");
-}
-
 auto test_tuple_element_offset_packs_tight_by_natural_width() -> void {
   // `(int8, int8, int64)`: the old uniform-8-byte-slot scheme would place
   // these at 0/8/16 (size 24); packed-by-natural-width places them at
@@ -379,8 +332,6 @@ auto main() -> int {
     test_refinement_field_lays_out_as_its_base();
     test_tuple_element_offset_packs_tight_by_natural_width();
     test_tuple_element_offset_sizes_a_reference_element_as_a_pointer();
-    test_list_reserve_slot_grows_and_preserves_existing_elements();
-    test_list_reserve_slot_narrow_elements();
   } catch (const std::exception &ex) {
     std::cerr << "layout_test failed: unhandled exception: " << ex.what()
               << '\n';

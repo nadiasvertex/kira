@@ -1,15 +1,15 @@
 # Moving `list[T]` out of the compiler
 
 **Status:** All five phases implemented. `list[T]` is an ordinary Kira type
-over `std.mem`; what is left is cleanup and the consequences the flip exposed
-(todo items 16-20).
+over `std.mem`; what is left is the consequences the flip exposed (todo items
+17-20).
 
 | Phase | What it makes possible | Status |
 |---|---|---|
 | 1 | `index`/`index_set` traits — `v[i]`, `v[i] = x` on any type | **Done**, `index_mut` included. Selection is by key type, so `index[usize]` and `index[range[usize]]` coexist; `&v[i]` (a read-borrow) still has no trait — todo 17 |
 | 2 | `for` through `into_iterator` | **Done**, both consuming and borrowing (`for x in &v`) |
 | 3 | `from_array` construction, and the settled `list` default for literals | **Done** |
-| 4 | Flip `list[T]` onto `vector[T]`'s storage | **Done.** `list[T]` is the Kira struct; the builtin entries are gone. Residual dead backend code, an unfinished stdlib sweep, and the un-taken benchmark are todo 16; what the flip exposed is todo 17-19 |
+| 4 | Flip `list[T]` onto `vector[T]`'s storage | **Done.** `list[T]` is the Kira struct; the builtin entries and the dead backend code behind them are gone, and the cost is measured (below). What the flip exposed is todo 17-19 |
 | 5 | A user collection with all four, as proof | **Done.** The proof type *became* `list[T]` in phase 4, which is the strongest form of it |
 
 `list[T]` (`src/std/list.kira`) is now a growable, heap-owning sequence
@@ -322,23 +322,23 @@ annotation that restores the old meaning; it does not yet.
 
 ## Phase 4 — flip `list[T]`
 
-**Done, with a tail.** Steps 1 and 2 landed; 3 and 4 left dead code behind,
-and 5 is incomplete. Tracked as todo item 16.
+**Done.** Steps 1-4 landed; 5 is incomplete (see below).
 
 1. ~~Rename `vector[T]` → `list[T]`~~ **Done** — `src/std/list.kira`, with
    `impl index`/`index_mut`/`index_set`/`into_iterator`/`from_array`, and
    `drop`.
 2. ~~Delete `list` from `k_builtin_generic_arities` and its four entries
    from `k_builtin_methods`~~ **Done.**
-3. Delete the `list` arm of `resolve_container_view` in **both** backends.
-   **Not done, but inert:** `is_list_type`
-   (`src/bytecode_compiler/compile.cpp:1025`,
-   `src/llvm_codegen/codegen.cpp:980`) tests `builtin_generic_kind`, which
-   `list` no longer is, so the arms can never fire. `slice`, `str` and
-   `array` keep theirs — they are views and language primitives, not
-   library types.
-4. Delete `list_reserve_slot` from the runtime and its LLVM declaration.
-   **Not done** (`src/llvm_codegen/codegen.h:86`).
+3. ~~Delete the `list` arm of `resolve_container_view` in **both**
+   backends~~ **Done** (2026-09-23), along with every other builtin-`list`
+   path: `is_list_type`, `compile_list_init`, the `hir_list_push` and
+   `hir_mutable_cell` nodes and the `push`/`cell`/`mutable_cell` lowering
+   interceptions that produced them (each fired only for a call with no
+   resolved callee, and `list` now declares all three), and `op_list_push`.
+   `slice`, `str` and `array` keep their arms — they are views and language
+   primitives, not library types.
+4. ~~Delete `list_reserve_slot` from the runtime and its LLVM declaration~~
+   **Done** (2026-09-23).
 5. Sweep every stdlib module written against builtin `list` — `std.algo` in
    particular, whose sorts index and swap in hot loops. **Partly done:**
    `std.algo` is clean and `src/testdata/std_test/algo_sort.kira` runs on
@@ -390,7 +390,25 @@ regression there.
 
 Do not pre-emptively design an inliner for this. Measure first: check in a
 benchmark *before* phase 4 (sort 100k `int32` on both tiers, both allocator
-modes) so the number is a fact rather than a fear. If it is unacceptable, the
+modes) so the number is a fact rather than a fear.
+
+**Measured (2026-09-23), after the fact.** The pre-flip number was never
+taken, so it was reconstructed: `a46bd51` (the commit before the flip, with
+only the LLVM 23 toolchain bump applied) against the flip-plus-cleanup tree,
+both built `-c opt`, running `bench/sort_100k_int32.kira` (push-fill,
+`sort` over `&mut xs[0..n]`, indexed sortedness check). Mean of 8-15 runs:
+
+| Tier | pre-flip | post-flip | |
+|---|---|---|---|
+| bytecode VM (net of a `n = 2` compile-and-run baseline) | ~430 ms | ~995 ms | **~2.3x slower** |
+| LLVM AOT, `-O0` | 10.8 ms | 14.2 ms | ~1.3x slower |
+| LLVM AOT, `-O2` | 8.6 ms | 8.3 ms | no difference |
+
+`KIRA_ALLOCATOR=system` and `=arena` agree to within noise on every row. The
+VM regression is the one the paragraph above predicted: every `xs[i]` and
+`xs.push(v)` is now a call frame. The pre-flip side also lacks every other
+change between the two commits, so the VM ratio is an upper bound on what
+the flip alone costs. If it is unacceptable, the
 proportionate fix is inlining trivial trait-method bodies in HIR, which
 benefits every user collection and not just `list`. The migration's value is
 that `list` stops being special; buying its performance back with a *second*
@@ -435,16 +453,16 @@ Phase 4 (flip list)        ─── DONE (2026-09-19). Brought three unplanned
                                 pre-existing `&`/`*` codegen bug for raw
                                 pointers to compound elements (found via
                                 `sort_by` on a tuple `list`, fixed both
-                                tiers). Tail: todo 16 (dead backend arms,
-                                unswept `std.io`, the benchmark nobody took)
-                                and todo 17-19 (what the flip exposed).
+                                tiers). Dead backend arms removed and the
+                                benchmark taken 2026-09-23; tail is todo
+                                17-19 (what the flip exposed).
 Phase 5 (proof)            ─── DONE; phase 4 turned the proof into `list[T]`
 ```
 
 Phases 1–3 each make the language strictly more capable on their own and were
 worth landing whether or not phase 4 ever happened. That is deliberate — and
-the benchmark phase 4 asked for *before* flipping was never taken, so the
-cost of the flip is still unmeasured (todo item 16).
+the benchmark phase 4 asked for *before* flipping was only taken afterward,
+against a rebuilt pre-flip compiler (phase 4, "Measured").
 
 ## See also
 
@@ -452,5 +470,5 @@ cost of the flip is still unmeasured (todo item 16).
   `list[T]` and `vector[T]` are today.
 - [`38-machine-layer.md`](specification/03-advanced/38-machine-layer.md) —
   the substrate `vector[T]` is built on.
-- [`todo.md`](todo.md) items 16-20 — what the migration left behind and
+- [`todo.md`](todo.md) items 17-20 — what the migration left behind and
   what it exposed.

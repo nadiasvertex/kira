@@ -1745,19 +1745,6 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         f.pc = ops.pos();
         break;
       }
-      case opcode::op_list_push: {
-        auto ops = operand_cursor{.code = code, .at = ip};
-        const auto header_reg = ops.reg();
-        const auto value_reg = ops.reg();
-        const auto elem_size = ops.imm8();
-        auto *header = reinterpret_cast<uint64_t *>(
-            static_cast<uintptr_t>(f.registers[header_reg].u));
-        auto *slot = kira::runtime::list_reserve_slot(header, elem_size);
-        store_sized(static_cast<uint8_t *>(slot), elem_size,
-                    f.registers[value_reg].u);
-        f.pc = ops.pos();
-        break;
-      }
 
       case opcode::op_panic_if: {
         auto ops = operand_cursor{.code = code, .at = ip};

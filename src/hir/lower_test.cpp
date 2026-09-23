@@ -2239,11 +2239,8 @@ auto test_lowers_simple_comprehension() -> void {
   expect(loop.body->stmts.size() == 2,
          "expected the loop-var let and the push (the increment is the step)");
   expect(loop.step != nullptr, "expected a desugared `for` to carry a step");
-  // A real call to `list.push`, not the `hir_list_push` primitive. That
-  // node only fires for a `push` with no resolved callee behind it
-  // (`lower_stmt`'s `expr_stmt` case); `list` now declares `push` itself
-  // (`src/std/list.kira`), so the comprehension appends through the same
-  // method any hand-written `xs.push(v)` would.
+  // A real call to `list.push` (`src/std/list.kira`): the comprehension
+  // appends through the same method any hand-written `xs.push(v)` would.
   expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_expr_stmt,
          "expected the yielded value to be appended by a `push` call");
   const auto &push_stmt =

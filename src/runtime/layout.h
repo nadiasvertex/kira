@@ -164,39 +164,4 @@ struct layout_info {
                                         semantic::type_id id, size_t index)
     -> std::optional<size_t>;
 
-/// Grows (if necessary) the `list[T]` value whose 3-slot header
-/// `{ u64 len; u64 cap; T* data; }` (this file's top comment) begins at
-/// `header` so it has room for one more `elem_size`-byte element (1/2/4/8 —
-/// `runtime::layout_of(element_type).size_bytes`, generalizing what used to
-/// be a hardcoded `sizeof(uint64_t)` element width so a `list[bool]`/
-/// `list[int16]` doesn't waste 8 bytes per element the same way an array's
-/// own element storage no longer does), bumps `len`, and returns a pointer
-/// to the newly-reserved element's address (`data + old_len * elem_size`)
-/// — the caller stores its own `elem_size`-byte payload there directly.
-/// Growth allocates a fresh, larger `data` block via `global_arena()`
-/// (copying every existing element across, `old_len * elem_size` bytes)
-/// when the list is already at capacity — starting capacity 4, doubling
-/// thereafter, the same "simplest thing that works" placeholder growth
-/// strategy `bump_arena` itself already uses. Returning an address for the
-/// caller to store through (rather than taking the value as a parameter
-/// here) mirrors how every other heap write in this codebase —
-/// `str`/tuple/struct/sum-payload construction — is a plain store at a
-/// computed address, never a value-passing runtime call: it means this
-/// function doesn't need to know or care whether the pushed value is a
-/// scalar bit pattern or a heap pointer, only how many bytes it is. Returns
-/// `void*`, not `uint64_t*`, since the reserved address is not generally
-/// 8-byte-aligned once `elem_size` can be 1/2/4. A plain C++ function so
-/// `bytecode::vm` can call it directly with no ABI boundary to cross
-/// (mirrors `global_arena()`'s own doc comment in `arena.h`);
-/// `kira_rt_list_reserve_slot` below is the `extern "C"` wrapper generated
-/// IR calls instead.
-[[nodiscard]] auto list_reserve_slot(uint64_t *header, size_t elem_size)
-    -> void *;
-
-/// `extern "C"` wrapper around `list_reserve_slot` for generated IR to call
-/// by name (`src/llvm_codegen/codegen.h`'s `kListReserveSlotSymbolName`) —
-/// mirrors `kira_rt_alloc` (`arena.h`)'s JIT/AOT-boundary rationale exactly.
-extern "C" auto kira_rt_list_reserve_slot(uint64_t *header, uint64_t elem_size)
-    -> void *;
-
 } // namespace kira::runtime
