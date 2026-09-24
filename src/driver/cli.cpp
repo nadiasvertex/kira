@@ -172,6 +172,14 @@ static const std::unordered_map<std::string_view, cli_converter>
             cfg.contract_checks = false;
             return std::monostate{};
           }}},
+        {"--no-inline",
+         {.name = "--no-inline",
+          .needs_value = false,
+          .apply = +[](cli_config &cfg, std::string_view)
+              -> std::expected<std::monostate, std::string> {
+            cfg.inline_calls = false;
+            return std::monostate{};
+          }}},
         {"-O",
          {.name = "-O",
           .needs_value = false,
@@ -351,6 +359,8 @@ auto render_help(std::string_view program_name) -> std::string {
       "                          could not prove. This asserts that they all\n"
       "                          hold by other means; if one doesn't, the\n"
       "                          program misbehaves instead of panicking\n"
+      "  --no-inline              Do not inline small functions at their\n"
+      "                          call sites (both tiers)\n"
       "  --show-compile-details   Print the per-module compile/HIR-lowering\n"
       "                          listing (silent by default, especially in\n"
       "                          the default interpreting mode, where\n"

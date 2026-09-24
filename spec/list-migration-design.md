@@ -408,11 +408,23 @@ both built `-c opt`, running `bench/sort_100k_int32.kira` (push-fill,
 VM regression is the one the paragraph above predicted: every `xs[i]` and
 `xs.push(v)` is now a call frame. The pre-flip side also lacks every other
 change between the two commits, so the VM ratio is an upper bound on what
-the flip alone costs. If it is unacceptable, the
-proportionate fix is inlining trivial trait-method bodies in HIR, which
-benefits every user collection and not just `list`. The migration's value is
-that `list` stops being special; buying its performance back with a *second*
-special case would spend the whole point.
+the flip alone costs. The proportionate fix was inlining small function
+bodies in HIR, which benefits every user collection and not just `list` —
+the migration's value is that `list` stops being special, and buying its
+performance back with a *second* special case would spend the whole point.
+
+**Inlined (2026-09-24).** `hir::inline_small_calls` (`src/hir/inline.h`)
+runs between lowering and both backends, on by default (`--no-inline` turns
+it off). Same benchmark, same build:
+
+| Tier | `--no-inline` | inlined |
+|---|---|---|
+| bytecode VM (net) | ~984 ms | ~462 ms — within ~7% of pre-flip |
+| LLVM AOT, `-O0` | 12.2 ms | 12.4 ms |
+
+`codegen_stress_test` runs the whole corpus a second time with inlining on
+and requires the same result as without it, on both tiers
+(`100_inline_call_shapes.kira` covers each rewrite shape by value).
 
 ## Phase 5 — what the migration buys, made visible *(done)*
 

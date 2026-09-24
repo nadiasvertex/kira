@@ -11,6 +11,7 @@
 #include "lowering_stage.h"
 #include "parse_stage.h"
 #include "run_build_stage.h"
+#include "src/hir/inline.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/borrow_check.h"
 #include "src/semantic/move_check.h"
@@ -361,9 +362,12 @@ auto compile_sources(const cli_config &cfg, bool use_color)
       diagnostic_renderer(sources, use_color).render_all(session_diagnostics));
 
   const auto lowering_renderer = diagnostic_renderer(sources, use_color);
-  const auto lowered_modules =
+  auto lowered_modules =
       lower_and_emit_modules(effective_cfg, parsed_inputs, file_has_errors,
                              checked, metadata_root, lowering_renderer, report);
+  if (effective_cfg.inline_calls) {
+    hir::inline_small_calls(lowered_modules, checked.types);
+  }
 
   run_requested_function(effective_cfg, lowered_modules, checked, report);
   build_requested_function(effective_cfg, lowered_modules, checked, report);

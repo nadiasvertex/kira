@@ -1,0 +1,89 @@
+module codegen_stress.inline_call_shapes
+
+# Every call-site shape `hir::inline_small_calls` rewrites, each checked by
+# value (`codegen_stress_test` runs this file with and without inlining, on
+# both tiers — agreement alone would miss a rewrite both tiers read the same
+# wrong way):
+#
+#   - a guard clause (`if b == 0: return @none`) followed by the real work;
+#   - an `if`/`elif`/`else` whose every branch returns;
+#   - a bare `return` in a `unit` function;
+#   - a small callee calling another (a nested copy);
+#   - the same callee with a local of its own, copied twice into one
+#     expression (its `let` must get a different symbol each time);
+#   - a recursive callee (expanded to a bounded depth, then a real call);
+#   - a callee calling through its own `fn`-typed parameter (a closure call,
+#     never mistaken for a function to inline);
+#   - arguments with side effects: evaluated once each, left to right, even
+#     when the callee uses its parameter twice.
+
+type tally = { count: int32, total: int32 }
+
+def safe_div(a: int32, b: int32) -> option[int32]:
+    if b == 0:
+        return @none
+    return @some(a / b)
+
+def unwrap_or(o: option[int32], fallback: int32) -> int32:
+    match o:
+        @some(v) => v
+        @none    => fallback
+
+def sign(x: int32) -> int32:
+    if x > 0:
+        return 1
+    elif x < 0:
+        return -1
+    else:
+        return 0
+
+def add_if_positive(t: &mut tally, x: int32) -> unit:
+    if x <= 0:
+        return
+    t.count = t.count + 1
+    t.total = t.total + x
+
+def scaled_sign(x: int32) -> int32:
+    return sign(x) * 10
+
+def sq_plus(x: int32) -> int32:
+    let y = x * x
+    return y + 1
+
+def fact(n: int32) -> int32:
+    if n <= 1:
+        return 1
+    return n * fact(n - 1)
+
+def apply_twice(f: fn(int32) -> int32, x: int32) -> int32:
+    return f(f(x))
+
+def bump(t: &mut tally) -> int32:
+    t.count = t.count + 1
+    return t.count
+
+def pair(a: int32, b: int32) -> int32:
+    return a * 10 + b
+
+def twice(x: int32) -> int32:
+    return x + x
+
+def main() -> int32:
+    var t = tally { count: 0, total: 0 }
+    add_if_positive(&mut t, 5)
+    add_if_positive(&mut t, -2)
+    add_if_positive(&mut t, 7)
+    let a = unwrap_or(safe_div(84, 2), -1)         # 42
+    let b = unwrap_or(safe_div(1, 0), -1)          # -1
+    let c = scaled_sign(-9) * 3 + scaled_sign(4)   # -30 + 10 = -20
+    let d = sq_plus(2) + sq_plus(3)                # 5 + 10 = 15
+    let e = fact(5)                                # 120
+    let triple: fn(int32) -> int32 = k => k * 3
+    let f = apply_twice(triple, 2)                 # 18
+    var u = tally { count: 0, total: 0 }
+    let g = pair(bump(&mut u), bump(&mut u))       # 1 then 2: 12
+    let h = twice(bump(&mut u))                    # one bump, to 3: 6
+    # t is { 2, 12 }; u.count is 3.
+    return t.count * 1000 + t.total + a + b + c + d + e + f + g + h + u.count
+
+# expect: 2207

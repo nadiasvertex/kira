@@ -30,6 +30,7 @@
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/compile.h"
+#include "src/hir/inline.h"
 #include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
@@ -504,6 +505,69 @@ auto run_llvm(const fs::path &path,
   return std::nullopt;
 }
 
+/// Both tiers' compiled artifacts, kept alive for as long as a heap-typed
+/// result's `bits` may still be read — see `bytecode_run`/`llvm_run`.
+struct tier_runs {
+  bytecode_run vm;
+  llvm_run jit;
+};
+
+/// Runs `main` on both tiers and checks they agree with each other and with
+/// the file's `# expect:` value, if it has one.
+auto run_and_check_tiers(const fs::path &path, std::string_view text,
+                         std::span<const hir::hir_module *const> module_set,
+                         const kira::semantic::type_table &types,
+                         kira::semantic::type_id return_type,
+                         std::optional<bc::numeric_kind> return_kind,
+                         bool is_heap_result) -> tier_runs {
+  auto runs = tier_runs{
+      .vm = run_bytecode(path, module_set, types),
+      .jit = run_llvm(path, module_set, types, return_kind, is_heap_result)};
+  const auto &vm_result = runs.vm.result;
+  const auto &jit_result = runs.jit.result;
+
+  if (vm_result.panicked || jit_result.panicked) {
+    expect(vm_result.panicked && jit_result.panicked,
+           std::format("`{}`: one tier panicked and the other didn't (VM "
+                       "panicked: {}, JIT panicked: {})",
+                       path.string(), vm_result.panicked, jit_result.panicked));
+    expect(vm_result.panic == jit_result.panic,
+           std::format("`{}`: tiers panicked for different reasons",
+                       path.string()));
+    return runs;
+  }
+
+  expect(vm_result.has_value == jit_result.has_value,
+         std::format("`{}`: tiers disagree on whether `main` produced a "
+                     "value",
+                     path.string()));
+  if (vm_result.has_value) {
+    const auto agree = is_heap_result
+                           ? values_equal(types, return_type, vm_result.bits,
+                                          jit_result.bits)
+                           : vm_result.bits == jit_result.bits;
+    expect(agree,
+           std::format("`{}`: bytecode VM and LLVM JIT disagree on `main`'s "
+                       "result",
+                       path.string()));
+    if (const auto expected = expected_result_of(text); expected.has_value()) {
+      expect(!is_heap_result,
+             std::format("`{}`: `# expect:` only applies to a scalar `main` "
+                         "result",
+                         path.string()));
+      expect(vm_result.bits == static_cast<uint64_t>(*expected),
+             std::format("`{}`: `main` returned {}, but `# expect:` says {}",
+                         path.string(), vm_result.bits, *expected));
+    }
+  }
+  return runs;
+}
+
+/// Call sites `hir::inline_small_calls` replaced across the whole corpus —
+/// checked in `main`, so the inlined second pass can't quietly become a
+/// re-run of the first.
+auto inlined_call_sites = size_t{0};
+
 auto run_one(const fs::path &path) -> void {
   const auto text = read_file(path);
   auto fixture = check_source(text, path);
@@ -569,48 +633,35 @@ auto run_one(const fs::path &path) -> void {
                      "deep-comparable heap representation",
                      path.string()));
 
-  // Kept alive for the whole function (not just the compile-and-run call
-  // above) since a heap-typed result's `bits` may point into memory either
-  // one owns — see `bytecode_run`/`llvm_run`'s doc comment.
-  auto bc_run = run_bytecode(path, module_set, fixture.checked.types);
-  auto llvm_run_result = run_llvm(path, module_set, fixture.checked.types,
-                                  return_kind, is_heap_result);
-  const auto &vm_result = bc_run.result;
-  const auto &jit_result = llvm_run_result.result;
+  const auto checked_runs =
+      run_and_check_tiers(path, text, module_set, types, main_fn->return_type,
+                          return_kind, is_heap_result);
 
-  if (vm_result.panicked || jit_result.panicked) {
-    expect(vm_result.panicked && jit_result.panicked,
-           std::format("`{}`: one tier panicked and the other didn't (VM "
-                       "panicked: {}, JIT panicked: {})",
-                       path.string(), vm_result.panicked, jit_result.panicked));
-    expect(vm_result.panic == jit_result.panic,
-           std::format("`{}`: tiers panicked for different reasons",
-                       path.string()));
-    return;
-  }
-
-  expect(vm_result.has_value == jit_result.has_value,
-         std::format("`{}`: tiers disagree on whether `main` produced a "
-                     "value",
+  // The same program again with small calls inlined (`hir::inline_small_
+  // calls`, which the driver runs by default). Tier agreement alone can't
+  // catch an inliner bug — both tiers read the same rewritten HIR — so the
+  // inlined result must also match the un-inlined one.
+  inlined_call_sites +=
+      hir::inline_small_calls(owned_modules, fixture.checked.types).call_sites;
+  const auto inlined_set =
+      hir::find_reachable_modules(*entry_module, owned_modules);
+  const auto inlined_runs =
+      run_and_check_tiers(path, text, inlined_set, types, main_fn->return_type,
+                          return_kind, is_heap_result);
+  const auto &before = checked_runs.vm.result;
+  const auto &after = inlined_runs.vm.result;
+  expect(before.panicked == after.panicked && before.panic == after.panic &&
+             before.has_value == after.has_value,
+         std::format("`{}`: inlining changed whether `main` panicked or "
+                     "produced a value",
                      path.string()));
-  if (vm_result.has_value) {
+  if (!before.panicked && before.has_value) {
     const auto agree = is_heap_result
                            ? values_equal(types, main_fn->return_type,
-                                          vm_result.bits, jit_result.bits)
-                           : vm_result.bits == jit_result.bits;
-    expect(agree,
-           std::format("`{}`: bytecode VM and LLVM JIT disagree on `main`'s "
-                       "result",
-                       path.string()));
-    if (const auto expected = expected_result_of(text); expected.has_value()) {
-      expect(!is_heap_result,
-             std::format("`{}`: `# expect:` only applies to a scalar `main` "
-                         "result",
-                         path.string()));
-      expect(vm_result.bits == static_cast<uint64_t>(*expected),
-             std::format("`{}`: `main` returned {}, but `# expect:` says {}",
-                         path.string(), vm_result.bits, *expected));
-    }
+                                          before.bits, after.bits)
+                           : before.bits == after.bits;
+    expect(agree, std::format("`{}`: inlining changed `main`'s result",
+                              path.string()));
   }
 }
 
@@ -632,10 +683,15 @@ auto main(int argc, char *argv[]) -> int {
     for (const auto &file : files) {
       run_one(file);
     }
+    expect(inlined_call_sites >= 100,
+           std::format("expected the inlined pass to inline a real share of "
+                       "the corpus's calls, but it inlined only {}",
+                       inlined_call_sites));
 
     std::cout << "codegen_stress_test: " << files.size()
               << " program(s) agreed between the bytecode VM and the LLVM "
-                 "JIT\n";
+                 "JIT, with and without inlining ("
+              << inlined_call_sites << " call sites inlined)\n";
   } catch (const std::exception &ex) {
     std::cerr << "codegen_stress_test failed: unhandled exception: "
               << ex.what() << '\n';

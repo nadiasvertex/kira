@@ -45,6 +45,11 @@ struct cli_config {
             ///< ("Release builds may elide runtime contract checks with an
             ///< explicit flag — doing so is the programmer's assertion that
             ///< all contracts hold by other means").
+  bool inline_calls =
+      true; ///< Whether small functions are inlined at their call sites
+            ///< (`hir::inline_small_calls`) before either backend runs.
+            ///< `--no-inline` turns it off, for measuring what it buys or
+            ///< ruling it out while chasing a miscompile.
   bool run = false; ///< Compile to bytecode and execute `run_function`
                     ///< via the tier-0 VM (`src/bytecode/vm.h`) after a
                     ///< successful compile. `parse_args` defaults this
