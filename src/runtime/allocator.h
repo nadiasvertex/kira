@@ -76,16 +76,15 @@ void kira_heap_free(void *ptr, uint64_t bytes);
 /// storage instead of relying on the compiler's built-in `list[T]`.
 ///
 /// These are separate symbols from the `kira_heap_*` trio above because they
-/// speak the uniform intrinsic ABI — every argument and result is an opaque
-/// heap pointer (`src/runtime/io.h`'s doc comment) — rather than the native
-/// `(i64) -> ptr` shape generated IR calls for its own allocations. A
-/// `usize` argument therefore arrives as a `box_usize` (a 1-slot struct
-/// holding the count), while a `*mut byte` is already pointer-shaped and is
-/// passed through as-is. `kira_rt_free` returns a pointer it never uses
-/// (always null, standing for Kira's `unit`) purely to share that one ABI.
+/// speak the intrinsic ABI (`src/intrinsics.h`'s `intrinsic_wire_kind`)
+/// rather than the native `(i64) -> ptr` shape generated IR calls for its
+/// own allocations — in practice identical here, since a `usize` argument's
+/// wire kind is already a native `uint64_t` and a `*mut byte` is already
+/// pointer-shaped. `kira_rt_free` returns a pointer it never uses (always
+/// null, standing for Kira's `unit`) purely to share that one ABI.
 extern "C" {
-auto kira_rt_alloc(uint64_t *bytes_box) -> uint64_t *;
-auto kira_rt_realloc(uint64_t *ptr, uint64_t *old_bytes_box,
-                     uint64_t *new_bytes_box) -> uint64_t *;
-auto kira_rt_free(uint64_t *ptr, uint64_t *bytes_box) -> uint64_t *;
+auto kira_rt_alloc(uint64_t bytes) -> uint64_t *;
+auto kira_rt_realloc(uint64_t *ptr, uint64_t old_bytes, uint64_t new_bytes)
+    -> uint64_t *;
+auto kira_rt_free(uint64_t *ptr, uint64_t bytes) -> uint64_t *;
 }

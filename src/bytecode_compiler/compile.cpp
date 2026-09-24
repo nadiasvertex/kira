@@ -2885,22 +2885,18 @@ private:
     emit_op(opcode::op_load_str_const);
     emit_register(literal_reg);
     writer_.emit_u16(index);
-    auto boxed_reg = alloc_register(lit.span);
-    if (!boxed_reg.has_value()) {
-      return std::unexpected(boxed_reg.error());
-    }
-    emit_op(opcode::op_call_intrinsic);
-    emit_register(*boxed_reg);
-    writer_.emit_u8(*intrinsic_id);
-    emit_register(subject_reg);
-    writer_.emit_u8(uint8_t{2});
-    // `rt_str_eq` yields a *boxed* bool (`box_bool` in `std/string.kira`);
-    // unwrap its single slot the same way `.v` does.
+    // `rt_str_eq` now returns its `bool` result directly (a plain scalar,
+    // not boxed in a 1-slot struct), so `op_call_intrinsic` writes straight
+    // into the result register.
     auto result_reg = alloc_register(lit.span);
     if (!result_reg.has_value()) {
       return std::unexpected(result_reg.error());
     }
-    emit_load_slot(*result_reg, *boxed_reg, uint16_t{0});
+    emit_op(opcode::op_call_intrinsic);
+    emit_register(*result_reg);
+    writer_.emit_u8(*intrinsic_id);
+    emit_register(subject_reg);
+    writer_.emit_u8(uint8_t{2});
     return *result_reg;
   }
 

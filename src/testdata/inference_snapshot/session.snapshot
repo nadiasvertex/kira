@@ -1,7 +1,7 @@
 # inference snapshot
-# 1761 interned types
+# 1741 interned types
 
-## node_types (27178)
+## node_types (27113)
 003_collections_lambdas.kira:3:14 [named_type] unit
 003_collections_lambdas.kira:4:9 [binding_pat] list[int32]
 003_collections_lambdas.kira:4:19 [array] list[int32]
@@ -5319,540 +5319,521 @@ std/deriving.kira:330:17 [ident] int32
 std/deriving.kira:330:17 [binary] int32
 std/deriving.kira:330:25 [literal] int32
 std/deriving.kira:331:12 [quote] def_expr
-std/fmt.kira:38:16 [binding_pat] str
-std/fmt.kira:38:27 [named_type] usize
-std/fmt.kira:39:12 [ident] fn(str) -> box_usize
-std/fmt.kira:39:12 [call] box_usize
-std/fmt.kira:39:12 [field] usize
-std/fmt.kira:39:31 [ident] str
-std/fmt.kira:41:17 [binding_pat] char
-std/fmt.kira:41:26 [binding_pat] usize
-std/fmt.kira:41:39 [named_type] str
-std/fmt.kira:42:12 [ident] fn(box_u32, box_usize) -> str
-std/fmt.kira:42:12 [call] str
-std/fmt.kira:42:31 [struct_literal] box_u32
-std/fmt.kira:42:44 [ident] char
-std/fmt.kira:42:44 [cast] uint32
-std/fmt.kira:42:59 [struct_literal] box_usize
-std/fmt.kira:42:74 [ident] usize
-std/fmt.kira:44:19 [binding_pat] option[usize]
-std/fmt.kira:44:44 [named_type] usize
-std/fmt.kira:45:11 [ident] option[usize]
-std/fmt.kira:46:9 [option_pat] option[usize]
-std/fmt.kira:46:15 [binding_pat] usize
-std/fmt.kira:46:21 [ident] usize
-std/fmt.kira:47:9 [ctor_pat] option[usize]
-std/fmt.kira:47:18 [literal] usize
-std/fmt.kira:49:14 [binding_pat] option[align_mode]
-std/fmt.kira:49:41 [binding_pat] align_mode
-std/fmt.kira:49:71 [named_type] align_mode
-std/fmt.kira:50:11 [ident] option[align_mode]
-std/fmt.kira:51:9 [option_pat] option[align_mode]
-std/fmt.kira:51:15 [binding_pat] align_mode
-std/fmt.kira:51:21 [ident] align_mode
-std/fmt.kira:52:9 [ctor_pat] option[align_mode]
-std/fmt.kira:52:18 [ident] align_mode
-std/fmt.kira:54:15 [binding_pat] option[align_mode]
-std/fmt.kira:54:45 [named_type] bool
-std/fmt.kira:55:11 [ident] option[align_mode]
-std/fmt.kira:56:9 [option_pat] option[align_mode]
-std/fmt.kira:56:15 [binding_pat] align_mode
-std/fmt.kira:56:21 [literal] bool
-std/fmt.kira:57:9 [ctor_pat] option[align_mode]
-std/fmt.kira:57:18 [literal] bool
-std/fmt.kira:65:22 [binding_pat] bool
-std/fmt.kira:65:38 [binding_pat] sign_mode
-std/fmt.kira:65:58 [named_type] str
-std/fmt.kira:66:11 [ident] sign_mode
-std/fmt.kira:67:9 [ctor_pat] sign_mode
-std/fmt.kira:68:16 [ident] bool
-std/fmt.kira:69:24 [literal] str
-std/fmt.kira:70:20 [literal] str
-std/fmt.kira:71:9 [ctor_pat] sign_mode
-std/fmt.kira:72:16 [ident] bool
-std/fmt.kira:73:24 [literal] str
-std/fmt.kira:74:20 [literal] str
-std/fmt.kira:75:9 [ctor_pat] sign_mode
-std/fmt.kira:76:16 [ident] bool
-std/fmt.kira:77:24 [literal] str
-std/fmt.kira:78:20 [literal] str
-std/fmt.kira:80:22 [binding_pat] bool
-std/fmt.kira:80:39 [binding_pat] str
-std/fmt.kira:80:55 [named_type] str
-std/fmt.kira:81:8 [ident] bool
-std/fmt.kira:82:16 [ident] str
-std/fmt.kira:83:12 [literal] str
-std/fmt.kira:85:15 [binding_pat] bool
-std/fmt.kira:85:27 [named_type] str
-std/fmt.kira:86:8 [ident] bool
-std/fmt.kira:87:16 [literal] str
-std/fmt.kira:88:12 [literal] str
-std/fmt.kira:96:17 [binding_pat] str
-std/fmt.kira:96:25 [binding_pat] format_spec
-std/fmt.kira:96:47 [named_type] str
-std/fmt.kira:97:9 [binding_pat] str
-std/fmt.kira:97:21 [match] str
-std/fmt.kira:97:27 [module_path] option[usize]
-std/fmt.kira:98:9 [option_pat] option[usize]
-std/fmt.kira:98:15 [binding_pat] usize
-std/fmt.kira:98:24 [ident] fn(str, box_usize) -> str
-std/fmt.kira:98:24 [call] str
-std/fmt.kira:98:48 [ident] str
-std/fmt.kira:98:51 [struct_literal] box_usize
-std/fmt.kira:98:66 [ident] usize
-std/fmt.kira:99:9 [ctor_pat] option[usize]
-std/fmt.kira:99:18 [ident] str
-std/fmt.kira:101:9 [binding_pat] usize
-std/fmt.kira:101:20 [ident] fn(str) -> usize
-std/fmt.kira:101:20 [call] usize
-std/fmt.kira:101:31 [ident] str
-std/fmt.kira:102:9 [binding_pat] usize
-std/fmt.kira:102:24 [ident] fn(option[usize]) -> usize
-std/fmt.kira:102:24 [call] usize
-std/fmt.kira:102:38 [module_path] option[usize]
-std/fmt.kira:103:8 [ident] usize
-std/fmt.kira:103:8 [binary] bool
-std/fmt.kira:103:24 [ident] usize
-std/fmt.kira:104:16 [ident] str
-std/fmt.kira:106:9 [binding_pat] usize
-std/fmt.kira:106:21 [ident] usize
-std/fmt.kira:106:21 [binary] usize
-std/fmt.kira:106:36 [ident] usize
-std/fmt.kira:107:9 [binding_pat] align_mode
-std/fmt.kira:107:17 [ident] fn(option[align_mode], align_mode) -> align_mode
-std/fmt.kira:107:17 [call] align_mode
-std/fmt.kira:107:26 [module_path] option[align_mode]
-std/fmt.kira:107:38 [ident] align_mode
-std/fmt.kira:109:11 [ident] align_mode
-std/fmt.kira:110:9 [ctor_pat] align_mode
-std/fmt.kira:110:18 [ident] fn(str, str) -> str
-std/fmt.kira:110:18 [call] str
-std/fmt.kira:110:32 [ident] str
-std/fmt.kira:110:43 [ident] fn(char, usize) -> str
-std/fmt.kira:110:43 [call] str
-std/fmt.kira:110:55 [module_path] char
-std/fmt.kira:110:66 [ident] usize
-std/fmt.kira:111:9 [ctor_pat] align_mode
-std/fmt.kira:111:19 [ident] fn(str, str) -> str
-std/fmt.kira:111:19 [call] str
-std/fmt.kira:111:33 [ident] fn(char, usize) -> str
-std/fmt.kira:111:33 [call] str
-std/fmt.kira:111:45 [module_path] char
-std/fmt.kira:111:56 [ident] usize
-std/fmt.kira:111:68 [ident] str
-std/fmt.kira:112:9 [ctor_pat] align_mode
-std/fmt.kira:113:17 [binding_pat] usize
-std/fmt.kira:113:28 [ident] usize
-std/fmt.kira:113:28 [binary] usize
-std/fmt.kira:113:40 [literal] usize
-std/fmt.kira:114:17 [binding_pat] usize
-std/fmt.kira:114:29 [ident] usize
-std/fmt.kira:114:29 [binary] usize
-std/fmt.kira:114:41 [ident] usize
-std/fmt.kira:115:13 [ident] fn(str, str) -> str
-std/fmt.kira:115:13 [call] str
-std/fmt.kira:115:27 [ident] fn(str, str) -> str
-std/fmt.kira:115:27 [call] str
-std/fmt.kira:115:41 [ident] fn(char, usize) -> str
-std/fmt.kira:115:41 [call] str
-std/fmt.kira:115:53 [module_path] char
-std/fmt.kira:115:64 [ident] usize
-std/fmt.kira:115:75 [ident] str
-std/fmt.kira:115:87 [ident] fn(char, usize) -> str
-std/fmt.kira:115:87 [call] str
-std/fmt.kira:115:99 [module_path] char
-std/fmt.kira:115:110 [ident] usize
-std/fmt.kira:125:22 [binding_pat] bool
-std/fmt.kira:125:38 [binding_pat] str
-std/fmt.kira:125:51 [binding_pat] str
-std/fmt.kira:125:64 [binding_pat] format_spec
-std/fmt.kira:125:86 [named_type] str
-std/fmt.kira:126:9 [binding_pat] str
-std/fmt.kira:126:21 [ident] fn(bool, sign_mode) -> str
-std/fmt.kira:126:21 [call] str
-std/fmt.kira:126:38 [ident] bool
-std/fmt.kira:126:48 [module_path] sign_mode
-std/fmt.kira:127:9 [binding_pat] str
-std/fmt.kira:127:23 [ident] fn(bool, str) -> str
-std/fmt.kira:127:23 [call] str
-std/fmt.kira:127:40 [module_path] bool
-std/fmt.kira:127:56 [ident] str
-std/fmt.kira:128:9 [binding_pat] str
-std/fmt.kira:128:16 [ident] fn(str, str) -> str
-std/fmt.kira:128:16 [call] str
-std/fmt.kira:128:30 [ident] fn(str, str) -> str
-std/fmt.kira:128:30 [call] str
-std/fmt.kira:128:44 [ident] str
-std/fmt.kira:128:55 [ident] str
-std/fmt.kira:128:69 [ident] str
-std/fmt.kira:129:9 [binding_pat] bool
-std/fmt.kira:129:30 [ident] fn(option[align_mode]) -> bool
-std/fmt.kira:129:30 [call] bool
-std/fmt.kira:129:40 [module_path] option[align_mode]
-std/fmt.kira:131:8 [module_path] bool
-std/fmt.kira:131:8 [binary] bool
-std/fmt.kira:131:26 [unary] bool
-std/fmt.kira:131:30 [ident] bool
-std/fmt.kira:132:13 [binding_pat] usize
-std/fmt.kira:132:31 [ident] fn(str) -> usize
-std/fmt.kira:132:31 [call] usize
-std/fmt.kira:132:31 [binary] usize
-std/fmt.kira:132:42 [ident] str
-std/fmt.kira:132:55 [ident] fn(str) -> usize
-std/fmt.kira:132:55 [call] usize
-std/fmt.kira:132:66 [ident] str
-std/fmt.kira:133:13 [binding_pat] usize
-std/fmt.kira:133:26 [ident] fn(str) -> usize
-std/fmt.kira:133:26 [call] usize
-std/fmt.kira:133:37 [ident] str
-std/fmt.kira:134:13 [binding_pat] usize
-std/fmt.kira:134:28 [ident] fn(option[usize]) -> usize
-std/fmt.kira:134:28 [call] usize
-std/fmt.kira:134:42 [module_path] option[usize]
-std/fmt.kira:135:12 [ident] usize
-std/fmt.kira:135:12 [binary] bool
-std/fmt.kira:135:28 [ident] usize
-std/fmt.kira:135:28 [binary] usize
-std/fmt.kira:135:46 [ident] usize
-std/fmt.kira:136:20 [ident] str
-std/fmt.kira:137:13 [binding_pat] str
-std/fmt.kira:137:21 [ident] fn(char, usize) -> str
-std/fmt.kira:137:21 [call] str
-std/fmt.kira:137:33 [literal] char
-std/fmt.kira:137:38 [ident] usize
-std/fmt.kira:137:38 [binary] usize
-std/fmt.kira:137:38 [binary] usize
-std/fmt.kira:137:53 [ident] usize
-std/fmt.kira:137:71 [ident] usize
-std/fmt.kira:138:16 [ident] fn(str, str) -> str
-std/fmt.kira:138:16 [call] str
-std/fmt.kira:138:30 [ident] fn(str, str) -> str
-std/fmt.kira:138:30 [call] str
-std/fmt.kira:138:44 [ident] fn(str, str) -> str
-std/fmt.kira:138:44 [call] str
-std/fmt.kira:138:58 [ident] str
-std/fmt.kira:138:69 [ident] str
-std/fmt.kira:138:83 [ident] str
-std/fmt.kira:138:91 [ident] str
-std/fmt.kira:140:9 [binding_pat] format_spec
-std/fmt.kira:140:21 [struct_literal] format_spec
-std/fmt.kira:141:15 [module_path] char
-std/fmt.kira:142:16 [call] option[align_mode]
-std/fmt.kira:142:22 [ident] fn(option[align_mode], align_mode) -> align_mode
-std/fmt.kira:142:22 [call] align_mode
-std/fmt.kira:142:31 [module_path] option[align_mode]
-std/fmt.kira:142:43 [ident] align_mode
-std/fmt.kira:143:15 [module_path] sign_mode
-std/fmt.kira:144:20 [module_path] bool
-std/fmt.kira:145:19 [literal] bool
-std/fmt.kira:146:16 [module_path] option[usize]
-std/fmt.kira:147:20 [ident] option[usize]
-std/fmt.kira:149:12 [ident] fn(str, format_spec) -> str
-std/fmt.kira:149:12 [call] str
-std/fmt.kira:149:20 [ident] str
-std/fmt.kira:149:26 [ident] format_spec
-std/fmt.kira:165:22 [binding_pat] str
-std/fmt.kira:165:30 [binding_pat] format_spec
-std/fmt.kira:165:52 [named_type] str
-std/fmt.kira:166:12 [ident] fn(str, format_spec) -> str
-std/fmt.kira:166:12 [call] str
-std/fmt.kira:166:20 [ident] str
-std/fmt.kira:166:23 [ident] format_spec
-std/fmt.kira:174:23 [binding_pat] str
-std/fmt.kira:174:31 [binding_pat] format_spec
-std/fmt.kira:174:53 [named_type] str
-std/fmt.kira:175:12 [ident] fn(str, format_spec) -> str
-std/fmt.kira:175:12 [call] str
-std/fmt.kira:175:20 [ident] fn(str, str) -> str
-std/fmt.kira:175:20 [call] str
-std/fmt.kira:175:34 [ident] fn(str, str) -> str
-std/fmt.kira:175:34 [call] str
-std/fmt.kira:175:48 [literal] str
-std/fmt.kira:175:54 [ident] str
-std/fmt.kira:175:58 [literal] str
-std/fmt.kira:175:65 [ident] format_spec
-std/fmt.kira:183:23 [binding_pat] bool
-std/fmt.kira:183:32 [binding_pat] format_spec
-std/fmt.kira:183:54 [named_type] str
-std/fmt.kira:184:12 [ident] fn(str, format_spec) -> str
-std/fmt.kira:184:12 [call] str
-std/fmt.kira:184:20 [ident] fn(bool) -> str
-std/fmt.kira:184:20 [call] str
-std/fmt.kira:184:30 [ident] bool
-std/fmt.kira:184:34 [ident] format_spec
-std/fmt.kira:192:23 [binding_pat] char
-std/fmt.kira:192:32 [binding_pat] format_spec
-std/fmt.kira:192:54 [named_type] str
-std/fmt.kira:193:12 [ident] fn(str, format_spec) -> str
-std/fmt.kira:193:12 [call] str
-std/fmt.kira:193:20 [ident] fn(box_u32) -> str
-std/fmt.kira:193:20 [call] str
-std/fmt.kira:193:47 [struct_literal] box_u32
-std/fmt.kira:193:60 [ident] char
-std/fmt.kira:193:60 [cast] uint32
-std/fmt.kira:193:76 [ident] format_spec
-std/fmt.kira:201:28 [binding_pat] uint32
-std/fmt.kira:201:40 [binding_pat] format_spec
-std/fmt.kira:201:62 [named_type] str
-std/fmt.kira:202:12 [ident] fn(str, format_spec) -> str
-std/fmt.kira:202:12 [call] str
-std/fmt.kira:202:20 [ident] fn(box_u32) -> str
-std/fmt.kira:202:20 [call] str
-std/fmt.kira:202:47 [struct_literal] box_u32
-std/fmt.kira:202:60 [ident] uint32
-std/fmt.kira:202:67 [ident] format_spec
-std/fmt.kira:210:22 [binding_pat] int64
-std/fmt.kira:210:32 [binding_pat] format_spec
-std/fmt.kira:210:54 [named_type] str
-std/fmt.kira:211:12 [ident] fn(int64, uint8, bool, str, format_spec) -> str
-std/fmt.kira:211:12 [call] str
-std/fmt.kira:211:26 [ident] int64
-std/fmt.kira:211:29 [literal] uint8
-std/fmt.kira:211:33 [literal] bool
-std/fmt.kira:211:40 [literal] str
-std/fmt.kira:211:44 [ident] format_spec
-std/fmt.kira:219:22 [binding_pat] uint64
-std/fmt.kira:219:33 [binding_pat] format_spec
-std/fmt.kira:219:55 [named_type] str
-std/fmt.kira:220:12 [ident] fn(uint64, uint8, bool, str, format_spec) -> str
-std/fmt.kira:220:12 [call] str
-std/fmt.kira:220:26 [ident] uint64
-std/fmt.kira:220:29 [literal] uint8
-std/fmt.kira:220:33 [literal] bool
-std/fmt.kira:220:40 [literal] str
-std/fmt.kira:220:44 [ident] format_spec
-std/fmt.kira:231:23 [binding_pat] int64
-std/fmt.kira:231:33 [binding_pat] uint8
-std/fmt.kira:231:47 [binding_pat] bool
-std/fmt.kira:231:64 [binding_pat] str
-std/fmt.kira:231:77 [binding_pat] format_spec
-std/fmt.kira:231:99 [named_type] str
-std/fmt.kira:232:9 [binding_pat] bool
-std/fmt.kira:232:20 [ident] int64
-std/fmt.kira:232:20 [binary] bool
-std/fmt.kira:232:24 [literal] int64
-std/fmt.kira:233:9 [binding_pat] uint64
-std/fmt.kira:233:16 [ident] int64
-std/fmt.kira:233:16 [cast] uint64
-std/fmt.kira:234:9 [binding_pat] uint64
-std/fmt.kira:234:21 [if] uint64
-std/fmt.kira:234:24 [ident] bool
-std/fmt.kira:234:34 [group] uint64
-std/fmt.kira:234:34 [binary] uint64
-std/fmt.kira:234:35 [literal] uint64
-std/fmt.kira:234:35 [cast] uint64
-std/fmt.kira:234:35 [binary] uint64
-std/fmt.kira:234:68 [ident] uint64
-std/fmt.kira:234:76 [group] uint64
-std/fmt.kira:234:77 [literal] uint64
-std/fmt.kira:234:77 [cast] uint64
-std/fmt.kira:234:96 [ident] uint64
-std/fmt.kira:235:9 [binding_pat] str
-std/fmt.kira:235:18 [ident] fn(box_u64, box_u8, box_bool) -> str
-std/fmt.kira:235:18 [call] str
-std/fmt.kira:235:38 [struct_literal] box_u64
-std/fmt.kira:235:51 [ident] uint64
-std/fmt.kira:235:64 [struct_literal] box_u8
-std/fmt.kira:235:76 [ident] uint8
-std/fmt.kira:235:85 [struct_literal] box_bool
-std/fmt.kira:235:99 [ident] bool
-std/fmt.kira:236:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.kira:236:12 [call] str
-std/fmt.kira:236:25 [ident] bool
-std/fmt.kira:236:35 [ident] str
-std/fmt.kira:236:43 [ident] str
-std/fmt.kira:236:51 [ident] format_spec
-std/fmt.kira:247:23 [binding_pat] uint64
-std/fmt.kira:247:34 [binding_pat] uint8
-std/fmt.kira:247:48 [binding_pat] bool
-std/fmt.kira:247:65 [binding_pat] str
-std/fmt.kira:247:78 [binding_pat] format_spec
-std/fmt.kira:247:100 [named_type] str
-std/fmt.kira:248:9 [binding_pat] str
-std/fmt.kira:248:18 [ident] fn(box_u64, box_u8, box_bool) -> str
-std/fmt.kira:248:18 [call] str
-std/fmt.kira:248:38 [struct_literal] box_u64
-std/fmt.kira:248:51 [ident] uint64
-std/fmt.kira:248:56 [struct_literal] box_u8
-std/fmt.kira:248:68 [ident] uint8
-std/fmt.kira:248:77 [struct_literal] box_bool
-std/fmt.kira:248:91 [ident] bool
-std/fmt.kira:249:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.kira:249:12 [call] str
-std/fmt.kira:249:25 [literal] bool
-std/fmt.kira:249:32 [ident] str
-std/fmt.kira:249:40 [ident] str
-std/fmt.kira:249:48 [ident] format_spec
-std/fmt.kira:258:25 [binding_pat] float64
-std/fmt.kira:258:37 [binding_pat] usize
-std/fmt.kira:258:55 [binding_pat] format_spec
-std/fmt.kira:258:77 [named_type] str
-std/fmt.kira:259:9 [binding_pat] bool
-std/fmt.kira:259:20 [ident] float64
-std/fmt.kira:259:20 [binary] bool
-std/fmt.kira:259:24 [literal] float64
-std/fmt.kira:260:9 [binding_pat] float64
-std/fmt.kira:260:21 [if] float64
-std/fmt.kira:260:24 [ident] bool
-std/fmt.kira:260:34 [unary] float64
-std/fmt.kira:260:35 [ident] float64
-std/fmt.kira:260:43 [ident] float64
-std/fmt.kira:261:9 [binding_pat] str
-std/fmt.kira:261:18 [ident] fn(box_f64, box_usize) -> str
-std/fmt.kira:261:18 [call] str
-std/fmt.kira:261:35 [struct_literal] box_f64
-std/fmt.kira:261:48 [ident] float64
-std/fmt.kira:261:61 [struct_literal] box_usize
-std/fmt.kira:261:76 [ident] usize
-std/fmt.kira:262:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.kira:262:12 [call] str
-std/fmt.kira:262:25 [ident] bool
-std/fmt.kira:262:35 [literal] str
-std/fmt.kira:262:39 [ident] str
-std/fmt.kira:262:47 [ident] format_spec
-std/fmt.kira:272:23 [binding_pat] float64
-std/fmt.kira:272:35 [binding_pat] usize
-std/fmt.kira:272:53 [binding_pat] bool
-std/fmt.kira:272:70 [binding_pat] format_spec
-std/fmt.kira:272:92 [named_type] str
-std/fmt.kira:273:9 [binding_pat] bool
-std/fmt.kira:273:20 [ident] float64
-std/fmt.kira:273:20 [binary] bool
-std/fmt.kira:273:24 [literal] float64
-std/fmt.kira:274:9 [binding_pat] float64
-std/fmt.kira:274:21 [if] float64
-std/fmt.kira:274:24 [ident] bool
-std/fmt.kira:274:34 [unary] float64
-std/fmt.kira:274:35 [ident] float64
-std/fmt.kira:274:43 [ident] float64
-std/fmt.kira:275:9 [binding_pat] str
-std/fmt.kira:275:18 [ident] fn(box_f64, box_usize, box_bool) -> str
-std/fmt.kira:275:18 [call] str
-std/fmt.kira:275:33 [struct_literal] box_f64
-std/fmt.kira:275:46 [ident] float64
-std/fmt.kira:275:59 [struct_literal] box_usize
-std/fmt.kira:275:74 [ident] usize
-std/fmt.kira:275:87 [struct_literal] box_bool
-std/fmt.kira:275:101 [ident] bool
-std/fmt.kira:276:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.kira:276:12 [call] str
-std/fmt.kira:276:25 [ident] bool
-std/fmt.kira:276:35 [literal] str
-std/fmt.kira:276:39 [ident] str
-std/fmt.kira:276:47 [ident] format_spec
-std/fmt.kira:285:27 [binding_pat] float64
-std/fmt.kira:285:39 [binding_pat] usize
-std/fmt.kira:285:57 [binding_pat] format_spec
-std/fmt.kira:285:79 [named_type] str
-std/fmt.kira:286:9 [binding_pat] bool
-std/fmt.kira:286:20 [ident] float64
-std/fmt.kira:286:20 [binary] bool
-std/fmt.kira:286:24 [literal] float64
-std/fmt.kira:287:9 [binding_pat] float64
-std/fmt.kira:287:21 [if] float64
-std/fmt.kira:287:24 [ident] bool
-std/fmt.kira:287:34 [unary] float64
-std/fmt.kira:287:35 [ident] float64
-std/fmt.kira:287:43 [ident] float64
-std/fmt.kira:288:9 [binding_pat] str
-std/fmt.kira:288:18 [ident] fn(box_f64, box_usize) -> str
-std/fmt.kira:288:18 [call] str
-std/fmt.kira:288:37 [struct_literal] box_f64
-std/fmt.kira:288:50 [ident] float64
-std/fmt.kira:288:63 [struct_literal] box_usize
-std/fmt.kira:288:78 [ident] usize
-std/fmt.kira:289:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.kira:289:12 [call] str
-std/fmt.kira:289:25 [ident] bool
-std/fmt.kira:289:35 [literal] str
-std/fmt.kira:289:39 [ident] str
-std/fmt.kira:289:47 [ident] format_spec
-std/intrinsics.kira:26:37 [binding_pat] box_f64
-std/intrinsics.kira:26:52 [named_type] box_u64
-std/intrinsics.kira:30:37 [binding_pat] box_f32
-std/intrinsics.kira:30:52 [named_type] box_u32
-std/intrinsics.kira:40:29 [binding_pat] str
-std/intrinsics.kira:40:37 [binding_pat] str
-std/intrinsics.kira:40:48 [named_type] str
-std/intrinsics.kira:41:34 [binding_pat] str
-std/intrinsics.kira:41:45 [named_type] box_usize
-std/intrinsics.kira:42:34 [binding_pat] box_u32
-std/intrinsics.kira:42:46 [binding_pat] box_usize
-std/intrinsics.kira:42:63 [named_type] str
-std/intrinsics.kira:43:39 [binding_pat] str
-std/intrinsics.kira:43:47 [binding_pat] box_usize
-std/intrinsics.kira:43:64 [named_type] str
-std/intrinsics.kira:44:25 [binding_pat] str
-std/intrinsics.kira:44:33 [binding_pat] str
-std/intrinsics.kira:44:44 [named_type] box_bool
-std/intrinsics.kira:45:26 [binding_pat] str
-std/intrinsics.kira:45:34 [binding_pat] str
-std/intrinsics.kira:45:45 [named_type] box_i32
-std/intrinsics.kira:46:27 [binding_pat] str
-std/intrinsics.kira:46:42 [binding_pat] str
-std/intrinsics.kira:46:55 [binding_pat] box_usize
-std/intrinsics.kira:46:75 [named_type] find_result
-std/intrinsics.kira:47:28 [binding_pat] str
-std/intrinsics.kira:47:43 [binding_pat] str
-std/intrinsics.kira:47:59 [named_type] find_result
-std/intrinsics.kira:48:30 [binding_pat] str
-std/intrinsics.kira:48:41 [named_type] str
-std/intrinsics.kira:49:27 [binding_pat] str
-std/intrinsics.kira:49:35 [binding_pat] box_u8
-std/intrinsics.kira:49:52 [named_type] str
-std/intrinsics.kira:50:30 [binding_pat] str
-std/intrinsics.kira:50:38 [binding_pat] str
-std/intrinsics.kira:50:49 [binding_pat] str
-std/intrinsics.kira:50:61 [named_type] str
-std/intrinsics.kira:52:35 [binding_pat] box_u64
-std/intrinsics.kira:52:51 [binding_pat] box_u8
-std/intrinsics.kira:52:66 [binding_pat] box_bool
-std/intrinsics.kira:52:90 [named_type] str
-std/intrinsics.kira:53:32 [binding_pat] box_f64
-std/intrinsics.kira:53:48 [binding_pat] box_usize
-std/intrinsics.kira:53:73 [named_type] str
-std/intrinsics.kira:54:30 [binding_pat] box_f64
-std/intrinsics.kira:54:46 [binding_pat] box_usize
-std/intrinsics.kira:54:68 [binding_pat] box_bool
-std/intrinsics.kira:54:92 [named_type] str
-std/intrinsics.kira:55:34 [binding_pat] box_f64
-std/intrinsics.kira:55:50 [binding_pat] box_usize
-std/intrinsics.kira:55:75 [named_type] str
-std/intrinsics.kira:56:42 [binding_pat] box_u32
-std/intrinsics.kira:56:58 [named_type] str
-std/intrinsics.kira:76:29 [named_type] raw_fd
-std/intrinsics.kira:77:30 [named_type] raw_fd
-std/intrinsics.kira:78:30 [named_type] raw_fd
-std/intrinsics.kira:80:23 [binding_pat] str
-std/intrinsics.kira:80:34 [binding_pat] open_options
-std/intrinsics.kira:80:57 [named_type] result[raw_fd, io_errno]
-std/intrinsics.kira:81:24 [binding_pat] raw_fd
-std/intrinsics.kira:81:39 [named_type] result[unit, io_errno]
-std/intrinsics.kira:82:23 [binding_pat] raw_fd
-std/intrinsics.kira:82:35 [binding_pat] &mut slice_mut[byte]
-std/intrinsics.kira:82:65 [named_type] result[usize, io_errno]
-std/intrinsics.kira:83:24 [binding_pat] raw_fd
-std/intrinsics.kira:83:36 [binding_pat] &slice[byte]
-std/intrinsics.kira:83:58 [named_type] result[usize, io_errno]
-std/intrinsics.kira:84:24 [binding_pat] raw_fd
-std/intrinsics.kira:84:39 [named_type] result[unit, io_errno]
-std/intrinsics.kira:90:24 [binding_pat] str
-std/intrinsics.kira:90:37 [named_type] never
-std/intrinsics.kira:132:29 [named_type] result[uname_raw, io_errno]
-std/intrinsics.kira:137:36 [named_type] result[libc_version, io_errno]
-std/intrinsics.kira:142:39 [named_type] result[winver_raw, io_errno]
-std/intrinsics.kira:147:37 [named_type] result[macver_raw, io_errno]
-std/intrinsics.kira:152:35 [named_type] result[str, io_errno]
-std/intrinsics.kira:157:38 [named_type] result[str, io_errno]
-std/intrinsics.kira:180:24 [binding_pat] box_usize
-std/intrinsics.kira:180:45 [ptr_type] *mut byte
-std/intrinsics.kira:185:26 [binding_pat] *mut byte
-std/intrinsics.kira:185:40 [binding_pat] box_usize
-std/intrinsics.kira:185:62 [binding_pat] box_usize
-std/intrinsics.kira:185:87 [ptr_type] *mut byte
-std/intrinsics.kira:189:23 [binding_pat] *mut byte
-std/intrinsics.kira:189:37 [binding_pat] box_usize
-std/intrinsics.kira:189:58 [named_type] unit
+std/fmt.kira:31:16 [binding_pat] str
+std/fmt.kira:31:27 [named_type] usize
+std/fmt.kira:32:12 [ident] fn(str) -> usize
+std/fmt.kira:32:12 [call] usize
+std/fmt.kira:32:31 [ident] str
+std/fmt.kira:34:17 [binding_pat] char
+std/fmt.kira:34:26 [binding_pat] usize
+std/fmt.kira:34:39 [named_type] str
+std/fmt.kira:35:12 [ident] fn(uint32, usize) -> str
+std/fmt.kira:35:12 [call] str
+std/fmt.kira:35:31 [ident] char
+std/fmt.kira:35:31 [cast] uint32
+std/fmt.kira:35:44 [ident] usize
+std/fmt.kira:37:19 [binding_pat] option[usize]
+std/fmt.kira:37:44 [named_type] usize
+std/fmt.kira:38:11 [ident] option[usize]
+std/fmt.kira:39:9 [option_pat] option[usize]
+std/fmt.kira:39:15 [binding_pat] usize
+std/fmt.kira:39:21 [ident] usize
+std/fmt.kira:40:9 [ctor_pat] option[usize]
+std/fmt.kira:40:18 [literal] usize
+std/fmt.kira:42:14 [binding_pat] option[align_mode]
+std/fmt.kira:42:41 [binding_pat] align_mode
+std/fmt.kira:42:71 [named_type] align_mode
+std/fmt.kira:43:11 [ident] option[align_mode]
+std/fmt.kira:44:9 [option_pat] option[align_mode]
+std/fmt.kira:44:15 [binding_pat] align_mode
+std/fmt.kira:44:21 [ident] align_mode
+std/fmt.kira:45:9 [ctor_pat] option[align_mode]
+std/fmt.kira:45:18 [ident] align_mode
+std/fmt.kira:47:15 [binding_pat] option[align_mode]
+std/fmt.kira:47:45 [named_type] bool
+std/fmt.kira:48:11 [ident] option[align_mode]
+std/fmt.kira:49:9 [option_pat] option[align_mode]
+std/fmt.kira:49:15 [binding_pat] align_mode
+std/fmt.kira:49:21 [literal] bool
+std/fmt.kira:50:9 [ctor_pat] option[align_mode]
+std/fmt.kira:50:18 [literal] bool
+std/fmt.kira:58:22 [binding_pat] bool
+std/fmt.kira:58:38 [binding_pat] sign_mode
+std/fmt.kira:58:58 [named_type] str
+std/fmt.kira:59:11 [ident] sign_mode
+std/fmt.kira:60:9 [ctor_pat] sign_mode
+std/fmt.kira:61:16 [ident] bool
+std/fmt.kira:62:24 [literal] str
+std/fmt.kira:63:20 [literal] str
+std/fmt.kira:64:9 [ctor_pat] sign_mode
+std/fmt.kira:65:16 [ident] bool
+std/fmt.kira:66:24 [literal] str
+std/fmt.kira:67:20 [literal] str
+std/fmt.kira:68:9 [ctor_pat] sign_mode
+std/fmt.kira:69:16 [ident] bool
+std/fmt.kira:70:24 [literal] str
+std/fmt.kira:71:20 [literal] str
+std/fmt.kira:73:22 [binding_pat] bool
+std/fmt.kira:73:39 [binding_pat] str
+std/fmt.kira:73:55 [named_type] str
+std/fmt.kira:74:8 [ident] bool
+std/fmt.kira:75:16 [ident] str
+std/fmt.kira:76:12 [literal] str
+std/fmt.kira:78:15 [binding_pat] bool
+std/fmt.kira:78:27 [named_type] str
+std/fmt.kira:79:8 [ident] bool
+std/fmt.kira:80:16 [literal] str
+std/fmt.kira:81:12 [literal] str
+std/fmt.kira:89:17 [binding_pat] str
+std/fmt.kira:89:25 [binding_pat] format_spec
+std/fmt.kira:89:47 [named_type] str
+std/fmt.kira:90:9 [binding_pat] str
+std/fmt.kira:90:21 [match] str
+std/fmt.kira:90:27 [module_path] option[usize]
+std/fmt.kira:91:9 [option_pat] option[usize]
+std/fmt.kira:91:15 [binding_pat] usize
+std/fmt.kira:91:24 [ident] fn(str, usize) -> str
+std/fmt.kira:91:24 [call] str
+std/fmt.kira:91:48 [ident] str
+std/fmt.kira:91:51 [ident] usize
+std/fmt.kira:92:9 [ctor_pat] option[usize]
+std/fmt.kira:92:18 [ident] str
+std/fmt.kira:94:9 [binding_pat] usize
+std/fmt.kira:94:20 [ident] fn(str) -> usize
+std/fmt.kira:94:20 [call] usize
+std/fmt.kira:94:31 [ident] str
+std/fmt.kira:95:9 [binding_pat] usize
+std/fmt.kira:95:24 [ident] fn(option[usize]) -> usize
+std/fmt.kira:95:24 [call] usize
+std/fmt.kira:95:38 [module_path] option[usize]
+std/fmt.kira:96:8 [ident] usize
+std/fmt.kira:96:8 [binary] bool
+std/fmt.kira:96:24 [ident] usize
+std/fmt.kira:97:16 [ident] str
+std/fmt.kira:99:9 [binding_pat] usize
+std/fmt.kira:99:21 [ident] usize
+std/fmt.kira:99:21 [binary] usize
+std/fmt.kira:99:36 [ident] usize
+std/fmt.kira:100:9 [binding_pat] align_mode
+std/fmt.kira:100:17 [ident] fn(option[align_mode], align_mode) -> align_mode
+std/fmt.kira:100:17 [call] align_mode
+std/fmt.kira:100:26 [module_path] option[align_mode]
+std/fmt.kira:100:38 [ident] align_mode
+std/fmt.kira:102:11 [ident] align_mode
+std/fmt.kira:103:9 [ctor_pat] align_mode
+std/fmt.kira:103:18 [ident] fn(str, str) -> str
+std/fmt.kira:103:18 [call] str
+std/fmt.kira:103:32 [ident] str
+std/fmt.kira:103:43 [ident] fn(char, usize) -> str
+std/fmt.kira:103:43 [call] str
+std/fmt.kira:103:55 [module_path] char
+std/fmt.kira:103:66 [ident] usize
+std/fmt.kira:104:9 [ctor_pat] align_mode
+std/fmt.kira:104:19 [ident] fn(str, str) -> str
+std/fmt.kira:104:19 [call] str
+std/fmt.kira:104:33 [ident] fn(char, usize) -> str
+std/fmt.kira:104:33 [call] str
+std/fmt.kira:104:45 [module_path] char
+std/fmt.kira:104:56 [ident] usize
+std/fmt.kira:104:68 [ident] str
+std/fmt.kira:105:9 [ctor_pat] align_mode
+std/fmt.kira:106:17 [binding_pat] usize
+std/fmt.kira:106:28 [ident] usize
+std/fmt.kira:106:28 [binary] usize
+std/fmt.kira:106:40 [literal] usize
+std/fmt.kira:107:17 [binding_pat] usize
+std/fmt.kira:107:29 [ident] usize
+std/fmt.kira:107:29 [binary] usize
+std/fmt.kira:107:41 [ident] usize
+std/fmt.kira:108:13 [ident] fn(str, str) -> str
+std/fmt.kira:108:13 [call] str
+std/fmt.kira:108:27 [ident] fn(str, str) -> str
+std/fmt.kira:108:27 [call] str
+std/fmt.kira:108:41 [ident] fn(char, usize) -> str
+std/fmt.kira:108:41 [call] str
+std/fmt.kira:108:53 [module_path] char
+std/fmt.kira:108:64 [ident] usize
+std/fmt.kira:108:75 [ident] str
+std/fmt.kira:108:87 [ident] fn(char, usize) -> str
+std/fmt.kira:108:87 [call] str
+std/fmt.kira:108:99 [module_path] char
+std/fmt.kira:108:110 [ident] usize
+std/fmt.kira:118:22 [binding_pat] bool
+std/fmt.kira:118:38 [binding_pat] str
+std/fmt.kira:118:51 [binding_pat] str
+std/fmt.kira:118:64 [binding_pat] format_spec
+std/fmt.kira:118:86 [named_type] str
+std/fmt.kira:119:9 [binding_pat] str
+std/fmt.kira:119:21 [ident] fn(bool, sign_mode) -> str
+std/fmt.kira:119:21 [call] str
+std/fmt.kira:119:38 [ident] bool
+std/fmt.kira:119:48 [module_path] sign_mode
+std/fmt.kira:120:9 [binding_pat] str
+std/fmt.kira:120:23 [ident] fn(bool, str) -> str
+std/fmt.kira:120:23 [call] str
+std/fmt.kira:120:40 [module_path] bool
+std/fmt.kira:120:56 [ident] str
+std/fmt.kira:121:9 [binding_pat] str
+std/fmt.kira:121:16 [ident] fn(str, str) -> str
+std/fmt.kira:121:16 [call] str
+std/fmt.kira:121:30 [ident] fn(str, str) -> str
+std/fmt.kira:121:30 [call] str
+std/fmt.kira:121:44 [ident] str
+std/fmt.kira:121:55 [ident] str
+std/fmt.kira:121:69 [ident] str
+std/fmt.kira:122:9 [binding_pat] bool
+std/fmt.kira:122:30 [ident] fn(option[align_mode]) -> bool
+std/fmt.kira:122:30 [call] bool
+std/fmt.kira:122:40 [module_path] option[align_mode]
+std/fmt.kira:124:8 [module_path] bool
+std/fmt.kira:124:8 [binary] bool
+std/fmt.kira:124:26 [unary] bool
+std/fmt.kira:124:30 [ident] bool
+std/fmt.kira:125:13 [binding_pat] usize
+std/fmt.kira:125:31 [ident] fn(str) -> usize
+std/fmt.kira:125:31 [call] usize
+std/fmt.kira:125:31 [binary] usize
+std/fmt.kira:125:42 [ident] str
+std/fmt.kira:125:55 [ident] fn(str) -> usize
+std/fmt.kira:125:55 [call] usize
+std/fmt.kira:125:66 [ident] str
+std/fmt.kira:126:13 [binding_pat] usize
+std/fmt.kira:126:26 [ident] fn(str) -> usize
+std/fmt.kira:126:26 [call] usize
+std/fmt.kira:126:37 [ident] str
+std/fmt.kira:127:13 [binding_pat] usize
+std/fmt.kira:127:28 [ident] fn(option[usize]) -> usize
+std/fmt.kira:127:28 [call] usize
+std/fmt.kira:127:42 [module_path] option[usize]
+std/fmt.kira:128:12 [ident] usize
+std/fmt.kira:128:12 [binary] bool
+std/fmt.kira:128:28 [ident] usize
+std/fmt.kira:128:28 [binary] usize
+std/fmt.kira:128:46 [ident] usize
+std/fmt.kira:129:20 [ident] str
+std/fmt.kira:130:13 [binding_pat] str
+std/fmt.kira:130:21 [ident] fn(char, usize) -> str
+std/fmt.kira:130:21 [call] str
+std/fmt.kira:130:33 [literal] char
+std/fmt.kira:130:38 [ident] usize
+std/fmt.kira:130:38 [binary] usize
+std/fmt.kira:130:38 [binary] usize
+std/fmt.kira:130:53 [ident] usize
+std/fmt.kira:130:71 [ident] usize
+std/fmt.kira:131:16 [ident] fn(str, str) -> str
+std/fmt.kira:131:16 [call] str
+std/fmt.kira:131:30 [ident] fn(str, str) -> str
+std/fmt.kira:131:30 [call] str
+std/fmt.kira:131:44 [ident] fn(str, str) -> str
+std/fmt.kira:131:44 [call] str
+std/fmt.kira:131:58 [ident] str
+std/fmt.kira:131:69 [ident] str
+std/fmt.kira:131:83 [ident] str
+std/fmt.kira:131:91 [ident] str
+std/fmt.kira:133:9 [binding_pat] format_spec
+std/fmt.kira:133:21 [struct_literal] format_spec
+std/fmt.kira:134:15 [module_path] char
+std/fmt.kira:135:16 [call] option[align_mode]
+std/fmt.kira:135:22 [ident] fn(option[align_mode], align_mode) -> align_mode
+std/fmt.kira:135:22 [call] align_mode
+std/fmt.kira:135:31 [module_path] option[align_mode]
+std/fmt.kira:135:43 [ident] align_mode
+std/fmt.kira:136:15 [module_path] sign_mode
+std/fmt.kira:137:20 [module_path] bool
+std/fmt.kira:138:19 [literal] bool
+std/fmt.kira:139:16 [module_path] option[usize]
+std/fmt.kira:140:20 [ident] option[usize]
+std/fmt.kira:142:12 [ident] fn(str, format_spec) -> str
+std/fmt.kira:142:12 [call] str
+std/fmt.kira:142:20 [ident] str
+std/fmt.kira:142:26 [ident] format_spec
+std/fmt.kira:158:22 [binding_pat] str
+std/fmt.kira:158:30 [binding_pat] format_spec
+std/fmt.kira:158:52 [named_type] str
+std/fmt.kira:159:12 [ident] fn(str, format_spec) -> str
+std/fmt.kira:159:12 [call] str
+std/fmt.kira:159:20 [ident] str
+std/fmt.kira:159:23 [ident] format_spec
+std/fmt.kira:167:23 [binding_pat] str
+std/fmt.kira:167:31 [binding_pat] format_spec
+std/fmt.kira:167:53 [named_type] str
+std/fmt.kira:168:12 [ident] fn(str, format_spec) -> str
+std/fmt.kira:168:12 [call] str
+std/fmt.kira:168:20 [ident] fn(str, str) -> str
+std/fmt.kira:168:20 [call] str
+std/fmt.kira:168:34 [ident] fn(str, str) -> str
+std/fmt.kira:168:34 [call] str
+std/fmt.kira:168:48 [literal] str
+std/fmt.kira:168:54 [ident] str
+std/fmt.kira:168:58 [literal] str
+std/fmt.kira:168:65 [ident] format_spec
+std/fmt.kira:176:23 [binding_pat] bool
+std/fmt.kira:176:32 [binding_pat] format_spec
+std/fmt.kira:176:54 [named_type] str
+std/fmt.kira:177:12 [ident] fn(str, format_spec) -> str
+std/fmt.kira:177:12 [call] str
+std/fmt.kira:177:20 [ident] fn(bool) -> str
+std/fmt.kira:177:20 [call] str
+std/fmt.kira:177:30 [ident] bool
+std/fmt.kira:177:34 [ident] format_spec
+std/fmt.kira:185:23 [binding_pat] char
+std/fmt.kira:185:32 [binding_pat] format_spec
+std/fmt.kira:185:54 [named_type] str
+std/fmt.kira:186:12 [ident] fn(str, format_spec) -> str
+std/fmt.kira:186:12 [call] str
+std/fmt.kira:186:20 [ident] fn(uint32) -> str
+std/fmt.kira:186:20 [call] str
+std/fmt.kira:186:47 [ident] char
+std/fmt.kira:186:47 [cast] uint32
+std/fmt.kira:186:61 [ident] format_spec
+std/fmt.kira:194:28 [binding_pat] uint32
+std/fmt.kira:194:40 [binding_pat] format_spec
+std/fmt.kira:194:62 [named_type] str
+std/fmt.kira:195:12 [ident] fn(str, format_spec) -> str
+std/fmt.kira:195:12 [call] str
+std/fmt.kira:195:20 [ident] fn(uint32) -> str
+std/fmt.kira:195:20 [call] str
+std/fmt.kira:195:47 [ident] uint32
+std/fmt.kira:195:52 [ident] format_spec
+std/fmt.kira:203:22 [binding_pat] int64
+std/fmt.kira:203:32 [binding_pat] format_spec
+std/fmt.kira:203:54 [named_type] str
+std/fmt.kira:204:12 [ident] fn(int64, uint8, bool, str, format_spec) -> str
+std/fmt.kira:204:12 [call] str
+std/fmt.kira:204:26 [ident] int64
+std/fmt.kira:204:29 [literal] uint8
+std/fmt.kira:204:33 [literal] bool
+std/fmt.kira:204:40 [literal] str
+std/fmt.kira:204:44 [ident] format_spec
+std/fmt.kira:212:22 [binding_pat] uint64
+std/fmt.kira:212:33 [binding_pat] format_spec
+std/fmt.kira:212:55 [named_type] str
+std/fmt.kira:213:12 [ident] fn(uint64, uint8, bool, str, format_spec) -> str
+std/fmt.kira:213:12 [call] str
+std/fmt.kira:213:26 [ident] uint64
+std/fmt.kira:213:29 [literal] uint8
+std/fmt.kira:213:33 [literal] bool
+std/fmt.kira:213:40 [literal] str
+std/fmt.kira:213:44 [ident] format_spec
+std/fmt.kira:224:23 [binding_pat] int64
+std/fmt.kira:224:33 [binding_pat] uint8
+std/fmt.kira:224:47 [binding_pat] bool
+std/fmt.kira:224:64 [binding_pat] str
+std/fmt.kira:224:77 [binding_pat] format_spec
+std/fmt.kira:224:99 [named_type] str
+std/fmt.kira:225:9 [binding_pat] bool
+std/fmt.kira:225:20 [ident] int64
+std/fmt.kira:225:20 [binary] bool
+std/fmt.kira:225:24 [literal] int64
+std/fmt.kira:226:9 [binding_pat] uint64
+std/fmt.kira:226:16 [ident] int64
+std/fmt.kira:226:16 [cast] uint64
+std/fmt.kira:227:9 [binding_pat] uint64
+std/fmt.kira:227:21 [if] uint64
+std/fmt.kira:227:24 [ident] bool
+std/fmt.kira:227:34 [group] uint64
+std/fmt.kira:227:34 [binary] uint64
+std/fmt.kira:227:35 [literal] uint64
+std/fmt.kira:227:35 [cast] uint64
+std/fmt.kira:227:35 [binary] uint64
+std/fmt.kira:227:68 [ident] uint64
+std/fmt.kira:227:76 [group] uint64
+std/fmt.kira:227:77 [literal] uint64
+std/fmt.kira:227:77 [cast] uint64
+std/fmt.kira:227:96 [ident] uint64
+std/fmt.kira:228:9 [binding_pat] str
+std/fmt.kira:228:18 [ident] fn(uint64, uint8, bool) -> str
+std/fmt.kira:228:18 [call] str
+std/fmt.kira:228:38 [ident] uint64
+std/fmt.kira:228:49 [ident] uint8
+std/fmt.kira:228:56 [ident] bool
+std/fmt.kira:229:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.kira:229:12 [call] str
+std/fmt.kira:229:25 [ident] bool
+std/fmt.kira:229:35 [ident] str
+std/fmt.kira:229:43 [ident] str
+std/fmt.kira:229:51 [ident] format_spec
+std/fmt.kira:240:23 [binding_pat] uint64
+std/fmt.kira:240:34 [binding_pat] uint8
+std/fmt.kira:240:48 [binding_pat] bool
+std/fmt.kira:240:65 [binding_pat] str
+std/fmt.kira:240:78 [binding_pat] format_spec
+std/fmt.kira:240:100 [named_type] str
+std/fmt.kira:241:9 [binding_pat] str
+std/fmt.kira:241:18 [ident] fn(uint64, uint8, bool) -> str
+std/fmt.kira:241:18 [call] str
+std/fmt.kira:241:38 [ident] uint64
+std/fmt.kira:241:41 [ident] uint8
+std/fmt.kira:241:48 [ident] bool
+std/fmt.kira:242:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.kira:242:12 [call] str
+std/fmt.kira:242:25 [literal] bool
+std/fmt.kira:242:32 [ident] str
+std/fmt.kira:242:40 [ident] str
+std/fmt.kira:242:48 [ident] format_spec
+std/fmt.kira:251:25 [binding_pat] float64
+std/fmt.kira:251:37 [binding_pat] usize
+std/fmt.kira:251:55 [binding_pat] format_spec
+std/fmt.kira:251:77 [named_type] str
+std/fmt.kira:252:9 [binding_pat] bool
+std/fmt.kira:252:20 [ident] float64
+std/fmt.kira:252:20 [binary] bool
+std/fmt.kira:252:24 [literal] float64
+std/fmt.kira:253:9 [binding_pat] float64
+std/fmt.kira:253:21 [if] float64
+std/fmt.kira:253:24 [ident] bool
+std/fmt.kira:253:34 [unary] float64
+std/fmt.kira:253:35 [ident] float64
+std/fmt.kira:253:43 [ident] float64
+std/fmt.kira:254:9 [binding_pat] str
+std/fmt.kira:254:18 [ident] fn(float64, usize) -> str
+std/fmt.kira:254:18 [call] str
+std/fmt.kira:254:35 [ident] float64
+std/fmt.kira:254:46 [ident] usize
+std/fmt.kira:255:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.kira:255:12 [call] str
+std/fmt.kira:255:25 [ident] bool
+std/fmt.kira:255:35 [literal] str
+std/fmt.kira:255:39 [ident] str
+std/fmt.kira:255:47 [ident] format_spec
+std/fmt.kira:265:23 [binding_pat] float64
+std/fmt.kira:265:35 [binding_pat] usize
+std/fmt.kira:265:53 [binding_pat] bool
+std/fmt.kira:265:70 [binding_pat] format_spec
+std/fmt.kira:265:92 [named_type] str
+std/fmt.kira:266:9 [binding_pat] bool
+std/fmt.kira:266:20 [ident] float64
+std/fmt.kira:266:20 [binary] bool
+std/fmt.kira:266:24 [literal] float64
+std/fmt.kira:267:9 [binding_pat] float64
+std/fmt.kira:267:21 [if] float64
+std/fmt.kira:267:24 [ident] bool
+std/fmt.kira:267:34 [unary] float64
+std/fmt.kira:267:35 [ident] float64
+std/fmt.kira:267:43 [ident] float64
+std/fmt.kira:268:9 [binding_pat] str
+std/fmt.kira:268:18 [ident] fn(float64, usize, bool) -> str
+std/fmt.kira:268:18 [call] str
+std/fmt.kira:268:33 [ident] float64
+std/fmt.kira:268:44 [ident] usize
+std/fmt.kira:268:55 [ident] bool
+std/fmt.kira:269:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.kira:269:12 [call] str
+std/fmt.kira:269:25 [ident] bool
+std/fmt.kira:269:35 [literal] str
+std/fmt.kira:269:39 [ident] str
+std/fmt.kira:269:47 [ident] format_spec
+std/fmt.kira:278:27 [binding_pat] float64
+std/fmt.kira:278:39 [binding_pat] usize
+std/fmt.kira:278:57 [binding_pat] format_spec
+std/fmt.kira:278:79 [named_type] str
+std/fmt.kira:279:9 [binding_pat] bool
+std/fmt.kira:279:20 [ident] float64
+std/fmt.kira:279:20 [binary] bool
+std/fmt.kira:279:24 [literal] float64
+std/fmt.kira:280:9 [binding_pat] float64
+std/fmt.kira:280:21 [if] float64
+std/fmt.kira:280:24 [ident] bool
+std/fmt.kira:280:34 [unary] float64
+std/fmt.kira:280:35 [ident] float64
+std/fmt.kira:280:43 [ident] float64
+std/fmt.kira:281:9 [binding_pat] str
+std/fmt.kira:281:18 [ident] fn(float64, usize) -> str
+std/fmt.kira:281:18 [call] str
+std/fmt.kira:281:37 [ident] float64
+std/fmt.kira:281:48 [ident] usize
+std/fmt.kira:282:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.kira:282:12 [call] str
+std/fmt.kira:282:25 [ident] bool
+std/fmt.kira:282:35 [literal] str
+std/fmt.kira:282:39 [ident] str
+std/fmt.kira:282:47 [ident] format_spec
+std/intrinsics.kira:9:37 [binding_pat] float64
+std/intrinsics.kira:9:52 [named_type] uint64
+std/intrinsics.kira:13:37 [binding_pat] float32
+std/intrinsics.kira:13:52 [named_type] uint32
+std/intrinsics.kira:23:29 [binding_pat] str
+std/intrinsics.kira:23:37 [binding_pat] str
+std/intrinsics.kira:23:48 [named_type] str
+std/intrinsics.kira:24:34 [binding_pat] str
+std/intrinsics.kira:24:45 [named_type] usize
+std/intrinsics.kira:25:34 [binding_pat] uint32
+std/intrinsics.kira:25:45 [binding_pat] usize
+std/intrinsics.kira:25:58 [named_type] str
+std/intrinsics.kira:26:39 [binding_pat] str
+std/intrinsics.kira:26:47 [binding_pat] usize
+std/intrinsics.kira:26:60 [named_type] str
+std/intrinsics.kira:27:25 [binding_pat] str
+std/intrinsics.kira:27:33 [binding_pat] str
+std/intrinsics.kira:27:44 [named_type] bool
+std/intrinsics.kira:28:26 [binding_pat] str
+std/intrinsics.kira:28:34 [binding_pat] str
+std/intrinsics.kira:28:45 [named_type] int32
+std/intrinsics.kira:29:27 [binding_pat] str
+std/intrinsics.kira:29:42 [binding_pat] str
+std/intrinsics.kira:29:55 [binding_pat] usize
+std/intrinsics.kira:29:71 [named_type] find_result
+std/intrinsics.kira:30:28 [binding_pat] str
+std/intrinsics.kira:30:43 [binding_pat] str
+std/intrinsics.kira:30:59 [named_type] find_result
+std/intrinsics.kira:31:30 [binding_pat] str
+std/intrinsics.kira:31:41 [named_type] str
+std/intrinsics.kira:32:27 [binding_pat] str
+std/intrinsics.kira:32:35 [binding_pat] uint8
+std/intrinsics.kira:32:51 [named_type] str
+std/intrinsics.kira:33:30 [binding_pat] str
+std/intrinsics.kira:33:38 [binding_pat] str
+std/intrinsics.kira:33:49 [binding_pat] str
+std/intrinsics.kira:33:61 [named_type] str
+std/intrinsics.kira:35:35 [binding_pat] uint64
+std/intrinsics.kira:35:50 [binding_pat] uint8
+std/intrinsics.kira:35:64 [binding_pat] bool
+std/intrinsics.kira:35:84 [named_type] str
+std/intrinsics.kira:36:32 [binding_pat] float64
+std/intrinsics.kira:36:48 [binding_pat] usize
+std/intrinsics.kira:36:69 [named_type] str
+std/intrinsics.kira:37:30 [binding_pat] float64
+std/intrinsics.kira:37:46 [binding_pat] usize
+std/intrinsics.kira:37:64 [binding_pat] bool
+std/intrinsics.kira:37:84 [named_type] str
+std/intrinsics.kira:38:34 [binding_pat] float64
+std/intrinsics.kira:38:50 [binding_pat] usize
+std/intrinsics.kira:38:71 [named_type] str
+std/intrinsics.kira:39:42 [binding_pat] uint32
+std/intrinsics.kira:39:57 [named_type] str
+std/intrinsics.kira:59:29 [named_type] raw_fd
+std/intrinsics.kira:60:30 [named_type] raw_fd
+std/intrinsics.kira:61:30 [named_type] raw_fd
+std/intrinsics.kira:63:23 [binding_pat] str
+std/intrinsics.kira:63:34 [binding_pat] open_options
+std/intrinsics.kira:63:57 [named_type] result[raw_fd, io_errno]
+std/intrinsics.kira:64:24 [binding_pat] raw_fd
+std/intrinsics.kira:64:39 [named_type] result[unit, io_errno]
+std/intrinsics.kira:65:23 [binding_pat] raw_fd
+std/intrinsics.kira:65:35 [binding_pat] &mut slice_mut[byte]
+std/intrinsics.kira:65:65 [named_type] result[usize, io_errno]
+std/intrinsics.kira:66:24 [binding_pat] raw_fd
+std/intrinsics.kira:66:36 [binding_pat] &slice[byte]
+std/intrinsics.kira:66:58 [named_type] result[usize, io_errno]
+std/intrinsics.kira:67:24 [binding_pat] raw_fd
+std/intrinsics.kira:67:39 [named_type] result[unit, io_errno]
+std/intrinsics.kira:73:24 [binding_pat] str
+std/intrinsics.kira:73:37 [named_type] never
+std/intrinsics.kira:115:29 [named_type] result[uname_raw, io_errno]
+std/intrinsics.kira:120:36 [named_type] result[libc_version, io_errno]
+std/intrinsics.kira:125:39 [named_type] result[winver_raw, io_errno]
+std/intrinsics.kira:130:37 [named_type] result[macver_raw, io_errno]
+std/intrinsics.kira:135:35 [named_type] result[str, io_errno]
+std/intrinsics.kira:140:38 [named_type] result[str, io_errno]
+std/intrinsics.kira:163:24 [binding_pat] usize
+std/intrinsics.kira:163:41 [ptr_type] *mut byte
+std/intrinsics.kira:168:26 [binding_pat] *mut byte
+std/intrinsics.kira:168:40 [binding_pat] usize
+std/intrinsics.kira:168:58 [binding_pat] usize
+std/intrinsics.kira:168:79 [ptr_type] *mut byte
+std/intrinsics.kira:172:23 [binding_pat] *mut byte
+std/intrinsics.kira:172:37 [binding_pat] usize
+std/intrinsics.kira:172:54 [named_type] unit
 std/io.kira:21:14 [binding_pat] io_errno
 std/io.kira:21:30 [named_type] io_error
 std/io.kira:22:15 [module_path] int32
@@ -7704,48 +7685,42 @@ std/mem.kira:30:9 [binding_pat] *mut byte
 std/mem.kira:30:9 [binding_pat] *mut byte
 std/mem.kira:30:9 [binding_pat] *mut byte
 std/mem.kira:30:9 [binding_pat] *mut byte
-std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
-std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
-std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
-std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
-std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
-std/mem.kira:30:15 [ident] fn(box_usize) -> *mut byte
+std/mem.kira:30:15 [ident] fn(usize) -> *mut byte
+std/mem.kira:30:15 [ident] fn(usize) -> *mut byte
+std/mem.kira:30:15 [ident] fn(usize) -> *mut byte
+std/mem.kira:30:15 [ident] fn(usize) -> *mut byte
+std/mem.kira:30:15 [ident] fn(usize) -> *mut byte
+std/mem.kira:30:15 [ident] fn(usize) -> *mut byte
 std/mem.kira:30:15 [call] *mut byte
 std/mem.kira:30:15 [call] *mut byte
 std/mem.kira:30:15 [call] *mut byte
 std/mem.kira:30:15 [call] *mut byte
 std/mem.kira:30:15 [call] *mut byte
 std/mem.kira:30:15 [call] *mut byte
-std/mem.kira:30:24 [struct_literal] box_usize
-std/mem.kira:30:24 [struct_literal] box_usize
-std/mem.kira:30:24 [struct_literal] box_usize
-std/mem.kira:30:24 [struct_literal] box_usize
-std/mem.kira:30:24 [struct_literal] box_usize
-std/mem.kira:30:24 [struct_literal] box_usize
-std/mem.kira:30:39 [ident] usize
-std/mem.kira:30:39 [ident] usize
-std/mem.kira:30:39 [ident] usize
-std/mem.kira:30:39 [ident] usize
-std/mem.kira:30:39 [ident] usize
-std/mem.kira:30:39 [ident] usize
-std/mem.kira:30:39 [binary] usize
-std/mem.kira:30:39 [binary] usize
-std/mem.kira:30:39 [binary] usize
-std/mem.kira:30:39 [binary] usize
-std/mem.kira:30:39 [binary] usize
-std/mem.kira:30:39 [binary] usize
-std/mem.kira:30:47 [ident] _
-std/mem.kira:30:47 [ident] _
-std/mem.kira:30:47 [ident] _
-std/mem.kira:30:47 [ident] _
-std/mem.kira:30:47 [ident] _
-std/mem.kira:30:47 [ident] _
-std/mem.kira:30:47 [call] usize
-std/mem.kira:30:47 [call] usize
-std/mem.kira:30:47 [call] usize
-std/mem.kira:30:47 [call] usize
-std/mem.kira:30:47 [call] usize
-std/mem.kira:30:47 [call] usize
+std/mem.kira:30:24 [ident] usize
+std/mem.kira:30:24 [ident] usize
+std/mem.kira:30:24 [ident] usize
+std/mem.kira:30:24 [ident] usize
+std/mem.kira:30:24 [ident] usize
+std/mem.kira:30:24 [ident] usize
+std/mem.kira:30:24 [binary] usize
+std/mem.kira:30:24 [binary] usize
+std/mem.kira:30:24 [binary] usize
+std/mem.kira:30:24 [binary] usize
+std/mem.kira:30:24 [binary] usize
+std/mem.kira:30:24 [binary] usize
+std/mem.kira:30:32 [ident] _
+std/mem.kira:30:32 [ident] _
+std/mem.kira:30:32 [ident] _
+std/mem.kira:30:32 [ident] _
+std/mem.kira:30:32 [ident] _
+std/mem.kira:30:32 [ident] _
+std/mem.kira:30:32 [call] usize
+std/mem.kira:30:32 [call] usize
+std/mem.kira:30:32 [call] usize
+std/mem.kira:30:32 [call] usize
+std/mem.kira:30:32 [call] usize
+std/mem.kira:30:32 [call] usize
 std/mem.kira:31:12 [ident] _
 std/mem.kira:31:12 [ident] _
 std/mem.kira:31:12 [ident] _
@@ -7799,13 +7774,13 @@ std/mem.kira:42:9 [binding_pat] *mut byte
 std/mem.kira:42:9 [binding_pat] *mut byte
 std/mem.kira:42:9 [binding_pat] *mut byte
 std/mem.kira:42:9 [binding_pat] *mut byte
-std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
-std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
-std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
-std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
-std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
-std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
-std/mem.kira:42:15 [ident] fn(*mut byte, box_usize, box_usize) -> *mut byte
+std/mem.kira:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
+std/mem.kira:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
+std/mem.kira:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
+std/mem.kira:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
+std/mem.kira:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
+std/mem.kira:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
+std/mem.kira:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
 std/mem.kira:42:15 [call] *mut byte
 std/mem.kira:42:15 [call] *mut byte
 std/mem.kira:42:15 [call] *mut byte
@@ -7834,76 +7809,62 @@ std/mem.kira:42:41 [ident] *mut int64
 std/mem.kira:42:41 [ident] *mut str
 std/mem.kira:42:41 [ident] *mut test_suite
 std/mem.kira:42:41 [ident] *mut uint32
-std/mem.kira:43:26 [struct_literal] box_usize
-std/mem.kira:43:26 [struct_literal] box_usize
-std/mem.kira:43:26 [struct_literal] box_usize
-std/mem.kira:43:26 [struct_literal] box_usize
-std/mem.kira:43:26 [struct_literal] box_usize
-std/mem.kira:43:26 [struct_literal] box_usize
-std/mem.kira:43:26 [struct_literal] box_usize
-std/mem.kira:43:41 [ident] usize
-std/mem.kira:43:41 [ident] usize
-std/mem.kira:43:41 [ident] usize
-std/mem.kira:43:41 [ident] usize
-std/mem.kira:43:41 [ident] usize
-std/mem.kira:43:41 [ident] usize
-std/mem.kira:43:41 [ident] usize
-std/mem.kira:43:41 [binary] usize
-std/mem.kira:43:41 [binary] usize
-std/mem.kira:43:41 [binary] usize
-std/mem.kira:43:41 [binary] usize
-std/mem.kira:43:41 [binary] usize
-std/mem.kira:43:41 [binary] usize
-std/mem.kira:43:41 [binary] usize
-std/mem.kira:43:53 [ident] _
-std/mem.kira:43:53 [ident] _
-std/mem.kira:43:53 [ident] _
-std/mem.kira:43:53 [ident] _
-std/mem.kira:43:53 [ident] _
-std/mem.kira:43:53 [ident] _
-std/mem.kira:43:53 [ident] _
-std/mem.kira:43:53 [call] usize
-std/mem.kira:43:53 [call] usize
-std/mem.kira:43:53 [call] usize
-std/mem.kira:43:53 [call] usize
-std/mem.kira:43:53 [call] usize
-std/mem.kira:43:53 [call] usize
-std/mem.kira:43:53 [call] usize
-std/mem.kira:44:26 [struct_literal] box_usize
-std/mem.kira:44:26 [struct_literal] box_usize
-std/mem.kira:44:26 [struct_literal] box_usize
-std/mem.kira:44:26 [struct_literal] box_usize
-std/mem.kira:44:26 [struct_literal] box_usize
-std/mem.kira:44:26 [struct_literal] box_usize
-std/mem.kira:44:26 [struct_literal] box_usize
-std/mem.kira:44:41 [ident] usize
-std/mem.kira:44:41 [ident] usize
-std/mem.kira:44:41 [ident] usize
-std/mem.kira:44:41 [ident] usize
-std/mem.kira:44:41 [ident] usize
-std/mem.kira:44:41 [ident] usize
-std/mem.kira:44:41 [ident] usize
-std/mem.kira:44:41 [binary] usize
-std/mem.kira:44:41 [binary] usize
-std/mem.kira:44:41 [binary] usize
-std/mem.kira:44:41 [binary] usize
-std/mem.kira:44:41 [binary] usize
-std/mem.kira:44:41 [binary] usize
-std/mem.kira:44:41 [binary] usize
-std/mem.kira:44:53 [ident] _
-std/mem.kira:44:53 [ident] _
-std/mem.kira:44:53 [ident] _
-std/mem.kira:44:53 [ident] _
-std/mem.kira:44:53 [ident] _
-std/mem.kira:44:53 [ident] _
-std/mem.kira:44:53 [ident] _
-std/mem.kira:44:53 [call] usize
-std/mem.kira:44:53 [call] usize
-std/mem.kira:44:53 [call] usize
-std/mem.kira:44:53 [call] usize
-std/mem.kira:44:53 [call] usize
-std/mem.kira:44:53 [call] usize
-std/mem.kira:44:53 [call] usize
+std/mem.kira:43:26 [ident] usize
+std/mem.kira:43:26 [ident] usize
+std/mem.kira:43:26 [ident] usize
+std/mem.kira:43:26 [ident] usize
+std/mem.kira:43:26 [ident] usize
+std/mem.kira:43:26 [ident] usize
+std/mem.kira:43:26 [ident] usize
+std/mem.kira:43:26 [binary] usize
+std/mem.kira:43:26 [binary] usize
+std/mem.kira:43:26 [binary] usize
+std/mem.kira:43:26 [binary] usize
+std/mem.kira:43:26 [binary] usize
+std/mem.kira:43:26 [binary] usize
+std/mem.kira:43:26 [binary] usize
+std/mem.kira:43:38 [ident] _
+std/mem.kira:43:38 [ident] _
+std/mem.kira:43:38 [ident] _
+std/mem.kira:43:38 [ident] _
+std/mem.kira:43:38 [ident] _
+std/mem.kira:43:38 [ident] _
+std/mem.kira:43:38 [ident] _
+std/mem.kira:43:38 [call] usize
+std/mem.kira:43:38 [call] usize
+std/mem.kira:43:38 [call] usize
+std/mem.kira:43:38 [call] usize
+std/mem.kira:43:38 [call] usize
+std/mem.kira:43:38 [call] usize
+std/mem.kira:43:38 [call] usize
+std/mem.kira:44:26 [ident] usize
+std/mem.kira:44:26 [ident] usize
+std/mem.kira:44:26 [ident] usize
+std/mem.kira:44:26 [ident] usize
+std/mem.kira:44:26 [ident] usize
+std/mem.kira:44:26 [ident] usize
+std/mem.kira:44:26 [ident] usize
+std/mem.kira:44:26 [binary] usize
+std/mem.kira:44:26 [binary] usize
+std/mem.kira:44:26 [binary] usize
+std/mem.kira:44:26 [binary] usize
+std/mem.kira:44:26 [binary] usize
+std/mem.kira:44:26 [binary] usize
+std/mem.kira:44:26 [binary] usize
+std/mem.kira:44:38 [ident] _
+std/mem.kira:44:38 [ident] _
+std/mem.kira:44:38 [ident] _
+std/mem.kira:44:38 [ident] _
+std/mem.kira:44:38 [ident] _
+std/mem.kira:44:38 [ident] _
+std/mem.kira:44:38 [ident] _
+std/mem.kira:44:38 [call] usize
+std/mem.kira:44:38 [call] usize
+std/mem.kira:44:38 [call] usize
+std/mem.kira:44:38 [call] usize
+std/mem.kira:44:38 [call] usize
+std/mem.kira:44:38 [call] usize
+std/mem.kira:44:38 [call] usize
 std/mem.kira:45:12 [ident] _
 std/mem.kira:45:12 [ident] _
 std/mem.kira:45:12 [ident] _
@@ -7955,16 +7916,16 @@ std/mem.kira:54:53 [named_type] unit
 std/mem.kira:54:53 [named_type] unit
 std/mem.kira:54:53 [named_type] unit
 std/mem.kira:54:53 [named_type] unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
-std/mem.kira:55:5 [ident] fn(*mut byte, box_usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.kira:55:5 [ident] fn(*mut byte, usize) -> unit
 std/mem.kira:55:5 [call] unit
 std/mem.kira:55:5 [call] unit
 std/mem.kira:55:5 [call] unit
@@ -8005,56 +7966,46 @@ std/mem.kira:55:28 [ident] *mut test_case
 std/mem.kira:55:28 [ident] *mut test_suite
 std/mem.kira:55:28 [ident] *mut uint32
 std/mem.kira:55:28 [ident] *mut usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:32 [struct_literal] box_usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [ident] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:47 [binary] usize
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [ident] _
-std/mem.kira:55:55 [call] usize
-std/mem.kira:55:55 [call] usize
-std/mem.kira:55:55 [call] usize
-std/mem.kira:55:55 [call] usize
-std/mem.kira:55:55 [call] usize
-std/mem.kira:55:55 [call] usize
-std/mem.kira:55:55 [call] usize
-std/mem.kira:55:55 [call] usize
-std/mem.kira:55:55 [call] usize
-std/mem.kira:55:55 [call] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [ident] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:32 [binary] usize
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [ident] _
+std/mem.kira:55:40 [call] usize
+std/mem.kira:55:40 [call] usize
+std/mem.kira:55:40 [call] usize
+std/mem.kira:55:40 [call] usize
+std/mem.kira:55:40 [call] usize
+std/mem.kira:55:40 [call] usize
+std/mem.kira:55:40 [call] usize
+std/mem.kira:55:40 [call] usize
+std/mem.kira:55:40 [call] usize
+std/mem.kira:55:40 [call] usize
 std/mem.kira:62:25 [binding_pat] *mut T
 std/mem.kira:62:38 [binding_pat] *T
 std/mem.kira:62:47 [binding_pat] usize
@@ -8152,263 +8103,252 @@ std/result.kira:32:23 [literal] bool
 std/result.kira:33:13 [result_pat] result[T, E]
 std/result.kira:33:18 [wildcard_pat] E
 std/result.kira:33:24 [literal] bool
-std/string.kira:29:25 [binding_pat] str
-std/string.kira:29:33 [binding_pat] str
-std/string.kira:29:44 [named_type] box_bool
-std/string.kira:30:26 [binding_pat] str
-std/string.kira:30:34 [binding_pat] str
-std/string.kira:30:45 [named_type] box_i32
-std/string.kira:31:27 [binding_pat] str
-std/string.kira:31:42 [binding_pat] str
-std/string.kira:31:55 [binding_pat] box_usize
-std/string.kira:31:75 [named_type] find_result
-std/string.kira:32:28 [binding_pat] str
-std/string.kira:32:43 [binding_pat] str
-std/string.kira:32:59 [named_type] find_result
-std/string.kira:33:30 [binding_pat] str
-std/string.kira:33:41 [named_type] str
-std/string.kira:34:27 [binding_pat] str
-std/string.kira:34:35 [binding_pat] box_u8
-std/string.kira:34:52 [named_type] str
-std/string.kira:35:30 [binding_pat] str
-std/string.kira:35:38 [binding_pat] str
-std/string.kira:35:49 [binding_pat] str
-std/string.kira:35:61 [named_type] str
-std/string.kira:42:22 [binding_pat] str
-std/string.kira:42:31 [named_type] bool
-std/string.kira:43:16 [ident] str
-std/string.kira:43:16 [call] usize
-std/string.kira:43:16 [binary] bool
-std/string.kira:43:30 [literal] usize
-std/string.kira:52:16 [binding_pat] str
-std/string.kira:52:22 [binding_pat] str
-std/string.kira:52:37 [named_type] bool
-std/string.kira:53:16 [ident] fn(str, str) -> box_bool
-std/string.kira:53:16 [call] box_bool
-std/string.kira:53:16 [field] bool
-std/string.kira:53:26 [ident] str
-std/string.kira:53:32 [ident] str
-std/string.kira:64:17 [binding_pat] str
-std/string.kira:64:23 [binding_pat] str
-std/string.kira:64:38 [named_type] ordering
-std/string.kira:65:13 [binding_pat] int32
-std/string.kira:65:17 [ident] fn(str, str) -> box_i32
-std/string.kira:65:17 [call] box_i32
-std/string.kira:65:17 [field] int32
-std/string.kira:65:28 [ident] str
-std/string.kira:65:34 [ident] str
-std/string.kira:66:12 [ident] int32
-std/string.kira:66:12 [binary] bool
-std/string.kira:66:16 [literal] int32
-std/string.kira:67:20 [ident] ordering
-std/string.kira:68:14 [ident] int32
-std/string.kira:68:14 [binary] bool
-std/string.kira:68:18 [literal] int32
-std/string.kira:69:20 [ident] ordering
-std/string.kira:70:16 [ident] ordering
-std/string.kira:78:25 [binding_pat] str
-std/string.kira:78:31 [binding_pat] str
-std/string.kira:78:47 [named_type] bool
-std/string.kira:79:13 [binding_pat] usize
-std/string.kira:79:20 [ident] str
-std/string.kira:79:20 [call] usize
-std/string.kira:80:12 [ident] str
-std/string.kira:80:12 [call] usize
-std/string.kira:80:12 [binary] bool
-std/string.kira:80:25 [ident] usize
-std/string.kira:81:20 [literal] bool
-std/string.kira:82:16 [ident] fn(str, str) -> box_bool
-std/string.kira:82:16 [call] box_bool
-std/string.kira:82:16 [field] bool
-std/string.kira:82:26 [ident] str
-std/string.kira:82:26 [index] str
-std/string.kira:82:31 [literal] usize
-std/string.kira:82:31 [binary] range[usize]
-std/string.kira:82:36 [ident] usize
-std/string.kira:82:43 [ident] str
-std/string.kira:90:23 [binding_pat] str
-std/string.kira:90:29 [binding_pat] str
-std/string.kira:90:45 [named_type] bool
-std/string.kira:91:13 [binding_pat] usize
-std/string.kira:91:20 [ident] str
-std/string.kira:91:20 [call] usize
-std/string.kira:92:13 [binding_pat] usize
-std/string.kira:92:17 [ident] str
-std/string.kira:92:17 [call] usize
-std/string.kira:93:12 [ident] usize
-std/string.kira:93:12 [binary] bool
-std/string.kira:93:16 [ident] usize
-std/string.kira:94:20 [literal] bool
-std/string.kira:95:16 [ident] fn(str, str) -> box_bool
-std/string.kira:95:16 [call] box_bool
-std/string.kira:95:16 [field] bool
-std/string.kira:95:26 [ident] str
-std/string.kira:95:26 [index] str
-std/string.kira:95:31 [ident] usize
-std/string.kira:95:31 [binary] usize
-std/string.kira:95:31 [binary] range[usize]
-std/string.kira:95:35 [ident] usize
-std/string.kira:95:43 [ident] usize
-std/string.kira:95:47 [ident] str
-std/string.kira:103:22 [binding_pat] str
-std/string.kira:103:28 [binding_pat] str
-std/string.kira:103:44 [named_type] bool
-std/string.kira:104:16 [ident] fn(str, str, box_usize) -> find_result
-std/string.kira:104:16 [call] find_result
-std/string.kira:104:16 [field] bool
-std/string.kira:104:28 [ident] str
-std/string.kira:104:34 [ident] str
-std/string.kira:104:42 [struct_literal] box_usize
-std/string.kira:104:57 [literal] usize
-std/string.kira:113:18 [binding_pat] str
-std/string.kira:113:24 [binding_pat] str
-std/string.kira:113:40 [named_type] option[usize]
-std/string.kira:114:13 [binding_pat] find_result
-std/string.kira:114:17 [ident] fn(str, str, box_usize) -> find_result
-std/string.kira:114:17 [call] find_result
-std/string.kira:114:29 [ident] str
-std/string.kira:114:35 [ident] str
-std/string.kira:114:43 [struct_literal] box_usize
-std/string.kira:114:58 [literal] usize
-std/string.kira:115:12 [module_path] bool
-std/string.kira:116:20 [call] option[usize]
-std/string.kira:116:26 [module_path] usize
-std/string.kira:117:16 [ident] option[usize]
-std/string.kira:126:19 [binding_pat] str
-std/string.kira:126:25 [binding_pat] str
-std/string.kira:126:41 [named_type] option[usize]
-std/string.kira:127:13 [binding_pat] find_result
-std/string.kira:127:17 [ident] fn(str, str) -> find_result
-std/string.kira:127:17 [call] find_result
-std/string.kira:127:30 [ident] str
-std/string.kira:127:36 [ident] str
-std/string.kira:128:12 [module_path] bool
-std/string.kira:129:20 [call] option[usize]
-std/string.kira:129:26 [module_path] usize
-std/string.kira:130:16 [ident] option[usize]
-std/string.kira:135:18 [binding_pat] str
-std/string.kira:135:27 [named_type] str
-std/string.kira:136:16 [ident] fn(str, box_u8) -> str
-std/string.kira:136:16 [call] str
-std/string.kira:136:28 [ident] str
-std/string.kira:136:34 [struct_literal] box_u8
-std/string.kira:136:46 [literal] uint8
-std/string.kira:141:24 [binding_pat] str
-std/string.kira:141:33 [named_type] str
-std/string.kira:142:16 [ident] fn(str, box_u8) -> str
-std/string.kira:142:16 [call] str
-std/string.kira:142:28 [ident] str
-std/string.kira:142:34 [struct_literal] box_u8
-std/string.kira:142:46 [literal] uint8
-std/string.kira:147:22 [binding_pat] str
-std/string.kira:147:31 [named_type] str
-std/string.kira:148:16 [ident] fn(str, box_u8) -> str
-std/string.kira:148:16 [call] str
-std/string.kira:148:28 [ident] str
-std/string.kira:148:34 [struct_literal] box_u8
-std/string.kira:148:46 [literal] uint8
-std/string.kira:153:22 [binding_pat] str
-std/string.kira:153:31 [named_type] str
-std/string.kira:154:16 [ident] fn(str) -> str
-std/string.kira:154:16 [call] str
-std/string.kira:154:31 [ident] str
-std/string.kira:161:26 [binding_pat] str
-std/string.kira:161:35 [named_type] str
-std/string.kira:162:16 [ident] fn(str) -> str
-std/string.kira:162:16 [call] str
-std/string.kira:162:29 [ident] str
-std/string.kira:169:26 [binding_pat] str
-std/string.kira:169:35 [named_type] str
-std/string.kira:170:16 [ident] fn(str) -> str
-std/string.kira:170:16 [call] str
-std/string.kira:170:29 [ident] str
-std/string.kira:177:23 [binding_pat] str
-std/string.kira:177:32 [named_type] str
-std/string.kira:178:16 [ident] fn(str) -> str
-std/string.kira:178:16 [call] str
-std/string.kira:178:26 [ident] str
-std/string.kira:187:28 [binding_pat] str
-std/string.kira:187:34 [binding_pat] str
-std/string.kira:187:49 [named_type] bool
-std/string.kira:188:16 [ident] fn(str, str) -> box_bool
-std/string.kira:188:16 [call] box_bool
-std/string.kira:188:16 [field] bool
-std/string.kira:188:26 [ident] fn(str) -> str
-std/string.kira:188:26 [call] str
-std/string.kira:188:36 [ident] str
-std/string.kira:188:43 [ident] fn(str) -> str
-std/string.kira:188:43 [call] str
-std/string.kira:188:53 [ident] str
-std/string.kira:197:21 [binding_pat] str
-std/string.kira:197:27 [binding_pat] str
-std/string.kira:197:38 [binding_pat] str
-std/string.kira:197:50 [named_type] str
-std/string.kira:198:16 [ident] fn(str, str, str) -> str
-std/string.kira:198:16 [call] str
-std/string.kira:198:31 [ident] str
-std/string.kira:198:37 [ident] str
-std/string.kira:198:43 [ident] str
-std/string.kira:208:19 [binding_pat] str
-std/string.kira:208:25 [binding_pat] str
-std/string.kira:208:38 [named_type] list[str]
-std/string.kira:209:9 [var_stmt] list[str]
-std/string.kira:209:33 [array] list[str]
-std/string.kira:210:12 [ident] str
-std/string.kira:210:12 [call] usize
-std/string.kira:210:12 [binary] bool
-std/string.kira:210:25 [literal] usize
-std/string.kira:211:13 [ident] list[str]
-std/string.kira:211:13 [field] fn(_, _) -> unit
-std/string.kira:211:13 [call] unit
-std/string.kira:211:25 [ident] str
-std/string.kira:212:20 [ident] list[str]
-std/string.kira:213:13 [binding_pat] usize
-std/string.kira:213:17 [ident] str
-std/string.kira:213:17 [call] usize
-std/string.kira:214:9 [var_stmt] usize
-std/string.kira:214:28 [literal] usize
-std/string.kira:215:15 [literal] bool
-std/string.kira:216:17 [binding_pat] find_result
-std/string.kira:216:21 [ident] fn(str, str, box_usize) -> find_result
-std/string.kira:216:21 [call] find_result
-std/string.kira:216:33 [ident] str
-std/string.kira:216:39 [ident] str
-std/string.kira:216:44 [struct_literal] box_usize
-std/string.kira:216:59 [ident] usize
-std/string.kira:217:16 [unary] bool
-std/string.kira:217:20 [module_path] bool
-std/string.kira:218:17 [ident] list[str]
-std/string.kira:218:17 [field] fn(_, _) -> unit
-std/string.kira:218:17 [call] unit
-std/string.kira:218:29 [ident] str
-std/string.kira:218:29 [index] str
-std/string.kira:218:34 [ident] usize
-std/string.kira:218:34 [binary] range[usize]
-std/string.kira:218:43 [ident] usize
-std/string.kira:219:24 [ident] list[str]
-std/string.kira:220:13 [ident] list[str]
-std/string.kira:220:13 [field] fn(_, _) -> unit
-std/string.kira:220:13 [call] unit
-std/string.kira:220:25 [ident] str
-std/string.kira:220:25 [index] str
-std/string.kira:220:30 [ident] usize
-std/string.kira:220:30 [binary] range[usize]
-std/string.kira:220:39 [module_path] usize
-std/string.kira:221:13 [ident] usize
-std/string.kira:221:21 [module_path] usize
-std/string.kira:221:21 [binary] usize
-std/string.kira:221:29 [ident] str
-std/string.kira:221:29 [call] usize
-std/string.kira:223:29 [binding_pat] str
-std/string.kira:223:37 [binding_pat] str
-std/string.kira:223:48 [named_type] str
-std/string.kira:233:13 [binding_pat] str
-std/string.kira:233:19 [binding_pat] str
-std/string.kira:233:34 [named_type] str
-std/string.kira:234:16 [ident] fn(str, str) -> str
-std/string.kira:234:16 [call] str
-std/string.kira:234:30 [ident] str
-std/string.kira:234:36 [ident] str
+std/string.kira:24:25 [binding_pat] str
+std/string.kira:24:33 [binding_pat] str
+std/string.kira:24:44 [named_type] bool
+std/string.kira:25:26 [binding_pat] str
+std/string.kira:25:34 [binding_pat] str
+std/string.kira:25:45 [named_type] int32
+std/string.kira:26:27 [binding_pat] str
+std/string.kira:26:42 [binding_pat] str
+std/string.kira:26:55 [binding_pat] usize
+std/string.kira:26:71 [named_type] find_result
+std/string.kira:27:28 [binding_pat] str
+std/string.kira:27:43 [binding_pat] str
+std/string.kira:27:59 [named_type] find_result
+std/string.kira:28:30 [binding_pat] str
+std/string.kira:28:41 [named_type] str
+std/string.kira:29:27 [binding_pat] str
+std/string.kira:29:35 [binding_pat] uint8
+std/string.kira:29:51 [named_type] str
+std/string.kira:30:30 [binding_pat] str
+std/string.kira:30:38 [binding_pat] str
+std/string.kira:30:49 [binding_pat] str
+std/string.kira:30:61 [named_type] str
+std/string.kira:37:22 [binding_pat] str
+std/string.kira:37:31 [named_type] bool
+std/string.kira:38:16 [ident] str
+std/string.kira:38:16 [call] usize
+std/string.kira:38:16 [binary] bool
+std/string.kira:38:30 [literal] usize
+std/string.kira:47:16 [binding_pat] str
+std/string.kira:47:22 [binding_pat] str
+std/string.kira:47:37 [named_type] bool
+std/string.kira:48:16 [ident] fn(str, str) -> bool
+std/string.kira:48:16 [call] bool
+std/string.kira:48:26 [ident] str
+std/string.kira:48:32 [ident] str
+std/string.kira:59:17 [binding_pat] str
+std/string.kira:59:23 [binding_pat] str
+std/string.kira:59:38 [named_type] ordering
+std/string.kira:60:13 [binding_pat] int32
+std/string.kira:60:17 [ident] fn(str, str) -> int32
+std/string.kira:60:17 [call] int32
+std/string.kira:60:28 [ident] str
+std/string.kira:60:34 [ident] str
+std/string.kira:61:12 [ident] int32
+std/string.kira:61:12 [binary] bool
+std/string.kira:61:16 [literal] int32
+std/string.kira:62:20 [ident] ordering
+std/string.kira:63:14 [ident] int32
+std/string.kira:63:14 [binary] bool
+std/string.kira:63:18 [literal] int32
+std/string.kira:64:20 [ident] ordering
+std/string.kira:65:16 [ident] ordering
+std/string.kira:73:25 [binding_pat] str
+std/string.kira:73:31 [binding_pat] str
+std/string.kira:73:47 [named_type] bool
+std/string.kira:74:13 [binding_pat] usize
+std/string.kira:74:20 [ident] str
+std/string.kira:74:20 [call] usize
+std/string.kira:75:12 [ident] str
+std/string.kira:75:12 [call] usize
+std/string.kira:75:12 [binary] bool
+std/string.kira:75:25 [ident] usize
+std/string.kira:76:20 [literal] bool
+std/string.kira:77:16 [ident] fn(str, str) -> bool
+std/string.kira:77:16 [call] bool
+std/string.kira:77:26 [ident] str
+std/string.kira:77:26 [index] str
+std/string.kira:77:31 [literal] usize
+std/string.kira:77:31 [binary] range[usize]
+std/string.kira:77:36 [ident] usize
+std/string.kira:77:43 [ident] str
+std/string.kira:85:23 [binding_pat] str
+std/string.kira:85:29 [binding_pat] str
+std/string.kira:85:45 [named_type] bool
+std/string.kira:86:13 [binding_pat] usize
+std/string.kira:86:20 [ident] str
+std/string.kira:86:20 [call] usize
+std/string.kira:87:13 [binding_pat] usize
+std/string.kira:87:17 [ident] str
+std/string.kira:87:17 [call] usize
+std/string.kira:88:12 [ident] usize
+std/string.kira:88:12 [binary] bool
+std/string.kira:88:16 [ident] usize
+std/string.kira:89:20 [literal] bool
+std/string.kira:90:16 [ident] fn(str, str) -> bool
+std/string.kira:90:16 [call] bool
+std/string.kira:90:26 [ident] str
+std/string.kira:90:26 [index] str
+std/string.kira:90:31 [ident] usize
+std/string.kira:90:31 [binary] usize
+std/string.kira:90:31 [binary] range[usize]
+std/string.kira:90:35 [ident] usize
+std/string.kira:90:43 [ident] usize
+std/string.kira:90:47 [ident] str
+std/string.kira:98:22 [binding_pat] str
+std/string.kira:98:28 [binding_pat] str
+std/string.kira:98:44 [named_type] bool
+std/string.kira:99:16 [ident] fn(str, str, usize) -> find_result
+std/string.kira:99:16 [call] find_result
+std/string.kira:99:16 [field] bool
+std/string.kira:99:28 [ident] str
+std/string.kira:99:34 [ident] str
+std/string.kira:99:42 [literal] usize
+std/string.kira:108:18 [binding_pat] str
+std/string.kira:108:24 [binding_pat] str
+std/string.kira:108:40 [named_type] option[usize]
+std/string.kira:109:13 [binding_pat] find_result
+std/string.kira:109:17 [ident] fn(str, str, usize) -> find_result
+std/string.kira:109:17 [call] find_result
+std/string.kira:109:29 [ident] str
+std/string.kira:109:35 [ident] str
+std/string.kira:109:43 [literal] usize
+std/string.kira:110:12 [module_path] bool
+std/string.kira:111:20 [call] option[usize]
+std/string.kira:111:26 [module_path] usize
+std/string.kira:112:16 [ident] option[usize]
+std/string.kira:121:19 [binding_pat] str
+std/string.kira:121:25 [binding_pat] str
+std/string.kira:121:41 [named_type] option[usize]
+std/string.kira:122:13 [binding_pat] find_result
+std/string.kira:122:17 [ident] fn(str, str) -> find_result
+std/string.kira:122:17 [call] find_result
+std/string.kira:122:30 [ident] str
+std/string.kira:122:36 [ident] str
+std/string.kira:123:12 [module_path] bool
+std/string.kira:124:20 [call] option[usize]
+std/string.kira:124:26 [module_path] usize
+std/string.kira:125:16 [ident] option[usize]
+std/string.kira:130:18 [binding_pat] str
+std/string.kira:130:27 [named_type] str
+std/string.kira:131:16 [ident] fn(str, uint8) -> str
+std/string.kira:131:16 [call] str
+std/string.kira:131:28 [ident] str
+std/string.kira:131:34 [literal] uint8
+std/string.kira:136:24 [binding_pat] str
+std/string.kira:136:33 [named_type] str
+std/string.kira:137:16 [ident] fn(str, uint8) -> str
+std/string.kira:137:16 [call] str
+std/string.kira:137:28 [ident] str
+std/string.kira:137:34 [literal] uint8
+std/string.kira:142:22 [binding_pat] str
+std/string.kira:142:31 [named_type] str
+std/string.kira:143:16 [ident] fn(str, uint8) -> str
+std/string.kira:143:16 [call] str
+std/string.kira:143:28 [ident] str
+std/string.kira:143:34 [literal] uint8
+std/string.kira:148:22 [binding_pat] str
+std/string.kira:148:31 [named_type] str
+std/string.kira:149:16 [ident] fn(str) -> str
+std/string.kira:149:16 [call] str
+std/string.kira:149:31 [ident] str
+std/string.kira:156:26 [binding_pat] str
+std/string.kira:156:35 [named_type] str
+std/string.kira:157:16 [ident] fn(str) -> str
+std/string.kira:157:16 [call] str
+std/string.kira:157:29 [ident] str
+std/string.kira:164:26 [binding_pat] str
+std/string.kira:164:35 [named_type] str
+std/string.kira:165:16 [ident] fn(str) -> str
+std/string.kira:165:16 [call] str
+std/string.kira:165:29 [ident] str
+std/string.kira:172:23 [binding_pat] str
+std/string.kira:172:32 [named_type] str
+std/string.kira:173:16 [ident] fn(str) -> str
+std/string.kira:173:16 [call] str
+std/string.kira:173:26 [ident] str
+std/string.kira:182:28 [binding_pat] str
+std/string.kira:182:34 [binding_pat] str
+std/string.kira:182:49 [named_type] bool
+std/string.kira:183:16 [ident] fn(str, str) -> bool
+std/string.kira:183:16 [call] bool
+std/string.kira:183:26 [ident] fn(str) -> str
+std/string.kira:183:26 [call] str
+std/string.kira:183:36 [ident] str
+std/string.kira:183:43 [ident] fn(str) -> str
+std/string.kira:183:43 [call] str
+std/string.kira:183:53 [ident] str
+std/string.kira:192:21 [binding_pat] str
+std/string.kira:192:27 [binding_pat] str
+std/string.kira:192:38 [binding_pat] str
+std/string.kira:192:50 [named_type] str
+std/string.kira:193:16 [ident] fn(str, str, str) -> str
+std/string.kira:193:16 [call] str
+std/string.kira:193:31 [ident] str
+std/string.kira:193:37 [ident] str
+std/string.kira:193:43 [ident] str
+std/string.kira:203:19 [binding_pat] str
+std/string.kira:203:25 [binding_pat] str
+std/string.kira:203:38 [named_type] list[str]
+std/string.kira:204:9 [var_stmt] list[str]
+std/string.kira:204:33 [array] list[str]
+std/string.kira:205:12 [ident] str
+std/string.kira:205:12 [call] usize
+std/string.kira:205:12 [binary] bool
+std/string.kira:205:25 [literal] usize
+std/string.kira:206:13 [ident] list[str]
+std/string.kira:206:13 [field] fn(_, _) -> unit
+std/string.kira:206:13 [call] unit
+std/string.kira:206:25 [ident] str
+std/string.kira:207:20 [ident] list[str]
+std/string.kira:208:13 [binding_pat] usize
+std/string.kira:208:17 [ident] str
+std/string.kira:208:17 [call] usize
+std/string.kira:209:9 [var_stmt] usize
+std/string.kira:209:28 [literal] usize
+std/string.kira:210:15 [literal] bool
+std/string.kira:211:17 [binding_pat] find_result
+std/string.kira:211:21 [ident] fn(str, str, usize) -> find_result
+std/string.kira:211:21 [call] find_result
+std/string.kira:211:33 [ident] str
+std/string.kira:211:39 [ident] str
+std/string.kira:211:44 [ident] usize
+std/string.kira:212:16 [unary] bool
+std/string.kira:212:20 [module_path] bool
+std/string.kira:213:17 [ident] list[str]
+std/string.kira:213:17 [field] fn(_, _) -> unit
+std/string.kira:213:17 [call] unit
+std/string.kira:213:29 [ident] str
+std/string.kira:213:29 [index] str
+std/string.kira:213:34 [ident] usize
+std/string.kira:213:34 [binary] range[usize]
+std/string.kira:213:43 [ident] usize
+std/string.kira:214:24 [ident] list[str]
+std/string.kira:215:13 [ident] list[str]
+std/string.kira:215:13 [field] fn(_, _) -> unit
+std/string.kira:215:13 [call] unit
+std/string.kira:215:25 [ident] str
+std/string.kira:215:25 [index] str
+std/string.kira:215:30 [ident] usize
+std/string.kira:215:30 [binary] range[usize]
+std/string.kira:215:39 [module_path] usize
+std/string.kira:216:13 [ident] usize
+std/string.kira:216:21 [module_path] usize
+std/string.kira:216:21 [binary] usize
+std/string.kira:216:29 [ident] str
+std/string.kira:216:29 [call] usize
+std/string.kira:218:29 [binding_pat] str
+std/string.kira:218:37 [binding_pat] str
+std/string.kira:218:48 [named_type] str
+std/string.kira:228:13 [binding_pat] str
+std/string.kira:228:19 [binding_pat] str
+std/string.kira:228:34 [named_type] str
+std/string.kira:229:16 [ident] fn(str, str) -> str
+std/string.kira:229:16 [call] str
+std/string.kira:229:30 [ident] str
+std/string.kira:229:36 [ident] str
 std/test.kira:13:21 [binding_pat] bool
 std/test.kira:13:33 [binding_pat] str
 std/test.kira:13:50 [named_type] result[unit, test_failure]
@@ -8981,206 +8921,202 @@ std/traits.conversion.kira:10:14 [binding_pat] T
 std/traits.conversion.kira:10:27 [named_type] self
 std/traits.conversion.kira:17:14 [binding_pat] self
 std/traits.conversion.kira:17:23 [named_type] T
-std/traits.hash.kira:13:14 [binding_pat] self
-std/traits.hash.kira:13:23 [named_type] uint64
-std/traits.hash.kira:42:24 [named_type] uint64
-std/traits.hash.kira:43:12 [literal] uint64
-std/traits.hash.kira:55:22 [binding_pat] uint64
-std/traits.hash.kira:55:35 [binding_pat] uint64
-std/traits.hash.kira:55:52 [named_type] uint64
-std/traits.hash.kira:56:12 [group] uint64
-std/traits.hash.kira:56:12 [binary] uint64
-std/traits.hash.kira:56:13 [ident] uint64
-std/traits.hash.kira:56:13 [binary] uint64
-std/traits.hash.kira:56:19 [ident] uint64
-std/traits.hash.kira:56:28 [literal] uint64
-std/traits.hash.kira:67:23 [binding_pat] T
-std/traits.hash.kira:67:32 [named_type] uint64
-std/traits.hash.kira:68:12 [ident] T
-std/traits.hash.kira:68:12 [call] _
-std/traits.hash.kira:80:18 [binding_pat] uint64
-std/traits.hash.kira:80:32 [named_type] uint64
-std/traits.hash.kira:81:12 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:81:12 [call] uint64
-std/traits.hash.kira:81:25 [ident] fn() -> uint64
-std/traits.hash.kira:81:25 [call] uint64
-std/traits.hash.kira:81:38 [ident] uint64
-std/traits.hash.kira:102:24 [binding_pat] float64
-std/traits.hash.kira:102:39 [named_type] uint64
+std/traits.hash.kira:11:14 [binding_pat] self
+std/traits.hash.kira:11:23 [named_type] uint64
+std/traits.hash.kira:40:24 [named_type] uint64
+std/traits.hash.kira:41:12 [literal] uint64
+std/traits.hash.kira:53:22 [binding_pat] uint64
+std/traits.hash.kira:53:35 [binding_pat] uint64
+std/traits.hash.kira:53:52 [named_type] uint64
+std/traits.hash.kira:54:12 [group] uint64
+std/traits.hash.kira:54:12 [binary] uint64
+std/traits.hash.kira:54:13 [ident] uint64
+std/traits.hash.kira:54:13 [binary] uint64
+std/traits.hash.kira:54:19 [ident] uint64
+std/traits.hash.kira:54:28 [literal] uint64
+std/traits.hash.kira:65:23 [binding_pat] T
+std/traits.hash.kira:65:32 [named_type] uint64
+std/traits.hash.kira:66:12 [ident] T
+std/traits.hash.kira:66:12 [call] _
+std/traits.hash.kira:78:18 [binding_pat] uint64
+std/traits.hash.kira:78:32 [named_type] uint64
+std/traits.hash.kira:79:12 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:79:12 [call] uint64
+std/traits.hash.kira:79:25 [ident] fn() -> uint64
+std/traits.hash.kira:79:25 [call] uint64
+std/traits.hash.kira:79:38 [ident] uint64
+std/traits.hash.kira:100:24 [binding_pat] float64
+std/traits.hash.kira:100:39 [named_type] uint64
+std/traits.hash.kira:101:8 [ident] float64
+std/traits.hash.kira:101:8 [binary] bool
+std/traits.hash.kira:101:13 [literal] float64
+std/traits.hash.kira:102:16 [literal] uint64
 std/traits.hash.kira:103:8 [ident] float64
 std/traits.hash.kira:103:8 [binary] bool
-std/traits.hash.kira:103:13 [literal] float64
+std/traits.hash.kira:103:13 [ident] float64
 std/traits.hash.kira:104:16 [literal] uint64
-std/traits.hash.kira:105:8 [ident] float64
-std/traits.hash.kira:105:8 [binary] bool
-std/traits.hash.kira:105:13 [ident] float64
-std/traits.hash.kira:106:16 [literal] uint64
-std/traits.hash.kira:107:12 [ident] fn(box_f64) -> box_u64
-std/traits.hash.kira:107:12 [call] box_u64
-std/traits.hash.kira:107:12 [field] uint64
-std/traits.hash.kira:107:34 [struct_literal] box_f64
-std/traits.hash.kira:107:47 [ident] float64
-std/traits.hash.kira:114:24 [binding_pat] float32
-std/traits.hash.kira:114:39 [named_type] uint32
+std/traits.hash.kira:105:12 [ident] fn(float64) -> uint64
+std/traits.hash.kira:105:12 [call] uint64
+std/traits.hash.kira:105:34 [ident] float64
+std/traits.hash.kira:112:24 [binding_pat] float32
+std/traits.hash.kira:112:39 [named_type] uint32
+std/traits.hash.kira:113:8 [ident] float32
+std/traits.hash.kira:113:8 [binary] bool
+std/traits.hash.kira:113:13 [literal] float32
+std/traits.hash.kira:114:16 [literal] uint32
 std/traits.hash.kira:115:8 [ident] float32
 std/traits.hash.kira:115:8 [binary] bool
-std/traits.hash.kira:115:13 [literal] float32
+std/traits.hash.kira:115:13 [ident] float32
 std/traits.hash.kira:116:16 [literal] uint32
-std/traits.hash.kira:117:8 [ident] float32
-std/traits.hash.kira:117:8 [binary] bool
-std/traits.hash.kira:117:13 [ident] float32
-std/traits.hash.kira:118:16 [literal] uint32
-std/traits.hash.kira:119:12 [ident] fn(box_f32) -> box_u32
-std/traits.hash.kira:119:12 [call] box_u32
-std/traits.hash.kira:119:12 [field] uint32
-std/traits.hash.kira:119:34 [struct_literal] box_f32
-std/traits.hash.kira:119:47 [ident] float32
-std/traits.hash.kira:122:14 [binding_pat] bool
-std/traits.hash.kira:122:23 [named_type] uint64
-std/traits.hash.kira:123:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:123:16 [call] uint64
-std/traits.hash.kira:123:29 [ident] fn() -> uint64
-std/traits.hash.kira:123:29 [call] uint64
-std/traits.hash.kira:123:42 [ident] bool
-std/traits.hash.kira:123:42 [cast] uint64
-std/traits.hash.kira:126:14 [binding_pat] char
-std/traits.hash.kira:126:23 [named_type] uint64
-std/traits.hash.kira:127:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:127:16 [call] uint64
-std/traits.hash.kira:127:29 [ident] fn() -> uint64
-std/traits.hash.kira:127:29 [call] uint64
-std/traits.hash.kira:127:42 [ident] char
-std/traits.hash.kira:127:42 [cast] uint64
-std/traits.hash.kira:130:14 [binding_pat] byte
-std/traits.hash.kira:130:23 [named_type] uint64
-std/traits.hash.kira:131:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:131:16 [call] uint64
-std/traits.hash.kira:131:29 [ident] fn() -> uint64
-std/traits.hash.kira:131:29 [call] uint64
-std/traits.hash.kira:131:42 [ident] byte
-std/traits.hash.kira:131:42 [cast] uint64
-std/traits.hash.kira:134:14 [binding_pat] int8
-std/traits.hash.kira:134:23 [named_type] uint64
-std/traits.hash.kira:135:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:135:16 [call] uint64
-std/traits.hash.kira:135:29 [ident] fn() -> uint64
-std/traits.hash.kira:135:29 [call] uint64
-std/traits.hash.kira:135:42 [ident] int8
-std/traits.hash.kira:135:42 [cast] uint64
-std/traits.hash.kira:138:14 [binding_pat] int16
-std/traits.hash.kira:138:23 [named_type] uint64
-std/traits.hash.kira:139:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:139:16 [call] uint64
-std/traits.hash.kira:139:29 [ident] fn() -> uint64
-std/traits.hash.kira:139:29 [call] uint64
-std/traits.hash.kira:139:42 [ident] int16
-std/traits.hash.kira:139:42 [cast] uint64
-std/traits.hash.kira:142:14 [binding_pat] int32
-std/traits.hash.kira:142:23 [named_type] uint64
-std/traits.hash.kira:143:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:143:16 [call] uint64
-std/traits.hash.kira:143:29 [ident] fn() -> uint64
-std/traits.hash.kira:143:29 [call] uint64
-std/traits.hash.kira:143:42 [ident] int32
-std/traits.hash.kira:143:42 [cast] uint64
-std/traits.hash.kira:146:14 [binding_pat] int64
-std/traits.hash.kira:146:23 [named_type] uint64
-std/traits.hash.kira:147:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:147:16 [call] uint64
-std/traits.hash.kira:147:29 [ident] fn() -> uint64
-std/traits.hash.kira:147:29 [call] uint64
-std/traits.hash.kira:147:42 [ident] int64
-std/traits.hash.kira:147:42 [cast] uint64
-std/traits.hash.kira:150:14 [binding_pat] isize
-std/traits.hash.kira:150:23 [named_type] uint64
-std/traits.hash.kira:151:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:151:16 [call] uint64
-std/traits.hash.kira:151:29 [ident] fn() -> uint64
-std/traits.hash.kira:151:29 [call] uint64
-std/traits.hash.kira:151:42 [ident] isize
-std/traits.hash.kira:151:42 [cast] uint64
-std/traits.hash.kira:154:14 [binding_pat] uint8
-std/traits.hash.kira:154:23 [named_type] uint64
-std/traits.hash.kira:155:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:155:16 [call] uint64
-std/traits.hash.kira:155:29 [ident] fn() -> uint64
-std/traits.hash.kira:155:29 [call] uint64
-std/traits.hash.kira:155:42 [ident] uint8
-std/traits.hash.kira:155:42 [cast] uint64
-std/traits.hash.kira:158:14 [binding_pat] uint16
-std/traits.hash.kira:158:23 [named_type] uint64
-std/traits.hash.kira:159:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:159:16 [call] uint64
-std/traits.hash.kira:159:29 [ident] fn() -> uint64
-std/traits.hash.kira:159:29 [call] uint64
-std/traits.hash.kira:159:42 [ident] uint16
-std/traits.hash.kira:159:42 [cast] uint64
-std/traits.hash.kira:162:14 [binding_pat] uint32
-std/traits.hash.kira:162:23 [named_type] uint64
-std/traits.hash.kira:163:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:163:16 [call] uint64
-std/traits.hash.kira:163:29 [ident] fn() -> uint64
-std/traits.hash.kira:163:29 [call] uint64
-std/traits.hash.kira:163:42 [ident] uint32
-std/traits.hash.kira:163:42 [cast] uint64
-std/traits.hash.kira:166:14 [binding_pat] uint64
-std/traits.hash.kira:166:23 [named_type] uint64
-std/traits.hash.kira:167:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:167:16 [call] uint64
-std/traits.hash.kira:167:29 [ident] fn() -> uint64
-std/traits.hash.kira:167:29 [call] uint64
-std/traits.hash.kira:167:42 [ident] uint64
-std/traits.hash.kira:170:14 [binding_pat] usize
-std/traits.hash.kira:170:23 [named_type] uint64
-std/traits.hash.kira:171:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:171:16 [call] uint64
-std/traits.hash.kira:171:29 [ident] fn() -> uint64
-std/traits.hash.kira:171:29 [call] uint64
-std/traits.hash.kira:171:42 [ident] usize
-std/traits.hash.kira:171:42 [cast] uint64
-std/traits.hash.kira:174:14 [binding_pat] float64
-std/traits.hash.kira:174:23 [named_type] uint64
-std/traits.hash.kira:175:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:175:16 [call] uint64
-std/traits.hash.kira:175:29 [ident] fn() -> uint64
-std/traits.hash.kira:175:29 [call] uint64
-std/traits.hash.kira:175:42 [ident] fn(float64) -> uint64
-std/traits.hash.kira:175:42 [call] uint64
-std/traits.hash.kira:175:61 [ident] float64
-std/traits.hash.kira:178:14 [binding_pat] float32
-std/traits.hash.kira:178:23 [named_type] uint64
-std/traits.hash.kira:179:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:179:16 [call] uint64
-std/traits.hash.kira:179:29 [ident] fn() -> uint64
-std/traits.hash.kira:179:29 [call] uint64
-std/traits.hash.kira:179:42 [ident] fn(float32) -> uint32
-std/traits.hash.kira:179:42 [call] uint32
-std/traits.hash.kira:179:42 [cast] uint64
-std/traits.hash.kira:179:61 [ident] float32
-std/traits.hash.kira:186:14 [binding_pat] str
-std/traits.hash.kira:186:23 [named_type] uint64
-std/traits.hash.kira:187:9 [var_stmt] uint64
-std/traits.hash.kira:187:25 [ident] fn() -> uint64
-std/traits.hash.kira:187:25 [call] uint64
-std/traits.hash.kira:188:9 [var_stmt] usize
-std/traits.hash.kira:188:24 [literal] usize
-std/traits.hash.kira:189:15 [ident] usize
-std/traits.hash.kira:189:15 [binary] bool
-std/traits.hash.kira:189:19 [ident] str
-std/traits.hash.kira:189:19 [call] usize
-std/traits.hash.kira:190:13 [ident] uint64
-std/traits.hash.kira:190:17 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.kira:190:17 [call] uint64
-std/traits.hash.kira:190:30 [ident] uint64
-std/traits.hash.kira:190:33 [ident] str
-std/traits.hash.kira:190:33 [index] byte
-std/traits.hash.kira:190:33 [cast] uint64
-std/traits.hash.kira:190:38 [ident] usize
-std/traits.hash.kira:191:13 [ident] usize
-std/traits.hash.kira:191:17 [ident] usize
-std/traits.hash.kira:191:17 [binary] usize
-std/traits.hash.kira:191:21 [literal] usize
-std/traits.hash.kira:192:16 [ident] uint64
+std/traits.hash.kira:117:12 [ident] fn(float32) -> uint32
+std/traits.hash.kira:117:12 [call] uint32
+std/traits.hash.kira:117:34 [ident] float32
+std/traits.hash.kira:120:14 [binding_pat] bool
+std/traits.hash.kira:120:23 [named_type] uint64
+std/traits.hash.kira:121:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:121:16 [call] uint64
+std/traits.hash.kira:121:29 [ident] fn() -> uint64
+std/traits.hash.kira:121:29 [call] uint64
+std/traits.hash.kira:121:42 [ident] bool
+std/traits.hash.kira:121:42 [cast] uint64
+std/traits.hash.kira:124:14 [binding_pat] char
+std/traits.hash.kira:124:23 [named_type] uint64
+std/traits.hash.kira:125:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:125:16 [call] uint64
+std/traits.hash.kira:125:29 [ident] fn() -> uint64
+std/traits.hash.kira:125:29 [call] uint64
+std/traits.hash.kira:125:42 [ident] char
+std/traits.hash.kira:125:42 [cast] uint64
+std/traits.hash.kira:128:14 [binding_pat] byte
+std/traits.hash.kira:128:23 [named_type] uint64
+std/traits.hash.kira:129:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:129:16 [call] uint64
+std/traits.hash.kira:129:29 [ident] fn() -> uint64
+std/traits.hash.kira:129:29 [call] uint64
+std/traits.hash.kira:129:42 [ident] byte
+std/traits.hash.kira:129:42 [cast] uint64
+std/traits.hash.kira:132:14 [binding_pat] int8
+std/traits.hash.kira:132:23 [named_type] uint64
+std/traits.hash.kira:133:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:133:16 [call] uint64
+std/traits.hash.kira:133:29 [ident] fn() -> uint64
+std/traits.hash.kira:133:29 [call] uint64
+std/traits.hash.kira:133:42 [ident] int8
+std/traits.hash.kira:133:42 [cast] uint64
+std/traits.hash.kira:136:14 [binding_pat] int16
+std/traits.hash.kira:136:23 [named_type] uint64
+std/traits.hash.kira:137:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:137:16 [call] uint64
+std/traits.hash.kira:137:29 [ident] fn() -> uint64
+std/traits.hash.kira:137:29 [call] uint64
+std/traits.hash.kira:137:42 [ident] int16
+std/traits.hash.kira:137:42 [cast] uint64
+std/traits.hash.kira:140:14 [binding_pat] int32
+std/traits.hash.kira:140:23 [named_type] uint64
+std/traits.hash.kira:141:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:141:16 [call] uint64
+std/traits.hash.kira:141:29 [ident] fn() -> uint64
+std/traits.hash.kira:141:29 [call] uint64
+std/traits.hash.kira:141:42 [ident] int32
+std/traits.hash.kira:141:42 [cast] uint64
+std/traits.hash.kira:144:14 [binding_pat] int64
+std/traits.hash.kira:144:23 [named_type] uint64
+std/traits.hash.kira:145:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:145:16 [call] uint64
+std/traits.hash.kira:145:29 [ident] fn() -> uint64
+std/traits.hash.kira:145:29 [call] uint64
+std/traits.hash.kira:145:42 [ident] int64
+std/traits.hash.kira:145:42 [cast] uint64
+std/traits.hash.kira:148:14 [binding_pat] isize
+std/traits.hash.kira:148:23 [named_type] uint64
+std/traits.hash.kira:149:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:149:16 [call] uint64
+std/traits.hash.kira:149:29 [ident] fn() -> uint64
+std/traits.hash.kira:149:29 [call] uint64
+std/traits.hash.kira:149:42 [ident] isize
+std/traits.hash.kira:149:42 [cast] uint64
+std/traits.hash.kira:152:14 [binding_pat] uint8
+std/traits.hash.kira:152:23 [named_type] uint64
+std/traits.hash.kira:153:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:153:16 [call] uint64
+std/traits.hash.kira:153:29 [ident] fn() -> uint64
+std/traits.hash.kira:153:29 [call] uint64
+std/traits.hash.kira:153:42 [ident] uint8
+std/traits.hash.kira:153:42 [cast] uint64
+std/traits.hash.kira:156:14 [binding_pat] uint16
+std/traits.hash.kira:156:23 [named_type] uint64
+std/traits.hash.kira:157:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:157:16 [call] uint64
+std/traits.hash.kira:157:29 [ident] fn() -> uint64
+std/traits.hash.kira:157:29 [call] uint64
+std/traits.hash.kira:157:42 [ident] uint16
+std/traits.hash.kira:157:42 [cast] uint64
+std/traits.hash.kira:160:14 [binding_pat] uint32
+std/traits.hash.kira:160:23 [named_type] uint64
+std/traits.hash.kira:161:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:161:16 [call] uint64
+std/traits.hash.kira:161:29 [ident] fn() -> uint64
+std/traits.hash.kira:161:29 [call] uint64
+std/traits.hash.kira:161:42 [ident] uint32
+std/traits.hash.kira:161:42 [cast] uint64
+std/traits.hash.kira:164:14 [binding_pat] uint64
+std/traits.hash.kira:164:23 [named_type] uint64
+std/traits.hash.kira:165:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:165:16 [call] uint64
+std/traits.hash.kira:165:29 [ident] fn() -> uint64
+std/traits.hash.kira:165:29 [call] uint64
+std/traits.hash.kira:165:42 [ident] uint64
+std/traits.hash.kira:168:14 [binding_pat] usize
+std/traits.hash.kira:168:23 [named_type] uint64
+std/traits.hash.kira:169:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:169:16 [call] uint64
+std/traits.hash.kira:169:29 [ident] fn() -> uint64
+std/traits.hash.kira:169:29 [call] uint64
+std/traits.hash.kira:169:42 [ident] usize
+std/traits.hash.kira:169:42 [cast] uint64
+std/traits.hash.kira:172:14 [binding_pat] float64
+std/traits.hash.kira:172:23 [named_type] uint64
+std/traits.hash.kira:173:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:173:16 [call] uint64
+std/traits.hash.kira:173:29 [ident] fn() -> uint64
+std/traits.hash.kira:173:29 [call] uint64
+std/traits.hash.kira:173:42 [ident] fn(float64) -> uint64
+std/traits.hash.kira:173:42 [call] uint64
+std/traits.hash.kira:173:61 [ident] float64
+std/traits.hash.kira:176:14 [binding_pat] float32
+std/traits.hash.kira:176:23 [named_type] uint64
+std/traits.hash.kira:177:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:177:16 [call] uint64
+std/traits.hash.kira:177:29 [ident] fn() -> uint64
+std/traits.hash.kira:177:29 [call] uint64
+std/traits.hash.kira:177:42 [ident] fn(float32) -> uint32
+std/traits.hash.kira:177:42 [call] uint32
+std/traits.hash.kira:177:42 [cast] uint64
+std/traits.hash.kira:177:61 [ident] float32
+std/traits.hash.kira:184:14 [binding_pat] str
+std/traits.hash.kira:184:23 [named_type] uint64
+std/traits.hash.kira:185:9 [var_stmt] uint64
+std/traits.hash.kira:185:25 [ident] fn() -> uint64
+std/traits.hash.kira:185:25 [call] uint64
+std/traits.hash.kira:186:9 [var_stmt] usize
+std/traits.hash.kira:186:24 [literal] usize
+std/traits.hash.kira:187:15 [ident] usize
+std/traits.hash.kira:187:15 [binary] bool
+std/traits.hash.kira:187:19 [ident] str
+std/traits.hash.kira:187:19 [call] usize
+std/traits.hash.kira:188:13 [ident] uint64
+std/traits.hash.kira:188:17 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.kira:188:17 [call] uint64
+std/traits.hash.kira:188:30 [ident] uint64
+std/traits.hash.kira:188:33 [ident] str
+std/traits.hash.kira:188:33 [index] byte
+std/traits.hash.kira:188:33 [cast] uint64
+std/traits.hash.kira:188:38 [ident] usize
+std/traits.hash.kira:189:13 [ident] usize
+std/traits.hash.kira:189:17 [ident] usize
+std/traits.hash.kira:189:17 [binary] usize
+std/traits.hash.kira:189:21 [literal] usize
+std/traits.hash.kira:190:16 [ident] uint64
 std/traits.index.kira:54:12 [binding_pat] self
 std/traits.index.kira:54:18 [binding_pat] I
 std/traits.index.kira:54:27 [named_type] _
@@ -9309,684 +9245,683 @@ std/traits.show.kira:30:15 [binding_pat] self
 std/traits.show.kira:30:24 [named_type] str
 std/traits.show.kira:37:16 [binding_pat] self
 std/traits.show.kira:37:25 [named_type] str
-std/unicode.kira:39:42 [binding_pat] box_u32
-std/unicode.kira:39:58 [named_type] str
-std/unicode.kira:50:15 [binding_pat] uint32
-std/unicode.kira:50:30 [named_type] str
-std/unicode.kira:51:12 [ident] fn(box_u32) -> str
-std/unicode.kira:51:12 [call] str
-std/unicode.kira:51:39 [struct_literal] box_u32
-std/unicode.kira:51:52 [ident] uint32
-std/unicode.kira:58:17 [binding_pat] str
-std/unicode.kira:58:28 [named_type] list[uint32]
-std/unicode.kira:59:9 [binding_pat] slice[byte]
-std/unicode.kira:59:17 [ident] str
-std/unicode.kira:59:17 [call] slice[byte]
-std/unicode.kira:60:9 [binding_pat] usize
-std/unicode.kira:60:13 [ident] slice[byte]
-std/unicode.kira:60:13 [call] usize
-std/unicode.kira:61:5 [var_stmt] list[uint32]
-std/unicode.kira:61:29 [array] list[uint32]
-std/unicode.kira:62:5 [var_stmt] usize
-std/unicode.kira:62:20 [literal] usize
-std/unicode.kira:63:11 [ident] usize
-std/unicode.kira:63:11 [binary] bool
-std/unicode.kira:63:15 [ident] usize
-std/unicode.kira:64:13 [binding_pat] uint32
-std/unicode.kira:64:18 [ident] slice[byte]
-std/unicode.kira:64:18 [index] byte
-std/unicode.kira:64:18 [cast] uint32
-std/unicode.kira:64:24 [ident] usize
-std/unicode.kira:65:12 [ident] uint32
-std/unicode.kira:65:12 [binary] bool
-std/unicode.kira:65:17 [literal] uint32
-std/unicode.kira:66:13 [ident] list[uint32]
-std/unicode.kira:66:13 [field] fn(_, _) -> unit
-std/unicode.kira:66:13 [call] unit
-std/unicode.kira:66:22 [ident] uint32
-std/unicode.kira:67:13 [ident] usize
-std/unicode.kira:67:17 [ident] usize
-std/unicode.kira:67:17 [binary] usize
-std/unicode.kira:67:21 [literal] usize
-std/unicode.kira:68:14 [ident] uint32
-std/unicode.kira:68:14 [binary] bool
-std/unicode.kira:68:19 [literal] uint32
-std/unicode.kira:69:17 [binding_pat] uint32
-std/unicode.kira:69:22 [ident] slice[byte]
-std/unicode.kira:69:22 [index] byte
-std/unicode.kira:69:22 [cast] uint32
-std/unicode.kira:69:28 [ident] usize
-std/unicode.kira:69:28 [binary] usize
-std/unicode.kira:69:32 [literal] usize
-std/unicode.kira:70:13 [ident] list[uint32]
-std/unicode.kira:70:13 [field] fn(_, _) -> unit
-std/unicode.kira:70:13 [call] unit
-std/unicode.kira:70:22 [group] uint32
-std/unicode.kira:70:22 [binary] uint32
-std/unicode.kira:70:22 [binary] uint32
-std/unicode.kira:70:23 [ident] uint32
-std/unicode.kira:70:23 [binary] uint32
-std/unicode.kira:70:28 [literal] uint32
-std/unicode.kira:70:36 [literal] uint32
-std/unicode.kira:70:43 [group] uint32
-std/unicode.kira:70:44 [ident] uint32
-std/unicode.kira:70:44 [binary] uint32
-std/unicode.kira:70:49 [literal] uint32
-std/unicode.kira:71:13 [ident] usize
-std/unicode.kira:71:17 [ident] usize
-std/unicode.kira:71:17 [binary] usize
-std/unicode.kira:71:21 [literal] usize
-std/unicode.kira:72:14 [ident] uint32
-std/unicode.kira:72:14 [binary] bool
-std/unicode.kira:72:19 [literal] uint32
-std/unicode.kira:73:17 [binding_pat] uint32
-std/unicode.kira:73:22 [ident] slice[byte]
-std/unicode.kira:73:22 [index] byte
-std/unicode.kira:73:22 [cast] uint32
-std/unicode.kira:73:28 [ident] usize
-std/unicode.kira:73:28 [binary] usize
-std/unicode.kira:73:32 [literal] usize
-std/unicode.kira:74:17 [binding_pat] uint32
-std/unicode.kira:74:22 [ident] slice[byte]
-std/unicode.kira:74:22 [index] byte
-std/unicode.kira:74:22 [cast] uint32
-std/unicode.kira:74:28 [ident] usize
-std/unicode.kira:74:28 [binary] usize
-std/unicode.kira:74:32 [literal] usize
-std/unicode.kira:75:13 [ident] list[uint32]
-std/unicode.kira:75:13 [field] fn(_, _) -> unit
-std/unicode.kira:75:13 [call] unit
-std/unicode.kira:75:22 [group] uint32
-std/unicode.kira:75:22 [binary] uint32
-std/unicode.kira:75:22 [binary] uint32
-std/unicode.kira:75:22 [binary] uint32
-std/unicode.kira:75:23 [ident] uint32
-std/unicode.kira:75:23 [binary] uint32
-std/unicode.kira:75:28 [literal] uint32
-std/unicode.kira:75:36 [literal] uint32
-std/unicode.kira:75:45 [group] uint32
-std/unicode.kira:75:45 [binary] uint32
-std/unicode.kira:75:46 [ident] uint32
-std/unicode.kira:75:46 [binary] uint32
-std/unicode.kira:75:51 [literal] uint32
-std/unicode.kira:75:59 [literal] uint32
-std/unicode.kira:75:66 [group] uint32
-std/unicode.kira:75:67 [ident] uint32
-std/unicode.kira:75:67 [binary] uint32
-std/unicode.kira:75:72 [literal] uint32
-std/unicode.kira:76:13 [ident] usize
-std/unicode.kira:76:17 [ident] usize
-std/unicode.kira:76:17 [binary] usize
-std/unicode.kira:76:21 [literal] usize
-std/unicode.kira:78:17 [binding_pat] uint32
-std/unicode.kira:78:22 [ident] slice[byte]
-std/unicode.kira:78:22 [index] byte
-std/unicode.kira:78:22 [cast] uint32
-std/unicode.kira:78:28 [ident] usize
-std/unicode.kira:78:28 [binary] usize
-std/unicode.kira:78:32 [literal] usize
-std/unicode.kira:79:17 [binding_pat] uint32
-std/unicode.kira:79:22 [ident] slice[byte]
-std/unicode.kira:79:22 [index] byte
-std/unicode.kira:79:22 [cast] uint32
-std/unicode.kira:79:28 [ident] usize
-std/unicode.kira:79:28 [binary] usize
-std/unicode.kira:79:32 [literal] usize
-std/unicode.kira:80:17 [binding_pat] uint32
-std/unicode.kira:80:22 [ident] slice[byte]
-std/unicode.kira:80:22 [index] byte
-std/unicode.kira:80:22 [cast] uint32
-std/unicode.kira:80:28 [ident] usize
-std/unicode.kira:80:28 [binary] usize
-std/unicode.kira:80:32 [literal] usize
-std/unicode.kira:81:13 [ident] list[uint32]
-std/unicode.kira:81:13 [field] fn(_, _) -> unit
-std/unicode.kira:81:13 [call] unit
-std/unicode.kira:81:22 [group] uint32
-std/unicode.kira:81:22 [binary] uint32
-std/unicode.kira:81:22 [binary] uint32
-std/unicode.kira:81:22 [binary] uint32
-std/unicode.kira:81:22 [binary] uint32
-std/unicode.kira:81:23 [ident] uint32
-std/unicode.kira:81:23 [binary] uint32
-std/unicode.kira:81:28 [literal] uint32
-std/unicode.kira:81:36 [literal] uint32
-std/unicode.kira:81:46 [group] uint32
-std/unicode.kira:81:46 [binary] uint32
-std/unicode.kira:81:47 [ident] uint32
-std/unicode.kira:81:47 [binary] uint32
-std/unicode.kira:81:52 [literal] uint32
-std/unicode.kira:81:60 [literal] uint32
-std/unicode.kira:82:17 [group] uint32
-std/unicode.kira:82:17 [binary] uint32
-std/unicode.kira:82:18 [ident] uint32
-std/unicode.kira:82:18 [binary] uint32
-std/unicode.kira:82:23 [literal] uint32
-std/unicode.kira:82:31 [literal] uint32
-std/unicode.kira:82:38 [group] uint32
-std/unicode.kira:82:39 [ident] uint32
-std/unicode.kira:82:39 [binary] uint32
-std/unicode.kira:82:44 [literal] uint32
-std/unicode.kira:83:13 [ident] usize
-std/unicode.kira:83:17 [ident] usize
-std/unicode.kira:83:17 [binary] usize
-std/unicode.kira:83:21 [literal] usize
-std/unicode.kira:84:12 [ident] list[uint32]
-std/unicode.kira:94:23 [binding_pat] &slice[uint32]
-std/unicode.kira:94:45 [binding_pat] &slice[uint32]
-std/unicode.kira:94:67 [binding_pat] uint32
-std/unicode.kira:94:82 [named_type] option[uint32]
-std/unicode.kira:95:11 [ident] fn(&slice[uint32], uint32) -> option[usize]
-std/unicode.kira:95:11 [call] option[usize]
-std/unicode.kira:95:25 [ident] &slice[uint32]
-std/unicode.kira:95:31 [ident] uint32
-std/unicode.kira:96:9 [option_pat] option[usize]
-std/unicode.kira:96:15 [binding_pat] usize
-std/unicode.kira:96:21 [call] option[uint32]
-std/unicode.kira:96:27 [ident] &slice[uint32]
-std/unicode.kira:96:27 [index] uint32
-std/unicode.kira:96:32 [ident] usize
-std/unicode.kira:97:9 [ctor_pat] option[usize]
-std/unicode.kira:97:18 [ident] option[uint32]
-std/unicode.kira:113:24 [binding_pat] &slice[uint32]
-std/unicode.kira:113:46 [binding_pat] &slice[uint8]
-std/unicode.kira:114:9 [binding_pat] &slice[uint32]
-std/unicode.kira:114:31 [binding_pat] &slice[uint32]
-std/unicode.kira:114:53 [binding_pat] &slice[uint32]
-std/unicode.kira:115:9 [binding_pat] &slice[uint32]
-std/unicode.kira:115:31 [binding_pat] uint32
-std/unicode.kira:115:46 [named_type] option[str]
-std/unicode.kira:116:11 [ident] fn(&slice[uint32], uint32) -> option[usize]
-std/unicode.kira:116:11 [call] option[usize]
-std/unicode.kira:116:25 [ident] &slice[uint32]
-std/unicode.kira:116:31 [ident] uint32
-std/unicode.kira:117:9 [ctor_pat] option[usize]
-std/unicode.kira:117:18 [ident] option[str]
-std/unicode.kira:118:9 [option_pat] option[usize]
-std/unicode.kira:118:15 [binding_pat] usize
-std/unicode.kira:119:17 [binding_pat] uint8
-std/unicode.kira:119:21 [ident] &slice[uint8]
-std/unicode.kira:119:21 [index] uint8
-std/unicode.kira:119:28 [ident] usize
-std/unicode.kira:120:13 [var_stmt] str
-std/unicode.kira:120:23 [ident] fn(uint32) -> str
-std/unicode.kira:120:23 [call] str
-std/unicode.kira:120:33 [ident] &slice[uint32]
-std/unicode.kira:120:33 [index] uint32
-std/unicode.kira:120:38 [ident] usize
-std/unicode.kira:121:16 [ident] uint8
-std/unicode.kira:121:16 [binary] bool
-std/unicode.kira:121:20 [literal] uint8
-std/unicode.kira:122:17 [ident] str
-std/unicode.kira:122:23 [ident] str
-std/unicode.kira:122:23 [binary] str
-std/unicode.kira:122:29 [ident] fn(uint32) -> str
-std/unicode.kira:122:29 [call] str
-std/unicode.kira:122:39 [ident] &slice[uint32]
-std/unicode.kira:122:39 [index] uint32
-std/unicode.kira:122:44 [ident] usize
-std/unicode.kira:123:16 [ident] uint8
-std/unicode.kira:123:16 [binary] bool
-std/unicode.kira:123:20 [literal] uint8
-std/unicode.kira:124:17 [ident] str
-std/unicode.kira:124:23 [ident] str
-std/unicode.kira:124:23 [binary] str
-std/unicode.kira:124:29 [ident] fn(uint32) -> str
-std/unicode.kira:124:29 [call] str
-std/unicode.kira:124:39 [ident] &slice[uint32]
-std/unicode.kira:124:39 [index] uint32
-std/unicode.kira:124:44 [ident] usize
-std/unicode.kira:125:16 [ident] uint8
-std/unicode.kira:125:16 [binary] bool
-std/unicode.kira:125:20 [literal] uint8
-std/unicode.kira:126:17 [ident] str
-std/unicode.kira:126:23 [ident] str
-std/unicode.kira:126:23 [binary] str
-std/unicode.kira:126:29 [ident] fn(uint32) -> str
-std/unicode.kira:126:29 [call] str
-std/unicode.kira:126:39 [ident] &slice[uint32]
-std/unicode.kira:126:39 [index] uint32
-std/unicode.kira:126:44 [ident] usize
-std/unicode.kira:127:20 [call] option[str]
-std/unicode.kira:127:26 [ident] str
-std/unicode.kira:135:14 [binding_pat] uint32
-std/unicode.kira:135:29 [named_type] bool
-std/unicode.kira:136:12 [ident] fn(&slice[uint32], &slice[uint32], uint32) -> bool
-std/unicode.kira:136:12 [call] bool
-std/unicode.kira:136:22 [unary] &slice[uint32]
-std/unicode.kira:136:23 [ident] array[uint32, 147]
-std/unicode.kira:136:23 [index] slice[uint32]
-std/unicode.kira:136:32 [literal] usize
-std/unicode.kira:136:32 [binary] range[usize]
-std/unicode.kira:136:35 [ident] usize
-std/unicode.kira:136:35 [literal] usize
-std/unicode.kira:136:47 [unary] &slice[uint32]
-std/unicode.kira:136:48 [ident] array[uint32, 147]
-std/unicode.kira:136:48 [index] slice[uint32]
-std/unicode.kira:136:57 [literal] usize
-std/unicode.kira:136:57 [binary] range[usize]
-std/unicode.kira:136:60 [ident] usize
-std/unicode.kira:136:60 [literal] usize
-std/unicode.kira:136:72 [ident] uint32
-std/unicode.kira:145:23 [binding_pat] uint32
-std/unicode.kira:145:38 [named_type] bool
-std/unicode.kira:146:12 [ident] fn(&slice[uint32], &slice[uint32], uint32) -> bool
-std/unicode.kira:146:12 [call] bool
-std/unicode.kira:146:22 [unary] &slice[uint32]
-std/unicode.kira:146:23 [ident] array[uint32, 376]
-std/unicode.kira:146:23 [index] slice[uint32]
-std/unicode.kira:146:41 [literal] usize
-std/unicode.kira:146:41 [binary] range[usize]
-std/unicode.kira:146:44 [ident] usize
-std/unicode.kira:146:44 [literal] usize
-std/unicode.kira:147:9 [unary] &slice[uint32]
-std/unicode.kira:147:10 [ident] array[uint32, 376]
-std/unicode.kira:147:10 [index] slice[uint32]
-std/unicode.kira:147:28 [literal] usize
-std/unicode.kira:147:28 [binary] range[usize]
-std/unicode.kira:147:31 [ident] usize
-std/unicode.kira:147:31 [literal] usize
-std/unicode.kira:147:52 [ident] uint32
-std/unicode.kira:158:15 [binding_pat] &slice[uint32]
-std/unicode.kira:158:36 [binding_pat] &slice[uint32]
-std/unicode.kira:158:57 [binding_pat] uint32
-std/unicode.kira:158:72 [named_type] bool
-std/unicode.kira:159:9 [binding_pat] usize
-std/unicode.kira:159:15 [ident] fn(&slice[uint32], fn(uint32) -> bool) -> usize
-std/unicode.kira:159:15 [call] usize
-std/unicode.kira:159:31 [ident] &slice[uint32]
-std/unicode.kira:159:36 [lambda] fn(uint32) -> bool
-std/unicode.kira:159:52 [ident] uint32
-std/unicode.kira:159:52 [binary] bool
-std/unicode.kira:159:58 [ident] uint32
-std/unicode.kira:160:8 [ident] usize
-std/unicode.kira:160:8 [binary] bool
-std/unicode.kira:160:15 [literal] usize
-std/unicode.kira:161:16 [literal] bool
-std/unicode.kira:162:12 [ident] &slice[uint32]
-std/unicode.kira:162:12 [index] uint32
-std/unicode.kira:162:12 [binary] bool
-std/unicode.kira:162:16 [ident] usize
-std/unicode.kira:162:16 [binary] usize
-std/unicode.kira:162:22 [literal] usize
-std/unicode.kira:162:28 [ident] uint32
-std/unicode.kira:173:20 [binding_pat] &slice[uint32]
-std/unicode.kira:173:48 [binding_pat] usize
-std/unicode.kira:173:61 [named_type] bool
-std/unicode.kira:174:5 [var_stmt] bool
-std/unicode.kira:174:29 [literal] bool
-std/unicode.kira:175:5 [var_stmt] usize
-std/unicode.kira:175:13 [ident] usize
-std/unicode.kira:176:11 [ident] usize
-std/unicode.kira:176:11 [binary] bool
-std/unicode.kira:176:15 [literal] usize
-std/unicode.kira:177:9 [ident] usize
-std/unicode.kira:177:13 [ident] usize
-std/unicode.kira:177:13 [binary] usize
-std/unicode.kira:177:17 [literal] usize
-std/unicode.kira:178:13 [binding_pat] uint32
-std/unicode.kira:178:18 [ident] &slice[uint32]
-std/unicode.kira:178:18 [index] uint32
-std/unicode.kira:178:29 [ident] usize
-std/unicode.kira:179:12 [ident] fn(uint32) -> bool
-std/unicode.kira:179:12 [call] bool
-std/unicode.kira:179:30 [ident] uint32
-std/unicode.kira:181:9 [ident] bool
-std/unicode.kira:181:29 [ident] fn(uint32) -> bool
-std/unicode.kira:181:29 [call] bool
-std/unicode.kira:181:38 [ident] uint32
-std/unicode.kira:183:8 [unary] bool
-std/unicode.kira:183:12 [ident] bool
-std/unicode.kira:184:16 [literal] bool
-std/unicode.kira:186:9 [binding_pat] usize
-std/unicode.kira:186:13 [ident] &slice[uint32]
-std/unicode.kira:186:13 [call] usize
-std/unicode.kira:187:5 [var_stmt] usize
-std/unicode.kira:187:13 [ident] usize
-std/unicode.kira:187:13 [binary] usize
-std/unicode.kira:187:17 [literal] usize
-std/unicode.kira:188:11 [ident] usize
-std/unicode.kira:188:11 [binary] bool
-std/unicode.kira:188:15 [ident] usize
-std/unicode.kira:189:13 [binding_pat] uint32
-std/unicode.kira:189:18 [ident] &slice[uint32]
-std/unicode.kira:189:18 [index] uint32
-std/unicode.kira:189:29 [ident] usize
-std/unicode.kira:190:12 [ident] fn(uint32) -> bool
-std/unicode.kira:190:12 [call] bool
-std/unicode.kira:190:30 [ident] uint32
-std/unicode.kira:191:13 [ident] usize
-std/unicode.kira:191:17 [ident] usize
-std/unicode.kira:191:17 [binary] usize
-std/unicode.kira:191:21 [literal] usize
-std/unicode.kira:193:16 [unary] bool
-std/unicode.kira:193:20 [ident] fn(uint32) -> bool
-std/unicode.kira:193:20 [call] bool
-std/unicode.kira:193:29 [ident] uint32
-std/unicode.kira:194:12 [literal] bool
-std/unicode.kira:203:15 [binding_pat] uint32
-std/unicode.kira:203:30 [named_type] str
-std/unicode.kira:204:11 [ident] fn(&slice[uint32], &slice[uint8], &slice[uint32], &slice[uint32], &slice[uint32], &slice[uint32], uint32) -> option[str]
-std/unicode.kira:204:11 [call] option[str]
-std/unicode.kira:204:30 [unary] &slice[uint32]
-std/unicode.kira:204:31 [ident] array[uint32, 102]
-std/unicode.kira:204:31 [index] slice[uint32]
-std/unicode.kira:204:46 [literal] usize
-std/unicode.kira:204:46 [binary] range[usize]
-std/unicode.kira:204:49 [ident] usize
-std/unicode.kira:204:49 [literal] usize
-std/unicode.kira:204:66 [unary] &slice[uint8]
-std/unicode.kira:204:67 [ident] array[uint8, 102]
-std/unicode.kira:204:67 [index] slice[uint8]
-std/unicode.kira:204:84 [literal] usize
-std/unicode.kira:204:84 [binary] range[usize]
-std/unicode.kira:204:87 [ident] usize
-std/unicode.kira:204:87 [literal] usize
-std/unicode.kira:205:13 [unary] &slice[uint32]
-std/unicode.kira:205:14 [ident] array[uint32, 102]
-std/unicode.kira:205:14 [index] slice[uint32]
-std/unicode.kira:205:29 [literal] usize
-std/unicode.kira:205:29 [binary] range[usize]
-std/unicode.kira:205:32 [ident] usize
-std/unicode.kira:205:32 [literal] usize
-std/unicode.kira:205:49 [unary] &slice[uint32]
-std/unicode.kira:205:50 [ident] array[uint32, 102]
-std/unicode.kira:205:50 [index] slice[uint32]
-std/unicode.kira:205:65 [literal] usize
-std/unicode.kira:205:65 [binary] range[usize]
-std/unicode.kira:205:68 [ident] usize
-std/unicode.kira:205:68 [literal] usize
-std/unicode.kira:206:13 [unary] &slice[uint32]
-std/unicode.kira:206:14 [ident] array[uint32, 102]
-std/unicode.kira:206:14 [index] slice[uint32]
-std/unicode.kira:206:29 [literal] usize
-std/unicode.kira:206:29 [binary] range[usize]
-std/unicode.kira:206:32 [ident] usize
-std/unicode.kira:206:32 [literal] usize
-std/unicode.kira:206:49 [unary] &slice[uint32]
-std/unicode.kira:206:50 [ident] array[uint32, 102]
-std/unicode.kira:206:50 [index] slice[uint32]
-std/unicode.kira:206:65 [literal] usize
-std/unicode.kira:206:65 [binary] range[usize]
-std/unicode.kira:206:68 [ident] usize
-std/unicode.kira:206:68 [literal] usize
-std/unicode.kira:206:85 [ident] uint32
-std/unicode.kira:207:9 [option_pat] option[str]
-std/unicode.kira:207:15 [binding_pat] str
-std/unicode.kira:207:28 [ident] str
-std/unicode.kira:208:9 [ctor_pat] option[str]
-std/unicode.kira:209:19 [ident] fn(&slice[uint32], &slice[uint32], uint32) -> option[uint32]
-std/unicode.kira:209:19 [call] option[uint32]
-std/unicode.kira:209:37 [unary] &slice[uint32]
-std/unicode.kira:209:38 [ident] array[uint32, 1505]
-std/unicode.kira:209:38 [index] slice[uint32]
-std/unicode.kira:209:55 [literal] usize
-std/unicode.kira:209:55 [binary] range[usize]
-std/unicode.kira:209:58 [ident] usize
-std/unicode.kira:209:58 [literal] usize
-std/unicode.kira:209:77 [unary] &slice[uint32]
-std/unicode.kira:209:78 [ident] array[uint32, 1505]
-std/unicode.kira:209:78 [index] slice[uint32]
-std/unicode.kira:209:95 [literal] usize
-std/unicode.kira:209:95 [binary] range[usize]
-std/unicode.kira:209:98 [ident] usize
-std/unicode.kira:209:98 [literal] usize
-std/unicode.kira:209:117 [ident] uint32
-std/unicode.kira:210:17 [option_pat] option[uint32]
-std/unicode.kira:210:23 [binding_pat] uint32
-std/unicode.kira:210:36 [ident] fn(uint32) -> str
-std/unicode.kira:210:36 [call] str
-std/unicode.kira:210:46 [ident] uint32
-std/unicode.kira:211:17 [ctor_pat] option[uint32]
-std/unicode.kira:211:33 [ident] fn(uint32) -> str
-std/unicode.kira:211:33 [call] str
-std/unicode.kira:211:43 [ident] uint32
-std/unicode.kira:220:22 [binding_pat] uint32
-std/unicode.kira:220:37 [named_type] str
-std/unicode.kira:221:11 [ident] fn(&slice[uint32], &slice[uint8], &slice[uint32], &slice[uint32], &slice[uint32], &slice[uint32], uint32) -> option[str]
-std/unicode.kira:221:11 [call] option[str]
-std/unicode.kira:221:30 [unary] &slice[uint32]
-std/unicode.kira:221:31 [ident] array[uint32, 1]
-std/unicode.kira:221:31 [index] slice[uint32]
-std/unicode.kira:221:46 [literal] usize
-std/unicode.kira:221:46 [binary] range[usize]
-std/unicode.kira:221:49 [ident] usize
-std/unicode.kira:221:49 [literal] usize
-std/unicode.kira:221:66 [unary] &slice[uint8]
-std/unicode.kira:221:67 [ident] array[uint8, 1]
-std/unicode.kira:221:67 [index] slice[uint8]
-std/unicode.kira:221:84 [literal] usize
-std/unicode.kira:221:84 [binary] range[usize]
-std/unicode.kira:221:87 [ident] usize
-std/unicode.kira:221:87 [literal] usize
-std/unicode.kira:222:13 [unary] &slice[uint32]
-std/unicode.kira:222:14 [ident] array[uint32, 1]
-std/unicode.kira:222:14 [index] slice[uint32]
-std/unicode.kira:222:29 [literal] usize
-std/unicode.kira:222:29 [binary] range[usize]
-std/unicode.kira:222:32 [ident] usize
-std/unicode.kira:222:32 [literal] usize
-std/unicode.kira:222:49 [unary] &slice[uint32]
-std/unicode.kira:222:50 [ident] array[uint32, 1]
-std/unicode.kira:222:50 [index] slice[uint32]
-std/unicode.kira:222:65 [literal] usize
-std/unicode.kira:222:65 [binary] range[usize]
-std/unicode.kira:222:68 [ident] usize
-std/unicode.kira:222:68 [literal] usize
-std/unicode.kira:223:13 [unary] &slice[uint32]
-std/unicode.kira:223:14 [ident] array[uint32, 1]
-std/unicode.kira:223:14 [index] slice[uint32]
-std/unicode.kira:223:29 [literal] usize
-std/unicode.kira:223:29 [binary] range[usize]
-std/unicode.kira:223:32 [ident] usize
-std/unicode.kira:223:32 [literal] usize
-std/unicode.kira:223:49 [unary] &slice[uint32]
-std/unicode.kira:223:50 [ident] array[uint32, 1]
-std/unicode.kira:223:50 [index] slice[uint32]
-std/unicode.kira:223:65 [literal] usize
-std/unicode.kira:223:65 [binary] range[usize]
-std/unicode.kira:223:68 [ident] usize
-std/unicode.kira:223:68 [literal] usize
-std/unicode.kira:223:85 [ident] uint32
-std/unicode.kira:224:9 [option_pat] option[str]
-std/unicode.kira:224:15 [binding_pat] str
-std/unicode.kira:224:28 [ident] str
-std/unicode.kira:225:9 [ctor_pat] option[str]
-std/unicode.kira:226:19 [ident] fn(&slice[uint32], &slice[uint32], uint32) -> option[uint32]
-std/unicode.kira:226:19 [call] option[uint32]
-std/unicode.kira:226:37 [unary] &slice[uint32]
-std/unicode.kira:226:38 [ident] array[uint32, 1488]
-std/unicode.kira:226:38 [index] slice[uint32]
-std/unicode.kira:226:55 [literal] usize
-std/unicode.kira:226:55 [binary] range[usize]
-std/unicode.kira:226:58 [ident] usize
-std/unicode.kira:226:58 [literal] usize
-std/unicode.kira:226:77 [unary] &slice[uint32]
-std/unicode.kira:226:78 [ident] array[uint32, 1488]
-std/unicode.kira:226:78 [index] slice[uint32]
-std/unicode.kira:226:95 [literal] usize
-std/unicode.kira:226:95 [binary] range[usize]
-std/unicode.kira:226:98 [ident] usize
-std/unicode.kira:226:98 [literal] usize
-std/unicode.kira:226:117 [ident] uint32
-std/unicode.kira:227:17 [option_pat] option[uint32]
-std/unicode.kira:227:23 [binding_pat] uint32
-std/unicode.kira:227:36 [ident] fn(uint32) -> str
-std/unicode.kira:227:36 [call] str
-std/unicode.kira:227:46 [ident] uint32
-std/unicode.kira:228:17 [ctor_pat] option[uint32]
-std/unicode.kira:228:33 [ident] fn(uint32) -> str
-std/unicode.kira:228:33 [call] str
-std/unicode.kira:228:43 [ident] uint32
-std/unicode.kira:230:38 [literal] uint32
-std/unicode.kira:231:42 [literal] uint32
-std/unicode.kira:240:22 [binding_pat] str
-std/unicode.kira:240:33 [named_type] str
-std/unicode.kira:241:9 [binding_pat] list[uint32]
-std/unicode.kira:241:22 [ident] fn(str) -> list[uint32]
-std/unicode.kira:241:22 [call] list[uint32]
-std/unicode.kira:241:34 [ident] str
-std/unicode.kira:242:9 [binding_pat] usize
-std/unicode.kira:242:13 [ident] list[uint32]
-std/unicode.kira:242:13 [field] fn(_) -> usize
-std/unicode.kira:242:13 [call] usize
-std/unicode.kira:243:5 [var_stmt] str
-std/unicode.kira:243:15 [literal] str
-std/unicode.kira:244:5 [var_stmt] usize
-std/unicode.kira:244:20 [literal] usize
-std/unicode.kira:245:11 [ident] usize
-std/unicode.kira:245:11 [binary] bool
-std/unicode.kira:245:15 [ident] usize
-std/unicode.kira:246:9 [ident] str
-std/unicode.kira:246:15 [ident] str
-std/unicode.kira:246:15 [binary] str
-std/unicode.kira:246:21 [ident] fn(uint32) -> str
-std/unicode.kira:246:21 [call] str
-std/unicode.kira:246:31 [ident] list[uint32]
-std/unicode.kira:246:31 [index] uint32
-std/unicode.kira:246:42 [ident] usize
-std/unicode.kira:247:9 [ident] usize
-std/unicode.kira:247:13 [ident] usize
-std/unicode.kira:247:13 [binary] usize
-std/unicode.kira:247:17 [literal] usize
-std/unicode.kira:248:12 [ident] str
-std/unicode.kira:257:22 [binding_pat] str
-std/unicode.kira:257:33 [named_type] str
-std/unicode.kira:258:9 [binding_pat] list[uint32]
-std/unicode.kira:258:22 [ident] fn(str) -> list[uint32]
-std/unicode.kira:258:22 [call] list[uint32]
-std/unicode.kira:258:34 [ident] str
-std/unicode.kira:259:9 [binding_pat] usize
-std/unicode.kira:259:13 [ident] list[uint32]
-std/unicode.kira:259:13 [field] fn(_) -> usize
-std/unicode.kira:259:13 [call] usize
-std/unicode.kira:260:5 [var_stmt] str
-std/unicode.kira:260:15 [literal] str
-std/unicode.kira:261:5 [var_stmt] usize
-std/unicode.kira:261:20 [literal] usize
-std/unicode.kira:262:11 [ident] usize
-std/unicode.kira:262:11 [binary] bool
-std/unicode.kira:262:15 [ident] usize
-std/unicode.kira:263:13 [binding_pat] uint32
-std/unicode.kira:263:18 [ident] list[uint32]
-std/unicode.kira:263:18 [index] uint32
-std/unicode.kira:263:29 [ident] usize
-std/unicode.kira:264:12 [ident] uint32
-std/unicode.kira:264:12 [binary] bool
-std/unicode.kira:264:12 [binary] bool
-std/unicode.kira:264:18 [ident] uint32
-std/unicode.kira:264:18 [literal] uint32
-std/unicode.kira:264:42 [ident] fn(&slice[uint32], usize) -> bool
-std/unicode.kira:264:42 [call] bool
-std/unicode.kira:264:57 [unary] &slice[uint32]
-std/unicode.kira:264:58 [ident] list[uint32]
-std/unicode.kira:264:58 [index] slice[uint32]
-std/unicode.kira:264:69 [literal] usize
-std/unicode.kira:264:69 [binary] range[usize]
-std/unicode.kira:264:72 [ident] usize
-std/unicode.kira:264:76 [ident] usize
-std/unicode.kira:265:13 [ident] str
-std/unicode.kira:265:19 [ident] str
-std/unicode.kira:265:19 [binary] str
-std/unicode.kira:265:25 [ident] fn(uint32) -> str
-std/unicode.kira:265:25 [call] str
-std/unicode.kira:265:35 [ident] uint32
-std/unicode.kira:265:35 [literal] uint32
-std/unicode.kira:267:13 [ident] str
-std/unicode.kira:267:19 [ident] str
-std/unicode.kira:267:19 [binary] str
-std/unicode.kira:267:25 [ident] fn(uint32) -> str
-std/unicode.kira:267:25 [call] str
-std/unicode.kira:267:42 [ident] uint32
-std/unicode.kira:268:9 [ident] usize
-std/unicode.kira:268:13 [ident] usize
-std/unicode.kira:268:13 [binary] usize
-std/unicode.kira:268:17 [literal] usize
-std/unicode.kira:269:12 [ident] str
-std/unicode.kira:278:19 [binding_pat] str
-std/unicode.kira:278:30 [named_type] str
-std/unicode.kira:279:9 [binding_pat] list[uint32]
-std/unicode.kira:279:22 [ident] fn(str) -> list[uint32]
-std/unicode.kira:279:22 [call] list[uint32]
-std/unicode.kira:279:34 [ident] str
-std/unicode.kira:280:9 [binding_pat] usize
-std/unicode.kira:280:13 [ident] list[uint32]
-std/unicode.kira:280:13 [field] fn(_) -> usize
-std/unicode.kira:280:13 [call] usize
-std/unicode.kira:281:5 [var_stmt] str
-std/unicode.kira:281:15 [literal] str
-std/unicode.kira:282:5 [var_stmt] usize
-std/unicode.kira:282:20 [literal] usize
-std/unicode.kira:283:11 [ident] usize
-std/unicode.kira:283:11 [binary] bool
-std/unicode.kira:283:15 [ident] usize
-std/unicode.kira:284:13 [binding_pat] uint32
-std/unicode.kira:284:18 [ident] list[uint32]
-std/unicode.kira:284:18 [index] uint32
-std/unicode.kira:284:29 [ident] usize
-std/unicode.kira:285:15 [ident] fn(&slice[uint32], &slice[uint8], &slice[uint32], &slice[uint32], &slice[uint32], &slice[uint32], uint32) -> option[str]
-std/unicode.kira:285:15 [call] option[str]
-std/unicode.kira:285:34 [unary] &slice[uint32]
-std/unicode.kira:285:35 [ident] array[uint32, 1585]
-std/unicode.kira:285:35 [index] slice[uint32]
-std/unicode.kira:285:44 [literal] usize
-std/unicode.kira:285:44 [binary] range[usize]
-std/unicode.kira:285:47 [ident] usize
-std/unicode.kira:285:47 [literal] usize
-std/unicode.kira:285:58 [unary] &slice[uint8]
-std/unicode.kira:285:59 [ident] array[uint8, 1585]
-std/unicode.kira:285:59 [index] slice[uint8]
-std/unicode.kira:285:70 [literal] usize
-std/unicode.kira:285:70 [binary] range[usize]
-std/unicode.kira:285:73 [ident] usize
-std/unicode.kira:285:73 [literal] usize
-std/unicode.kira:286:17 [unary] &slice[uint32]
-std/unicode.kira:286:18 [ident] array[uint32, 1585]
-std/unicode.kira:286:18 [index] slice[uint32]
-std/unicode.kira:286:27 [literal] usize
-std/unicode.kira:286:27 [binary] range[usize]
-std/unicode.kira:286:30 [ident] usize
-std/unicode.kira:286:30 [literal] usize
-std/unicode.kira:286:41 [unary] &slice[uint32]
-std/unicode.kira:286:42 [ident] array[uint32, 1585]
-std/unicode.kira:286:42 [index] slice[uint32]
-std/unicode.kira:286:51 [literal] usize
-std/unicode.kira:286:51 [binary] range[usize]
-std/unicode.kira:286:54 [ident] usize
-std/unicode.kira:286:54 [literal] usize
-std/unicode.kira:287:17 [unary] &slice[uint32]
-std/unicode.kira:287:18 [ident] array[uint32, 1585]
-std/unicode.kira:287:18 [index] slice[uint32]
-std/unicode.kira:287:27 [literal] usize
-std/unicode.kira:287:27 [binary] range[usize]
-std/unicode.kira:287:30 [ident] usize
-std/unicode.kira:287:30 [literal] usize
-std/unicode.kira:287:41 [unary] &slice[uint32]
-std/unicode.kira:287:42 [ident] array[uint32, 1585]
-std/unicode.kira:287:42 [index] slice[uint32]
-std/unicode.kira:287:51 [literal] usize
-std/unicode.kira:287:51 [binary] range[usize]
-std/unicode.kira:287:54 [ident] usize
-std/unicode.kira:287:54 [literal] usize
-std/unicode.kira:287:65 [ident] uint32
-std/unicode.kira:288:13 [option_pat] option[str]
-std/unicode.kira:288:19 [binding_pat] str
-std/unicode.kira:289:17 [ident] str
-std/unicode.kira:289:23 [ident] str
-std/unicode.kira:289:23 [binary] str
-std/unicode.kira:289:29 [ident] str
-std/unicode.kira:290:13 [ctor_pat] option[str]
-std/unicode.kira:291:17 [ident] str
-std/unicode.kira:291:23 [ident] str
-std/unicode.kira:291:23 [binary] str
-std/unicode.kira:291:29 [ident] fn(uint32) -> str
-std/unicode.kira:291:29 [call] str
-std/unicode.kira:291:39 [ident] uint32
-std/unicode.kira:292:9 [ident] usize
-std/unicode.kira:292:13 [ident] usize
-std/unicode.kira:292:13 [binary] usize
-std/unicode.kira:292:17 [literal] usize
-std/unicode.kira:293:12 [ident] str
+std/unicode.kira:36:42 [binding_pat] uint32
+std/unicode.kira:36:57 [named_type] str
+std/unicode.kira:47:15 [binding_pat] uint32
+std/unicode.kira:47:30 [named_type] str
+std/unicode.kira:48:12 [ident] fn(uint32) -> str
+std/unicode.kira:48:12 [call] str
+std/unicode.kira:48:39 [ident] uint32
+std/unicode.kira:55:17 [binding_pat] str
+std/unicode.kira:55:28 [named_type] list[uint32]
+std/unicode.kira:56:9 [binding_pat] slice[byte]
+std/unicode.kira:56:17 [ident] str
+std/unicode.kira:56:17 [call] slice[byte]
+std/unicode.kira:57:9 [binding_pat] usize
+std/unicode.kira:57:13 [ident] slice[byte]
+std/unicode.kira:57:13 [call] usize
+std/unicode.kira:58:5 [var_stmt] list[uint32]
+std/unicode.kira:58:29 [array] list[uint32]
+std/unicode.kira:59:5 [var_stmt] usize
+std/unicode.kira:59:20 [literal] usize
+std/unicode.kira:60:11 [ident] usize
+std/unicode.kira:60:11 [binary] bool
+std/unicode.kira:60:15 [ident] usize
+std/unicode.kira:61:13 [binding_pat] uint32
+std/unicode.kira:61:18 [ident] slice[byte]
+std/unicode.kira:61:18 [index] byte
+std/unicode.kira:61:18 [cast] uint32
+std/unicode.kira:61:24 [ident] usize
+std/unicode.kira:62:12 [ident] uint32
+std/unicode.kira:62:12 [binary] bool
+std/unicode.kira:62:17 [literal] uint32
+std/unicode.kira:63:13 [ident] list[uint32]
+std/unicode.kira:63:13 [field] fn(_, _) -> unit
+std/unicode.kira:63:13 [call] unit
+std/unicode.kira:63:22 [ident] uint32
+std/unicode.kira:64:13 [ident] usize
+std/unicode.kira:64:17 [ident] usize
+std/unicode.kira:64:17 [binary] usize
+std/unicode.kira:64:21 [literal] usize
+std/unicode.kira:65:14 [ident] uint32
+std/unicode.kira:65:14 [binary] bool
+std/unicode.kira:65:19 [literal] uint32
+std/unicode.kira:66:17 [binding_pat] uint32
+std/unicode.kira:66:22 [ident] slice[byte]
+std/unicode.kira:66:22 [index] byte
+std/unicode.kira:66:22 [cast] uint32
+std/unicode.kira:66:28 [ident] usize
+std/unicode.kira:66:28 [binary] usize
+std/unicode.kira:66:32 [literal] usize
+std/unicode.kira:67:13 [ident] list[uint32]
+std/unicode.kira:67:13 [field] fn(_, _) -> unit
+std/unicode.kira:67:13 [call] unit
+std/unicode.kira:67:22 [group] uint32
+std/unicode.kira:67:22 [binary] uint32
+std/unicode.kira:67:22 [binary] uint32
+std/unicode.kira:67:23 [ident] uint32
+std/unicode.kira:67:23 [binary] uint32
+std/unicode.kira:67:28 [literal] uint32
+std/unicode.kira:67:36 [literal] uint32
+std/unicode.kira:67:43 [group] uint32
+std/unicode.kira:67:44 [ident] uint32
+std/unicode.kira:67:44 [binary] uint32
+std/unicode.kira:67:49 [literal] uint32
+std/unicode.kira:68:13 [ident] usize
+std/unicode.kira:68:17 [ident] usize
+std/unicode.kira:68:17 [binary] usize
+std/unicode.kira:68:21 [literal] usize
+std/unicode.kira:69:14 [ident] uint32
+std/unicode.kira:69:14 [binary] bool
+std/unicode.kira:69:19 [literal] uint32
+std/unicode.kira:70:17 [binding_pat] uint32
+std/unicode.kira:70:22 [ident] slice[byte]
+std/unicode.kira:70:22 [index] byte
+std/unicode.kira:70:22 [cast] uint32
+std/unicode.kira:70:28 [ident] usize
+std/unicode.kira:70:28 [binary] usize
+std/unicode.kira:70:32 [literal] usize
+std/unicode.kira:71:17 [binding_pat] uint32
+std/unicode.kira:71:22 [ident] slice[byte]
+std/unicode.kira:71:22 [index] byte
+std/unicode.kira:71:22 [cast] uint32
+std/unicode.kira:71:28 [ident] usize
+std/unicode.kira:71:28 [binary] usize
+std/unicode.kira:71:32 [literal] usize
+std/unicode.kira:72:13 [ident] list[uint32]
+std/unicode.kira:72:13 [field] fn(_, _) -> unit
+std/unicode.kira:72:13 [call] unit
+std/unicode.kira:72:22 [group] uint32
+std/unicode.kira:72:22 [binary] uint32
+std/unicode.kira:72:22 [binary] uint32
+std/unicode.kira:72:22 [binary] uint32
+std/unicode.kira:72:23 [ident] uint32
+std/unicode.kira:72:23 [binary] uint32
+std/unicode.kira:72:28 [literal] uint32
+std/unicode.kira:72:36 [literal] uint32
+std/unicode.kira:72:45 [group] uint32
+std/unicode.kira:72:45 [binary] uint32
+std/unicode.kira:72:46 [ident] uint32
+std/unicode.kira:72:46 [binary] uint32
+std/unicode.kira:72:51 [literal] uint32
+std/unicode.kira:72:59 [literal] uint32
+std/unicode.kira:72:66 [group] uint32
+std/unicode.kira:72:67 [ident] uint32
+std/unicode.kira:72:67 [binary] uint32
+std/unicode.kira:72:72 [literal] uint32
+std/unicode.kira:73:13 [ident] usize
+std/unicode.kira:73:17 [ident] usize
+std/unicode.kira:73:17 [binary] usize
+std/unicode.kira:73:21 [literal] usize
+std/unicode.kira:75:17 [binding_pat] uint32
+std/unicode.kira:75:22 [ident] slice[byte]
+std/unicode.kira:75:22 [index] byte
+std/unicode.kira:75:22 [cast] uint32
+std/unicode.kira:75:28 [ident] usize
+std/unicode.kira:75:28 [binary] usize
+std/unicode.kira:75:32 [literal] usize
+std/unicode.kira:76:17 [binding_pat] uint32
+std/unicode.kira:76:22 [ident] slice[byte]
+std/unicode.kira:76:22 [index] byte
+std/unicode.kira:76:22 [cast] uint32
+std/unicode.kira:76:28 [ident] usize
+std/unicode.kira:76:28 [binary] usize
+std/unicode.kira:76:32 [literal] usize
+std/unicode.kira:77:17 [binding_pat] uint32
+std/unicode.kira:77:22 [ident] slice[byte]
+std/unicode.kira:77:22 [index] byte
+std/unicode.kira:77:22 [cast] uint32
+std/unicode.kira:77:28 [ident] usize
+std/unicode.kira:77:28 [binary] usize
+std/unicode.kira:77:32 [literal] usize
+std/unicode.kira:78:13 [ident] list[uint32]
+std/unicode.kira:78:13 [field] fn(_, _) -> unit
+std/unicode.kira:78:13 [call] unit
+std/unicode.kira:78:22 [group] uint32
+std/unicode.kira:78:22 [binary] uint32
+std/unicode.kira:78:22 [binary] uint32
+std/unicode.kira:78:22 [binary] uint32
+std/unicode.kira:78:22 [binary] uint32
+std/unicode.kira:78:23 [ident] uint32
+std/unicode.kira:78:23 [binary] uint32
+std/unicode.kira:78:28 [literal] uint32
+std/unicode.kira:78:36 [literal] uint32
+std/unicode.kira:78:46 [group] uint32
+std/unicode.kira:78:46 [binary] uint32
+std/unicode.kira:78:47 [ident] uint32
+std/unicode.kira:78:47 [binary] uint32
+std/unicode.kira:78:52 [literal] uint32
+std/unicode.kira:78:60 [literal] uint32
+std/unicode.kira:79:17 [group] uint32
+std/unicode.kira:79:17 [binary] uint32
+std/unicode.kira:79:18 [ident] uint32
+std/unicode.kira:79:18 [binary] uint32
+std/unicode.kira:79:23 [literal] uint32
+std/unicode.kira:79:31 [literal] uint32
+std/unicode.kira:79:38 [group] uint32
+std/unicode.kira:79:39 [ident] uint32
+std/unicode.kira:79:39 [binary] uint32
+std/unicode.kira:79:44 [literal] uint32
+std/unicode.kira:80:13 [ident] usize
+std/unicode.kira:80:17 [ident] usize
+std/unicode.kira:80:17 [binary] usize
+std/unicode.kira:80:21 [literal] usize
+std/unicode.kira:81:12 [ident] list[uint32]
+std/unicode.kira:91:23 [binding_pat] &slice[uint32]
+std/unicode.kira:91:45 [binding_pat] &slice[uint32]
+std/unicode.kira:91:67 [binding_pat] uint32
+std/unicode.kira:91:82 [named_type] option[uint32]
+std/unicode.kira:92:11 [ident] fn(&slice[uint32], uint32) -> option[usize]
+std/unicode.kira:92:11 [call] option[usize]
+std/unicode.kira:92:25 [ident] &slice[uint32]
+std/unicode.kira:92:31 [ident] uint32
+std/unicode.kira:93:9 [option_pat] option[usize]
+std/unicode.kira:93:15 [binding_pat] usize
+std/unicode.kira:93:21 [call] option[uint32]
+std/unicode.kira:93:27 [ident] &slice[uint32]
+std/unicode.kira:93:27 [index] uint32
+std/unicode.kira:93:32 [ident] usize
+std/unicode.kira:94:9 [ctor_pat] option[usize]
+std/unicode.kira:94:18 [ident] option[uint32]
+std/unicode.kira:110:24 [binding_pat] &slice[uint32]
+std/unicode.kira:110:46 [binding_pat] &slice[uint8]
+std/unicode.kira:111:9 [binding_pat] &slice[uint32]
+std/unicode.kira:111:31 [binding_pat] &slice[uint32]
+std/unicode.kira:111:53 [binding_pat] &slice[uint32]
+std/unicode.kira:112:9 [binding_pat] &slice[uint32]
+std/unicode.kira:112:31 [binding_pat] uint32
+std/unicode.kira:112:46 [named_type] option[str]
+std/unicode.kira:113:11 [ident] fn(&slice[uint32], uint32) -> option[usize]
+std/unicode.kira:113:11 [call] option[usize]
+std/unicode.kira:113:25 [ident] &slice[uint32]
+std/unicode.kira:113:31 [ident] uint32
+std/unicode.kira:114:9 [ctor_pat] option[usize]
+std/unicode.kira:114:18 [ident] option[str]
+std/unicode.kira:115:9 [option_pat] option[usize]
+std/unicode.kira:115:15 [binding_pat] usize
+std/unicode.kira:116:17 [binding_pat] uint8
+std/unicode.kira:116:21 [ident] &slice[uint8]
+std/unicode.kira:116:21 [index] uint8
+std/unicode.kira:116:28 [ident] usize
+std/unicode.kira:117:13 [var_stmt] str
+std/unicode.kira:117:23 [ident] fn(uint32) -> str
+std/unicode.kira:117:23 [call] str
+std/unicode.kira:117:33 [ident] &slice[uint32]
+std/unicode.kira:117:33 [index] uint32
+std/unicode.kira:117:38 [ident] usize
+std/unicode.kira:118:16 [ident] uint8
+std/unicode.kira:118:16 [binary] bool
+std/unicode.kira:118:20 [literal] uint8
+std/unicode.kira:119:17 [ident] str
+std/unicode.kira:119:23 [ident] str
+std/unicode.kira:119:23 [binary] str
+std/unicode.kira:119:29 [ident] fn(uint32) -> str
+std/unicode.kira:119:29 [call] str
+std/unicode.kira:119:39 [ident] &slice[uint32]
+std/unicode.kira:119:39 [index] uint32
+std/unicode.kira:119:44 [ident] usize
+std/unicode.kira:120:16 [ident] uint8
+std/unicode.kira:120:16 [binary] bool
+std/unicode.kira:120:20 [literal] uint8
+std/unicode.kira:121:17 [ident] str
+std/unicode.kira:121:23 [ident] str
+std/unicode.kira:121:23 [binary] str
+std/unicode.kira:121:29 [ident] fn(uint32) -> str
+std/unicode.kira:121:29 [call] str
+std/unicode.kira:121:39 [ident] &slice[uint32]
+std/unicode.kira:121:39 [index] uint32
+std/unicode.kira:121:44 [ident] usize
+std/unicode.kira:122:16 [ident] uint8
+std/unicode.kira:122:16 [binary] bool
+std/unicode.kira:122:20 [literal] uint8
+std/unicode.kira:123:17 [ident] str
+std/unicode.kira:123:23 [ident] str
+std/unicode.kira:123:23 [binary] str
+std/unicode.kira:123:29 [ident] fn(uint32) -> str
+std/unicode.kira:123:29 [call] str
+std/unicode.kira:123:39 [ident] &slice[uint32]
+std/unicode.kira:123:39 [index] uint32
+std/unicode.kira:123:44 [ident] usize
+std/unicode.kira:124:20 [call] option[str]
+std/unicode.kira:124:26 [ident] str
+std/unicode.kira:132:14 [binding_pat] uint32
+std/unicode.kira:132:29 [named_type] bool
+std/unicode.kira:133:12 [ident] fn(&slice[uint32], &slice[uint32], uint32) -> bool
+std/unicode.kira:133:12 [call] bool
+std/unicode.kira:133:22 [unary] &slice[uint32]
+std/unicode.kira:133:23 [ident] array[uint32, 147]
+std/unicode.kira:133:23 [index] slice[uint32]
+std/unicode.kira:133:32 [literal] usize
+std/unicode.kira:133:32 [binary] range[usize]
+std/unicode.kira:133:35 [ident] usize
+std/unicode.kira:133:35 [literal] usize
+std/unicode.kira:133:47 [unary] &slice[uint32]
+std/unicode.kira:133:48 [ident] array[uint32, 147]
+std/unicode.kira:133:48 [index] slice[uint32]
+std/unicode.kira:133:57 [literal] usize
+std/unicode.kira:133:57 [binary] range[usize]
+std/unicode.kira:133:60 [ident] usize
+std/unicode.kira:133:60 [literal] usize
+std/unicode.kira:133:72 [ident] uint32
+std/unicode.kira:142:23 [binding_pat] uint32
+std/unicode.kira:142:38 [named_type] bool
+std/unicode.kira:143:12 [ident] fn(&slice[uint32], &slice[uint32], uint32) -> bool
+std/unicode.kira:143:12 [call] bool
+std/unicode.kira:143:22 [unary] &slice[uint32]
+std/unicode.kira:143:23 [ident] array[uint32, 376]
+std/unicode.kira:143:23 [index] slice[uint32]
+std/unicode.kira:143:41 [literal] usize
+std/unicode.kira:143:41 [binary] range[usize]
+std/unicode.kira:143:44 [ident] usize
+std/unicode.kira:143:44 [literal] usize
+std/unicode.kira:144:9 [unary] &slice[uint32]
+std/unicode.kira:144:10 [ident] array[uint32, 376]
+std/unicode.kira:144:10 [index] slice[uint32]
+std/unicode.kira:144:28 [literal] usize
+std/unicode.kira:144:28 [binary] range[usize]
+std/unicode.kira:144:31 [ident] usize
+std/unicode.kira:144:31 [literal] usize
+std/unicode.kira:144:52 [ident] uint32
+std/unicode.kira:155:15 [binding_pat] &slice[uint32]
+std/unicode.kira:155:36 [binding_pat] &slice[uint32]
+std/unicode.kira:155:57 [binding_pat] uint32
+std/unicode.kira:155:72 [named_type] bool
+std/unicode.kira:156:9 [binding_pat] usize
+std/unicode.kira:156:15 [ident] fn(&slice[uint32], fn(uint32) -> bool) -> usize
+std/unicode.kira:156:15 [call] usize
+std/unicode.kira:156:31 [ident] &slice[uint32]
+std/unicode.kira:156:36 [lambda] fn(uint32) -> bool
+std/unicode.kira:156:52 [ident] uint32
+std/unicode.kira:156:52 [binary] bool
+std/unicode.kira:156:58 [ident] uint32
+std/unicode.kira:157:8 [ident] usize
+std/unicode.kira:157:8 [binary] bool
+std/unicode.kira:157:15 [literal] usize
+std/unicode.kira:158:16 [literal] bool
+std/unicode.kira:159:12 [ident] &slice[uint32]
+std/unicode.kira:159:12 [index] uint32
+std/unicode.kira:159:12 [binary] bool
+std/unicode.kira:159:16 [ident] usize
+std/unicode.kira:159:16 [binary] usize
+std/unicode.kira:159:22 [literal] usize
+std/unicode.kira:159:28 [ident] uint32
+std/unicode.kira:170:20 [binding_pat] &slice[uint32]
+std/unicode.kira:170:48 [binding_pat] usize
+std/unicode.kira:170:61 [named_type] bool
+std/unicode.kira:171:5 [var_stmt] bool
+std/unicode.kira:171:29 [literal] bool
+std/unicode.kira:172:5 [var_stmt] usize
+std/unicode.kira:172:13 [ident] usize
+std/unicode.kira:173:11 [ident] usize
+std/unicode.kira:173:11 [binary] bool
+std/unicode.kira:173:15 [literal] usize
+std/unicode.kira:174:9 [ident] usize
+std/unicode.kira:174:13 [ident] usize
+std/unicode.kira:174:13 [binary] usize
+std/unicode.kira:174:17 [literal] usize
+std/unicode.kira:175:13 [binding_pat] uint32
+std/unicode.kira:175:18 [ident] &slice[uint32]
+std/unicode.kira:175:18 [index] uint32
+std/unicode.kira:175:29 [ident] usize
+std/unicode.kira:176:12 [ident] fn(uint32) -> bool
+std/unicode.kira:176:12 [call] bool
+std/unicode.kira:176:30 [ident] uint32
+std/unicode.kira:178:9 [ident] bool
+std/unicode.kira:178:29 [ident] fn(uint32) -> bool
+std/unicode.kira:178:29 [call] bool
+std/unicode.kira:178:38 [ident] uint32
+std/unicode.kira:180:8 [unary] bool
+std/unicode.kira:180:12 [ident] bool
+std/unicode.kira:181:16 [literal] bool
+std/unicode.kira:183:9 [binding_pat] usize
+std/unicode.kira:183:13 [ident] &slice[uint32]
+std/unicode.kira:183:13 [call] usize
+std/unicode.kira:184:5 [var_stmt] usize
+std/unicode.kira:184:13 [ident] usize
+std/unicode.kira:184:13 [binary] usize
+std/unicode.kira:184:17 [literal] usize
+std/unicode.kira:185:11 [ident] usize
+std/unicode.kira:185:11 [binary] bool
+std/unicode.kira:185:15 [ident] usize
+std/unicode.kira:186:13 [binding_pat] uint32
+std/unicode.kira:186:18 [ident] &slice[uint32]
+std/unicode.kira:186:18 [index] uint32
+std/unicode.kira:186:29 [ident] usize
+std/unicode.kira:187:12 [ident] fn(uint32) -> bool
+std/unicode.kira:187:12 [call] bool
+std/unicode.kira:187:30 [ident] uint32
+std/unicode.kira:188:13 [ident] usize
+std/unicode.kira:188:17 [ident] usize
+std/unicode.kira:188:17 [binary] usize
+std/unicode.kira:188:21 [literal] usize
+std/unicode.kira:190:16 [unary] bool
+std/unicode.kira:190:20 [ident] fn(uint32) -> bool
+std/unicode.kira:190:20 [call] bool
+std/unicode.kira:190:29 [ident] uint32
+std/unicode.kira:191:12 [literal] bool
+std/unicode.kira:200:15 [binding_pat] uint32
+std/unicode.kira:200:30 [named_type] str
+std/unicode.kira:201:11 [ident] fn(&slice[uint32], &slice[uint8], &slice[uint32], &slice[uint32], &slice[uint32], &slice[uint32], uint32) -> option[str]
+std/unicode.kira:201:11 [call] option[str]
+std/unicode.kira:201:30 [unary] &slice[uint32]
+std/unicode.kira:201:31 [ident] array[uint32, 102]
+std/unicode.kira:201:31 [index] slice[uint32]
+std/unicode.kira:201:46 [literal] usize
+std/unicode.kira:201:46 [binary] range[usize]
+std/unicode.kira:201:49 [ident] usize
+std/unicode.kira:201:49 [literal] usize
+std/unicode.kira:201:66 [unary] &slice[uint8]
+std/unicode.kira:201:67 [ident] array[uint8, 102]
+std/unicode.kira:201:67 [index] slice[uint8]
+std/unicode.kira:201:84 [literal] usize
+std/unicode.kira:201:84 [binary] range[usize]
+std/unicode.kira:201:87 [ident] usize
+std/unicode.kira:201:87 [literal] usize
+std/unicode.kira:202:13 [unary] &slice[uint32]
+std/unicode.kira:202:14 [ident] array[uint32, 102]
+std/unicode.kira:202:14 [index] slice[uint32]
+std/unicode.kira:202:29 [literal] usize
+std/unicode.kira:202:29 [binary] range[usize]
+std/unicode.kira:202:32 [ident] usize
+std/unicode.kira:202:32 [literal] usize
+std/unicode.kira:202:49 [unary] &slice[uint32]
+std/unicode.kira:202:50 [ident] array[uint32, 102]
+std/unicode.kira:202:50 [index] slice[uint32]
+std/unicode.kira:202:65 [literal] usize
+std/unicode.kira:202:65 [binary] range[usize]
+std/unicode.kira:202:68 [ident] usize
+std/unicode.kira:202:68 [literal] usize
+std/unicode.kira:203:13 [unary] &slice[uint32]
+std/unicode.kira:203:14 [ident] array[uint32, 102]
+std/unicode.kira:203:14 [index] slice[uint32]
+std/unicode.kira:203:29 [literal] usize
+std/unicode.kira:203:29 [binary] range[usize]
+std/unicode.kira:203:32 [ident] usize
+std/unicode.kira:203:32 [literal] usize
+std/unicode.kira:203:49 [unary] &slice[uint32]
+std/unicode.kira:203:50 [ident] array[uint32, 102]
+std/unicode.kira:203:50 [index] slice[uint32]
+std/unicode.kira:203:65 [literal] usize
+std/unicode.kira:203:65 [binary] range[usize]
+std/unicode.kira:203:68 [ident] usize
+std/unicode.kira:203:68 [literal] usize
+std/unicode.kira:203:85 [ident] uint32
+std/unicode.kira:204:9 [option_pat] option[str]
+std/unicode.kira:204:15 [binding_pat] str
+std/unicode.kira:204:28 [ident] str
+std/unicode.kira:205:9 [ctor_pat] option[str]
+std/unicode.kira:206:19 [ident] fn(&slice[uint32], &slice[uint32], uint32) -> option[uint32]
+std/unicode.kira:206:19 [call] option[uint32]
+std/unicode.kira:206:37 [unary] &slice[uint32]
+std/unicode.kira:206:38 [ident] array[uint32, 1505]
+std/unicode.kira:206:38 [index] slice[uint32]
+std/unicode.kira:206:55 [literal] usize
+std/unicode.kira:206:55 [binary] range[usize]
+std/unicode.kira:206:58 [ident] usize
+std/unicode.kira:206:58 [literal] usize
+std/unicode.kira:206:77 [unary] &slice[uint32]
+std/unicode.kira:206:78 [ident] array[uint32, 1505]
+std/unicode.kira:206:78 [index] slice[uint32]
+std/unicode.kira:206:95 [literal] usize
+std/unicode.kira:206:95 [binary] range[usize]
+std/unicode.kira:206:98 [ident] usize
+std/unicode.kira:206:98 [literal] usize
+std/unicode.kira:206:117 [ident] uint32
+std/unicode.kira:207:17 [option_pat] option[uint32]
+std/unicode.kira:207:23 [binding_pat] uint32
+std/unicode.kira:207:36 [ident] fn(uint32) -> str
+std/unicode.kira:207:36 [call] str
+std/unicode.kira:207:46 [ident] uint32
+std/unicode.kira:208:17 [ctor_pat] option[uint32]
+std/unicode.kira:208:33 [ident] fn(uint32) -> str
+std/unicode.kira:208:33 [call] str
+std/unicode.kira:208:43 [ident] uint32
+std/unicode.kira:217:22 [binding_pat] uint32
+std/unicode.kira:217:37 [named_type] str
+std/unicode.kira:218:11 [ident] fn(&slice[uint32], &slice[uint8], &slice[uint32], &slice[uint32], &slice[uint32], &slice[uint32], uint32) -> option[str]
+std/unicode.kira:218:11 [call] option[str]
+std/unicode.kira:218:30 [unary] &slice[uint32]
+std/unicode.kira:218:31 [ident] array[uint32, 1]
+std/unicode.kira:218:31 [index] slice[uint32]
+std/unicode.kira:218:46 [literal] usize
+std/unicode.kira:218:46 [binary] range[usize]
+std/unicode.kira:218:49 [ident] usize
+std/unicode.kira:218:49 [literal] usize
+std/unicode.kira:218:66 [unary] &slice[uint8]
+std/unicode.kira:218:67 [ident] array[uint8, 1]
+std/unicode.kira:218:67 [index] slice[uint8]
+std/unicode.kira:218:84 [literal] usize
+std/unicode.kira:218:84 [binary] range[usize]
+std/unicode.kira:218:87 [ident] usize
+std/unicode.kira:218:87 [literal] usize
+std/unicode.kira:219:13 [unary] &slice[uint32]
+std/unicode.kira:219:14 [ident] array[uint32, 1]
+std/unicode.kira:219:14 [index] slice[uint32]
+std/unicode.kira:219:29 [literal] usize
+std/unicode.kira:219:29 [binary] range[usize]
+std/unicode.kira:219:32 [ident] usize
+std/unicode.kira:219:32 [literal] usize
+std/unicode.kira:219:49 [unary] &slice[uint32]
+std/unicode.kira:219:50 [ident] array[uint32, 1]
+std/unicode.kira:219:50 [index] slice[uint32]
+std/unicode.kira:219:65 [literal] usize
+std/unicode.kira:219:65 [binary] range[usize]
+std/unicode.kira:219:68 [ident] usize
+std/unicode.kira:219:68 [literal] usize
+std/unicode.kira:220:13 [unary] &slice[uint32]
+std/unicode.kira:220:14 [ident] array[uint32, 1]
+std/unicode.kira:220:14 [index] slice[uint32]
+std/unicode.kira:220:29 [literal] usize
+std/unicode.kira:220:29 [binary] range[usize]
+std/unicode.kira:220:32 [ident] usize
+std/unicode.kira:220:32 [literal] usize
+std/unicode.kira:220:49 [unary] &slice[uint32]
+std/unicode.kira:220:50 [ident] array[uint32, 1]
+std/unicode.kira:220:50 [index] slice[uint32]
+std/unicode.kira:220:65 [literal] usize
+std/unicode.kira:220:65 [binary] range[usize]
+std/unicode.kira:220:68 [ident] usize
+std/unicode.kira:220:68 [literal] usize
+std/unicode.kira:220:85 [ident] uint32
+std/unicode.kira:221:9 [option_pat] option[str]
+std/unicode.kira:221:15 [binding_pat] str
+std/unicode.kira:221:28 [ident] str
+std/unicode.kira:222:9 [ctor_pat] option[str]
+std/unicode.kira:223:19 [ident] fn(&slice[uint32], &slice[uint32], uint32) -> option[uint32]
+std/unicode.kira:223:19 [call] option[uint32]
+std/unicode.kira:223:37 [unary] &slice[uint32]
+std/unicode.kira:223:38 [ident] array[uint32, 1488]
+std/unicode.kira:223:38 [index] slice[uint32]
+std/unicode.kira:223:55 [literal] usize
+std/unicode.kira:223:55 [binary] range[usize]
+std/unicode.kira:223:58 [ident] usize
+std/unicode.kira:223:58 [literal] usize
+std/unicode.kira:223:77 [unary] &slice[uint32]
+std/unicode.kira:223:78 [ident] array[uint32, 1488]
+std/unicode.kira:223:78 [index] slice[uint32]
+std/unicode.kira:223:95 [literal] usize
+std/unicode.kira:223:95 [binary] range[usize]
+std/unicode.kira:223:98 [ident] usize
+std/unicode.kira:223:98 [literal] usize
+std/unicode.kira:223:117 [ident] uint32
+std/unicode.kira:224:17 [option_pat] option[uint32]
+std/unicode.kira:224:23 [binding_pat] uint32
+std/unicode.kira:224:36 [ident] fn(uint32) -> str
+std/unicode.kira:224:36 [call] str
+std/unicode.kira:224:46 [ident] uint32
+std/unicode.kira:225:17 [ctor_pat] option[uint32]
+std/unicode.kira:225:33 [ident] fn(uint32) -> str
+std/unicode.kira:225:33 [call] str
+std/unicode.kira:225:43 [ident] uint32
+std/unicode.kira:227:38 [literal] uint32
+std/unicode.kira:228:42 [literal] uint32
+std/unicode.kira:237:22 [binding_pat] str
+std/unicode.kira:237:33 [named_type] str
+std/unicode.kira:238:9 [binding_pat] list[uint32]
+std/unicode.kira:238:22 [ident] fn(str) -> list[uint32]
+std/unicode.kira:238:22 [call] list[uint32]
+std/unicode.kira:238:34 [ident] str
+std/unicode.kira:239:9 [binding_pat] usize
+std/unicode.kira:239:13 [ident] list[uint32]
+std/unicode.kira:239:13 [field] fn(_) -> usize
+std/unicode.kira:239:13 [call] usize
+std/unicode.kira:240:5 [var_stmt] str
+std/unicode.kira:240:15 [literal] str
+std/unicode.kira:241:5 [var_stmt] usize
+std/unicode.kira:241:20 [literal] usize
+std/unicode.kira:242:11 [ident] usize
+std/unicode.kira:242:11 [binary] bool
+std/unicode.kira:242:15 [ident] usize
+std/unicode.kira:243:9 [ident] str
+std/unicode.kira:243:15 [ident] str
+std/unicode.kira:243:15 [binary] str
+std/unicode.kira:243:21 [ident] fn(uint32) -> str
+std/unicode.kira:243:21 [call] str
+std/unicode.kira:243:31 [ident] list[uint32]
+std/unicode.kira:243:31 [index] uint32
+std/unicode.kira:243:42 [ident] usize
+std/unicode.kira:244:9 [ident] usize
+std/unicode.kira:244:13 [ident] usize
+std/unicode.kira:244:13 [binary] usize
+std/unicode.kira:244:17 [literal] usize
+std/unicode.kira:245:12 [ident] str
+std/unicode.kira:254:22 [binding_pat] str
+std/unicode.kira:254:33 [named_type] str
+std/unicode.kira:255:9 [binding_pat] list[uint32]
+std/unicode.kira:255:22 [ident] fn(str) -> list[uint32]
+std/unicode.kira:255:22 [call] list[uint32]
+std/unicode.kira:255:34 [ident] str
+std/unicode.kira:256:9 [binding_pat] usize
+std/unicode.kira:256:13 [ident] list[uint32]
+std/unicode.kira:256:13 [field] fn(_) -> usize
+std/unicode.kira:256:13 [call] usize
+std/unicode.kira:257:5 [var_stmt] str
+std/unicode.kira:257:15 [literal] str
+std/unicode.kira:258:5 [var_stmt] usize
+std/unicode.kira:258:20 [literal] usize
+std/unicode.kira:259:11 [ident] usize
+std/unicode.kira:259:11 [binary] bool
+std/unicode.kira:259:15 [ident] usize
+std/unicode.kira:260:13 [binding_pat] uint32
+std/unicode.kira:260:18 [ident] list[uint32]
+std/unicode.kira:260:18 [index] uint32
+std/unicode.kira:260:29 [ident] usize
+std/unicode.kira:261:12 [ident] uint32
+std/unicode.kira:261:12 [binary] bool
+std/unicode.kira:261:12 [binary] bool
+std/unicode.kira:261:18 [ident] uint32
+std/unicode.kira:261:18 [literal] uint32
+std/unicode.kira:261:42 [ident] fn(&slice[uint32], usize) -> bool
+std/unicode.kira:261:42 [call] bool
+std/unicode.kira:261:57 [unary] &slice[uint32]
+std/unicode.kira:261:58 [ident] list[uint32]
+std/unicode.kira:261:58 [index] slice[uint32]
+std/unicode.kira:261:69 [literal] usize
+std/unicode.kira:261:69 [binary] range[usize]
+std/unicode.kira:261:72 [ident] usize
+std/unicode.kira:261:76 [ident] usize
+std/unicode.kira:262:13 [ident] str
+std/unicode.kira:262:19 [ident] str
+std/unicode.kira:262:19 [binary] str
+std/unicode.kira:262:25 [ident] fn(uint32) -> str
+std/unicode.kira:262:25 [call] str
+std/unicode.kira:262:35 [ident] uint32
+std/unicode.kira:262:35 [literal] uint32
+std/unicode.kira:264:13 [ident] str
+std/unicode.kira:264:19 [ident] str
+std/unicode.kira:264:19 [binary] str
+std/unicode.kira:264:25 [ident] fn(uint32) -> str
+std/unicode.kira:264:25 [call] str
+std/unicode.kira:264:42 [ident] uint32
+std/unicode.kira:265:9 [ident] usize
+std/unicode.kira:265:13 [ident] usize
+std/unicode.kira:265:13 [binary] usize
+std/unicode.kira:265:17 [literal] usize
+std/unicode.kira:266:12 [ident] str
+std/unicode.kira:275:19 [binding_pat] str
+std/unicode.kira:275:30 [named_type] str
+std/unicode.kira:276:9 [binding_pat] list[uint32]
+std/unicode.kira:276:22 [ident] fn(str) -> list[uint32]
+std/unicode.kira:276:22 [call] list[uint32]
+std/unicode.kira:276:34 [ident] str
+std/unicode.kira:277:9 [binding_pat] usize
+std/unicode.kira:277:13 [ident] list[uint32]
+std/unicode.kira:277:13 [field] fn(_) -> usize
+std/unicode.kira:277:13 [call] usize
+std/unicode.kira:278:5 [var_stmt] str
+std/unicode.kira:278:15 [literal] str
+std/unicode.kira:279:5 [var_stmt] usize
+std/unicode.kira:279:20 [literal] usize
+std/unicode.kira:280:11 [ident] usize
+std/unicode.kira:280:11 [binary] bool
+std/unicode.kira:280:15 [ident] usize
+std/unicode.kira:281:13 [binding_pat] uint32
+std/unicode.kira:281:18 [ident] list[uint32]
+std/unicode.kira:281:18 [index] uint32
+std/unicode.kira:281:29 [ident] usize
+std/unicode.kira:282:15 [ident] fn(&slice[uint32], &slice[uint8], &slice[uint32], &slice[uint32], &slice[uint32], &slice[uint32], uint32) -> option[str]
+std/unicode.kira:282:15 [call] option[str]
+std/unicode.kira:282:34 [unary] &slice[uint32]
+std/unicode.kira:282:35 [ident] array[uint32, 1585]
+std/unicode.kira:282:35 [index] slice[uint32]
+std/unicode.kira:282:44 [literal] usize
+std/unicode.kira:282:44 [binary] range[usize]
+std/unicode.kira:282:47 [ident] usize
+std/unicode.kira:282:47 [literal] usize
+std/unicode.kira:282:58 [unary] &slice[uint8]
+std/unicode.kira:282:59 [ident] array[uint8, 1585]
+std/unicode.kira:282:59 [index] slice[uint8]
+std/unicode.kira:282:70 [literal] usize
+std/unicode.kira:282:70 [binary] range[usize]
+std/unicode.kira:282:73 [ident] usize
+std/unicode.kira:282:73 [literal] usize
+std/unicode.kira:283:17 [unary] &slice[uint32]
+std/unicode.kira:283:18 [ident] array[uint32, 1585]
+std/unicode.kira:283:18 [index] slice[uint32]
+std/unicode.kira:283:27 [literal] usize
+std/unicode.kira:283:27 [binary] range[usize]
+std/unicode.kira:283:30 [ident] usize
+std/unicode.kira:283:30 [literal] usize
+std/unicode.kira:283:41 [unary] &slice[uint32]
+std/unicode.kira:283:42 [ident] array[uint32, 1585]
+std/unicode.kira:283:42 [index] slice[uint32]
+std/unicode.kira:283:51 [literal] usize
+std/unicode.kira:283:51 [binary] range[usize]
+std/unicode.kira:283:54 [ident] usize
+std/unicode.kira:283:54 [literal] usize
+std/unicode.kira:284:17 [unary] &slice[uint32]
+std/unicode.kira:284:18 [ident] array[uint32, 1585]
+std/unicode.kira:284:18 [index] slice[uint32]
+std/unicode.kira:284:27 [literal] usize
+std/unicode.kira:284:27 [binary] range[usize]
+std/unicode.kira:284:30 [ident] usize
+std/unicode.kira:284:30 [literal] usize
+std/unicode.kira:284:41 [unary] &slice[uint32]
+std/unicode.kira:284:42 [ident] array[uint32, 1585]
+std/unicode.kira:284:42 [index] slice[uint32]
+std/unicode.kira:284:51 [literal] usize
+std/unicode.kira:284:51 [binary] range[usize]
+std/unicode.kira:284:54 [ident] usize
+std/unicode.kira:284:54 [literal] usize
+std/unicode.kira:284:65 [ident] uint32
+std/unicode.kira:285:13 [option_pat] option[str]
+std/unicode.kira:285:19 [binding_pat] str
+std/unicode.kira:286:17 [ident] str
+std/unicode.kira:286:23 [ident] str
+std/unicode.kira:286:23 [binary] str
+std/unicode.kira:286:29 [ident] str
+std/unicode.kira:287:13 [ctor_pat] option[str]
+std/unicode.kira:288:17 [ident] str
+std/unicode.kira:288:23 [ident] str
+std/unicode.kira:288:23 [binary] str
+std/unicode.kira:288:29 [ident] fn(uint32) -> str
+std/unicode.kira:288:29 [call] str
+std/unicode.kira:288:39 [ident] uint32
+std/unicode.kira:289:9 [ident] usize
+std/unicode.kira:289:13 [ident] usize
+std/unicode.kira:289:13 [binary] usize
+std/unicode.kira:289:17 [literal] usize
+std/unicode.kira:290:12 [ident] str
 std/unicode_tables.kira:14:34 [literal] usize
 std/unicode_tables.kira:16:48 [array] array[uint32, 1505]
 std/unicode_tables.kira:17:5 [literal] uint32
@@ -27183,21 +27118,13 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 
 ## struct_pattern_field_types (0)
 
-## struct_literal_field_types (213)
+## struct_literal_field_types (156)
 ?:750 data array[T, m]
 ?:882 current int32
 ?:894 limit int32
 ?:1076 len usize
 ?:1108 len usize
 ?:1142 n int32
-?:1163 v uint32
-?:1193 v usize
-?:1376 v usize
-?:1376 v usize
-?:1376 v usize
-?:1376 v usize
-?:1376 v usize
-?:1376 v usize
 ?:1718 len usize
 ?:1718 len usize
 ?:1718 len usize
@@ -27220,20 +27147,6 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:1925 name str
 ?:1937 run fn() -> result[unit, test_failure]
 ?:1947 skip bool
-?:1985 v usize
-?:1985 v usize
-?:1985 v usize
-?:1985 v usize
-?:1985 v usize
-?:1985 v usize
-?:1985 v usize
-?:2053 v usize
-?:2053 v usize
-?:2053 v usize
-?:2053 v usize
-?:2053 v usize
-?:2053 v usize
-?:2053 v usize
 ?:2133 name str
 ?:2145 run fn() -> result[unit, test_failure]
 ?:2155 skip bool
@@ -27242,21 +27155,10 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:2384 inner counter
 ?:2395 f fn(T) -> U
 ?:2395 f fn(int32) -> int32
-?:2574 v uint32
 ?:2619 inner I
 ?:2619 inner filter_iter[counter, int32]
 ?:2630 f fn(T) -> U
 ?:2630 f fn(int32) -> int32
-?:2647 v usize
-?:2647 v usize
-?:2647 v usize
-?:2647 v usize
-?:2647 v usize
-?:2647 v usize
-?:2647 v usize
-?:2647 v usize
-?:2647 v usize
-?:2647 v usize
 ?:2707 value int32
 ?:2742 value int64
 ?:2751 inner I
@@ -27268,7 +27170,6 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:2827 at int32
 ?:2834 stop int32
 ?:2843 total int32
-?:2920 v usize
 ?:3064 at int32
 ?:3071 stop int32
 ?:3076 remaining int32
@@ -27289,7 +27190,6 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:4053 f fn(T) -> U
 ?:4064 seen int32
 ?:4064 seen int32
-?:4115 v usize
 ?:4337 fd int32
 ?:4358 total int32
 ?:4358 total int32
@@ -27298,28 +27198,25 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:4465 fd raw_fd
 ?:4468 at usize
 ?:4475 end usize
-?:4539 v usize
 ?:4581 inner I
 ?:4592 pred fn(T) -> bool
+?:4606 fill char
+?:4631 align option[align_mode]
 ?:4669 fd raw_fd
-?:4743 v float64
+?:4683 sign sign_mode
+?:4708 alternate bool
+?:4743 zero_pad bool
+?:4768 width option[usize]
+?:4795 precision option[usize]
 ?:4797 src &mut list[T]
 ?:4806 at usize
 ?:4813 end usize
-?:4822 fill char
 ?:4824 v T
 ?:4824 v int32
 ?:4841 fd raw_fd
-?:4847 align option[align_mode]
-?:4899 sign sign_mode
-?:4924 alternate bool
-?:4959 zero_pad bool
-?:4984 width option[usize]
-?:5011 precision option[usize]
 ?:5013 fd raw_fd
 ?:5049 at int32
 ?:5056 end int32
-?:5085 v float32
 ?:5085 src list[T]
 ?:5094 at usize
 ?:5101 end usize
@@ -27327,24 +27224,7 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:5218 end int32
 ?:5270 at int32
 ?:5277 end int32
-?:5305 v uint8
-?:5507 v uint8
-?:5709 v uint8
 ?:6073 value int64
-?:6798 v uint32
-?:7153 v uint32
-?:8359 v usize
-?:8491 v uint64
-?:8516 v uint8
-?:8539 v bool
-?:9161 v uint64
-?:9178 v uint8
-?:9201 v bool
-?:9729 v float64
-?:9757 v usize
-?:10357 v float64
-?:10385 v usize
-?:10412 v bool
 ?:10875 src list[T]
 ?:10875 src list[int32]
 ?:10875 src list[test_case]
@@ -27357,8 +27237,6 @@ std/unicode_tables.kira:135:3053 [literal] uint32
 ?:10893 end usize
 ?:10893 end usize
 ?:10893 end usize
-?:11002 v float64
-?:11030 v usize
 ?:12617 inner I
 ?:12628 left usize
 ?:13105 inner I
@@ -27632,57 +27510,57 @@ std/console.kira:43:5 [call] ()
 std/console.kira:43:5 [call] (buf=arg)
 std/console.kira:50:5 [call] (s=arg)
 std/console.kira:51:5 [call] (s=arg)
-std/fmt.kira:39:12 [call] (s=arg)
-std/fmt.kira:42:12 [call] (c=arg, n=arg)
-std/fmt.kira:98:24 [call] (s=arg, n=arg)
-std/fmt.kira:101:20 [call] (s=arg)
-std/fmt.kira:102:24 [call] (width=arg)
-std/fmt.kira:107:17 [call] (align=arg, default_align=arg)
-std/fmt.kira:110:18 [call] (a=arg, b=arg)
-std/fmt.kira:110:43 [call] (c=arg, n=arg)
-std/fmt.kira:111:19 [call] (a=arg, b=arg)
-std/fmt.kira:111:33 [call] (c=arg, n=arg)
-std/fmt.kira:115:13 [call] (a=arg, b=arg)
-std/fmt.kira:115:27 [call] (a=arg, b=arg)
-std/fmt.kira:115:41 [call] (c=arg, n=arg)
-std/fmt.kira:115:87 [call] (c=arg, n=arg)
-std/fmt.kira:126:21 [call] (negative=arg, mode=arg)
-std/fmt.kira:127:23 [call] (alternate=arg, prefix=arg)
-std/fmt.kira:128:16 [call] (a=arg, b=arg)
-std/fmt.kira:128:30 [call] (a=arg, b=arg)
-std/fmt.kira:129:30 [call] (align=arg)
-std/fmt.kira:132:31 [call] (s=arg)
-std/fmt.kira:132:55 [call] (s=arg)
-std/fmt.kira:133:26 [call] (s=arg)
-std/fmt.kira:134:28 [call] (width=arg)
-std/fmt.kira:137:21 [call] (c=arg, n=arg)
-std/fmt.kira:138:16 [call] (a=arg, b=arg)
-std/fmt.kira:138:30 [call] (a=arg, b=arg)
-std/fmt.kira:138:44 [call] (a=arg, b=arg)
-std/fmt.kira:142:22 [call] (align=arg, default_align=arg)
-std/fmt.kira:149:12 [call] (s=arg, spec=arg)
-std/fmt.kira:166:12 [call] (s=arg, spec=arg)
-std/fmt.kira:175:12 [call] (s=arg, spec=arg)
-std/fmt.kira:175:20 [call] (a=arg, b=arg)
-std/fmt.kira:175:34 [call] (a=arg, b=arg)
-std/fmt.kira:184:12 [call] (s=arg, spec=arg)
-std/fmt.kira:184:20 [call] (b=arg)
-std/fmt.kira:193:12 [call] (s=arg, spec=arg)
-std/fmt.kira:193:20 [call] (cp=arg)
-std/fmt.kira:202:12 [call] (s=arg, spec=arg)
-std/fmt.kira:202:20 [call] (cp=arg)
-std/fmt.kira:211:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
-std/fmt.kira:220:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
-std/fmt.kira:235:18 [call] (value=arg, radix=arg, uppercase=arg)
-std/fmt.kira:236:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.kira:248:18 [call] (value=arg, radix=arg, uppercase=arg)
-std/fmt.kira:249:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.kira:261:18 [call] (value=arg, precision=arg)
-std/fmt.kira:262:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.kira:275:18 [call] (value=arg, precision=arg, uppercase=arg)
-std/fmt.kira:276:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.kira:288:18 [call] (value=arg, precision=arg)
-std/fmt.kira:289:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.kira:32:12 [call] (s=arg)
+std/fmt.kira:35:12 [call] (c=arg, n=arg)
+std/fmt.kira:91:24 [call] (s=arg, n=arg)
+std/fmt.kira:94:20 [call] (s=arg)
+std/fmt.kira:95:24 [call] (width=arg)
+std/fmt.kira:100:17 [call] (align=arg, default_align=arg)
+std/fmt.kira:103:18 [call] (a=arg, b=arg)
+std/fmt.kira:103:43 [call] (c=arg, n=arg)
+std/fmt.kira:104:19 [call] (a=arg, b=arg)
+std/fmt.kira:104:33 [call] (c=arg, n=arg)
+std/fmt.kira:108:13 [call] (a=arg, b=arg)
+std/fmt.kira:108:27 [call] (a=arg, b=arg)
+std/fmt.kira:108:41 [call] (c=arg, n=arg)
+std/fmt.kira:108:87 [call] (c=arg, n=arg)
+std/fmt.kira:119:21 [call] (negative=arg, mode=arg)
+std/fmt.kira:120:23 [call] (alternate=arg, prefix=arg)
+std/fmt.kira:121:16 [call] (a=arg, b=arg)
+std/fmt.kira:121:30 [call] (a=arg, b=arg)
+std/fmt.kira:122:30 [call] (align=arg)
+std/fmt.kira:125:31 [call] (s=arg)
+std/fmt.kira:125:55 [call] (s=arg)
+std/fmt.kira:126:26 [call] (s=arg)
+std/fmt.kira:127:28 [call] (width=arg)
+std/fmt.kira:130:21 [call] (c=arg, n=arg)
+std/fmt.kira:131:16 [call] (a=arg, b=arg)
+std/fmt.kira:131:30 [call] (a=arg, b=arg)
+std/fmt.kira:131:44 [call] (a=arg, b=arg)
+std/fmt.kira:135:22 [call] (align=arg, default_align=arg)
+std/fmt.kira:142:12 [call] (s=arg, spec=arg)
+std/fmt.kira:159:12 [call] (s=arg, spec=arg)
+std/fmt.kira:168:12 [call] (s=arg, spec=arg)
+std/fmt.kira:168:20 [call] (a=arg, b=arg)
+std/fmt.kira:168:34 [call] (a=arg, b=arg)
+std/fmt.kira:177:12 [call] (s=arg, spec=arg)
+std/fmt.kira:177:20 [call] (b=arg)
+std/fmt.kira:186:12 [call] (s=arg, spec=arg)
+std/fmt.kira:186:20 [call] (cp=arg)
+std/fmt.kira:195:12 [call] (s=arg, spec=arg)
+std/fmt.kira:195:20 [call] (cp=arg)
+std/fmt.kira:204:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
+std/fmt.kira:213:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
+std/fmt.kira:228:18 [call] (value=arg, radix=arg, uppercase=arg)
+std/fmt.kira:229:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.kira:241:18 [call] (value=arg, radix=arg, uppercase=arg)
+std/fmt.kira:242:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.kira:254:18 [call] (value=arg, precision=arg)
+std/fmt.kira:255:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.kira:268:18 [call] (value=arg, precision=arg, uppercase=arg)
+std/fmt.kira:269:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.kira:281:18 [call] (value=arg, precision=arg)
+std/fmt.kira:282:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
 std/io.kira:52:23 [call] (buf=arg)
 std/io.kira:57:17 [call] (value=arg)
 std/io.kira:57:17 [call] (value=arg)
@@ -27814,29 +27692,29 @@ std/mem.kira:55:5 [call] (p=arg, bytes=arg)
 std/option.kira:26:22 [call] (message=arg)
 std/panic.kira:24:12 [call] (msg=arg)
 std/result.kira:21:24 [call] (message=arg)
-std/string.kira:53:16 [call] (a=arg, b=arg)
-std/string.kira:65:17 [call] (a=arg, b=arg)
-std/string.kira:82:16 [call] (a=arg, b=arg)
-std/string.kira:95:16 [call] (a=arg, b=arg)
-std/string.kira:104:16 [call] (haystack=arg, needle=arg, from=arg)
-std/string.kira:114:17 [call] (haystack=arg, needle=arg, from=arg)
-std/string.kira:127:17 [call] (haystack=arg, needle=arg)
-std/string.kira:136:16 [call] (s=arg, mode=arg)
-std/string.kira:142:16 [call] (s=arg, mode=arg)
-std/string.kira:148:16 [call] (s=arg, mode=arg)
-std/string.kira:154:16 [call] (s=arg)
-std/string.kira:162:16 [call] (s=arg)
-std/string.kira:170:16 [call] (s=arg)
-std/string.kira:178:16 [call] (s=arg)
-std/string.kira:188:16 [call] (a=arg, b=arg)
-std/string.kira:188:26 [call] (s=arg)
-std/string.kira:188:43 [call] (s=arg)
-std/string.kira:198:16 [call] (s=arg, from=arg, to=arg)
-std/string.kira:211:13 [call] (value=arg)
-std/string.kira:216:21 [call] (haystack=arg, needle=arg, from=arg)
-std/string.kira:218:17 [call] (value=arg)
-std/string.kira:220:13 [call] (value=arg)
-std/string.kira:234:16 [call] (a=arg, b=arg)
+std/string.kira:48:16 [call] (a=arg, b=arg)
+std/string.kira:60:17 [call] (a=arg, b=arg)
+std/string.kira:77:16 [call] (a=arg, b=arg)
+std/string.kira:90:16 [call] (a=arg, b=arg)
+std/string.kira:99:16 [call] (haystack=arg, needle=arg, from=arg)
+std/string.kira:109:17 [call] (haystack=arg, needle=arg, from=arg)
+std/string.kira:122:17 [call] (haystack=arg, needle=arg)
+std/string.kira:131:16 [call] (s=arg, mode=arg)
+std/string.kira:137:16 [call] (s=arg, mode=arg)
+std/string.kira:143:16 [call] (s=arg, mode=arg)
+std/string.kira:149:16 [call] (s=arg)
+std/string.kira:157:16 [call] (s=arg)
+std/string.kira:165:16 [call] (s=arg)
+std/string.kira:173:16 [call] (s=arg)
+std/string.kira:183:16 [call] (a=arg, b=arg)
+std/string.kira:183:26 [call] (s=arg)
+std/string.kira:183:43 [call] (s=arg)
+std/string.kira:193:16 [call] (s=arg, from=arg, to=arg)
+std/string.kira:206:13 [call] (value=arg)
+std/string.kira:211:21 [call] (haystack=arg, needle=arg, from=arg)
+std/string.kira:213:17 [call] (value=arg)
+std/string.kira:215:13 [call] (value=arg)
+std/string.kira:229:16 [call] (a=arg, b=arg)
 std/test.kira:98:19 [call] (s=arg)
 std/test.kira:99:20 [call] (s=arg)
 std/test.kira:99:45 [call] (f=arg)
@@ -27858,82 +27736,82 @@ std/traits.category.kira:81:12 [call] ()
 std/traits.category.kira:81:31 [call] ()
 std/traits.category.kira:81:47 [call] ()
 std/traits.category.kira:172:12 [call] ()
-std/traits.hash.kira:81:12 [call] (acc=arg, next=arg)
-std/traits.hash.kira:81:25 [call] ()
-std/traits.hash.kira:107:12 [call] (v=arg)
-std/traits.hash.kira:119:12 [call] (v=arg)
-std/traits.hash.kira:123:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:123:29 [call] ()
-std/traits.hash.kira:127:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:127:29 [call] ()
-std/traits.hash.kira:131:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:131:29 [call] ()
-std/traits.hash.kira:135:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:135:29 [call] ()
-std/traits.hash.kira:139:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:139:29 [call] ()
-std/traits.hash.kira:143:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:143:29 [call] ()
-std/traits.hash.kira:147:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:147:29 [call] ()
-std/traits.hash.kira:151:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:151:29 [call] ()
-std/traits.hash.kira:155:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:155:29 [call] ()
-std/traits.hash.kira:159:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:159:29 [call] ()
-std/traits.hash.kira:163:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:163:29 [call] ()
-std/traits.hash.kira:167:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:167:29 [call] ()
-std/traits.hash.kira:171:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:171:29 [call] ()
-std/traits.hash.kira:175:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:175:29 [call] ()
-std/traits.hash.kira:175:42 [call] (v=arg)
-std/traits.hash.kira:179:16 [call] (acc=arg, next=arg)
-std/traits.hash.kira:179:29 [call] ()
-std/traits.hash.kira:179:42 [call] (v=arg)
-std/traits.hash.kira:187:25 [call] ()
-std/traits.hash.kira:190:17 [call] (acc=arg, next=arg)
-std/unicode.kira:51:12 [call] (cp=arg)
-std/unicode.kira:66:13 [call] (value=arg)
-std/unicode.kira:70:13 [call] (value=arg)
-std/unicode.kira:75:13 [call] (value=arg)
-std/unicode.kira:81:13 [call] (value=arg)
-std/unicode.kira:95:11 [call] (s=arg, target=arg)
-std/unicode.kira:116:11 [call] (s=arg, target=arg)
-std/unicode.kira:120:23 [call] (cp=arg)
-std/unicode.kira:122:29 [call] (cp=arg)
-std/unicode.kira:124:29 [call] (cp=arg)
-std/unicode.kira:126:29 [call] (cp=arg)
-std/unicode.kira:136:12 [call] (los=arg, his=arg, cp=arg)
-std/unicode.kira:146:12 [call] (los=arg, his=arg, cp=arg)
-std/unicode.kira:159:15 [call] (s=arg, pred=arg)
-std/unicode.kira:179:12 [call] (cp=arg)
-std/unicode.kira:181:29 [call] (cp=arg)
-std/unicode.kira:190:12 [call] (cp=arg)
-std/unicode.kira:193:20 [call] (cp=arg)
-std/unicode.kira:204:11 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
-std/unicode.kira:209:19 [call] (keys=arg, vals=arg, cp=arg)
-std/unicode.kira:210:36 [call] (cp=arg)
-std/unicode.kira:211:33 [call] (cp=arg)
-std/unicode.kira:221:11 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
-std/unicode.kira:226:19 [call] (keys=arg, vals=arg, cp=arg)
-std/unicode.kira:227:36 [call] (cp=arg)
-std/unicode.kira:228:33 [call] (cp=arg)
-std/unicode.kira:241:22 [call] (s=arg)
-std/unicode.kira:242:13 [call] ()
-std/unicode.kira:246:21 [call] (cp=arg)
-std/unicode.kira:258:22 [call] (s=arg)
-std/unicode.kira:259:13 [call] ()
-std/unicode.kira:264:42 [call] (codepoints=arg, i=arg)
-std/unicode.kira:265:25 [call] (cp=arg)
-std/unicode.kira:267:25 [call] (cp=arg)
-std/unicode.kira:279:22 [call] (s=arg)
-std/unicode.kira:280:13 [call] ()
-std/unicode.kira:285:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
-std/unicode.kira:291:29 [call] (cp=arg)
+std/traits.hash.kira:79:12 [call] (acc=arg, next=arg)
+std/traits.hash.kira:79:25 [call] ()
+std/traits.hash.kira:105:12 [call] (v=arg)
+std/traits.hash.kira:117:12 [call] (v=arg)
+std/traits.hash.kira:121:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:121:29 [call] ()
+std/traits.hash.kira:125:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:125:29 [call] ()
+std/traits.hash.kira:129:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:129:29 [call] ()
+std/traits.hash.kira:133:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:133:29 [call] ()
+std/traits.hash.kira:137:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:137:29 [call] ()
+std/traits.hash.kira:141:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:141:29 [call] ()
+std/traits.hash.kira:145:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:145:29 [call] ()
+std/traits.hash.kira:149:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:149:29 [call] ()
+std/traits.hash.kira:153:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:153:29 [call] ()
+std/traits.hash.kira:157:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:157:29 [call] ()
+std/traits.hash.kira:161:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:161:29 [call] ()
+std/traits.hash.kira:165:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:165:29 [call] ()
+std/traits.hash.kira:169:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:169:29 [call] ()
+std/traits.hash.kira:173:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:173:29 [call] ()
+std/traits.hash.kira:173:42 [call] (v=arg)
+std/traits.hash.kira:177:16 [call] (acc=arg, next=arg)
+std/traits.hash.kira:177:29 [call] ()
+std/traits.hash.kira:177:42 [call] (v=arg)
+std/traits.hash.kira:185:25 [call] ()
+std/traits.hash.kira:188:17 [call] (acc=arg, next=arg)
+std/unicode.kira:48:12 [call] (cp=arg)
+std/unicode.kira:63:13 [call] (value=arg)
+std/unicode.kira:67:13 [call] (value=arg)
+std/unicode.kira:72:13 [call] (value=arg)
+std/unicode.kira:78:13 [call] (value=arg)
+std/unicode.kira:92:11 [call] (s=arg, target=arg)
+std/unicode.kira:113:11 [call] (s=arg, target=arg)
+std/unicode.kira:117:23 [call] (cp=arg)
+std/unicode.kira:119:29 [call] (cp=arg)
+std/unicode.kira:121:29 [call] (cp=arg)
+std/unicode.kira:123:29 [call] (cp=arg)
+std/unicode.kira:133:12 [call] (los=arg, his=arg, cp=arg)
+std/unicode.kira:143:12 [call] (los=arg, his=arg, cp=arg)
+std/unicode.kira:156:15 [call] (s=arg, pred=arg)
+std/unicode.kira:176:12 [call] (cp=arg)
+std/unicode.kira:178:29 [call] (cp=arg)
+std/unicode.kira:187:12 [call] (cp=arg)
+std/unicode.kira:190:20 [call] (cp=arg)
+std/unicode.kira:201:11 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
+std/unicode.kira:206:19 [call] (keys=arg, vals=arg, cp=arg)
+std/unicode.kira:207:36 [call] (cp=arg)
+std/unicode.kira:208:33 [call] (cp=arg)
+std/unicode.kira:218:11 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
+std/unicode.kira:223:19 [call] (keys=arg, vals=arg, cp=arg)
+std/unicode.kira:224:36 [call] (cp=arg)
+std/unicode.kira:225:33 [call] (cp=arg)
+std/unicode.kira:238:22 [call] (s=arg)
+std/unicode.kira:239:13 [call] ()
+std/unicode.kira:243:21 [call] (cp=arg)
+std/unicode.kira:255:22 [call] (s=arg)
+std/unicode.kira:256:13 [call] ()
+std/unicode.kira:261:42 [call] (codepoints=arg, i=arg)
+std/unicode.kira:262:25 [call] (cp=arg)
+std/unicode.kira:264:25 [call] (cp=arg)
+std/unicode.kira:276:22 [call] (s=arg)
+std/unicode.kira:277:13 [call] ()
+std/unicode.kira:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
+std/unicode.kira:288:29 [call] (cp=arg)
 
 ## resolved_callees (284)
 003_collections_lambdas.kira:18:5 [call] std.console::println
@@ -28051,27 +27929,27 @@ std/console.kira:13:12 [call] std.io::stderr_handle
 std/console.kira:19:12 [call] std.io::stdin_handle
 std/console.kira:27:5 [call] std.io::file_handle::write_all trait=writer recv
 std/console.kira:43:5 [call] std.io::file_handle::write_all trait=writer recv
-std/fmt.kira:39:12 [call] std.intrinsics::rt_str_len_scalars
-std/fmt.kira:42:12 [call] std.intrinsics::rt_str_repeat_char
-std/fmt.kira:98:24 [call] std.intrinsics::rt_str_truncate_scalars
-std/fmt.kira:110:18 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:111:19 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:115:13 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:115:27 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:128:16 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:128:30 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:138:16 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:138:30 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:138:44 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:175:20 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:175:34 [call] std.intrinsics::rt_str_concat
-std/fmt.kira:193:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
-std/fmt.kira:202:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
-std/fmt.kira:235:18 [call] std.intrinsics::rt_fmt_radix_digits
-std/fmt.kira:248:18 [call] std.intrinsics::rt_fmt_radix_digits
-std/fmt.kira:261:18 [call] std.intrinsics::rt_fmt_f64_fixed
-std/fmt.kira:275:18 [call] std.intrinsics::rt_fmt_f64_sci
-std/fmt.kira:288:18 [call] std.intrinsics::rt_fmt_f64_general
+std/fmt.kira:32:12 [call] std.intrinsics::rt_str_len_scalars
+std/fmt.kira:35:12 [call] std.intrinsics::rt_str_repeat_char
+std/fmt.kira:91:24 [call] std.intrinsics::rt_str_truncate_scalars
+std/fmt.kira:103:18 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:104:19 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:108:13 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:108:27 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:121:16 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:121:30 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:131:16 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:131:30 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:131:44 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:168:20 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:168:34 [call] std.intrinsics::rt_str_concat
+std/fmt.kira:186:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
+std/fmt.kira:195:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
+std/fmt.kira:228:18 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.kira:241:18 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.kira:254:18 [call] std.intrinsics::rt_fmt_f64_fixed
+std/fmt.kira:268:18 [call] std.intrinsics::rt_fmt_f64_sci
+std/fmt.kira:281:18 [call] std.intrinsics::rt_fmt_f64_general
 std/io.kira:52:23 [call] std.io::file_handle::read trait=reader recv
 std/io.kira:57:17 [call] std.list::list::push$list_byte_ recv
 std/io.kira:57:17 [call] std.list::list::push$list_byte_ recv
@@ -28196,30 +28074,30 @@ std/mem.kira:55:5 [call] std.intrinsics::rt_free
 std/mem.kira:55:5 [call] std.intrinsics::rt_free
 std/option.kira:26:22 [call] std.panic::panic
 std/result.kira:21:24 [call] std.panic::panic
-std/string.kira:162:16 [call] std.unicode::to_uppercase
-std/string.kira:170:16 [call] std.unicode::to_lowercase
-std/string.kira:178:16 [call] std.unicode::fold_case
-std/string.kira:188:26 [call] std.unicode::fold_case
-std/string.kira:188:43 [call] std.unicode::fold_case
-std/string.kira:211:13 [call] std.list::list::push$list_str_ recv
-std/string.kira:218:17 [call] std.list::list::push$list_str_ recv
-std/string.kira:220:13 [call] std.list::list::push$list_str_ recv
+std/string.kira:157:16 [call] std.unicode::to_uppercase
+std/string.kira:165:16 [call] std.unicode::to_lowercase
+std/string.kira:173:16 [call] std.unicode::fold_case
+std/string.kira:183:26 [call] std.unicode::fold_case
+std/string.kira:183:43 [call] std.unicode::fold_case
+std/string.kira:206:13 [call] std.list::list::push$list_str_ recv
+std/string.kira:213:17 [call] std.list::list::push$list_str_ recv
+std/string.kira:215:13 [call] std.list::list::push$list_str_ recv
 std/test.kira:98:19 [call] std.console::println
 std/test.kira:99:20 [call] std.console::println
 std/test.kira:134:17 [call] std.console::println
 std/test.kira:181:5 [call] std.console::println
-std/traits.hash.kira:107:12 [call] std.intrinsics::rt_bitcast_f64_to_u64
-std/traits.hash.kira:119:12 [call] std.intrinsics::rt_bitcast_f32_to_u32
-std/unicode.kira:66:13 [call] std.list::list::push$list_uint32_ recv
-std/unicode.kira:70:13 [call] std.list::list::push$list_uint32_ recv
-std/unicode.kira:75:13 [call] std.list::list::push$list_uint32_ recv
-std/unicode.kira:81:13 [call] std.list::list::push$list_uint32_ recv
-std/unicode.kira:95:11 [call] std.algo::binary_search$uint32
-std/unicode.kira:116:11 [call] std.algo::binary_search$uint32
-std/unicode.kira:159:15 [call] std.algo::partition_point$uint32
-std/unicode.kira:242:13 [call] std.list::list::len$list_uint32_ recv
-std/unicode.kira:259:13 [call] std.list::list::len$list_uint32_ recv
-std/unicode.kira:280:13 [call] std.list::list::len$list_uint32_ recv
+std/traits.hash.kira:105:12 [call] std.intrinsics::rt_bitcast_f64_to_u64
+std/traits.hash.kira:117:12 [call] std.intrinsics::rt_bitcast_f32_to_u32
+std/unicode.kira:63:13 [call] std.list::list::push$list_uint32_ recv
+std/unicode.kira:67:13 [call] std.list::list::push$list_uint32_ recv
+std/unicode.kira:72:13 [call] std.list::list::push$list_uint32_ recv
+std/unicode.kira:78:13 [call] std.list::list::push$list_uint32_ recv
+std/unicode.kira:92:11 [call] std.algo::binary_search$uint32
+std/unicode.kira:113:11 [call] std.algo::binary_search$uint32
+std/unicode.kira:156:15 [call] std.algo::partition_point$uint32
+std/unicode.kira:239:13 [call] std.list::list::len$list_uint32_ recv
+std/unicode.kira:256:13 [call] std.list::list::len$list_uint32_ recv
+std/unicode.kira:277:13 [call] std.list::list::len$list_uint32_ recv
 
 ## resolved_fn_values (4)
 089_elaboration_snapshot_gaps.kira:112:13 [ident] codegen_stress.elaboration_snapshot_gaps::triple
@@ -28303,14 +28181,14 @@ std/traits.category.kira:192:8 [binary] std.string::str::eq recv
 std/traits.category.kira:192:24 [binary] std.string::str::eq recv
 std/traits.category.kira:192:40 [binary] std.string::str::eq recv
 std/traits.category.kira:194:8 [binary] std.string::str::eq recv
-std/unicode.kira:122:23 [binary] std.string::str::add recv
-std/unicode.kira:124:23 [binary] std.string::str::add recv
-std/unicode.kira:126:23 [binary] std.string::str::add recv
-std/unicode.kira:246:15 [binary] std.string::str::add recv
-std/unicode.kira:265:19 [binary] std.string::str::add recv
-std/unicode.kira:267:19 [binary] std.string::str::add recv
-std/unicode.kira:289:23 [binary] std.string::str::add recv
-std/unicode.kira:291:23 [binary] std.string::str::add recv
+std/unicode.kira:119:23 [binary] std.string::str::add recv
+std/unicode.kira:121:23 [binary] std.string::str::add recv
+std/unicode.kira:123:23 [binary] std.string::str::add recv
+std/unicode.kira:243:15 [binary] std.string::str::add recv
+std/unicode.kira:262:19 [binary] std.string::str::add recv
+std/unicode.kira:264:19 [binary] std.string::str::add recv
+std/unicode.kira:286:23 [binary] std.string::str::add recv
+std/unicode.kira:288:23 [binary] std.string::str::add recv
 
 ## ord_dispatch_result_types (1)
 089_elaboration_snapshot_gaps.kira:72:8 [binary] ordering
@@ -28371,10 +28249,10 @@ std/iter.kira:176:21 [index] std.list::list::at recv
 std/iter.kira:184:22 [index] std.list::list::at recv
 std/list.kira:58:22 [index] std.list::list::at recv
 std/list.kira:64:22 [index] std.list::list::at recv
-std/unicode.kira:246:31 [index] std.list::list::at$list_uint32_$usize recv
-std/unicode.kira:263:18 [index] std.list::list::at$list_uint32_$usize recv
-std/unicode.kira:264:58 [index] std.list::list::at$list_uint32_$range_usize_ recv
-std/unicode.kira:284:18 [index] std.list::list::at$list_uint32_$usize recv
+std/unicode.kira:243:31 [index] std.list::list::at$list_uint32_$usize recv
+std/unicode.kira:260:18 [index] std.list::list::at$list_uint32_$usize recv
+std/unicode.kira:261:58 [index] std.list::list::at$list_uint32_$range_usize_ recv
+std/unicode.kira:281:18 [index] std.list::list::at$list_uint32_$usize recv
 
 ## index_set_dispatches (8)
 052_element_assignment.kira:42:9 [index] std.list::list::set_at$list_int32_$usize recv
@@ -28428,9 +28306,9 @@ std/algo.kira:1948:47 [array] std.list::list::from_array from array[(usize, usiz
 std/algo.kira:2108:31 [array] std.list::list::from_array from array[slice[T], 0]
 std/algo.kira:2128:31 [array] std.list::list::from_array from array[slice[T], 0]
 std/iter.kira:197:19 [array] std.list::list::from_array from array[T, 0]
-std/string.kira:209:33 [array] std.list::list::from_array$0$list_str_ from array[str, 0]
+std/string.kira:204:33 [array] std.list::list::from_array$0$list_str_ from array[str, 0]
 std/test.kira:108:23 [array] std.list::list::from_array$1$list_test_suite_ from array[test_suite, 1]
-std/unicode.kira:61:29 [array] std.list::list::from_array$0$list_uint32_ from array[uint32, 0]
+std/unicode.kira:58:29 [array] std.list::list::from_array$0$list_uint32_ from array[uint32, 0]
 
 ## interp_dispatches (21)
 003_collections_lambdas.kira:18:15 [ident] show spec=' ' value=int32
@@ -28481,36 +28359,36 @@ std/test.kira:181:49 [ident] show spec=' ' value=int32
 089_elaboration_snapshot_gaps.kira:97:18 [array] list=list[int32] new=std.list::list::new$list_int32_ push=std.list::list::push$list_int32_
 
 ## layout_queries (30)
-std/mem.kira:30:47 [call] size of _
-std/mem.kira:30:47 [call] size of int32
-std/mem.kira:30:47 [call] size of int64
-std/mem.kira:30:47 [call] size of str
-std/mem.kira:30:47 [call] size of test_suite
-std/mem.kira:30:47 [call] size of uint32
-std/mem.kira:43:53 [call] size of _
-std/mem.kira:43:53 [call] size of byte
-std/mem.kira:43:53 [call] size of int32
-std/mem.kira:43:53 [call] size of int64
-std/mem.kira:43:53 [call] size of str
-std/mem.kira:43:53 [call] size of test_suite
-std/mem.kira:43:53 [call] size of uint32
-std/mem.kira:44:53 [call] size of _
-std/mem.kira:44:53 [call] size of byte
-std/mem.kira:44:53 [call] size of int32
-std/mem.kira:44:53 [call] size of int64
-std/mem.kira:44:53 [call] size of str
-std/mem.kira:44:53 [call] size of test_suite
-std/mem.kira:44:53 [call] size of uint32
-std/mem.kira:55:55 [call] size of (usize, usize)
-std/mem.kira:55:55 [call] size of _
-std/mem.kira:55:55 [call] size of byte
-std/mem.kira:55:55 [call] size of int32
-std/mem.kira:55:55 [call] size of int64
-std/mem.kira:55:55 [call] size of str
-std/mem.kira:55:55 [call] size of test_case
-std/mem.kira:55:55 [call] size of test_suite
-std/mem.kira:55:55 [call] size of uint32
-std/mem.kira:55:55 [call] size of usize
+std/mem.kira:30:32 [call] size of _
+std/mem.kira:30:32 [call] size of int32
+std/mem.kira:30:32 [call] size of int64
+std/mem.kira:30:32 [call] size of str
+std/mem.kira:30:32 [call] size of test_suite
+std/mem.kira:30:32 [call] size of uint32
+std/mem.kira:43:38 [call] size of _
+std/mem.kira:43:38 [call] size of byte
+std/mem.kira:43:38 [call] size of int32
+std/mem.kira:43:38 [call] size of int64
+std/mem.kira:43:38 [call] size of str
+std/mem.kira:43:38 [call] size of test_suite
+std/mem.kira:43:38 [call] size of uint32
+std/mem.kira:44:38 [call] size of _
+std/mem.kira:44:38 [call] size of byte
+std/mem.kira:44:38 [call] size of int32
+std/mem.kira:44:38 [call] size of int64
+std/mem.kira:44:38 [call] size of str
+std/mem.kira:44:38 [call] size of test_suite
+std/mem.kira:44:38 [call] size of uint32
+std/mem.kira:55:40 [call] size of (usize, usize)
+std/mem.kira:55:40 [call] size of _
+std/mem.kira:55:40 [call] size of byte
+std/mem.kira:55:40 [call] size of int32
+std/mem.kira:55:40 [call] size of int64
+std/mem.kira:55:40 [call] size of str
+std/mem.kira:55:40 [call] size of test_case
+std/mem.kira:55:40 [call] size of test_suite
+std/mem.kira:55:40 [call] size of uint32
+std/mem.kira:55:40 [call] size of usize
 
 ## ptr_casts (28)
 std/mem.kira:31:12 [call] *mut int32
@@ -28597,64 +28475,64 @@ std/list.kira:270:19 [ident] 2
 std/list.kira:270:19 [ident] 3
 std/list.kira:270:19 [ident] 4
 std/list.kira:270:19 [ident] 5
-std/unicode.kira:136:35 [ident] 147
-std/unicode.kira:136:60 [ident] 147
-std/unicode.kira:146:44 [ident] 376
-std/unicode.kira:147:31 [ident] 376
-std/unicode.kira:204:49 [ident] 102
-std/unicode.kira:204:87 [ident] 102
-std/unicode.kira:205:32 [ident] 102
-std/unicode.kira:205:68 [ident] 102
-std/unicode.kira:206:32 [ident] 102
-std/unicode.kira:206:68 [ident] 102
-std/unicode.kira:209:58 [ident] 1505
-std/unicode.kira:209:98 [ident] 1505
-std/unicode.kira:221:49 [ident] 1
-std/unicode.kira:221:87 [ident] 1
-std/unicode.kira:222:32 [ident] 1
-std/unicode.kira:222:68 [ident] 1
-std/unicode.kira:223:32 [ident] 1
-std/unicode.kira:223:68 [ident] 1
-std/unicode.kira:226:58 [ident] 1488
-std/unicode.kira:226:98 [ident] 1488
-std/unicode.kira:264:18 [ident] 931
-std/unicode.kira:265:35 [ident] 962
-std/unicode.kira:285:47 [ident] 1585
-std/unicode.kira:285:73 [ident] 1585
-std/unicode.kira:286:30 [ident] 1585
-std/unicode.kira:286:54 [ident] 1585
-std/unicode.kira:287:30 [ident] 1585
-std/unicode.kira:287:54 [ident] 1585
+std/unicode.kira:133:35 [ident] 147
+std/unicode.kira:133:60 [ident] 147
+std/unicode.kira:143:44 [ident] 376
+std/unicode.kira:144:31 [ident] 376
+std/unicode.kira:201:49 [ident] 102
+std/unicode.kira:201:87 [ident] 102
+std/unicode.kira:202:32 [ident] 102
+std/unicode.kira:202:68 [ident] 102
+std/unicode.kira:203:32 [ident] 102
+std/unicode.kira:203:68 [ident] 102
+std/unicode.kira:206:58 [ident] 1505
+std/unicode.kira:206:98 [ident] 1505
+std/unicode.kira:218:49 [ident] 1
+std/unicode.kira:218:87 [ident] 1
+std/unicode.kira:219:32 [ident] 1
+std/unicode.kira:219:68 [ident] 1
+std/unicode.kira:220:32 [ident] 1
+std/unicode.kira:220:68 [ident] 1
+std/unicode.kira:223:58 [ident] 1488
+std/unicode.kira:223:98 [ident] 1488
+std/unicode.kira:261:18 [ident] 931
+std/unicode.kira:262:35 [ident] 962
+std/unicode.kira:282:47 [ident] 1585
+std/unicode.kira:282:73 [ident] 1585
+std/unicode.kira:283:30 [ident] 1585
+std/unicode.kira:283:54 [ident] 1585
+std/unicode.kira:284:30 [ident] 1585
+std/unicode.kira:284:54 [ident] 1585
 
 ## folded_comptime_calls (0)
 
 ## static_global_refs (26)
-std/unicode.kira:136:23 [ident] static$CASED_LO$0
-std/unicode.kira:136:48 [ident] static$CASED_HI$1
-std/unicode.kira:146:23 [ident] static$CASE_IGNORABLE_LO$2
-std/unicode.kira:147:10 [ident] static$CASE_IGNORABLE_HI$3
-std/unicode.kira:204:31 [ident] static$UPPER_FULL_KEY$4
-std/unicode.kira:204:67 [ident] static$UPPER_FULL_COUNT$5
-std/unicode.kira:205:14 [ident] static$UPPER_FULL_CP0$6
-std/unicode.kira:205:50 [ident] static$UPPER_FULL_CP1$7
-std/unicode.kira:206:14 [ident] static$UPPER_FULL_CP2$8
-std/unicode.kira:206:50 [ident] static$UPPER_FULL_CP3$9
-std/unicode.kira:209:38 [ident] static$SIMPLE_UPPER_KEY$10
-std/unicode.kira:209:78 [ident] static$SIMPLE_UPPER_VAL$11
-std/unicode.kira:221:31 [ident] static$LOWER_FULL_KEY$12
-std/unicode.kira:221:67 [ident] static$LOWER_FULL_COUNT$13
-std/unicode.kira:222:14 [ident] static$LOWER_FULL_CP0$14
-std/unicode.kira:222:50 [ident] static$LOWER_FULL_CP1$15
-std/unicode.kira:223:14 [ident] static$LOWER_FULL_CP2$16
-std/unicode.kira:223:50 [ident] static$LOWER_FULL_CP3$17
-std/unicode.kira:226:38 [ident] static$SIMPLE_LOWER_KEY$18
-std/unicode.kira:226:78 [ident] static$SIMPLE_LOWER_VAL$19
-std/unicode.kira:285:35 [ident] static$FOLD_KEY$20
-std/unicode.kira:285:59 [ident] static$FOLD_COUNT$21
-std/unicode.kira:286:18 [ident] static$FOLD_CP0$22
-std/unicode.kira:286:42 [ident] static$FOLD_CP1$23
-std/unicode.kira:287:18 [ident] static$FOLD_CP2$24
-std/unicode.kira:287:42 [ident] static$FOLD_CP3$25
+std/unicode.kira:133:23 [ident] static$CASED_LO$0
+std/unicode.kira:133:48 [ident] static$CASED_HI$1
+std/unicode.kira:143:23 [ident] static$CASE_IGNORABLE_LO$2
+std/unicode.kira:144:10 [ident] static$CASE_IGNORABLE_HI$3
+std/unicode.kira:201:31 [ident] static$UPPER_FULL_KEY$4
+std/unicode.kira:201:67 [ident] static$UPPER_FULL_COUNT$5
+std/unicode.kira:202:14 [ident] static$UPPER_FULL_CP0$6
+std/unicode.kira:202:50 [ident] static$UPPER_FULL_CP1$7
+std/unicode.kira:203:14 [ident] static$UPPER_FULL_CP2$8
+std/unicode.kira:203:50 [ident] static$UPPER_FULL_CP3$9
+std/unicode.kira:206:38 [ident] static$SIMPLE_UPPER_KEY$10
+std/unicode.kira:206:78 [ident] static$SIMPLE_UPPER_VAL$11
+std/unicode.kira:218:31 [ident] static$LOWER_FULL_KEY$12
+std/unicode.kira:218:67 [ident] static$LOWER_FULL_COUNT$13
+std/unicode.kira:219:14 [ident] static$LOWER_FULL_CP0$14
+std/unicode.kira:219:50 [ident] static$LOWER_FULL_CP1$15
+std/unicode.kira:220:14 [ident] static$LOWER_FULL_CP2$16
+std/unicode.kira:220:50 [ident] static$LOWER_FULL_CP3$17
+std/unicode.kira:223:38 [ident] static$SIMPLE_LOWER_KEY$18
+std/unicode.kira:223:78 [ident] static$SIMPLE_LOWER_VAL$19
+std/unicode.kira:282:35 [ident] static$FOLD_KEY$20
+std/unicode.kira:282:59 [ident] static$FOLD_COUNT$21
+std/unicode.kira:283:18 [ident] static$FOLD_CP0$22
+std/unicode.kira:283:42 [ident] static$FOLD_CP1$23
+std/unicode.kira:284:18 [ident] static$FOLD_CP2$24
+std/unicode.kira:284:42 [ident] static$FOLD_CP3$25
 
 ## static_if_taken_branch (0)
 
@@ -29231,12 +29109,6 @@ elided_contracts 0
 format_spec format_spec
 align_mode align_mode
 sign_mode sign_mode
-box_u64 _
-box_u32 _
-box_u8 _
-box_usize _
-box_bool _
-box_f64 _
 str str
 int64 int64
 uint64 uint64

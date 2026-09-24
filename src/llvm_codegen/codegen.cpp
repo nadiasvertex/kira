@@ -254,6 +254,27 @@ using kira::decode_string_literal;
   }
 }
 
+/// Maps an intrinsic's wire-level ABI kind (`src/intrinsics.h`'s
+/// `intrinsic_wire_kind`) to the LLVM type its `kira_rt_*` C-ABI symbol
+/// actually declares that parameter/return as.
+[[nodiscard]] auto llvm_type_for(llvm::LLVMContext &ctx,
+                                 kira::intrinsic_wire_kind kind)
+    -> llvm::Type * {
+  switch (kind) {
+  case kira::intrinsic_wire_kind::ptr:
+    return llvm::PointerType::get(ctx, 0);
+  case kira::intrinsic_wire_kind::i32:
+    return llvm::Type::getInt32Ty(ctx);
+  case kira::intrinsic_wire_kind::i64:
+    return llvm::Type::getInt64Ty(ctx);
+  case kira::intrinsic_wire_kind::f32:
+    return llvm::Type::getFloatTy(ctx);
+  case kira::intrinsic_wire_kind::f64:
+    return llvm::Type::getDoubleTy(ctx);
+  }
+  return llvm::PointerType::get(ctx, 0);
+}
+
 /// Unwraps `&T`/`&mut T` down to `T` — mirrors `semantic::check.cpp`'s own
 /// `strip_refs`. A parameter/local/field declared `&T` is represented
 /// identically to a bare `T` for every `is_heap_type` kind (the same
@@ -1857,16 +1878,44 @@ private:
         // implemented in `src/runtime/io.h`).
         if (const auto intrinsic_id = kira::intrinsic_index_of(ref.name);
             intrinsic_id.has_value()) {
+          auto *callee = intrinsic_fns_.at(*intrinsic_id);
           auto args = std::vector<llvm::Value *>{};
           args.reserve(call.args.size());
-          for (const auto &arg : call.args) {
-            auto value = compile_expr(*arg);
+          for (size_t i = 0; i < call.args.size(); ++i) {
+            auto value = compile_expr(*call.args[i]);
             if (!value.has_value()) {
               return std::unexpected(value.error());
             }
-            args.push_back(*value);
+            // Every intrinsic parameter already crosses at its own wire
+            // kind (`src/intrinsics.h`'s `intrinsic_wire_kind`), matching
+            // what `compile_expr` produces for that Kira type — except
+            // `bool`/`uint8`, which widen to the wire type's `i32` (see
+            // that enum's doc comment). `getParamType` is the source of
+            // truth for what's actually expected here.
+            auto *arg = *value;
+            auto *expected = callee->getFunctionType()->getParamType(
+                static_cast<unsigned>(i));
+            if (arg->getType() != expected) {
+              arg = builder_.CreateZExt(arg, expected);
+            }
+            args.push_back(arg);
           }
-          return builder_.CreateCall(intrinsic_fns_.at(*intrinsic_id), args);
+          auto *raw_result = builder_.CreateCall(callee, args);
+          // Symmetric narrowing on the way back out: a `bool`-returning
+          // intrinsic's wire return is `i32`, which needs a `trunc` down
+          // to Kira's own `i1` bool representation before this value can
+          // flow into ordinary bool-typed code (a branch condition, a
+          // stored `bool` local, ...).
+          if (raw_result->getType()->isIntegerTy(32)) {
+            auto expected = storage_type_for(call.type, call.span);
+            if (!expected.has_value()) {
+              return std::unexpected(expected.error());
+            }
+            if (*expected != raw_result->getType()) {
+              return builder_.CreateTrunc(raw_result, *expected);
+            }
+          }
+          return raw_result;
         }
 
         const auto found = functions_.find(resolve_callee_key(ref));
@@ -3127,15 +3176,13 @@ private:
     if (!literal.has_value()) {
       return std::unexpected(literal.error());
     }
-    auto *boxed = builder_.CreateCall(intrinsic_fns_.at(*intrinsic_id),
-                                      {value, *literal}, "pat.str.eq");
-    // `rt_str_eq` yields a *boxed* bool (`box_bool` in `std/string.kira`);
-    // unwrap its single slot the same way `.v` does.
-    auto *flag =
-        builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                            slot_address(boxed, size_t{0}), "pat.str.eq.v");
+    // `rt_str_eq` returns its `bool` result directly now, widened to `i32`
+    // on the wire (`src/intrinsics.h`'s `intrinsic_wire_kind`) rather than
+    // boxed in a 1-slot struct — narrow it back to Kira's `i1` bool.
+    auto *flag = builder_.CreateCall(intrinsic_fns_.at(*intrinsic_id),
+                                     {value, *literal}, "pat.str.eq");
     return builder_.CreateICmpNE(
-        flag, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
+        flag, llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx_), 0),
         "pat.str.eq.bool");
   }
 
@@ -4330,21 +4377,27 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
       llvm::Function::ExternalLinkage, kAllocSymbolName, llvm_module);
 
   // `intrinsic def` declarations (src/intrinsics.h): fixed native entry
-  // points, each taking/returning opaque heap pointers (see
-  // src/runtime/io.h's and src/runtime/fmt.h's doc comments for the exact
-  // layout each argument's Kira type maps to). Declared once here, the same
-  // way the three runtime externs just above are, and resolved the same way
-  // (JIT: process-symbol lookup against `//src/runtime:runtime`, which now
-  // also builds `io.cpp`/`fmt.cpp`; AOT: ordinary static linking against
-  // that same archive).
+  // points, each parameter/return typed at its own wire kind
+  // (`kira::intrinsic_wire_kind` — see src/runtime/io.h's, fmt.h's and
+  // string.h's doc comments for the exact layout/type each argument's Kira
+  // type maps to). Declared once here, the same way the three runtime
+  // externs just above are, and resolved the same way (JIT: process-symbol
+  // lookup against `//src/runtime:runtime`, which now also builds
+  // `io.cpp`/`fmt.cpp`; AOT: ordinary static linking against that same
+  // archive).
   auto *ptr_ty = llvm::PointerType::get(ctx, 0);
   auto intrinsic_fns =
       std::array<llvm::Function *, kira::known_intrinsic_names.size()>{};
   for (size_t i = 0; i < kira::known_intrinsic_names.size(); ++i) {
-    auto param_types =
-        std::vector<llvm::Type *>(kira::known_intrinsic_arities[i], ptr_ty);
+    auto param_types = std::vector<llvm::Type *>{};
+    param_types.reserve(kira::known_intrinsic_arities[i]);
+    for (size_t p = 0; p < kira::known_intrinsic_arities[i]; ++p) {
+      param_types.push_back(
+          llvm_type_for(ctx, kira::known_intrinsic_param_kinds[i][p]));
+    }
+    auto *ret_ty = llvm_type_for(ctx, kira::known_intrinsic_return_kinds[i]);
     auto *fn_type =
-        llvm::FunctionType::get(ptr_ty, param_types, /*isVarArg=*/false);
+        llvm::FunctionType::get(ret_ty, param_types, /*isVarArg=*/false);
     const auto symbol_name =
         std::format("kira_{}", kira::known_intrinsic_names[i]);
     intrinsic_fns[i] = llvm::Function::Create(

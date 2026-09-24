@@ -738,8 +738,8 @@ struct functor_instance {
 
 /// Type ids for `std.fmt`'s runtime-support types (`src/std/fmt.kira`),
 /// resolved once after checking finishes and handed to `hir::lower` so it
-/// can build `format_spec`/box-type struct literals for interpolation
-/// lowering without a name-based lookup of its own — `type_table` only
+/// can build `format_spec` struct literals for interpolation lowering
+/// without a name-based lookup of its own — `type_table` only
 /// supports looking a user type up via its declaring `ast::type_decl`, which
 /// lowering has no route to independent of an AST node it's already
 /// visiting (see `interp_dispatch`'s use in `hir::lower`). Left as
@@ -774,12 +774,6 @@ struct fmt_runtime_types {
   type_id format_spec = 0;
   type_id align_mode = 0;
   type_id sign_mode = 0;
-  type_id box_u64 = 0;
-  type_id box_u32 = 0;
-  type_id box_u8 = 0;
-  type_id box_usize = 0;
-  type_id box_bool = 0;
-  type_id box_f64 = 0;
   /// Builtin scalar types lowering needs for casts ahead of a `std.fmt`
   /// helper call (e.g. widening an `int32` to `int64` before
   /// `fmt_show_i64`) — resolved here for the same reason the `box_*`/

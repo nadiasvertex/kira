@@ -542,8 +542,8 @@ public:
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
-  /// `sign_mode`, and the `box_*` scalar wrappers) into `type_id`s for
-  /// `hir::lower` — see `fmt_runtime_types`'s doc comment for why this can't
+  /// `sign_mode`) into `type_id`s for `hir::lower` — see
+  /// `fmt_runtime_types`'s doc comment for why this can't
   /// just be a lookup lowering does itself. A no-op (all-zero) result if
   /// `std.fmt` isn't part of this session at all.
   auto resolve_fmt_runtime_types() -> fmt_runtime_types {
@@ -562,12 +562,6 @@ public:
     result.format_spec = resolve("format_spec");
     result.align_mode = resolve("align_mode");
     result.sign_mode = resolve("sign_mode");
-    result.box_u64 = resolve("box_u64");
-    result.box_u32 = resolve("box_u32");
-    result.box_u8 = resolve("box_u8");
-    result.box_usize = resolve("box_usize");
-    result.box_bool = resolve("box_bool");
-    result.box_f64 = resolve("box_f64");
     result.str_type = types_.builtin("str");
     result.int64_type = types_.builtin("int64");
     result.uint64_type = types_.builtin("uint64");

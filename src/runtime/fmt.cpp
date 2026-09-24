@@ -29,19 +29,9 @@ namespace {
   return header;
 }
 
-[[nodiscard]] auto make_box(uint64_t v) -> uint64_t * {
-  auto *slots = alloc_slots(1);
-  slots[0] = v;
-  return slots;
-}
-
 [[nodiscard]] auto view_of(const uint64_t *str_header) -> std::string_view {
   const auto *data = reinterpret_cast<const char *>(str_header[1]); // NOLINT
   return {data, static_cast<size_t>(str_header[0])};
-}
-
-[[nodiscard]] auto as_double(uint64_t bits) -> double {
-  return std::bit_cast<double>(bits);
 }
 
 [[nodiscard]] auto tidy_scientific_exponent(std::string_view formatted)
@@ -77,7 +67,7 @@ auto kira_rt_str_concat(uint64_t *a, uint64_t *b) -> uint64_t * {
   return make_str(out);
 }
 
-auto kira_rt_str_len_scalars(uint64_t *s) -> uint64_t * {
+auto kira_rt_str_len_scalars(uint64_t *s) -> uint64_t {
   const auto view = view_of(s);
   size_t count = 0;
   size_t pos = 0;
@@ -87,27 +77,26 @@ auto kira_rt_str_len_scalars(uint64_t *s) -> uint64_t * {
     }
     ++count;
   }
-  return make_box(count);
+  return count;
 }
 
-auto kira_rt_str_repeat_char(uint64_t *codepoint, uint64_t *count)
+auto kira_rt_str_repeat_char(uint32_t codepoint, uint64_t count)
     -> uint64_t * {
   std::string one;
-  kira::encode_utf8_scalar(static_cast<uint32_t>(codepoint[0]), one);
+  kira::encode_utf8_scalar(codepoint, one);
   std::string out;
-  out.reserve(one.size() * static_cast<size_t>(count[0]));
-  for (uint64_t i = 0; i < count[0]; ++i) {
+  out.reserve(one.size() * static_cast<size_t>(count));
+  for (uint64_t i = 0; i < count; ++i) {
     out += one;
   }
   return make_str(out);
 }
 
-auto kira_rt_str_truncate_scalars(uint64_t *s, uint64_t *count) -> uint64_t * {
+auto kira_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t * {
   const auto view = view_of(s);
-  const auto n = count[0];
   size_t pos = 0;
   uint64_t seen = 0;
-  while (seen < n && pos < view.size()) {
+  while (seen < count && pos < view.size()) {
     if (!kira::decode_utf8_scalar(view, pos).has_value()) {
       break;
     }
@@ -116,32 +105,29 @@ auto kira_rt_str_truncate_scalars(uint64_t *s, uint64_t *count) -> uint64_t * {
   return make_str(view.substr(0, pos));
 }
 
-auto kira_rt_fmt_radix_digits(uint64_t *value, uint64_t *radix,
-                              uint64_t *uppercase) -> uint64_t * {
-  const auto v = value[0];
-  const auto r = radix[0];
-  const bool upper = uppercase[0] != 0;
-  if (v == 0) {
+auto kira_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
+                              uint32_t uppercase) -> uint64_t * {
+  const bool upper = uppercase != 0;
+  if (value == 0) {
     return make_str("0");
   }
   static constexpr std::string_view lower_digits = "0123456789abcdef";
   static constexpr std::string_view upper_digits = "0123456789ABCDEF";
   const auto &digits = upper ? upper_digits : lower_digits;
   std::string out;
-  uint64_t rest = v;
+  uint64_t rest = value;
   while (rest > 0) {
-    out.push_back(digits[rest % r]);
-    rest /= r;
+    out.push_back(digits[rest % radix]);
+    rest /= radix;
   }
   std::ranges::reverse(out);
   return make_str(out);
 }
 
-auto kira_rt_fmt_f64_fixed(uint64_t *value, uint64_t *precision) -> uint64_t * {
-  const auto v = as_double(value[0]);
-  const auto prec = static_cast<int>(precision[0]);
+auto kira_rt_fmt_f64_fixed(double value, uint64_t precision) -> uint64_t * {
+  const auto prec = static_cast<int>(precision);
   std::array<char, 512> buf{};
-  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), v,
+  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
                                     std::chars_format::fixed, prec);
   if (result.ec != std::errc{}) {
     return make_str("0");
@@ -149,13 +135,12 @@ auto kira_rt_fmt_f64_fixed(uint64_t *value, uint64_t *precision) -> uint64_t * {
   return make_str(std::string_view(buf.data(), result.ptr));
 }
 
-auto kira_rt_fmt_f64_sci(uint64_t *value, uint64_t *precision,
-                         uint64_t *uppercase) -> uint64_t * {
-  const auto v = as_double(value[0]);
-  const auto prec = static_cast<int>(precision[0]);
-  const bool upper = uppercase[0] != 0;
+auto kira_rt_fmt_f64_sci(double value, uint64_t precision, uint32_t uppercase)
+    -> uint64_t * {
+  const auto prec = static_cast<int>(precision);
+  const bool upper = uppercase != 0;
   std::array<char, 512> buf{};
-  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), v,
+  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
                                     std::chars_format::scientific, prec);
   if (result.ec != std::errc{}) {
     return make_str("0");
@@ -172,12 +157,10 @@ auto kira_rt_fmt_f64_sci(uint64_t *value, uint64_t *precision,
   return make_str(tidy);
 }
 
-auto kira_rt_fmt_f64_general(uint64_t *value, uint64_t *precision)
-    -> uint64_t * {
-  const auto v = as_double(value[0]);
-  const auto prec = static_cast<int>(precision[0]);
+auto kira_rt_fmt_f64_general(double value, uint64_t precision) -> uint64_t * {
+  const auto prec = static_cast<int>(precision);
   std::array<char, 512> buf{};
-  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), v,
+  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
                                     std::chars_format::general, prec);
   if (result.ec != std::errc{}) {
     return make_str("0");
@@ -186,25 +169,25 @@ auto kira_rt_fmt_f64_general(uint64_t *value, uint64_t *precision)
       tidy_scientific_exponent(std::string_view(buf.data(), result.ptr)));
 }
 
-auto kira_rt_fmt_char_from_codepoint(uint64_t *codepoint) -> uint64_t * {
+auto kira_rt_fmt_char_from_codepoint(uint32_t codepoint) -> uint64_t * {
   std::string out;
-  kira::encode_utf8_scalar(static_cast<uint32_t>(codepoint[0]), out);
+  kira::encode_utf8_scalar(codepoint, out);
   return make_str(out);
 }
 
 // Reinterprets a float's bit pattern as an equal-width unsigned integer
 // (`spec/todo.md` item 7): `hash` on `float32`/`float64` needs the raw bits,
 // and `as uint64`/`as uint32` on a float is a value conversion, not a
-// reinterpret. Both a boxed `float32`/`float64` field and this function's
-// `uint64_t*` argument already hold the same in-memory bit pattern -- native
-// IEEE-754 layout, not the bytecode VM's tagged-slot representation -- so
-// there is nothing to convert, only to re-box.
-auto kira_rt_bitcast_f64_to_u64(uint64_t *value) -> uint64_t * {
-  return make_box(value[0]);
+// reinterpret. `value` arrives as a genuine native float/double now (the
+// wire kind for a `float32`/`float64` intrinsic parameter is the IEEE-754
+// value itself, not a boxed bit pattern), so the reinterpret is a plain
+// `std::bit_cast`.
+auto kira_rt_bitcast_f64_to_u64(double value) -> uint64_t {
+  return std::bit_cast<uint64_t>(value);
 }
 
-auto kira_rt_bitcast_f32_to_u32(uint64_t *value) -> uint64_t * {
-  return make_box(static_cast<uint32_t>(value[0]));
+auto kira_rt_bitcast_f32_to_u32(float value) -> uint32_t {
+  return std::bit_cast<uint32_t>(value);
 }
 
 } // extern "C"

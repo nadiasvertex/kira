@@ -28,15 +28,12 @@ module std.unicode
 
 use std.unicode_tables.*
 
-#: Single-field wrapper for uint32 to pass across the intrinsic boundary.
-type box_u32 = { v: uint32 }
-
 #: Intrinsic boundary: encodes one Unicode scalar value as its UTF-8 string.
 #: Args:
-#:   cp: the scalar value to encode, boxed to cross the intrinsic boundary.
+#:   cp: the scalar value to encode.
 #: Returns:
-#:   the UTF-8 encoding of `cp.v` as a string.
-intrinsic def rt_fmt_char_from_codepoint(cp: box_u32) -> str
+#:   the UTF-8 encoding of `cp` as a string.
+intrinsic def rt_fmt_char_from_codepoint(cp: uint32) -> str
 
 #: Encodes one Unicode scalar value as its UTF-8 string. Reuses the same
 #: general codepoint-to-`str` primitive `std.fmt` already relies on for `{c}`
@@ -48,7 +45,7 @@ intrinsic def rt_fmt_char_from_codepoint(cp: box_u32) -> str
 #: Returns:
 #:   the UTF-8 encoding of `cp` as a string.
 def encode_cp(cp: uint32) -> str:
-    return rt_fmt_char_from_codepoint(box_u32 { v: cp })
+    return rt_fmt_char_from_codepoint(cp)
 
 #: Decodes `s`'s UTF-8 bytes into a list of Unicode scalar values.
 #: Args:

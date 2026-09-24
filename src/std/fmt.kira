@@ -1,12 +1,5 @@
 module std.fmt
 
-use std.intrinsics.box_u64
-use std.intrinsics.box_u32
-use std.intrinsics.box_u8
-use std.intrinsics.box_usize
-use std.intrinsics.box_bool
-use std.intrinsics.box_f64
-
 use std.intrinsics.rt_str_concat
 use std.intrinsics.rt_str_len_scalars
 use std.intrinsics.rt_str_repeat_char
@@ -36,10 +29,10 @@ pub type format_spec = {
 
 
 def scalar_len(s: str) -> usize:
-    return rt_str_len_scalars(s).v
+    return rt_str_len_scalars(s)
 
 def repeat_char(c: char, n: usize) -> str:
-    return rt_str_repeat_char(box_u32 { v: c as uint32 }, box_usize { v: n })
+    return rt_str_repeat_char(c as uint32, n)
 
 def width_or_zero(width: option[usize]) -> usize:
     match width:
@@ -95,7 +88,7 @@ def bool_text(b: bool) -> str:
 #:   the formatted string with padding applied.
 pub def pad_str(s: str, spec: format_spec) -> str:
     let truncated = match spec.precision:
-        @some(prec) => rt_str_truncate_scalars(s, box_usize { v: prec })
+        @some(prec) => rt_str_truncate_scalars(s, prec)
         @none => s
 
     let text_len = scalar_len(truncated)
@@ -190,7 +183,7 @@ pub def fmt_show_bool(b: bool, spec: format_spec) -> str:
 #: Returns:
 #:   the formatted string.
 pub def fmt_show_char(c: char, spec: format_spec) -> str:
-    return pad_str(rt_fmt_char_from_codepoint(box_u32 { v: c as uint32 }), spec)
+    return pad_str(rt_fmt_char_from_codepoint(c as uint32), spec)
 
 #: Formats a Unicode codepoint as a character with the given specification.
 #: Args:
@@ -199,7 +192,7 @@ pub def fmt_show_char(c: char, spec: format_spec) -> str:
 #: Returns:
 #:   the formatted string.
 pub def fmt_char_codepoint(cp: uint32, spec: format_spec) -> str:
-    return pad_str(rt_fmt_char_from_codepoint(box_u32 { v: cp }), spec)
+    return pad_str(rt_fmt_char_from_codepoint(cp), spec)
 
 #: Formats a 64-bit signed integer in decimal with the given specification.
 #: Args:
@@ -232,7 +225,7 @@ pub def fmt_radix_i64(v: int64, radix: uint8, uppercase: bool, prefix: str, spec
     let negative = v < 0
     let bits = v as uint64
     let magnitude = if negative: (18446744073709551615 as uint64 - bits) + (1 as uint64) else: bits
-    let digits = rt_fmt_radix_digits(box_u64 { v: magnitude }, box_u8 { v: radix }, box_bool { v: uppercase })
+    let digits = rt_fmt_radix_digits(magnitude, radix, uppercase)
     return pad_integral(negative, prefix, digits, spec)
 
 #: Formats a 64-bit unsigned integer in the specified radix with optional prefix and uppercase.
@@ -245,7 +238,7 @@ pub def fmt_radix_i64(v: int64, radix: uint8, uppercase: bool, prefix: str, spec
 #: Returns:
 #:   the formatted string.
 pub def fmt_radix_u64(v: uint64, radix: uint8, uppercase: bool, prefix: str, spec: format_spec) -> str:
-    let digits = rt_fmt_radix_digits(box_u64 { v: v }, box_u8 { v: radix }, box_bool { v: uppercase })
+    let digits = rt_fmt_radix_digits(v, radix, uppercase)
     return pad_integral(false, prefix, digits, spec)
 
 #: Formats a 64-bit floating-point number in fixed-point notation.
@@ -258,7 +251,7 @@ pub def fmt_radix_u64(v: uint64, radix: uint8, uppercase: bool, prefix: str, spe
 pub def fmt_float_fixed(v: float64, precision: usize, spec: format_spec) -> str:
     let negative = v < 0.0
     let magnitude = if negative: -v else: v
-    let digits = rt_fmt_f64_fixed(box_f64 { v: magnitude }, box_usize { v: precision })
+    let digits = rt_fmt_f64_fixed(magnitude, precision)
     return pad_integral(negative, "", digits, spec)
 
 #: Formats a 64-bit floating-point number in scientific notation.
@@ -272,7 +265,7 @@ pub def fmt_float_fixed(v: float64, precision: usize, spec: format_spec) -> str:
 pub def fmt_float_sci(v: float64, precision: usize, uppercase: bool, spec: format_spec) -> str:
     let negative = v < 0.0
     let magnitude = if negative: -v else: v
-    let digits = rt_fmt_f64_sci(box_f64 { v: magnitude }, box_usize { v: precision }, box_bool { v: uppercase })
+    let digits = rt_fmt_f64_sci(magnitude, precision, uppercase)
     return pad_integral(negative, "", digits, spec)
 
 #: Formats a 64-bit floating-point number in general notation (automatic choice between fixed and scientific).
@@ -285,5 +278,5 @@ pub def fmt_float_sci(v: float64, precision: usize, uppercase: bool, spec: forma
 pub def fmt_float_general(v: float64, precision: usize, spec: format_spec) -> str:
     let negative = v < 0.0
     let magnitude = if negative: -v else: v
-    let digits = rt_fmt_f64_general(box_f64 { v: magnitude }, box_usize { v: precision })
+    let digits = rt_fmt_f64_general(magnitude, precision)
     return pad_integral(negative, "", digits, spec)

@@ -1013,14 +1013,6 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   return alloc_struct(fields);
 }
 
-[[nodiscard]] auto make_box(slot_value v) -> slot_value {
-  return alloc_struct(std::span<const slot_value>(&v, 1));
-}
-
-[[nodiscard]] auto unbox(slot_value boxed) -> slot_value {
-  return slots_of(boxed)[0];
-}
-
 [[nodiscard]] auto view_of(slot_value str_header) -> std::string_view {
   const auto bytes = bytes_of(str_header);
   return {bytes.data(), bytes.size()};
@@ -1043,13 +1035,13 @@ auto intrinsic_rt_str_len_scalars(std::span<const slot_value> args)
     }
     ++count;
   }
-  return make_box(slot_value{static_cast<uint64_t>(count)});
+  return slot_value{static_cast<uint64_t>(count)};
 }
 
 auto intrinsic_rt_str_repeat_char(std::span<const slot_value> args)
     -> slot_value {
-  const auto codepoint = static_cast<uint32_t>(unbox(args[0]).u);
-  const auto n = unbox(args[1]).u;
+  const auto codepoint = static_cast<uint32_t>(args[0].u);
+  const auto n = args[1].u;
   std::string one;
   encode_utf8_scalar(codepoint, one);
   std::string out;
@@ -1063,7 +1055,7 @@ auto intrinsic_rt_str_repeat_char(std::span<const slot_value> args)
 auto intrinsic_rt_str_truncate_scalars(std::span<const slot_value> args)
     -> slot_value {
   const auto view = view_of(args[0]);
-  const auto n = unbox(args[1]).u;
+  const auto n = args[1].u;
   size_t pos = 0;
   uint64_t count = 0;
   while (count < n && pos < view.size()) {
@@ -1092,19 +1084,18 @@ auto intrinsic_rt_str_truncate_scalars(std::span<const slot_value> args)
 auto intrinsic_rt_str_eq(std::span<const slot_value> args) -> slot_value {
   const auto equal =
       kira::runtime::str_equal(view_of(args[0]), view_of(args[1]));
-  return make_box(slot_value{static_cast<uint64_t>(equal ? 1 : 0)});
+  return slot_value{static_cast<uint64_t>(equal ? 1 : 0)};
 }
 
 auto intrinsic_rt_str_cmp(std::span<const slot_value> args) -> slot_value {
   const auto cmp =
       kira::runtime::str_compare(view_of(args[0]), view_of(args[1]));
-  return make_box(slot_value{static_cast<int64_t>(cmp)});
+  return slot_value{static_cast<int64_t>(cmp)};
 }
 
 auto intrinsic_rt_str_find(std::span<const slot_value> args) -> slot_value {
-  return make_find_result(
-      kira::runtime::str_find(view_of(args[0]), view_of(args[1]),
-                              static_cast<size_t>(unbox(args[2]).u)));
+  return make_find_result(kira::runtime::str_find(
+      view_of(args[0]), view_of(args[1]), static_cast<size_t>(args[2].u)));
 }
 
 auto intrinsic_rt_str_rfind(std::span<const slot_value> args) -> slot_value {
@@ -1118,7 +1109,7 @@ auto intrinsic_rt_str_reverse(std::span<const slot_value> args) -> slot_value {
 
 auto intrinsic_rt_str_trim(std::span<const slot_value> args) -> slot_value {
   const auto mode = static_cast<kira::runtime::trim_mode>(
-      static_cast<uint8_t>(unbox(args[1]).u));
+      static_cast<uint8_t>(args[1].u));
   return make_runtime_str(kira::runtime::str_trim(view_of(args[0]), mode));
 }
 
@@ -1129,9 +1120,9 @@ auto intrinsic_rt_str_replace(std::span<const slot_value> args) -> slot_value {
 
 auto intrinsic_rt_fmt_radix_digits(std::span<const slot_value> args)
     -> slot_value {
-  const auto value = unbox(args[0]).u;
-  const auto radix = static_cast<uint64_t>(unbox(args[1]).u);
-  const bool uppercase = unbox(args[2]).u != 0;
+  const auto value = args[0].u;
+  const auto radix = static_cast<uint64_t>(args[1].u);
+  const bool uppercase = args[2].u != 0;
   if (value == 0) {
     return make_runtime_str("0");
   }
@@ -1176,8 +1167,8 @@ auto intrinsic_rt_fmt_radix_digits(std::span<const slot_value> args)
 
 auto intrinsic_rt_fmt_f64_fixed(std::span<const slot_value> args)
     -> slot_value {
-  const auto value = unbox(args[0]).f;
-  const auto precision = static_cast<int>(unbox(args[1]).u);
+  const auto value = args[0].f;
+  const auto precision = static_cast<int>(args[1].u);
   std::array<char, 512> buf{};
   const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
                                     std::chars_format::fixed, precision);
@@ -1188,9 +1179,9 @@ auto intrinsic_rt_fmt_f64_fixed(std::span<const slot_value> args)
 }
 
 auto intrinsic_rt_fmt_f64_sci(std::span<const slot_value> args) -> slot_value {
-  const auto value = unbox(args[0]).f;
-  const auto precision = static_cast<int>(unbox(args[1]).u);
-  const bool uppercase = unbox(args[2]).u != 0;
+  const auto value = args[0].f;
+  const auto precision = static_cast<int>(args[1].u);
+  const bool uppercase = args[2].u != 0;
   std::array<char, 512> buf{};
   const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
                                     std::chars_format::scientific, precision);
@@ -1211,8 +1202,8 @@ auto intrinsic_rt_fmt_f64_sci(std::span<const slot_value> args) -> slot_value {
 
 auto intrinsic_rt_fmt_f64_general(std::span<const slot_value> args)
     -> slot_value {
-  const auto value = unbox(args[0]).f;
-  const auto precision = static_cast<int>(unbox(args[1]).u);
+  const auto value = args[0].f;
+  const auto precision = static_cast<int>(args[1].u);
   std::array<char, 512> buf{};
   const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
                                     std::chars_format::general, precision);
@@ -1235,40 +1226,38 @@ auto intrinsic_rt_fmt_f64_general(std::span<const slot_value> args)
 /// same allocator, which is what keeps a `list` built on these intrinsics
 /// byte-for-byte identical across them.
 auto intrinsic_rt_alloc(std::span<const slot_value> args) -> slot_value {
-  auto *block = kira_heap_alloc(unbox(args[0]).u);
+  auto *block = kira_heap_alloc(args[0].u);
   return slot_value{reinterpret_cast<uint64_t>(block)}; // NOLINT
 }
 
 auto intrinsic_rt_realloc(std::span<const slot_value> args) -> slot_value {
   auto *block = kira_heap_realloc(reinterpret_cast<void *>(args[0].u), // NOLINT
-                                  unbox(args[1]).u, unbox(args[2]).u);
+                                  args[1].u, args[2].u);
   return slot_value{reinterpret_cast<uint64_t>(block)}; // NOLINT
 }
 
 auto intrinsic_rt_free(std::span<const slot_value> args) -> slot_value {
-  kira_heap_free(reinterpret_cast<void *>(args[0].u),
-                 unbox(args[1]).u); // NOLINT
-  return slot_value{};              // `unit`
+  kira_heap_free(reinterpret_cast<void *>(args[0].u), args[1].u); // NOLINT
+  return slot_value{};                                            // `unit`
 }
 
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
     -> slot_value {
-  const auto bits = std::bit_cast<uint64_t>(unbox(args[0]).f);
-  return make_box(slot_value{bits});
+  return slot_value{std::bit_cast<uint64_t>(args[0].f)};
 }
 
 auto intrinsic_rt_bitcast_f32_to_u32(std::span<const slot_value> args)
     -> slot_value {
-  // A boxed `float32` field's slot was written by `store_f32`, whose active
-  // union member is `.u` (the bit pattern, zero-extended) rather than `.f`
-  // -- unlike `float64`, which stores straight into `.f`.
-  const auto bits = static_cast<uint32_t>(unbox(args[0]).u);
-  return make_box(slot_value{static_cast<uint64_t>(bits)});
+  // A `float32` value's slot was written by `store_f32`, whose active union
+  // member is `.u` (the bit pattern, zero-extended) rather than `.f` --
+  // unlike `float64`, which stores straight into `.f`.
+  const auto bits = static_cast<uint32_t>(args[0].u);
+  return slot_value{static_cast<uint64_t>(bits)};
 }
 
 auto intrinsic_rt_fmt_char_from_codepoint(std::span<const slot_value> args)
     -> slot_value {
-  const auto codepoint = static_cast<uint32_t>(unbox(args[0]).u);
+  const auto codepoint = static_cast<uint32_t>(args[0].u);
   std::string out;
   encode_utf8_scalar(codepoint, out);
   return make_runtime_str(out);

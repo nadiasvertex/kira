@@ -19,7 +19,7 @@ module std.mem
 # the allocator's guarantee, not this module's, and it holds under both
 # `KIRA_ALLOCATOR` modes.
 
-use std.intrinsics.{rt_alloc, rt_realloc, rt_free, box_usize}
+use std.intrinsics.{rt_alloc, rt_realloc, rt_free}
 
 #: Allocates room for `count` values of `T`, zero-filled.
 #:
@@ -27,7 +27,7 @@ use std.intrinsics.{rt_alloc, rt_realloc, rt_free, box_usize}
 #: satisfied terminates the process rather than returning null — there is no
 #: failure channel here yet.
 pub machine def alloc[T](count: usize) -> *mut T:
-    let raw = rt_alloc(box_usize { v: count * size_of[T]() })
+    let raw = rt_alloc(count * size_of[T]())
     return ptr_cast[T](raw)
 
 #: Resizes a block from `old_count` to `new_count` values of `T`, preserving
@@ -40,8 +40,8 @@ pub machine def alloc[T](count: usize) -> *mut T:
 #: again.
 pub machine def resize[T](p: *mut T, old_count: usize, new_count: usize) -> *mut T:
     let raw = rt_realloc(ptr_cast[byte](p),
-                         box_usize { v: old_count * size_of[T]() },
-                         box_usize { v: new_count * size_of[T]() })
+                         old_count * size_of[T](),
+                         new_count * size_of[T]())
     return ptr_cast[T](raw)
 
 #: Releases a block obtained from `alloc`/`resize`. A null `p` is a no-op.
@@ -52,7 +52,7 @@ pub machine def resize[T](p: *mut T, old_count: usize, new_count: usize) -> *mut
 #: only through struct fields — so a collection holding resource-owning
 #: elements leaks them regardless of what it does here.
 pub machine def free[T](p: *mut T, count: usize) -> unit:
-    rt_free(ptr_cast[byte](p), box_usize { v: count * size_of[T]() })
+    rt_free(ptr_cast[byte](p), count * size_of[T]())
 
 #: Copies `count` values of `T` from `src` to `dst`.
 #:

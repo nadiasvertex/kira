@@ -646,13 +646,11 @@ auto renderer::run() -> std::string {
   out_ += std::format(
       "\n## fmt_runtime_types\n"
       "format_spec {}\nalign_mode {}\nsign_mode {}\n"
-      "box_u64 {}\nbox_u32 {}\nbox_u8 {}\nbox_usize {}\n"
-      "box_bool {}\nbox_f64 {}\nstr {}\nint64 {}\nuint64 {}\n"
+      "str {}\nint64 {}\nuint64 {}\n"
       "uint32 {}\nuint8 {}\nfloat64 {}\noption_align_mode {}\n"
       "option_usize {}\n",
       ty(fmt.format_spec), ty(fmt.align_mode), ty(fmt.sign_mode),
-      ty(fmt.box_u64), ty(fmt.box_u32), ty(fmt.box_u8), ty(fmt.box_usize),
-      ty(fmt.box_bool), ty(fmt.box_f64), ty(fmt.str_type), ty(fmt.int64_type),
+      ty(fmt.str_type), ty(fmt.int64_type),
       ty(fmt.uint64_type), ty(fmt.uint32_type), ty(fmt.uint8_type),
       ty(fmt.float64_type), ty(fmt.option_align_mode), ty(fmt.option_usize));
 

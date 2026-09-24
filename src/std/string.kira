@@ -15,23 +15,18 @@ use std.unicode.to_uppercase
 use std.unicode.to_lowercase
 use std.unicode.fold_case
 
-type box_usize = { v: usize }
-type box_u8 = { v: uint8 }
-type box_bool = { v: bool }
-type box_i32 = { v: int32 }
-
 #: Result of a substring search. pos is meaningful only when found is true.
 type find_result = { found: bool, pos: usize }
 
 #: Layer 1: native intrinsics
 #: Search is Two-Way (linear worst case) over UTF-8 bytes, scalar-correct by
 #: self-synchronization. trim mode: 0 = both, 1 = start, 2 = end.
-intrinsic def rt_str_eq(a: str, b: str) -> box_bool
-intrinsic def rt_str_cmp(a: str, b: str) -> box_i32
-intrinsic def rt_str_find(haystack: str, needle: str, from: box_usize) -> find_result
+intrinsic def rt_str_eq(a: str, b: str) -> bool
+intrinsic def rt_str_cmp(a: str, b: str) -> int32
+intrinsic def rt_str_find(haystack: str, needle: str, from: usize) -> find_result
 intrinsic def rt_str_rfind(haystack: str, needle: str) -> find_result
 intrinsic def rt_str_reverse(s: str) -> str
-intrinsic def rt_str_trim(s: str, mode: box_u8) -> str
+intrinsic def rt_str_trim(s: str, mode: uint8) -> str
 intrinsic def rt_str_replace(s: str, from: str, to: str) -> str
 
 #: Layer 2: public API (thin composition over the intrinsics)
@@ -50,7 +45,7 @@ extend str:
     #: Returns:
     #:   true if the strings are equal byte-for-byte, false otherwise.
     pub def eq(self, other: str) -> bool:
-        return rt_str_eq(self, other).v
+        return rt_str_eq(self, other)
 
     #: Compares two strings lexicographically by UTF-8 byte value. Backs
     #: `ord for str`, which is what `<`/`<=`/`>`/`>=` and `min`/`max`/`sort`
@@ -62,7 +57,7 @@ extend str:
     #: Returns:
     #:   how self orders relative to other.
     pub def cmp(self, other: str) -> ordering:
-        let c = rt_str_cmp(self, other).v
+        let c = rt_str_cmp(self, other)
         if c < 0:
             return @less
         elif c > 0:
@@ -79,7 +74,7 @@ extend str:
         let plen = prefix.len()
         if self.len() < plen:
             return false
-        return rt_str_eq(self[0 .. plen], prefix).v
+        return rt_str_eq(self[0 .. plen], prefix)
 
     #: Checks if the string ends with the given suffix.
     #: Args:
@@ -92,7 +87,7 @@ extend str:
         let n = self.len()
         if n < slen:
             return false
-        return rt_str_eq(self[n - slen .. n], suffix).v
+        return rt_str_eq(self[n - slen .. n], suffix)
 
     #: Checks if the needle string occurs anywhere in this string.
     #: Args:
@@ -101,7 +96,7 @@ extend str:
     #: Returns:
     #:   true if needle is found, false otherwise.
     pub def contains(self, needle: str) -> bool:
-        return rt_str_find(self, needle, box_usize { v: 0 }).found
+        return rt_str_find(self, needle, 0).found
 
     #: Finds the byte offset of the first occurrence of needle.
     #: Args:
@@ -111,7 +106,7 @@ extend str:
     #:   some(offset) where offset is the byte position of the first occurrence,
     #:   or none if needle is not found.
     pub def find(self, needle: str) -> option[usize]:
-        let r = rt_str_find(self, needle, box_usize { v: 0 })
+        let r = rt_str_find(self, needle, 0)
         if r.found:
             return @some(r.pos)
         return @none
@@ -133,19 +128,19 @@ extend str:
     #: Returns:
     #:   a new string with leading and trailing whitespace removed.
     pub def trim(self) -> str:
-        return rt_str_trim(self, box_u8 { v: 0 })
+        return rt_str_trim(self, 0)
 
     #: Removes leading Unicode whitespace.
     #: Returns:
     #:   a new string with leading whitespace removed.
     pub def trim_start(self) -> str:
-        return rt_str_trim(self, box_u8 { v: 1 })
+        return rt_str_trim(self, 1)
 
     #: Removes trailing Unicode whitespace.
     #: Returns:
     #:   a new string with trailing whitespace removed.
     pub def trim_end(self) -> str:
-        return rt_str_trim(self, box_u8 { v: 2 })
+        return rt_str_trim(self, 2)
 
     #: Creates a new string with the Unicode scalars in reverse order.
     #: Returns:
@@ -185,7 +180,7 @@ extend str:
     #: Returns:
     #:   true if the strings are equal ignoring case, false otherwise.
     pub def eq_ignore_case(self, other: str) -> bool:
-        return rt_str_eq(fold_case(self), fold_case(other)).v
+        return rt_str_eq(fold_case(self), fold_case(other))
 
     #: Replaces every non-overlapping occurrence of from with to.
     #: Args:
@@ -213,7 +208,7 @@ extend str:
         let n = self.len()
         var start: usize = 0
         while true:
-            let r = rt_str_find(self, sep, box_usize { v: start })
+            let r = rt_str_find(self, sep, start)
             if not r.found:
                 pieces.push(self[start .. n])
                 return pieces

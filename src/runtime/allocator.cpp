@@ -127,30 +127,20 @@ extern "C" void kira_heap_free(void *ptr, uint64_t bytes) {
 }
 
 // --------------------------------------------------------------------------
-//  Uniform-ABI intrinsic entry points (see allocator.h).
+//  Intrinsic entry points (see allocator.h) — `bytes`/`old_bytes`/
+//  `new_bytes` cross as plain native `uint64_t`s now, no boxing needed.
 // --------------------------------------------------------------------------
 
-namespace {
-
-/// Reads the `usize` out of a `box_usize` (`src/std/intrinsics.kira`) — a
-/// 1-slot struct whose single slot holds the count.
-[[nodiscard]] auto unbox_usize(const uint64_t *box) -> uint64_t {
-  return box == nullptr ? 0 : *box;
+extern "C" auto kira_rt_alloc(uint64_t bytes) -> uint64_t * {
+  return static_cast<uint64_t *>(kira_heap_alloc(bytes));
 }
 
-} // namespace
-
-extern "C" auto kira_rt_alloc(uint64_t *bytes_box) -> uint64_t * {
-  return static_cast<uint64_t *>(kira_heap_alloc(unbox_usize(bytes_box)));
+extern "C" auto kira_rt_realloc(uint64_t *ptr, uint64_t old_bytes,
+                                uint64_t new_bytes) -> uint64_t * {
+  return static_cast<uint64_t *>(kira_heap_realloc(ptr, old_bytes, new_bytes));
 }
 
-extern "C" auto kira_rt_realloc(uint64_t *ptr, uint64_t *old_bytes_box,
-                                uint64_t *new_bytes_box) -> uint64_t * {
-  return static_cast<uint64_t *>(kira_heap_realloc(
-      ptr, unbox_usize(old_bytes_box), unbox_usize(new_bytes_box)));
-}
-
-extern "C" auto kira_rt_free(uint64_t *ptr, uint64_t *bytes_box) -> uint64_t * {
-  kira_heap_free(ptr, unbox_usize(bytes_box));
+extern "C" auto kira_rt_free(uint64_t *ptr, uint64_t bytes) -> uint64_t * {
+  kira_heap_free(ptr, bytes);
   return nullptr; // Kira `unit`; see allocator.h.
 }

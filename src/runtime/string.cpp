@@ -24,12 +24,6 @@ namespace {
   return header;
 }
 
-[[nodiscard]] auto make_box(uint64_t v) -> uint64_t * {
-  auto *slots = alloc_slots(1);
-  slots[0] = v;
-  return slots;
-}
-
 /// A 2-slot `find_result { found: bool; pos: usize }` (see
 /// `src/std/string.kira`): slot 0 is the found flag, slot 1 the byte offset.
 [[nodiscard]] auto make_find_result(std::optional<size_t> hit) -> uint64_t * {
@@ -48,19 +42,18 @@ namespace {
 
 extern "C" {
 
-auto kira_rt_str_eq(uint64_t *a, uint64_t *b) -> uint64_t * {
-  return make_box(kira::runtime::str_equal(view_of(a), view_of(b)) ? 1U : 0U);
+auto kira_rt_str_eq(uint64_t *a, uint64_t *b) -> uint32_t {
+  return kira::runtime::str_equal(view_of(a), view_of(b)) ? 1U : 0U;
 }
 
-auto kira_rt_str_cmp(uint64_t *a, uint64_t *b) -> uint64_t * {
-  const auto cmp = kira::runtime::str_compare(view_of(a), view_of(b));
-  return make_box(static_cast<uint64_t>(static_cast<int64_t>(cmp)));
+auto kira_rt_str_cmp(uint64_t *a, uint64_t *b) -> int32_t {
+  return static_cast<int32_t>(kira::runtime::str_compare(view_of(a), view_of(b)));
 }
 
-auto kira_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t *from)
+auto kira_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t from)
     -> uint64_t * {
   return make_find_result(kira::runtime::str_find(
-      view_of(haystack), view_of(needle), static_cast<size_t>(from[0])));
+      view_of(haystack), view_of(needle), static_cast<size_t>(from)));
 }
 
 auto kira_rt_str_rfind(uint64_t *haystack, uint64_t *needle) -> uint64_t * {
@@ -72,9 +65,9 @@ auto kira_rt_str_reverse(uint64_t *s) -> uint64_t * {
   return make_str(kira::runtime::str_reverse(view_of(s)));
 }
 
-auto kira_rt_str_trim(uint64_t *s, uint64_t *mode) -> uint64_t * {
+auto kira_rt_str_trim(uint64_t *s, uint32_t mode) -> uint64_t * {
   const auto trim =
-      static_cast<kira::runtime::trim_mode>(static_cast<uint8_t>(mode[0]));
+      static_cast<kira::runtime::trim_mode>(static_cast<uint8_t>(mode));
   return make_str(kira::runtime::str_trim(view_of(s), trim));
 }
 
