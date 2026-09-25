@@ -7093,7 +7093,7 @@ private:
     if (decl.return_type != nullptr) {
       result = resolve_type(*decl.return_type, ctx);
     } else if (const auto found = inferred_returns_.find(instance);
-              found != inferred_returns_.end()) {
+               found != inferred_returns_.end()) {
       result = found->second;
     } else {
       result = leaf_ctxt_.fresh_type(
@@ -7767,9 +7767,9 @@ private:
 
   [[nodiscard]] auto find_module_scope_value(std::string_view name) const
       -> std::optional<module_value_ref> {
-    const auto in = [&](const module_members &members,
-                        const std::string &member)
-        -> std::optional<module_value_ref> {
+    const auto in =
+        [&](const module_members &members,
+            const std::string &member) -> std::optional<module_value_ref> {
       if (const auto it = members.functions.find(member);
           it != members.functions.end()) {
         return module_value_ref{.function = it->second.decl,
@@ -7880,8 +7880,8 @@ private:
                                   value->owner->module_name);
         return fn_type_of(*value->function, value->owner);
       }
-      const auto type = static_binding_type(*value->static_binding,
-                                            value->owner);
+      const auto type =
+          static_binding_type(*value->static_binding, value->owner);
       record_static_const_reference(ident, *value->static_binding, type,
                                     value->owner->module_name);
       return type;
@@ -11736,7 +11736,8 @@ private:
     // `check_call_args_against`; the rest of the record is the same as for an
     // ordinary call (`check_call_against_decl`).
     if (!in_const_generic_template_ && !in_type_generic_template_ &&
-        has_unannotated_params(decl) && is_free_function(decl, candidate.owner)) {
+        has_unannotated_params(decl) &&
+        is_free_function(decl, candidate.owner)) {
       solve_leaves(params.front().type, receiver_type);
       auto param_types = std::vector<type_id>{};
       param_types.reserve(params.size());
@@ -13965,12 +13966,13 @@ private:
     size_t first_field = 0;
   };
 
-  [[nodiscard]] auto find_module_static_prefix(
-      const std::vector<std::string> &segments) const
+  [[nodiscard]] auto
+  find_module_static_prefix(const std::vector<std::string> &segments) const
       -> std::optional<module_static_prefix> {
     for (auto end = segments.size(); end >= 2; --end) {
       const auto prefix = std::vector<std::string>(
-          segments.begin(), segments.begin() + static_cast<std::ptrdiff_t>(end));
+          segments.begin(),
+          segments.begin() + static_cast<std::ptrdiff_t>(end));
       const auto *owner = find_static_owner_of_path(prefix);
       if (owner == nullptr) {
         continue;
@@ -13996,8 +13998,8 @@ private:
     for (auto i = found->first_field; i < path.segments.size(); ++i) {
       type = field_access_type(type, path.segments[i], path.span);
     }
-    fold_static_field_path(path, *found->decl, found->owner,
-                           found->first_field, type);
+    fold_static_field_path(path, *found->decl, found->owner, found->first_field,
+                           type);
     return type;
   }
 
@@ -14013,9 +14015,9 @@ private:
     using reading = comptime::evaluator::dotted_path_reading;
     const auto &root = path.segments.front();
     const auto text = join_strings(path.segments, ".");
-    const auto static_value =
-        [&](const ast::static_decl &decl, const module_members *owner,
-            size_t first_field) -> reading {
+    const auto static_value = [&](const ast::static_decl &decl,
+                                  const module_members *owner,
+                                  size_t first_field) -> reading {
       if (static_bindings_evaluating_.contains(&decl)) {
         return reading{.reading = reading::kind::not_constant,
                        .base = {},
@@ -16846,192 +16848,189 @@ private:
   /// `pending_interp_segments_`) has been pinned by `finish_open_results`.
   auto finish_interp_segment(const ast::interp_segment &seg, type_id value_type)
       -> void {
-      const char type_char = (seg.has_spec && seg.spec.type_char.has_value())
-                                 ? *seg.spec.type_char
-                                 : '\0';
+    const char type_char = (seg.has_spec && seg.spec.type_char.has_value())
+                               ? *seg.spec.type_char
+                               : '\0';
 
-      const bool has_precision =
-          seg.has_spec &&
-          !std::holds_alternative<std::monostate>(seg.spec.precision);
-      const bool is_integer_style = type_char == 'd' || type_char == 'x' ||
-                                    type_char == 'X' || type_char == 'o' ||
-                                    type_char == 'b';
-      if (has_precision && is_integer_style) {
-        error_with_help(
-            seg.spec.span,
-            std::format("`.precision` is not allowed with `{}`", type_char),
-            "precision is only meaningful for `s`, `?`, `f`, `e`/`E`, `g`/`G`",
-            "for integer styles, use width and zero-padding instead, e.g. "
-            "\"{value :04x}\"");
-      }
+    const bool has_precision =
+        seg.has_spec &&
+        !std::holds_alternative<std::monostate>(seg.spec.precision);
+    const bool is_integer_style = type_char == 'd' || type_char == 'x' ||
+                                  type_char == 'X' || type_char == 'o' ||
+                                  type_char == 'b';
+    if (has_precision && is_integer_style) {
+      error_with_help(
+          seg.spec.span,
+          std::format("`.precision` is not allowed with `{}`", type_char),
+          "precision is only meaningful for `s`, `?`, `f`, `e`/`E`, `g`/`G`",
+          "for integer styles, use width and zero-padding instead, e.g. "
+          "\"{value :04x}\"");
+    }
 
-      const auto &value_entry = types_.entry(value_type);
-      const bool is_builtin_int = types_.is_integer(value_type);
-      const bool is_builtin_float = types_.is_float(value_type);
-      const bool is_builtin_str = value_entry.kind == type_kind::builtin_kind &&
-                                  value_entry.name == "str";
-      const bool is_builtin_bool = types_.is_boolean(value_type);
-      const bool is_builtin_char =
-          value_entry.kind == type_kind::builtin_kind &&
-          value_entry.name == "char";
-      const bool is_any_builtin = is_builtin_int || is_builtin_float ||
-                                  is_builtin_str || is_builtin_bool ||
-                                  is_builtin_char;
+    const auto &value_entry = types_.entry(value_type);
+    const bool is_builtin_int = types_.is_integer(value_type);
+    const bool is_builtin_float = types_.is_float(value_type);
+    const bool is_builtin_str = value_entry.kind == type_kind::builtin_kind &&
+                                value_entry.name == "str";
+    const bool is_builtin_bool = types_.is_boolean(value_type);
+    const bool is_builtin_char = value_entry.kind == type_kind::builtin_kind &&
+                                 value_entry.name == "char";
+    const bool is_any_builtin = is_builtin_int || is_builtin_float ||
+                                is_builtin_str || is_builtin_bool ||
+                                is_builtin_char;
 
-      auto dispatch = interp_dispatch{};
-      dispatch.type_char = type_char;
-      dispatch.value_type = value_type;
+    auto dispatch = interp_dispatch{};
+    dispatch.type_char = type_char;
+    dispatch.value_type = value_type;
 
-      const auto try_trait_dispatch =
-          [&](std::string_view trait_name,
-              interp_dispatch::kind_t builtin_kind_fallback,
-              bool builtin_allowed) -> bool {
-        if (builtin_allowed) {
-          dispatch.kind = builtin_kind_fallback;
-          return true;
-        }
-        if (!type_has_trait(value_entry, trait_name)) {
-          return false;
-        }
-        dispatch.kind = interp_dispatch::kind_t::trait_method;
-        dispatch.impl_target_type = value_entry.name;
-        // `value_type` is passed, not left to default: it is what lets a
-        // lookup on a concrete instantiation of a generic `deriving` type
-        // derive that instantiation's method (`ensure_derived_instance_
-        // impls`), and what lets `find_method` tell `wrap[int32]`'s impl
-        // from `wrap[str]`'s.
-        if (const auto *method =
-                find_method(value_entry, trait_name, value_type);
-            method != nullptr) {
-          dispatch.decl = method->decl;
-          dispatch.owner_module = method->owner->module_name;
-          // A method reached through an impl over a generic target only
-          // exists once compiled for this receiver. Record the instance, and
-          // clear `impl_target_type` so `hir::lower` uses the instance's own
-          // mangled name rather than composing `wrap::show`, which is the
-          // template and is never emitted.
-          if (const auto *instance = instantiate_impl_method_for(
-                  *seg.value, *method, value_entry, value_type)) {
-            dispatch.decl = instance;
-            dispatch.impl_target_type.clear();
-          }
-        }
+    const auto try_trait_dispatch =
+        [&](std::string_view trait_name,
+            interp_dispatch::kind_t builtin_kind_fallback,
+            bool builtin_allowed) -> bool {
+      if (builtin_allowed) {
+        dispatch.kind = builtin_kind_fallback;
         return true;
-      };
-
-      // What `value_type` actually supports — used only for the diagnostic
-      // below when the requested style isn't one of them, so the message
-      // never has to guess: builtins get a fixed description per category,
-      // a user type gets a list of the capability traits it really
-      // implements (empty if none, meaning only `impl show for T` etc. can
-      // fix this).
-      auto describe_supported = [&]() -> std::string {
-        if (is_builtin_int) {
-          return "the default/`s` style (`show`), `?` (`debug`), `d`, "
-                 "`x`/`X`, `o`, `b`, and `c`";
-        }
-        if (is_builtin_float) {
-          return "the default/`s` style (`show`), `?` (`debug`), `e`/`E`, "
-                 "`f`, and `g`/`G`";
-        }
-        if (is_builtin_char) {
-          return "the default/`s` style (`show`), `?` (`debug`), and `c`";
-        }
-        if (is_builtin_str || is_builtin_bool) {
-          return "the default/`s` style (`show`) and `?` (`debug`)";
-        }
-        auto styles = std::vector<std::string>{};
-        for (const auto &[trait_name, label] :
-             {std::pair{"show", "the default/`s` style (`show`)"},
-              std::pair{"debug", "`?` (`debug`)"},
-              std::pair{"hex", "`x`/`X` (`hex`)"},
-              std::pair{"octal", "`o` (`octal`)"},
-              std::pair{"binary", "`b` (`binary`)"}}) {
-          if (type_has_trait(value_entry, trait_name)) {
-            styles.emplace_back(label);
-          }
-        }
-        if (styles.empty()) {
-          return "no format styles yet";
-        }
-        auto out = std::string{};
-        for (size_t i = 0; i < styles.size(); ++i) {
-          if (i > 0) {
-            out += ", ";
-          }
-          out += styles[i];
-        }
-        return out;
-      };
-
-      auto ok = false;
-      std::string trait_hint;
-      switch (type_char) {
-      case '\0':
-      case 's':
-        ok = try_trait_dispatch("show", interp_dispatch::kind_t::builtin_show,
-                                is_any_builtin);
-        trait_hint = "show";
-        break;
-      case '?':
-        ok = try_trait_dispatch("debug", interp_dispatch::kind_t::builtin_debug,
-                                is_any_builtin);
-        trait_hint = "debug";
-        break;
-      case 'x':
-      case 'X':
-        ok = try_trait_dispatch("hex", interp_dispatch::kind_t::builtin_radix,
-                                is_builtin_int);
-        trait_hint = "hex";
-        break;
-      case 'o':
-        ok = try_trait_dispatch("octal", interp_dispatch::kind_t::builtin_radix,
-                                is_builtin_int);
-        trait_hint = "octal";
-        break;
-      case 'b':
-        ok = try_trait_dispatch(
-            "binary", interp_dispatch::kind_t::builtin_radix, is_builtin_int);
-        trait_hint = "binary";
-        break;
-      case 'd':
-        ok = is_builtin_int;
-        dispatch.kind = interp_dispatch::kind_t::builtin_radix;
-        break;
-      case 'e':
-      case 'E':
-      case 'f':
-      case 'g':
-      case 'G':
-        ok = is_builtin_float;
-        dispatch.kind = interp_dispatch::kind_t::builtin_float;
-        break;
-      case 'c':
-        ok = is_builtin_int;
-        dispatch.kind = interp_dispatch::kind_t::builtin_char;
-        break;
-      default:
-        break;
       }
-
-      if (!ok) {
-        error_with_help(
-            seg.value->span,
-            std::format("`{}` does not support {} formatting",
-                        types_.display(value_type),
-                        type_char == '\0' ? "the requested"
-                                          : std::string(1, type_char)),
-            std::format("`{}` does not implement a required trait",
-                        types_.display(value_type)),
-            std::format("`{}` supports {} — implement `{} for {}` yourself "
-                        "if you want this style to mean something specific",
-                        types_.display(value_type), describe_supported(),
-                        trait_hint.empty() ? "show" : trait_hint,
-                        types_.display(value_type)));
-        return;
+      if (!type_has_trait(value_entry, trait_name)) {
+        return false;
       }
+      dispatch.kind = interp_dispatch::kind_t::trait_method;
+      dispatch.impl_target_type = value_entry.name;
+      // `value_type` is passed, not left to default: it is what lets a
+      // lookup on a concrete instantiation of a generic `deriving` type
+      // derive that instantiation's method (`ensure_derived_instance_
+      // impls`), and what lets `find_method` tell `wrap[int32]`'s impl
+      // from `wrap[str]`'s.
+      if (const auto *method = find_method(value_entry, trait_name, value_type);
+          method != nullptr) {
+        dispatch.decl = method->decl;
+        dispatch.owner_module = method->owner->module_name;
+        // A method reached through an impl over a generic target only
+        // exists once compiled for this receiver. Record the instance, and
+        // clear `impl_target_type` so `hir::lower` uses the instance's own
+        // mangled name rather than composing `wrap::show`, which is the
+        // template and is never emitted.
+        if (const auto *instance = instantiate_impl_method_for(
+                *seg.value, *method, value_entry, value_type)) {
+          dispatch.decl = instance;
+          dispatch.impl_target_type.clear();
+        }
+      }
+      return true;
+    };
 
-      interp_dispatches_[seg.value.get()] = dispatch;
+    // What `value_type` actually supports — used only for the diagnostic
+    // below when the requested style isn't one of them, so the message
+    // never has to guess: builtins get a fixed description per category,
+    // a user type gets a list of the capability traits it really
+    // implements (empty if none, meaning only `impl show for T` etc. can
+    // fix this).
+    auto describe_supported = [&]() -> std::string {
+      if (is_builtin_int) {
+        return "the default/`s` style (`show`), `?` (`debug`), `d`, "
+               "`x`/`X`, `o`, `b`, and `c`";
+      }
+      if (is_builtin_float) {
+        return "the default/`s` style (`show`), `?` (`debug`), `e`/`E`, "
+               "`f`, and `g`/`G`";
+      }
+      if (is_builtin_char) {
+        return "the default/`s` style (`show`), `?` (`debug`), and `c`";
+      }
+      if (is_builtin_str || is_builtin_bool) {
+        return "the default/`s` style (`show`) and `?` (`debug`)";
+      }
+      auto styles = std::vector<std::string>{};
+      for (const auto &[trait_name, label] :
+           {std::pair{"show", "the default/`s` style (`show`)"},
+            std::pair{"debug", "`?` (`debug`)"},
+            std::pair{"hex", "`x`/`X` (`hex`)"},
+            std::pair{"octal", "`o` (`octal`)"},
+            std::pair{"binary", "`b` (`binary`)"}}) {
+        if (type_has_trait(value_entry, trait_name)) {
+          styles.emplace_back(label);
+        }
+      }
+      if (styles.empty()) {
+        return "no format styles yet";
+      }
+      auto out = std::string{};
+      for (size_t i = 0; i < styles.size(); ++i) {
+        if (i > 0) {
+          out += ", ";
+        }
+        out += styles[i];
+      }
+      return out;
+    };
+
+    auto ok = false;
+    std::string trait_hint;
+    switch (type_char) {
+    case '\0':
+    case 's':
+      ok = try_trait_dispatch("show", interp_dispatch::kind_t::builtin_show,
+                              is_any_builtin);
+      trait_hint = "show";
+      break;
+    case '?':
+      ok = try_trait_dispatch("debug", interp_dispatch::kind_t::builtin_debug,
+                              is_any_builtin);
+      trait_hint = "debug";
+      break;
+    case 'x':
+    case 'X':
+      ok = try_trait_dispatch("hex", interp_dispatch::kind_t::builtin_radix,
+                              is_builtin_int);
+      trait_hint = "hex";
+      break;
+    case 'o':
+      ok = try_trait_dispatch("octal", interp_dispatch::kind_t::builtin_radix,
+                              is_builtin_int);
+      trait_hint = "octal";
+      break;
+    case 'b':
+      ok = try_trait_dispatch("binary", interp_dispatch::kind_t::builtin_radix,
+                              is_builtin_int);
+      trait_hint = "binary";
+      break;
+    case 'd':
+      ok = is_builtin_int;
+      dispatch.kind = interp_dispatch::kind_t::builtin_radix;
+      break;
+    case 'e':
+    case 'E':
+    case 'f':
+    case 'g':
+    case 'G':
+      ok = is_builtin_float;
+      dispatch.kind = interp_dispatch::kind_t::builtin_float;
+      break;
+    case 'c':
+      ok = is_builtin_int;
+      dispatch.kind = interp_dispatch::kind_t::builtin_char;
+      break;
+    default:
+      break;
+    }
+
+    if (!ok) {
+      error_with_help(
+          seg.value->span,
+          std::format(
+              "`{}` does not support {} formatting", types_.display(value_type),
+              type_char == '\0' ? "the requested" : std::string(1, type_char)),
+          std::format("`{}` does not implement a required trait",
+                      types_.display(value_type)),
+          std::format("`{}` supports {} — implement `{} for {}` yourself "
+                      "if you want this style to mean something specific",
+                      types_.display(value_type), describe_supported(),
+                      trait_hint.empty() ? "show" : trait_hint,
+                      types_.display(value_type)));
+      return;
+    }
+
+    interp_dispatches_[seg.value.get()] = dispatch;
   }
 
   /// An interpolation segment whose value type was still an open call-result

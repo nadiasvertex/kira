@@ -1631,7 +1631,7 @@ auto main() -> int {
   try {
     test_add_compiles_and_runs();
     test_registers_are_reused_across_dead_values();
-  test_huge_array_literal_compiles_and_runs();
+    test_huge_array_literal_compiles_and_runs();
     test_loop_carried_value_keeps_its_register();
     test_intrinsic_call_compiles_to_op_call_intrinsic();
     test_intrinsic_result_constructs_and_matches_through_real_syntax();

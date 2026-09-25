@@ -193,91 +193,100 @@ enum class intrinsic_wire_kind : uint8_t {
 };
 
 /// Each intrinsic's return kind, indexed the same as `known_intrinsic_names`.
-inline constexpr std::array<intrinsic_wire_kind, 36> known_intrinsic_return_kinds = {{
-    intrinsic_wire_kind::ptr, // rt_stdin
-    intrinsic_wire_kind::ptr, // rt_stdout
-    intrinsic_wire_kind::ptr, // rt_stderr
-    intrinsic_wire_kind::ptr, // rt_open
-    intrinsic_wire_kind::ptr, // rt_close
-    intrinsic_wire_kind::ptr, // rt_read
-    intrinsic_wire_kind::ptr, // rt_write
-    intrinsic_wire_kind::ptr, // rt_flush
-    intrinsic_wire_kind::ptr, // rt_str_concat
-    intrinsic_wire_kind::i64, // rt_str_len_scalars -> usize
-    intrinsic_wire_kind::ptr, // rt_str_repeat_char
-    intrinsic_wire_kind::ptr, // rt_str_truncate_scalars
-    intrinsic_wire_kind::ptr, // rt_fmt_radix_digits
-    intrinsic_wire_kind::ptr, // rt_fmt_f64_fixed
-    intrinsic_wire_kind::ptr, // rt_fmt_f64_sci
-    intrinsic_wire_kind::ptr, // rt_fmt_f64_general
-    intrinsic_wire_kind::ptr, // rt_fmt_char_from_codepoint
-    intrinsic_wire_kind::i32, // rt_str_eq -> bool
-    intrinsic_wire_kind::i32, // rt_str_cmp -> int32
-    intrinsic_wire_kind::ptr, // rt_str_find
-    intrinsic_wire_kind::ptr, // rt_str_rfind
-    intrinsic_wire_kind::ptr, // rt_str_reverse
-    intrinsic_wire_kind::ptr, // rt_str_trim
-    intrinsic_wire_kind::ptr, // rt_str_replace
-    intrinsic_wire_kind::ptr, // rt_uname
-    intrinsic_wire_kind::ptr, // rt_gethostname
-    intrinsic_wire_kind::ptr, // rt_processor_name
-    intrinsic_wire_kind::ptr, // rt_libc_version
-    intrinsic_wire_kind::ptr, // rt_windows_version
-    intrinsic_wire_kind::ptr, // rt_macos_version
-    intrinsic_wire_kind::ptr, // rt_panic (never returns)
-    intrinsic_wire_kind::i64, // rt_bitcast_f64_to_u64 -> uint64
-    intrinsic_wire_kind::i32, // rt_bitcast_f32_to_u32 -> uint32
-    intrinsic_wire_kind::ptr, // rt_alloc
-    intrinsic_wire_kind::ptr, // rt_realloc
-    intrinsic_wire_kind::ptr, // rt_free (unused `unit` placeholder)
-}};
+inline constexpr std::array<intrinsic_wire_kind, 36>
+    known_intrinsic_return_kinds = {{
+        intrinsic_wire_kind::ptr, // rt_stdin
+        intrinsic_wire_kind::ptr, // rt_stdout
+        intrinsic_wire_kind::ptr, // rt_stderr
+        intrinsic_wire_kind::ptr, // rt_open
+        intrinsic_wire_kind::ptr, // rt_close
+        intrinsic_wire_kind::ptr, // rt_read
+        intrinsic_wire_kind::ptr, // rt_write
+        intrinsic_wire_kind::ptr, // rt_flush
+        intrinsic_wire_kind::ptr, // rt_str_concat
+        intrinsic_wire_kind::i64, // rt_str_len_scalars -> usize
+        intrinsic_wire_kind::ptr, // rt_str_repeat_char
+        intrinsic_wire_kind::ptr, // rt_str_truncate_scalars
+        intrinsic_wire_kind::ptr, // rt_fmt_radix_digits
+        intrinsic_wire_kind::ptr, // rt_fmt_f64_fixed
+        intrinsic_wire_kind::ptr, // rt_fmt_f64_sci
+        intrinsic_wire_kind::ptr, // rt_fmt_f64_general
+        intrinsic_wire_kind::ptr, // rt_fmt_char_from_codepoint
+        intrinsic_wire_kind::i32, // rt_str_eq -> bool
+        intrinsic_wire_kind::i32, // rt_str_cmp -> int32
+        intrinsic_wire_kind::ptr, // rt_str_find
+        intrinsic_wire_kind::ptr, // rt_str_rfind
+        intrinsic_wire_kind::ptr, // rt_str_reverse
+        intrinsic_wire_kind::ptr, // rt_str_trim
+        intrinsic_wire_kind::ptr, // rt_str_replace
+        intrinsic_wire_kind::ptr, // rt_uname
+        intrinsic_wire_kind::ptr, // rt_gethostname
+        intrinsic_wire_kind::ptr, // rt_processor_name
+        intrinsic_wire_kind::ptr, // rt_libc_version
+        intrinsic_wire_kind::ptr, // rt_windows_version
+        intrinsic_wire_kind::ptr, // rt_macos_version
+        intrinsic_wire_kind::ptr, // rt_panic (never returns)
+        intrinsic_wire_kind::i64, // rt_bitcast_f64_to_u64 -> uint64
+        intrinsic_wire_kind::i32, // rt_bitcast_f32_to_u32 -> uint32
+        intrinsic_wire_kind::ptr, // rt_alloc
+        intrinsic_wire_kind::ptr, // rt_realloc
+        intrinsic_wire_kind::ptr, // rt_free (unused `unit` placeholder)
+    }};
 
 /// Each intrinsic's parameter kinds, indexed the same as
 /// `known_intrinsic_names`; only the first `known_intrinsic_arities[i]`
 /// entries of each row are meaningful, the rest are unused filler.
 inline constexpr std::array<std::array<intrinsic_wire_kind, 3>, 36>
     known_intrinsic_param_kinds = {{
-        {}, // rt_stdin
-        {}, // rt_stdout
-        {}, // rt_stderr
+        {},                                                   // rt_stdin
+        {},                                                   // rt_stdout
+        {},                                                   // rt_stderr
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::ptr}, // rt_open
-        {intrinsic_wire_kind::ptr}, // rt_close
+        {intrinsic_wire_kind::ptr},                           // rt_close
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::ptr}, // rt_read
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::ptr}, // rt_write
-        {intrinsic_wire_kind::ptr}, // rt_flush
+        {intrinsic_wire_kind::ptr},                           // rt_flush
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::ptr}, // rt_str_concat
         {intrinsic_wire_kind::ptr}, // rt_str_len_scalars
-        {intrinsic_wire_kind::i32, intrinsic_wire_kind::i64}, // rt_str_repeat_char (codepoint, n)
-        {intrinsic_wire_kind::ptr, intrinsic_wire_kind::i64}, // rt_str_truncate_scalars (s, n)
+        {intrinsic_wire_kind::i32,
+         intrinsic_wire_kind::i64}, // rt_str_repeat_char (codepoint, n)
+        {intrinsic_wire_kind::ptr,
+         intrinsic_wire_kind::i64}, // rt_str_truncate_scalars (s, n)
         {intrinsic_wire_kind::i64, intrinsic_wire_kind::i32,
-         intrinsic_wire_kind::i32}, // rt_fmt_radix_digits (value, radix, uppercase)
-        {intrinsic_wire_kind::f64, intrinsic_wire_kind::i64}, // rt_fmt_f64_fixed (value, precision)
+         intrinsic_wire_kind::i32}, // rt_fmt_radix_digits (value, radix,
+                                    // uppercase)
+        {intrinsic_wire_kind::f64,
+         intrinsic_wire_kind::i64}, // rt_fmt_f64_fixed (value, precision)
         {intrinsic_wire_kind::f64, intrinsic_wire_kind::i64,
-         intrinsic_wire_kind::i32}, // rt_fmt_f64_sci (value, precision, uppercase)
-        {intrinsic_wire_kind::f64, intrinsic_wire_kind::i64}, // rt_fmt_f64_general (value, precision)
+         intrinsic_wire_kind::i32}, // rt_fmt_f64_sci (value, precision,
+                                    // uppercase)
+        {intrinsic_wire_kind::f64,
+         intrinsic_wire_kind::i64}, // rt_fmt_f64_general (value, precision)
         {intrinsic_wire_kind::i32}, // rt_fmt_char_from_codepoint (cp)
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::ptr}, // rt_str_eq
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::ptr}, // rt_str_cmp
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::ptr,
          intrinsic_wire_kind::i64}, // rt_str_find (haystack, needle, from)
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::ptr}, // rt_str_rfind
-        {intrinsic_wire_kind::ptr}, // rt_str_reverse
-        {intrinsic_wire_kind::ptr, intrinsic_wire_kind::i32}, // rt_str_trim (s, mode)
+        {intrinsic_wire_kind::ptr},                           // rt_str_reverse
+        {intrinsic_wire_kind::ptr,
+         intrinsic_wire_kind::i32}, // rt_str_trim (s, mode)
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::ptr,
          intrinsic_wire_kind::ptr}, // rt_str_replace
-        {}, // rt_uname
-        {}, // rt_gethostname
-        {}, // rt_processor_name
-        {}, // rt_libc_version
-        {}, // rt_windows_version
-        {}, // rt_macos_version
+        {},                         // rt_uname
+        {},                         // rt_gethostname
+        {},                         // rt_processor_name
+        {},                         // rt_libc_version
+        {},                         // rt_windows_version
+        {},                         // rt_macos_version
         {intrinsic_wire_kind::ptr}, // rt_panic (msg)
         {intrinsic_wire_kind::f64}, // rt_bitcast_f64_to_u64 (v)
         {intrinsic_wire_kind::f32}, // rt_bitcast_f32_to_u32 (v)
         {intrinsic_wire_kind::i64}, // rt_alloc (bytes)
         {intrinsic_wire_kind::ptr, intrinsic_wire_kind::i64,
          intrinsic_wire_kind::i64}, // rt_realloc (ptr, old_bytes, new_bytes)
-        {intrinsic_wire_kind::ptr, intrinsic_wire_kind::i64}, // rt_free (ptr, bytes)
+        {intrinsic_wire_kind::ptr,
+         intrinsic_wire_kind::i64}, // rt_free (ptr, bytes)
     }};
 
 } // namespace kira

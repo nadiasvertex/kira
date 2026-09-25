@@ -1223,9 +1223,8 @@ private:
       base.first_index = index;
     }
     emit_store_field(
-        base.reg,
-        static_cast<uint16_t>((index - base.first_index) * elem_size), src,
-        elem_size);
+        base.reg, static_cast<uint16_t>((index - base.first_index) * elem_size),
+        src, elem_size);
     return {};
   }
 
@@ -1514,9 +1513,8 @@ private:
       return entry.name == "str";
     case semantic::type_kind::builtin_generic_kind:
       return entry.name == "slice" || entry.name == "slice_mut" ||
-             entry.name == "option" ||
-             entry.name == "result" || entry.name == "cell" ||
-             entry.name == "cell_mut";
+             entry.name == "option" || entry.name == "result" ||
+             entry.name == "cell" || entry.name == "cell_mut";
     default:
       return false;
     }
@@ -2734,10 +2732,10 @@ private:
                      "`slice`/`slice_mut`, or a raw `*T`/`*mut T` yet"});
     }
 
-    const auto elem_size =
-        indexing_str     ? uint8_t{1}
-        : indexing_slice ? element_stride(object_entry.args.front())
-                         : element_stride(object_entry.result);
+    const auto elem_size = indexing_str ? uint8_t{1}
+                           : indexing_slice
+                               ? element_stride(object_entry.args.front())
+                               : element_stride(object_entry.result);
 
     if (!indexing_view) {
       const auto len_const = writer_.add_constant(

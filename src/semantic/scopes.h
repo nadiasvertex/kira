@@ -23,11 +23,11 @@ enum class semantic_scope_kind : uint8_t {
   function_body_scope,      ///< Statement body of a function.
   lambda_signature_scope,   ///< Parameter list of a lambda expression.
   lambda_body_scope,        ///< Body of a lambda expression.
-  block_scope,     ///< An ordinary indented block or `let`/`var` extension.
-  branch_scope,    ///< Body of an `if`/`elif`/`else` branch.
-  loop_scope,      ///< Body of a `while`/`for` loop or `for` comprehension.
-  match_arm_scope, ///< Body and bindings of one `match` arm.
-  where_scope,     ///< Bindings introduced by a trailing `where:` clause.
+  block_scope,      ///< An ordinary indented block or `let`/`var` extension.
+  branch_scope,     ///< Body of an `if`/`elif`/`else` branch.
+  loop_scope,       ///< Body of a `while`/`for` loop or `for` comprehension.
+  match_arm_scope,  ///< Body and bindings of one `match` arm.
+  where_scope,      ///< Bindings introduced by a trailing `where:` clause.
   static_for_scope, ///< Binders and body of a `static for`.
 };
 

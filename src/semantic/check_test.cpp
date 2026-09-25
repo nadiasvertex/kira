@@ -368,11 +368,10 @@ auto test_module_name_conflicts_are_general() -> void {
               "    return 7\n",
   };
   const auto expect_one = [&](std::string_view main_text,
-                              std::string_view needle,
-                              std::string_view what) {
-    const auto analyzed = analyze_sources(
-        {pkg, source_fixture{.path = "main.kira",
-                             .text = std::string(main_text)}});
+                              std::string_view needle, std::string_view what) {
+    const auto analyzed =
+        analyze_sources({pkg, source_fixture{.path = "main.kira",
+                                             .text = std::string(main_text)}});
     expect_diagnostic(analyzed, needle,
                       std::format("expected {} to be rejected", what));
     expect(analyzed.error_count == 1,
@@ -458,17 +457,18 @@ auto test_root_module_alias() -> void {
               "pub def seven() -> int32:\n"
               "    return 7\n",
   };
-  expect_clean(analyze_sources({pkg, source_fixture{
-                                         .path = "main.kira",
-                                         .text = "module main\n"
-                                                 "\n"
-                                                 "use pkg as p\n"
-                                                 "\n"
-                                                 "def main() -> int32:\n"
-                                                 "    let h: p.holder = "
-                                                 "p.holder { value: p.seven() }\n"
-                                                 "    return h.value\n",
-                                     }}),
+  expect_clean(analyze_sources({pkg,
+                                source_fixture{
+                                    .path = "main.kira",
+                                    .text = "module main\n"
+                                            "\n"
+                                            "use pkg as p\n"
+                                            "\n"
+                                            "def main() -> int32:\n"
+                                            "    let h: p.holder = "
+                                            "p.holder { value: p.seven() }\n"
+                                            "    return h.value\n",
+                                }}),
                "expected `use pkg as p` to make `p.seven()` and `p.holder` "
                "resolve");
   const auto hidden = analyze_sources(
@@ -497,24 +497,24 @@ auto test_dotted_name_rooted_at_module_value() -> void {
               "\n"
               "pub static let origin: point = point { x: 3, y: 4 }\n",
   };
-  expect_clean(
-      analyze_sources({geo, source_fixture{
-                                .path = "main.kira",
-                                .text = "module main\n"
-                                        "\n"
-                                        "use geo\n"
-                                        "use geo.{origin}\n"
-                                        "\n"
-                                        "static let mine: geo.point = "
-                                        "geo.point { x: 1, y: 2 }\n"
-                                        "\n"
-                                        "def main() -> int32:\n"
-                                        "    let a: int32 = mine.y\n"
-                                        "    let b: int32 = origin.x\n"
-                                        "    let c: int32 = geo.origin.y\n"
-                                        "    return a + b + c\n",
-                            }}),
-      "expected field access on module-level statics to type-check");
+  expect_clean(analyze_sources({geo,
+                                source_fixture{
+                                    .path = "main.kira",
+                                    .text = "module main\n"
+                                            "\n"
+                                            "use geo\n"
+                                            "use geo.{origin}\n"
+                                            "\n"
+                                            "static let mine: geo.point = "
+                                            "geo.point { x: 1, y: 2 }\n"
+                                            "\n"
+                                            "def main() -> int32:\n"
+                                            "    let a: int32 = mine.y\n"
+                                            "    let b: int32 = origin.x\n"
+                                            "    let c: int32 = geo.origin.y\n"
+                                            "    return a + b + c\n",
+                                }}),
+               "expected field access on module-level statics to type-check");
   const auto wrong = analyze_sources(
       {geo, source_fixture{.path = "main.kira",
                            .text = "module main\n"
@@ -526,15 +526,15 @@ auto test_dotted_name_rooted_at_module_value() -> void {
                                    "    return 0\n"}});
   expect_diagnostic(wrong, "expected `bool`, found `int32`",
                     "expected `origin.x` to be typed as the field's type");
-  const auto fn_root = analyze_sources(
-      {source_fixture{.path = "main.kira",
-                      .text = "module main\n"
-                              "\n"
-                              "def helper() -> int32:\n"
-                              "    return 1\n"
-                              "\n"
-                              "def main() -> int32:\n"
-                              "    return helper.x\n"}});
+  const auto fn_root =
+      analyze_sources({source_fixture{.path = "main.kira",
+                                      .text = "module main\n"
+                                              "\n"
+                                              "def helper() -> int32:\n"
+                                              "    return 1\n"
+                                              "\n"
+                                              "def main() -> int32:\n"
+                                              "    return helper.x\n"}});
   expect(fn_root.error_count > 0 &&
              fn_root.diagnostics.find("module") == std::string::npos,
          "expected `helper.x` on a function to be a field error, not a module "

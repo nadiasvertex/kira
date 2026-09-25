@@ -1250,8 +1250,8 @@ auto test_dotted_names_through_module_values_and_root_alias() -> void {
   const auto status = std::system(output_path.string().c_str()); // NOLINT
 #ifdef WEXITSTATUS
   expect(WEXITSTATUS(status) == expected,
-         std::format("expected {} from the linked executable, got {}",
-                     expected, WEXITSTATUS(status)));
+         std::format("expected {} from the linked executable, got {}", expected,
+                     WEXITSTATUS(status)));
 #endif
 }
 
@@ -4520,11 +4520,12 @@ auto test_compile_sources_enforces_frame_stack_budget() -> void {
     return std::move(*report);
   };
 
-  const auto at_limit = compile("at_limit", "module sample\n"
-                                            "machine def f() -> int64:\n"
-                                            "  var a = uninit[int64, 131072]()\n"
-                                            "  a[0] = 1\n"
-                                            "  return a[0]\n");
+  const auto at_limit =
+      compile("at_limit", "module sample\n"
+                          "machine def f() -> int64:\n"
+                          "  var a = uninit[int64, 131072]()\n"
+                          "  a[0] = 1\n"
+                          "  return a[0]\n");
   expect(at_limit.error_count == 0,
          "expected a frame of exactly 1 MiB of `uninit` storage to compile");
 

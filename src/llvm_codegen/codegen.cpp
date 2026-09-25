@@ -523,8 +523,7 @@ public:
       std::string entry_module_name, std::string current_module_name,
       const std::unordered_map<std::string, llvm::GlobalVariable *> &globals)
       : ctx_(ctx), types_(types), functions_(functions), panic_fn_(panic_fn),
-        alloc_fn_(alloc_fn),
-        intrinsic_fns_(intrinsic_fns),
+        alloc_fn_(alloc_fn), intrinsic_fns_(intrinsic_fns),
         entry_module_name_(std::move(entry_module_name)),
         current_module_name_(std::move(current_module_name)), globals_(globals),
         builder_(ctx) {}
@@ -634,8 +633,8 @@ public:
         current_fn_->getParent());
 
     auto nested = function_compiler(
-        ctx_, types_, functions_, panic_fn_, alloc_fn_,
-        intrinsic_fns_, entry_module_name_, current_module_name_, globals_);
+        ctx_, types_, functions_, panic_fn_, alloc_fn_, intrinsic_fns_,
+        entry_module_name_, current_module_name_, globals_);
     auto step_compiled =
         nested.compile_generator_step(fn, state_symbols, step_fn);
     if (!step_compiled.has_value()) {
@@ -1201,7 +1200,8 @@ private:
                 ref.name)});
       }
       // Every reified global is a heap value (an array), stored the same
-      // pointer-sized way `compile_array_init` produces it — see `compile_static_global_value`.
+      // pointer-sized way `compile_array_init` produces it — see
+      // `compile_static_global_value`.
       return builder_.CreateLoad(llvm::PointerType::get(ctx_, 0), found->second,
                                  ref.name);
     }
@@ -1682,9 +1682,8 @@ private:
       return entry.name == "str";
     case semantic::type_kind::builtin_generic_kind:
       return entry.name == "slice" || entry.name == "slice_mut" ||
-             entry.name == "option" ||
-             entry.name == "result" || entry.name == "cell" ||
-             entry.name == "cell_mut";
+             entry.name == "option" || entry.name == "result" ||
+             entry.name == "cell" || entry.name == "cell_mut";
     default:
       return false;
     }
@@ -2163,8 +2162,8 @@ private:
         current_fn_->getParent());
 
     auto nested = function_compiler(
-        ctx_, types_, functions_, panic_fn_, alloc_fn_,
-        intrinsic_fns_, entry_module_name_, current_module_name_, globals_);
+        ctx_, types_, functions_, panic_fn_, alloc_fn_, intrinsic_fns_,
+        entry_module_name_, current_module_name_, globals_);
     auto compiled =
         nested.compile_lambda_body(lambda, plan, capture_types, lambda_fn);
     if (!compiled.has_value()) {
@@ -2628,10 +2627,10 @@ private:
                      "`slice`/`slice_mut`, or a raw `*T`/`*mut T` yet"});
     }
 
-    const auto elem_size =
-        indexing_str     ? uint8_t{1}
-        : indexing_slice ? element_stride(object_entry.args.front())
-                         : element_stride(object_entry.result);
+    const auto elem_size = indexing_str ? uint8_t{1}
+                           : indexing_slice
+                               ? element_stride(object_entry.args.front())
+                               : element_stride(object_entry.result);
 
     if (!indexing_view) {
       auto *len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
@@ -2639,9 +2638,9 @@ private:
       return container_view{.len = len, .data = object, .elem_size = elem_size};
     }
 
-    auto *len = builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                                    slot_address(object, size_t{0}),
-                                    "view.len");
+    auto *len =
+        builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
+                            slot_address(object, size_t{0}), "view.len");
     // A 2-slot `{ len; data }` view header keeps its data pointer at slot 1.
     auto *data =
         builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
@@ -4513,9 +4512,9 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
                          ? fn->name
                          : module->module_name + "::" + fn->name;
     auto *llvm_fn = functions.at(key);
-    auto compiler = function_compiler(
-        ctx, types, functions, panic_fn, alloc_fn,
-        intrinsic_fns, entry_name, module->module_name, global_vars);
+    auto compiler = function_compiler(ctx, types, functions, panic_fn, alloc_fn,
+                                      intrinsic_fns, entry_name,
+                                      module->module_name, global_vars);
     auto compiled = compiler.compile(*fn, llvm_fn);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
@@ -4535,9 +4534,9 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
     auto *init_fn =
         llvm::Function::Create(init_fn_type, llvm::Function::InternalLinkage,
                                "__kira_static_init", llvm_module);
-    auto init_compiler = function_compiler(
-        ctx, types, functions, panic_fn, alloc_fn,
-        intrinsic_fns, entry_name, entry_name, global_vars);
+    auto init_compiler =
+        function_compiler(ctx, types, functions, panic_fn, alloc_fn,
+                          intrinsic_fns, entry_name, entry_name, global_vars);
     auto compiled_init =
         init_compiler.compile_static_init(ordered_globals, init_fn);
     if (!compiled_init.has_value()) {

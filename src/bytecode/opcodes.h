@@ -361,16 +361,16 @@ enum class opcode : uint8_t {
                    ///< = reg[ptr].u + reg[index].u * elem_size. The address
                    ///< counterpart of `op_load_indexed`: `&mut xs[i]`, and
                    ///< the opcode `iter_mut` over a container is built on.
-  op_panic_if,  ///< u16 cond, u8 panic_reason — panics with
-                ///< `static_cast<panic_reason>(panic_reason)` if
-                ///< reg[cond] (a `boolean` register) is true; otherwise
-                ///< falls through. The bytecode-level building block a
-                ///< compiler-emitted bounds check (or any other
-                ///< source-triggered panic condition that isn't one of
-                ///< the checked-arithmetic opcodes' own built-in panics)
-                ///< composes from — mirrors `llvm_codegen`'s
-                ///< `guard_panic` helper, just reified as one opcode
-                ///< instead of a conditional branch to a call.
+  op_panic_if,     ///< u16 cond, u8 panic_reason — panics with
+                   ///< `static_cast<panic_reason>(panic_reason)` if
+                   ///< reg[cond] (a `boolean` register) is true; otherwise
+                   ///< falls through. The bytecode-level building block a
+                   ///< compiler-emitted bounds check (or any other
+                   ///< source-triggered panic condition that isn't one of
+                   ///< the checked-arithmetic opcodes' own built-in panics)
+                   ///< composes from — mirrors `llvm_codegen`'s
+                   ///< `guard_panic` helper, just reified as one opcode
+                   ///< instead of a conditional branch to a call.
 
   // --- Diagnostics ---------------------------------------------------------
   op_panic, ///< (no operands) — panics with `panic_reason::explicit_panic`

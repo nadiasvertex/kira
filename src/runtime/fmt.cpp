@@ -80,8 +80,7 @@ auto kira_rt_str_len_scalars(uint64_t *s) -> uint64_t {
   return count;
 }
 
-auto kira_rt_str_repeat_char(uint32_t codepoint, uint64_t count)
-    -> uint64_t * {
+auto kira_rt_str_repeat_char(uint32_t codepoint, uint64_t count) -> uint64_t * {
   std::string one;
   kira::encode_utf8_scalar(codepoint, one);
   std::string out;

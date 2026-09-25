@@ -2197,9 +2197,9 @@ struct introduced_module_name {
 /// that is not itself a module (`use p.{f}`).
 struct scope_name {
   std::string name;
-  std::string kind_name;    ///< "function", "type", "import of `p.f`", ...
-  source_location location; ///< The declaration, or the `use` item.
-  bool imported = false;    ///< Brought in by `use` rather than declared.
+  std::string kind_name;     ///< "function", "type", "import of `p.f`", ...
+  source_location location;  ///< The declaration, or the `use` item.
+  bool imported = false;     ///< Brought in by `use` rather than declared.
   std::string imported_path; ///< What an import names (`p.f`); else empty.
 };
 
@@ -2256,9 +2256,9 @@ auto emit_module_name_conflict(const scope_name &name,
                    name.location.file_id)
             .with_label(name.location.span, "same name"));
   } else {
-    conflict.with_label(primary.span,
-                        std::format("this {} is named like a visible module",
-                                    name.kind_name));
+    conflict.with_label(
+        primary.span,
+        std::format("this {} is named like a visible module", name.kind_name));
     conflict.children.push_back(
         diagnostic(diagnostic_level::note,
                    std::format("module `{}` is {} here", visible.module_name,
@@ -2278,9 +2278,8 @@ auto emit_module_name_conflict(const scope_name &name,
                        name.kind_name, visible.module_name, name.name);
   }();
   const auto other =
-      name.imported
-          ? std::format("the imported `{}`", name.imported_path)
-          : std::format("the {} `{}`", name.kind_name, name.name);
+      name.imported ? std::format("the imported `{}`", name.imported_path)
+                    : std::format("the {} `{}`", name.kind_name, name.name);
   conflict.with_help(std::format(
       "`{0}.x` could reach into the module `{1}` or into {2}, so Kira "
       "rejects the pair rather than guess. {3}",
@@ -2381,10 +2380,10 @@ auto collect_file_imports(const std::vector<ast::ptr<ast::node>> &items,
       for (auto &name : module_scope_names(semantic_index, base)) {
         imports.members.push_back(scope_name{
             .name = name.name,
-            .kind_name = std::format("import of `{}.{}` (through `{}.*`)",
-                                     base, name.name, base),
-            .location = source_location{.file_id = file_id,
-                                        .span = use.selector->span},
+            .kind_name = std::format("import of `{}.{}` (through `{}.*`)", base,
+                                     name.name, base),
+            .location =
+                source_location{.file_id = file_id, .span = use.selector->span},
             .imported = true,
             .imported_path = append_module_name(base, name.name)});
       }
@@ -2435,11 +2434,13 @@ auto check_import_import_conflicts(const file_imports &imports,
 /// share their file's imports: an imported module may not share its local
 /// name with a declaration of the module, and an imported member may not
 /// share its local name with a declared child module.
-auto check_import_conflicts(
-    const std::vector<ast::ptr<ast::node>> &items, std::string_view module_name,
-    const file_imports &imports, const module_session_index &session_index,
-    const semantic_resolution_index &semantic_index, diagnostic_bag &diag,
-    std::vector<bool> &file_has_errors) -> void {
+auto check_import_conflicts(const std::vector<ast::ptr<ast::node>> &items,
+                            std::string_view module_name,
+                            const file_imports &imports,
+                            const module_session_index &session_index,
+                            const semantic_resolution_index &semantic_index,
+                            diagnostic_bag &diag,
+                            std::vector<bool> &file_has_errors) -> void {
   for (const auto &name : module_scope_names(semantic_index, module_name)) {
     for (const auto &[local_name, visible] : imports.modules) {
       if (local_name == name.name) {
@@ -2455,12 +2456,12 @@ auto check_import_conflicts(
     }
     for (const auto &[local_name, visible] : imports.modules) {
       if (local_name == child.child_name) {
-        emit_module_module_conflict(local_name, module_name, visible,
-                                    introduced_module_name{
-                                        .module_name = child.module_name,
-                                        .location = child.location,
-                                        .imported = false},
-                                    diag, file_has_errors);
+        emit_module_module_conflict(
+            local_name, module_name, visible,
+            introduced_module_name{.module_name = child.module_name,
+                                   .location = child.location,
+                                   .imported = false},
+            diag, file_has_errors);
       }
     }
     for (const auto &member : imports.members) {
@@ -2480,10 +2481,9 @@ auto check_import_conflicts(
     }
     const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
     if (!sub.is_functor() && !sub.items.empty()) {
-      check_import_conflicts(sub.items,
-                             append_module_name(module_name, sub.name), imports,
-                             session_index, semantic_index, diag,
-                             file_has_errors);
+      check_import_conflicts(
+          sub.items, append_module_name(module_name, sub.name), imports,
+          session_index, semantic_index, diag, file_has_errors);
     }
   }
 }
@@ -2532,8 +2532,7 @@ auto validate_module_name_conflicts(
     }
     const auto module_name =
         join_strings(input.ast_file->module_decl->path, ".");
-    check_import_import_conflicts(imports, module_name, diag,
-                                  file_has_errors);
+    check_import_import_conflicts(imports, module_name, diag, file_has_errors);
     check_import_conflicts(input.ast_file->items, module_name, imports,
                            session_index, semantic_index, diag,
                            file_has_errors);

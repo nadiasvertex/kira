@@ -976,7 +976,7 @@ auto main() -> int {
     test_saturating_add_clamps_to_max();
     test_cast_sign_extends_negative_value();
     test_load_const_reaches_past_65536_constants();
-  test_while_loop_sums_one_to_n();
+    test_while_loop_sums_one_to_n();
     test_recursive_call_computes_factorial();
     test_unbounded_recursion_panics_with_stack_overflow();
     test_tail_call_reuses_frame_past_max_call_depth();

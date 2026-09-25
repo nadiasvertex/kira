@@ -178,8 +178,7 @@ auto walk_child(const ast::ptr<node_type> &child, scope_id scope,
 /// types, not statements.
 template <typename node_type>
 auto walk_children(const std::vector<ast::ptr<node_type>> &children,
-                   scope_id scope, const scope_build_context &context)
-    -> void {
+                   scope_id scope, const scope_build_context &context) -> void {
   for (const auto &child : children) {
     walk_child(child, scope, context);
   }
@@ -1255,8 +1254,8 @@ auto walk_node(const ast::node &node, scope_id active_scope,
                active_scope, context);
     return active_scope;
   case ast::node_kind::ref_pattern:
-    walk_child(dynamic_cast<const ast::ref_pattern &>(node).inner,
-               active_scope, context);
+    walk_child(dynamic_cast<const ast::ref_pattern &>(node).inner, active_scope,
+               context);
     return active_scope;
   case ast::node_kind::or_pattern:
     walk_children(dynamic_cast<const ast::or_pattern &>(node).alternatives,
@@ -1309,10 +1308,10 @@ auto walk_static_decl(const ast::static_decl &decl, scope_id active_scope,
     return extend_scope_with_bindings(
         context.session, active_scope, semantic_scope_kind::block_scope,
         decl.name, context.file_id, context.module_name,
-        {pattern_binding_spec{
-            .name = decl.name,
-            .location = source_location{.file_id = context.file_id,
-                                        .span = decl.span}}},
+        {pattern_binding_spec{.name = decl.name,
+                              .location =
+                                  source_location{.file_id = context.file_id,
+                                                  .span = decl.span}}},
         semantic_symbol_kind::static_binding_symbol);
   }
   case ast::static_decl_kind::assertion:
@@ -1340,10 +1339,9 @@ auto walk_static_decl(const ast::static_decl &decl, scope_id active_scope,
   case ast::static_decl_kind::for_inline:
   case ast::static_decl_kind::for_block: {
     walk_child(decl.for_iterable, active_scope, context);
-    const auto for_scope =
-        create_block_scope(active_scope, context,
-                           semantic_scope_kind::static_for_scope, "static for",
-                           decl.span);
+    const auto for_scope = create_block_scope(
+        active_scope, context, semantic_scope_kind::static_for_scope,
+        "static for", decl.span);
     for (const auto &pattern : decl.for_patterns) {
       if (pattern == nullptr) {
         continue;

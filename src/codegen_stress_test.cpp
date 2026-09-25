@@ -542,10 +542,10 @@ auto run_and_check_tiers(const fs::path &path, std::string_view text,
                      "value",
                      path.string()));
   if (vm_result.has_value) {
-    const auto agree = is_heap_result
-                           ? values_equal(types, return_type, vm_result.bits,
-                                          jit_result.bits)
-                           : vm_result.bits == jit_result.bits;
+    const auto agree =
+        is_heap_result
+            ? values_equal(types, return_type, vm_result.bits, jit_result.bits)
+            : vm_result.bits == jit_result.bits;
     expect(agree,
            std::format("`{}`: bytecode VM and LLVM JIT disagree on `main`'s "
                        "result",
@@ -656,10 +656,10 @@ auto run_one(const fs::path &path) -> void {
                      "produced a value",
                      path.string()));
   if (!before.panicked && before.has_value) {
-    const auto agree = is_heap_result
-                           ? values_equal(types, main_fn->return_type,
-                                          before.bits, after.bits)
-                           : before.bits == after.bits;
+    const auto agree =
+        is_heap_result
+            ? values_equal(types, main_fn->return_type, before.bits, after.bits)
+            : before.bits == after.bits;
     expect(agree, std::format("`{}`: inlining changed `main`'s result",
                               path.string()));
   }

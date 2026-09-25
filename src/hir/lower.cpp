@@ -690,7 +690,8 @@ private:
   /// clause chain into nested loops (reusing the same three shape lowerers
   /// as `for` statements, one nested inside the next), and appends the
   /// yielded value — filtered by `guard`, if present — via the list's own
-  /// `push` method at the innermost position. See spec/iterator-protocol-design.md.
+  /// `push` method at the innermost position. See
+  /// spec/iterator-protocol-design.md.
   [[nodiscard]] auto lower_for_expr(const ast::for_expr &for_expr)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   /// Recursively lowers `clauses[index:]` into nested loops, calling

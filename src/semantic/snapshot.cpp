@@ -643,16 +643,16 @@ auto renderer::run() -> std::string {
                       checked_.elided_contracts.size());
 
   const auto &fmt = checked_.fmt_types;
-  out_ += std::format(
-      "\n## fmt_runtime_types\n"
-      "format_spec {}\nalign_mode {}\nsign_mode {}\n"
-      "str {}\nint64 {}\nuint64 {}\n"
-      "uint32 {}\nuint8 {}\nfloat64 {}\noption_align_mode {}\n"
-      "option_usize {}\n",
-      ty(fmt.format_spec), ty(fmt.align_mode), ty(fmt.sign_mode),
-      ty(fmt.str_type), ty(fmt.int64_type),
-      ty(fmt.uint64_type), ty(fmt.uint32_type), ty(fmt.uint8_type),
-      ty(fmt.float64_type), ty(fmt.option_align_mode), ty(fmt.option_usize));
+  out_ +=
+      std::format("\n## fmt_runtime_types\n"
+                  "format_spec {}\nalign_mode {}\nsign_mode {}\n"
+                  "str {}\nint64 {}\nuint64 {}\n"
+                  "uint32 {}\nuint8 {}\nfloat64 {}\noption_align_mode {}\n"
+                  "option_usize {}\n",
+                  ty(fmt.format_spec), ty(fmt.align_mode), ty(fmt.sign_mode),
+                  ty(fmt.str_type), ty(fmt.int64_type), ty(fmt.uint64_type),
+                  ty(fmt.uint32_type), ty(fmt.uint8_type), ty(fmt.float64_type),
+                  ty(fmt.option_align_mode), ty(fmt.option_usize));
 
   return std::move(out_);
 }

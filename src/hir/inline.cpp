@@ -153,8 +153,9 @@ template <typename T>
   auto out = std::vector<hir_param>{};
   out.reserve(params.size());
   for (const auto &param : params) {
-    out.push_back(hir_param{
-        .symbol = rename(param.symbol), .name = param.name, .type = param.type});
+    out.push_back(hir_param{.symbol = rename(param.symbol),
+                            .name = param.name,
+                            .type = param.type});
   }
   return out;
 }
@@ -168,8 +169,7 @@ template <typename T>
   return pattern;
 }
 
-auto clone_node(const hir_node &node, symbol_renamer &rename)
-    -> ptr<hir_node> {
+auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
   const auto span = node.span;
   const auto type = node.type;
   switch (node.kind) {
@@ -180,7 +180,7 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
   case hir_node_kind::hir_local_ref: {
     const auto &n = dynamic_cast<const hir_local_ref &>(node);
     return hir::make<hir_local_ref>(span, type, rename(n.symbol), n.name,
-                               n.owner_module);
+                                    n.owner_module);
   }
   case hir_node_kind::hir_global_ref: {
     const auto &n = dynamic_cast<const hir_global_ref &>(node);
@@ -189,7 +189,7 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
   case hir_node_kind::hir_binary: {
     const auto &n = dynamic_cast<const hir_binary &>(node);
     return hir::make<hir_binary>(span, type, n.op, clone_as(*n.lhs, rename),
-                            clone_as(*n.rhs, rename));
+                                 clone_as(*n.rhs, rename));
   }
   case hir_node_kind::hir_unary: {
     const auto &n = dynamic_cast<const hir_unary &>(node);
@@ -198,19 +198,19 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
   case hir_node_kind::hir_call: {
     const auto &n = dynamic_cast<const hir_call &>(node);
     auto copy = hir::make<hir_call>(span, type, clone_as(*n.callee, rename),
-                               clone_all(n.args, rename));
+                                    clone_all(n.args, rename));
     copy->is_tail_call = n.is_tail_call;
     return copy;
   }
   case hir_node_kind::hir_field: {
     const auto &n = dynamic_cast<const hir_field &>(node);
     return hir::make<hir_field>(span, type, clone_as(*n.object, rename),
-                           n.field_name);
+                                n.field_name);
   }
   case hir_node_kind::hir_index: {
     const auto &n = dynamic_cast<const hir_index &>(node);
     return hir::make<hir_index>(span, type, clone_as(*n.object, rename),
-                           clone_as(*n.index, rename));
+                                clone_as(*n.index, rename));
   }
   case hir_node_kind::hir_tuple: {
     const auto &n = dynamic_cast<const hir_tuple &>(node);
@@ -229,8 +229,8 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
   case hir_node_kind::hir_array_init: {
     const auto &n = dynamic_cast<const hir_array_init &>(node);
     return hir::make<hir_array_init>(span, type, clone_all(n.elements, rename),
-                                clone_opt(n.fill_value, rename),
-                                clone_opt(n.fill_count, rename));
+                                     clone_opt(n.fill_value, rename),
+                                     clone_opt(n.fill_count, rename));
   }
   case hir_node_kind::hir_cast: {
     const auto &n = dynamic_cast<const hir_cast &>(node);
@@ -250,7 +250,7 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
                         .body = clone_as(*branch.body, rename)});
     }
     return hir::make<hir_if>(span, type, std::move(branches),
-                        clone_opt(n.else_body, rename));
+                             clone_opt(n.else_body, rename));
   }
   case hir_node_kind::hir_match: {
     const auto &n = dynamic_cast<const hir_match &>(node);
@@ -264,7 +264,7 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
                                    .body = clone_as(*arm.body, rename)});
     }
     return hir::make<hir_match>(span, type, std::move(subject), subject_symbol,
-                           std::move(arms));
+                                std::move(arms));
   }
   case hir_node_kind::hir_lambda: {
     const auto &n = dynamic_cast<const hir_lambda &>(node);
@@ -273,27 +273,28 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
     if (n.captures.has_value()) {
       captures.emplace();
       for (const auto &capture : *n.captures) {
-        captures->push_back(
-            hir_capture{.symbol = rename(capture.symbol), .mode = capture.mode});
+        captures->push_back(hir_capture{.symbol = rename(capture.symbol),
+                                        .mode = capture.mode});
       }
     }
     return hir::make<hir_lambda>(span, type, std::move(params), n.return_type,
-                            clone_as(*n.body, rename), std::move(captures));
+                                 clone_as(*n.body, rename),
+                                 std::move(captures));
   }
   case hir_node_kind::hir_tuple_index: {
     const auto &n = dynamic_cast<const hir_tuple_index &>(node);
     return hir::make<hir_tuple_index>(span, type, clone_as(*n.object, rename),
-                                 n.index);
+                                      n.index);
   }
   case hir_node_kind::hir_variant_payload: {
     const auto &n = dynamic_cast<const hir_variant_payload &>(node);
-    return hir::make<hir_variant_payload>(span, type, clone_as(*n.object, rename),
-                                     n.variant_name, n.index);
+    return hir::make<hir_variant_payload>(
+        span, type, clone_as(*n.object, rename), n.variant_name, n.index);
   }
   case hir_node_kind::hir_variant_init: {
     const auto &n = dynamic_cast<const hir_variant_init &>(node);
     return hir::make<hir_variant_init>(span, type, n.variant_name,
-                                  clone_all(n.args, rename));
+                                       clone_all(n.args, rename));
   }
   case hir_node_kind::hir_stack_buffer: {
     const auto &n = dynamic_cast<const hir_stack_buffer &>(node);
@@ -301,44 +302,48 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
   }
   case hir_node_kind::hir_container_data: {
     const auto &n = dynamic_cast<const hir_container_data &>(node);
-    return hir::make<hir_container_data>(span, type, clone_as(*n.object, rename));
+    return hir::make<hir_container_data>(span, type,
+                                         clone_as(*n.object, rename));
   }
   case hir_node_kind::hir_slice_from_raw_parts: {
     const auto &n = dynamic_cast<const hir_slice_from_raw_parts &>(node);
-    return hir::make<hir_slice_from_raw_parts>(span, type,
-                                          clone_as(*n.pointer, rename),
-                                          clone_as(*n.len, rename));
+    return hir::make<hir_slice_from_raw_parts>(
+        span, type, clone_as(*n.pointer, rename), clone_as(*n.len, rename));
   }
   case hir_node_kind::hir_container_len: {
     const auto &n = dynamic_cast<const hir_container_len &>(node);
-    return hir::make<hir_container_len>(span, type, clone_as(*n.object, rename));
+    return hir::make<hir_container_len>(span, type,
+                                        clone_as(*n.object, rename));
   }
   case hir_node_kind::hir_generator_next: {
     const auto &n = dynamic_cast<const hir_generator_next &>(node);
-    return hir::make<hir_generator_next>(span, type, clone_as(*n.object, rename));
+    return hir::make<hir_generator_next>(span, type,
+                                         clone_as(*n.object, rename));
   }
   case hir_node_kind::hir_str_decode_scalar: {
     const auto &n = dynamic_cast<const hir_str_decode_scalar &>(node);
-    return hir::make<hir_str_decode_scalar>(span, type, clone_as(*n.object, rename),
-                                       clone_as(*n.byte_offset, rename));
+    return hir::make<hir_str_decode_scalar>(span, type,
+                                            clone_as(*n.object, rename),
+                                            clone_as(*n.byte_offset, rename));
   }
   case hir_node_kind::hir_str_scalar_width: {
     const auto &n = dynamic_cast<const hir_str_scalar_width &>(node);
-    return hir::make<hir_str_scalar_width>(span, type, clone_as(*n.object, rename),
-                                      clone_as(*n.byte_offset, rename));
+    return hir::make<hir_str_scalar_width>(span, type,
+                                           clone_as(*n.object, rename),
+                                           clone_as(*n.byte_offset, rename));
   }
   case hir_node_kind::hir_cell_set: {
     const auto &n = dynamic_cast<const hir_cell_set &>(node);
     return hir::make<hir_cell_set>(span, type, clone_as(*n.cell, rename),
-                              clone_as(*n.value, rename));
+                                   clone_as(*n.value, rename));
   }
   case hir_node_kind::hir_wildcard_pattern:
     return with_subject(hir::make<hir_wildcard_pattern>(span),
                         dynamic_cast<const hir_pattern &>(node));
   case hir_node_kind::hir_literal_pattern: {
     const auto &n = dynamic_cast<const hir_literal_pattern &>(node);
-    return with_subject(hir::make<hir_literal_pattern>(span, n.lit_kind, n.value),
-                        n);
+    return with_subject(
+        hir::make<hir_literal_pattern>(span, n.lit_kind, n.value), n);
   }
   case hir_node_kind::hir_or_pattern: {
     const auto &n = dynamic_cast<const hir_or_pattern &>(node);
@@ -363,7 +368,8 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
       fields.push_back(hir_struct_pattern_field{
           .name = field.name, .pattern = clone_as(*field.pattern, rename)});
     }
-    return with_subject(hir::make<hir_struct_pattern>(span, std::move(fields)), n);
+    return with_subject(hir::make<hir_struct_pattern>(span, std::move(fields)),
+                        n);
   }
   case hir_node_kind::hir_constructor_pattern: {
     const auto &n = dynamic_cast<const hir_constructor_pattern &>(node);
@@ -373,30 +379,29 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
   }
   case hir_node_kind::hir_range_pattern: {
     const auto &n = dynamic_cast<const hir_range_pattern &>(node);
-    return with_subject(hir::make<hir_range_pattern>(span,
-                                                clone_opt(n.start, rename),
-                                                clone_opt(n.end, rename),
-                                                n.inclusive),
-                        n);
+    return with_subject(
+        hir::make<hir_range_pattern>(span, clone_opt(n.start, rename),
+                                     clone_opt(n.end, rename), n.inclusive),
+        n);
   }
   case hir_node_kind::hir_let: {
     const auto &n = dynamic_cast<const hir_let &>(node);
     auto initializer = clone_as(*n.initializer, rename);
     return hir::make<hir_let>(span, rename(n.symbol), n.name,
-                         std::move(initializer), n.is_mut);
+                              std::move(initializer), n.is_mut);
   }
   case hir_node_kind::hir_let_else: {
     const auto &n = dynamic_cast<const hir_let_else &>(node);
     auto initializer = clone_as(*n.initializer, rename);
     const auto subject_symbol = rename(n.subject_symbol);
     return hir::make<hir_let_else>(span, subject_symbol, std::move(initializer),
-                              clone_as(*n.pattern, rename),
-                              clone_as(*n.else_body, rename));
+                                   clone_as(*n.pattern, rename),
+                                   clone_as(*n.else_body, rename));
   }
   case hir_node_kind::hir_assign: {
     const auto &n = dynamic_cast<const hir_assign &>(node);
     return hir::make<hir_assign>(span, n.op, clone_as(*n.target, rename),
-                            clone_as(*n.value, rename));
+                                 clone_as(*n.value, rename));
   }
   case hir_node_kind::hir_expr_stmt: {
     const auto &n = dynamic_cast<const hir_expr_stmt &>(node);
@@ -413,16 +418,16 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
   case hir_node_kind::hir_while: {
     const auto &n = dynamic_cast<const hir_while &>(node);
     return hir::make<hir_while>(span, clone_as(*n.condition, rename),
-                           clone_as(*n.body, rename),
-                           clone_opt(n.step, rename));
+                                clone_as(*n.body, rename),
+                                clone_opt(n.step, rename));
   }
   case hir_node_kind::hir_while_let: {
     const auto &n = dynamic_cast<const hir_while_let &>(node);
     auto subject = clone_as(*n.subject, rename);
     const auto subject_symbol = rename(n.subject_symbol);
     return hir::make<hir_while_let>(span, std::move(subject), subject_symbol,
-                               clone_as(*n.pattern, rename),
-                               clone_as(*n.body, rename));
+                                    clone_as(*n.pattern, rename),
+                                    clone_as(*n.body, rename));
   }
   case hir_node_kind::hir_break:
     return hir::make<hir_break>(span);
@@ -431,7 +436,7 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
   case hir_node_kind::hir_contract_check: {
     const auto &n = dynamic_cast<const hir_contract_check &>(node);
     return hir::make<hir_contract_check>(span, clone_as(*n.condition, rename),
-                                    n.kind, n.message);
+                                         n.kind, n.message);
   }
   case hir_node_kind::hir_function:
   case hir_node_kind::hir_module:
@@ -484,17 +489,17 @@ auto clone_node(const hir_node &node, symbol_renamer &rename)
       !always_returns(*iff->else_body)) {
     return false;
   }
-  return std::ranges::all_of(iff->branches, [](const hir_if_branch &branch) -> bool {
-    return always_returns(*branch.body);
-  });
+  return std::ranges::all_of(iff->branches,
+                             [](const hir_if_branch &branch) -> bool {
+                               return always_returns(*branch.body);
+                             });
 }
 
 auto always_returns(const hir_block &block) -> bool {
   return !block.stmts.empty() && always_returns(*block.stmts.back());
 }
 
-[[nodiscard]] auto unit_value(source_span span, type_id unit)
-    -> ptr<hir_expr> {
+[[nodiscard]] auto unit_value(source_span span, type_id unit) -> ptr<hir_expr> {
   return hir::make<hir_literal>(span, unit, token_kind::kw_unit, "");
 }
 
@@ -529,9 +534,10 @@ auto always_returns(const hir_block &block) -> bool {
     }
     auto *iff = as_if(*stmt);
     if (iff == nullptr ||
-        !std::ranges::all_of(iff->branches, [](const hir_if_branch &branch) -> bool {
-          return always_returns(*branch.body);
-        })) {
+        !std::ranges::all_of(iff->branches,
+                             [](const hir_if_branch &branch) -> bool {
+                               return always_returns(*branch.body);
+                             })) {
       return std::nullopt;
     }
     auto else_stmts = ptr_vec<hir_node>{};
@@ -550,14 +556,14 @@ auto always_returns(const hir_block &block) -> bool {
     auto branches = std::vector<hir_if_branch>{};
     branches.reserve(iff->branches.size());
     for (auto &branch : iff->branches) {
-      auto body =
-          to_block_value(std::move(branch.body->stmts), result, types);
+      auto body = to_block_value(std::move(branch.body->stmts), result, types);
       if (!body.has_value()) {
         return std::nullopt;
       }
-      branches.push_back(hir_if_branch{
-          .condition = std::move(branch.condition),
-          .body = hir::make<hir_block>(branch.body->span, result, std::move(*body))});
+      branches.push_back(
+          hir_if_branch{.condition = std::move(branch.condition),
+                        .body = hir::make<hir_block>(branch.body->span, result,
+                                                     std::move(*body))});
     }
     auto else_body = to_block_value(std::move(else_stmts), result, types);
     if (!else_body.has_value()) {
@@ -566,8 +572,8 @@ auto always_returns(const hir_block &block) -> bool {
     const auto span = iff->span;
     out.push_back(hir::make<hir_expr_stmt>(
         span, hir::make<hir_if>(span, result, std::move(branches),
-                           hir::make<hir_block>(else_span, result,
-                                           std::move(*else_body)))));
+                                hir::make<hir_block>(else_span, result,
+                                                     std::move(*else_body)))));
     return out;
   }
   // Control falls out the bottom: the tail expression, if any, is the value.
@@ -799,7 +805,7 @@ private:
       const auto &param = candidate->params[i];
       const auto span = call.args[i]->span;
       stmts.push_back(hir::make<hir_let>(span, rename(param.symbol), param.name,
-                                    std::move(call.args[i])));
+                                         std::move(call.args[i])));
     }
     const auto body_start = stmts.size();
     for (const auto &stmt : candidate->stmts) {

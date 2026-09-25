@@ -16,8 +16,8 @@
 // ==========================================================================
 
 #include <cstdint>
-#include <utility>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "src/bytecode_compiler/register_alloc.h"
@@ -304,7 +304,6 @@ auto test_many_virtuals_fit_when_not_simultaneously_live() -> void {
   expect(result.register_count <= 2,
          "300 virtuals with overlapping-by-one ranges need only two physicals");
 }
-
 
 /// The virtual count is unbounded: more virtuals than there are physical
 /// registers still fit when few are live at once. A 70000-element array

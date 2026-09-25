@@ -611,12 +611,12 @@ struct hir_generator_next : hir_expr {
 };
 
 /// `c.set(v)` on a `cell_mut[T]`: stores `v` through the address `c` already
-/// is (a `cell_mut[T]` is a bare element address) and evaluates to `unit`. A dedicated node
-/// rather than reuse of `hir_assign` (`*c = v`), because `hir_assign` is a
-/// statement — it has no value of its own to plug into an expression
-/// position, and `c.set(v)` is a method call used as one. `cell.get()`/
-/// `cell_mut.get()` need no equivalent node: they lower straight to
-/// `hir_unary(deref, cell_expr)`, since reading through the address is all
+/// is (a `cell_mut[T]` is a bare element address) and evaluates to `unit`. A
+/// dedicated node rather than reuse of `hir_assign` (`*c = v`), because
+/// `hir_assign` is a statement — it has no value of its own to plug into an
+/// expression position, and `c.set(v)` is a method call used as one.
+/// `cell.get()`/ `cell_mut.get()` need no equivalent node: they lower straight
+/// to `hir_unary(deref, cell_expr)`, since reading through the address is all
 /// `get` ever does.
 struct hir_cell_set : hir_expr {
   ptr<hir_expr> cell;

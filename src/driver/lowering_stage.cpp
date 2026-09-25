@@ -97,9 +97,8 @@ static auto check_frame_budgets(hir::hir_module &module, file_id_type file_id,
                     format_bytes(hir::k_max_frame_stack_bytes)),
         file_id);
     for (const auto &buffer : violation.buffers) {
-      diag.with_label(buffer.span,
-                      std::format("this buffer takes {}",
-                                  format_bytes(buffer.byte_size)));
+      diag.with_label(buffer.span, std::format("this buffer takes {}",
+                                               format_bytes(buffer.byte_size)));
     }
     diag.with_note(std::format(
         "`uninit[T, N]` lives in the function's stack frame, and a frame this "

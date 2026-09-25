@@ -175,12 +175,12 @@ private:
     const auto left = node * 2;
     const auto right = left + 1;
     const auto half = span_of(left);
-    prefix_[node] = prefix_[left] == half ? half + prefix_[right]
-                                           : prefix_[left];
-    suffix_[node] = suffix_[right] == half ? half + suffix_[left]
-                                            : suffix_[right];
-    best_[node] = std::max({best_[left], best_[right],
-                            suffix_[left] + prefix_[right]});
+    prefix_[node] =
+        prefix_[left] == half ? half + prefix_[right] : prefix_[left];
+    suffix_[node] =
+        suffix_[right] == half ? half + suffix_[left] : suffix_[right];
+    best_[node] =
+        std::max({best_[left], best_[right], suffix_[left] + prefix_[right]});
   }
 
   /// Doubles the tree until it covers `[0, limit)`, carrying every leaf's
@@ -342,8 +342,7 @@ auto allocate_registers(const allocation_input &input)
     // source operands and writes its destination, and letting those share a
     // physical would make the write clobber a source still to be read.
     while (!active.empty() && active.top().end < group.range.start) {
-      free_registers.set_busy(active.top().physical, active.top().count,
-                              false);
+      free_registers.set_busy(active.top().physical, active.top().count, false);
       active.pop();
     }
 

@@ -178,8 +178,9 @@ struct target_os_info {
 /// `assemble_platform_module_source`, memoized per `platform_source_path`
 /// for the life of the process (test binaries compile many sessions).
 /// Returns `nullptr` when assembly fails; a failure is not cached.
-[[nodiscard]] auto cached_platform_module_source(
-    const std::filesystem::path &platform_source_path) -> const std::string * {
+[[nodiscard]] auto
+cached_platform_module_source(const std::filesystem::path &platform_source_path)
+    -> const std::string * {
   static auto mutex = std::mutex{};
   static auto cache = std::map<std::string, std::string>{};
   const auto lock = std::scoped_lock(mutex);

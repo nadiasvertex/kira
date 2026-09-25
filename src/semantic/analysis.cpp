@@ -34,7 +34,7 @@ auto validate_semantics(const std::vector<parsed_module> &inputs,
                            file_has_errors);
   validate_declaration_scopes(inputs, diag, file_has_errors);
   validate_module_name_conflicts(inputs, session_index, semantic_index, diag,
-                                  file_has_errors);
+                                 file_has_errors);
   validate_qualified_paths(inputs, session_index, semantic_index, diag,
                            file_has_errors);
 

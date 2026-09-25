@@ -58,7 +58,8 @@ auto inline_program(const std::string &text) -> inlined_program {
                                                   file_has_errors);
   expect(program.diag.error_count() == 0, "expected fixture to check cleanly");
 
-  auto lowered = hir::lower_module(*program.ast_file, "sample", program.checked);
+  auto lowered =
+      hir::lower_module(*program.ast_file, "sample", program.checked);
   expect(lowered.has_value(), "expected fixture to lower to HIR");
   program.modules.push_back(std::move(*lowered));
   program.stats =
@@ -198,8 +199,8 @@ def main() -> int32:
          "expected both arguments bound first, in order");
   expect(block.stmts[2]->kind == hir::hir_node_kind::hir_expr_stmt,
          "expected the body to end in the block's value");
-  const auto &value = *dynamic_cast<const hir::hir_expr_stmt &>(*block.stmts[2])
-                           .expr;
+  const auto &value =
+      *dynamic_cast<const hir::hir_expr_stmt &>(*block.stmts[2]).expr;
   expect(value.kind == hir::hir_node_kind::hir_if,
          "expected the guard clause and the code after it to become one "
          "if/else value");

@@ -2779,7 +2779,7 @@ auto main() -> int {
     test_rejects_unannotated_parameter_with_specific_error();
     test_lowers_unannotated_parameter_the_body_pins();
     test_lowers_function_with_inferred_return_type();
-  test_rejects_function_whose_return_type_cannot_be_inferred();
+    test_rejects_function_whose_return_type_cannot_be_inferred();
     test_preserves_source_spans();
     test_lowers_compact_expression_body();
     test_lowers_if_expression_and_module();

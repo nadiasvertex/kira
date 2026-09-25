@@ -47,7 +47,8 @@ auto kira_rt_str_eq(uint64_t *a, uint64_t *b) -> uint32_t {
 }
 
 auto kira_rt_str_cmp(uint64_t *a, uint64_t *b) -> int32_t {
-  return static_cast<int32_t>(kira::runtime::str_compare(view_of(a), view_of(b)));
+  return static_cast<int32_t>(
+      kira::runtime::str_compare(view_of(a), view_of(b)));
 }
 
 auto kira_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t from)

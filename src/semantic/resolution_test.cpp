@@ -149,7 +149,8 @@ auto find_recorded_node(const kira::semantic::semantic_session &session,
   for (const auto &[node, scope] : session.node_scopes) {
     (void)scope;
     if (pick(*node)) {
-      expect(found == nullptr, std::string("expected one ") + std::string(what));
+      expect(found == nullptr,
+             std::string("expected one ") + std::string(what));
       found = node;
     }
   }
@@ -207,8 +208,8 @@ auto test_scope_walk_reaches_nested_expressions_and_static_for() -> void {
       session, step_scope, symbol_namespace::value_namespace, "step");
   expect(step_symbol != nullptr,
          "expected the `static for` binder to be in scope in its body");
-  const auto *binder_scope = kira::semantic::find_semantic_scope(
-      session, step_symbol->defining_scope);
+  const auto *binder_scope =
+      kira::semantic::find_semantic_scope(session, step_symbol->defining_scope);
   expect(binder_scope != nullptr &&
              binder_scope->kind ==
                  kira::semantic::semantic_scope_kind::static_for_scope,

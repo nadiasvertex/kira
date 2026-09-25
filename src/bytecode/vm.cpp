@@ -1118,8 +1118,8 @@ auto intrinsic_rt_str_reverse(std::span<const slot_value> args) -> slot_value {
 }
 
 auto intrinsic_rt_str_trim(std::span<const slot_value> args) -> slot_value {
-  const auto mode = static_cast<kira::runtime::trim_mode>(
-      static_cast<uint8_t>(args[1].u));
+  const auto mode =
+      static_cast<kira::runtime::trim_mode>(static_cast<uint8_t>(args[1].u));
   return make_runtime_str(kira::runtime::str_trim(view_of(args[0]), mode));
 }
 
