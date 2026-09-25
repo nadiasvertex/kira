@@ -91,6 +91,8 @@ struct bytecode_module {
     -> uint16_t;
 [[nodiscard]] auto read_u32(const std::vector<uint8_t> &code, size_t offset)
     -> uint32_t;
+[[nodiscard]] auto read_u64(const std::vector<uint8_t> &code, size_t offset)
+    -> uint64_t;
 [[nodiscard]] auto read_i32(const std::vector<uint8_t> &code, size_t offset)
     -> int32_t;
 
@@ -116,6 +118,7 @@ public:
   auto emit_u8(uint8_t value) -> void;
   auto emit_u16(uint16_t value) -> void;
   auto emit_u32(uint32_t value) -> void;
+  auto emit_u64(uint64_t value) -> void;
 
   /// Emits a register operand at whatever width `k_register_operand_bytes`
   /// declares. Distinct from `emit_u8`/`emit_u16` so that "this operand is a

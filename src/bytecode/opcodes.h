@@ -276,7 +276,7 @@ enum class opcode : uint8_t {
                      ///< whole on frame entry, so the address is stable for
                      ///< the life of the frame and the opcode itself
                      ///< allocates nothing.
-  op_alloc,          ///< u16 dst, u16 byte_size — reg[dst] = a fresh, zeroed
+  op_alloc,          ///< u16 dst, u64 byte_size — reg[dst] = a fresh, zeroed
                      ///< `byte_size`-byte block from the arena. Despite the
                      ///< name, this has always just allocated a byte count
                      ///< (`slot_count * 8` for the uniform-slot constructs
@@ -524,6 +524,7 @@ enum class operand_kind : uint8_t {
   imm8,  ///< A 1-byte immediate (kind tag, size, count, id).
   imm16, ///< A 2-byte immediate (constant index, byte offset, function index).
   imm32, ///< A 4-byte unsigned immediate (a frame's `uninit` byte offset).
+  imm64, ///< An 8-byte unsigned immediate (a heap allocation's byte size).
   rel32, ///< A 4-byte signed relative jump offset.
 };
 
@@ -623,7 +624,7 @@ struct operand_signature {
   case opcode::op_stack_alloc:
     return sig({reg, imm32});
   case opcode::op_alloc:
-    return sig({reg, imm16});
+    return sig({reg, imm64});
   case opcode::op_load_slot:
     return sig({reg, reg, imm16, imm8});
   case opcode::op_store_slot:
@@ -684,6 +685,9 @@ struct operand_signature {
     case operand_kind::imm32:
     case operand_kind::rel32:
       size += 4;
+      break;
+    case operand_kind::imm64:
+      size += 8;
       break;
     }
   }

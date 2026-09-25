@@ -34,7 +34,7 @@ auto emit_alloc_slots(bc::chunk_writer &writer, uint8_t dst,
                       uint16_t slot_count) -> void {
   writer.emit_opcode(bc::opcode::op_alloc);
   writer.emit_register(dst);
-  writer.emit_u16(static_cast<uint16_t>(slot_count * 8));
+  writer.emit_u64(uint64_t{slot_count} * 8);
 }
 
 auto emit_load_slot(bc::chunk_writer &writer, uint8_t dst, uint8_t ptr,
@@ -514,7 +514,7 @@ auto test_packed_struct_fields_round_trip_without_clobbering_neighbors()
 
   writer.emit_opcode(bc::opcode::op_alloc);
   writer.emit_register(0);
-  writer.emit_u16(6); // byte_size — packed layout, not slot count.
+  writer.emit_u64(6); // byte_size — packed layout, not slot count.
 
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(1);
@@ -604,7 +604,7 @@ auto test_narrow_element_array_indexed_load_store_round_trip() -> void {
   auto w = bc::chunk_writer{};
   w.emit_opcode(bc::opcode::op_alloc);
   w.emit_register(0);
-  w.emit_u16(10); // 5 elements * 2 bytes.
+  w.emit_u64(10); // 5 elements * 2 bytes.
 
   const auto c1 = w.add_constant(bc::slot_value{int64_t{111}});
   const auto c2 = w.add_constant(bc::slot_value{int64_t{222}});

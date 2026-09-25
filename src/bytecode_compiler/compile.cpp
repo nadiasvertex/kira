@@ -1076,18 +1076,18 @@ private:
   }
 
   /// Allocates a fresh, zeroed `byte_size`-byte heap block into `dst`.
-  auto emit_alloc(virtual_reg dst, uint16_t byte_size) -> void {
+  auto emit_alloc(virtual_reg dst, uint64_t byte_size) -> void {
     emit_op(opcode::op_alloc);
     emit_register(dst);
-    writer_.emit_u16(byte_size);
+    writer_.emit_u64(byte_size);
   }
 
   /// `emit_alloc`'s uniform-8-byte-slot convenience form — tuple/sum-
   /// payload/closure-env/`array[byte,N]`'s slot-count-worth-of-words/
   /// list-header construction all still allocate by *count*, not a
   /// pre-computed byte size.
-  auto emit_alloc_slots(virtual_reg dst, uint16_t slot_count) -> void {
-    emit_alloc(dst, static_cast<uint16_t>(slot_count * 8));
+  auto emit_alloc_slots(virtual_reg dst, uint64_t slot_count) -> void {
+    emit_alloc(dst, slot_count * 8);
   }
 
   /// reg[dst] = a `field_size`-byte (1/2/4/8) read at
@@ -1158,6 +1158,103 @@ private:
     emit_register(index_reg);
     emit_register(src);
     writer_.emit_u8(elem_size);
+  }
+
+  /// A fresh register holding the `uint64_t` constant `value`.
+  [[nodiscard]] auto emit_u64_constant(uint64_t value, source_span span)
+      -> std::expected<virtual_reg, compile_error> {
+    auto reg = alloc_register(span);
+    if (!reg.has_value()) {
+      return std::unexpected(reg.error());
+    }
+    const auto index = writer_.add_constant(slot_value{value});
+    emit_op(opcode::op_load_const);
+    emit_register(*reg);
+    writer_.emit_u16(index);
+    return *reg;
+  }
+
+  /// The pointer an unrolled run of array-element stores addresses from, and
+  /// the element index it points at. `op_store_slot`'s byte offset is 16
+  /// bits, so a literal larger than 64 KiB moves the base forward (one
+  /// `op_addr_indexed` per 64 KiB) rather than capping the literal's size.
+  struct element_store_base {
+    virtual_reg reg;
+    uint64_t first_index = 0;
+  };
+
+  /// Stores `src` as element `index` of the array block `block`, rebasing
+  /// `base` first when the element lies beyond `op_store_slot`'s reach.
+  [[nodiscard]] auto emit_store_element(virtual_reg block,
+                                        element_store_base &base,
+                                        uint64_t index, virtual_reg src,
+                                        uint8_t elem_size, source_span span)
+      -> std::expected<void, compile_error> {
+    if ((index - base.first_index) * elem_size > 0xFFFF - elem_size) {
+      auto index_reg = emit_u64_constant(index, span);
+      if (!index_reg.has_value()) {
+        return std::unexpected(index_reg.error());
+      }
+      if (base.reg == block) {
+        auto moved = alloc_register(span);
+        if (!moved.has_value()) {
+          return std::unexpected(moved.error());
+        }
+        base.reg = *moved;
+      }
+      emit_op(opcode::op_addr_indexed);
+      emit_register(base.reg);
+      emit_register(block);
+      emit_register(*index_reg);
+      writer_.emit_u8(elem_size);
+      base.first_index = index;
+    }
+    emit_store_field(
+        base.reg,
+        static_cast<uint16_t>((index - base.first_index) * elem_size), src,
+        elem_size);
+    return {};
+  }
+
+  /// A `[fill; count]` literal with at most this many elements is stored
+  /// unrolled; a larger one runs `emit_fill_loop`, so its code size doesn't
+  /// grow with `count`.
+  static constexpr uint64_t k_max_unrolled_fill = 64;
+
+  /// `for i in 0..count: block[i] = fill` — the runtime-loop form of a
+  /// `[fill; count]` literal.
+  [[nodiscard]] auto emit_fill_loop(virtual_reg block, uint64_t count,
+                                    virtual_reg fill, uint8_t elem_size,
+                                    source_span span)
+      -> std::expected<void, compile_error> {
+    auto index_reg = emit_u64_constant(0, span);
+    auto count_reg = emit_u64_constant(count, span);
+    auto one_reg = emit_u64_constant(1, span);
+    auto more_reg = alloc_register(span);
+    for (const auto *reg : {&index_reg, &count_reg, &one_reg, &more_reg}) {
+      if (!reg->has_value()) {
+        return std::unexpected(reg->error());
+      }
+    }
+    const auto loop_start = writer_.current_offset();
+    emit_op(opcode::op_lt);
+    emit_register(*more_reg);
+    emit_register(*index_reg);
+    emit_register(*count_reg);
+    writer_.emit_numeric_kind(numeric_kind::u64);
+    emit_op(opcode::op_jump_if_false);
+    emit_register(*more_reg);
+    const auto exit_placeholder = writer_.emit_jump_placeholder();
+    emit_store_indexed(block, *index_reg, fill, elem_size);
+    emit_op(opcode::op_add);
+    emit_register(*index_reg);
+    emit_register(*index_reg);
+    emit_register(*one_reg);
+    writer_.emit_numeric_kind(numeric_kind::u64);
+    note_loop(loop_start);
+    emit_jump_back_to(loop_start);
+    writer_.patch_jump_to_here(exit_placeholder);
+    return {};
   }
 
   // ------------------------------------------------------------------
@@ -1923,10 +2020,10 @@ private:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::encoding_limit_exceeded,
           .span = tup.span,
-          .message = "this tuple literal's total size exceeds the "
-                     "bytecode format's u16 byte-size operand"});
+          .message = "this tuple literal is larger than 64 KiB, past "
+                     "the bytecode format's u16 field-offset operand"});
     }
-    emit_alloc(dst, static_cast<uint16_t>(layout.size_bytes));
+    emit_alloc(dst, layout.size_bytes);
     for (size_t i = 0; i < tup.elements.size(); ++i) {
       const auto offset = runtime::tuple_element_offset(types_, tup.type, i);
       if (!offset.has_value()) {
@@ -1961,10 +2058,10 @@ private:
       return std::unexpected(compile_error{
           .kind = compile_error_kind::encoding_limit_exceeded,
           .span = init.span,
-          .message = "this struct literal's total size exceeds the "
-                     "bytecode format's u16 byte-size operand"});
+          .message = "this struct literal is larger than 64 KiB, past "
+                     "the bytecode format's u16 field-offset operand"});
     }
-    emit_alloc(dst, static_cast<uint16_t>(layout.size_bytes));
+    emit_alloc(dst, layout.size_bytes);
     for (const auto &field : init.fields) {
       const auto offset =
           runtime::struct_field_offset(types_, init.type, field.name);
@@ -2004,22 +2101,18 @@ private:
       virtual_reg dst) -> std::expected<void, compile_error> {
     const auto &array_entry = types_.entry(container_type);
     const auto elem_size = element_stride(array_entry.result);
-    const auto byte_size = elements.size() * elem_size;
-    if (byte_size > 0xFFFF) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::encoding_limit_exceeded,
-          .span = source_span{},
-          .message = "this static global's total size exceeds the "
-                     "bytecode format's u16 byte-size operand"});
-    }
-    emit_alloc(dst, static_cast<uint16_t>(byte_size));
+    emit_alloc(dst, elements.size() * elem_size);
+    auto base = element_store_base{.reg = dst};
     for (size_t i = 0; i < elements.size(); ++i) {
       auto value_reg = compile_expr(*elements[i]);
       if (!value_reg.has_value()) {
         return std::unexpected(value_reg.error());
       }
-      emit_store_field(dst, static_cast<uint16_t>(i * elem_size), *value_reg,
-                       elem_size);
+      if (auto stored = emit_store_element(dst, base, i, *value_reg, elem_size,
+                                           elements[i]->span);
+          !stored.has_value()) {
+        return std::unexpected(stored.error());
+      }
     }
     return {};
   }
@@ -2045,23 +2138,19 @@ private:
     }
     const auto count = *array_entry.array_size;
     const auto elem_size = element_stride(array_entry.result);
-    const auto byte_size = count * elem_size;
-    if (byte_size > 0xFFFF) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::encoding_limit_exceeded,
-          .span = init.span,
-          .message = "this array literal's total size exceeds the "
-                     "bytecode format's u16 byte-size operand"});
-    }
-    emit_alloc(dst, static_cast<uint16_t>(byte_size));
+    emit_alloc(dst, count * elem_size);
     if (init.fill_value == nullptr) {
+      auto base = element_store_base{.reg = dst};
       for (size_t i = 0; i < init.elements.size(); ++i) {
         auto value_reg = compile_expr(*init.elements[i]);
         if (!value_reg.has_value()) {
           return std::unexpected(value_reg.error());
         }
-        emit_store_field(dst, static_cast<uint16_t>(i * elem_size), *value_reg,
-                         elem_size);
+        if (auto stored = emit_store_element(dst, base, i, *value_reg,
+                                             elem_size, init.elements[i]->span);
+            !stored.has_value()) {
+          return std::unexpected(stored.error());
+        }
       }
       return {};
     }
@@ -2074,11 +2163,14 @@ private:
     if (!fill_reg.has_value()) {
       return std::unexpected(fill_reg.error());
     }
-    for (uint64_t i = 0; i < count; ++i) {
-      emit_store_field(dst, static_cast<uint16_t>(i * elem_size), *fill_reg,
-                       elem_size);
+    if (count <= k_max_unrolled_fill) {
+      for (uint64_t i = 0; i < count; ++i) {
+        emit_store_field(dst, static_cast<uint16_t>(i * elem_size), *fill_reg,
+                         elem_size);
+      }
+      return {};
     }
-    return {};
+    return emit_fill_loop(dst, count, *fill_reg, elem_size, init.span);
   }
 
   /// A container's runtime element count (`for`-loop/`while`-loop bound

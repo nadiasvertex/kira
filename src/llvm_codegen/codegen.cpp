@@ -2381,11 +2381,39 @@ private:
     if (!fill_value.has_value()) {
       return std::unexpected(fill_value.error());
     }
-    for (uint64_t i = 0; i < count; ++i) {
-      builder_.CreateStore(*fill_value, byte_address(block, i * elem_size));
+    if (count <= k_max_unrolled_fill) {
+      for (uint64_t i = 0; i < count; ++i) {
+        builder_.CreateStore(*fill_value, byte_address(block, i * elem_size));
+      }
+      return block;
     }
+    // Past `k_max_unrolled_fill`, a loop, so the IR doesn't grow with
+    // `count`. `count` is nonzero here, so the body runs at least once.
+    auto *i64 = llvm::Type::getInt64Ty(ctx_);
+    auto *entry_bb = builder_.GetInsertBlock();
+    auto *fn = entry_bb->getParent();
+    auto *loop_bb = llvm::BasicBlock::Create(ctx_, "fill.loop", fn);
+    auto *end_bb = llvm::BasicBlock::Create(ctx_, "fill.end", fn);
+    builder_.CreateBr(loop_bb);
+    builder_.SetInsertPoint(loop_bb);
+    auto *index = builder_.CreatePHI(i64, 2, "fill.i");
+    index->addIncoming(llvm::ConstantInt::get(i64, 0), entry_bb);
+    auto *byte_index =
+        builder_.CreateMul(index, llvm::ConstantInt::get(i64, elem_size));
+    builder_.CreateStore(*fill_value, byte_address(block, byte_index));
+    auto *next = builder_.CreateAdd(index, llvm::ConstantInt::get(i64, 1));
+    index->addIncoming(next, loop_bb);
+    builder_.CreateCondBr(
+        builder_.CreateICmpULT(next, llvm::ConstantInt::get(i64, count)),
+        loop_bb, end_bb);
+    builder_.SetInsertPoint(end_bb);
     return block;
   }
+
+  /// A `[fill; count]` literal with at most this many elements is stored
+  /// unrolled; a larger one is a loop. Same threshold as
+  /// `bytecode_compiler::function_compiler::k_max_unrolled_fill`.
+  static constexpr uint64_t k_max_unrolled_fill = 64;
 
   /// Builds a reified `static let` array global's backing heap value —
   /// the explicit-elements branch of `compile_array_init` duplicated for a

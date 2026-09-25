@@ -808,6 +808,11 @@ struct operand_cursor {
     at += 4;
     return value;
   }
+  [[nodiscard]] auto imm64() -> uint64_t {
+    const auto value = read_u64(code, at);
+    at += 8;
+    return value;
+  }
   [[nodiscard]] auto rel32() -> int32_t {
     const auto value = read_i32(code, at);
     at += 4;
@@ -1644,7 +1649,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       case opcode::op_alloc: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
-        const auto byte_size = ops.imm16();
+        const auto byte_size = ops.imm64();
         auto *raw = kira_heap_alloc(byte_size);
         f.registers[dst] = ptr_to_slot(raw);
         f.pc = ops.pos();

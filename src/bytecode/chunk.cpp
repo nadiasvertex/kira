@@ -16,6 +16,11 @@ auto read_u32(const std::vector<uint8_t> &code, size_t offset) -> uint32_t {
          (static_cast<uint32_t>(code[offset + 3]) << 24);
 }
 
+auto read_u64(const std::vector<uint8_t> &code, size_t offset) -> uint64_t {
+  return static_cast<uint64_t>(read_u32(code, offset)) |
+         (static_cast<uint64_t>(read_u32(code, offset + 4)) << 32);
+}
+
 auto read_i32(const std::vector<uint8_t> &code, size_t offset) -> int32_t {
   return static_cast<int32_t>(read_u32(code, offset));
 }
@@ -44,6 +49,11 @@ auto chunk_writer::emit_u32(uint32_t value) -> void {
   code_.push_back(static_cast<uint8_t>((value >> 8) & 0xFFU));
   code_.push_back(static_cast<uint8_t>((value >> 16) & 0xFFU));
   code_.push_back(static_cast<uint8_t>((value >> 24) & 0xFFU));
+}
+
+auto chunk_writer::emit_u64(uint64_t value) -> void {
+  emit_u32(static_cast<uint32_t>(value & 0xFFFFFFFFU));
+  emit_u32(static_cast<uint32_t>(value >> 32));
 }
 
 auto chunk_writer::emit_i32(int32_t value) -> void {
