@@ -237,7 +237,8 @@ void evaluator::push_locals(std::unordered_map<std::string, value> scope) {
 void evaluator::pop_locals() { locals_.pop_back(); }
 
 auto evaluator::lookup_local(const std::string &name) -> const value * {
-  for (const auto &scope : locals_ | std::views::reverse) {
+  for (const auto &scope :
+       locals_ | std::views::drop(frame_base_) | std::views::reverse) {
     if (const auto found = scope.find(name); found != scope.end()) {
       return &found->second;
     }
@@ -359,26 +360,60 @@ auto evaluator::eval_literal(const ast::literal_expr &lit) -> value {
   }
 }
 
+auto evaluator::read_module_name(const std::string &name, source_span span)
+    -> bare_name_reading {
+  if (name_resolver_) {
+    return name_resolver_(name);
+  }
+  if (const auto it = globals_.find(name); it != globals_.end()) {
+    return bare_name_reading{.reading = bare_name_reading::kind::static_value,
+                             .base = it->second,
+                             .function = nullptr,
+                             .reason = {}};
+  }
+  if (pending_statics_.contains(name)) {
+    if (const auto *resolved = resolve_pending_static(name, span);
+        resolved != nullptr) {
+      return bare_name_reading{.reading = bare_name_reading::kind::static_value,
+                               .base = *resolved,
+                               .function = nullptr,
+                               .reason = {}};
+    }
+    // `resolve_pending_static` already reported a diagnostic (cycle, or the
+    // initializer's own evaluation failure) — don't pile on another one.
+    return bare_name_reading{.reading = bare_name_reading::kind::not_constant,
+                             .base = {},
+                             .function = nullptr,
+                             .reason = {}};
+  }
+  if (const auto fn_it = pending_functions_.find(name);
+      fn_it != pending_functions_.end()) {
+    return bare_name_reading{.reading = bare_name_reading::kind::function,
+                             .base = {},
+                             .function = fn_it->second,
+                             .reason = {}};
+  }
+  return bare_name_reading{};
+}
+
 auto evaluator::resolve_name(const std::string &name, source_span span)
     -> value {
   if (const auto *local = lookup_local(name); local != nullptr) {
     return *local;
   }
-  if (const auto it = globals_.find(name); it != globals_.end()) {
-    return it->second;
-  }
-  if (pending_statics_.contains(name)) {
-    if (const auto *resolved = resolve_pending_static(name, span);
-        resolved != nullptr) {
-      return *resolved;
+  auto reading = read_module_name(name, span);
+  switch (reading.reading) {
+  case bare_name_reading::kind::static_value:
+    return std::move(reading.base);
+  case bare_name_reading::kind::function:
+    return value::make_closure(name, reading.function);
+  case bare_name_reading::kind::not_constant:
+    if (reading.reason.empty()) {
+      return value::make_error();
     }
-    // `resolve_pending_static` already reported a diagnostic (cycle, or the
-    // initializer's own evaluation failure) — don't pile on another one.
-    return value::make_error();
-  }
-  if (const auto fn_it = pending_functions_.find(name);
-      fn_it != pending_functions_.end()) {
-    return value::make_closure(name, fn_it->second);
+    return report(span, std::move(reading.reason));
+  case bare_name_reading::kind::not_found:
+    break;
   }
   return report(span,
                 std::format("`{}` is not a compile-time constant that has "
@@ -386,25 +421,61 @@ auto evaluator::resolve_name(const std::string &name, source_span span)
                             name));
 }
 
+auto evaluator::resolve_callee(const std::string &name, source_span span)
+    -> const ast::func_decl * {
+  if (const auto *local = lookup_local(name); local != nullptr) {
+    return local->kind == value_kind::closure ? local->function : nullptr;
+  }
+  const auto reading = read_module_name(name, span);
+  switch (reading.reading) {
+  case bare_name_reading::kind::function:
+    return reading.function;
+  case bare_name_reading::kind::static_value:
+    return reading.base.kind == value_kind::closure ? reading.base.function
+                                                    : nullptr;
+  case bare_name_reading::kind::not_constant:
+  case bare_name_reading::kind::not_found:
+    break;
+  }
+  return nullptr;
+}
+
 auto evaluator::eval_ident(const ast::ident_expr &ident) -> value {
   if (const auto variant = resolve_variant(ident)) {
     return value::make_variant(variant->first->name, variant->second->name, {});
   }
+  if (const auto *local = lookup_local(ident.name); local != nullptr) {
+    return *local;
+  }
   // `resolve_variant`'s checker-backed answer came back empty. Before
-  // falling through to `resolve_name` (locals/globals/pending statics/
-  // pending functions, erroring if none match), try the name-only variant
-  // fallback — but only when nothing else already explains this identifier,
-  // so a local variable that happens to share a spelling with some
-  // unrelated sum type's variant is never misread as a variant constructor.
-  // See `resolve_variant_by_name`'s doc comment for why this path exists.
-  if (lookup_local(ident.name) == nullptr && !globals_.contains(ident.name) &&
-      !pending_statics_.contains(ident.name) &&
-      !pending_functions_.contains(ident.name)) {
+  // reporting an unresolved name, try the name-only variant fallback — but
+  // only when nothing else already explains this identifier, so a binding
+  // that happens to share a spelling with some unrelated sum type's variant
+  // is never misread as a variant constructor. See
+  // `resolve_variant_by_name`'s doc comment for why this path exists.
+  auto reading = read_module_name(ident.name, ident.span);
+  if (reading.reading == bare_name_reading::kind::not_found) {
     if (const auto fallback = resolve_variant_by_name(ident.name)) {
       return value::make_variant(fallback->first, fallback->second, {});
     }
   }
-  return resolve_name(ident.name, ident.span);
+  switch (reading.reading) {
+  case bare_name_reading::kind::static_value:
+    return std::move(reading.base);
+  case bare_name_reading::kind::function:
+    return value::make_closure(ident.name, reading.function);
+  case bare_name_reading::kind::not_constant:
+    if (reading.reason.empty()) {
+      return value::make_error();
+    }
+    return report(ident.span, std::move(reading.reason));
+  case bare_name_reading::kind::not_found:
+    break;
+  }
+  return report(ident.span,
+                std::format("`{}` is not a compile-time constant that has "
+                            "been evaluated yet",
+                            ident.name));
 }
 
 auto evaluator::eval_unary(const ast::unary_expr &un) -> value {
@@ -672,18 +743,12 @@ auto evaluator::eval_struct(const ast::struct_expr &st) -> value {
     if (field.value == nullptr) {
       // Shorthand `{x}` lowers to `{x: x}` — read the bare name back as a
       // reference.
-      if (const auto *local = lookup_local(field.name); local != nullptr) {
-        fields.insert_or_assign(field.name, *local);
-        continue;
+      auto shorthand = resolve_name(field.name, field.span);
+      if (shorthand.is_error()) {
+        return shorthand;
       }
-      if (const auto it = globals_.find(field.name); it != globals_.end()) {
-        fields.insert_or_assign(field.name, it->second);
-        continue;
-      }
-      return report(field.span,
-                    std::format("`{}` is not a compile-time constant that "
-                                "has been evaluated yet",
-                                field.name));
+      fields.insert_or_assign(field.name, std::move(shorthand));
+      continue;
     }
     auto evaluated = evaluate(*field.value);
     if (evaluated.is_error()) {
@@ -758,6 +823,8 @@ auto evaluator::eval_module_path(const ast::module_path_expr &path) -> value {
   case dotted_path_reading::kind::static_value:
     current = std::move(reading.base);
     break;
+  case dotted_path_reading::kind::function:
+    return value::make_closure(path.segments.back(), reading.function);
   case dotted_path_reading::kind::not_constant:
     if (reading.reason.empty()) {
       return value::make_error();
@@ -1125,51 +1192,50 @@ auto evaluator::call_function(
                   std::format("`{}` takes {} argument(s), but {} were given",
                               name, fn.params.size(), args.size()));
   }
+  // Reported before switching into `fn`'s context: it is the call site's
+  // mistake, so it belongs to the caller's file.
+  for (size_t i = args.size(); i < fn.params.size(); ++i) {
+    if (fn.params[i].default_value == nullptr) {
+      return report(span,
+                    std::format("`{}` is missing a required argument", name));
+    }
+  }
   auto scope = std::unordered_map<std::string, value>{};
   for (auto &[type_param_name, type_arg] : type_args) {
     scope.insert_or_assign(type_param_name, std::move(type_arg));
   }
   ++call_depth_;
   push_locals({});
-  for (size_t i = 0; i < fn.params.size(); ++i) {
-    const auto &param = fn.params[i];
-    auto arg_value = value{};
-    if (i < args.size()) {
-      arg_value = std::move(args[i]);
-    } else if (param.default_value != nullptr) {
-      arg_value = evaluate(*param.default_value);
-    } else {
-      pop_locals();
-      --call_depth_;
-      return report(span,
-                    std::format("`{}` is missing a required argument", name));
+  const auto saved_frame_base = frame_base_;
+  frame_base_ = locals_.size() - 1;
+  // Default arguments and the body both run in `fn`'s own context
+  // (`call_context_`), with only `fn`'s parameters in scope.
+  const auto run = [&] -> value {
+    for (size_t i = 0; i < fn.params.size(); ++i) {
+      const auto &param = fn.params[i];
+      auto arg_value =
+          i < args.size() ? std::move(args[i]) : evaluate(*param.default_value);
+      if (arg_value.is_error()) {
+        return arg_value;
+      }
+      if (param.pattern != nullptr &&
+          !bind_pattern(*param.pattern, arg_value, scope)) {
+        return value::make_error();
+      }
     }
-    if (arg_value.is_error()) {
-      pop_locals();
-      --call_depth_;
-      return arg_value;
+    locals_.back() = std::move(scope);
+    if (fn.body_expr != nullptr) {
+      return evaluate(*fn.body_expr);
     }
-    if (param.pattern != nullptr &&
-        !bind_pattern(*param.pattern, arg_value, scope)) {
-      pop_locals();
-      --call_depth_;
-      return value::make_error();
-    }
-  }
-  locals_.back() = std::move(scope);
-
-  auto result = value::make_unit();
-  if (fn.body_expr != nullptr) {
-    result = evaluate(*fn.body_expr);
-  } else {
     const auto exec = evaluate_block_value(fn.body_stmts);
     if (exec.errored) {
-      result = value::make_error();
-    } else if (exec.returned) {
-      result = exec.result;
+      return value::make_error();
     }
-  }
+    return exec.returned ? exec.result : value::make_unit();
+  };
+  auto result = call_context_ ? call_context_(fn, run) : run();
   pop_locals();
+  frame_base_ = saved_frame_base;
   --call_depth_;
   return result;
 }
@@ -2061,11 +2127,7 @@ auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
     return std::nullopt;
   }
   const auto &callee_ident = dynamic_cast<const ast::ident_expr &>(*base);
-  const ast::func_decl *fn = nullptr;
-  if (const auto it = pending_functions_.find(callee_ident.name);
-      it != pending_functions_.end()) {
-    fn = it->second;
-  }
+  const auto *fn = resolve_callee(callee_ident.name, callee_ident.span);
   if (fn == nullptr || fn->type_params.empty() ||
       type_arg_exprs.size() > fn->type_params.size()) {
     return std::nullopt;
@@ -2106,6 +2168,29 @@ auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
   }
   return call_function(*fn, callee_ident.name, std::move(args), call.span,
                        std::move(type_args));
+}
+
+auto evaluator::qualified_callee_path(const ast::expr &callee)
+    -> std::optional<ast::module_path_expr> {
+  // The parser leaves a call's last segment off the path: `a.f(x)` is a
+  // field access `f` on `a`, `a.b.f(x)` one on the path `a.b`.
+  const auto *field = dynamic_cast<const ast::field_expr *>(&callee);
+  if (field == nullptr || field->object == nullptr) {
+    return std::nullopt;
+  }
+  auto path = ast::module_path_expr{};
+  path.span = callee.span;
+  if (const auto *root =
+          dynamic_cast<const ast::ident_expr *>(field->object.get())) {
+    path.segments.push_back(root->name);
+  } else if (const auto *prefix = dynamic_cast<const ast::module_path_expr *>(
+                 field->object.get())) {
+    path.segments = prefix->segments;
+  } else {
+    return std::nullopt;
+  }
+  path.segments.push_back(field->field_name);
+  return path;
 }
 
 auto evaluator::eval_call(const ast::call_expr &call) -> value {
@@ -2157,29 +2242,34 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
   if (auto generic_call = try_eval_comptime_generic_call(call)) {
     return *generic_call;
   }
-  const auto *callee_ident =
-      dynamic_cast<const ast::ident_expr *>(call.callee.get());
-  if (callee_ident == nullptr) {
+  const ast::func_decl *fn = nullptr;
+  auto callee_name = std::string{};
+  if (const auto *callee_ident =
+          dynamic_cast<const ast::ident_expr *>(call.callee.get())) {
+    callee_name = callee_ident->name;
+    fn = resolve_callee(callee_name, callee_ident->span);
+  } else if (auto callee_path = qualified_callee_path(*call.callee)) {
+    // `inner.scale(2)`: the checker reads the path, the same as any other
+    // dotted name (`eval_module_path`).
+    callee_name = callee_path->segments | std::views::join_with('.') |
+                  std::ranges::to<std::string>();
+    const auto callee = eval_module_path(*callee_path);
+    if (callee.is_error()) {
+      return callee;
+    }
+    if (callee.kind == value_kind::closure) {
+      fn = callee.function;
+    }
+  } else {
     return report(call.span, "only direct calls to a named `static def` "
                              "function are supported in compile-time "
                              "evaluation");
-  }
-  const ast::func_decl *fn = nullptr;
-  if (const auto it = pending_functions_.find(callee_ident->name);
-      it != pending_functions_.end()) {
-    fn = it->second;
-  } else if (const auto *local = lookup_local(callee_ident->name);
-             local != nullptr && local->kind == value_kind::closure) {
-    fn = local->function;
-  } else if (const auto git = globals_.find(callee_ident->name);
-             git != globals_.end() && git->second.kind == value_kind::closure) {
-    fn = git->second.function;
   }
   if (fn == nullptr) {
     return report(call.span,
                   std::format("`{}` is not a `static def` function that can "
                               "be called at compile time",
-                              callee_ident->name));
+                              callee_name));
   }
   auto args = std::vector<value>{};
   args.reserve(call.args.size());
@@ -2197,7 +2287,7 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
     }
     args.push_back(std::move(evaluated));
   }
-  return call_function(*fn, callee_ident->name, std::move(args), call.span);
+  return call_function(*fn, callee_name, std::move(args), call.span);
 }
 
 auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
@@ -2662,7 +2752,8 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     if (new_value.is_error()) {
       return exec_result{.errored = true};
     }
-    for (auto &scope : locals_ | std::views::reverse) {
+    for (auto &scope :
+         locals_ | std::views::drop(frame_base_) | std::views::reverse) {
       if (scope.contains(target->name)) {
         scope.insert_or_assign(target->name, std::move(new_value));
         return exec_result{};

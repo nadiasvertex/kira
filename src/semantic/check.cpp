@@ -4,6 +4,7 @@
 #include <cctype>
 #include <charconv>
 #include <deque>
+#include <expected>
 #include <format>
 #include <functional>
 #include <optional>
@@ -384,6 +385,18 @@ public:
     comptime_eval_.set_path_resolver(
         [this](const ast::module_path_expr &path, bool root_is_local) {
           return read_dotted_path_for_comptime(path, root_is_local);
+        });
+    comptime_eval_.set_name_resolver([this](const std::string &name) {
+      return read_bare_name_for_comptime(name);
+    });
+    comptime_eval_.set_call_context(
+        [this](const ast::func_decl &fn,
+               const std::function<comptime::value()> &body) {
+          const auto owner = function_owner(fn);
+          if (!owner.has_value()) {
+            return body();
+          }
+          return in_module_context(*owner->first, owner->second, body);
         });
     // A default is a candidate the queue offers once everything else has
     // stalled, not a rule inside the solver. The candidate travels in the
@@ -1160,6 +1173,13 @@ private:
   /// `static` bindings whose initializer `ensure_static_binding_evaluated`
   /// is evaluating right now — its cycle guard.
   std::unordered_set<const ast::static_decl *> static_bindings_evaluating_;
+  /// Every module-level function's declaring module and file, plus each
+  /// monomorphized instance's (its template's) — see `function_owner`.
+  std::unordered_map<const ast::func_decl *,
+                     std::pair<const module_members *, file_id_type>>
+      function_owners_;
+  /// `index_.modules.size()` when `function_owners_` last scanned it.
+  size_t function_owners_modules_ = 0;
   /// Compile-time evaluator backing `static let`/`static assert`/
   /// `static if`. One instance for the whole session (parallel to
   /// `static_types_`/`types_`) so `static let` bindings evaluated while
@@ -5780,6 +5800,12 @@ private:
     const auto *instance = cloned->get();
     synthesized_decls_.push_back(std::move(*cloned));
     hk_instance_cache_.emplace(key, instance);
+    // A compile-time call into the instance runs where its template was
+    // declared (`function_owner`), not where it was instantiated.
+    if (owner != nullptr) {
+      function_owners_.emplace(instance,
+                               std::pair{owner, decl_file.value_or(file_id_)});
+    }
     // An instance of a function with unannotated parameters is checked
     // against the concrete types its call chose, not against leaves: seeding
     // `param_types_for`'s cache is all that takes.
@@ -7984,14 +8010,10 @@ private:
         decl.name.empty()) {
       return nullptr;
     }
-    // Memoized per *declaration*, and deliberately not read back out of
-    // `comptime_eval_`'s globals by name: those are one flat namespace keyed
-    // by the bare name, so a parent module and an inline submodule that each
-    // declare `static limit` collide there. Reading by name handed every
-    // reference whichever of the two was evaluated first — a silently wrong
-    // value, not an error. The global binding is still written (first
-    // writer wins), because that namespace is what makes one compile-time
-    // initializer able to reference another by name.
+    // Memoized per *declaration*, never by bare name: a parent module and
+    // an inline submodule may each declare `static limit`. Compile-time
+    // code reaches this through the checker's own name lookup
+    // (`read_bare_name_for_comptime`, `read_dotted_path_for_comptime`).
     if (const auto it = static_binding_values_.find(&decl);
         it != static_binding_values_.end()) {
       return it->second.has_value() ? &*it->second : nullptr;
@@ -8007,32 +8029,15 @@ private:
         return comptime_eval_.evaluate(*decl.initializer);
       }
       const auto listed = owner->statics.find(decl.name);
-      const auto saved_module = module_;
-      const auto saved_module_name = module_name_;
-      const auto saved_functor_owner = functor_owner_module_;
-      const auto saved_file = file_id_;
-      module_ = owner;
-      module_name_ = owner->module_name;
-      functor_owner_module_.clear();
-      if (listed != owner->statics.end()) {
-        file_id_ = listed->second.file_id;
-      }
-      comptime_eval_.set_file(file_id_);
-      auto result = comptime_eval_.evaluate(*decl.initializer);
-      module_ = saved_module;
-      module_name_ = saved_module_name;
-      functor_owner_module_ = saved_functor_owner;
-      file_id_ = saved_file;
-      comptime_eval_.set_file(file_id_);
-      return result;
+      return in_module_context(
+          *owner,
+          listed != owner->statics.end() ? listed->second.file_id : file_id_,
+          [&] { return comptime_eval_.evaluate(*decl.initializer); });
     }();
     static_bindings_evaluating_.erase(&decl);
     if (evaluated.is_error()) {
       static_binding_values_.emplace(&decl, std::nullopt);
       return nullptr;
-    }
-    if (!comptime_eval_.has_global(decl.name)) {
-      comptime_eval_.bind_global(decl.name, evaluated);
     }
     return &*static_binding_values_.emplace(&decl, evaluated).first->second;
   }
@@ -14003,12 +14008,116 @@ private:
     return type;
   }
 
+  /// Runs `body` with `owner` (declared in `file`) as the module being
+  /// checked — module, file, and imports — so the names it reads resolve
+  /// the way they do at the declaration. Compile-time code crosses modules
+  /// this way: a `static` initializer reached from another module, and a
+  /// `static def` body called from one.
+  template <typename F>
+  auto in_module_context(const module_members &owner, file_id_type file,
+                         F &&body) -> decltype(body()) {
+    if (&owner == module_ && file == file_id_) {
+      return std::forward<F>(body)();
+    }
+    const auto saved_module = module_;
+    const auto saved_module_name = module_name_;
+    const auto saved_functor_owner = functor_owner_module_;
+    const auto saved_file = file_id_;
+    module_ = &owner;
+    module_name_ = owner.module_name;
+    functor_owner_module_.clear();
+    file_id_ = file;
+    comptime_eval_.set_file(file_id_);
+    auto result = std::forward<F>(body)();
+    module_ = saved_module;
+    module_name_ = saved_module_name;
+    functor_owner_module_ = saved_functor_owner;
+    file_id_ = saved_file;
+    comptime_eval_.set_file(file_id_);
+    return result;
+  }
+
+  /// The module and file declaring `fn`, when it is a module-level
+  /// function; `nullopt` for anything else (a method, a synthesized
+  /// declaration), which then runs in its caller's context.
+  auto function_owner(const ast::func_decl &fn)
+      -> std::optional<std::pair<const module_members *, file_id_type>> {
+    // Rescanned when the index has grown: an instantiated functor adds a
+    // module mid-session.
+    if (function_owners_modules_ != index_.modules.size()) {
+      function_owners_modules_ = index_.modules.size();
+      for (const auto &[module_name, members] : index_.modules) {
+        for (const auto &[fn_name, ref] : members.functions) {
+          function_owners_.emplace(ref.decl, std::pair{&members, ref.file_id});
+        }
+      }
+    }
+    const auto it = function_owners_.find(&fn);
+    if (it == function_owners_.end()) {
+      return std::nullopt;
+    }
+    return it->second;
+  }
+
+  /// A module-level `static`'s compile-time value for the evaluator,
+  /// evaluated per declaration in its declaring module
+  /// (`ensure_static_binding_evaluated`). The error is the diagnostic to
+  /// report, or empty when the cause was already reported; `cycle` is the
+  /// message for a read of `decl` while its own initializer is running.
+  auto comptime_static_value(const ast::static_decl &decl,
+                             const module_members *owner, std::string cycle)
+      -> std::expected<comptime::value, std::string> {
+    if (static_bindings_evaluating_.contains(&decl)) {
+      return std::unexpected(std::move(cycle));
+    }
+    if (const auto *value = ensure_static_binding_evaluated(decl, owner)) {
+      return *value;
+    }
+    return std::unexpected(std::string{});
+  }
+
+  /// The compile-time evaluator's view of a bare name that is none of its
+  /// own frame locals (`comptime::evaluator::name_resolver_fn`): the same
+  /// module-scope lookup `resolve_ident` does for ordinary code — this
+  /// module's `def`s and `static`s, then imported ones — in whatever module
+  /// the evaluator is running in (`in_module_context`).
+  auto read_bare_name_for_comptime(const std::string &name)
+      -> comptime::evaluator::bare_name_reading {
+    using reading = comptime::evaluator::bare_name_reading;
+    const auto found = find_module_scope_value(name);
+    if (!found.has_value()) {
+      return reading{};
+    }
+    if (found->function != nullptr) {
+      return reading{.reading = reading::kind::function,
+                     .base = {},
+                     .function = found->function,
+                     .reason = {}};
+    }
+    auto value = comptime_static_value(
+        *found->static_binding, found->owner,
+        std::format("`{}` is part of a compile-time evaluation cycle (it "
+                    "references itself, directly or indirectly, while being "
+                    "evaluated)",
+                    name));
+    if (!value.has_value()) {
+      return reading{.reading = reading::kind::not_constant,
+                     .base = {},
+                     .function = nullptr,
+                     .reason = std::move(value.error())};
+    }
+    return reading{.reading = reading::kind::static_value,
+                   .base = std::move(*value),
+                   .function = nullptr,
+                   .reason = {}};
+  }
+
   /// The compile-time evaluator's view of a dotted path
   /// (`comptime::evaluator::path_resolver_fn`): the same
   /// `classify_dotted_root` ordinary code gets, with the evaluator's own
   /// frames standing in for lexical scope, and module-level `static`s
-  /// evaluated through `ensure_static_binding_evaluated` — per declaration,
-  /// in the declaring module — rather than looked up by bare name.
+  /// evaluated through `comptime_static_value` rather than looked up by
+  /// bare name.
   auto read_dotted_path_for_comptime(const ast::module_path_expr &path,
                                      bool root_is_local)
       -> comptime::evaluator::dotted_path_reading {
@@ -14018,25 +14127,20 @@ private:
     const auto static_value = [&](const ast::static_decl &decl,
                                   const module_members *owner,
                                   size_t first_field) -> reading {
-      if (static_bindings_evaluating_.contains(&decl)) {
+      auto value = comptime_static_value(
+          decl, owner,
+          std::format("`{}` is part of a compile-time evaluation cycle: "
+                      "`{}` reads it while it is being evaluated",
+                      decl.name, text));
+      if (!value.has_value()) {
         return reading{.reading = reading::kind::not_constant,
                        .base = {},
                        .first_field = 0,
-                       .reason = std::format(
-                           "`{}` is part of a compile-time evaluation cycle: "
-                           "`{}` reads it while it is being evaluated",
-                           decl.name, text)};
+                       .reason = std::move(value.error())};
       }
-      if (const auto *value = ensure_static_binding_evaluated(decl, owner)) {
-        return reading{.reading = reading::kind::static_value,
-                       .base = *value,
-                       .first_field = first_field,
-                       .reason = {}};
-      }
-      // The initializer's own failure was already reported.
-      return reading{.reading = reading::kind::not_constant,
-                     .base = {},
-                     .first_field = 0,
+      return reading{.reading = reading::kind::static_value,
+                     .base = std::move(*value),
+                     .first_field = first_field,
                      .reason = {}};
     };
     switch (classify_dotted_root(root, root_is_local)) {
@@ -14056,6 +14160,14 @@ private:
     }
     case dotted_root::module:
       break;
+    }
+    if (const auto *owner = find_fn_owner_of_path(path.segments)) {
+      return reading{.reading = reading::kind::function,
+                     .base = {},
+                     .first_field = 0,
+                     .reason = {},
+                     .function =
+                         owner->functions.at(path.segments.back()).decl};
     }
     if (const auto found = find_module_static_prefix(path.segments)) {
       return static_value(*found->decl, found->owner, found->first_field);
@@ -21645,25 +21757,19 @@ private:
     pop_scope();
   }
 
-  /// Recursively registers every top-level `static let` binding and
-  /// `static def` function found in `items` (descending into inline
-  /// submodules) with `comptime_eval_`, so cross-file/forward references
-  /// resolve lazily regardless of file-checking order — see the design
-  /// plan's confluence requirement.
-  auto register_comptime_globals(const std::vector<ast::ptr<ast::node>> &items,
-                                 file_id_type owner_file) -> void {
+  /// Recursively registers every top-level `static def` function and `type`
+  /// declaration found in `items` (descending into inline submodules) with
+  /// `comptime_eval_`. Bare names in compile-time code do not resolve
+  /// against these tables — the checker answers them per module
+  /// (`read_bare_name_for_comptime`) — but `evaluate_derive_call` finds its
+  /// `derive_<trait>` function here, and type reflection its declarations.
+  auto register_comptime_globals(const std::vector<ast::ptr<ast::node>> &items)
+      -> void {
     for (const auto &item : items) {
       if (item == nullptr || item->has_error) {
         continue;
       }
-      if (item->kind == ast::node_kind::static_decl) {
-        const auto &decl = dynamic_cast<const ast::static_decl &>(*item);
-        if (decl.decl_kind == ast::static_decl_kind::binding &&
-            decl.initializer != nullptr && !decl.name.empty()) {
-          comptime_eval_.register_pending_static(decl.name, *decl.initializer,
-                                                 owner_file);
-        }
-      } else if (item->kind == ast::node_kind::func_decl) {
+      if (item->kind == ast::node_kind::func_decl) {
         const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
         if (fn.modifiers.is_static && !fn.name.empty()) {
           comptime_eval_.register_pending_function(fn.name, fn);
@@ -21684,7 +21790,7 @@ private:
         }
       } else if (item->kind == ast::node_kind::sub_module_decl) {
         const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
-        register_comptime_globals(sub.items, owner_file);
+        register_comptime_globals(sub.items);
       }
     }
   }
@@ -21874,7 +21980,15 @@ private:
     auto derive_fn_name = is_sum_shaped
                               ? std::format("derive_{}_sum", trait_name)
                               : std::format("derive_{}", trait_name);
-    if (!comptime_eval_.has_pending_function(derive_fn_name)) {
+    const auto *derive_fn = comptime_eval_.pending_function(derive_fn_name);
+    if (derive_fn == nullptr) {
+      return nullptr;
+    }
+    // The synthesized call names `derive_<trait>` bare, so it is evaluated
+    // in the module declaring it (`std.derive`), not the one being checked,
+    // which need not import it.
+    const auto derive_owner = function_owner(*derive_fn);
+    if (!derive_owner.has_value()) {
       return nullptr;
     }
     auto callee_ident = ast::make<ast::ident_expr>();
@@ -21905,7 +22019,9 @@ private:
       }
     }
     comptime_eval_.push_field_type_context(std::move(field_type_names));
-    const auto fragment_value = comptime_eval_.evaluate(*call);
+    const auto fragment_value =
+        in_module_context(*derive_owner->first, derive_owner->second,
+                          [&] { return comptime_eval_.evaluate(*call); });
     comptime_eval_.pop_field_type_context();
     if (fragment_value.is_error() ||
         fragment_value.kind != comptime::value_kind::def_expr_fragment ||
@@ -22205,7 +22321,7 @@ public:
           file_has_errors_[input.file_id]) {
         continue;
       }
-      register_comptime_globals(input.ast_file->items, input.file_id);
+      register_comptime_globals(input.ast_file->items);
     }
 
     // Resolve item-level splices before the method table/coherence build

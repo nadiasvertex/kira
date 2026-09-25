@@ -239,6 +239,8 @@ public:
       /// The path names a module-level `static`, whose value is `base`;
       /// segments from `first_field` on are field access on it.
       static_value,
+      /// The path names a module-level function, `function`.
+      function,
       /// The path names nothing with a compile-time value; `reason` says
       /// why, or is empty when the cause was already reported.
       not_constant,
@@ -247,6 +249,7 @@ public:
     value base;
     size_t first_field = 1;
     std::string reason;
+    const ast::func_decl *function = nullptr;
   };
 
   /// Reads a dotted path. `root_is_local` is whether the first segment is a
@@ -263,6 +266,62 @@ public:
   /// a module and every path is field access on a name.
   void set_path_resolver(path_resolver_fn resolver) {
     path_resolver_ = std::move(resolver);
+  }
+
+  /// What a bare name that is not one of the evaluator's own frame locals
+  /// means, as the checker reads it — see `set_name_resolver`.
+  struct bare_name_reading {
+    enum class kind : std::uint8_t {
+      /// A module-level `static`, whose value is `base`.
+      static_value,
+      /// A module-level function, `function`.
+      function,
+      /// A module-level name with no compile-time value; `reason` says why,
+      /// or is empty when the cause was already reported.
+      not_constant,
+      /// No module-level value of that name is visible here.
+      not_found,
+    };
+    kind reading = kind::not_found;
+    value base;
+    const ast::func_decl *function = nullptr;
+    std::string reason;
+  };
+
+  /// Reads a bare name that is not a frame local. The checker answers with
+  /// the same module-scope lookup ordinary code gets (the module being
+  /// checked, then its imports), so two modules that each declare
+  /// `static limit` or `static def f` never meet.
+  using name_resolver_fn =
+      std::function<bare_name_reading(const std::string &name)>;
+
+  /// Installs the checker's bare-name reader (see `name_resolver_fn`).
+  /// Unset, bare names resolve against the evaluator's own session-wide
+  /// tables (`register_pending_static`/`register_pending_function`/
+  /// `bind_global`) — a standalone evaluator with no module system.
+  void set_name_resolver(name_resolver_fn resolver) {
+    name_resolver_ = std::move(resolver);
+  }
+
+  /// Runs `body` (a compile-time call into `fn`) in `fn`'s declaring
+  /// module's context, so names inside it read the way they would at the
+  /// declaration rather than at the call site — see `set_call_context`.
+  using call_context_fn = std::function<value(
+      const ast::func_decl &fn, const std::function<value()> &body)>;
+
+  /// Installs the checker's call-context switch (see `call_context_fn`).
+  /// Unset, a call runs in whatever context the caller had.
+  void set_call_context(call_context_fn context) {
+    call_context_ = std::move(context);
+  }
+
+  /// The registered `static def` named `name`, if any — a session-wide
+  /// lookup for a caller that synthesizes a call to a known library
+  /// function (`checker::evaluate_derive_call`) and needs its declaration.
+  [[nodiscard]] auto pending_function(const std::string &name) const
+      -> const ast::func_decl * {
+    const auto it = pending_functions_.find(name);
+    return it != pending_functions_.end() ? it->second : nullptr;
   }
 
   /// Evaluates `iterable` in `static for` position to a `list` value.
@@ -641,15 +700,36 @@ private:
   evaluate_block_value(const std::vector<ast::ptr<ast::node>> &body)
       -> exec_result;
 
-  /// Looks up `name` in the local-scope stack (innermost first).
+  /// Looks up `name` in the local-scope stack (innermost first), down to
+  /// the current call's own frames — a `static def` body never sees its
+  /// caller's locals.
   [[nodiscard]] auto lookup_local(const std::string &name) -> const value *;
 
-  /// Resolves a bare name (locals, then globals, then a pending `static
-  /// let`/`static def`), reporting "not a compile-time constant" if none
-  /// match. Also reads the root of a dotted path the checker classified as
-  /// a local (`eval_module_path`).
+  /// Reads a bare name that is not a frame local: through `name_resolver_`
+  /// when the checker installed one, otherwise against the evaluator's own
+  /// session-wide tables. Reports nothing, except what evaluating a
+  /// not-yet-evaluated `static` initializer reports itself.
+  [[nodiscard]] auto read_module_name(const std::string &name, source_span span)
+      -> bare_name_reading;
+
+  /// Resolves a bare name (a frame local, then `read_module_name`),
+  /// reporting "not a compile-time constant" if none match. Also reads the
+  /// root of a dotted path the checker classified as a local
+  /// (`eval_module_path`).
   [[nodiscard]] auto resolve_name(const std::string &name, source_span span)
       -> value;
+
+  /// `callee` as a dotted path when it is a call's `a.f`/`a.b.f` shape — a
+  /// field access on a name or path — so the checker can read it
+  /// (`path_resolver_`); `nullopt` for any other callee.
+  [[nodiscard]] static auto qualified_callee_path(const ast::expr &callee)
+      -> std::optional<ast::module_path_expr>;
+
+  /// The function a callee name `name` calls: a frame-local closure, else a
+  /// module-level function (or a `static` bound to a closure). `nullptr` if
+  /// it names neither.
+  [[nodiscard]] auto resolve_callee(const std::string &name, source_span span)
+      -> const ast::func_decl *;
 
   /// Resolves a not-yet-bound global by evaluating its pending `static
   /// let` initializer, with cycle detection.
@@ -689,7 +769,16 @@ private:
   /// See `set_path_resolver`; unset until `checker` installs it.
   path_resolver_fn path_resolver_;
 
+  /// See `set_name_resolver`; unset until `checker` installs it.
+  name_resolver_fn name_resolver_;
+
+  /// See `set_call_context`; unset until `checker` installs it.
+  call_context_fn call_context_;
+
   std::vector<std::unordered_map<std::string, value>> locals_;
+  /// Index of the innermost call's first frame in `locals_` — the floor
+  /// `lookup_local` and assignment search down to.
+  size_t frame_base_ = 0;
   int call_depth_ = 0;
 
   /// Owns every AST node synthesized by `try_eval_expr_builder_call`

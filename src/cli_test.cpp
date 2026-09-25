@@ -1255,6 +1255,94 @@ auto test_dotted_names_through_module_values_and_root_alias() -> void {
 #endif
 }
 
+/// Bare names in compile-time code resolve by the checker's per-module
+/// lookup, not a session-wide table keyed by the bare name (spec/todo.md
+/// item 10):
+/// - `main` and its inline submodule `inner` each declare `static limit`
+///   and `static def scale`; each module's initializers see their own;
+/// - `inner.boxed(2)` — a module-qualified compile-time call — runs `boxed`
+///   in `inner`, so its bare `scale` is `inner.scale`;
+/// - a `static def` body never sees its caller's locals: `peek` reads the
+///   module's `shadow`, not `caller`'s `let shadow`.
+/// Checked by value on both backends: the flat table gave 229, not 140.
+auto test_comptime_bare_names_resolve_per_module() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "bare_names_bin";
+
+  write_file(main_source, "module main\n"
+                          "static limit: int32 = 3\n"
+                          "static def scale(n: int32) -> int32:\n"
+                          "    return n * limit\n"
+                          "static let parent_total: int32 = scale(limit)\n"
+                          "module inner:\n"
+                          "    static limit: int32 = 4\n"
+                          "    static def scale(n: int32) -> int32:\n"
+                          "        return n * limit + 1\n"
+                          "    pub static def boxed(n: int32) -> int32:\n"
+                          "        return scale(n)\n"
+                          "    pub static let total: int32 = scale(limit)\n"
+                          "static let via_inner: int32 = inner.boxed(2)\n"
+                          "static shadow: int32 = 5\n"
+                          "static def peek() -> int32:\n"
+                          "    return shadow\n"
+                          "static def caller() -> int32:\n"
+                          "    let shadow = 100\n"
+                          "    return peek() + shadow\n"
+                          "static let scoped: int32 = caller()\n"
+                          "def main() -> int32:\n"
+                          "    return parent_total + inner.total + via_inner + "
+                          "scoped\n");
+
+  // 9 (3 * 3) + 17 (4 * 4 + 1) + 9 (2 * 4 + 1) + 105 (5 + 100).
+  constexpr auto expected = 140;
+  const auto sources = std::vector<std::string>{main_source.string()};
+
+  kira::driver::cli_config run_cfg{
+      .program_name = "kira",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected per-module compile-time names to compile: " +
+             run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == expected,
+         std::format("expected {} on the VM, got {}", expected,
+                     run_report->run->exit_code));
+
+  kira::driver::cli_config build_cfg{
+      .program_name = "kira",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value() && build_report->build.has_value() &&
+             build_report->build->succeeded,
+         "expected `--build` of the per-module names program to link: " +
+             (build_report.has_value() ? build_report->diagnostics
+                                       : std::string{}));
+  const auto status = std::system(output_path.string().c_str()); // NOLINT
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(status) == expected,
+         std::format("expected {} from the linked executable, got {}", expected,
+                     WEXITSTATUS(status)));
+#endif
+}
+
 /// `use a.b as c` imports the *module* `a.b` under the name `c`, even when
 /// no file declares `a` — the form `--test`'s synthesized runner reaches
 /// every suite through. It used to be read as a member selection on `a`
@@ -4580,6 +4668,7 @@ auto main() -> int {
     test_compile_sources_reports_parser_errors();
     test_local_binding_shadows_same_named_module();
     test_dotted_names_through_module_values_and_root_alias();
+    test_comptime_bare_names_resolve_per_module();
     test_stdlib_immune_to_user_root_module_names();
     test_aliased_import_of_parentless_module_runs();
     test_compile_sources_reports_nested_parser_errors();
