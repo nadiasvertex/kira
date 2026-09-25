@@ -115,6 +115,7 @@ public:
   auto emit_opcode(opcode op) -> void;
   auto emit_u8(uint8_t value) -> void;
   auto emit_u16(uint16_t value) -> void;
+  auto emit_u32(uint32_t value) -> void;
 
   /// Emits a register operand at whatever width `k_register_operand_bytes`
   /// declares. Distinct from `emit_u8`/`emit_u16` so that "this operand is a

@@ -2104,21 +2104,16 @@ private:
     // within it yields an aligned address.
     const auto align = node.align_bytes == 0 ? uint64_t{1} : node.align_bytes;
     const auto offset = (stack_bytes_used_ + align - 1) / align * align;
+    //
+    // `hir::find_frame_budget_violations` already rejected any frame over
+    // `hir::k_max_frame_stack_bytes`, so the total (padding included) fits
+    // the opcode's 32-bit offset with room to spare.
     const auto end = offset + node.byte_size;
-    if (end > k_max_stack_bytes) {
-      return std::unexpected(compile_error{
-          .kind = compile_error_kind::unsupported_construct,
-          .span = node.span,
-          .message = std::format(
-              "this function's `uninit` buffers need {} bytes of frame "
-              "storage, more than the {} a single frame can address",
-              end, k_max_stack_bytes)});
-    }
     stack_bytes_used_ = static_cast<uint32_t>(end);
 
     emit_op(opcode::op_stack_alloc);
     emit_register(dst);
-    writer_.emit_u16(static_cast<uint16_t>(offset));
+    writer_.emit_u32(static_cast<uint32_t>(offset));
     return {};
   }
 
@@ -4048,11 +4043,9 @@ private:
   std::unordered_set<hir::symbol_id> cell_promoted_;
   size_t next_register_ = 0;
   /// Bytes of frame-local `uninit[T, N]` storage placed so far in this
-  /// function; becomes `bytecode_function::stack_byte_size`. Capped by
-  /// `k_max_stack_bytes` because `op_stack_alloc` encodes its offset as a
-  /// 16-bit immediate.
+  /// function; becomes `bytecode_function::stack_byte_size`. Bounded by
+  /// the language-level `hir::k_max_frame_stack_bytes`, checked in HIR.
   uint32_t stack_bytes_used_ = 0;
-  static constexpr uint32_t k_max_stack_bytes = 0xFFFF;
 
   // ------------------------------------------------------------------
   //  Register-allocation bookkeeping, accumulated while emitting and

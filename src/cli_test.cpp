@@ -4190,6 +4190,60 @@ auto test_build_runs_script_mode_implicit_main() -> void {
 #endif
 }
 
+/// `uninit` storage is capped at `hir::k_max_frame_stack_bytes` (1 MiB) per
+/// function frame, summed over every buffer in it — a language rule
+/// reported as the program's error, whether or not code was asked for.
+/// Exactly 1 MiB is accepted; one more `int64` slot, split across two
+/// buffers so only the sum is over, is not.
+auto test_compile_sources_enforces_frame_stack_budget() -> void {
+  const auto compile = [](std::string_view name, const std::string &program) {
+    auto temp = make_temp_dir();
+    auto source_path = temp.path / std::format("{}.kira", name);
+    write_file(source_path, program);
+    kira::driver::cli_config cfg{
+        .program_name = "kira",
+        .sources = {source_path.string()},
+        .metadata_dir = (temp.path / "meta").string(),
+        .show_help = false,
+    };
+    auto report = kira::driver::compile_sources(cfg, false);
+    expect(report.has_value(), "expected compile driver to return a report");
+    return std::move(*report);
+  };
+
+  const auto at_limit = compile("at_limit", "module sample\n"
+                                            "machine def f() -> int64:\n"
+                                            "  var a = uninit[int64, 131072]()\n"
+                                            "  a[0] = 1\n"
+                                            "  return a[0]\n");
+  expect(at_limit.error_count == 0,
+         "expected a frame of exactly 1 MiB of `uninit` storage to compile");
+
+  const auto over = compile("over_limit", "module sample\n"
+                                          "machine def f() -> int64:\n"
+                                          "  var a = uninit[int64, 131000]()\n"
+                                          "  var b = uninit[int64, 73]()\n"
+                                          "  a[0] = 1\n"
+                                          "  b[0] = 2\n"
+                                          "  return a[0] + b[0]\n");
+  expect(over.error_count == 1,
+         "expected one error for a frame one slot over 1 MiB");
+  expect(over.diagnostics.find("`f` needs 1048584 bytes of `uninit` stack "
+                               "storage, more than the 1 MiB one function "
+                               "frame may use") != std::string::npos,
+         std::format("expected the frame-budget error naming `f` and both "
+                     "sizes, got:\n{}",
+                     over.diagnostics));
+  expect(over.diagnostics.find("this buffer takes 584 bytes") !=
+             std::string::npos,
+         "expected each contributing buffer to be labelled with its size");
+  expect(over.diagnostics.find("gap in the compiler") == std::string::npos,
+         "expected the frame budget to be the program's error, not reported "
+         "as a compiler gap");
+  expect(over.hir_modules.size() == 1 && over.hir_modules[0].lowered,
+         "expected the module itself to have lowered before the check");
+}
+
 } // namespace
 
 /// Run the CLI driver regression tests.
@@ -4212,6 +4266,7 @@ auto main() -> int {
     test_compile_sources_lowers_module_to_hir();
     test_compile_sources_records_hir_lowering_failure_without_failing_compile();
     test_compile_sources_skips_lowering_when_parse_only();
+    test_compile_sources_enforces_frame_stack_budget();
     test_compile_sources_reports_parser_errors();
     test_compile_sources_reports_nested_parser_errors();
     test_compile_sources_handles_multiple_files();

@@ -803,6 +803,11 @@ struct operand_cursor {
     at += 2;
     return value;
   }
+  [[nodiscard]] auto imm32() -> uint32_t {
+    const auto value = read_u32(code, at);
+    at += 4;
+    return value;
+  }
   [[nodiscard]] auto rel32() -> int32_t {
     const auto value = read_i32(code, at);
     at += 4;
@@ -1600,6 +1605,11 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto &callee = module_.functions.at(fn_idx);
         f.function = &callee;
         f.registers.assign(callee.register_count, slot_value{});
+        // The callee's own `uninit` storage, sized and zeroed exactly as
+        // `push_frame` would. Nothing can still point into the old range:
+        // `hir::mark_tail_calls` never marks a call out of a function that
+        // owns a buffer.
+        f.stack_bytes.assign(callee.stack_byte_size, std::byte{});
         for (size_t i = 0; i < call_args.size(); ++i) {
           f.registers[i] = call_args[i];
         }
@@ -1623,7 +1633,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       case opcode::op_stack_alloc: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
-        const auto byte_offset = ops.imm16();
+        const auto byte_offset = ops.imm32();
         // The range was reserved whole on frame entry, so this is address
         // arithmetic and nothing else — no allocation, and the result stays
         // valid until the frame is popped.

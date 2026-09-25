@@ -5,6 +5,7 @@ cc_library(
     srcs = [
         "captures.cpp",
         "drop_schedule.cpp",
+        "frame_budget.cpp",
         "inline.cpp",
         "link.cpp",
         "live_across_yield.cpp",
@@ -14,6 +15,7 @@ cc_library(
     hdrs = [
         "captures.h",
         "drop_schedule.h",
+        "frame_budget.h",
         "ids.h",
         "inline.h",
         "link.h",
@@ -21,6 +23,7 @@ cc_library(
         "lower.h",
         "nodes.h",
         "tail_calls.h",
+        "traversal.h",
     ],
     deps = [
         "//src:intrinsics",

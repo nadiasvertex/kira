@@ -15,6 +15,10 @@ namespace kira::hir {
 /// A no-op for a generator function (`fn.is_generator`): its body doubles
 /// as the generator step function's body, which the spec excludes outright.
 ///
+/// Also a no-op for a function that owns an `uninit[T, N]` buffer: the
+/// buffer lives in this frame and a callee may hold a pointer into it, so
+/// the frame cannot be reused until the callee returns.
+///
 /// Does not descend into a nested `hir_lambda`'s body. A lambda compiles to
 /// its own separate function, so its own tail calls are a distinct
 /// question this milestone doesn't answer — and more importantly, a name

@@ -333,6 +333,40 @@ def main() -> int32:
 
 } // namespace
 
+/// A callee with an `uninit` buffer is never copied into its caller: that
+/// would move the buffer into the caller's frame, where it counts against
+/// the caller's `hir::k_max_frame_stack_bytes` budget instead of its own —
+/// a program that checked clean could then fail after inlining. The same
+/// buffer also keeps its owner from making tail calls, since a callee may
+/// still point into it.
+auto test_stack_buffer_callee_stays_a_call() -> void {
+  const auto program = inline_program(R"(module sample
+
+machine def scratch() -> int64:
+    var buf = uninit[int64, 2]()
+    buf[0] = 1
+    return buf[0]
+
+machine def owner() -> int64:
+    var buf = uninit[int64, 2]()
+    buf[0] = 2
+    return scratch()
+
+def main() -> int64:
+    return scratch()
+)");
+  const auto main_calls = calls_to(function_named(program, "main"), "scratch");
+  expect(main_calls.size() == 1,
+         "expected a callee with an `uninit` buffer to stay a call");
+  expect(main_calls.front()->is_tail_call,
+         "expected a call out of a buffer-free frame to stay a tail call");
+  const auto owner_calls =
+      calls_to(function_named(program, "owner"), "scratch");
+  expect(owner_calls.size() == 1, "expected `owner` to call `scratch`");
+  expect(!owner_calls.front()->is_tail_call,
+         "expected no tail call out of a frame that owns an `uninit` buffer");
+}
+
 auto main() -> int {
   try {
     test_guard_clause_becomes_if_else_value();
@@ -341,6 +375,7 @@ auto main() -> int {
     test_closure_parameter_stays_a_call();
     test_declines_what_it_cannot_rewrite();
     test_copied_function_references_name_their_module();
+    test_stack_buffer_callee_stays_a_call();
   } catch (const std::exception &ex) {
     std::cerr << "inline_test failed: unhandled exception: " << ex.what()
               << "\n";

@@ -39,12 +39,15 @@ auto chunk_writer::emit_register(uint16_t reg) -> void {
   emit_u16(reg);
 }
 
+auto chunk_writer::emit_u32(uint32_t value) -> void {
+  code_.push_back(static_cast<uint8_t>(value & 0xFFU));
+  code_.push_back(static_cast<uint8_t>((value >> 8) & 0xFFU));
+  code_.push_back(static_cast<uint8_t>((value >> 16) & 0xFFU));
+  code_.push_back(static_cast<uint8_t>((value >> 24) & 0xFFU));
+}
+
 auto chunk_writer::emit_i32(int32_t value) -> void {
-  const auto bits = static_cast<uint32_t>(value);
-  code_.push_back(static_cast<uint8_t>(bits & 0xFFU));
-  code_.push_back(static_cast<uint8_t>((bits >> 8) & 0xFFU));
-  code_.push_back(static_cast<uint8_t>((bits >> 16) & 0xFFU));
-  code_.push_back(static_cast<uint8_t>((bits >> 24) & 0xFFU));
+  emit_u32(static_cast<uint32_t>(value));
 }
 
 auto chunk_writer::emit_numeric_kind(numeric_kind kind) -> void {

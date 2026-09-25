@@ -1,0 +1,44 @@
+module codegen_stress.uninit_frame_budget
+
+# `uninit[T, N]` frames past the old 64 KiB bytecode cap, and the two ways a
+# tail call interacts with a frame's buffer storage. `# expect:` rather than
+# agreement alone: each case below was once wrong on one tier only.
+#
+#  - `past_64k`: 80000 bytes, read at both ends. The bytecode tier used to
+#    reject this (a 16-bit `op_stack_alloc` offset); the limit is now the
+#    language-level 1 MiB `hir::k_max_frame_stack_bytes`.
+#  - `main` reaches `past_64k` through a tail call from a frame with no
+#    buffer. The VM reused the frame without sizing its buffer storage for
+#    the callee, so the callee addressed past the end of an empty range.
+#  - `owner` passes a pointer into its own buffer to `peek` from tail
+#    position. Reusing `owner`'s frame for `peek` would free that buffer
+#    mid-call (and is UB under LLVM `musttail`), so a buffer-owning function
+#    makes no tail calls. `peek` has a same-sized buffer of its own, so a
+#    reused frame would read back its zeroed storage — 0, not 5.
+
+machine def past_64k() -> int64:
+    var buf = uninit[int64, 10000]()
+    buf[0] = 7
+    buf[9999] = 35
+    return buf[0] + buf[9999] + int64(buf.len())
+
+machine def peek(p: *mut int64) -> int64:
+    var scratch = uninit[int64, 4]()
+    scratch[0] = 100
+    return p[0] + scratch[1]
+
+machine def owner() -> int64:
+    var buf = uninit[int64, 4]()
+    buf[0] = 5
+    return peek(buf.as_mut_ptr())
+
+def via_tail_call() -> int64:
+    return past_64k()
+
+def main() -> int32:
+    # 10042 + 5
+    return int32(via_tail_call() + owner())
+
+# past_64k: 7 + 35 + 10000 = 10042
+# owner:    5 (read through the pointer into owner's still-live buffer)
+# expect: 10047

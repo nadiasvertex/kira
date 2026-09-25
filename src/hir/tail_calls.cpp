@@ -2,6 +2,7 @@
 
 #include <unordered_set>
 
+#include "src/hir/traversal.h"
 #include "src/intrinsics.h"
 
 namespace kira::hir {
@@ -357,12 +358,37 @@ auto mark_tail_block(hir_block &block,
   }
 }
 
+/// Whether `node` holds a `uninit` buffer in its own frame — lambda bodies
+/// are frames of their own and are not searched.
+[[nodiscard]] auto owns_stack_buffer(hir_node &node) -> bool {
+  if (node.kind == hir_node_kind::hir_stack_buffer) {
+    return true;
+  }
+  if (node.kind == hir_node_kind::hir_lambda) {
+    return false;
+  }
+  auto found = false;
+  for_each_child(node, [&](auto &slot) -> void {
+    found = found || owns_stack_buffer(*slot);
+  });
+  return found;
+}
+
 } // namespace
 
 auto mark_tail_calls(hir_function &fn) -> void {
   if (fn.is_generator) {
     // This body doubles as the generator step function's body — excluded
     // outright (Decision 2 / Future extensions item 4).
+    return;
+  }
+  if (owns_stack_buffer(*fn.body)) {
+    // A tail call reuses this frame, and this frame holds an `uninit`
+    // buffer the callee may have been handed a pointer into (`&buf`,
+    // `buf.as_mut_ptr()`, a slice of it). Reusing the frame would free that
+    // storage mid-call — and on LLVM, `musttail` with a callee that can
+    // reach the caller's allocas is undefined behavior. The buffer must
+    // outlive the call, so no call here is a tail call.
     return;
   }
 

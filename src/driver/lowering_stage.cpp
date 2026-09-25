@@ -3,6 +3,7 @@
 #include <format>
 #include <utility>
 
+#include "src/hir/frame_budget.h"
 #include "src/hir/lower.h"
 #include "src/util/path.h"
 #include "src/util/str.h"
@@ -64,6 +65,55 @@ static auto report_lowering_failure(const cli_config &cfg,
   ++report.error_count;
 }
 
+/// Renders a byte count the way a person would say it: `1 MiB`, `96 KiB`,
+/// or plain bytes when it is not a whole number of either.
+[[nodiscard]] static auto format_bytes(uint64_t bytes) -> std::string {
+  constexpr auto kib = uint64_t{1} << 10;
+  constexpr auto mib = uint64_t{1} << 20;
+  if (bytes != 0 && bytes % mib == 0) {
+    return std::format("{} MiB", bytes / mib);
+  }
+  if (bytes != 0 && bytes % kib == 0) {
+    return std::format("{} KiB", bytes / kib);
+  }
+  return std::format("{} bytes", bytes);
+}
+
+/// Reports every frame in `module` whose `uninit` buffers exceed
+/// `hir::k_max_frame_stack_bytes`. Unlike a lowering failure this is the
+/// program's error, not the compiler's, and it is reported whether or not
+/// code was asked for: the rule is part of the language, not of whichever
+/// backend runs next. Returns whether `module` is clean.
+static auto check_frame_budgets(hir::hir_module &module, file_id_type file_id,
+                                const diagnostic_renderer &renderer,
+                                compile_report &report) -> bool {
+  const auto violations = hir::find_frame_budget_violations(module);
+  for (const auto &violation : violations) {
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("{} needs {} of `uninit` stack storage, more than the {} "
+                    "one function frame may use",
+                    violation.frame_name, format_bytes(violation.total_bytes),
+                    format_bytes(hir::k_max_frame_stack_bytes)),
+        file_id);
+    for (const auto &buffer : violation.buffers) {
+      diag.with_label(buffer.span,
+                      std::format("this buffer takes {}",
+                                  format_bytes(buffer.byte_size)));
+    }
+    diag.with_note(std::format(
+        "`uninit[T, N]` lives in the function's stack frame, and a frame this "
+        "large can overflow the thread's stack. Every `uninit` buffer in one "
+        "function counts toward the same {} limit, on every backend.",
+        format_bytes(hir::k_max_frame_stack_bytes)));
+    diag.with_help("store this many elements on the heap instead (`list[T]` "
+                   "or `vec[T]`), or use a smaller `N`");
+    append_text(report.diagnostics, renderer.render(diag));
+    ++report.error_count;
+  }
+  return violations.empty();
+}
+
 auto lower_and_emit_modules(const cli_config &cfg,
                             const std::vector<parsed_input> &parsed_inputs,
                             const std::vector<bool> &file_has_errors,
@@ -121,7 +171,10 @@ auto lower_and_emit_modules(const cli_config &cfg,
                                        lowered_result.error().message,
                                        lowered_result.error().span.start)});
     if (lowered_result.has_value()) {
-      lowered_modules.push_back(std::move(*lowered_result));
+      if (check_frame_budgets(**lowered_result, input.file_id, renderer,
+                              report)) {
+        lowered_modules.push_back(std::move(*lowered_result));
+      }
     } else {
       report_lowering_failure(cfg, lowered_result.error(), module_name,
                               input.file_id, renderer, report);
@@ -139,7 +192,9 @@ auto lower_and_emit_modules(const cli_config &cfg,
       for (auto &submodule : *submodules) {
         report.hir_modules.push_back(hir_lowering_result{
             .module_path = submodule->module_name, .lowered = true});
-        lowered_modules.push_back(std::move(submodule));
+        if (check_frame_budgets(*submodule, input.file_id, renderer, report)) {
+          lowered_modules.push_back(std::move(submodule));
+        }
       }
     } else {
       report.hir_modules.push_back(hir_lowering_result{
@@ -165,7 +220,15 @@ auto lower_and_emit_modules(const cli_config &cfg,
       for (auto &functor_module : *functor_modules) {
         report.hir_modules.push_back(hir_lowering_result{
             .module_path = functor_module->module_name, .lowered = true});
-        lowered_modules.push_back(std::move(functor_module));
+        // Same file choice as `report_lowering_failure` below: a functor's
+        // cloned `def`s keep spans into the file that declared them.
+        if (check_frame_budgets(*functor_module,
+                                parsed_inputs.empty()
+                                    ? file_id_type{0}
+                                    : parsed_inputs.front().file_id,
+                                renderer, report)) {
+          lowered_modules.push_back(std::move(functor_module));
+        }
       }
     } else {
       report.hir_modules.push_back(hir_lowering_result{

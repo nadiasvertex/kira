@@ -266,7 +266,7 @@ enum class opcode : uint8_t {
   //  generic over "a flat block of 8-byte slots" (`src/runtime/layout.h`),
   //  matching the same "parameterize, don't combinatorially enumerate"
   //  choice `numeric_kind` already made for arithmetic.
-  op_stack_alloc,    ///< u16 dst, u16 byte_offset — reg[dst] = the address
+  op_stack_alloc,    ///< u16 dst, u32 byte_offset — reg[dst] = the address
                      ///< of `byte_offset` within this frame's own
                      ///< `stack_byte_size` scratch range. The frame-local
                      ///< counterpart of `op_alloc`: storage for a
@@ -523,6 +523,7 @@ enum class operand_kind : uint8_t {
   reg,   ///< A register index, `k_register_operand_bytes` wide.
   imm8,  ///< A 1-byte immediate (kind tag, size, count, id).
   imm16, ///< A 2-byte immediate (constant index, byte offset, function index).
+  imm32, ///< A 4-byte unsigned immediate (a frame's `uninit` byte offset).
   rel32, ///< A 4-byte signed relative jump offset.
 };
 
@@ -620,7 +621,7 @@ struct operand_signature {
     return sig({reg, imm8, reg, imm8});
 
   case opcode::op_stack_alloc:
-    return sig({reg, imm16});
+    return sig({reg, imm32});
   case opcode::op_alloc:
     return sig({reg, imm16});
   case opcode::op_load_slot:
@@ -680,6 +681,7 @@ struct operand_signature {
     case operand_kind::imm16:
       size += 2;
       break;
+    case operand_kind::imm32:
     case operand_kind::rel32:
       size += 4;
       break;

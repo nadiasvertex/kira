@@ -4534,6 +4534,19 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
                              "llvm.global_ctors");
   }
 
+  // Probe every page of a large frame as it is allocated, so a frame that
+  // does not fit the thread's stack faults on the guard page instead of
+  // stepping past it into unrelated memory ("stack clash"). The frame size
+  // itself is bounded by `hir::k_max_frame_stack_bytes`; this makes running
+  // out of stack under that bound deterministic, matching the bytecode tier,
+  // whose `uninit` storage never touches the native stack at all. Frames
+  // smaller than a page get no probes, so ordinary functions pay nothing.
+  for (auto &fn : llvm_module) {
+    if (!fn.isDeclaration()) {
+      fn.addFnAttr("probe-stack", "inline-asm");
+    }
+  }
+
   auto verify_message = std::string{};
   auto verify_stream = llvm::raw_string_ostream(verify_message);
   if (llvm::verifyModule(llvm_module, &verify_stream)) {
