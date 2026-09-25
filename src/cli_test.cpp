@@ -1164,6 +1164,97 @@ auto test_local_binding_shadows_same_named_module() -> void {
       std::format("unexpected stdout from the derived `show()`: `{}`", output));
 }
 
+/// Dotted names rooted at module-level values, on both backends, with the
+/// answer asserted through the computed value (every term below is one a
+/// misread path can't produce):
+/// - `use geo as g` renames a *root* module;
+/// - `origin.x` (an imported `static`), `local_box.w` (this module's
+///   `static`), and `g.origin.y`/`g.unit_seg.b.y` (a module path running
+///   into a `static`'s fields) are field access folded to constants;
+/// - the compile-time evaluator reads dotted names by the checker's rule:
+///   `g.far`'s initializer (`hidden.x + 53`) is evaluated in `geo`, the
+///   only place `hidden` is visible, and `pick`'s parameter `g` shadows the
+///   module alias `g` inside the `static def`.
+auto test_dotted_names_through_module_values_and_root_alias() -> void {
+  auto temp = make_temp_dir();
+  auto geo_source = temp.path / "geo.kira";
+  auto main_source = temp.path / "main.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "dotted_bin";
+
+  write_file(geo_source,
+             "module geo\n"
+             "pub type point = { x: int32, y: int32 }\n"
+             "pub type seg = { a: point, b: point }\n"
+             "pub static let origin: point = point { x: 3, y: 4 }\n"
+             "pub static let unit_seg: seg = seg { a: point { x: 0, y: 0 }, "
+             "b: point { x: 1, y: 9 } }\n"
+             "static let hidden: point = point { x: 50, y: 0 }\n"
+             "pub static let far: int32 = hidden.x + 53\n");
+  write_file(main_source,
+             "module main\n"
+             "use geo as g\n"
+             "use geo.{origin}\n"
+             "type bin = { w: int32 }\n"
+             "static let local_box: bin = bin { w: 7000 }\n"
+             "static def pick(g: g.point) -> int32:\n"
+             "  return g.y * 10\n"
+             "static let folded: int32 = g.far + g.origin.y + "
+             "pick(g.point { x: 1, y: 2 })\n"
+             "def main() -> int32:\n"
+             "  let local = local_box.w - 7000\n"
+             "  return folded + origin.x + g.unit_seg.b.y + local\n");
+
+  // 103 (g.far) + 4 (g.origin.y) + 20 (pick) + 3 (origin.x) + 9
+  // (g.unit_seg.b.y) + 0 (local_box.w - 7000).
+  constexpr auto expected = 139;
+  const auto sources =
+      std::vector<std::string>{main_source.string(), geo_source.string()};
+
+  kira::driver::cli_config run_cfg{
+      .program_name = "kira",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected module-value dotted names to compile: " +
+             run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == expected,
+         std::format("expected {} on the VM, got {}", expected,
+                     run_report->run->exit_code));
+
+  kira::driver::cli_config build_cfg{
+      .program_name = "kira",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value() && build_report->build.has_value() &&
+             build_report->build->succeeded,
+         "expected `--build` of the module-value program to link: " +
+             (build_report.has_value() ? build_report->diagnostics
+                                       : std::string{}));
+  const auto status = std::system(output_path.string().c_str()); // NOLINT
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(status) == expected,
+         std::format("expected {} from the linked executable, got {}",
+                     expected, WEXITSTATUS(status)));
+#endif
+}
+
 /// `use a.b as c` imports the *module* `a.b` under the name `c`, even when
 /// no file declares `a` — the form `--test`'s synthesized runner reaches
 /// every suite through. It used to be read as a member selection on `a`
@@ -4487,6 +4578,7 @@ auto main() -> int {
     test_compile_sources_enforces_frame_stack_budget();
     test_compile_sources_reports_parser_errors();
     test_local_binding_shadows_same_named_module();
+    test_dotted_names_through_module_values_and_root_alias();
     test_stdlib_immune_to_user_root_module_names();
     test_aliased_import_of_parentless_module_runs();
     test_compile_sources_reports_nested_parser_errors();

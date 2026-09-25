@@ -230,6 +230,41 @@ public:
     variant_resolver_ = std::move(resolver);
   }
 
+  /// What a dotted path `a.b.c` means, as the checker reads it for the
+  /// evaluator — see `set_path_resolver`.
+  struct dotted_path_reading {
+    enum class kind : std::uint8_t {
+      /// `a` is a binding in the evaluator's own frames: field access on it.
+      local,
+      /// The path names a module-level `static`, whose value is `base`;
+      /// segments from `first_field` on are field access on it.
+      static_value,
+      /// The path names nothing with a compile-time value; `reason` says
+      /// why, or is empty when the cause was already reported.
+      not_constant,
+    };
+    kind reading = kind::local;
+    value base;
+    size_t first_field = 1;
+    std::string reason;
+  };
+
+  /// Reads a dotted path. `root_is_local` is whether the first segment is a
+  /// binding in the evaluator's frames (a `static def` parameter, a `let` in
+  /// its body, a `static for` binder) — the one input only the evaluator
+  /// has. Everything else about what the path means is the checker's rule,
+  /// so compile-time code and ordinary code can never disagree.
+  using path_resolver_fn = std::function<dotted_path_reading(
+      const ast::module_path_expr &path, bool root_is_local)>;
+
+  /// Installs the checker's dotted-path reader (see `path_resolver_fn`).
+  /// Unset, there is no module system to consult (a standalone evaluator,
+  /// or the driver's pre-resolution `static if` fold), so no root can name
+  /// a module and every path is field access on a name.
+  void set_path_resolver(path_resolver_fn resolver) {
+    path_resolver_ = std::move(resolver);
+  }
+
   /// Evaluates `iterable` in `static for` position to a `list` value.
   /// Supports list/array literals and integer ranges (`a..b`, `a..=b`);
   /// anything else reports "not yet supported" and returns an error.
@@ -611,8 +646,8 @@ private:
 
   /// Resolves a bare name (locals, then globals, then a pending `static
   /// let`/`static def`), reporting "not a compile-time constant" if none
-  /// match. Shared by `eval_ident` and `eval_module_path`, since the parser
-  /// can't distinguish `a.b` field access from a module-qualified path.
+  /// match. Also reads the root of a dotted path the checker classified as
+  /// a local (`eval_module_path`).
   [[nodiscard]] auto resolve_name(const std::string &name, source_span span)
       -> value;
 
@@ -650,6 +685,9 @@ private:
   /// See `set_variant_resolver`; unset (empty `std::function`) until
   /// `checker` installs it.
   variant_resolver_fn variant_resolver_;
+
+  /// See `set_path_resolver`; unset until `checker` installs it.
+  path_resolver_fn path_resolver_;
 
   std::vector<std::unordered_map<std::string, value>> locals_;
   int call_depth_ = 0;

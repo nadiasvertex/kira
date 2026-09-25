@@ -1946,11 +1946,25 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
   if (value_path == checked_.value_path_types.end()) {
     return fail(lowering_error_kind::unsupported_construct, path.span,
                 std::format("`{}` is a module-qualified value reference, "
-                            "which is not lowered yet",
+                            "which is not lowered yet (a field of a "
+                            "`static` lowers only when it is a scalar the "
+                            "checker could embed)",
                             semantic::join_strings(path.segments, ".")));
   }
   const auto &segment_types = value_path->second;
   const auto root_symbol = lookup_local(path.segments[0]);
+  if (!root_symbol.has_value() &&
+      segment_types.size() == path.segments.size()) {
+    // The checker read the root as a module-level `def`/`static` and would
+    // have embedded a scalar field as a literal above; anything else needs
+    // the static itself at runtime, which only arrays/lists of scalars have.
+    return fail(lowering_error_kind::unsupported_construct, path.span,
+                std::format("`{}` reads a non-scalar part of the module-level "
+                            "value `{}`, and a struct-valued `static` has no "
+                            "runtime storage yet (see spec/todo.md)",
+                            semantic::join_strings(path.segments, "."),
+                            path.segments[0]));
+  }
   if (!root_symbol.has_value() ||
       segment_types.size() != path.segments.size()) {
     return fail(lowering_error_kind::unsupported_construct, path.span,

@@ -85,11 +85,13 @@ use_decl = [ visibility ] "use" use_path NEWLINE ;
 
 use_path
     = module_path [ "[" type_arg_list "]" ] "." use_selector
-    | module_path [ "[" type_arg_list "]" ]
+    | module_path [ "[" type_arg_list "]" ] [ "as" IDENT ]
     ;
     (* An argument list instantiates a parameterized module (functor):
        "use audited[postgres] as db". Arguments reuse type_arg_list, so nested
-       instantiations "audited[cached[postgres]]" parse. *)
+       instantiations "audited[cached[postgres]]" parse. A plain path may be
+       renamed too: "use a as b" imports the root module a under the name b,
+       and "use a.b as c" imports a.b (a module or a member) as c. *)
 
 use_selector
     = IDENT [ "as" IDENT ]

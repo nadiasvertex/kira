@@ -2426,8 +2426,26 @@ struct named_test {
 
 } // namespace
 
+/// `use a as b` renames a root module: the alias rides on the declaration
+/// (there is no base path to hang a selector off), and it parses cleanly —
+/// it used to be the diagnostic "expected `module_path.name as alias`".
+auto test_parser_accepts_root_module_alias() -> void {
+  const auto parsed = parse_source("module main\n"
+                                   "use pkg as p\n");
+  expect(parsed.error_count == 0,
+         "expected `use pkg as p` to parse cleanly:\n" + parsed.diagnostics);
+  auto *use = expect_node<kira::ast::use_decl>(parsed.file->items[0].get(),
+                                               kira::ast::node_kind::use_decl,
+                                               "expected a use declaration");
+  expect(use->path == std::vector<std::string>{"pkg"},
+         "expected the renamed root module to stay the whole path");
+  expect(use->alias == std::optional<std::string>{"p"},
+         "expected the alias on the declaration");
+  expect(!use->selector.has_value(), "expected no selector for a root rename");
+}
+
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 49> tests = {{
+  const std::array<named_test, 50> tests = {{
       {.name = "keyword_module_name",
        .fn = test_keyword_module_name_is_a_diagnosed_error},
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
@@ -2520,6 +2538,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_still_reads_static_bindings_as_bindings},
       {.name = "static_if_branches_accept_statements",
        .fn = test_parser_accepts_statements_in_static_if_branches},
+      {.name = "root_module_alias",
+       .fn = test_parser_accepts_root_module_alias},
   }};
 
   const std::span<char *> args(argv, static_cast<size_t>(argc));

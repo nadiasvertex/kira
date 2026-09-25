@@ -132,6 +132,10 @@ auto extend_scope_with_bindings(
 auto walk_node(const ast::node &node, scope_id active_scope,
                const scope_build_context &context) -> scope_id;
 
+/// Forward declaration: walks one `static` declaration — see its definition.
+auto walk_static_decl(const ast::static_decl &decl, scope_id active_scope,
+                      const scope_build_context &context) -> scope_id;
+
 /// Walks each item in `items` in order, threading the scope returned by one
 /// node's walk into the next (so sequential `let`/`var` bindings accumulate).
 auto walk_node_list(const std::vector<ast::ptr<ast::node>> &items,
@@ -158,6 +162,64 @@ auto create_block_scope(scope_id parent_scope,
                        .file_id = context.file_id,
                        .span = span,
                    });
+}
+
+/// Walks `child` beneath `scope` when present.
+template <typename node_type>
+auto walk_child(const ast::ptr<node_type> &child, scope_id scope,
+                const scope_build_context &context) -> void {
+  if (child != nullptr) {
+    walk_node(*child, scope, context);
+  }
+}
+
+/// Walks each of `children` beneath `scope`. Unlike `walk_node_list`, no
+/// child's bindings reach its siblings: these are expressions, patterns, or
+/// types, not statements.
+template <typename node_type>
+auto walk_children(const std::vector<ast::ptr<node_type>> &children,
+                   scope_id scope, const scope_build_context &context)
+    -> void {
+  for (const auto &child : children) {
+    walk_child(child, scope, context);
+  }
+}
+
+/// Walks the argument payloads of a type/functor application (a value
+/// argument is an expression; a type argument is a type).
+auto walk_type_args(const std::vector<ast::type_arg> &args, scope_id scope,
+                    const scope_build_context &context) -> void {
+  for (const auto &arg : args) {
+    walk_child(arg.value, scope, context);
+  }
+}
+
+/// Walks the bound or value type of each generic parameter.
+auto walk_type_param_bounds(const std::vector<ast::type_param> &params,
+                            scope_id scope, const scope_build_context &context)
+    -> void {
+  for (const auto &param : params) {
+    walk_child(param.bound_or_type, scope, context);
+  }
+}
+
+/// Walks every term of a `+`-joined bound.
+auto walk_bound(const ast::bound &bound, scope_id scope,
+                const scope_build_context &context) -> void {
+  for (const auto &term : bound.terms) {
+    walk_child(term.type, scope, context);
+  }
+}
+
+/// Whether `kind` is a scope whose declarations the module-symbol pass
+/// (`module_symbol_spec`) registers before any body is walked, so a nested
+/// walk must not register them again.
+auto is_item_scope(semantic_scope_kind kind) -> bool {
+  return kind == semantic_scope_kind::module_scope ||
+         kind == semantic_scope_kind::trait_scope ||
+         kind == semantic_scope_kind::impl_scope ||
+         kind == semantic_scope_kind::type_scope ||
+         kind == semantic_scope_kind::concept_scope;
 }
 
 /// Builds the signature scope (type parameters and parameter bindings) and
@@ -210,14 +272,18 @@ auto walk_function_like_body(const ast::func_decl &decl, scope_id parent_scope,
                    });
       }
     }
-    if (param.type_annotation != nullptr) {
-      record_node_scope(context.session, param.type_annotation.get(),
-                        signature_scope);
-    }
-    if (param.default_value != nullptr) {
-      record_node_scope(context.session, param.default_value.get(),
-                        signature_scope);
-    }
+    walk_child(param.type_annotation, signature_scope, context);
+    walk_child(param.default_value, signature_scope, context);
+  }
+  walk_type_param_bounds(decl.type_params, signature_scope, context);
+  walk_child(decl.modifiers.async_context, signature_scope, context);
+  walk_child(decl.return_type, signature_scope, context);
+  for (const auto &constraint : decl.where_constraints) {
+    walk_child(constraint.subject, signature_scope, context);
+    walk_child(constraint.bound_or_type, signature_scope, context);
+  }
+  for (const auto &contract : decl.contracts) {
+    walk_child(contract.condition, signature_scope, context);
   }
 
   auto body_scope = add_scope(context.session, body_kind, signature_scope,
@@ -263,11 +329,9 @@ auto walk_lambda_body(const ast::lambda_expr &lambda, scope_id parent_scope,
                    });
       }
     }
-    if (param.type_annotation != nullptr) {
-      record_node_scope(context.session, param.type_annotation.get(),
-                        signature_scope);
-    }
+    walk_child(param.type_annotation, signature_scope, context);
   }
+  walk_child(lambda.return_type, signature_scope, context);
 
   auto body_scope = add_scope(
       context.session, semantic_scope_kind::lambda_body_scope, signature_scope,
@@ -303,12 +367,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
     // walked at all; registering it again here would duplicate the symbol.
     // Only a `def` nested inside a function/lambda body has no such pass and
     // needs registering here instead.
-    const auto enclosing_kind = context.session.scopes[active_scope].kind;
-    if (enclosing_kind != semantic_scope_kind::module_scope &&
-        enclosing_kind != semantic_scope_kind::trait_scope &&
-        enclosing_kind != semantic_scope_kind::impl_scope &&
-        enclosing_kind != semantic_scope_kind::type_scope &&
-        enclosing_kind != semantic_scope_kind::concept_scope) {
+    if (!is_item_scope(context.session.scopes[active_scope].kind)) {
       if (auto spec = module_symbol_spec(node, context.file_id)) {
         add_symbol(context.session, active_scope, *spec);
       }
@@ -928,9 +987,388 @@ auto walk_node(const ast::node &node, scope_id active_scope,
     return active_scope;
   }
 
-  default:
+  case ast::node_kind::extend_decl: {
+    const auto &decl = dynamic_cast<const ast::extend_decl &>(node);
+    auto extend_scope =
+        add_scope(context.session, semantic_scope_kind::impl_scope,
+                  active_scope, context.file_id, context.module_name, "extend",
+                  source_location{
+                      .file_id = context.file_id,
+                      .span = decl.span,
+                  });
+    for (const auto &type_param : decl.type_params) {
+      if (type_param.name.empty()) {
+        continue;
+      }
+      add_symbol(context.session, extend_scope,
+                 semantic_symbol_spec{
+                     .name = type_param.name,
+                     .kind = semantic_symbol_kind::type_parameter_symbol,
+                     .name_space = symbol_namespace::type_parameter_namespace,
+                     .visibility = ast::visibility::def,
+                     .location =
+                         source_location{
+                             .file_id = context.file_id,
+                             .span = type_param.span,
+                         },
+                 });
+    }
+    walk_type_param_bounds(decl.type_params, extend_scope, context);
+    walk_child(decl.for_type, extend_scope, context);
+    walk_node_list(decl.items, extend_scope, context);
     return active_scope;
   }
+
+  case ast::node_kind::signature_decl:
+    walk_node_list(dynamic_cast<const ast::signature_decl &>(node).items,
+                   active_scope, context);
+    return active_scope;
+
+  case ast::node_kind::struct_type_def:
+    for (const auto &field :
+         dynamic_cast<const ast::struct_type_def &>(node).body.fields) {
+      walk_child(field.type, active_scope, context);
+    }
+    return active_scope;
+
+  case ast::node_kind::sum_type_def:
+    for (const auto &variant :
+         dynamic_cast<const ast::sum_type_def &>(node).body.variants) {
+      walk_children(variant.payload_types, active_scope, context);
+    }
+    return active_scope;
+
+  case ast::node_kind::static_decl:
+    return walk_static_decl(dynamic_cast<const ast::static_decl &>(node),
+                            active_scope, context);
+
+  case ast::node_kind::splice_stmt:
+    walk_child(dynamic_cast<const ast::splice_stmt &>(node).expr, active_scope,
+               context);
+    return active_scope;
+
+  // Types. None binds a name; each is walked for the expressions some of
+  // them carry (array lengths, refinement predicates, value arguments).
+  case ast::node_kind::named_type:
+    walk_type_args(dynamic_cast<const ast::named_type &>(node).type_args,
+                   active_scope, context);
+    return active_scope;
+  case ast::node_kind::bound_type:
+    walk_bound(dynamic_cast<const ast::bound_type &>(node).value, active_scope,
+               context);
+    return active_scope;
+  case ast::node_kind::existential_type:
+    walk_bound(dynamic_cast<const ast::existential_type &>(node).value,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::tuple_type:
+    walk_children(dynamic_cast<const ast::tuple_type &>(node).elements,
+                  active_scope, context);
+    return active_scope;
+  case ast::node_kind::slice_type:
+    walk_child(dynamic_cast<const ast::slice_type &>(node).element,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::array_type: {
+    const auto &type = dynamic_cast<const ast::array_type &>(node);
+    walk_child(type.element, active_scope, context);
+    walk_child(type.size, active_scope, context);
+    return active_scope;
+  }
+  case ast::node_kind::ref_type:
+    walk_child(dynamic_cast<const ast::ref_type &>(node).inner, active_scope,
+               context);
+    return active_scope;
+  case ast::node_kind::ptr_type:
+    walk_child(dynamic_cast<const ast::ptr_type &>(node).inner, active_scope,
+               context);
+    return active_scope;
+  case ast::node_kind::mut_type:
+    walk_child(dynamic_cast<const ast::mut_type &>(node).inner, active_scope,
+               context);
+    return active_scope;
+  case ast::node_kind::fn_type: {
+    const auto &type = dynamic_cast<const ast::fn_type &>(node);
+    walk_children(type.param_types, active_scope, context);
+    walk_child(type.return_type, active_scope, context);
+    return active_scope;
+  }
+  case ast::node_kind::splice_type:
+    walk_child(dynamic_cast<const ast::splice_type &>(node).operand,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::union_type:
+    walk_children(dynamic_cast<const ast::union_type &>(node).alternatives,
+                  active_scope, context);
+    return active_scope;
+  case ast::node_kind::refinement_type: {
+    const auto &type = dynamic_cast<const ast::refinement_type &>(node);
+    walk_child(type.base, active_scope, context);
+    walk_child(type.predicate, active_scope, context);
+    return active_scope;
+  }
+
+  // Expressions with no binders of their own: walked so every nested node
+  // (a lambda or block inside an argument, say) gets its scope.
+  case ast::node_kind::binary_expr: {
+    const auto &expr = dynamic_cast<const ast::binary_expr &>(node);
+    walk_child(expr.lhs, active_scope, context);
+    walk_child(expr.rhs, active_scope, context);
+    return active_scope;
+  }
+  case ast::node_kind::unary_expr:
+    walk_child(dynamic_cast<const ast::unary_expr &>(node).operand,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::call_expr: {
+    const auto &expr = dynamic_cast<const ast::call_expr &>(node);
+    walk_child(expr.callee, active_scope, context);
+    for (const auto &arg : expr.args) {
+      walk_child(arg.value, active_scope, context);
+    }
+    return active_scope;
+  }
+  case ast::node_kind::index_expr: {
+    const auto &expr = dynamic_cast<const ast::index_expr &>(node);
+    walk_child(expr.object, active_scope, context);
+    walk_child(expr.index, active_scope, context);
+    return active_scope;
+  }
+  case ast::node_kind::field_expr: {
+    const auto &expr = dynamic_cast<const ast::field_expr &>(node);
+    walk_child(expr.object, active_scope, context);
+    walk_children(expr.generic_args, active_scope, context);
+    return active_scope;
+  }
+  case ast::node_kind::cast_expr: {
+    const auto &expr = dynamic_cast<const ast::cast_expr &>(node);
+    walk_child(expr.operand, active_scope, context);
+    walk_child(expr.target_type, active_scope, context);
+    return active_scope;
+  }
+  case ast::node_kind::try_expr:
+    walk_child(dynamic_cast<const ast::try_expr &>(node).operand, active_scope,
+               context);
+    return active_scope;
+  case ast::node_kind::tuple_expr:
+    walk_children(dynamic_cast<const ast::tuple_expr &>(node).elements,
+                  active_scope, context);
+    return active_scope;
+  case ast::node_kind::array_expr: {
+    const auto &expr = dynamic_cast<const ast::array_expr &>(node);
+    walk_children(expr.elements, active_scope, context);
+    walk_child(expr.fill_value, active_scope, context);
+    walk_child(expr.fill_count, active_scope, context);
+    return active_scope;
+  }
+  case ast::node_kind::struct_expr: {
+    const auto &expr = dynamic_cast<const ast::struct_expr &>(node);
+    walk_child(expr.type_name, active_scope, context);
+    walk_type_args(expr.type_args, active_scope, context);
+    for (const auto &field : expr.fields) {
+      walk_child(field.value, active_scope, context);
+    }
+    return active_scope;
+  }
+  case ast::node_kind::group_expr:
+    walk_child(dynamic_cast<const ast::group_expr &>(node).inner, active_scope,
+               context);
+    return active_scope;
+  case ast::node_kind::await_expr:
+    walk_child(dynamic_cast<const ast::await_expr &>(node).operand,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::yield_expr:
+    walk_child(dynamic_cast<const ast::yield_expr &>(node).value, active_scope,
+               context);
+    return active_scope;
+  case ast::node_kind::par_expr:
+    walk_children(dynamic_cast<const ast::par_expr &>(node).branches,
+                  active_scope, context);
+    return active_scope;
+  case ast::node_kind::race_expr:
+    walk_children(dynamic_cast<const ast::race_expr &>(node).branches,
+                  active_scope, context);
+    return active_scope;
+  case ast::node_kind::quote_expr:
+    // The fragment's bindings belong to wherever it is spliced, which this
+    // walk can't know; its nodes are still given the scope it is written in.
+    walk_child(dynamic_cast<const ast::quote_expr &>(node).parsed_body,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::splice_expr:
+    walk_child(dynamic_cast<const ast::splice_expr &>(node).operand,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::static_expr:
+    walk_child(dynamic_cast<const ast::static_expr &>(node).operand,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::interpolated_string_expr:
+    for (const auto &segment :
+         dynamic_cast<const ast::interpolated_string_expr &>(node).segments) {
+      walk_child(segment.value, active_scope, context);
+      if (const auto *width =
+              std::get_if<ast::ptr<ast::expr>>(&segment.spec.width)) {
+        walk_child(*width, active_scope, context);
+      }
+      if (const auto *precision =
+              std::get_if<ast::ptr<ast::expr>>(&segment.spec.precision)) {
+        walk_child(*precision, active_scope, context);
+      }
+    }
+    return active_scope;
+
+  // Patterns. Their bindings are added by the construct that owns the
+  // pattern (`let`, a `match` arm, a parameter, ...); walking them only
+  // reaches the expressions a range pattern carries.
+  case ast::node_kind::constructor_pattern:
+    walk_children(dynamic_cast<const ast::constructor_pattern &>(node).args,
+                  active_scope, context);
+    return active_scope;
+  case ast::node_kind::tuple_pattern:
+    walk_children(dynamic_cast<const ast::tuple_pattern &>(node).elements,
+                  active_scope, context);
+    return active_scope;
+  case ast::node_kind::struct_pattern:
+    for (const auto &field :
+         dynamic_cast<const ast::struct_pattern &>(node).fields) {
+      walk_child(field.pattern, active_scope, context);
+    }
+    return active_scope;
+  case ast::node_kind::array_pattern:
+    walk_children(dynamic_cast<const ast::array_pattern &>(node).elements,
+                  active_scope, context);
+    return active_scope;
+  case ast::node_kind::range_pattern: {
+    const auto &pattern = dynamic_cast<const ast::range_pattern &>(node);
+    walk_child(pattern.start, active_scope, context);
+    walk_child(pattern.end, active_scope, context);
+    return active_scope;
+  }
+  case ast::node_kind::option_pattern:
+    walk_child(dynamic_cast<const ast::option_pattern &>(node).inner,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::result_pattern:
+    walk_child(dynamic_cast<const ast::result_pattern &>(node).inner,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::ref_pattern:
+    walk_child(dynamic_cast<const ast::ref_pattern &>(node).inner,
+               active_scope, context);
+    return active_scope;
+  case ast::node_kind::or_pattern:
+    walk_children(dynamic_cast<const ast::or_pattern &>(node).alternatives,
+                  active_scope, context);
+    return active_scope;
+  case ast::node_kind::group_pattern:
+    walk_child(dynamic_cast<const ast::group_pattern &>(node).inner,
+               active_scope, context);
+    return active_scope;
+
+  // Leaves: nothing beneath them to scope. Listed rather than defaulted so a
+  // new node kind is a compile error here until someone decides how it is
+  // walked.
+  case ast::node_kind::error_node:
+  case ast::node_kind::file_node:
+  case ast::node_kind::module_decl:
+  case ast::node_kind::use_decl:
+  case ast::node_kind::dep_decl:
+  case ast::node_kind::quote_type:
+  case ast::node_kind::break_stmt:
+  case ast::node_kind::continue_stmt:
+  case ast::node_kind::asm_stmt:
+  case ast::node_kind::ident_expr:
+  case ast::node_kind::literal_expr:
+  case ast::node_kind::postfix_expr:
+  case ast::node_kind::module_path_expr:
+  case ast::node_kind::wildcard_pattern:
+  case ast::node_kind::literal_pattern:
+  case ast::node_kind::binding_pattern:
+    return active_scope;
+  }
+  return active_scope;
+}
+
+/// `static let`/`static assert`/`static if`/`static for`. A `static let`
+/// inside a body binds its name for the statements after it, like `let`
+/// (at item scope the module-symbol pass already registered it). A `static
+/// for` opens a scope holding its binders — a binder is a lexical binding
+/// (spec "Dotted Names", rule 1) — for its guard, yield, and body.
+auto walk_static_decl(const ast::static_decl &decl, scope_id active_scope,
+                      const scope_build_context &context) -> scope_id {
+  switch (decl.decl_kind) {
+  case ast::static_decl_kind::binding: {
+    walk_child(decl.type_annotation, active_scope, context);
+    walk_child(decl.initializer, active_scope, context);
+    if (is_item_scope(context.session.scopes[active_scope].kind) ||
+        decl.name.empty()) {
+      return active_scope;
+    }
+    return extend_scope_with_bindings(
+        context.session, active_scope, semantic_scope_kind::block_scope,
+        decl.name, context.file_id, context.module_name,
+        {pattern_binding_spec{
+            .name = decl.name,
+            .location = source_location{.file_id = context.file_id,
+                                        .span = decl.span}}},
+        semantic_symbol_kind::static_binding_symbol);
+  }
+  case ast::static_decl_kind::assertion:
+    walk_child(decl.assert_condition, active_scope, context);
+    return active_scope;
+  case ast::static_decl_kind::conditional_compilation: {
+    walk_child(decl.if_condition, active_scope, context);
+    for (const auto *body : {&decl.if_body, &decl.else_body}) {
+      if (body->empty()) {
+        continue;
+      }
+      // At item scope the branches hold items; walking them in a fresh
+      // branch scope would hide nothing (items are pre-registered or not at
+      // all), so only a body-level `static if` gets its own scope.
+      const auto branch_scope =
+          is_item_scope(context.session.scopes[active_scope].kind)
+              ? active_scope
+              : create_block_scope(active_scope, context,
+                                   semantic_scope_kind::branch_scope,
+                                   "static if", decl.span);
+      walk_node_list(*body, branch_scope, context);
+    }
+    return active_scope;
+  }
+  case ast::static_decl_kind::for_inline:
+  case ast::static_decl_kind::for_block: {
+    walk_child(decl.for_iterable, active_scope, context);
+    const auto for_scope =
+        create_block_scope(active_scope, context,
+                           semantic_scope_kind::static_for_scope, "static for",
+                           decl.span);
+    for (const auto &pattern : decl.for_patterns) {
+      if (pattern == nullptr) {
+        continue;
+      }
+      walk_node(*pattern, for_scope, context);
+      auto bindings = std::vector<pattern_binding_spec>{};
+      collect_pattern_bindings(*pattern, context.file_id, bindings);
+      for (const auto &binding : bindings) {
+        add_symbol(context.session, for_scope,
+                   semantic_symbol_spec{
+                       .name = binding.name,
+                       .kind = semantic_symbol_kind::pattern_binding_symbol,
+                       .name_space = symbol_namespace::value_namespace,
+                       .visibility = ast::visibility::def,
+                       .location = binding.location,
+                   });
+      }
+    }
+    walk_child(decl.for_guard, for_scope, context);
+    walk_child(decl.for_yield, for_scope, context);
+    walk_node_list(decl.for_body, for_scope, context);
+    return active_scope;
+  }
+  }
+  return active_scope;
 }
 
 } // namespace

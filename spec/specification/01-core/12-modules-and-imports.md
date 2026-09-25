@@ -12,6 +12,7 @@ Covers `use`, visibility, and re-exporting with `pub use`. This is the basic mod
 use my_app.geometry.point
 use my_app.geometry.{ point, shape }   # multiple at once
 use my_app.geometry.point as pt        # rename
+use my_app as app                      # rename a root module
 ```
 
 A `use_selector` may also be `*` for a wildcard import of everything a module exports.
@@ -74,8 +75,8 @@ No other module is visible. A shared path prefix alone creates no relationship: 
 
 `a.b` is written the same way whether `a` is a value (field access) or a module (a qualified path). The meaning is decided by resolving the first segment:
 
-1. **Local bindings shadow modules.** If the first segment names a binding in an enclosing lexical scope — a `let`/`var`, a parameter, `self`, a pattern binding in a `match` arm, `if let`, `while let`, or `for`, or a `static for` binder — the path is field access on that binding, even when a visible module has the same name. Shadowing is silent: code never has to know which module names exist elsewhere, so a user module named `s` cannot break a library function with a loop variable `s`.
-2. **Module-scope values do not shadow modules.** A top-level `def` or `static` binding must not share its name with a module that its module *declares* as a child or that the file *imports*. This is a compile-time error reported once, where the clash was introduced — at the value for a declared child, at the `use` for an import — never at the individual uses:
+1. **Local bindings shadow modules.** If the first segment names a binding in an enclosing lexical scope — a `let`/`var`, a parameter, `self`, a pattern binding in a `match` arm, `if let`, `while let`, or `for`, or a `static for` binder — the path is field access on that binding, even when a visible module has the same name. Shadowing is silent: code never has to know which module names exist elsewhere, so a user module named `s` cannot break a library function with a loop variable `s`. The same holds inside compile-time code: a `static def` parameter or a `let` in its body shadows a module exactly as it would at run time.
+2. **Nothing else shares a name with a visible module.** No other name in a module's scope — a `def`, a `static` binding, a `type`, `trait`, `concept`, or `signature`, or a name brought in by `use` — may share its name with a module visible there: one the module *declares* as a child, or one the file *imports*. Two imports may not bind one name if either is a module. This is a compile-time error reported once, where the clash was introduced — at the declaration for a declared child, at the `use` for an import — never at the individual uses:
 
    ```kira
    module a.b
@@ -86,17 +87,17 @@ No other module is visible. A shared path prefix alone creates no relationship: 
                          #        module `a.b.c` visible in `a.b`
    ```
 
-   The fix is to rename one of the two, or to import the module under another name (`use x.c as c_mod`). A module that exists in the program but that this module neither declares nor imports is no conflict. The module's own root and `std` are not checked: a path starting with either always means the module, so `module main` may declare `def main`.
-3. **Otherwise** the first segment is looked up among the visible modules, and the rest of the path is resolved inside that module.
+   The fix is to rename one of the two, or to import the module under another name (`use x.c as c_mod`, or `use x as x_mod` for a root module). A module that exists in the program but that this module neither declares nor imports is no conflict. The module's own root and `std` are not checked: a path starting with either always means the module, so `module main` may declare `def main`.
+3. **Module-level values.** If the first segment is not the module's own root or `std` and names a `def` or `static` of the module, or one the file imports, the path is field access on that value: `origin.x` reads a field of `static let origin`. Rule 2 guarantees such a name is never also a visible module.
+4. **Otherwise** the first segment is looked up among the visible modules, and the rest of the path is resolved inside that module. When the path reaches a `static` binding before it ends, the remaining segments are field access on the static's value: `geo.origin.x`.
 
 Because every rule is evaluated against a finite, locally-declared set — the enclosing lexical scopes, the module's own declarations, and the file's imports — whether a dotted name is ambiguous is decided entirely by the file it appears in.
 
 ## Implementation status
 
 - `use`, visibility, and re-exporting are implemented.
-- **Visible Modules** and **Dotted Names** are implemented. The checker alone decides what a dotted name means (`checker::dotted_root_is_value`, `src/semantic/check.cpp`) and records value-rooted paths for lowering (`checked_types::value_path_types`); module-rooted ones are validated through `validate_module_reference` (`src/semantic/resolution.cpp`), and both path validation and the checker's own lookups apply the one visibility rule, `root_visible_without_import`. Rule 2 is `validate_value_module_conflicts`.
-- A root module can't be imported under another name: `use a as b` is not a `use` form, only `use a.b as c` is.
-- Types are not covered by rule 2: a top-level `type` may still share its name with a visible module, and `t.f()` then tries the module first.
+- **Visible Modules** and **Dotted Names** are implemented. The checker alone decides what a dotted name means (`checker::classify_dotted_root`, `src/semantic/check.cpp`) and records value-rooted paths for lowering (`checked_types::value_path_types`); module-rooted ones are validated through `validate_module_reference` (`src/semantic/resolution.cpp`), and both path validation and the checker's own lookups apply the one visibility rule, `root_visible_without_import`. The compile-time evaluator asks the checker through `comptime::evaluator::set_path_resolver`, supplying only whether the root is one of its own frame locals. Rule 2 is `validate_module_name_conflicts`.
+- A field read through a module-level `static` (rules 3 and 4) lowers when the value read is a scalar, which is embedded as a constant. A non-scalar part of a struct-valued `static` (`origin` itself, or `seg.a` where `a` is a struct) has no runtime storage yet; only arrays and lists of scalars are reified as globals.
 
 ## See also
 

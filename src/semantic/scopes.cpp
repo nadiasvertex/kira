@@ -33,6 +33,8 @@ auto semantic_scope_kind_name(semantic_scope_kind kind) -> std::string_view {
     return "match arm scope";
   case semantic_scope_kind::where_scope:
     return "where scope";
+  case semantic_scope_kind::static_for_scope:
+    return "static for scope";
   }
   return "scope";
 }

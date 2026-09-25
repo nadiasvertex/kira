@@ -53,14 +53,15 @@ auto validate_declaration_scopes(const std::vector<parsed_module> &inputs,
                                  diagnostic_bag &diag,
                                  std::vector<bool> &file_has_errors) -> void;
 
-/// Rejects a module-scope value (`def`, `static` binding) that shares its
-/// name with a module *visible* in that module because the module declares
-/// it as a child or a file imports it: `c.x` would otherwise mean two
+/// Rejects a name in a module's scope that is also the name of a module
+/// *visible* there: a declaration (`def`, `static`, `type`, `trait`,
+/// `concept`, `signature`) or an imported member, against a child the module
+/// declares or a module the file imports. `c.x` would otherwise mean two
 /// things (spec "Dotted Names", rule 2). A module that is merely *present*
 /// in the program — declared somewhere, but neither declared here nor
 /// imported — is no conflict, so the check never depends on names outside
 /// the files involved.
-auto validate_value_module_conflicts(
+auto validate_module_name_conflicts(
     const std::vector<parsed_module> &inputs,
     const module_session_index &session_index,
     const semantic_resolution_index &semantic_index, diagnostic_bag &diag,

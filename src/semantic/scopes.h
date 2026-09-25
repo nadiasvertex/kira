@@ -28,6 +28,7 @@ enum class semantic_scope_kind : uint8_t {
   loop_scope,      ///< Body of a `while`/`for` loop or `for` comprehension.
   match_arm_scope, ///< Body and bindings of one `match` arm.
   where_scope,     ///< Bindings introduced by a trailing `where:` clause.
+  static_for_scope, ///< Binders and body of a `static for`.
 };
 
 /// One lexical scope in the semantic scope tree.

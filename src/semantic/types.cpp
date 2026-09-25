@@ -866,7 +866,7 @@ auto record_use_bindings(const ast::use_decl &decl, file_id_type file_id,
       return;
     }
     bindings.push_back(import_binding{
-        .local_name = decl.path.back(),
+        .local_name = decl.alias.value_or(decl.path.back()),
         .path = decl.path,
         .leaf_name = {},
         .is_wildcard = false,

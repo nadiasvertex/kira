@@ -210,10 +210,12 @@ private:
       return;
     }
     case ast::node_kind::module_path_expr: {
-      // The parser can't tell `a.b` field access from a module-qualified
-      // path at parse time, so a renamed local read through this node
-      // shape too — see `checker::infer_module_path`'s identical
-      // "first segment might just be a value" handling.
+      // `temp.x` with `temp` bound by this fragment. No module-vs-value
+      // decision is made here: `lookup` only finds the fragment's own
+      // bindings, and a lexical binding always wins (spec "Dotted Names",
+      // rule 1), so the checker will read this root as that binding whatever
+      // it is called — renaming it with its binding is all hygiene needs. A
+      // root the fragment doesn't bind is left alone for the checker.
       auto &path = dynamic_cast<ast::module_path_expr &>(expr);
       if (!path.segments.empty()) {
         if (const auto *renamed = lookup(path.segments.front())) {

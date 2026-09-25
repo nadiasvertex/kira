@@ -739,18 +739,35 @@ auto evaluator::eval_index(const ast::index_expr &idx) -> value {
 }
 
 auto evaluator::eval_module_path(const ast::module_path_expr &path) -> value {
-  // The parser can't tell `origin.x` (field access) apart from a real
-  // module-qualified path at parse time — see `parse_ident_or_path_expr` —
-  // so, mirroring `checker::infer_module_path`, treat the first segment as
-  // a value reference and every remaining segment as a field projection.
+  // The parser can't tell `origin.x` (field access) from a module-qualified
+  // path, so the checker decides (`path_resolver_`), told only whether the
+  // root is one of this evaluator's own locals.
   if (path.segments.empty()) {
     return value::make_error();
   }
-  auto current = resolve_name(path.segments.front(), path.span);
+  const auto &root = path.segments.front();
+  auto reading = dotted_path_reading{};
+  if (path_resolver_) {
+    reading = path_resolver_(path, lookup_local(root) != nullptr);
+  }
+  auto current = value{};
+  switch (reading.reading) {
+  case dotted_path_reading::kind::local:
+    current = resolve_name(root, path.span);
+    break;
+  case dotted_path_reading::kind::static_value:
+    current = std::move(reading.base);
+    break;
+  case dotted_path_reading::kind::not_constant:
+    if (reading.reason.empty()) {
+      return value::make_error();
+    }
+    return report(path.span, std::move(reading.reason));
+  }
   if (current.is_error()) {
     return current;
   }
-  for (size_t i = 1; i < path.segments.size(); ++i) {
+  for (size_t i = reading.first_field; i < path.segments.size(); ++i) {
     if (current.kind != value_kind::struct_instance) {
       return report(path.span, "`.` field access requires a compile-time "
                                "struct value");

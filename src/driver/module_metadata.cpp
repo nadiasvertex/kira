@@ -372,6 +372,9 @@ auto add_import_metadata(const ast::use_decl &decl,
 
   if (!decl.selector.has_value()) {
     import->set_selector_kind(metadata::v1::IMPORT_SELECTOR_KIND_UNSPECIFIED);
+    if (decl.alias.has_value()) {
+      import->set_alias(*decl.alias);
+    }
     return;
   }
 

@@ -47,6 +47,8 @@ message Import {
   ImportSelectorKind selector_kind = 2;
   // Imported item list for single and group selectors.
   repeated ImportItem items = 3;
+  // Local name of a renamed root module (`use a as b`), if any.
+  string alias = 4;
 }
 
 // One imported item named by a selector.

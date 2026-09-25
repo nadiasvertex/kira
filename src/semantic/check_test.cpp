@@ -355,6 +355,193 @@ auto test_value_module_name_conflicts() -> void {
       "to be accepted");
 }
 
+/// Rule 2 is general: *any* non-module name in a module's scope — a type,
+/// a trait, an imported member — clashes with a module visible under the
+/// same name, as do two imports binding one name when either is a module.
+/// Each is reported once.
+auto test_module_name_conflicts_are_general() -> void {
+  const auto pkg = source_fixture{
+      .path = "pkg.kira",
+      .text = "module pkg\n"
+              "\n"
+              "pub def seven() -> int32:\n"
+              "    return 7\n",
+  };
+  const auto expect_one = [&](std::string_view main_text,
+                              std::string_view needle,
+                              std::string_view what) {
+    const auto analyzed = analyze_sources(
+        {pkg, source_fixture{.path = "main.kira",
+                             .text = std::string(main_text)}});
+    expect_diagnostic(analyzed, needle,
+                      std::format("expected {} to be rejected", what));
+    expect(analyzed.error_count == 1,
+           std::format("expected {} to be reported exactly once, got:\n{}",
+                       what, analyzed.diagnostics));
+  };
+
+  expect_one("module main\n"
+             "\n"
+             "use pkg\n"
+             "\n"
+             "type pkg = { x: int32 }\n",
+             "`pkg` names both a type and the module `pkg` visible in `main`",
+             "a type named like an imported module");
+  expect_one("module main\n"
+             "\n"
+             "use pkg\n"
+             "\n"
+             "trait pkg:\n"
+             "    def get(self) -> int32\n",
+             "`pkg` names both a trait and the module `pkg` visible in `main`",
+             "a trait named like an imported module");
+  expect_one("module main\n"
+             "\n"
+             "use pkg.{seven as inner}\n"
+             "\n"
+             "module inner:\n"
+             "    pub def one() -> int32:\n"
+             "        return 1\n",
+             "`inner` names both an import of `pkg.seven` and the module "
+             "`main.inner`",
+             "an imported member named like a declared child module");
+  expect_one("module main\n"
+             "\n"
+             "use pkg as seven\n"
+             "use pkg.{seven}\n",
+             "`seven` names both an import of `pkg.seven` and the module "
+             "`pkg`",
+             "a member import and a module import binding one name");
+
+  expect_one("module main\n"
+             "\n"
+             "use pkg.*\n"
+             "\n"
+             "module seven:\n"
+             "    pub def one() -> int32:\n"
+             "        return 1\n",
+             "`seven` names both an import of `pkg.seven` (through `pkg.*`) "
+             "and the module `main.seven`",
+             "a wildcard-imported name matching a declared child module");
+
+  // Across the files of one module: the per-file duplicate-declaration
+  // check can't see a `type` in one file and the `module` in another.
+  const auto split = analyze_sources({
+      source_fixture{.path = "split_a.kira",
+                     .text = "module split\n"
+                             "\n"
+                             "module part:\n"
+                             "    pub def one() -> int32:\n"
+                             "        return 1\n"},
+      source_fixture{.path = "split_b.kira",
+                     .text = "module split\n"
+                             "\n"
+                             "type part = { x: int32 }\n"},
+  });
+  expect_diagnostic(split,
+                    "`part` names both a type and the module `split.part`",
+                    "expected a type named like a child module declared in "
+                    "another file of the module to be rejected");
+  expect(split.error_count == 1,
+         "expected the cross-file type/child clash to be reported once");
+}
+
+/// `use a as b` renames a root module: `b.f()` and `b.t` reach it, and the
+/// original name is no longer visible — with a diagnostic that says so.
+auto test_root_module_alias() -> void {
+  const auto pkg = source_fixture{
+      .path = "pkg.kira",
+      .text = "module pkg\n"
+              "\n"
+              "pub type holder = { value: int32 }\n"
+              "\n"
+              "pub def seven() -> int32:\n"
+              "    return 7\n",
+  };
+  expect_clean(analyze_sources({pkg, source_fixture{
+                                         .path = "main.kira",
+                                         .text = "module main\n"
+                                                 "\n"
+                                                 "use pkg as p\n"
+                                                 "\n"
+                                                 "def main() -> int32:\n"
+                                                 "    let h: p.holder = "
+                                                 "p.holder { value: p.seven() }\n"
+                                                 "    return h.value\n",
+                                     }}),
+               "expected `use pkg as p` to make `p.seven()` and `p.holder` "
+               "resolve");
+  const auto hidden = analyze_sources(
+      {pkg, source_fixture{.path = "main.kira",
+                           .text = "module main\n"
+                                   "\n"
+                                   "use pkg as p\n"
+                                   "\n"
+                                   "def main() -> int32:\n"
+                                   "    return pkg.seven()\n"}});
+  expect_diagnostic(hidden, "imports `pkg` under the name `p`",
+                    "expected the original name of a renamed import to be "
+                    "reported with a pointer at the rename");
+}
+
+/// A dotted name rooted at a module-level `static` is field access, typed
+/// through the static's type: `origin.x`, an imported `origin.x`, and the
+/// module-qualified `geo.origin.x`. A `def` root is field access too, and
+/// is reported as a function having no fields rather than as a module.
+auto test_dotted_name_rooted_at_module_value() -> void {
+  const auto geo = source_fixture{
+      .path = "geo.kira",
+      .text = "module geo\n"
+              "\n"
+              "pub type point = { x: int32, y: int32 }\n"
+              "\n"
+              "pub static let origin: point = point { x: 3, y: 4 }\n",
+  };
+  expect_clean(
+      analyze_sources({geo, source_fixture{
+                                .path = "main.kira",
+                                .text = "module main\n"
+                                        "\n"
+                                        "use geo\n"
+                                        "use geo.{origin}\n"
+                                        "\n"
+                                        "static let mine: geo.point = "
+                                        "geo.point { x: 1, y: 2 }\n"
+                                        "\n"
+                                        "def main() -> int32:\n"
+                                        "    let a: int32 = mine.y\n"
+                                        "    let b: int32 = origin.x\n"
+                                        "    let c: int32 = geo.origin.y\n"
+                                        "    return a + b + c\n",
+                            }}),
+      "expected field access on module-level statics to type-check");
+  const auto wrong = analyze_sources(
+      {geo, source_fixture{.path = "main.kira",
+                           .text = "module main\n"
+                                   "\n"
+                                   "use geo.{origin}\n"
+                                   "\n"
+                                   "def main() -> int32:\n"
+                                   "    let a: bool = origin.x\n"
+                                   "    return 0\n"}});
+  expect_diagnostic(wrong, "expected `bool`, found `int32`",
+                    "expected `origin.x` to be typed as the field's type");
+  const auto fn_root = analyze_sources(
+      {source_fixture{.path = "main.kira",
+                      .text = "module main\n"
+                              "\n"
+                              "def helper() -> int32:\n"
+                              "    return 1\n"
+                              "\n"
+                              "def main() -> int32:\n"
+                              "    return helper.x\n"}});
+  expect(fn_root.error_count > 0 &&
+             fn_root.diagnostics.find("module") == std::string::npos,
+         "expected `helper.x` on a function to be a field error, not a module "
+         "lookup:\n" +
+             fn_root.diagnostics);
+}
+
 /// `use a.b as c` names the module `a.b` even when no file declares `a` —
 /// the import itself validates. (That `c.seven()` then reaches the right
 /// function is asserted by value in `cli_test`'s
@@ -803,10 +990,11 @@ auto test_inline_submodule_paths_resolve() -> void {
                     "expected the undeclared module path to be reported");
 }
 
-/// A `use`d module wins over a same-named inline submodule: after
-/// `use subprec.inner`, `inner.holder` is the *imported* module's `holder`.
-/// The relative reading is tried last precisely so this stays true.
-auto test_import_wins_over_inline_submodule() -> void {
+/// A `use`d module and a same-named inline submodule are two modules
+/// visible under one name: `inner.holder` could mean either, so the pair is
+/// rejected at the `use` (spec "Dotted Names", rule 2) rather than resolved
+/// by a precedence rule the reader has to know.
+auto test_import_conflicts_with_inline_submodule() -> void {
   const auto analyzed = analyze_sources({
       {
           .path = "subprec_inner.kira",
@@ -828,8 +1016,13 @@ auto test_import_wins_over_inline_submodule() -> void {
                   "    return h.imported\n",
       },
   });
-  expect_clean(analyzed,
-               "expected an import to win over a same-named inline submodule");
+  expect(analyzed.error_count == 1,
+         "expected exactly one error for an import named like an inline "
+         "submodule");
+  expect_diagnostic(analyzed,
+                    "`inner` names both the module `subprec.inner` and the "
+                    "module `main.inner`",
+                    "expected the import/submodule clash to be reported");
 }
 
 auto test_accepts_parameterized_extend() -> void {
@@ -3523,6 +3716,9 @@ auto main() -> int {
     test_accepts_fully_qualified_call();
     test_rejects_unimported_root_module_path();
     test_value_module_name_conflicts();
+    test_module_name_conflicts_are_general();
+    test_root_module_alias();
+    test_dotted_name_rooted_at_module_value();
     test_accepts_aliased_module_without_parent();
     test_accepts_local_shadowing_visible_module();
     test_accepts_type_qualified_associated_call();
@@ -3729,7 +3925,7 @@ auto main() -> int {
     test_generic_struct_literal_wrong_type_arg_count();
     test_impl_type_param_substituted_at_call_site();
     test_inline_submodule_paths_resolve();
-    test_import_wins_over_inline_submodule();
+    test_import_conflicts_with_inline_submodule();
     test_impls_on_distinct_instantiations_are_coherent();
     test_overlapping_generic_impl_still_conflicts();
   } catch (const std::exception &ex) {

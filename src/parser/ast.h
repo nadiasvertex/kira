@@ -1623,6 +1623,12 @@ struct use_decl : node {
   /// semantic analysis.
   std::vector<type_arg> instantiation_args;
   std::optional<use_selector> selector; ///< Optional leaf selection strategy.
+  /// The local name of a renamed *root module*: `use a as b` binds `b` to
+  /// the module `a`. A longer path renames through `selector` instead
+  /// (`use a.b as c` is base `a` with the selector `{b as c}`), which has no
+  /// base to hang off when the path is a single segment. Never set together
+  /// with `selector`.
+  std::optional<std::string> alias;
 
   use_decl() : node(node_kind::use_decl) {}
 };

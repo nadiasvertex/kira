@@ -138,6 +138,83 @@ auto find_node_scope_or_fail(const kira::semantic::semantic_session &session,
   return *scope;
 }
 
+/// Finds the one node `pick` accepts among every node the scope walk
+/// recorded — so a node the walk never reached is a test failure, not a
+/// crash in hand-navigated AST.
+template <typename predicate>
+auto find_recorded_node(const kira::semantic::semantic_session &session,
+                        predicate pick, std::string_view what)
+    -> const kira::ast::node & {
+  const kira::ast::node *found = nullptr;
+  for (const auto &[node, scope] : session.node_scopes) {
+    (void)scope;
+    if (pick(*node)) {
+      expect(found == nullptr, std::string("expected one ") + std::string(what));
+      found = node;
+    }
+  }
+  if (found == nullptr) {
+    fail(std::string("the scope walk never reached ") + std::string(what));
+  }
+  return *found;
+}
+
+/// The scope tree reaches every expression, not only statements: a lambda
+/// nested in a call argument gets its parameter scope, and a `static for`
+/// binder is a lexical binding (spec "Dotted Names", rule 1) visible to
+/// the loop's body.
+auto test_scope_walk_reaches_nested_expressions_and_static_for() -> void {
+  const auto parsed = parse_sources({source_fixture{
+      .path = "walk.kira",
+      .text = "module sample\n"
+              "def apply(f: fn(int32) -> int32, x: int32) -> int32:\n"
+              "  return f(x)\n"
+              "def run(bound: int32) -> int32:\n"
+              "  return apply(k => k + bound, 1)\n"
+              "static for step in [1, 2]:\n"
+              "  static assert step.value > 0, \"positive\"\n",
+  }});
+  const auto session =
+      kira::semantic::build_semantic_session(parsed.parsed_modules);
+  using kira::semantic::symbol_namespace;
+
+  const auto &k_ref = find_recorded_node(
+      session,
+      [](const kira::ast::node &node) {
+        return node.kind == kira::ast::node_kind::ident_expr &&
+               dynamic_cast<const kira::ast::ident_expr &>(node).name == "k";
+      },
+      "the lambda body's `k`");
+  const auto *k_symbol = kira::semantic::resolve_symbol(
+      session, find_node_scope_or_fail(session, k_ref),
+      symbol_namespace::value_namespace, "k");
+  expect(k_symbol != nullptr &&
+             k_symbol->kind ==
+                 kira::semantic::semantic_symbol_kind::parameter_symbol,
+         "expected `k` inside a lambda passed as a call argument to resolve "
+         "to the lambda's parameter");
+
+  const auto &step_ref = find_recorded_node(
+      session,
+      [](const kira::ast::node &node) {
+        return node.kind == kira::ast::node_kind::module_path_expr &&
+               dynamic_cast<const kira::ast::module_path_expr &>(node)
+                       .segments.front() == "step";
+      },
+      "the `static for` body's `step.value`");
+  const auto step_scope = find_node_scope_or_fail(session, step_ref);
+  const auto *step_symbol = kira::semantic::resolve_symbol(
+      session, step_scope, symbol_namespace::value_namespace, "step");
+  expect(step_symbol != nullptr,
+         "expected the `static for` binder to be in scope in its body");
+  const auto *binder_scope = kira::semantic::find_semantic_scope(
+      session, step_symbol->defining_scope);
+  expect(binder_scope != nullptr &&
+             binder_scope->kind ==
+                 kira::semantic::semantic_scope_kind::static_for_scope,
+         "expected the binder to live in a `static for` scope");
+}
+
 auto test_build_semantic_session_indexes_module_symbols() -> void {
   const auto parsed = parse_sources({
       load_test_data_fixture(
@@ -312,6 +389,7 @@ auto main() -> int {
     test_resolve_function_parameters_and_locals();
     test_match_arm_pattern_bindings_are_arm_local();
     test_lambda_parameters_shadow_outer_bindings();
+    test_scope_walk_reaches_nested_expressions_and_static_for();
   } catch (const std::exception &ex) {
     std::cerr << "resolution_test failed: unhandled exception: " << ex.what()
               << '\n';

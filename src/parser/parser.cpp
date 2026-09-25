@@ -994,7 +994,12 @@ auto parser::parse_use_decl(ast::visibility vis) -> ast::ptr<ast::use_decl> {
     sel.items.push_back(std::move(item));
     decl->selector = std::move(sel);
   } else if (match(token_kind::kw_as)) {
-    if (decl->path.size() < 2) {
+    if (decl->path.size() == 1) {
+      // `use a as b`: renames a root module. There is no base to put a
+      // selector on, so the alias is carried by the declaration itself.
+      auto alias_tok = expect(token_kind::ident);
+      decl->alias = std::string(alias_tok.text);
+    } else if (decl->path.size() < 2) {
       emit(diagnostic(
                diagnostic_level::error,
                "expected `module_path.name as alias` in this `use` declaration",

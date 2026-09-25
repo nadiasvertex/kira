@@ -529,6 +529,22 @@ auto resolve_named_type_path(const semantic_resolution_index &semantic_index,
 /// `should_validate_module_reference`), so no relative-path guessing is
 /// needed. An import binding that name wins; otherwise the root must be
 /// visible without one.
+/// A value-position path may run past the member it names when that member
+/// is a `static`: `geo.origin.y` is the module `geo`, its `static origin`,
+/// then field access (spec "Dotted Names", rule 3 — the rest of the path is
+/// resolved inside the module, and inside a value that means fields). The
+/// checker types the projection; this only stops the path from being
+/// reported as running past a declaration.
+auto accept_static_field_projection(qualified_path_resolution result)
+    -> qualified_path_resolution {
+  if (result.status == qualified_path_status::unresolved &&
+      result.symbol != nullptr &&
+      result.symbol->kind == semantic_symbol_kind::static_binding_symbol) {
+    result.status = qualified_path_status::resolved;
+  }
+  return result;
+}
+
 auto resolve_module_reference_path(
     const semantic_resolution_index &semantic_index,
     const module_session_index &session_index,
@@ -1973,7 +1989,7 @@ auto collect_module_aliases(const ast::file &file) -> module_alias_map {
       continue;
     }
     if (!use.selector.has_value()) {
-      aliases.emplace(use.path.back(), use.path);
+      aliases.emplace(use.alias.value_or(use.path.back()), use.path);
       continue;
     }
     if (use.selector->kind == ast::use_selector_kind::wildcard) {
@@ -2168,63 +2184,81 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
 namespace {
 
 /// A module name visible in some module because that module *declares* or
-/// *imports* it — the names `validate_value_module_conflicts` checks
-/// module-scope values against.
+/// *imports* it — the names `validate_module_name_conflicts` checks every
+/// other module-scope name against.
 struct introduced_module_name {
   std::string module_name;  ///< Absolute path of the visible module.
   source_location location; ///< The `module`/`use` that made it visible.
   bool imported = false;    ///< Brought in by `use` rather than declared.
 };
 
-/// The module-scope values (`def`s and `static` bindings, across every file
-/// of the module) of `module_name`.
-auto module_scope_values(const semantic_resolution_index &semantic_index,
-                         std::string_view module_name)
-    -> std::vector<const semantic_symbol *> {
-  auto values = std::vector<const semantic_symbol *>{};
+/// A non-module name in a module's scope: a declaration (`def`, `static`,
+/// `type`, `trait`, `concept`, `signature`) or a name a `use` brings in
+/// that is not itself a module (`use p.{f}`).
+struct scope_name {
+  std::string name;
+  std::string kind_name;    ///< "function", "type", "import of `p.f`", ...
+  source_location location; ///< The declaration, or the `use` item.
+  bool imported = false;    ///< Brought in by `use` rather than declared.
+  std::string imported_path; ///< What an import names (`p.f`); else empty.
+};
+
+/// Every non-module name declared at the top of `module_name`, across every
+/// file of the module. A child module is a submodule symbol here and is the
+/// other side of the comparison, not a candidate.
+auto module_scope_names(const semantic_resolution_index &semantic_index,
+                        std::string_view module_name)
+    -> std::vector<scope_name> {
+  auto names = std::vector<scope_name>{};
   const auto *scope = find_module_scope(semantic_index, module_name);
   if (scope == nullptr) {
-    return values;
+    return names;
   }
   for (const auto id : scope->symbols) {
     const auto *symbol = find_semantic_symbol(semantic_index.session, id);
     if (symbol != nullptr &&
-        (symbol->kind == semantic_symbol_kind::function_symbol ||
-         symbol->kind == semantic_symbol_kind::static_binding_symbol)) {
-      values.push_back(symbol);
+        symbol->kind != semantic_symbol_kind::submodule_symbol) {
+      names.push_back(scope_name{.name = symbol->name,
+                                 .kind_name = symbol->kind_name,
+                                 .location = symbol->location,
+                                 .imported = false,
+                                 .imported_path = {}});
     }
   }
-  return values;
+  return names;
 }
 
-/// Reports one value/module name clash, at `report_at`, with a note at the
-/// other declaration.
-auto emit_value_module_conflict(const semantic_symbol &value,
-                                std::string_view module_name,
-                                const introduced_module_name &visible,
-                                bool report_at_import, diagnostic_bag &diag,
-                                std::vector<bool> &file_has_errors) -> void {
-  const auto &primary = report_at_import ? visible.location : value.location;
+/// Reports one clash between `name` and a module visible under the same
+/// name. It is reported once, where the clash was introduced: at the `use`
+/// when that `use` is what brought the module in, otherwise at `name`, with
+/// a note at the other side.
+auto emit_module_name_conflict(const scope_name &name,
+                               std::string_view module_name,
+                               const introduced_module_name &visible,
+                               bool report_at_module, diagnostic_bag &diag,
+                               std::vector<bool> &file_has_errors) -> void {
+  const auto &primary = report_at_module ? visible.location : name.location;
   auto conflict = diagnostic(
       diagnostic_level::error,
-      std::format("`{}` names both a {} and the module `{}` visible in `{}`",
-                  value.name, value.kind_name, visible.module_name,
-                  module_name),
+      std::format("`{}` names both {} {} and the module `{}` visible in `{}`",
+                  name.name, name.imported ? "an" : "a", name.kind_name,
+                  visible.module_name, module_name),
       primary.file_id);
-  if (report_at_import) {
+  if (report_at_module) {
     conflict.with_label(primary.span,
                         std::format("imports module `{}` as `{}`",
-                                    visible.module_name, value.name));
+                                    visible.module_name, name.name));
     conflict.children.push_back(
         diagnostic(diagnostic_level::note,
-                   std::format("the {} `{}` is declared here", value.kind_name,
-                               value.name),
-                   value.location.file_id)
-            .with_label(value.location.span, "same name"));
+                   std::format("the {} `{}` is {} here", name.kind_name,
+                               name.name,
+                               name.imported ? "imported" : "declared"),
+                   name.location.file_id)
+            .with_label(name.location.span, "same name"));
   } else {
-    conflict.with_label(
-        primary.span,
-        std::format("this {} is named like a visible module", value.kind_name));
+    conflict.with_label(primary.span,
+                        std::format("this {} is named like a visible module",
+                                    name.kind_name));
     conflict.children.push_back(
         diagnostic(diagnostic_level::note,
                    std::format("module `{}` is {} here", visible.module_name,
@@ -2233,42 +2267,99 @@ auto emit_value_module_conflict(const semantic_symbol &value,
             .with_label(visible.location.span, "same name"));
   }
   const auto remedy = [&]() -> std::string {
+    if (name.imported) {
+      return "Import one of the two under another name with `as`.";
+    }
     if (!visible.imported) {
-      return std::format("Rename the {} or the submodule.", value.kind_name);
+      return std::format("Rename the {} or the submodule.", name.kind_name);
     }
-    // Only a nested module can be imported under another name; `use a as b`
-    // is not a `use` form for a root module.
-    if (visible.module_name.contains('.')) {
-      return std::format("Rename the {}, or import the module under another "
-                         "name: `use {} as {}_mod`.",
-                         value.kind_name, visible.module_name, value.name);
-    }
-    return std::format("Rename the {}.", value.kind_name);
+    return std::format("Rename the {}, or import the module under another "
+                       "name: `use {} as {}_mod`.",
+                       name.kind_name, visible.module_name, name.name);
   }();
+  const auto other =
+      name.imported
+          ? std::format("the imported `{}`", name.imported_path)
+          : std::format("the {} `{}`", name.kind_name, name.name);
   conflict.with_help(std::format(
-      "`{0}.name` could reach into the module `{1}` or into the {2} `{0}`, "
-      "so Kira rejects the pair rather than guess. {3}",
-      value.name, visible.module_name, value.kind_name, remedy));
+      "`{0}.x` could reach into the module `{1}` or into {2}, so Kira "
+      "rejects the pair rather than guess. {3}",
+      name.name, visible.module_name, other, remedy));
   diag.emit(conflict);
   mark_file_has_error(file_has_errors, primary.file_id);
 }
 
-/// The module names `items`' `use` declarations bind, each to the module it
-/// imports — only imports that name a module in this session.
-auto imported_module_names(const std::vector<ast::ptr<ast::node>> &items,
-                           file_id_type file_id,
-                           const module_session_index &session_index)
-    -> std::vector<std::pair<std::string, introduced_module_name>> {
-  auto names = std::vector<std::pair<std::string, introduced_module_name>>{};
+/// Reports two modules visible under one name: `imported` (a `use`, where
+/// the diagnostic goes) and `other` (a declared child or an earlier `use`).
+auto emit_module_module_conflict(std::string_view local_name,
+                                 std::string_view module_name,
+                                 const introduced_module_name &imported,
+                                 const introduced_module_name &other,
+                                 diagnostic_bag &diag,
+                                 std::vector<bool> &file_has_errors) -> void {
+  auto conflict = diagnostic(
+      diagnostic_level::error,
+      std::format("`{}` names both the module `{}` and the module `{}` "
+                  "visible in `{}`",
+                  local_name, imported.module_name, other.module_name,
+                  module_name),
+      imported.location.file_id);
+  conflict.with_label(imported.location.span,
+                      std::format("imports module `{}` as `{}`",
+                                  imported.module_name, local_name));
+  conflict.children.push_back(
+      diagnostic(diagnostic_level::note,
+                 std::format("module `{}` is {} here", other.module_name,
+                             other.imported ? "imported" : "declared"),
+                 other.location.file_id)
+          .with_label(other.location.span, "same name"));
+  conflict.with_help(std::format(
+      "`{0}.x` could reach into either module, so Kira rejects the pair "
+      "rather than guess. Import `{1}` under another name: `use {1} as "
+      "{0}_mod`.",
+      local_name, imported.module_name));
+  diag.emit(conflict);
+  mark_file_has_error(file_has_errors, imported.location.file_id);
+}
+
+/// The names a file's `use` declarations bind, split by what they bind:
+/// a module in this session, or anything else (a member of one).
+struct file_imports {
+  std::vector<std::pair<std::string, introduced_module_name>> modules;
+  std::vector<scope_name> members;
+};
+
+/// Collects `items`' `use` bindings. Only imports rooted in this session can
+/// be classified; a member import from outside it is left alone, since
+/// nothing here can tell whether it names a module. A wildcard contributes
+/// every name it brings in — the checker reads a wildcard-imported `def` or
+/// `static` as a module-level value (`find_module_scope_value`), so it must
+/// meet the same rule as a named import.
+auto collect_file_imports(const std::vector<ast::ptr<ast::node>> &items,
+                          file_id_type file_id,
+                          const module_session_index &session_index,
+                          const semantic_resolution_index &semantic_index)
+    -> file_imports {
+  auto imports = file_imports{};
   const auto add = [&](std::string local_name, std::string target,
                        source_span span) {
+    const auto location = source_location{.file_id = file_id, .span = span};
     if (session_contains_module(session_index, target)) {
-      names.emplace_back(
+      imports.modules.emplace_back(
           std::move(local_name),
-          introduced_module_name{
-              .module_name = std::move(target),
-              .location = source_location{.file_id = file_id, .span = span},
-              .imported = true});
+          introduced_module_name{.module_name = std::move(target),
+                                 .location = location,
+                                 .imported = true});
+      return;
+    }
+    const auto root = target.substr(0, target.find('.'));
+    if (session_owns_root_module(session_index, root)) {
+      imports.members.push_back(
+          scope_name{.name = std::move(local_name),
+                     .kind_name = std::format("import of `{}`", target),
+                     .location = location,
+                     .imported = true,
+                     .imported_path = target});
     }
   };
   for (const auto &item : items) {
@@ -2281,10 +2372,22 @@ auto imported_module_names(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
     if (!use.selector.has_value()) {
-      add(use.path.back(), join_strings(use.path, "."), use.span);
+      add(use.alias.value_or(use.path.back()), join_strings(use.path, "."),
+          use.span);
       continue;
     }
     if (use.selector->kind == ast::use_selector_kind::wildcard) {
+      const auto base = join_strings(use.path, ".");
+      for (auto &name : module_scope_names(semantic_index, base)) {
+        imports.members.push_back(scope_name{
+            .name = name.name,
+            .kind_name = std::format("import of `{}.{}` (through `{}.*`)",
+                                     base, name.name, base),
+            .location = source_location{.file_id = file_id,
+                                        .span = use.selector->span},
+            .imported = true,
+            .imported_path = append_module_name(base, name.name)});
+      }
       continue;
     }
     for (const auto &selected : use.selector->items) {
@@ -2293,23 +2396,81 @@ auto imported_module_names(const std::vector<ast::ptr<ast::node>> &items,
           selected.span);
     }
   }
-  return names;
+  return imports;
 }
 
-/// Checks the module-scope values of `module_name` (a file's module, or an
-/// inline submodule inside it) against the module names the file imports,
-/// recursing into inline submodules, which share their file's imports.
+/// Reports a module import and another import (of a module or a member)
+/// that bind the same local name in one file, at the later of the two.
+auto check_import_import_conflicts(const file_imports &imports,
+                                   std::string_view module_name,
+                                   diagnostic_bag &diag,
+                                   std::vector<bool> &file_has_errors) -> void {
+  const auto &modules = imports.modules;
+  for (size_t i = 0; i < modules.size(); ++i) {
+    for (size_t j = i + 1; j < modules.size(); ++j) {
+      if (modules[i].first == modules[j].first &&
+          modules[i].second.module_name != modules[j].second.module_name) {
+        const auto later_is_j = modules[i].second.location.span.start <
+                                modules[j].second.location.span.start;
+        emit_module_module_conflict(
+            modules[i].first, module_name,
+            later_is_j ? modules[j].second : modules[i].second,
+            later_is_j ? modules[i].second : modules[j].second, diag,
+            file_has_errors);
+      }
+    }
+    for (const auto &member : imports.members) {
+      if (member.name == modules[i].first) {
+        const auto at_module =
+            member.location.span.start < modules[i].second.location.span.start;
+        emit_module_name_conflict(member, module_name, modules[i].second,
+                                  at_module, diag, file_has_errors);
+      }
+    }
+  }
+}
+
+/// Checks `module_name` (a file's module, or an inline submodule inside it)
+/// against the file's imports, recursing into inline submodules, which
+/// share their file's imports: an imported module may not share its local
+/// name with a declaration of the module, and an imported member may not
+/// share its local name with a declared child module.
 auto check_import_conflicts(
     const std::vector<ast::ptr<ast::node>> &items, std::string_view module_name,
-    const std::vector<std::pair<std::string, introduced_module_name>> &imports,
+    const file_imports &imports, const module_session_index &session_index,
     const semantic_resolution_index &semantic_index, diagnostic_bag &diag,
     std::vector<bool> &file_has_errors) -> void {
-  for (const auto *value : module_scope_values(semantic_index, module_name)) {
-    for (const auto &[local_name, visible] : imports) {
-      if (local_name == value->name) {
-        emit_value_module_conflict(*value, module_name, visible,
-                                   /*report_at_import=*/true, diag,
-                                   file_has_errors);
+  for (const auto &name : module_scope_names(semantic_index, module_name)) {
+    for (const auto &[local_name, visible] : imports.modules) {
+      if (local_name == name.name) {
+        emit_module_name_conflict(name, module_name, visible,
+                                  /*report_at_module=*/true, diag,
+                                  file_has_errors);
+      }
+    }
+  }
+  for (const auto &child : session_index.submodule_declarations) {
+    if (child.parent_module_name != module_name) {
+      continue;
+    }
+    for (const auto &[local_name, visible] : imports.modules) {
+      if (local_name == child.child_name) {
+        emit_module_module_conflict(local_name, module_name, visible,
+                                    introduced_module_name{
+                                        .module_name = child.module_name,
+                                        .location = child.location,
+                                        .imported = false},
+                                    diag, file_has_errors);
+      }
+    }
+    for (const auto &member : imports.members) {
+      if (member.name == child.child_name) {
+        emit_module_name_conflict(
+            member, module_name,
+            introduced_module_name{.module_name = child.module_name,
+                                   .location = child.location,
+                                   .imported = false},
+            /*report_at_module=*/false, diag, file_has_errors);
       }
     }
   }
@@ -2321,7 +2482,8 @@ auto check_import_conflicts(
     if (!sub.is_functor() && !sub.items.empty()) {
       check_import_conflicts(sub.items,
                              append_module_name(module_name, sub.name), imports,
-                             semantic_index, diag, file_has_errors);
+                             session_index, semantic_index, diag,
+                             file_has_errors);
     }
   }
 }
@@ -2330,24 +2492,28 @@ auto check_import_conflicts(
 
 /// Two passes, so each clash is reported exactly once and where it was
 /// introduced: a clash with a *declared* child is a property of the module
-/// (reported at the value), and a clash with an *imported* module is a
-/// property of the importing file (reported at the `use`).
-auto validate_value_module_conflicts(
+/// (reported at the declaration), and a clash involving an import is a
+/// property of the importing file (reported at the `use`). A file already
+/// marked failing is skipped, which is also what keeps a same-file
+/// `type c` + `module c` pair — already a duplicate declaration — from being
+/// reported twice.
+auto validate_module_name_conflicts(
     const std::vector<parsed_module> &inputs,
     const module_session_index &session_index,
     const semantic_resolution_index &semantic_index, diagnostic_bag &diag,
     std::vector<bool> &file_has_errors) -> void {
   for (const auto &child : session_index.submodule_declarations) {
-    for (const auto *value :
-         module_scope_values(semantic_index, child.parent_module_name)) {
-      if (value->name == child.child_name &&
-          !has_file_error(file_has_errors, value->location.file_id)) {
-        emit_value_module_conflict(
-            *value, child.parent_module_name,
+    for (const auto &name :
+         module_scope_names(semantic_index, child.parent_module_name)) {
+      if (name.name == child.child_name &&
+          !has_file_error(file_has_errors, name.location.file_id) &&
+          !has_file_error(file_has_errors, child.location.file_id)) {
+        emit_module_name_conflict(
+            name, child.parent_module_name,
             introduced_module_name{.module_name = child.module_name,
                                    .location = child.location,
                                    .imported = false},
-            /*report_at_import=*/false, diag, file_has_errors);
+            /*report_at_module=*/false, diag, file_has_errors);
       }
     }
   }
@@ -2359,14 +2525,18 @@ auto validate_value_module_conflicts(
         has_file_error(file_has_errors, input.file_id)) {
       continue;
     }
-    const auto imports = imported_module_names(input.ast_file->items,
-                                               input.file_id, session_index);
-    if (imports.empty()) {
+    const auto imports = collect_file_imports(
+        input.ast_file->items, input.file_id, session_index, semantic_index);
+    if (imports.modules.empty() && imports.members.empty()) {
       continue;
     }
-    check_import_conflicts(input.ast_file->items,
-                           join_strings(input.ast_file->module_decl->path, "."),
-                           imports, semantic_index, diag, file_has_errors);
+    const auto module_name =
+        join_strings(input.ast_file->module_decl->path, ".");
+    check_import_import_conflicts(imports, module_name, diag,
+                                  file_has_errors);
+    check_import_conflicts(input.ast_file->items, module_name, imports,
+                           session_index, semantic_index, diag,
+                           file_has_errors);
   }
 }
 
@@ -2418,9 +2588,9 @@ auto validate_module_reference(const ast::module_path_expr &path,
     return false;
   }
 
-  const auto resolution =
+  const auto resolution = accept_static_field_projection(
       resolve_module_reference_path(semantic_index, session_index, module_name,
-                                    path.segments, file_has_errors, aliases);
+                                    path.segments, file_has_errors, aliases));
   if (resolution.status == qualified_path_status::blocked) {
     return true;
   }

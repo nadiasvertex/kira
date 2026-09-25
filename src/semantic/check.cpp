@@ -114,6 +114,14 @@ auto is_variant_ident(const ast::ident_expr &ident) -> bool {
   return ident.span.len() > ident.name.size();
 }
 
+/// What the first segment of a dotted name `a.b.c` stands for — see
+/// `checker::classify_dotted_root`.
+enum class dotted_root : uint8_t {
+  local_value,  ///< A lexical binding (or `self`): field access on it.
+  module_value, ///< A module-level `def`/`static`: field access on it.
+  module,       ///< A module: the rest of the path is inside it.
+};
+
 /// How a value binding entered scope, used to decide whether it may be
 /// reassigned and to word the "declared here" note on an immutability error.
 enum class binding_origin : uint8_t {
@@ -372,6 +380,10 @@ public:
         [this](const ast::node &node)
             -> std::optional<std::pair<std::string, std::string>> {
           return resolve_variant_tag(node);
+        });
+    comptime_eval_.set_path_resolver(
+        [this](const ast::module_path_expr &path, bool root_is_local) {
+          return read_dotted_path_for_comptime(path, root_is_local);
         });
     // A default is a candidate the queue offers once everything else has
     // stalled, not a rule inside the solver. The candidate travels in the
@@ -1145,6 +1157,9 @@ private:
   /// every later reference.
   std::unordered_map<const ast::static_decl *, std::optional<comptime::value>>
       static_binding_values_;
+  /// `static` bindings whose initializer `ensure_static_binding_evaluated`
+  /// is evaluating right now — its cycle guard.
+  std::unordered_set<const ast::static_decl *> static_bindings_evaluating_;
   /// Compile-time evaluator backing `static let`/`static assert`/
   /// `static if`. One instance for the whole session (parallel to
   /// `static_types_`/`types_`) so `static let` bindings evaluated while
@@ -2073,6 +2088,29 @@ private:
       -> const std::vector<import_binding> * {
     const auto it = index_.imports.find(file_id_);
     return it != index_.imports.end() ? &it->second : nullptr;
+  }
+
+  /// The import that brings in something originally named `name` under a
+  /// different local name (`use util as u`, `use a.{b as c}`), for the
+  /// undefined-name diagnostic to point at.
+  [[nodiscard]] auto find_renamed_import(std::string_view name) const
+      -> const import_binding * {
+    const auto *imports = imports_for_current_file();
+    if (imports == nullptr) {
+      return nullptr;
+    }
+    for (const auto &binding : *imports) {
+      if (binding.is_wildcard || binding.local_name == name) {
+        continue;
+      }
+      const auto &original = binding.leaf_name.empty() && !binding.path.empty()
+                                 ? binding.path.back()
+                                 : binding.leaf_name;
+      if (original == name) {
+        return &binding;
+      }
+    }
+    return nullptr;
   }
 
   /// Finds the non-wildcard import binding that introduces `name` locally
@@ -7682,8 +7720,13 @@ private:
     auto diag = diagnostic(diagnostic_level::error,
                            std::format("undefined name `{}`", name), file_id_);
     diag.with_label(span, "not found in this scope");
-    if (const auto suggestion =
-            best_suggestion(name, value_name_candidates())) {
+    if (const auto *renamed = find_renamed_import(name)) {
+      diag.with_help(std::format(
+          "This file imports `{}` under the name `{}`, and a renamed import "
+          "is only reachable by its new name. Write `{}` here.",
+          name, renamed->local_name, renamed->local_name));
+    } else if (const auto suggestion =
+                   best_suggestion(name, value_name_candidates())) {
       diag.with_help(std::format("did you mean `{}`?", *suggestion));
     } else {
       diag.with_help(std::format(
@@ -7710,6 +7753,55 @@ private:
            name == "channel" || name == "watch" || name == "shared" ||
            name == "expr" || name == "slice_from_raw_parts" ||
            name == "slice_mut_from_raw_parts";
+  }
+
+  /// A module-level value a bare name reaches with no local binding in the
+  /// way: a `def` or `static` of the module being checked, then an imported
+  /// one (`use p.{f}`), then one re-exported by a session-owned wildcard
+  /// import. Exactly one of `function`/`static_binding` is set.
+  struct module_value_ref {
+    const ast::func_decl *function = nullptr;
+    const ast::static_decl *static_binding = nullptr;
+    const module_members *owner = nullptr;
+  };
+
+  [[nodiscard]] auto find_module_scope_value(std::string_view name) const
+      -> std::optional<module_value_ref> {
+    const auto in = [&](const module_members &members,
+                        const std::string &member)
+        -> std::optional<module_value_ref> {
+      if (const auto it = members.functions.find(member);
+          it != members.functions.end()) {
+        return module_value_ref{.function = it->second.decl,
+                                .static_binding = nullptr,
+                                .owner = &members};
+      }
+      if (const auto it = members.statics.find(member);
+          it != members.statics.end()) {
+        return module_value_ref{.function = nullptr,
+                                .static_binding = it->second.decl,
+                                .owner = &members};
+      }
+      return std::nullopt;
+    };
+    const auto key = std::string(name);
+    if (module_ != nullptr) {
+      if (auto found = in(*module_, key)) {
+        return found;
+      }
+    }
+    if (const auto *binding = find_import(name)) {
+      if (const auto *source = import_source_module(*binding)) {
+        return in(*source, imported_member_name(*binding));
+      }
+      return std::nullopt;
+    }
+    for (const auto *source : wildcard_import_sources()) {
+      if (auto found = in(*source, key)) {
+        return found;
+      }
+    }
+    return std::nullopt;
   }
 
   /// Resolves a value-position identifier through, in order: a variant
@@ -7782,56 +7874,20 @@ private:
       return self_type_;
     }
 
-    if (module_ != nullptr) {
-      if (const auto it = module_->functions.find(name);
-          it != module_->functions.end()) {
-        record_fn_value_reference(ident, *it->second.decl,
-                                  module_->module_name);
-        return fn_type_of(*it->second.decl, module_);
+    if (const auto value = find_module_scope_value(name)) {
+      if (value->function != nullptr) {
+        record_fn_value_reference(ident, *value->function,
+                                  value->owner->module_name);
+        return fn_type_of(*value->function, value->owner);
       }
-      if (const auto it = module_->statics.find(name);
-          it != module_->statics.end()) {
-        const auto type = static_binding_type(*it->second.decl, module_);
-        record_static_const_reference(ident, *it->second.decl, type,
-                                      module_->module_name);
-        return type;
-      }
+      const auto type = static_binding_type(*value->static_binding,
+                                            value->owner);
+      record_static_const_reference(ident, *value->static_binding, type,
+                                    value->owner->module_name);
+      return type;
     }
-
-    if (const auto *binding = find_import(name)) {
-      if (const auto *source = import_source_module(*binding)) {
-        const auto member = imported_member_name(*binding);
-        if (const auto it = source->functions.find(member);
-            it != source->functions.end()) {
-          record_fn_value_reference(ident, *it->second.decl,
-                                    source->module_name);
-          return fn_type_of(*it->second.decl, source);
-        }
-        if (const auto it = source->statics.find(member);
-            it != source->statics.end()) {
-          const auto type = static_binding_type(*it->second.decl, source);
-          record_static_const_reference(ident, *it->second.decl, type,
-                                        source->module_name);
-          return type;
-        }
-      }
+    if (find_import(name) != nullptr) {
       return k_unknown_type;
-    }
-
-    // Values re-exported by a session-owned wildcard import (`use a.b.*`).
-    for (const auto *source : wildcard_import_sources()) {
-      if (const auto it = source->functions.find(std::string(name));
-          it != source->functions.end()) {
-        record_fn_value_reference(ident, *it->second.decl, source->module_name);
-        return fn_type_of(*it->second.decl, source);
-      }
-      if (const auto it = source->statics.find(std::string(name));
-          it != source->statics.end()) {
-        const auto type = static_binding_type(*it->second.decl, source);
-        record_static_const_reference(ident, *it->second.decl, type,
-                                      source->module_name);
-        return type;
-      }
     }
 
     if (is_prelude_value_name(name) || is_type_like_name(name)) {
@@ -7915,7 +7971,14 @@ private:
   /// own declaration, and every reference needs the same confluent,
   /// order-independent evaluation the rest of this compile-time subsystem
   /// already guarantees.
-  auto ensure_static_binding_evaluated(const ast::static_decl &decl)
+  ///
+  /// `owner` is the module declaring `decl` when that may not be the module
+  /// being checked. The initializer is evaluated in *its* module's context —
+  /// module, file, and imports — so a dotted name inside it
+  /// (`classify_dotted_root`) reads the way it would at the declaration, not
+  /// at whichever reference happened to reach it first.
+  auto ensure_static_binding_evaluated(const ast::static_decl &decl,
+                                       const module_members *owner = nullptr)
       -> const comptime::value * {
     if (decl.initializer == nullptr || decl.initializer->has_error ||
         decl.name.empty()) {
@@ -7933,7 +7996,37 @@ private:
         it != static_binding_values_.end()) {
       return it->second.has_value() ? &*it->second : nullptr;
     }
-    const auto evaluated = comptime_eval_.evaluate(*decl.initializer);
+    // A dotted path reaches this through the checker rather than the
+    // evaluator's own by-name cycle guard (`resolve_pending_static`), so a
+    // self-referential `static a = a.x` needs a guard here too.
+    if (!static_bindings_evaluating_.insert(&decl).second) {
+      return nullptr;
+    }
+    const auto evaluated = [&] {
+      if (owner == nullptr || owner == module_) {
+        return comptime_eval_.evaluate(*decl.initializer);
+      }
+      const auto listed = owner->statics.find(decl.name);
+      const auto saved_module = module_;
+      const auto saved_module_name = module_name_;
+      const auto saved_functor_owner = functor_owner_module_;
+      const auto saved_file = file_id_;
+      module_ = owner;
+      module_name_ = owner->module_name;
+      functor_owner_module_.clear();
+      if (listed != owner->statics.end()) {
+        file_id_ = listed->second.file_id;
+      }
+      comptime_eval_.set_file(file_id_);
+      auto result = comptime_eval_.evaluate(*decl.initializer);
+      module_ = saved_module;
+      module_name_ = saved_module_name;
+      functor_owner_module_ = saved_functor_owner;
+      file_id_ = saved_file;
+      comptime_eval_.set_file(file_id_);
+      return result;
+    }();
+    static_bindings_evaluating_.erase(&decl);
     if (evaluated.is_error()) {
       static_binding_values_.emplace(&decl, std::nullopt);
       return nullptr;
@@ -7983,7 +8076,8 @@ private:
   auto record_static_const_reference(const ast::expr &reference,
                                      const ast::static_decl &decl, type_id type,
                                      std::string_view owner_module) -> void {
-    const auto *value = ensure_static_binding_evaluated(decl);
+    const auto *value =
+        ensure_static_binding_evaluated(decl, index_.find_module(owner_module));
     if (value == nullptr) {
       return;
     }
@@ -12576,10 +12670,11 @@ private:
     }
 
     // Relative to the module being checked: `inner.val()` inside `module
-    // main` is `main.inner`'s `val`. An import binding this root wins, the
-    // same precedence `find_type_decl_by_path` gives the two spellings — so
-    // this needs the whole path plus `fn_name` as the module member, which
-    // is what appending the name to `root` asks for.
+    // main` is `main.inner`'s `val`. An import and a declared child can't
+    // share a name (`validate_module_name_conflicts`), so skipping an
+    // imported root here only keeps the two lookups from overlapping. This
+    // needs the whole path plus `fn_name` as the module member, which is
+    // what appending the name to `root` asks for.
     if (find_import(root.front()) == nullptr) {
       auto member_path = root;
       member_path.push_back(fn_name);
@@ -13659,6 +13754,23 @@ private:
       }
       return entry.args[*index];
     }
+    case type_kind::fn_kind: {
+      // `helper.x` where `helper` is a function. Used to fall through to
+      // the builtin arm, which knows no methods on `fn` types and returned
+      // `unknown` without a word, so the mistake type-checked.
+      if (const auto *method = find_extend_method_for_builtin(entry, name)) {
+        return fn_type_of(*method->decl, method->owner);
+      }
+      error_with_help(
+          span,
+          std::format("no field `{}` on a function of type `{}`", name,
+                      types_.display(stripped)),
+          "a function has no fields",
+          std::format("To read `{}` from what the function returns, call it "
+                      "first: `f().{}`.",
+                      name, name));
+      return k_error_type;
+    }
     default: {
       const auto builtin_result = builtin_method_result(entry, name);
       if (types_.is_unknown(builtin_result)) {
@@ -13758,15 +13870,41 @@ private:
   /// when `a` is a binding in an enclosing lexical scope (including one a
   /// capture list puts out of reach: that is still the local, and deserves
   /// the capture diagnostic, not a module lookup) or `self` in a method;
-  /// a module reference otherwise. A local always wins, so no library body
-  /// can be broken by whatever module names a user program declares.
+  /// a module reference when `a` is the module's own root or `std`; field
+  /// access on a module-level value when `a` names a `def`/`static` of this
+  /// module or an imported one; a module reference otherwise. A local always
+  /// wins, so no library body can be broken by whatever module names a user
+  /// program declares, and a module-level value can never meet a visible
+  /// module of the same name (`validate_module_name_conflicts`), so the
+  /// order of the last two readings only matters for the root and `std`.
   ///
-  /// Every site that has to tell the two apart asks this, and
+  /// `root_is_local` is whether `a` is a lexical binding where the path is
+  /// read. The checker passes its own scopes (`dotted_root_is_value`); the
+  /// compile-time evaluator, which runs `static def` bodies with a frame
+  /// stack of its own, passes its frames — the rest of the rule is this
+  /// function either way.
+  auto classify_dotted_root(std::string_view root, bool root_is_local)
+      -> dotted_root {
+    if (root_is_local) {
+      return dotted_root::local_value;
+    }
+    if (root_visible_without_import(visibility_module(), root)) {
+      return dotted_root::module;
+    }
+    if (find_module_scope_value(root).has_value()) {
+      return dotted_root::module_value;
+    }
+    return dotted_root::module;
+  }
+
+  /// `classify_dotted_root` against the checker's own scopes. Every site
+  /// that has to tell the two readings apart asks this, and
   /// `infer_value_rooted_path` records the answer for lowering, so no later
   /// pass decides again.
   auto dotted_root_is_value(std::string_view root) -> bool {
-    return find_value_in_scopes(root).binding != nullptr ||
-           (root == "self" && self_type_ != k_unknown_type);
+    const auto is_local = find_value_in_scopes(root).binding != nullptr ||
+                          (root == "self" && self_type_ != k_unknown_type);
+    return classify_dotted_root(root, is_local) != dotted_root::module;
   }
 
   auto infer_module_path(const ast::module_path_expr &path) -> type_id {
@@ -13815,20 +13953,143 @@ private:
         return fn_type_of(*it->second.decl, owner);
       }
     }
-    return k_unknown_type;
+    return infer_module_static_projection(path);
   }
 
-  /// `a.b.c` where `a` is a binding in scope: a chain of field accesses.
-  /// Records each prefix's type in `value_path_types_` — lowering builds
-  /// the projection chain from exactly these, whatever the chain's length.
+  /// The `static` a module-rooted path names, and where its fields start:
+  /// `geo.origin` (first field past the end) or `geo.origin.y` (first field
+  /// `y`) — the longest prefix naming a `static` wins.
+  struct module_static_prefix {
+    const ast::static_decl *decl = nullptr;
+    const module_members *owner = nullptr;
+    size_t first_field = 0;
+  };
+
+  [[nodiscard]] auto find_module_static_prefix(
+      const std::vector<std::string> &segments) const
+      -> std::optional<module_static_prefix> {
+    for (auto end = segments.size(); end >= 2; --end) {
+      const auto prefix = std::vector<std::string>(
+          segments.begin(), segments.begin() + static_cast<std::ptrdiff_t>(end));
+      const auto *owner = find_static_owner_of_path(prefix);
+      if (owner == nullptr) {
+        continue;
+      }
+      if (const auto it = owner->statics.find(prefix.back());
+          it != owner->statics.end()) {
+        return module_static_prefix{
+            .decl = it->second.decl, .owner = owner, .first_field = end};
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// `geo.origin.y`: a module path to a `static`, then field access on it
+  /// (spec "Dotted Names", rule 3).
+  auto infer_module_static_projection(const ast::module_path_expr &path)
+      -> type_id {
+    const auto found = find_module_static_prefix(path.segments);
+    if (!found.has_value() || found->first_field == path.segments.size()) {
+      return k_unknown_type;
+    }
+    auto type = static_binding_type(*found->decl, found->owner);
+    for (auto i = found->first_field; i < path.segments.size(); ++i) {
+      type = field_access_type(type, path.segments[i], path.span);
+    }
+    fold_static_field_path(path, *found->decl, found->owner,
+                           found->first_field, type);
+    return type;
+  }
+
+  /// The compile-time evaluator's view of a dotted path
+  /// (`comptime::evaluator::path_resolver_fn`): the same
+  /// `classify_dotted_root` ordinary code gets, with the evaluator's own
+  /// frames standing in for lexical scope, and module-level `static`s
+  /// evaluated through `ensure_static_binding_evaluated` — per declaration,
+  /// in the declaring module — rather than looked up by bare name.
+  auto read_dotted_path_for_comptime(const ast::module_path_expr &path,
+                                     bool root_is_local)
+      -> comptime::evaluator::dotted_path_reading {
+    using reading = comptime::evaluator::dotted_path_reading;
+    const auto &root = path.segments.front();
+    const auto text = join_strings(path.segments, ".");
+    const auto static_value =
+        [&](const ast::static_decl &decl, const module_members *owner,
+            size_t first_field) -> reading {
+      if (static_bindings_evaluating_.contains(&decl)) {
+        return reading{.reading = reading::kind::not_constant,
+                       .base = {},
+                       .first_field = 0,
+                       .reason = std::format(
+                           "`{}` is part of a compile-time evaluation cycle: "
+                           "`{}` reads it while it is being evaluated",
+                           decl.name, text)};
+      }
+      if (const auto *value = ensure_static_binding_evaluated(decl, owner)) {
+        return reading{.reading = reading::kind::static_value,
+                       .base = *value,
+                       .first_field = first_field,
+                       .reason = {}};
+      }
+      // The initializer's own failure was already reported.
+      return reading{.reading = reading::kind::not_constant,
+                     .base = {},
+                     .first_field = 0,
+                     .reason = {}};
+    };
+    switch (classify_dotted_root(root, root_is_local)) {
+    case dotted_root::local_value:
+      return reading{};
+    case dotted_root::module_value: {
+      const auto value = find_module_scope_value(root);
+      if (value->static_binding != nullptr) {
+        return static_value(*value->static_binding, value->owner, 1);
+      }
+      return reading{.reading = reading::kind::not_constant,
+                     .base = {},
+                     .first_field = 0,
+                     .reason = std::format("`{}` is a function, which has no "
+                                           "fields to read in `{}`",
+                                           root, text)};
+    }
+    case dotted_root::module:
+      break;
+    }
+    if (const auto found = find_module_static_prefix(path.segments)) {
+      return static_value(*found->decl, found->owner, found->first_field);
+    }
+    return reading{.reading = reading::kind::not_constant,
+                   .base = {},
+                   .first_field = 0,
+                   .reason = std::format("`{}` is not a compile-time constant: "
+                                         "`{}` is not a binding here, so the "
+                                         "path is read as a module path, and "
+                                         "it names no `static` binding",
+                                         text, root)};
+  }
+
+  /// `a.b.c` where `a` is a binding in scope, or a module-level `def`/
+  /// `static`: a chain of field accesses. Records each prefix's type in
+  /// `value_path_types_` — lowering builds the projection chain from exactly
+  /// these, whatever the chain's length.
   auto infer_value_rooted_path(const ast::module_path_expr &path) -> type_id {
     const auto &root = path.segments.front();
     auto base = self_type_;
+    auto module_value = std::optional<module_value_ref>{};
     if (const auto *binding = lookup_value(root)) {
       base = binding->type;
     } else if (const auto *barrier = capture_barrier_blocking(root)) {
       emit_capture_not_listed(path.span, root, *barrier);
       return k_error_type;
+    } else if (root != "self" || self_type_ == k_unknown_type) {
+      module_value = find_module_scope_value(root);
+      if (!module_value.has_value()) {
+        return k_unknown_type;
+      }
+      base = module_value->function != nullptr
+                 ? fn_type_of(*module_value->function, module_value->owner)
+                 : static_binding_type(*module_value->static_binding,
+                                       module_value->owner);
     }
     auto segment_types = std::vector<type_id>{base};
     for (size_t i = 1; i < path.segments.size(); ++i) {
@@ -13836,7 +14097,37 @@ private:
       segment_types.push_back(base);
     }
     value_path_types_.insert_or_assign(&path, std::move(segment_types));
+    if (module_value.has_value() && module_value->static_binding != nullptr) {
+      fold_static_field_path(path, *module_value->static_binding,
+                             module_value->owner, 1, base);
+    }
     return base;
+  }
+
+  /// `origin.x` (or `geo.origin.x`) where `origin` is a `static`: its value
+  /// is known at compile time, so a scalar field is embedded as a literal,
+  /// exactly as a bare scalar `static` is (`record_static_const_reference`).
+  /// `first_field` is the index of the first field segment. A projection
+  /// that doesn't end in a scalar is left to lowering, which reports it.
+  auto fold_static_field_path(const ast::module_path_expr &path,
+                              const ast::static_decl &decl,
+                              const module_members *owner, size_t first_field,
+                              type_id type) -> void {
+    const auto *value = ensure_static_binding_evaluated(decl, owner);
+    for (size_t i = first_field; value != nullptr && i < path.segments.size();
+         ++i) {
+      if (value->kind != comptime::value_kind::struct_instance) {
+        return;
+      }
+      const auto it = value->fields.find(path.segments[i]);
+      value = it != value->fields.end() ? &it->second : nullptr;
+    }
+    if (value == nullptr) {
+      return;
+    }
+    if (const auto *lit = materialize_const_literal(*value, path.span, type)) {
+      static_const_values_[&path] = lit;
+    }
   }
 
   /// The module whose "Visible Modules" set applies to the code being
