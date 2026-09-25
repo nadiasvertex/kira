@@ -1,11 +1,12 @@
 #include "src/bytecode_compiler/register_alloc.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <format>
-#include <optional>
+#include <queue>
 #include <vector>
 
 namespace kira::bytecode_compiler {
@@ -104,23 +105,117 @@ auto extend_across_loops(std::vector<scan_group> &groups,
   }
 }
 
-/// The lowest physical register starting a free run of `count` registers, or
-/// `nullopt` when no such run exists.
-[[nodiscard]] auto find_free_run(const std::vector<bool> &busy, uint32_t count)
-    -> std::optional<uint32_t> {
-  auto run = uint32_t{0};
-  for (auto index = uint32_t{0}; index < k_physical_register_count; ++index) {
-    if (busy[index]) {
-      run = 0;
-      continue;
+/// Which physical registers are free, answering "lowest start of a free run
+/// of `count` registers" in O(log n).
+///
+/// A segment tree over `[0, capacity)`: each node records the longest free
+/// run touching its left edge (`prefix`), its right edge (`suffix`), and
+/// anywhere inside it (`best`). The leftmost run long enough is found by
+/// descending — left child first, then a run straddling the midpoint, then
+/// the right child. A linear scan of the register file per value made
+/// allocation quadratic in the number of values live at once: 65536 of them
+/// took minutes.
+///
+/// Registers at or above `capacity` are all free, so the tree starts small
+/// and doubles as the frame grows. A function that only ever holds a few
+/// values live pays for a few dozen nodes, not all 65536 registers.
+class free_register_map {
+public:
+  free_register_map() { grow_to(1); }
+
+  /// The lowest physical starting a free run of `count` registers. A run may
+  /// begin inside the tree and continue past `capacity` into registers never
+  /// yet used, so this always has an answer; whether it fits in the frame is
+  /// the caller's check.
+  [[nodiscard]] auto lowest_free_run(uint32_t count) const -> uint32_t {
+    if (best_[1] < count) {
+      return capacity_ - suffix_[1];
     }
-    ++run;
-    if (run == count) {
-      return index + 1 - count;
+    auto node = size_t{1};
+    auto low = uint32_t{0};
+    auto length = capacity_;
+    while (node < capacity_) {
+      const auto half = length / 2;
+      const auto left = node * 2;
+      const auto right = left + 1;
+      if (best_[left] >= count) {
+        node = left;
+      } else if (suffix_[left] + prefix_[right] >= count) {
+        return low + half - suffix_[left];
+      } else {
+        node = right;
+        low += half;
+      }
+      length = half;
+    }
+    return low;
+  }
+
+  auto set_busy(uint32_t first, uint32_t count, bool busy) -> void {
+    grow_to(first + count);
+    for (auto physical = first; physical < first + count; ++physical) {
+      auto node = capacity_ + physical;
+      const auto free = busy ? uint32_t{0} : uint32_t{1};
+      prefix_[node] = free;
+      suffix_[node] = free;
+      best_[node] = free;
+      for (node /= 2; node >= 1; node /= 2) {
+        combine(node);
+      }
     }
   }
-  return std::nullopt;
-}
+
+private:
+  /// The number of registers node `node` covers.
+  [[nodiscard]] auto span_of(size_t node) const -> uint32_t {
+    return capacity_ >> (std::bit_width(node) - 1);
+  }
+
+  auto combine(size_t node) -> void {
+    const auto left = node * 2;
+    const auto right = left + 1;
+    const auto half = span_of(left);
+    prefix_[node] = prefix_[left] == half ? half + prefix_[right]
+                                           : prefix_[left];
+    suffix_[node] = suffix_[right] == half ? half + suffix_[left]
+                                            : suffix_[right];
+    best_[node] = std::max({best_[left], best_[right],
+                            suffix_[left] + prefix_[right]});
+  }
+
+  /// Doubles the tree until it covers `[0, limit)`, carrying every leaf's
+  /// state across and treating the new registers as free.
+  auto grow_to(uint32_t limit) -> void {
+    if (limit <= capacity_ && !best_.empty()) {
+      return;
+    }
+    auto capacity = std::max(capacity_, uint32_t{64});
+    while (capacity < limit) {
+      capacity *= 2;
+    }
+    auto leaves = std::vector<uint32_t>(capacity, 1);
+    for (auto physical = uint32_t{0}; physical < capacity_; ++physical) {
+      leaves[physical] = best_[capacity_ + physical];
+    }
+    capacity_ = capacity;
+    prefix_.assign(size_t{2} * capacity_, 0);
+    suffix_.assign(size_t{2} * capacity_, 0);
+    best_.assign(size_t{2} * capacity_, 0);
+    for (auto physical = uint32_t{0}; physical < capacity_; ++physical) {
+      prefix_[capacity_ + physical] = leaves[physical];
+      suffix_[capacity_ + physical] = leaves[physical];
+      best_[capacity_ + physical] = leaves[physical];
+    }
+    for (auto node = size_t{capacity_} - 1; node >= 1; --node) {
+      combine(node);
+    }
+  }
+
+  uint32_t capacity_ = 0;
+  std::vector<uint32_t> prefix_;
+  std::vector<uint32_t> suffix_;
+  std::vector<uint32_t> best_;
+};
 
 } // namespace
 
@@ -215,8 +310,15 @@ auto allocate_registers(const allocation_input &input)
   });
 
   auto assignment = std::vector<uint16_t>(input.virtual_count, 0);
-  auto busy = std::vector<bool>(k_physical_register_count, false);
-  auto active = std::vector<active_group>{};
+  auto free_registers = free_register_map{};
+  // Ordered by end point, soonest first, so expiring is a pop per group
+  // rather than a pass over everything live.
+  const auto ends_later = [](const active_group &lhs,
+                             const active_group &rhs) -> bool {
+    return lhs.end > rhs.end;
+  };
+  auto active = std::priority_queue<active_group, std::vector<active_group>,
+                                    decltype(ends_later)>{ends_later};
   auto highest = uint32_t{0};
 
   const auto assign = [&](const scan_group &group, uint32_t physical) -> void {
@@ -225,9 +327,9 @@ auto allocate_registers(const allocation_input &input)
       if (id < input.virtual_count) {
         assignment[id] = static_cast<uint16_t>(physical + offset);
       }
-      busy[physical + offset] = true;
     }
-    active.push_back(active_group{
+    free_registers.set_busy(physical, group.count, true);
+    active.push(active_group{
         .physical = physical, .count = group.count, .end = group.range.end});
     highest = std::max(highest, physical + group.count);
   };
@@ -239,29 +341,19 @@ auto allocate_registers(const allocation_input &input)
     // deliberately not expired: within a single instruction the VM reads its
     // source operands and writes its destination, and letting those share a
     // physical would make the write clobber a source still to be read.
-    auto surviving = std::vector<active_group>{};
-    surviving.reserve(active.size());
-    for (const auto &entry : active) {
-      if (entry.end >= group.range.start) {
-        surviving.push_back(entry);
-        continue;
-      }
-      for (auto offset = uint32_t{0}; offset < entry.count; ++offset) {
-        busy[entry.physical + offset] = false;
-      }
+    while (!active.empty() && active.top().end < group.range.start) {
+      free_registers.set_busy(active.top().physical, active.top().count,
+                              false);
+      active.pop();
     }
-    active = std::move(surviving);
 
     const auto pinned = group.first < input.pinned_prefix && group.count == 1;
-    const auto reused = pinned ? std::optional<uint32_t>{group.first}
-                               : find_free_run(busy, group.count);
-
-    // No free run means the register file is full or fragmented: a group
-    // needs its registers contiguous (call opcodes read `argc` consecutive
-    // registers), and a long-lived value in the middle of an otherwise free
-    // run can block one. Appending above the high-water mark handles
-    // fragmentation; if that doesn't fit either, the frame is out of room.
-    const auto physical = reused.value_or(highest);
+    // A group needs its registers contiguous (call opcodes read `argc`
+    // consecutive registers), so a long-lived value in the middle of an
+    // otherwise free run can push it higher. If the lowest run that fits
+    // runs off the end of the frame, the frame is out of room.
+    const auto physical =
+        pinned ? group.first : free_registers.lowest_free_run(group.count);
     if (physical + group.count > k_physical_register_count) {
       return std::unexpected(register_file_exhausted{});
     }

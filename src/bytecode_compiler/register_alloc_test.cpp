@@ -321,31 +321,106 @@ auto test_more_virtuals_than_physicals_fit_when_short_lived() -> void {
          "70000 virtuals that never overlap should share one physical");
 }
 
-/// `count` virtuals live across the same two instructions, as one call-
-/// argument group. One group rather than `count` independent values reaches
-/// the same limit without the allocator's per-value scans, which are
-/// quadratic at this size.
-[[nodiscard]] auto all_live_at_once(uint32_t count) -> allocation_input {
+/// `count` virtuals live across the same two instructions. `as_group` makes
+/// them one call-argument block instead of independent values.
+[[nodiscard]] auto all_live_at_once(uint32_t count, bool as_group)
+    -> allocation_input {
   auto input = with_instructions(2, count);
   for (auto index = uint32_t{0}; index < count; ++index) {
     mention(input, index, 0);
+    mention(input, index, 1);
   }
-  mention(input, 0, 1);
-  input.groups.push_back(register_group{.first = virtual_reg{0}, .count = count});
+  if (as_group) {
+    input.groups.push_back(
+        register_group{.first = virtual_reg{0}, .count = count});
+  }
   return input;
 }
 
 /// The one real limit: values live at the same moment. A full register file
-/// (65536, one more than a `u16` count holds) fits; one more does not.
+/// (65536, one more than a `u16` count holds) fits; one more does not —
+/// whether the values are independent or one contiguous block.
+///
+/// The independent case is also the allocator's worst case for speed. It
+/// used to scan the register file once per value, which took minutes here;
+/// this target is `size = "small"` so a return to that times out.
 auto test_register_file_exhaustion_is_reported() -> void {
-  const auto full = allocate_registers(all_live_at_once(65536));
-  expect(full.has_value() && full->register_count == 65536,
-         "65536 simultaneously live values should fill the frame exactly");
+  for (const auto as_group : {false, true}) {
+    const auto full = allocate_registers(all_live_at_once(65536, as_group));
+    expect(full.has_value() && full->register_count == 65536,
+           "65536 simultaneously live values should fill the frame exactly");
 
-  const auto over = allocate_registers(all_live_at_once(65537));
-  expect(!over.has_value(),
-         "65537 simultaneously live values must be reported, not wrapped "
-         "onto a register still in use");
+    const auto over = allocate_registers(all_live_at_once(65537, as_group));
+    expect(!over.has_value(),
+           "65537 simultaneously live values must be reported, not wrapped "
+           "onto a register still in use");
+  }
+}
+
+/// A contiguous group takes the lowest free run long enough to hold it, not
+/// merely the lowest free register, and not a fresh run above everything.
+///
+/// Singletons 0..9 are live from instruction 0; 0, 2, 5 and 9 stay live to
+/// the end, the rest die at once. That leaves holes of 1 (physical 1),
+/// 2 (3-4) and 3 (6-8). Starting at instruction 2, a 3-wide group must land
+/// in the 3-hole, then a 2-wide group in the 2-hole, then a singleton in the
+/// 1-hole.
+auto test_groups_take_the_lowest_run_that_fits() -> void {
+  auto input = with_instructions(4, 16);
+  for (auto index = uint32_t{0}; index < 10; ++index) {
+    mention(input, index, 0);
+  }
+  for (const auto survivor : {0U, 2U, 5U, 9U}) {
+    mention(input, survivor, 3);
+  }
+  for (auto index = uint32_t{10}; index < 16; ++index) {
+    mention(input, index, 2);
+    mention(input, index, 3);
+  }
+  input.groups.push_back(register_group{.first = virtual_reg{10}, .count = 3});
+  input.groups.push_back(register_group{.first = virtual_reg{13}, .count = 2});
+
+  const auto result = allocate_or_fail(input);
+  expect(result.assignment[10] == 6 && result.assignment[11] == 7 &&
+             result.assignment[12] == 8,
+         "a 3-wide group should fill the 3-register hole at 6..8");
+  expect(result.assignment[13] == 3 && result.assignment[14] == 4,
+         "a 2-wide group should fill the 2-register hole at 3..4");
+  expect(result.assignment[15] == 1,
+         "a singleton should fill the 1-register hole at 1");
+  expect(result.register_count == 10,
+         "filling the holes should not grow the frame");
+}
+
+/// A group that fits only by running from the last free register off the
+/// end of what has been used so far starts in that free register rather
+/// than above it — and the allocator's bookkeeping, which starts small and
+/// grows with the frame, must follow it there.
+auto test_group_straddling_the_high_water_mark() -> void {
+  constexpr auto k_live = uint32_t{63};
+  auto input = with_instructions(4, k_live + 5);
+  for (auto index = uint32_t{0}; index <= k_live; ++index) {
+    mention(input, index, 0);
+  }
+  for (auto index = uint32_t{0}; index < k_live; ++index) {
+    mention(input, index, 3);
+  }
+  // Virtual 63 dies at instruction 0, freeing physical 63.
+  for (auto index = k_live + 1; index < k_live + 5; ++index) {
+    mention(input, index, 2);
+    mention(input, index, 3);
+  }
+  input.groups.push_back(
+      register_group{.first = virtual_reg{k_live + 1}, .count = 3});
+
+  const auto result = allocate_or_fail(input);
+  expect(result.assignment[k_live + 1] == 63 &&
+             result.assignment[k_live + 3] == 65,
+         "a 3-wide group should start in free physical 63 and run to 65");
+  expect(result.assignment[k_live + 4] == 66,
+         "the next value must go above the group, not onto 64 or 65");
+  expect(result.register_count == 67,
+         "the frame should end just past the last value placed");
 }
 
 } // namespace
@@ -366,5 +441,7 @@ auto main() -> int {
   test_many_virtuals_fit_when_not_simultaneously_live();
   test_more_virtuals_than_physicals_fit_when_short_lived();
   test_register_file_exhaustion_is_reported();
+  test_groups_take_the_lowest_run_that_fits();
+  test_group_straddling_the_high_water_mark();
   return 0;
 }
