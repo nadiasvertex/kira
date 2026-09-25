@@ -1436,7 +1436,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       case opcode::op_load_const: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
-        const auto idx = ops.imm16();
+        const auto idx = ops.imm32();
         f.registers[dst] = f.function->constants[idx];
         f.pc = ops.pos();
         break;
@@ -1714,7 +1714,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       case opcode::op_load_str_const: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
-        const auto idx = ops.imm16();
+        const auto idx = ops.imm32();
         const auto &text = f.function->string_constants[idx];
         auto *header = kira_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);

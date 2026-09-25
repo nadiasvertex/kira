@@ -462,7 +462,7 @@ public:
       const auto null_const = writer_.add_constant(slot_value{uint64_t{0}});
       emit_op(opcode::op_load_const);
       emit_register(*state_ptr_reg);
-      writer_.emit_u16(null_const);
+      writer_.emit_u32(null_const);
     } else {
       emit_alloc_slots(*state_ptr_reg,
                        static_cast<uint16_t>(state_symbols.size()));
@@ -564,7 +564,7 @@ public:
       }
       emit_op(opcode::op_load_const);
       emit_register(*k_reg);
-      writer_.emit_u16(k_const);
+      writer_.emit_u32(k_const);
       auto cmp_reg = alloc_register(fn.span);
       if (!cmp_reg.has_value()) {
         return std::unexpected(cmp_reg.error());
@@ -615,7 +615,7 @@ public:
     const auto one_const = writer_.add_constant(slot_value{uint64_t{1}});
     emit_op(opcode::op_load_const);
     emit_register(*one_reg);
-    writer_.emit_u16(one_const);
+    writer_.emit_u32(one_const);
     emit_store_slot(generator_self_reg_, 3, *one_reg);
 
     auto none_reg = alloc_register(span);
@@ -633,7 +633,7 @@ public:
     const auto none_tag_const = writer_.add_constant(slot_value{int64_t{1}});
     emit_op(opcode::op_load_const);
     emit_register(*none_tag_reg);
-    writer_.emit_u16(none_tag_const);
+    writer_.emit_u32(none_tag_const);
     emit_store_slot(*none_reg, 0, *none_tag_reg);
 
     emit_op(opcode::op_return_value);
@@ -1170,7 +1170,7 @@ private:
     const auto index = writer_.add_constant(slot_value{value});
     emit_op(opcode::op_load_const);
     emit_register(*reg);
-    writer_.emit_u16(index);
+    writer_.emit_u32(index);
     return *reg;
   }
 
@@ -1291,7 +1291,7 @@ private:
         const auto index = writer_.add_constant(slot_value{uint64_t{0}});
         emit_op(opcode::op_load_const);
         emit_register(dst);
-        writer_.emit_u16(index);
+        writer_.emit_u32(index);
         return {};
       }
       auto kind = numeric_kind_for(expr.type, expr.span);
@@ -1305,7 +1305,7 @@ private:
       const auto index = writer_.add_constant(*value);
       emit_op(opcode::op_load_const);
       emit_register(dst);
-      writer_.emit_u16(index);
+      writer_.emit_u32(index);
       return {};
     }
     case hir_node_kind::hir_local_ref: {
@@ -1633,7 +1633,7 @@ private:
       const auto index = writer_.add_constant(slot_value{negated});
       emit_op(opcode::op_load_const);
       emit_register(dst);
-      writer_.emit_u16(index);
+      writer_.emit_u32(index);
       return {};
     }
     auto kind = numeric_kind_for(un.operand->type, un.span);
@@ -2000,7 +2000,7 @@ private:
     const auto index = writer_.add_string_constant(std::move(*text));
     emit_op(opcode::op_load_str_const);
     emit_register(dst);
-    writer_.emit_u16(index);
+    writer_.emit_u32(index);
     return {};
   }
 
@@ -2504,7 +2504,7 @@ private:
       }
       emit_op(opcode::op_load_const);
       emit_register(*one_reg);
-      writer_.emit_u16(one_const);
+      writer_.emit_u32(one_const);
       auto inclusive_end_reg = alloc_register(node.span);
       if (!inclusive_end_reg.has_value()) {
         return std::unexpected(inclusive_end_reg.error());
@@ -2704,7 +2704,7 @@ private:
       const auto len_const = writer_.add_constant(slot_value{*slots});
       emit_op(opcode::op_load_const);
       emit_register(*len_reg_exp);
-      writer_.emit_u16(len_const);
+      writer_.emit_u32(len_const);
       return container_view{.len_reg = *len_reg_exp,
                             .data_reg = object_reg,
                             .elem_size =
@@ -2735,7 +2735,7 @@ private:
       }
       emit_op(opcode::op_load_const);
       emit_register(*len_reg_exp);
-      writer_.emit_u16(len_const);
+      writer_.emit_u32(len_const);
       return container_view{.len_reg = *len_reg_exp,
                             .data_reg = object_reg,
                             .elem_size = elem_size};
@@ -2815,7 +2815,7 @@ private:
     const auto index = writer_.add_constant(slot_value{uint64_t{0}});
     emit_op(opcode::op_load_const);
     emit_register(dst);
-    writer_.emit_u16(index);
+    writer_.emit_u32(index);
     return {};
   }
 
@@ -2850,7 +2850,7 @@ private:
     }
     emit_op(opcode::op_load_const);
     emit_register(*tag_reg);
-    writer_.emit_u16(tag_const);
+    writer_.emit_u32(tag_const);
     emit_store_slot(dst, 0, *tag_reg);
 
     for (size_t i = 0; i < init.args.size(); ++i) {
@@ -2971,7 +2971,7 @@ private:
     const auto index = writer_.add_string_constant(std::move(*text));
     emit_op(opcode::op_load_str_const);
     emit_register(literal_reg);
-    writer_.emit_u16(index);
+    writer_.emit_u32(index);
     // `rt_str_eq` now returns its `bool` result directly (a plain scalar,
     // not boxed in a 1-slot struct), so `op_call_intrinsic` writes straight
     // into the result register.
@@ -3000,7 +3000,7 @@ private:
       const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
       emit_op(opcode::op_load_const);
       emit_register(*reg);
-      writer_.emit_u16(idx);
+      writer_.emit_u32(idx);
       return *reg;
     }
     case hir_node_kind::hir_literal_pattern: {
@@ -3032,7 +3032,7 @@ private:
       const auto idx = writer_.add_constant(*encoded);
       emit_op(opcode::op_load_const);
       emit_register(*const_reg);
-      writer_.emit_u16(idx);
+      writer_.emit_u32(idx);
       auto result_reg = alloc_register(pattern.span);
       if (!result_reg.has_value()) {
         return std::unexpected(result_reg.error());
@@ -3142,7 +3142,7 @@ private:
         const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
         emit_op(opcode::op_load_const);
         emit_register(*reg);
-        writer_.emit_u16(idx);
+        writer_.emit_u32(idx);
         return *reg;
       }
       return *result_reg;
@@ -3189,7 +3189,7 @@ private:
         const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
         emit_op(opcode::op_load_const);
         emit_register(*reg);
-        writer_.emit_u16(idx);
+        writer_.emit_u32(idx);
         return *reg;
       }
       return *result_reg;
@@ -3259,7 +3259,7 @@ private:
       const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
       emit_op(opcode::op_load_const);
       emit_register(*reg);
-      writer_.emit_u16(idx);
+      writer_.emit_u32(idx);
       return *reg;
     }
     case hir_node_kind::hir_constructor_pattern: {
@@ -3298,7 +3298,7 @@ private:
           writer_.add_constant(slot_value{static_cast<int64_t>(*tag)});
       emit_op(opcode::op_load_const);
       emit_register(*const_reg);
-      writer_.emit_u16(idx);
+      writer_.emit_u32(idx);
       auto result_reg = alloc_register(pattern.span);
       if (!result_reg.has_value()) {
         return std::unexpected(result_reg.error());
@@ -3421,7 +3421,7 @@ private:
         const auto idx = writer_.add_constant(slot_value{uint64_t{1}});
         emit_op(opcode::op_load_const);
         emit_register(*reg);
-        writer_.emit_u16(idx);
+        writer_.emit_u32(idx);
         return *reg;
       }
       return *result_reg;

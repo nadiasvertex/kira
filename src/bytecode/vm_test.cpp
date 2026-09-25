@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <format>
 #include <iostream>
 #include <string>
 #include <unistd.h>
@@ -198,7 +199,7 @@ auto test_cast_sign_extends_negative_value() -> void {
   const auto neg_five = writer.add_constant(bc::slot_value{int64_t{-5}});
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(0);
-  writer.emit_u16(neg_five);
+  writer.emit_u32(neg_five);
   writer.emit_opcode(bc::opcode::op_cast);
   writer.emit_register(1);
   writer.emit_register(0);
@@ -218,6 +219,33 @@ auto test_cast_sign_extends_negative_value() -> void {
          "expected i32(-5) cast to i64 to sign-extend, staying -5");
 }
 
+auto test_load_const_reaches_past_65536_constants() -> void {
+  // A function with more than 65536 constants — one per element of a large
+  // explicit array literal or reified static. The index used to be 16 bits,
+  // so constant 70000 silently read constant 70000 - 65536 = 4464 instead.
+  auto writer = bc::chunk_writer{};
+  auto last = uint32_t{0};
+  for (int64_t i = 0; i <= 70000; ++i) {
+    last = writer.add_constant(bc::slot_value{i * 3});
+  }
+  writer.emit_opcode(bc::opcode::op_load_const);
+  writer.emit_register(0);
+  writer.emit_u32(last);
+  writer.emit_opcode(bc::opcode::op_return_value);
+  writer.emit_register(0);
+  auto function = std::move(writer).finish("many_constants", 0, 1);
+
+  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
+  module.functions.push_back(std::move(function));
+
+  auto result = bc::vm{module}.run(0, {});
+
+  expect(result.has_value(), "expected loading a constant to succeed");
+  expect(result->value.i == 210000,
+         std::format("expected constant 70000 to be 210000, got {}",
+                     result->value.i));
+}
+
 auto test_while_loop_sums_one_to_n() -> void {
   // fn(n: i32) -> i32 {
   //   var sum = 0; var i = 1
@@ -231,13 +259,13 @@ auto test_while_loop_sums_one_to_n() -> void {
 
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(1);
-  writer.emit_u16(c_zero);
+  writer.emit_u32(c_zero);
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(2);
-  writer.emit_u16(c_one);
+  writer.emit_u32(c_one);
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(4);
-  writer.emit_u16(c_one);
+  writer.emit_u32(c_one);
 
   const auto loop_start = writer.current_offset();
   writer.emit_opcode(bc::opcode::op_le);
@@ -294,7 +322,7 @@ auto test_recursive_call_computes_factorial() -> void {
 
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(2);
-  writer.emit_u16(c_one);
+  writer.emit_u32(c_one);
   writer.emit_opcode(bc::opcode::op_le);
   writer.emit_register(1);
   writer.emit_register(0);
@@ -390,7 +418,7 @@ auto test_tail_call_reuses_frame_past_max_call_depth() -> void {
 
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(2);
-  writer.emit_u16(c_zero);
+  writer.emit_u32(c_zero);
   writer.emit_opcode(bc::opcode::op_le);
   writer.emit_register(3);
   writer.emit_register(0);
@@ -409,7 +437,7 @@ auto test_tail_call_reuses_frame_past_max_call_depth() -> void {
   writer.patch_jump_to_here(else_placeholder);
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(6);
-  writer.emit_u16(c_one);
+  writer.emit_u32(c_one);
   writer.emit_opcode(bc::opcode::op_sub);
   writer.emit_register(4);
   writer.emit_register(0);
@@ -471,12 +499,12 @@ auto test_alloc_and_slot_roundtrip_a_two_field_heap_block() -> void {
 
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(1);
-  writer.emit_u16(c11);
+  writer.emit_u32(c11);
   emit_store_slot(writer, 0, 0, 1);
 
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(2);
-  writer.emit_u16(c31);
+  writer.emit_u32(c31);
   emit_store_slot(writer, 0, 1, 2);
 
   emit_load_slot(writer, 3, 0, 0);
@@ -518,7 +546,7 @@ auto test_packed_struct_fields_round_trip_without_clobbering_neighbors()
 
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(1);
-  writer.emit_u16(c_true);
+  writer.emit_u32(c_true);
   writer.emit_opcode(bc::opcode::op_store_slot);
   writer.emit_register(0);
   writer.emit_u16(0);
@@ -527,7 +555,7 @@ auto test_packed_struct_fields_round_trip_without_clobbering_neighbors()
 
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(2);
-  writer.emit_u16(c_mid);
+  writer.emit_u32(c_mid);
   writer.emit_opcode(bc::opcode::op_store_slot);
   writer.emit_register(0);
   writer.emit_u16(1);
@@ -536,7 +564,7 @@ auto test_packed_struct_fields_round_trip_without_clobbering_neighbors()
 
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(3);
-  writer.emit_u16(c_false);
+  writer.emit_u32(c_false);
   writer.emit_opcode(bc::opcode::op_store_slot);
   writer.emit_register(0);
   writer.emit_u16(5);
@@ -563,7 +591,7 @@ auto test_packed_struct_fields_round_trip_without_clobbering_neighbors()
   const auto million = writer.add_constant(bc::slot_value{int64_t{1000000}});
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(7);
-  writer.emit_u16(million);
+  writer.emit_u32(million);
   writer.emit_opcode(bc::opcode::op_mul);
   writer.emit_register(8);
   writer.emit_register(4);
@@ -610,20 +638,20 @@ auto test_narrow_element_array_indexed_load_store_round_trip() -> void {
   const auto c2 = w.add_constant(bc::slot_value{int64_t{222}});
   w.emit_opcode(bc::opcode::op_load_const);
   w.emit_register(1);
-  w.emit_u16(c1);
+  w.emit_u32(c1);
   const auto zero_idx = w.add_constant(bc::slot_value{uint64_t{0}});
   w.emit_opcode(bc::opcode::op_load_const);
   w.emit_register(2);
-  w.emit_u16(zero_idx);
+  w.emit_u32(zero_idx);
   emit_store_indexed(w, 0, 2, 1, 2); // block[0] = 111, elem_size 2.
 
   w.emit_opcode(bc::opcode::op_load_const);
   w.emit_register(3);
-  w.emit_u16(c2);
+  w.emit_u32(c2);
   const auto four_idx = w.add_constant(bc::slot_value{uint64_t{4}});
   w.emit_opcode(bc::opcode::op_load_const);
   w.emit_register(4);
-  w.emit_u16(four_idx);
+  w.emit_u32(four_idx);
   emit_store_indexed(w, 0, 4, 3, 2); // block[4] = 222, elem_size 2.
 
   emit_load_indexed(w, 5, 0, 2, 2);
@@ -658,7 +686,7 @@ auto test_load_str_const_produces_len_and_data_slots() -> void {
   const auto idx = writer.add_string_constant("hi!");
   writer.emit_opcode(bc::opcode::op_load_str_const);
   writer.emit_register(0);
-  writer.emit_u16(idx);
+  writer.emit_u32(idx);
   emit_load_slot(writer, 1, 0, 0);
   writer.emit_opcode(bc::opcode::op_return_value);
   writer.emit_register(1);
@@ -778,11 +806,11 @@ auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
       writer.add_constant(bc::slot_value{int64_t{1000000}});
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(14);
-  writer.emit_u16(million_idx);
+  writer.emit_u32(million_idx);
   const auto ten_k_idx = writer.add_constant(bc::slot_value{int64_t{10000}});
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(15);
-  writer.emit_u16(ten_k_idx);
+  writer.emit_u32(ten_k_idx);
   // r16 = w.tag * 1000000, r17 = r.tag * 10000
   writer.emit_opcode(bc::opcode::op_mul);
   writer.emit_register(16);
@@ -899,7 +927,7 @@ auto test_intrinsic_rt_open_returns_err_on_a_missing_file() -> void {
       writer.add_constant(bc::slot_value{int64_t{1000000}});
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_register(13);
-  writer.emit_u16(million_idx);
+  writer.emit_u32(million_idx);
   writer.emit_opcode(bc::opcode::op_mul);
   writer.emit_register(14);
   writer.emit_register(10);
@@ -947,7 +975,8 @@ auto main() -> int {
     test_wrapping_add_does_not_panic();
     test_saturating_add_clamps_to_max();
     test_cast_sign_extends_negative_value();
-    test_while_loop_sums_one_to_n();
+    test_load_const_reaches_past_65536_constants();
+  test_while_loop_sums_one_to_n();
     test_recursive_call_computes_factorial();
     test_unbounded_recursion_panics_with_stack_overflow();
     test_tail_call_reuses_frame_past_max_call_depth();

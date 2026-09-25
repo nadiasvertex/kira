@@ -74,7 +74,7 @@ auto test_writer_encodes_load_const_and_move() -> void {
   const auto const_index = writer.add_constant(bc::slot_value{int64_t{42}});
   writer.emit_opcode(bc::opcode::op_load_const);
   writer.emit_u8(2); // dst register
-  writer.emit_u16(const_index);
+  writer.emit_u32(const_index);
   writer.emit_opcode(bc::opcode::op_move);
   writer.emit_u8(3); // dst register
   writer.emit_u8(2); // src register
@@ -83,17 +83,17 @@ auto test_writer_encodes_load_const_and_move() -> void {
 
   expect(function.constants.size() == 1, "expected exactly one constant");
   expect(function.constants[0].i == 42, "expected the constant to be 42");
-  expect(function.code.size() == 4 + 3,
-         "expected op_load_const(4 bytes) + op_move(3 bytes)");
+  expect(function.code.size() == 6 + 3,
+         "expected op_load_const(6 bytes) + op_move(3 bytes)");
   expect(function.code[0] == static_cast<uint8_t>(bc::opcode::op_load_const),
          "expected the first opcode to be op_load_const");
   expect(function.code[1] == 2, "expected the dst register operand to be 2");
-  expect(bc::read_u16(function.code, 2) == const_index,
+  expect(bc::read_u32(function.code, 2) == const_index,
          "expected the const_index operand to round-trip");
-  expect(function.code[4] == static_cast<uint8_t>(bc::opcode::op_move),
+  expect(function.code[6] == static_cast<uint8_t>(bc::opcode::op_move),
          "expected the second opcode to be op_move");
-  expect(function.code[5] == 3, "expected op_move's dst register to be 3");
-  expect(function.code[6] == 2, "expected op_move's src register to be 2");
+  expect(function.code[7] == 3, "expected op_move's dst register to be 3");
+  expect(function.code[8] == 2, "expected op_move's src register to be 2");
   expect(function.param_count == 2, "expected param_count to survive finish");
   expect(function.register_count == 5,
          "expected register_count to survive finish");

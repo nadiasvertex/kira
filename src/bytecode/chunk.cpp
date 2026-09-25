@@ -81,17 +81,14 @@ auto chunk_writer::patch_jump_to_here(size_t placeholder_offset) -> void {
   code_[placeholder_offset + 3] = static_cast<uint8_t>((bits >> 24) & 0xFFU);
 }
 
-auto chunk_writer::add_constant(slot_value value) -> uint16_t {
-  // Not guarded against exceeding 65536 constants — see the doc comment on
-  // `chunk_writer` in chunk.h; not a real concern for the scalar/control-
-  // flow subset this increment covers.
+auto chunk_writer::add_constant(slot_value value) -> uint32_t {
   constants_.push_back(value);
-  return static_cast<uint16_t>(constants_.size() - 1);
+  return static_cast<uint32_t>(constants_.size() - 1);
 }
 
-auto chunk_writer::add_string_constant(std::string text) -> uint16_t {
+auto chunk_writer::add_string_constant(std::string text) -> uint32_t {
   string_constants_.push_back(std::move(text));
-  return static_cast<uint16_t>(string_constants_.size() - 1);
+  return static_cast<uint32_t>(string_constants_.size() - 1);
 }
 
 auto chunk_writer::finish(std::string name, uint16_t param_count,

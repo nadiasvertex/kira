@@ -130,7 +130,7 @@ namespace kira::bytecode {
 // ==========================================================================
 enum class opcode : uint8_t {
   // --- Constants and register-to-register moves --------------------------
-  op_load_const,   ///< u16 dst, u16 const_index — reg[dst] = constants[idx].
+  op_load_const,   ///< u16 dst, u32 const_index — reg[dst] = constants[idx].
   op_move,         ///< u16 dst, u16 src — reg[dst] = reg[src].
   op_load_global,  ///< u16 dst, u16 global_index — reg[dst] = globals[idx].
                    ///< The module-wide global table (`bytecode_module::
@@ -300,7 +300,7 @@ enum class opcode : uint8_t {
                      ///< counterpart to `op_load_slot`; same
                      ///< `field_size = 8` convention for uniform-slot
                      ///< constructs.
-  op_load_str_const, ///< u16 dst, u16 string_const_index — reg[dst] = a
+  op_load_str_const, ///< u16 dst, u32 string_const_index — reg[dst] = a
                      ///< fresh 2-slot `str` heap value `{ len; data_ptr }`
                      ///< whose `data_ptr` points directly at
                      ///< `bytecode_function::string_constants[idx]`'s own
@@ -523,7 +523,8 @@ enum class operand_kind : uint8_t {
   reg,   ///< A register index, `k_register_operand_bytes` wide.
   imm8,  ///< A 1-byte immediate (kind tag, size, count, id).
   imm16, ///< A 2-byte immediate (constant index, byte offset, function index).
-  imm32, ///< A 4-byte unsigned immediate (a frame's `uninit` byte offset).
+  imm32, ///< A 4-byte unsigned immediate (a frame's `uninit` byte offset,
+         ///< a constant-pool index).
   imm64, ///< An 8-byte unsigned immediate (a heap allocation's byte size).
   rel32, ///< A 4-byte signed relative jump offset.
 };
@@ -563,7 +564,7 @@ struct operand_signature {
 
   switch (op) {
   case opcode::op_load_const:
-    return sig({reg, imm16});
+    return sig({reg, imm32});
   case opcode::op_move:
     return sig({reg, reg});
   case opcode::op_load_global:
@@ -630,7 +631,7 @@ struct operand_signature {
   case opcode::op_store_slot:
     return sig({reg, imm16, reg, imm8});
   case opcode::op_load_str_const:
-    return sig({reg, imm16});
+    return sig({reg, imm32});
   case opcode::op_load_indexed:
   case opcode::op_store_indexed:
     return sig({reg, reg, reg, imm8});

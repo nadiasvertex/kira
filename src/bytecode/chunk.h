@@ -140,12 +140,12 @@ public:
   /// Appends `value` to this function's constant pool, returning its index.
   /// Never deduplicates — a compiler that wants pooling can do so itself
   /// before calling this; this class only owns encoding, not policy.
-  [[nodiscard]] auto add_constant(slot_value value) -> uint16_t;
+  [[nodiscard]] auto add_constant(slot_value value) -> uint32_t;
 
   /// Appends `text` to this function's string-constant table, returning its
   /// index for `op_load_str_const`. Never deduplicates, for the same reason
   /// `add_constant` doesn't.
-  [[nodiscard]] auto add_string_constant(std::string text) -> uint16_t;
+  [[nodiscard]] auto add_string_constant(std::string text) -> uint32_t;
 
   [[nodiscard]] auto current_offset() const noexcept -> size_t {
     return code_.size();
