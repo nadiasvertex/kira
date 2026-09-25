@@ -37,7 +37,7 @@ namespace kira::bytecode {
 struct bytecode_function {
   std::string name;
   uint16_t param_count = 0;
-  uint16_t register_count = 0;
+  uint32_t register_count = 0;
   std::vector<uint8_t> code;
   std::vector<slot_value> constants;
   /// String-literal bytes referenced by `op_load_str_const` (opcodes.h).
@@ -154,7 +154,7 @@ public:
   /// Finalizes this writer into a `bytecode_function`. Consumes the writer
   /// (rvalue-qualified) since there's nothing left to build after this.
   [[nodiscard]] auto finish(std::string name, uint16_t param_count,
-                            uint16_t register_count) && -> bytecode_function;
+                            uint32_t register_count) && -> bytecode_function;
 
 private:
   std::vector<uint8_t> code_;

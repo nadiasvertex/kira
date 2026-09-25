@@ -124,7 +124,8 @@ auto extend_across_loops(std::vector<scan_group> &groups,
 
 } // namespace
 
-auto allocate_registers(const allocation_input &input) -> allocation_result {
+auto allocate_registers(const allocation_input &input)
+    -> std::expected<allocation_result, register_file_exhausted> {
   // ----------------------------------------------------------------------
   //  Live intervals, per virtual, from first and last mention.
   // ----------------------------------------------------------------------
@@ -255,21 +256,15 @@ auto allocate_registers(const allocation_input &input) -> allocation_result {
     const auto reused = pinned ? std::optional<uint32_t>{group.first}
                                : find_free_run(busy, group.count);
 
-    // Falling back to the high-water mark is what makes this pass total.
-    //
-    // Exhaustion is impossible — `function_compiler` hands out at most
-    // `k_max_virtual_registers` (65535) virtuals and there are 65536
-    // physicals — but *fragmentation* is not: a group needs its registers
-    // contiguous (call opcodes read `argc` consecutive registers), and a
-    // long-lived value sitting in the middle of an otherwise free run can
-    // block one while plenty of registers remain free elsewhere.
-    //
-    // Appending above everything allocated so far always succeeds and always
-    // fits. Each virtual is assigned exactly once, so if no group ever
-    // reused a physical, `highest` would equal `virtual_count` — bounded by
-    // 65535, one below the physicals available. Reuse only ever lowers it,
-    // so this branch cannot push the frame out of range.
+    // No free run means the register file is full or fragmented: a group
+    // needs its registers contiguous (call opcodes read `argc` consecutive
+    // registers), and a long-lived value in the middle of an otherwise free
+    // run can block one. Appending above the high-water mark handles
+    // fragmentation; if that doesn't fit either, the frame is out of room.
     const auto physical = reused.value_or(highest);
+    if (physical + group.count > k_physical_register_count) {
+      return std::unexpected(register_file_exhausted{});
+    }
     assign(group, physical);
   }
 
@@ -289,7 +284,7 @@ auto allocate_registers(const allocation_input &input) -> allocation_result {
   }
 
   return allocation_result{.assignment = std::move(assignment),
-                           .register_count = static_cast<uint16_t>(highest)};
+                           .register_count = highest};
 }
 
 } // namespace kira::bytecode_compiler

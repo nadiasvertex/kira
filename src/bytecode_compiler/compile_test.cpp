@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <exception>
 #include <expected>
+#include <format>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -277,6 +278,29 @@ auto test_registers_are_reused_across_dead_values() -> void {
   expect(main_result.has_value(), "expected main() to succeed");
   expect(main_result->value.i == expected,
          "reusing a register must not change what the function computes");
+}
+
+/// A function naming more values than a frame has registers, with few live
+/// at once. A 70000-element literal gives every element its own virtual and
+/// its own constant, and stores past `op_store_slot`'s 16-bit offset. Each of
+/// those was once a 16-bit limit: 65535 virtuals, a constant index that
+/// wrapped at 65536, and a heap block capped at 64 KiB.
+auto test_huge_array_literal_compiles_and_runs() -> void {
+  constexpr auto k_elements = 70000;
+  auto source = std::string{"module sample\n\ndef main() -> int64:\n"
+                            "    let xs: array[int64, 70000] = ["};
+  for (auto index = 0; index < k_elements; ++index) {
+    source += std::to_string(index * 3);
+    source += index + 1 < k_elements ? ", " : "]\n";
+  }
+  source += "    return xs[69999] + xs[65537] + xs[1]\n";
+
+  auto module = compile_fixture(source);
+  auto main_result = run_main(module);
+  expect(main_result.has_value(), "expected main() to succeed");
+  expect(main_result->value.i == (69999 + 65537 + 1) * 3,
+         std::format("expected main() to return {}, got {}",
+                     (69999 + 65537 + 1) * 3, main_result->value.i));
 }
 
 /// A value carried across a loop back edge is *not* dead at its last mention,
@@ -1607,6 +1631,7 @@ auto main() -> int {
   try {
     test_add_compiles_and_runs();
     test_registers_are_reused_across_dead_values();
+  test_huge_array_literal_compiles_and_runs();
     test_loop_carried_value_keeps_its_register();
     test_intrinsic_call_compiles_to_op_call_intrinsic();
     test_intrinsic_result_constructs_and_matches_through_real_syntax();

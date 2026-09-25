@@ -7,6 +7,7 @@
 #include <charconv>
 #include <cstdint>
 #include <format>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,11 +42,12 @@ using hir::hir_node_kind;
 using semantic::type_id;
 using semantic::type_table;
 
-/// A runaway guard on virtual-register allocation — see `alloc_register`.
-/// Nothing about the bytecode format cares about this number; the format's
-/// real limit is the 256 *physical* registers a `u8` operand can address,
-/// which `allocate_registers` enforces separately after reuse.
-inline constexpr size_t k_max_virtual_registers = 65535;
+/// Virtual register ids are `uint32_t`. Nothing about the bytecode format
+/// cares how many a function uses — `allocate_registers` maps them onto the
+/// 65536 physicals and fails only if more than that are live at once — so
+/// this is only a guard against the id overflowing.
+inline constexpr size_t k_max_virtual_registers =
+    std::numeric_limits<uint32_t>::max();
 
 // ==========================================================================
 //  Literal decoding — numeric and text escape handling.
@@ -808,7 +810,18 @@ private:
         .groups = std::move(groups_),
         .address_taken = std::move(address_taken_),
     };
-    const auto allocation = allocate_registers(input);
+    const auto allocated = allocate_registers(input);
+    if (!allocated.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::encoding_limit_exceeded,
+          .span = span,
+          .message = std::format(
+              "`{}` keeps more than {} values alive at the same moment, more "
+              "than one bytecode frame can hold; split it into smaller "
+              "functions",
+              name, k_physical_register_count)});
+    }
+    const auto &allocation = *allocated;
     auto function = std::move(writer_).finish(std::move(name), param_count,
                                               allocation.register_count);
     // Little-endian, matching `chunk_writer::emit_u16` — `emit_register`

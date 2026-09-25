@@ -52,11 +52,12 @@ namespace kira::bytecode_compiler {
 //    the loop body, so its physical gets reused — and the next iteration
 //    reads the clobbered value. See `loop_range`.
 //
-//  There is deliberately **no spilling**, and unlike most linear-scan
-//  implementations this one needs none: register operands are `u16`
-//  (opcodes.h), so a frame can address 65536 registers while the compiler
-//  hands out at most 65535 virtuals. The active set cannot exceed the
-//  register file, so there is never anything to evict.
+//  There is deliberately **no spilling**: register operands are `u16`
+//  (opcodes.h), so a frame can address 65536 registers, and only values
+//  live at the same moment compete for them. The number of virtuals is
+//  unbounded — a 70000-element array literal names 70000 values but holds
+//  only a few at once. A function that really keeps more than 65536 values
+//  live at once is reported (`register_file_exhausted`) rather than spilled.
 //
 //  Spilling was the original plan, and widening the operand replaced it on
 //  purpose. Spilling is the smaller change, but it only ever executes above
@@ -151,30 +152,29 @@ struct allocation_input {
 struct allocation_result {
   /// `assignment[v]` is virtual `v`'s physical register.
   std::vector<uint16_t> assignment;
-  /// Frame size: one past the highest physical actually used.
-  uint16_t register_count = 0;
+  /// Frame size: one past the highest physical actually used. Up to 65536,
+  /// one more than a `u16` holds.
+  uint32_t register_count = 0;
 };
+
+/// More values are live at one moment than a frame's 65536 registers can
+/// hold.
+struct register_file_exhausted {};
 
 /// Assigns every virtual in `input` a physical register, reusing physicals
 /// across virtuals whose live intervals do not overlap.
 ///
-/// This cannot fail, and deliberately returns no `std::expected` to say so.
-/// It used to: a `u8` register operand gave a frame 256 addressable
-/// registers, and a function needing more was a hard compile error the user
-/// could do nothing about except split the function by hand. Widening the
-/// operand to `u16` (see `opcodes.h`'s `k_register_operand_bytes`) makes
-/// exhaustion unreachable by construction rather than merely unlikely —
-/// `function_compiler` caps virtuals at `k_max_virtual_registers` (65535),
-/// which is strictly below the physicals available here, so the worst case
-/// where no virtual shares with any other still fits.
+/// Fails only when more than 65536 registers are needed at once: values
+/// simultaneously live, plus whatever a call's contiguous argument block
+/// cannot find room for between them. How many virtuals the function names
+/// in total does not matter.
 ///
-/// That demotes this pass from a correctness requirement to an
-/// optimization: it now only shrinks frames. Every constraint it honors
+/// Every constraint it honors
 /// (call-argument contiguity, the pinned parameter prefix, address-taken
 /// values, loop-carried liveness) remains load-bearing, because those are
 /// about assigning the *right* register, not about running out of them.
 [[nodiscard]] auto allocate_registers(const allocation_input &input)
-    -> allocation_result;
+    -> std::expected<allocation_result, register_file_exhausted>;
 
 /// The number of physical registers a frame can address — `opcodes.h`
 /// encodes every register operand as a `u16`.

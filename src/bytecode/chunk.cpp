@@ -92,7 +92,7 @@ auto chunk_writer::add_string_constant(std::string text) -> uint32_t {
 }
 
 auto chunk_writer::finish(std::string name, uint16_t param_count,
-                          uint16_t register_count) && -> bytecode_function {
+                          uint32_t register_count) && -> bytecode_function {
   return bytecode_function{.name = std::move(name),
                            .param_count = param_count,
                            .register_count = register_count,

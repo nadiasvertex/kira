@@ -16,6 +16,7 @@
 // ==========================================================================
 
 #include <cstdint>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -55,10 +56,11 @@ auto mention(allocation_input &input, uint32_t reg, size_t instruction)
 
 [[nodiscard]] auto allocate_or_fail(const allocation_input &input)
     -> allocation_result {
-  // Allocation is total since register operands widened to `u16` — there is
-  // no failure left to unwrap. Kept as a named helper so the tests below read
-  // the same as they did when it could fail.
-  return allocate_registers(input);
+  auto result = allocate_registers(input);
+  if (!result.has_value()) {
+    kira::testing::fail("expected allocation to fit in the register file");
+  }
+  return *std::move(result);
 }
 
 /// Two virtuals whose ranges do not overlap share one physical — the whole
@@ -303,6 +305,49 @@ auto test_many_virtuals_fit_when_not_simultaneously_live() -> void {
          "300 virtuals with overlapping-by-one ranges need only two physicals");
 }
 
+
+/// The virtual count is unbounded: more virtuals than there are physical
+/// registers still fit when few are live at once. A 70000-element array
+/// literal is exactly this shape.
+auto test_more_virtuals_than_physicals_fit_when_short_lived() -> void {
+  constexpr auto k_count = uint32_t{70000};
+  auto input = with_instructions(k_count, k_count);
+  for (auto index = uint32_t{0}; index < k_count; ++index) {
+    mention(input, index, index);
+  }
+
+  const auto result = allocate_or_fail(input);
+  expect(result.register_count == 1,
+         "70000 virtuals that never overlap should share one physical");
+}
+
+/// `count` virtuals live across the same two instructions, as one call-
+/// argument group. One group rather than `count` independent values reaches
+/// the same limit without the allocator's per-value scans, which are
+/// quadratic at this size.
+[[nodiscard]] auto all_live_at_once(uint32_t count) -> allocation_input {
+  auto input = with_instructions(2, count);
+  for (auto index = uint32_t{0}; index < count; ++index) {
+    mention(input, index, 0);
+  }
+  mention(input, 0, 1);
+  input.groups.push_back(register_group{.first = virtual_reg{0}, .count = count});
+  return input;
+}
+
+/// The one real limit: values live at the same moment. A full register file
+/// (65536, one more than a `u16` count holds) fits; one more does not.
+auto test_register_file_exhaustion_is_reported() -> void {
+  const auto full = allocate_registers(all_live_at_once(65536));
+  expect(full.has_value() && full->register_count == 65536,
+         "65536 simultaneously live values should fill the frame exactly");
+
+  const auto over = allocate_registers(all_live_at_once(65537));
+  expect(!over.has_value(),
+         "65537 simultaneously live values must be reported, not wrapped "
+         "onto a register still in use");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -319,5 +364,7 @@ auto main() -> int {
   test_many_short_lived_virtuals_collapse();
   test_many_simultaneously_live_values_all_get_distinct_physicals();
   test_many_virtuals_fit_when_not_simultaneously_live();
+  test_more_virtuals_than_physicals_fit_when_short_lived();
+  test_register_file_exhaustion_is_reported();
   return 0;
 }
