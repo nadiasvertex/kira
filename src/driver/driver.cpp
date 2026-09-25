@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <map>
+#include <mutex>
 #include <string_view>
 #include <system_error>
 
@@ -173,6 +175,30 @@ struct target_os_info {
                      generate_platform_target_accessors(), rest);
 }
 
+/// `assemble_platform_module_source`, memoized per `platform_source_path`
+/// for the life of the process (test binaries compile many sessions).
+/// Returns `nullptr` when assembly fails; a failure is not cached.
+[[nodiscard]] auto cached_platform_module_source(
+    const std::filesystem::path &platform_source_path) -> const std::string * {
+  static auto mutex = std::mutex{};
+  static auto cache = std::map<std::string, std::string>{};
+  const auto lock = std::scoped_lock(mutex);
+  const auto key = normalize_path(platform_source_path);
+  if (const auto found = cache.find(key); found != cache.end()) {
+    return &found->second;
+  }
+  auto assembled = assemble_platform_module_source(platform_source_path);
+  if (!assembled) {
+    return nullptr;
+  }
+  return &cache.emplace(key, std::move(*assembled)).first->second;
+}
+
+/// The name the assembled `std.platform` source is compiled under — shown in
+/// diagnostics, and never a path that exists on disk.
+constexpr std::string_view k_generated_platform_source_name =
+    "<generated>/std/platform.kira";
+
 } // namespace
 
 /// Locates `filename` under the `src/std` Bazel package, trying every
@@ -278,27 +304,18 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   // `std.platform` is assembled rather than injected verbatim: its checked-in
   // `platform.kira` body is spliced together with the driver-generated
   // `TARGET_*`/`KIRA_*` constants block (`assemble_platform_module_source`'s
-  // doc comment explains why the two can't be separate modules) and the
-  // result written to a fixed path under the system temp directory. The
-  // content is a pure function of this compiler binary's own build host, so
-  // a stale or concurrently-written copy from another `kira` invocation is
-  // always byte-identical — nothing to race on.
+  // doc comment explains why the two can't be separate modules). The result
+  // lives only in memory, under a name no real file can have; it is a pure
+  // function of this binary's build host and the checked-in file, so it is
+  // assembled once per process and reused by every later compile.
   if (const auto platform_source =
           find_stdlib_source_file(cfg.program_name, "platform.kira")) {
-    auto ec = std::error_code{};
-    const auto assembled_path =
-        std::filesystem::temp_directory_path(ec) / "kira-platform.kira";
-    if (!ec && !already_present(assembled_path)) {
-      if (const auto assembled =
-              assemble_platform_module_source(*platform_source)) {
-        auto out = std::ofstream(assembled_path, std::ios::trunc);
-        if (out) {
-          out << *assembled;
-          out.close();
-          if (!out.fail()) {
-            cfg.sources.push_back(assembled_path.string());
-          }
-        }
+    const auto name = std::string(k_generated_platform_source_name);
+    if (!already_present(name)) {
+      if (const auto *assembled =
+              cached_platform_module_source(*platform_source)) {
+        cfg.generated_sources.insert_or_assign(name, *assembled);
+        cfg.sources.push_back(name);
       }
     }
   }

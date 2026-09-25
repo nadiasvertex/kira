@@ -1,5 +1,7 @@
 #include "parse_stage.h"
 
+#include <expected>
+#include <string>
 #include <utility>
 
 #include "src/parser/lexer.h"
@@ -22,7 +24,11 @@ auto parse_sources(const cli_config &cfg, source_manager &sources,
 
   for (const auto &source_arg : cfg.sources) {
     const auto source_path = std::filesystem::path(source_arg);
-    auto source_text = read_source_file(source_path);
+    const auto generated = cfg.generated_sources.find(source_arg);
+    auto source_text =
+        generated != cfg.generated_sources.end()
+            ? std::expected<std::string, std::string>{generated->second}
+            : read_source_file(source_path);
     if (!source_text) {
       append_error(diagnostics, source_text.error());
       continue;

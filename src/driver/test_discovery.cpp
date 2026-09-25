@@ -1,9 +1,7 @@
 #include "test_discovery.h"
 
 #include <algorithm>
-#include <filesystem>
 #include <format>
-#include <fstream>
 #include <map>
 #include <memory>
 #include <optional>
@@ -354,34 +352,19 @@ auto discover_and_inject_test_runner(cli_config &cfg)
   }
   const auto source = render_runner_source(suites, declared_modules);
 
-  auto ec = std::error_code{};
-  const auto out_path =
-      std::filesystem::temp_directory_path(ec) / "kira-test-runner.kira";
-  if (ec) {
-    return std::unexpected(
-        "could not resolve a temp directory for the synthesized test runner");
-  }
-  auto out = std::ofstream(out_path, std::ios::trunc);
-  if (!out) {
-    return std::unexpected(
-        std::format("could not write the synthesized test runner to `{}`",
-                    out_path.string()));
-  }
-  out << source;
-  out.close();
-  if (out.fail()) {
-    return std::unexpected(
-        std::format("failed writing the synthesized test runner to `{}`",
-                    out_path.string()));
-  }
+  // Kept in memory rather than written to a fixed temp file: the runner
+  // differs per project, so concurrent `--test` runs sharing one file could
+  // compile each other's runner.
+  const auto runner_name = std::string("<generated>/test-runner.kira");
+  cfg.generated_sources.insert_or_assign(runner_name, source);
 
   if (cfg.stdlib_boundary.has_value()) {
     cfg.sources.insert(cfg.sources.begin() +
                            static_cast<std::ptrdiff_t>(*cfg.stdlib_boundary),
-                       out_path.string());
+                       runner_name);
     *cfg.stdlib_boundary += 1;
   } else {
-    cfg.sources.push_back(out_path.string());
+    cfg.sources.push_back(runner_name);
   }
   return {};
 }

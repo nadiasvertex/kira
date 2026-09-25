@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <map>
 #include <optional>
 #include <string>
 
@@ -16,6 +17,14 @@ struct cli_config {
   std::string program_name; ///< Executable name shown in usage and diagnostics.
   std::vector<std::string>
       sources; ///< Source file paths to compile in this session.
+  std::map<std::string, std::string>
+      generated_sources; ///< Compiler-synthesized sources, keyed by the
+                         ///< name they appear under in `sources` (and in
+                         ///< diagnostics). `parse_sources` takes their text
+                         ///< from here instead of reading the disk, so
+                         ///< nothing synthesized ever touches the file
+                         ///< system — concurrent compiles can't observe
+                         ///< each other's half-written or differing copies.
   std::optional<unsigned>
       stdlib_boundary; ///< Number of user-provided
                        ///< sources before `inject_stdlib_prelude` appended
