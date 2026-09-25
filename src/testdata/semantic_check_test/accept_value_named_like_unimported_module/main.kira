@@ -1,0 +1,9 @@
+module main
+
+# A module named `other` exists in the program, but nothing here declares or
+# imports it, so it is not visible and `other` is free to name a value.
+def other() -> int32:
+    return 2
+
+def main() -> int32:
+    return other()

@@ -1,0 +1,7 @@
+module app
+
+# `pkg` is another root module, and this file never imports it, so `pkg`
+# is not visible here (spec "Visible Modules") — even though the path would
+# resolve if it were.
+pub def run() -> int32:
+    return pkg.tools.double(21)

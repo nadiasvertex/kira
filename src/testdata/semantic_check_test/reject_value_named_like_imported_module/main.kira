@@ -1,0 +1,8 @@
+module main
+
+# Importing `other` makes it a visible module name in this module, so a
+# module-scope `def other` clashes with it.
+use other
+
+def other() -> int32:
+    return 2

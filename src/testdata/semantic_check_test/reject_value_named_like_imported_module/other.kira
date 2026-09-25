@@ -1,0 +1,4 @@
+module other
+
+pub def f() -> int32:
+    return 1

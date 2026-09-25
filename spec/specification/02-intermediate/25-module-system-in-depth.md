@@ -6,7 +6,7 @@ Modules spanning files, and project structure (`project.kira`, search paths, dep
 
 ## Modules Span Files
 
-A module is not a single file, and modules do not nest. Any number of files may declare the same module; together they form it, and `module`-visible names are shared across all of them. Two modules whose paths share a prefix — `my_app.geometry` and `my_app.geometry.shapes` — are unrelated: the shared prefix is a shared folder, not a parent–child relationship. Neither can see the other's non-`pub` names.
+A module is not a single file, and modules do not nest. Any number of files may declare the same module; together they form it, and `module`-visible names are shared across all of them. Two modules whose paths share a prefix — `my_app.geometry` and `my_app.geometry.shapes` — are unrelated: the shared prefix is a shared folder, not a parent–child relationship. Neither can see the other's non-`pub` names, and neither is visible from the other unless it is declared as a child (`module shapes` inside `my_app.geometry`) or imported — see [Visible Modules](../01-core/12-modules-and-imports.md#visible-modules).
 
 To split a large module across files, give each file the same `module` line:
 

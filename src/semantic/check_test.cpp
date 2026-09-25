@@ -313,6 +313,67 @@ auto test_accepts_wildcard_import() -> void {
       "functions, types, traits, statics, and variants into scope");
 }
 
+/// Spec "Visible Modules": a path may start at another root module only
+/// through an import. The same path is accepted once imported.
+auto test_rejects_unimported_root_module_path() -> void {
+  const auto analyzed =
+      analyze_test_data_directory("reject_unimported_root_module_path");
+  expect_diagnostic(analyzed, "Module `pkg` exists, but `app` can't see it",
+                    "expected a path through an unimported root module to be "
+                    "rejected with a pointer at the missing `use`");
+  expect_clean(analyze_test_data_directory("accept_imported_root_module_path"),
+               "expected the same path to resolve through an import");
+}
+
+/// Spec "Dotted Names", rule 2: a module-scope value may not share its name
+/// with a module the module declares or imports — reported once, where the
+/// clash was introduced — but may share it with one merely present.
+auto test_value_module_name_conflicts() -> void {
+  const auto child =
+      analyze_test_data_directory("reject_value_named_like_child_module");
+  expect_diagnostic(child,
+                    "`c` names both a static binding and the module `main.c` "
+                    "visible in `main`",
+                    "expected a static named like a declared child module to "
+                    "be rejected");
+  expect(child.error_count == 1,
+         "expected the child-module clash to be reported exactly once");
+
+  const auto imported =
+      analyze_test_data_directory("reject_value_named_like_imported_module");
+  expect_diagnostic(imported,
+                    "`other` names both a function and the module `other` "
+                    "visible in `main`",
+                    "expected a function named like an imported module to be "
+                    "rejected");
+  expect_diagnostic(imported, "imports module `other` as `other`",
+                    "expected the clash to be reported at the `use`");
+
+  expect_clean(
+      analyze_test_data_directory("accept_value_named_like_unimported_module"),
+      "expected a value named like a module nobody here declares or imports "
+      "to be accepted");
+}
+
+/// `use a.b as c` names the module `a.b` even when no file declares `a` —
+/// the import itself validates. (That `c.seven()` then reaches the right
+/// function is asserted by value in `cli_test`'s
+/// `test_aliased_import_of_parentless_module_runs`; this check alone can't
+/// see it, since an unresolved qualified call types as unknown.)
+auto test_accepts_aliased_module_without_parent() -> void {
+  expect_clean(
+      analyze_test_data_directory("accept_aliased_module_without_parent"),
+      "expected a parentless module to be importable under an alias");
+}
+
+/// Spec "Dotted Names", rule 1: a local shadows a visible module.
+auto test_accepts_local_shadowing_visible_module() -> void {
+  expect_clean(
+      analyze_test_data_directory("accept_local_shadows_visible_module"),
+      "expected `inner.value` on a local `inner` to be field access, not a "
+      "path into the visible child module `main.inner`");
+}
+
 auto test_accepts_fully_qualified_call() -> void {
   const auto analyzed =
       analyze_test_data_directory("accept_fully_qualified_call");
@@ -3460,6 +3521,10 @@ auto main() -> int {
     test_accepts_member_import_call();
     test_accepts_wildcard_import();
     test_accepts_fully_qualified_call();
+    test_rejects_unimported_root_module_path();
+    test_value_module_name_conflicts();
+    test_accepts_aliased_module_without_parent();
+    test_accepts_local_shadowing_visible_module();
     test_accepts_type_qualified_associated_call();
     test_accepts_indexing_local_bindings();
     test_accepts_str_byte_index();

@@ -4,9 +4,11 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -200,29 +202,73 @@ collect_suites(const std::vector<std::unique_ptr<ast::node>> &items,
 ///
 /// A hook a suite doesn't declare is simply left out of the call: `suite`
 /// defaults every hook to `@none`, so only the hooks that exist are named.
+///
+/// The runner is ordinary Kira and gets no special access, so it must be
+/// able to *see* every suite: a path may only start at a module the file
+/// imports (spec "Visible Modules"). Each suite is reached through an
+/// import of its *anchor* — the topmost prefix of its path that some file
+/// declares. Nothing above the anchor declares it, so no `module`-visibility
+/// declaration can restrict the import; and everything below it, the inline
+/// `tests` submodule included, is then an ordinary path through that alias.
 [[nodiscard]] auto
-render_runner_source(const std::vector<discovered_suite> &suites)
+render_runner_source(const std::vector<discovered_suite> &suites,
+                     const std::set<std::string> &declared_modules)
     -> std::string {
-  auto hook_arg = [](std::string_view param,
-                     const std::optional<std::string> &hook) -> std::string {
+  auto anchor_aliases = std::map<std::string, std::string>{};
+  const auto anchor_of = [&](const std::string &path) -> std::string {
+    for (auto dot = path.find('.'); dot != std::string::npos;
+         dot = path.find('.', dot + 1)) {
+      if (declared_modules.contains(path.substr(0, dot))) {
+        return path.substr(0, dot);
+      }
+    }
+    return path;
+  };
+  for (const auto &suite : suites) {
+    const auto anchor = anchor_of(suite.tests_module_path);
+    // A root module can't be renamed (`use a as b` is not a `use` form),
+    // and needs no alias: distinct roots already have distinct names. A
+    // deeper anchor is renamed, since two can share a leaf (`x.geometry`,
+    // `y.geometry`).
+    if (!anchor_aliases.contains(anchor)) {
+      anchor_aliases.emplace(
+          anchor, anchor.contains('.')
+                      ? std::format("kira_suite_root_{}", anchor_aliases.size())
+                      : anchor);
+    }
+  }
+  // `path` always starts with its anchor, followed by `.`.
+  const auto through_alias = [&](const std::string &path) -> std::string {
+    const auto anchor = anchor_of(path);
+    return anchor_aliases.at(anchor) + path.substr(anchor.size());
+  };
+
+  auto hook_arg =
+      [&through_alias](std::string_view param,
+                       const std::optional<std::string> &hook) -> std::string {
     if (!hook.has_value()) {
       return {};
     }
-    return std::format(", {}: @some({})", param, *hook);
+    return std::format(", {}: @some({})", param, through_alias(*hook));
   };
 
   auto source =
       std::string{"module kira_test_runner\n\n"
-                  "use std.test.{case, skipped, suite, run_suites}\n\n"
-                  "def main() -> int32:\n"
-                  "    return run_suites([\n"};
+                  "use std.test.{case, skipped, suite, run_suites}\n"};
+  for (const auto &[anchor, alias] : anchor_aliases) {
+    source += alias == anchor ? std::format("use {}\n", anchor)
+                              : std::format("use {} as {}\n", anchor, alias);
+  }
+  source += "\ndef main() -> int32:\n"
+            "    return run_suites([\n";
   for (const auto &suite : suites) {
     source += std::format("        suite(\"{}\", [\n", suite.suite_name);
     for (const auto &c : suite.cases) {
       const auto *ctor = c.skip ? "skipped" : "case";
-      source += std::format("            {}(\"{}.{}\", {}.{}),\n", ctor,
-                            suite.suite_name, c.function_name,
-                            suite.tests_module_path, c.function_name);
+      source +=
+          std::format("            {}(\"{}.{}\", {}.{}),\n", ctor,
+                      suite.suite_name, c.function_name,
+                      through_alias(suite.tests_module_path), c.function_name);
     }
     source += std::format("        ]{}{}{}{}),\n",
                           hook_arg("before_all", suite.before_all),
@@ -299,7 +345,14 @@ auto discover_and_inject_test_runner(cli_config &cfg)
         describe_sources(scan_cfg.sources)));
   }
 
-  const auto source = render_runner_source(suites);
+  auto declared_modules = std::set<std::string>{};
+  for (const auto &input : parsed) {
+    if (input.ast_file != nullptr && input.ast_file->module_decl != nullptr) {
+      declared_modules.insert(
+          join_module_path(input.ast_file->module_decl->path));
+    }
+  }
+  const auto source = render_runner_source(suites, declared_modules);
 
   auto ec = std::error_code{};
   const auto out_path =

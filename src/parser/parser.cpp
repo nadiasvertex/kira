@@ -1,5 +1,6 @@
 #include "parser.h"
 
+#include <algorithm>
 #include <cassert>
 #include <format>
 #include <optional>
@@ -123,6 +124,11 @@ auto parser::expect(token_kind expected) -> token {
     diag.with_fix("add `:`", found.span, ": ");
   } else if (expected == token_kind::eq) {
     diag.with_help("An `=` is needed here to assign a value.");
+  } else if (expected == token_kind::ident && found.is_keyword()) {
+    diag.with_help(std::format(
+        "`{0}` is a Kira keyword, so it can't be used as a name. Choose a "
+        "different name, such as `{0}_`.",
+        found.text));
   }
 
   emit(diag);
@@ -769,6 +775,12 @@ auto parser::parse_module_decl() -> ast::ptr<ast::module_decl> {
 
   expect(token_kind::kw_module);
   decl->path = parse_module_path();
+  // A segment `parse_module_path` could not read (a keyword, `module 1`)
+  // comes back empty after its diagnostic. The declaration must say so:
+  // every later pass keys the file on this path, and one with an empty
+  // segment names no module at all.
+  decl->has_error = std::ranges::any_of(
+      decl->path, [](const std::string &segment) { return segment.empty(); });
   expect_newline();
 
   decl->span = start.merge(previous_span());

@@ -4,6 +4,7 @@
 
 #include "src/parser/diagnostic.h"
 #include "src/semantic/analysis.h"
+#include "src/semantic/module_index.h"
 #include "src/semantic/types.h"
 
 namespace kira::semantic {
@@ -26,6 +27,16 @@ namespace kira::semantic {
 [[nodiscard]] auto check_program(const std::vector<parsed_module> &inputs,
                                  diagnostic_bag &diag,
                                  std::vector<bool> &file_has_errors)
+    -> checked_types;
+
+/// As above, reusing a module graph the caller already built (the
+/// `validate_semantics` pipeline builds it for its own passes). The graph is
+/// what module-rooted dotted paths (`pkg.mod.value`) are validated against.
+[[nodiscard]] auto
+check_program(const std::vector<parsed_module> &inputs,
+              const module_session_index &session_index,
+              const semantic_resolution_index &semantic_index,
+              diagnostic_bag &diag, std::vector<bool> &file_has_errors)
     -> checked_types;
 
 } // namespace kira::semantic

@@ -67,6 +67,23 @@ auto parse_source(std::string_view source) -> parsed_source {
   return parsed;
 }
 
+/// A keyword in the `module` line (`module deriving`) left an empty path
+/// segment behind with the declaration unmarked, and every later pass keyed
+/// the file on a module named "" — the compiler crashed with no message
+/// instead of printing this diagnostic.
+auto test_keyword_module_name_is_a_diagnosed_error() -> void {
+  const auto parsed = parse_source("module deriving\n");
+  expect(parsed.error_count == 1,
+         "expected exactly one error for a keyword module name");
+  expect(parsed.diagnostics.find("`deriving` is a Kira keyword") !=
+             std::string::npos,
+         "expected the diagnostic to say the name is a keyword: " +
+             parsed.diagnostics);
+  expect(parsed.file != nullptr && parsed.file->module_decl != nullptr &&
+             parsed.file->module_decl->has_error,
+         "expected the module declaration to be marked as erroneous");
+}
+
 auto test_lexer_emits_indent_and_dedent() -> void {
   kira::diagnostic_bag diag;
   std::string source = "module sample\n"
@@ -2410,7 +2427,9 @@ struct named_test {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 48> tests = {{
+  const std::array<named_test, 49> tests = {{
+      {.name = "keyword_module_name",
+       .fn = test_keyword_module_name_is_a_diagnosed_error},
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "multiline_sum_type",

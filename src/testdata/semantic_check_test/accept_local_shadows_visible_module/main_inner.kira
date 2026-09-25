@@ -1,0 +1,4 @@
+module main.inner
+
+pub def value() -> int32:
+    return 1

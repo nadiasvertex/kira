@@ -1,0 +1,7 @@
+module main
+
+# `main` declares the child `main.c`, so `c` is a visible module name here
+# and a module-scope value may not share it: `c.f` would mean two things.
+module c
+
+static c: int32 = 3

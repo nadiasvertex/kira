@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -11,12 +12,14 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "src/bytecode/panic.h"
 #include "src/module_metadata.pb.h"
+#include "src/parser/token.h"
 
 namespace {
 
@@ -1073,6 +1076,217 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
          "expected unresolved qualified type path diagnostic");
 }
 
+/// Todo item 10: a user root module whose name matches a local binding in
+/// a library body (`for s in suites: s.cases` in `std.test`, `static for v
+/// in T.variants(): v.name` in `std.derive`) once turned every such field
+/// access into an unresolved "module-qualified reference `s.cases`". A local
+/// shadows a module — spec "Dotted Names" — so both must compile, and the
+/// program's own local `s` inside module `s` must be field access too,
+/// through a three-segment chain that lowering used to refuse outright.
+/// Checked by computed value on both backends, not by the absence of
+/// diagnostics.
+auto test_local_binding_shadows_same_named_module() -> void {
+  auto temp = make_temp_dir();
+  auto s_source = temp.path / "s.kira";
+  auto v_source = temp.path / "v.kira";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "shadow_bin";
+
+  write_file(
+      s_source,
+      "module s\n"
+      "type inner = { value: int32 }\n"
+      "type outer = { a: inner, b: inner }\n"
+      "type color = | @red | @green deriving show\n"
+      "def main() -> int32:\n"
+      "  let s = outer { a: inner { value: 3 }, b: inner { value: 39 } }\n"
+      "  let c: color = @green\n"
+      "  println(c.show())\n"
+      "  return s.a.value + s.b.value\n");
+  write_file(v_source, "module v\n"
+                       "pub def unused() -> int32:\n"
+                       "  return 1\n");
+
+  kira::driver::cli_config run_cfg{
+      .program_name = "kira",
+      .sources = {s_source.string(), v_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected user modules `s` and `v` not to break the standard "
+         "library's `s`/`v` locals: " +
+             run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == 42,
+         std::format("expected `s.a.value + s.b.value` == 42 on the VM, got {}",
+                     run_report->run->exit_code));
+
+  kira::driver::cli_config build_cfg{
+      .program_name = "kira",
+      .sources = {s_source.string(), v_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  kira::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value() && build_report->build.has_value(),
+         "expected a build outcome to be recorded");
+  expect(build_report->build->succeeded,
+         std::format("expected `--build` of the shadowing program to link "
+                     "successfully: {}{}",
+                     build_report->build->message, build_report->diagnostics));
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(close_status) == 42,
+         "expected `s.a.value + s.b.value` == 42 from the linked executable");
+#endif
+  expect(
+      output == "green\n",
+      std::format("unexpected stdout from the derived `show()`: `{}`", output));
+}
+
+/// `use a.b as c` imports the *module* `a.b` under the name `c`, even when
+/// no file declares `a` — the form `--test`'s synthesized runner reaches
+/// every suite through. It used to be read as a member selection on `a`
+/// (rejected at the import), and the checker then bound `c` as a member
+/// import, so `c.seven()` typed as unknown and failed only in lowering.
+/// Asserted by the value computed through the alias.
+auto test_aliased_import_of_parentless_module_runs() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.kira";
+  auto inner_source = temp.path / "outer_inner.kira";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, "module main\n"
+                          "use outer.inner as renamed\n"
+                          "def main() -> int32:\n"
+                          "  return renamed.seven() * 6\n");
+  write_file(inner_source, "module outer.inner\n"
+                           "pub def seven() -> int32:\n"
+                           "  return 7\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {main_source.string(), inner_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `use outer.inner as renamed` to compile cleanly: " +
+             report->diagnostics);
+  expect(report->run.has_value() && report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(report->run->exit_code == 42,
+         std::format("expected `renamed.seven() * 6` == 42, got {}",
+                     report->run->exit_code));
+}
+
+/// The general form of todo item 10: no standard-library body may depend on
+/// which root modules a user program declares. Every identifier the stdlib
+/// ever writes as the root of a dotted name (`s` in `s.cases`, `v` in
+/// `v.name`, `T` in `T.kind()`, ...) becomes a user root module here, all at
+/// once, and the whole program must still compile with no diagnostics. A
+/// text scan over-approximates the roots — comments and strings contribute
+/// too — which only adds harmless extra modules.
+auto test_stdlib_immune_to_user_root_module_names() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.kira";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, "module main\n"
+                          "def main() -> int32:\n"
+                          "  return 0\n");
+
+  kira::driver::cli_config cfg{
+      .program_name = "kira",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+  };
+  kira::driver::inject_stdlib_prelude(cfg);
+
+  const auto is_ident_char = [](char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+  };
+  const auto is_ident_start = [](char c) {
+    return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '_';
+  };
+  auto roots = std::set<std::string>{};
+  auto stdlib_files = size_t{0};
+  for (const auto &source : cfg.sources) {
+    if (source == main_source.string()) {
+      continue;
+    }
+    ++stdlib_files;
+    std::ifstream in(source);
+    const auto text = std::string(std::istreambuf_iterator<char>(in), {});
+    for (size_t i = 0; i < text.size();) {
+      if (!is_ident_start(text[i]) ||
+          (i > 0 && (is_ident_char(text[i - 1]) || text[i - 1] == '.'))) {
+        ++i;
+        continue;
+      }
+      auto end = i;
+      while (end < text.size() && is_ident_char(text[end])) {
+        ++end;
+      }
+      if (end + 1 < text.size() && text[end] == '.' &&
+          is_ident_start(text[end + 1])) {
+        roots.insert(text.substr(i, end - i));
+      }
+      i = end;
+    }
+  }
+  expect(stdlib_files > 0, "expected the stdlib sources to be injected");
+  // Not module names a user could declare as a root: the stdlib's own root,
+  // this program's root, path keywords, and keywords generally (a comment
+  // mentioning `deriving.kira` is not a module a user could declare).
+  for (const auto *excluded : {"std", "main", "self", "super"}) {
+    roots.erase(excluded);
+  }
+  std::erase_if(roots, [](const std::string &root) {
+    return kira::classify_ident(root) != kira::token_kind::ident;
+  });
+  expect(roots.contains("s") && roots.contains("v"),
+         "expected the scan to find the `s`/`v` roots todo item 10 was "
+         "reported against");
+
+  for (const auto &root : roots) {
+    const auto path = temp.path / std::format("user_root_{}.kira", root);
+    write_file(path, std::format("module {}\n", root));
+    cfg.sources.push_back(path.string());
+  }
+
+  auto report = kira::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         std::format("expected {} user root modules named after stdlib "
+                     "dotted-name roots to leave the stdlib unaffected:\n{}",
+                     roots.size(), report->diagnostics));
+}
+
 /// Verify that unresolved module-qualified references fail semantic resolution.
 auto test_compile_sources_reports_unresolved_module_qualified_reference()
     -> void {
@@ -1657,8 +1871,11 @@ auto test_cross_module_function_used_as_a_value() -> void {
 #endif
 }
 
-/// The *module-qualified* spelling of the same thing: `outer.inner.target`
-/// named as a plain value, with no `use` bringing the name into scope. The
+/// The *module-qualified* spelling of the same thing: `inner.target` named
+/// as a plain value through a whole-module import (`use outer.inner`) rather
+/// than a member import that brings the bare name into scope. (Spelled out
+/// in full from another root, `outer.inner.target` is rejected: `outer` is
+/// not visible from `main` — spec "Visible Modules".) The
 /// bare-name form above resolves through `resolve_ident`; a dotted path
 /// parses as `module_path_expr` and goes through `infer_module_path` +
 /// `hir::lower_module_path` instead, which recorded nothing and died with
@@ -1668,7 +1885,7 @@ auto test_cross_module_function_used_as_a_value() -> void {
 ///
 /// This is what let `--test`'s synthesized runner drop its zero-arg lambda
 /// wrappers (`driver/test_discovery.cpp`) — it names each discovered function
-/// by its fully-qualified path, with no import to lean on.
+/// by a path through an import of the suite's module.
 ///
 /// Asserts the computed value on both tiers (`twice(target()) == 14`), not
 /// merely that it compiled, so a path that resolved to the wrong declaration
@@ -1686,11 +1903,12 @@ auto test_module_qualified_function_used_as_a_value() -> void {
                          "def twice(x: int32) -> int32:\n"
                          "  x * 2\n");
   write_file(main_path, "module main\n"
+                        "use outer.inner\n"
                         "def apply(f: fn(int32) -> int32, v: int32) -> int32:\n"
                         "  f(v)\n"
                         "def main() -> int32:\n"
-                        "  let g: fn() -> int32 = outer.inner.target\n"
-                        "  apply(outer.inner.twice, g())\n");
+                        "  let g: fn() -> int32 = inner.target\n"
+                        "  apply(inner.twice, g())\n");
 
   kira::driver::cli_config run_cfg{
       .program_name = "kira",
@@ -4268,6 +4486,9 @@ auto main() -> int {
     test_compile_sources_skips_lowering_when_parse_only();
     test_compile_sources_enforces_frame_stack_budget();
     test_compile_sources_reports_parser_errors();
+    test_local_binding_shadows_same_named_module();
+    test_stdlib_immune_to_user_root_module_names();
+    test_aliased_import_of_parentless_module_runs();
     test_compile_sources_reports_nested_parser_errors();
     test_compile_sources_handles_multiple_files();
     test_compile_sources_merges_multi_file_module_declarations();

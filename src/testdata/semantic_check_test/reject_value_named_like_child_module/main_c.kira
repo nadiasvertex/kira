@@ -1,0 +1,4 @@
+module main.c
+
+pub def f() -> int32:
+    return 1

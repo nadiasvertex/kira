@@ -1156,6 +1156,15 @@ struct checked_types {
   /// with no functions of its own, like `std.unicode_tables`, has no other
   /// way to end up in the reachable set.
   std::unordered_map<std::string, std::string> static_global_owners;
+  /// Every `module_path_expr` the checker classified as *field access on a
+  /// value* (`s.cases`, `self.value.inner`) rather than a module reference —
+  /// see `checker::dotted_root_is_value` — mapped to the type after each
+  /// segment: `[0]` is the root binding's type, `back()` the whole path's.
+  /// `hir::lower_module_path` builds its projection chain from this and
+  /// never re-decides what the path means; a `module_path_expr` absent from
+  /// this map is a module reference.
+  std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
+      value_path_types;
   /// Every `v[i]` the reasoning solver proved in bounds
   /// (`checker::check_index_in_bounds`) — an index whose safety is a
   /// *compile-time* fact, so lowering may omit the runtime bounds check

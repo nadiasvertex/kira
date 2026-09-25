@@ -1,4 +1,7 @@
-module app
+module pkg.app
+
+# Fully qualified from inside the same root: `pkg` is this module's own
+# root, so `pkg.tools` is visible without a `use`.
 
 pub def run() -> int32:
     return pkg.tools.double(21)

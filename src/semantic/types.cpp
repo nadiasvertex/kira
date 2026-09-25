@@ -1049,6 +1049,25 @@ auto build_program_index(const std::vector<parsed_module> &inputs)
     index_items(input.ast_file->items, module_name, input.file_id, index);
   }
 
+  // `use a.b as c` is recorded like a member selection (`a` + leaf `b`),
+  // because while one file is being indexed it is not yet known whether
+  // `a.b` is a module. Now that every module is: a selection naming a
+  // module is a module import, bound under its (possibly renamed) local
+  // name — exactly what `use a.b` would have bound, with the alias applied.
+  for (auto &[file_id, bindings] : index.imports) {
+    for (auto &binding : bindings) {
+      if (binding.is_wildcard || binding.leaf_name.empty()) {
+        continue;
+      }
+      auto module_path = binding.path;
+      module_path.push_back(binding.leaf_name);
+      if (index.find_module(join_strings(module_path, ".")) != nullptr) {
+        binding.path = std::move(module_path);
+        binding.leaf_name.clear();
+      }
+    }
+  }
+
   return index;
 }
 

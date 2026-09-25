@@ -1,0 +1,4 @@
+module outer.inner
+
+pub def seven() -> int32:
+    return 7

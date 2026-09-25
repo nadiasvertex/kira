@@ -1,0 +1,8 @@
+module app
+
+# The same path as `reject_unimported_root_module_path`, made visible by
+# importing the module it goes through.
+use pkg.tools
+
+pub def run() -> int32:
+    return tools.double(21)

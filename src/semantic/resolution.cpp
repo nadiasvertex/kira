@@ -5,6 +5,18 @@
 #include <utility>
 
 namespace kira::semantic {
+/// Whether a path rooted at `root` may be read as absolute from
+/// `current_module_name` without any import: the module's own root (which
+/// is how every ancestor, and everything they declare, is reached) or `std`.
+/// Every other root module needs a `use` — the "Visible Modules" section of
+/// `spec/specification/01-core/12-modules-and-imports.md`. Keeping the
+/// visible set this small is what makes a name clash decidable from the
+/// referring file alone: a module no file mentions can't collide with it.
+auto root_visible_without_import(std::string_view current_module_name,
+                                 std::string_view root) -> bool {
+  return root == module_root_name(current_module_name) || root == "std";
+}
+
 namespace {
 
 /// Marks `file_id` as failing, tolerating an out-of-range id.
@@ -293,16 +305,15 @@ struct qualified_path_resolution {
       0; ///< Segment count consumed by that module prefix.
   const module_scope_symbol_record *symbol =
       nullptr; ///< Symbol the remaining segment named, if any.
+  /// Set when the path's first segment names a root module this program
+  /// declares but the referring module cannot see — see
+  /// `root_visible_without_import`. The diagnostic then points at the
+  /// missing `use` instead of at the path's contents.
+  std::string invisible_root;
 };
 
 /// Ambient state threaded through the qualified-path validation walk: the
 /// fully-qualified module and file the currently-visited node belongs to.
-/// What each name a file's `use` declarations bind locally stands for, as an
-/// absolute module path: `use p.q` binds `q` to `p.q`, and `use p.q.{r as s}`
-/// binds `s` to `p.q.r` for as long as `r` is itself a module.
-using module_alias_map =
-    std::unordered_map<std::string, std::vector<std::string>>;
-
 struct semantic_walk_context {
   std::string module_name;
   file_id_type file_id = 0;
@@ -427,39 +438,6 @@ auto resolve_absolute_qualified_path(
   return result;
 }
 
-/// Collects `file`'s module-import aliases, so a qualified path written
-/// through one (`q.holder` after `use p.q`) can be resolved the way the
-/// checker already resolves it (`check.cpp`'s `resolve_named_type`).
-auto collect_module_aliases(const ast::file &file) -> module_alias_map {
-  auto aliases = module_alias_map{};
-  for (const auto &item : file.items) {
-    if (item == nullptr || item->has_error ||
-        item->kind != ast::node_kind::use_decl) {
-      continue;
-    }
-    const auto &use = dynamic_cast<const ast::use_decl &>(*item);
-    // A functor instantiation binds its alias to a module the checker
-    // materializes later, which is not something this pass can resolve a
-    // path through; `build_import_bindings` skips these for the same reason.
-    if (!use.instantiation_args.empty() || use.path.empty()) {
-      continue;
-    }
-    if (!use.selector.has_value()) {
-      aliases.emplace(use.path.back(), use.path);
-      continue;
-    }
-    if (use.selector->kind == ast::use_selector_kind::wildcard) {
-      continue;
-    }
-    for (const auto &selected : use.selector->items) {
-      auto full = use.path;
-      full.push_back(selected.name);
-      aliases.emplace(selected.alias.value_or(selected.name), std::move(full));
-    }
-  }
-  return aliases;
-}
-
 /// Resolves a named-type path, which may start with `super` (relative to
 /// the current module's parent), be implicitly relative to the current
 /// module, be absolute if its root is a session-owned module, or lead with a
@@ -506,7 +484,11 @@ auto resolve_named_type_path(const semantic_resolution_index &semantic_index,
       semantic_index, session_index, relative_segments, file_has_errors);
   best = std::move(relative);
 
-  if (session_owns_root_module(session_index, path.front())) {
+  const auto session_root =
+      session_owns_root_module(session_index, path.front());
+  const auto root_visible =
+      root_visible_without_import(current_module_name, path.front());
+  if (session_root && root_visible) {
     auto absolute = resolve_absolute_qualified_path(
         semantic_index, session_index, path, file_has_errors);
     if (is_better_resolution_candidate(absolute, best)) {
@@ -533,18 +515,26 @@ auto resolve_named_type_path(const semantic_resolution_index &semantic_index,
     }
   }
 
+  if (best.status == qualified_path_status::unresolved && session_root &&
+      !root_visible &&
+      (aliases == nullptr || !aliases->contains(path.front()))) {
+    best.invisible_root = path.front();
+  }
   return best;
 }
 
 /// Resolves a module-qualified value reference. Unlike named-type paths,
 /// these are only reached here when already known to be `super`-rooted or
-/// session-owned absolute (see `should_validate_module_reference`), so no
-/// relative-path guessing is needed.
+/// rooted at a session-owned module name (see
+/// `should_validate_module_reference`), so no relative-path guessing is
+/// needed. An import binding that name wins; otherwise the root must be
+/// visible without one.
 auto resolve_module_reference_path(
     const semantic_resolution_index &semantic_index,
     const module_session_index &session_index,
     std::string_view current_module_name, const std::vector<std::string> &path,
-    const std::vector<bool> &file_has_errors) -> qualified_path_resolution {
+    const std::vector<bool> &file_has_errors, const module_alias_map *aliases)
+    -> qualified_path_resolution {
   if (path.empty()) {
     return qualified_path_resolution{.status = qualified_path_status::resolved};
   }
@@ -562,6 +552,19 @@ auto resolve_module_reference_path(
                                            absolute_segments, file_has_errors);
   }
 
+  if (aliases != nullptr) {
+    if (const auto alias = aliases->find(path.front());
+        alias != aliases->end()) {
+      auto aliased = alias->second;
+      aliased.insert(aliased.end(), path.begin() + 1, path.end());
+      return resolve_absolute_qualified_path(semantic_index, session_index,
+                                             aliased, file_has_errors);
+    }
+  }
+  if (!root_visible_without_import(current_module_name, path.front())) {
+    return qualified_path_resolution{.absolute_path = join_strings(path, "."),
+                                     .invisible_root = path.front()};
+  }
   return resolve_absolute_qualified_path(semantic_index, session_index, path,
                                          file_has_errors);
 }
@@ -630,9 +633,18 @@ auto emit_unresolved_qualified_path(
     }
   }
 
-  unresolved.with_help(
-      "Declare the referenced symbol in that module, or change the path to one "
-      "that exists in this compilation session.");
+  if (!resolution.invisible_root.empty()) {
+    unresolved.with_help(std::format(
+        "Module `{0}` exists, but `{1}` can't see it: from inside `{1}`, a "
+        "path can start with `{2}` (this module's own root), `std`, or a "
+        "name brought in by `use`. Add `use {0}` (or `use` the specific "
+        "module you need) to this file.",
+        resolution.invisible_root, module_name, module_root_name(module_name)));
+  } else {
+    unresolved.with_help(
+        "Declare the referenced symbol in that module, or change the path to "
+        "one that exists in this compilation session.");
+  }
   diag.emit(unresolved);
   mark_file_has_error(file_has_errors, location.file_id);
 }
@@ -1251,46 +1263,16 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
     return;
   }
 
-  case ast::node_kind::module_path_expr: {
-    const auto &path = dynamic_cast<const ast::module_path_expr &>(expr);
-    if (!should_validate_module_reference(path, session_index) ||
-        path.segments.empty()) {
-      return;
-    }
-
-    const auto path_text = join_strings(path.segments, ".");
-    const auto location = source_location{
-        .file_id = context.file_id,
-        .span = path.span,
-    };
-
-    if (path.segments.front() == "super" &&
-        parent_module_name(context.module_name).empty()) {
-      emit_invalid_super_path("module-qualified reference", path_text, location,
-                              context.module_name, diag, file_has_errors);
-      return;
-    }
-
-    const auto resolution = resolve_module_reference_path(
-        semantic_index, session_index, context.module_name, path.segments,
-        file_has_errors);
-    if (resolution.status == qualified_path_status::blocked) {
-      return;
-    }
-    if (resolution.status != qualified_path_status::resolved) {
-      emit_unresolved_qualified_path("module-qualified reference", path_text,
-                                     location, context.module_name, resolution,
-                                     session_index, diag, file_has_errors);
-      return;
-    }
-    if (resolution.symbol != nullptr &&
-        !can_resolve_module_reference(resolution.symbol->kind)) {
-      emit_unresolved_qualified_path("module-qualified reference", path_text,
-                                     location, context.module_name, resolution,
-                                     session_index, diag, file_has_errors);
-    }
+  case ast::node_kind::module_path_expr:
+    // Deliberately not validated here: `a.b` is field access when `a` is a
+    // binding in scope and a module reference otherwise, and only the
+    // checker knows every binding in scope. It classifies the path and calls
+    // `validate_module_reference` for the module-rooted ones — deciding
+    // here instead, with no local scopes, is how a user `module s` once
+    // broke every `for s in ...: s.field` in the standard library.
+    // A struct-literal head (`q.holder { ... }`) is always a type path and
+    // is resolved by the checker's `find_type_decl_by_path`.
     return;
-  }
 
   case ast::node_kind::group_expr: {
     const auto &group = dynamic_cast<const ast::group_expr &>(expr);
@@ -1973,6 +1955,39 @@ auto validate_node_list(const std::vector<ast::ptr<ast::node>> &items,
 
 } // namespace
 
+/// Collects `file`'s module-import aliases, so a qualified path written
+/// through one (`q.holder` after `use p.q`) can be resolved the way the
+/// checker already resolves it (`check.cpp`'s `resolve_named_type`).
+auto collect_module_aliases(const ast::file &file) -> module_alias_map {
+  auto aliases = module_alias_map{};
+  for (const auto &item : file.items) {
+    if (item == nullptr || item->has_error ||
+        item->kind != ast::node_kind::use_decl) {
+      continue;
+    }
+    const auto &use = dynamic_cast<const ast::use_decl &>(*item);
+    // A functor instantiation binds its alias to a module the checker
+    // materializes later, which is not something this pass can resolve a
+    // path through; `build_import_bindings` skips these for the same reason.
+    if (!use.instantiation_args.empty() || use.path.empty()) {
+      continue;
+    }
+    if (!use.selector.has_value()) {
+      aliases.emplace(use.path.back(), use.path);
+      continue;
+    }
+    if (use.selector->kind == ast::use_selector_kind::wildcard) {
+      continue;
+    }
+    for (const auto &selected : use.selector->items) {
+      auto full = use.path;
+      full.push_back(selected.name);
+      aliases.emplace(selected.alias.value_or(selected.name), std::move(full));
+    }
+  }
+  return aliases;
+}
+
 /// For each module with a dotted parent, requires the parent's file to
 /// declare it as a submodule, and rejects a submodule that is declared both
 /// inline and as a separate external file.
@@ -2112,6 +2127,25 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
     }
 
     const auto base_module_name = join_strings(decl.path, ".");
+    // `use a.b as c` arrives as base `a` with the selector `{b as c}`. When
+    // `a.b` is itself a module the import names *it*, whether or not `a`
+    // is a module too — `a` need not be (a file may declare `a.b` with no
+    // `a` anywhere), and requiring it would leave a module with no parent
+    // unimportable under any alias.
+    if (decl.selector->kind != ast::use_selector_kind::wildcard &&
+        !session_contains_module(index, base_module_name) &&
+        !decl.selector->items.empty() &&
+        std::ranges::all_of(decl.selector->items, [&](const auto &item) {
+          return session_contains_module(
+              index, append_module_name(base_module_name, item.name));
+        })) {
+      for (const auto &item : decl.selector->items) {
+        validate_import_target(index, import_record,
+                               append_module_name(base_module_name, item.name),
+                               item.span, diag, file_has_errors);
+      }
+      continue;
+    }
     if (!validate_import_target(index, import_record, base_module_name,
                                 decl.selector->span, diag, file_has_errors)) {
       continue;
@@ -2131,6 +2165,211 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
   }
 }
 
+namespace {
+
+/// A module name visible in some module because that module *declares* or
+/// *imports* it — the names `validate_value_module_conflicts` checks
+/// module-scope values against.
+struct introduced_module_name {
+  std::string module_name;  ///< Absolute path of the visible module.
+  source_location location; ///< The `module`/`use` that made it visible.
+  bool imported = false;    ///< Brought in by `use` rather than declared.
+};
+
+/// The module-scope values (`def`s and `static` bindings, across every file
+/// of the module) of `module_name`.
+auto module_scope_values(const semantic_resolution_index &semantic_index,
+                         std::string_view module_name)
+    -> std::vector<const semantic_symbol *> {
+  auto values = std::vector<const semantic_symbol *>{};
+  const auto *scope = find_module_scope(semantic_index, module_name);
+  if (scope == nullptr) {
+    return values;
+  }
+  for (const auto id : scope->symbols) {
+    const auto *symbol = find_semantic_symbol(semantic_index.session, id);
+    if (symbol != nullptr &&
+        (symbol->kind == semantic_symbol_kind::function_symbol ||
+         symbol->kind == semantic_symbol_kind::static_binding_symbol)) {
+      values.push_back(symbol);
+    }
+  }
+  return values;
+}
+
+/// Reports one value/module name clash, at `report_at`, with a note at the
+/// other declaration.
+auto emit_value_module_conflict(const semantic_symbol &value,
+                                std::string_view module_name,
+                                const introduced_module_name &visible,
+                                bool report_at_import, diagnostic_bag &diag,
+                                std::vector<bool> &file_has_errors) -> void {
+  const auto &primary = report_at_import ? visible.location : value.location;
+  auto conflict = diagnostic(
+      diagnostic_level::error,
+      std::format("`{}` names both a {} and the module `{}` visible in `{}`",
+                  value.name, value.kind_name, visible.module_name,
+                  module_name),
+      primary.file_id);
+  if (report_at_import) {
+    conflict.with_label(primary.span,
+                        std::format("imports module `{}` as `{}`",
+                                    visible.module_name, value.name));
+    conflict.children.push_back(
+        diagnostic(diagnostic_level::note,
+                   std::format("the {} `{}` is declared here", value.kind_name,
+                               value.name),
+                   value.location.file_id)
+            .with_label(value.location.span, "same name"));
+  } else {
+    conflict.with_label(
+        primary.span,
+        std::format("this {} is named like a visible module", value.kind_name));
+    conflict.children.push_back(
+        diagnostic(diagnostic_level::note,
+                   std::format("module `{}` is {} here", visible.module_name,
+                               visible.imported ? "imported" : "declared"),
+                   visible.location.file_id)
+            .with_label(visible.location.span, "same name"));
+  }
+  const auto remedy = [&]() -> std::string {
+    if (!visible.imported) {
+      return std::format("Rename the {} or the submodule.", value.kind_name);
+    }
+    // Only a nested module can be imported under another name; `use a as b`
+    // is not a `use` form for a root module.
+    if (visible.module_name.contains('.')) {
+      return std::format("Rename the {}, or import the module under another "
+                         "name: `use {} as {}_mod`.",
+                         value.kind_name, visible.module_name, value.name);
+    }
+    return std::format("Rename the {}.", value.kind_name);
+  }();
+  conflict.with_help(std::format(
+      "`{0}.name` could reach into the module `{1}` or into the {2} `{0}`, "
+      "so Kira rejects the pair rather than guess. {3}",
+      value.name, visible.module_name, value.kind_name, remedy));
+  diag.emit(conflict);
+  mark_file_has_error(file_has_errors, primary.file_id);
+}
+
+/// The module names `items`' `use` declarations bind, each to the module it
+/// imports — only imports that name a module in this session.
+auto imported_module_names(const std::vector<ast::ptr<ast::node>> &items,
+                           file_id_type file_id,
+                           const module_session_index &session_index)
+    -> std::vector<std::pair<std::string, introduced_module_name>> {
+  auto names = std::vector<std::pair<std::string, introduced_module_name>>{};
+  const auto add = [&](std::string local_name, std::string target,
+                       source_span span) {
+    if (session_contains_module(session_index, target)) {
+      names.emplace_back(
+          std::move(local_name),
+          introduced_module_name{
+              .module_name = std::move(target),
+              .location = source_location{.file_id = file_id, .span = span},
+              .imported = true});
+    }
+  };
+  for (const auto &item : items) {
+    if (item == nullptr || item->has_error ||
+        item->kind != ast::node_kind::use_decl) {
+      continue;
+    }
+    const auto &use = dynamic_cast<const ast::use_decl &>(*item);
+    if (!use.instantiation_args.empty() || use.path.empty()) {
+      continue;
+    }
+    if (!use.selector.has_value()) {
+      add(use.path.back(), join_strings(use.path, "."), use.span);
+      continue;
+    }
+    if (use.selector->kind == ast::use_selector_kind::wildcard) {
+      continue;
+    }
+    for (const auto &selected : use.selector->items) {
+      add(selected.alias.value_or(selected.name),
+          append_module_name(join_strings(use.path, "."), selected.name),
+          selected.span);
+    }
+  }
+  return names;
+}
+
+/// Checks the module-scope values of `module_name` (a file's module, or an
+/// inline submodule inside it) against the module names the file imports,
+/// recursing into inline submodules, which share their file's imports.
+auto check_import_conflicts(
+    const std::vector<ast::ptr<ast::node>> &items, std::string_view module_name,
+    const std::vector<std::pair<std::string, introduced_module_name>> &imports,
+    const semantic_resolution_index &semantic_index, diagnostic_bag &diag,
+    std::vector<bool> &file_has_errors) -> void {
+  for (const auto *value : module_scope_values(semantic_index, module_name)) {
+    for (const auto &[local_name, visible] : imports) {
+      if (local_name == value->name) {
+        emit_value_module_conflict(*value, module_name, visible,
+                                   /*report_at_import=*/true, diag,
+                                   file_has_errors);
+      }
+    }
+  }
+  for (const auto &item : items) {
+    if (item == nullptr || item->kind != ast::node_kind::sub_module_decl) {
+      continue;
+    }
+    const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
+    if (!sub.is_functor() && !sub.items.empty()) {
+      check_import_conflicts(sub.items,
+                             append_module_name(module_name, sub.name), imports,
+                             semantic_index, diag, file_has_errors);
+    }
+  }
+}
+
+} // namespace
+
+/// Two passes, so each clash is reported exactly once and where it was
+/// introduced: a clash with a *declared* child is a property of the module
+/// (reported at the value), and a clash with an *imported* module is a
+/// property of the importing file (reported at the `use`).
+auto validate_value_module_conflicts(
+    const std::vector<parsed_module> &inputs,
+    const module_session_index &session_index,
+    const semantic_resolution_index &semantic_index, diagnostic_bag &diag,
+    std::vector<bool> &file_has_errors) -> void {
+  for (const auto &child : session_index.submodule_declarations) {
+    for (const auto *value :
+         module_scope_values(semantic_index, child.parent_module_name)) {
+      if (value->name == child.child_name &&
+          !has_file_error(file_has_errors, value->location.file_id)) {
+        emit_value_module_conflict(
+            *value, child.parent_module_name,
+            introduced_module_name{.module_name = child.module_name,
+                                   .location = child.location,
+                                   .imported = false},
+            /*report_at_import=*/false, diag, file_has_errors);
+      }
+    }
+  }
+
+  for (const auto &input : inputs) {
+    if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
+        input.ast_file->module_decl->has_error ||
+        input.ast_file->module_decl->path.empty() ||
+        has_file_error(file_has_errors, input.file_id)) {
+      continue;
+    }
+    const auto imports = imported_module_names(input.ast_file->items,
+                                               input.file_id, session_index);
+    if (imports.empty()) {
+      continue;
+    }
+    check_import_conflicts(input.ast_file->items,
+                           join_strings(input.ast_file->module_decl->path, "."),
+                           imports, semantic_index, diag, file_has_errors);
+  }
+}
+
 /// Runs `validate_module_scope` over each input file's top-level items.
 auto validate_declaration_scopes(const std::vector<parsed_module> &inputs,
                                  diagnostic_bag &diag,
@@ -2147,6 +2386,53 @@ auto validate_declaration_scopes(const std::vector<parsed_module> &inputs,
                           join_strings(input.ast_file->module_decl->path, "."),
                           input.file_id, diag, file_has_errors);
   }
+}
+
+/// Only paths touching a session-owned module (or `super`) are checked —
+/// see `should_validate_module_reference`; a path rooted anywhere else is
+/// left to the checker's own lookup, exactly as before the checker became
+/// the caller.
+auto validate_module_reference(const ast::module_path_expr &path,
+                               std::string_view module_name,
+                               file_id_type file_id,
+                               const module_session_index &session_index,
+                               const semantic_resolution_index &semantic_index,
+                               const module_alias_map *aliases,
+                               diagnostic_bag &diag,
+                               std::vector<bool> &file_has_errors) -> bool {
+  if (!should_validate_module_reference(path, session_index) ||
+      path.segments.empty()) {
+    return true;
+  }
+
+  const auto path_text = join_strings(path.segments, ".");
+  const auto location = source_location{
+      .file_id = file_id,
+      .span = path.span,
+  };
+
+  if (path.segments.front() == "super" &&
+      parent_module_name(module_name).empty()) {
+    emit_invalid_super_path("module-qualified reference", path_text, location,
+                            module_name, diag, file_has_errors);
+    return false;
+  }
+
+  const auto resolution =
+      resolve_module_reference_path(semantic_index, session_index, module_name,
+                                    path.segments, file_has_errors, aliases);
+  if (resolution.status == qualified_path_status::blocked) {
+    return true;
+  }
+  if (resolution.status != qualified_path_status::resolved ||
+      (resolution.symbol != nullptr &&
+       !can_resolve_module_reference(resolution.symbol->kind))) {
+    emit_unresolved_qualified_path("module-qualified reference", path_text,
+                                   location, module_name, resolution,
+                                   session_index, diag, file_has_errors);
+    return false;
+  }
+  return true;
 }
 
 /// Runs `validate_node_list` over each input file's top-level items,

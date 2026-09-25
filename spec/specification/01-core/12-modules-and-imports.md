@@ -1,6 +1,6 @@
 # 12. Modules and Imports
 
-**Status:** Implemented
+**Status:** Implemented — see Implementation status
 
 Covers `use`, visibility, and re-exporting with `pub use`. This is the basic module chapter; module-spanning-files and project structure are covered in the Intermediate module-system chapter.
 
@@ -58,6 +58,45 @@ pub use my_app.transform.rotate
 ```
 
 Importers of `my_app` now see `point`, `shape`, and `rotate` directly. The standard library prelude itself is built this way: several `std.*` modules are re-exported into every file implicitly (`k_prelude_reexport_modules` in `src/semantic/check.cpp`).
+
+## Visible Modules
+
+A module path is only ever resolved against the modules **visible** in the current scope. From inside module `a.b`, the visible modules are:
+
+- `a.b`'s declared child modules — each `sub_module_decl` in `a.b`, either bodiless (`module c`) or inline (`module c:` with a block);
+- `a.b`'s ancestors, reached through its own root (`a.x`) or `super`;
+- every module brought in by a `use` in the file, under its imported (or `as`-renamed) name;
+- `std`, which every file sees as if it began with an implicit `use std`.
+
+No other module is visible. A shared path prefix alone creates no relationship: a module `a.b.c` that `a.b` never declares or imports is not visible from `a.b`, and neither is another root module the file does not `use`. Naming one is an unresolved path, with help pointing at the missing `use`.
+
+## Dotted Names
+
+`a.b` is written the same way whether `a` is a value (field access) or a module (a qualified path). The meaning is decided by resolving the first segment:
+
+1. **Local bindings shadow modules.** If the first segment names a binding in an enclosing lexical scope — a `let`/`var`, a parameter, `self`, a pattern binding in a `match` arm, `if let`, `while let`, or `for`, or a `static for` binder — the path is field access on that binding, even when a visible module has the same name. Shadowing is silent: code never has to know which module names exist elsewhere, so a user module named `s` cannot break a library function with a loop variable `s`.
+2. **Module-scope values do not shadow modules.** A top-level `def` or `static` binding must not share its name with a module that its module *declares* as a child or that the file *imports*. This is a compile-time error reported once, where the clash was introduced — at the value for a declared child, at the `use` for an import — never at the individual uses:
+
+   ```kira
+   module a.b
+
+   module c              # declares child module a.b.c
+
+   static c: int32 = 3   # error: `c` names both a static binding and the
+                         #        module `a.b.c` visible in `a.b`
+   ```
+
+   The fix is to rename one of the two, or to import the module under another name (`use x.c as c_mod`). A module that exists in the program but that this module neither declares nor imports is no conflict. The module's own root and `std` are not checked: a path starting with either always means the module, so `module main` may declare `def main`.
+3. **Otherwise** the first segment is looked up among the visible modules, and the rest of the path is resolved inside that module.
+
+Because every rule is evaluated against a finite, locally-declared set — the enclosing lexical scopes, the module's own declarations, and the file's imports — whether a dotted name is ambiguous is decided entirely by the file it appears in.
+
+## Implementation status
+
+- `use`, visibility, and re-exporting are implemented.
+- **Visible Modules** and **Dotted Names** are implemented. The checker alone decides what a dotted name means (`checker::dotted_root_is_value`, `src/semantic/check.cpp`) and records value-rooted paths for lowering (`checked_types::value_path_types`); module-rooted ones are validated through `validate_module_reference` (`src/semantic/resolution.cpp`), and both path validation and the checker's own lookups apply the one visibility rule, `root_visible_without_import`. Rule 2 is `validate_value_module_conflicts`.
+- A root module can't be imported under another name: `use a as b` is not a `use` form, only `use a.b as c` is.
+- Types are not covered by rule 2: a top-level `type` may still share its name with a visible module, and `t.f()` then tries the module first.
 
 ## See also
 

@@ -1,0 +1,8 @@
+module main
+
+# `outer.inner` is a module, but no file declares `outer`. The module must
+# still be importable, under a new name too.
+use outer.inner as renamed
+
+def main() -> int32:
+    return renamed.seven()

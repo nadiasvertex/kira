@@ -1,0 +1,11 @@
+module main
+
+# `inner` is a visible module here (a declared child), and a local named
+# `inner` shadows it: `inner.value` is field access on the local.
+module inner
+
+type holder = { value: int32 }
+
+def main() -> int32:
+    let inner = holder { value: 5 }
+    return inner.value

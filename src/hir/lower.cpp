@@ -17,6 +17,7 @@
 #include "src/hir/tail_calls.h"
 #include "src/parser/ast.h"
 #include "src/runtime/layout.h"
+#include "src/semantic/module_index.h"
 #include "src/semantic/types.h"
 
 namespace kira::hir {
@@ -347,14 +348,21 @@ private:
   [[nodiscard]] auto checked_type_of(const ast::node &node)
       -> std::expected<type_id, lowering_error> {
     const auto found = checked_.node_types.find(&node);
-    if (found == checked_.node_types.end() || found->second == k_unknown_type ||
-        found->second == k_error_type) {
-      return fail(lowering_error_kind::unresolved_type, node.span,
+    return concrete_type(found == checked_.node_types.end() ? k_unknown_type
+                                                            : found->second,
+                         node.span);
+  }
+
+  /// `type` as lowering may use it: concrete, and opaque types unwrapped.
+  [[nodiscard]] auto concrete_type(type_id type, source_span span)
+      -> std::expected<type_id, lowering_error> {
+    if (type == k_unknown_type || type == k_error_type) {
+      return fail(lowering_error_kind::unresolved_type, span,
                   "no concrete checked type is available for this node; "
                   "lowering only accepts fully type-checked, fully-annotated "
                   "code (see spec/todo.md)");
     }
-    return resolve_opaque(found->second);
+    return resolve_opaque(type);
   }
 
   /// The module `reified_name` (a `static$name$counter` global) was reified
@@ -1884,25 +1892,10 @@ auto lowerer::lower_field(const ast::field_expr &field)
 
 /// `a.b` parses ambiguously — the parser cannot tell "a value being
 /// field-accessed" from "a module path" without symbol info (`parser.cpp`'s
-/// `parse_ident_or_path_expr`), so it always produces `module_path_expr` for
-/// a bare leading identifier followed by `.name`; `field_expr` only comes
-/// from a postfix chain whose base wasn't a bare identifier (`foo().field`,
-/// `arr[0].field`, ...). The checker's `infer_module_path`
-/// (`semantic/check.cpp`) resolves this ambiguity for typing purposes by
-/// checking whether the first segment is a known value binding, but never
-/// rewrites the AST — so lowering has to redo the same disambiguation here.
-///
-/// Only the two-segment case (`root.field`) is supported: `checked_.
-/// node_types` records a type for the *whole* `module_path_expr` node, not
-/// per-segment prefixes, so a chain's only two type_ids this pass can ever
-/// recover are the root's (via `local_type_of`, since `declare_local`
-/// records it) and the final result's (via `checked_type_of` on `path`
-/// itself, which — for exactly two segments — *is* the field's type). A
-/// longer chain (`a.b.c`) would need `b`'s type too, which isn't tracked
-/// anywhere lowering can reach; that's left as `unsupported_construct`
-/// rather than guessed. A root that isn't a local binding in scope here is
-/// a genuine module-qualified reference, which this milestone doesn't
-/// lower yet either.
+/// `parse_ident_or_path_expr`), so it produces `module_path_expr` for both.
+/// The checker resolves the ambiguity once (`checker::dotted_root_is_value`)
+/// and records the value-rooted paths in `checked_types::value_path_types`;
+/// this only reads that answer.
 auto lowerer::lower_module_path(const ast::module_path_expr &path)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   // A module-qualified scalar `static` (`main.inner.limit`, or `r.limit`
@@ -1946,18 +1939,25 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
     return ok_expr(make<hir_local_ref>(path.span, *type, symbol, local_name,
                                        resolved.owner_module));
   }
-  if (path.segments.size() != 2) {
+  // Field access on a value: the checker decided that (`checker::
+  // dotted_root_is_value`) and recorded every prefix's type, so the chain
+  // is built from those and nothing here re-decides what the path means.
+  const auto value_path = checked_.value_path_types.find(&path);
+  if (value_path == checked_.value_path_types.end()) {
     return fail(lowering_error_kind::unsupported_construct, path.span,
-                "only a two-segment `value.field` path is lowered by the "
-                "first milestone — a longer chain, or a module-qualified "
-                "reference, is not supported yet");
+                std::format("`{}` is a module-qualified value reference, "
+                            "which is not lowered yet",
+                            semantic::join_strings(path.segments, ".")));
   }
+  const auto &segment_types = value_path->second;
   const auto root_symbol = lookup_local(path.segments[0]);
-  if (!root_symbol.has_value()) {
+  if (!root_symbol.has_value() ||
+      segment_types.size() != path.segments.size()) {
     return fail(lowering_error_kind::unsupported_construct, path.span,
-                std::format("`{}` does not resolve to a local binding — "
-                            "module-qualified value references are not "
-                            "lowered by the first milestone yet",
+                std::format("internal: the checker classified `{}` as field "
+                            "access on the local `{}`, but lowering has no "
+                            "such local in scope",
+                            semantic::join_strings(path.segments, "."),
                             path.segments[0]));
   }
   const auto root_type = local_type_of(*root_symbol);
@@ -1967,14 +1967,19 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
                 "binding; lowering only accepts fully type-checked, "
                 "fully-annotated code (see spec/todo.md)");
   }
-  auto type = checked_type_of(path);
-  if (!type.has_value()) {
-    return std::unexpected(type.error());
-  }
-  auto root = ptr<hir_expr>(make<hir_local_ref>(
+  auto chain = ptr<hir_expr>(make<hir_local_ref>(
       path.span, *root_type, *root_symbol, path.segments[0]));
-  return ok_expr(
-      make<hir_field>(path.span, *type, std::move(root), path.segments[1]));
+  for (size_t i = 1; i < path.segments.size(); ++i) {
+    const auto type = i + 1 == path.segments.size()
+                          ? checked_type_of(path)
+                          : concrete_type(segment_types[i], path.span);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    chain =
+        make<hir_field>(path.span, *type, std::move(chain), path.segments[i]);
+  }
+  return ok_expr(std::move(chain));
 }
 
 auto lowerer::lower_index(const ast::index_expr &index)

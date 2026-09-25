@@ -28,6 +28,8 @@ let x = 1
 let x = x + 1    # x is now 2; original x is gone
 ```
 
+A local binding also shadows a module of the same name: if `s` is a local, `s.name` is always field access on it, never a path into a module `s`. Module-scope values follow a stricter rule — see [Dotted Names](12-modules-and-imports.md#dotted-names).
+
 ## Compound assignment
 
 A `var` may be updated with a compound assignment operator — `+=`, `-=`, `*=`, `/=`, and the rest of `assign_op` — as shorthand for `target = target <op> value`.

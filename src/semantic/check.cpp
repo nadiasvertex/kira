@@ -25,6 +25,7 @@
 #include "src/semantic/infer/unify.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/reason.h"
+#include "src/semantic/resolution.h"
 #include "src/semantic/types.h"
 
 namespace kira::semantic {
@@ -419,6 +420,15 @@ public:
     return fragments;
   }
 
+  /// Supplies the module graph for validating module-rooted dotted paths
+  /// (see `validate_module_path`).
+  auto set_module_graph(const module_session_index &session_index,
+                        const semantic_resolution_index &semantic_index)
+      -> void {
+    session_index_ = &session_index;
+    semantic_index_ = &semantic_index;
+  }
+
   auto take_checked_types() -> checked_types {
     const auto fmt_types = resolve_fmt_runtime_types();
     resolve_drop_plans();
@@ -479,6 +489,11 @@ public:
       dispatch.adapter_result_type =
           types_.erase_refinements(settle(dispatch.adapter_result_type));
     }
+    for (auto &[path, segment_types] : value_path_types_) {
+      for (auto &type : segment_types) {
+        type = types_.erase_refinements(settle(type));
+      }
+    }
     for (auto &[node, dispatch] : interp_dispatches_) {
       dispatch.value_type =
           types_.erase_refinements(settle(dispatch.value_type));
@@ -536,6 +551,7 @@ public:
         .static_if_taken_branch = std::move(static_if_taken_branch_),
         .static_global_refs = std::move(static_global_refs_),
         .static_global_owners = std::move(static_global_owners_),
+        .value_path_types = std::move(value_path_types_),
         .proven_in_bounds = std::move(proven_in_bounds_),
         .elided_contracts = std::move(elided_contracts_),
         .view_bearing_types = std::move(view_bearing)};
@@ -900,6 +916,26 @@ private:
   /// See `checked_types::static_global_refs`'s doc comment. Populated by
   /// `record_static_const_reference`.
   std::unordered_map<const ast::node *, std::string> static_global_refs_;
+  /// See `checked_types::value_path_types`. Populated by
+  /// `infer_value_rooted_path`.
+  std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
+      value_path_types_;
+  /// The module graph `validate_module_reference` resolves a module-rooted
+  /// dotted path against. Null when `check_program` was called without
+  /// them, in which case no module-rooted path is validated here.
+  const module_session_index *session_index_ = nullptr;
+  const semantic_resolution_index *semantic_index_ = nullptr;
+  /// Module-rooted paths already validated, so a generic body checked once
+  /// abstractly and once per instantiation reports a bad path once.
+  std::unordered_set<const ast::module_path_expr *> validated_module_paths_;
+  /// Each file's module-import aliases, for `validate_module_path`.
+  std::unordered_map<file_id_type, module_alias_map> file_module_aliases_;
+  /// While a functor instantiation's body is checked, the module that
+  /// declared the functor: `module_name_` is then the instance's synthetic
+  /// name, which the module graph has never heard of, but the body was
+  /// written in — and sees what is visible from — the declaring module.
+  /// Empty outside a functor body.
+  std::string functor_owner_module_;
   /// See `checked_types::folded_comptime_calls`'s doc comment. Populated by
   /// `try_fold_comptime_only_call`, from `instantiate_generic_function`.
   std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
@@ -1890,6 +1926,22 @@ private:
     return found;
   }
 
+  /// `find_session_module_of_path` for a path read as *absolute*, which is
+  /// only a reading at all when the path's root is visible here without an
+  /// import (`root_visible_without_import` — the same rule `resolution.cpp`
+  /// validates paths with, so the checker never resolves a path the
+  /// validator would reject). A path read through an import alias is
+  /// rewritten to its absolute form first and does not come through here.
+  [[nodiscard]] auto
+  find_visible_module_of_path(const std::vector<std::string> &path) const
+      -> const module_members * {
+    if (path.empty() ||
+        !root_visible_without_import(visibility_module(), path.front())) {
+      return nullptr;
+    }
+    return find_session_module_of_path(path);
+  }
+
   /// The module a *relative* qualified path names: `inner.holder` written
   /// inside `module main` means `main.inner`'s `holder`, which is how a
   /// submodule declared in the same file is meant to be reachable from its
@@ -1967,7 +2019,7 @@ private:
         }
       }
     }
-    if (const auto *owner = find_session_module_of_path(path); owns(owner)) {
+    if (const auto *owner = find_visible_module_of_path(path); owns(owner)) {
       return owner;
     }
     if (const auto *owner = find_submodule_of_current_module(path);
@@ -12474,8 +12526,7 @@ private:
     auto root = std::vector<std::string>{};
     if (object.kind == ast::node_kind::ident_expr) {
       const auto &ident = dynamic_cast<const ast::ident_expr &>(object);
-      if (lookup_value(ident.name) != nullptr ||
-          (ident.name == "self" && self_type_ != k_unknown_type)) {
+      if (dotted_root_is_value(ident.name)) {
         return std::nullopt; // a real value, not a module/type reference
       }
       root = {ident.name};
@@ -12484,8 +12535,7 @@ private:
       if (path.segments.empty()) {
         return std::nullopt;
       }
-      if (lookup_value(path.segments.front()) != nullptr ||
-          (path.segments.front() == "self" && self_type_ != k_unknown_type)) {
+      if (dotted_root_is_value(path.segments.front())) {
         return std::nullopt; // a value-rooted field chain, not a module path
       }
       root = path.segments;
@@ -12518,7 +12568,7 @@ private:
     };
 
     // Fully module-qualified: `std.io.open(...)`.
-    if (const auto *owner = find_session_module_of_path(root)) {
+    if (const auto *owner = find_visible_module_of_path(root)) {
       if (const auto it = owner->functions.find(fn_name);
           it != owner->functions.end()) {
         return resolve_against(*it->second.decl, owner, it->second.file_id, "");
@@ -13703,23 +13753,31 @@ private:
     return field_access_type(object, field.field_name, field.span);
   }
 
-  /// A dotted path whose first segment names an in-scope value is a chain of
-  /// field accesses, not a module reference.
+  /// The one rule for what `a.b.c` means — the "Dotted Names" section of
+  /// `spec/specification/01-core/12-modules-and-imports.md`: field access
+  /// when `a` is a binding in an enclosing lexical scope (including one a
+  /// capture list puts out of reach: that is still the local, and deserves
+  /// the capture diagnostic, not a module lookup) or `self` in a method;
+  /// a module reference otherwise. A local always wins, so no library body
+  /// can be broken by whatever module names a user program declares.
+  ///
+  /// Every site that has to tell the two apart asks this, and
+  /// `infer_value_rooted_path` records the answer for lowering, so no later
+  /// pass decides again.
+  auto dotted_root_is_value(std::string_view root) -> bool {
+    return find_value_in_scopes(root).binding != nullptr ||
+           (root == "self" && self_type_ != k_unknown_type);
+  }
+
   auto infer_module_path(const ast::module_path_expr &path) -> type_id {
     if (path.segments.empty()) {
       return k_unknown_type;
     }
     const auto &root = path.segments.front();
-
-    auto base = k_unknown_type;
-    auto value_rooted = false;
-    if (const auto *binding = lookup_value(root)) {
-      base = binding->type;
-      value_rooted = true;
-    } else if (root == "self" && self_type_ != k_unknown_type) {
-      base = self_type_;
-      value_rooted = true;
-    } else if (path.segments.size() == 2 && is_builtin_scalar_name(root)) {
+    if (dotted_root_is_value(root)) {
+      return infer_value_rooted_path(path);
+    }
+    if (path.segments.size() == 2 && is_builtin_scalar_name(root)) {
       const auto type = types_.builtin(root);
       const auto &member = path.segments.back();
       if ((member == "max" || member == "min") && types_.is_numeric(type)) {
@@ -13727,41 +13785,78 @@ private:
       }
       return k_unknown_type;
     }
-
-    if (!value_rooted) {
-      // A module-qualified `static` binding (`main.inner.limit`, or
-      // `r.limit` after `use p.r`). Resolving it here is what gives the
-      // reference a concrete type *and* a literal for lowering to embed —
-      // without both, the path typed as unknown and the program died in
-      // codegen with "only a two-segment `value.field` path is lowered".
-      // Everything else module-rooted is still validated elsewhere.
-      if (const auto *owner = find_static_owner_of_path(path.segments)) {
-        if (const auto it = owner->statics.find(path.segments.back());
-            it != owner->statics.end()) {
-          const auto type = static_binding_type(*it->second.decl, owner);
-          record_static_const_reference(path, *it->second.decl, type,
-                                        owner->module_name);
-          return type;
-        }
-      }
-      // A module-qualified function named as a plain value rather than called
-      // (`app.geometry.tests.test_area` passed to `case(...)`). The bare-name
-      // spelling records this in `resolve_ident`; recording it here is what
-      // lets `hir::lower_module_path` build the same owner-carrying reference
-      // instead of failing as an unsupported long path.
-      if (const auto *owner = find_fn_owner_of_path(path.segments)) {
-        if (const auto it = owner->functions.find(path.segments.back());
-            it != owner->functions.end()) {
-          record_fn_value_reference(path, *it->second.decl, owner->module_name);
-          return fn_type_of(*it->second.decl, owner);
-        }
-      }
-      return k_unknown_type; // module references are validated elsewhere
+    if (!validate_module_path(path)) {
+      return k_error_type;
     }
+
+    // A module-qualified `static` binding (`main.inner.limit`, or
+    // `r.limit` after `use p.r`). Resolving it here is what gives the
+    // reference a concrete type *and* a literal for lowering to embed —
+    // without both, the path typed as unknown and the program died in
+    // codegen with "only a two-segment `value.field` path is lowered".
+    if (const auto *owner = find_static_owner_of_path(path.segments)) {
+      if (const auto it = owner->statics.find(path.segments.back());
+          it != owner->statics.end()) {
+        const auto type = static_binding_type(*it->second.decl, owner);
+        record_static_const_reference(path, *it->second.decl, type,
+                                      owner->module_name);
+        return type;
+      }
+    }
+    // A module-qualified function named as a plain value rather than called
+    // (`app.geometry.tests.test_area` passed to `case(...)`). The bare-name
+    // spelling records this in `resolve_ident`; recording it here is what
+    // lets `hir::lower_module_path` build the same owner-carrying reference
+    // instead of failing as an unsupported long path.
+    if (const auto *owner = find_fn_owner_of_path(path.segments)) {
+      if (const auto it = owner->functions.find(path.segments.back());
+          it != owner->functions.end()) {
+        record_fn_value_reference(path, *it->second.decl, owner->module_name);
+        return fn_type_of(*it->second.decl, owner);
+      }
+    }
+    return k_unknown_type;
+  }
+
+  /// `a.b.c` where `a` is a binding in scope: a chain of field accesses.
+  /// Records each prefix's type in `value_path_types_` — lowering builds
+  /// the projection chain from exactly these, whatever the chain's length.
+  auto infer_value_rooted_path(const ast::module_path_expr &path) -> type_id {
+    const auto &root = path.segments.front();
+    auto base = self_type_;
+    if (const auto *binding = lookup_value(root)) {
+      base = binding->type;
+    } else if (const auto *barrier = capture_barrier_blocking(root)) {
+      emit_capture_not_listed(path.span, root, *barrier);
+      return k_error_type;
+    }
+    auto segment_types = std::vector<type_id>{base};
     for (size_t i = 1; i < path.segments.size(); ++i) {
       base = field_access_type(base, path.segments[i], path.span);
+      segment_types.push_back(base);
     }
+    value_path_types_.insert_or_assign(&path, std::move(segment_types));
     return base;
+  }
+
+  /// The module whose "Visible Modules" set applies to the code being
+  /// checked — see `functor_owner_module_`.
+  [[nodiscard]] auto visibility_module() const -> const std::string & {
+    return functor_owner_module_.empty() ? module_name_ : functor_owner_module_;
+  }
+
+  /// Validates a module-rooted dotted path against the module graph, once
+  /// per node. Returns false after reporting it.
+  auto validate_module_path(const ast::module_path_expr &path) -> bool {
+    if (session_index_ == nullptr || semantic_index_ == nullptr ||
+        !validated_module_paths_.insert(&path).second) {
+      return true;
+    }
+    const auto aliases = file_module_aliases_.find(file_id_);
+    return validate_module_reference(
+        path, visibility_module(), file_id_, *session_index_, *semantic_index_,
+        aliases != file_module_aliases_.end() ? &aliases->second : nullptr,
+        diag_, file_has_errors_);
   }
 
   /// Whether an identifier in callee/index position names a function or type
@@ -14896,7 +14991,7 @@ private:
         }
       }
     }
-    if (const auto *owner = find_session_module_of_path(path)) {
+    if (const auto *owner = find_visible_module_of_path(path)) {
       if (const auto it = owner->types.find(path.back());
           it != owner->types.end()) {
         return std::pair{it->second.decl, owner->module_name};
@@ -20590,6 +20685,7 @@ private:
 
       module_ = synth;
       module_name_ = pending.synth_name;
+      functor_owner_module_ = pending.owner_module;
       file_id_ = pending.functor_file;
       for (const auto *tr : pending.traits) {
         check_trait_decl(*tr);
@@ -20614,6 +20710,7 @@ private:
     }
     module_ = saved_module;
     module_name_ = saved_module_name;
+    functor_owner_module_.clear();
     file_id_ = saved_file_id;
   }
 
@@ -21791,6 +21888,12 @@ public:
   /// input file that has a valid module declaration and no already-recorded
   /// error, setting up the current-file/current-module context before each.
   auto run_impl(const std::vector<parsed_module> &inputs) -> void {
+    for (const auto &input : inputs) {
+      if (input.ast_file != nullptr) {
+        file_module_aliases_.emplace(input.file_id,
+                                     collect_module_aliases(*input.ast_file));
+      }
+    }
     // Eagerly, before anything below can take a `const type_entry &`
     // reference into `type_table` and hold it across an expression: `find_
     // method`'s own lazy call to this (guarded by `methods_built_`, so it
@@ -21918,11 +22021,23 @@ auto checker::run(const std::vector<parsed_module> &inputs) -> void {
 auto check_program(const std::vector<parsed_module> &inputs,
                    diagnostic_bag &diag, std::vector<bool> &file_has_errors)
     -> checked_types {
+  const auto session_index = build_module_session_index(inputs);
+  const auto semantic_index = build_semantic_resolution_index(inputs);
+  return check_program(inputs, session_index, semantic_index, diag,
+                       file_has_errors);
+}
+
+auto check_program(const std::vector<parsed_module> &inputs,
+                   const module_session_index &session_index,
+                   const semantic_resolution_index &semantic_index,
+                   diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> checked_types {
   // Not `const`: `checker::resolve_item_splices` mutates this in place to
   // graft splice-synthesized impls in before method-table/coherence build —
   // see `checker::index_`'s doc comment.
   auto index = build_program_index(inputs);
   auto session_checker = checker(index, diag, file_has_errors);
+  session_checker.set_module_graph(session_index, semantic_index);
   session_checker.run(inputs);
   return session_checker.take_checked_types();
 }
