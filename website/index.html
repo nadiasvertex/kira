@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cinder — a language that teaches you as it compiles</title>
+<meta name="description" content="Cinder is an early-stage systems language whose compiler is designed to teach: friendly diagnostics, dependent types, and proofs that elide runtime checks.">
+<link rel="icon" href="image/logo.png">
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --bg-raised: #131113;
+    --bg-card: #161314;
+    --border: #2a2325;
+    --text: #f2ede9;
+    --text-dim: #b8aca6;
+    --text-faint: #7d716c;
+    --ember-deep: #cf2e07;
+    --ember: #f73700;
+    --flame: #fd5000;
+    --flame-bright: #fe781c;
+    --gold: #fec232;
+    --focus: var(--flame-bright);
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code, pre, .mono {
+    font-family: "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
+  }
+
+  a { color: var(--flame-bright); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* -------------------------------------------------- header */
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(10, 10, 11, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    font-size: 1.05rem;
+    color: var(--text);
+  }
+  .brand:hover { text-decoration: none; }
+  .brand img { width: 28px; height: 28px; display: block; }
+
+  .nav-links {
+    display: flex;
+    gap: 28px;
+    align-items: center;
+  }
+  .nav-links a {
+    color: var(--text-dim);
+    font-size: 0.92rem;
+  }
+  .nav-links a:hover { color: var(--text); }
+  .nav-links a.cta {
+    color: var(--bg);
+    background: linear-gradient(135deg, var(--flame-bright), var(--ember));
+    padding: 7px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+  }
+  .nav-links a.cta:hover { text-decoration: none; filter: brightness(1.08); }
+
+  /* -------------------------------------------------- hero */
+
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding: 96px 0 72px;
+    text-align: center;
+  }
+
+  .hero::before {
+    content: "";
+    position: absolute;
+    top: -20%;
+    left: 50%;
+    width: 900px;
+    height: 700px;
+    transform: translateX(-50%);
+    background: radial-gradient(closest-side, rgba(253, 80, 0, 0.16), rgba(253, 80, 0, 0) 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .hero > * { position: relative; z-index: 1; }
+
+  .hero img.mark {
+    width: 84px;
+    height: 84px;
+    margin-bottom: 28px;
+  }
+
+  .hero h1 {
+    font-size: clamp(2.1rem, 5vw, 3.4rem);
+    margin: 0 0 18px;
+    letter-spacing: -0.02em;
+    font-weight: 800;
+  }
+
+  .hero h1 .flame-text {
+    background: linear-gradient(120deg, var(--gold), var(--flame), var(--ember-deep));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .hero p.lede {
+    max-width: 640px;
+    margin: 0 auto 36px;
+    color: var(--text-dim);
+    font-size: 1.15rem;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 12px 26px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.98rem;
+    border: 1px solid transparent;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--flame-bright), var(--ember));
+    color: #0a0a0b;
+  }
+  .btn-primary:hover { filter: brightness(1.08); text-decoration: none; }
+  .btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--text-faint); text-decoration: none; }
+
+  .hero-note {
+    color: var(--text-faint);
+    font-size: 0.85rem;
+  }
+  .hero-note code {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: var(--text-dim);
+  }
+
+  /* -------------------------------------------------- status strip */
+
+  .status {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-raised);
+  }
+  .status .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 28px;
+    padding: 14px 24px;
+    justify-content: center;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+  .status .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 7px;
+    background: var(--flame-bright);
+  }
+  .status .dot.dim { background: var(--text-faint); }
+
+  /* -------------------------------------------------- sections */
+
+  section { padding: 84px 0; }
+  section.tight { padding: 56px 0; }
+
+  h2.section-title {
+    font-size: 1.9rem;
+    margin: 0 0 12px;
+    letter-spacing: -0.01em;
+  }
+  p.section-sub {
+    color: var(--text-dim);
+    max-width: 620px;
+    margin: 0 0 44px;
+  }
+
+  /* -------------------------------------------------- feature grid */
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .card:hover { border-color: rgba(253, 80, 0, 0.5); transform: translateY(-2px); }
+
+  .card .icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--flame-bright), var(--ember-deep));
+    color: #0a0a0b;
+    font-weight: 800;
+    margin-bottom: 16px;
+    font-size: 1.05rem;
+  }
+
+  .card h3 {
+    margin: 0 0 8px;
+    font-size: 1.05rem;
+  }
+  .card p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 0.94rem;
+  }
+
+  /* -------------------------------------------------- code examples */
+
+  .examples {
+    background: var(--bg-raised);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .example-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .example-tab {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 8px 16px;
+    border-radius: 7px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .example-tab:hover { color: var(--text); border-color: var(--text-faint); }
+  .example-tab.active {
+    color: #0a0a0b;
+    background: var(--flame-bright);
+    border-color: var(--flame-bright);
+    font-weight: 600;
+  }
+
+  .example-panel { display: none; }
+  .example-panel.active { display: block; }
+
+  .code-block {
+    background: #0e0c0d;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .code-block .code-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-faint);
+  }
+  .code-block .dots { display: flex; gap: 6px; }
+  .code-block .dots span {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--border);
+  }
+  .code-block pre {
+    margin: 0;
+    padding: 20px;
+    overflow-x: auto;
+    font-size: 0.86rem;
+    line-height: 1.65;
+    color: #ecdfd8;
+  }
+  .code-block .caption {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+
+  /* minimal syntax coloring, hand-applied via spans */
+  .tok-kw { color: var(--flame-bright); }
+  .tok-str { color: var(--gold); }
+  .tok-com { color: var(--text-faint); font-style: italic; }
+  .tok-fn { color: #7fc8e0; }
+  .tok-type { color: #c9a4ff; }
+  .tok-num { color: var(--gold); }
+
+  /* -------------------------------------------------- diagnostics showcase */
+
+  .diag-block {
+    background: #0e0c0d;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 24px;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    overflow-x: auto;
+    color: #ecdfd8;
+  }
+  .diag-block .err { color: var(--flame-bright); font-weight: 700; }
+  .diag-block .loc { color: #7fc8e0; }
+  .diag-block .gut { color: var(--text-faint); }
+  .diag-block .hint { color: var(--gold); }
+  .diag-block .caret { color: var(--flame-bright); }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: start;
+  }
+  @media (max-width: 760px) {
+    .two-col { grid-template-columns: 1fr; }
+  }
+
+  /* -------------------------------------------------- roadmap */
+
+  .roadmap-list { list-style: none; margin: 0; padding: 0; }
+  .roadmap-list li {
+    display: flex;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.95rem;
+  }
+  .roadmap-list li:last-child { border-bottom: none; }
+  .roadmap-list .tag {
+    flex-shrink: 0;
+    width: 84px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 3px 0;
+    text-align: center;
+    border-radius: 5px;
+    height: fit-content;
+  }
+  .tag-done { background: rgba(254, 194, 50, 0.14); color: var(--gold); }
+  .tag-progress { background: rgba(253, 80, 0, 0.14); color: var(--flame-bright); }
+  .tag-planned { background: rgba(255,255,255,0.06); color: var(--text-faint); }
+
+  /* -------------------------------------------------- CTA band */
+
+  .cta-band {
+    text-align: center;
+    padding: 90px 0;
+    background: radial-gradient(closest-side, rgba(247, 55, 0, 0.1), rgba(10,10,11,0) 70%);
+  }
+  .cta-band h2 { font-size: 1.8rem; margin: 0 0 14px; }
+  .cta-band p { color: var(--text-dim); margin: 0 0 28px; }
+
+  /* -------------------------------------------------- footer */
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 40px 0;
+    color: var(--text-faint);
+    font-size: 0.85rem;
+  }
+  footer .wrap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  footer a { color: var(--text-dim); }
+  footer .foot-links { display: flex; gap: 22px; }
+
+  @media (max-width: 640px) {
+    .nav-links { gap: 16px; }
+    .nav-links a:not(.cta) { display: none; }
+    section { padding: 56px 0; }
+    .hero { padding: 64px 0 48px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="nav wrap">
+    <a class="brand" href="#top">
+      <img src="image/logo.png" alt="">
+      CINDER
+    </a>
+    <nav class="nav-links">
+      <a href="#language">Language</a>
+      <a href="#diagnostics">Diagnostics</a>
+      <a href="#status">Status</a>
+      <a href="spec/index.html">Spec</a>
+      <a class="cta" href="https://github.com/nadiasvertex/kira">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <div class="wrap">
+      <img class="mark" src="image/logo.png" alt="Cinder logo">
+      <h1>A compiler that<br><span class="flame-text">teaches while it checks.</span></h1>
+      <p class="lede">
+        Cinder is an early-stage systems language built around one idea: the compiler
+        is a teacher first. Every diagnostic explains what was expected, what was found,
+        and how to fix it — and the type system proves what it can, so you pay for
+        checks only where the compiler can't already tell you're safe.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#language">See the language</a>
+        <a class="btn btn-secondary" href="spec/index.html">Read the spec</a>
+      </div>
+      <p class="hero-note">
+        <code>cinder path/to/module.cn</code> — no build step, runs straight off the parser and VM.
+      </p>
+    </div>
+  </section>
+
+  <div class="status" id="status">
+    <div class="wrap">
+      <span><span class="dot"></span>Lexer + parser</span>
+      <span><span class="dot"></span>Semantic analysis</span>
+      <span><span class="dot"></span>Bytecode VM</span>
+      <span><span class="dot"></span>LLVM AOT backend</span>
+      <span><span class="dot dim"></span>Package manager — planned</span>
+      <span><span class="dot dim"></span>Playground — planned</span>
+    </div>
+  </div>
+
+  <section id="language">
+    <div class="wrap">
+      <h2 class="section-title">A language with real proofs, not just annotations</h2>
+      <p class="section-sub">
+        Cinder isn't a syntax skin over familiar semantics. Dependent and refinement
+        types let the compiler discharge bounds checks and preconditions statically —
+        and fall back to a runtime check, explicitly, only when it has to.
+      </p>
+      <div class="grid">
+        <div class="card">
+          <div class="icon">λ</div>
+          <h3>Functional-first core</h3>
+          <p>Closures, iterators, and combinators (<code>map</code>, <code>fold</code>, <code>chain</code>, <code>filter</code>) are the everyday
+          way to write Cinder — not a bolted-on module.</p>
+        </div>
+        <div class="card">
+          <div class="icon">∀</div>
+          <h3>Refinement &amp; dependent types</h3>
+          <p>Constrain a type with a predicate over <code>self</code>. The compiler proves what
+          it can from literals, branches, and array lengths, and elides the check entirely.</p>
+        </div>
+        <div class="card">
+          <div class="icon">⚙</div>
+          <h3>Compile-time execution</h3>
+          <p><code>static if</code>, <code>static assert</code>, and const generics run real Cinder code
+          at compile time — the untaken branch is discarded before it's even name-resolved.</p>
+        </div>
+        <div class="card">
+          <div class="icon">✓</div>
+          <h3>Diagnostics as UI</h3>
+          <p>Every error states what was expected, what was found, why the rule exists, and
+          a concrete fix — never just a type name and a line number.</p>
+        </div>
+        <div class="card">
+          <div class="icon">⊕</div>
+          <h3>Traits &amp; generics</h3>
+          <p>Monomorphized generics, higher-kinded traits, and type-level reflection
+          (<code>T.name()</code>, <code>T.kind()</code>) for writing real generic libraries.</p>
+        </div>
+        <div class="card">
+          <div class="icon">▣</div>
+          <h3>Modules as values</h3>
+          <p>Modules can be parameterized and passed around like any other compile-time
+          value — functors, not just namespaces.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="examples">
+    <div class="wrap">
+      <h2 class="section-title">Cinder, in practice</h2>
+      <p class="section-sub">There's no playground yet — these run today, exactly as shown, via <code>cinder path/to/file.cn</code>.</p>
+
+      <div class="example-tabs" role="tablist">
+        <button class="example-tab active" data-target="ex-fold">Iterators</button>
+        <button class="example-tab" data-target="ex-refine">Refinement types</button>
+        <button class="example-tab" data-target="ex-static">Compile-time <code>if</code></button>
+      </div>
+
+      <div class="example-panel active" id="ex-fold">
+        <div class="code-block">
+          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>demo/algorithm-fold.cn</span></div>
+<pre><span class="tok-kw">def</span> <span class="tok-fn">main</span>() -&gt; <span class="tok-type">int32</span>:
+    <span class="tok-kw">let</span> nums = [1, 2, 3, 4, 5]
+    <span class="tok-kw">let</span> nv = nums.iter().values()
+
+    <span class="tok-com"># Sum: start at 0, add each element</span>
+    println(<span class="tok-str">"sum={nv.fold(0, (acc, x) =&gt; acc + x)}"</span>)
+    <span class="tok-com"># Product: start at 1, multiply each element</span>
+    println(<span class="tok-str">"product={nv.fold(1, (acc, x) =&gt; acc * x)}"</span>)
+
+    <span class="tok-com"># Empty iterator returns the initial value, unlike reduce</span>
+    <span class="tok-kw">let</span> empty: list[<span class="tok-type">int32</span>] = []
+    println(<span class="tok-str">"empty_fold={empty.iter().values().fold(42, (acc, x) =&gt; acc + x)}"</span>)
+    <span class="tok-kw">return</span> 0</pre>
+          <div class="caption">Combinators over <code>iter()</code> are ordinary methods — no separate "iterator trait" ceremony to opt into.</div>
+        </div>
+      </div>
+
+      <div class="example-panel" id="ex-refine">
+        <div class="code-block">
+          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>demo/dependent-types.cn</span></div>
+<pre><span class="tok-com"># A refinement constrains a type with a predicate over `self`.</span>
+<span class="tok-kw">type</span> positive = <span class="tok-type">int32</span> <span class="tok-kw">where</span> self &gt; 0
+
+<span class="tok-com"># `index4` is a `usize` provably a valid index into a 4-element array.</span>
+<span class="tok-kw">type</span> index4 = <span class="tok-type">usize</span> <span class="tok-kw">where</span> self &lt; 4
+
+<span class="tok-com"># `i &lt; 4` and `len(v) == 4` are both known here, so `i &lt; len(v)` is</span>
+<span class="tok-com"># *proved* — this compiles to a bare load, no bounds check emitted.</span>
+<span class="tok-kw">def</span> <span class="tok-fn">safe_get</span>(v: array[<span class="tok-type">int32</span>, 4], i: index4) -&gt; <span class="tok-type">int32</span>:
+    v[i]
+
+<span class="tok-com"># The escape hatch: what the solver can't prove, a runtime check can.</span>
+<span class="tok-kw">def</span> <span class="tok-fn">classify</span>(raw: <span class="tok-type">int32</span>) -&gt; <span class="tok-type">int32</span>:
+    <span class="tok-kw">match</span> positive.try_from(raw):
+        @some(p) =&gt; needs_positive(p)
+        @none    =&gt; 0</pre>
+          <div class="caption">The unwrap <em>is</em> the proof — inside the <code>@some(p)</code> arm, <code>p</code> already has type <code>positive</code>.</div>
+        </div>
+      </div>
+
+      <div class="example-panel" id="ex-static">
+        <div class="code-block">
+          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>demo/static-if.cn</span></div>
+<pre><span class="tok-com"># The condition runs in the compile-time interpreter; the branch not</span>
+<span class="tok-com"># taken is discarded before name resolution ever sees it.</span>
+<span class="tok-kw">def</span> <span class="tok-fn">describe</span>[T]() -&gt; <span class="tok-type">str</span>:
+    <span class="tok-kw">static if</span> T.name() == <span class="tok-str">"int64"</span>:
+        <span class="tok-kw">return</span> <span class="tok-str">"wide"</span>
+    <span class="tok-kw">else</span>:
+        <span class="tok-kw">return</span> <span class="tok-str">"narrow"</span>
+
+<span class="tok-kw">def</span> <span class="tok-fn">main</span>() -&gt; <span class="tok-type">int32</span>:
+    println(<span class="tok-str">"describe[int64]={describe[int64]()}"</span>)
+    println(<span class="tok-str">"describe[int32]={describe[int32]()}"</span>)
+    <span class="tok-kw">return</span> 0</pre>
+          <div class="caption">One <code>describe</code> per instantiation, each branch resolved once, statically, per type.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="diagnostics">
+    <div class="wrap two-col">
+      <div>
+        <h2 class="section-title">Errors that explain themselves</h2>
+        <p class="section-sub">
+          A diagnostic states what was expected, what was found, why the constraint
+          exists, and — where applicable — exactly how to satisfy it. When a rule
+          depends on a concept you haven't reached yet, the message names it and
+          points at the chapter that explains it.
+        </p>
+      </div>
+      <div class="diag-block">
+<pre><span class="err">error[E0012]</span>: type mismatch
+  <span class="loc">--&gt; src/main.cn:14:5</span>
+<span class="gut">   |</span>
+<span class="gut">13 |</span>     let x: int32 = compute()
+<span class="gut">14 |</span>     process(x)
+<span class="gut">   |</span>             <span class="caret">^ expected float64, found int32</span>
+<span class="gut">   |</span>
+<span class="gut">   =</span> compute() returns int32
+<span class="gut">   =</span> process() expects float64
+<span class="gut">   =</span> <span class="hint">hint: use float64(x), or change compute()'s return type</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight" id="build">
+    <div class="wrap">
+      <h2 class="section-title">Try it now</h2>
+      <p class="section-sub">Bazel/bzlmod build, Clang 23.1+ (C++26). No install required to run a single file.</p>
+      <div class="code-block">
+        <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>terminal</span></div>
+<pre><span class="tok-com"># run a script directly — no build step</span>
+cinder path/to/module.cn
+
+<span class="tok-com"># compile to a native binary via LLVM</span>
+cinder --compile path/to/module.cn
+
+<span class="tok-com"># build cinder itself from source</span>
+just build
+just test</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="tight">
+    <div class="wrap">
+      <h2 class="section-title">Where things stand</h2>
+      <p class="section-sub">Cinder is early. The pipeline below is real and working; the rest is being built in the open.</p>
+      <ul class="roadmap-list">
+        <li><span class="tag tag-done">Shipping</span> Lexer, recursive-descent parser, and error-recovering diagnostics</li>
+        <li><span class="tag tag-done">Shipping</span> Module graph, name resolution, and type checking</li>
+        <li><span class="tag tag-done">Shipping</span> Tier-0 bytecode VM and LLVM-backed native (AOT) compilation</li>
+        <li><span class="tag tag-done">Shipping</span> Generics, traits, dependent &amp; refinement types, compile-time execution</li>
+        <li><span class="tag tag-progress">In progress</span> Broader standard library coverage (<code>std.algo</code>, <code>std.string</code>, <code>std.fs</code>, …)</li>
+        <li><span class="tag tag-planned">Planned</span> Interactive playground</li>
+        <li><span class="tag tag-planned">Planned</span> Package manager and multi-crate builds</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="cta-band">
+    <div class="wrap">
+      <h2>Read the spec, or read the compiler.</h2>
+      <p>Cinder's specification is written to be loaded one chapter at a time — by a person or an LLM.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="spec/index.html">Browse the specification</a>
+        <a class="btn btn-secondary" href="https://github.com/nadiasvertex/kira">View source</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>&copy; 2026 Cinder Contributors</span>
+    <div class="foot-links">
+      <a href="spec/index.html">Specification</a>
+      <a href="spec/cinder-grammar.ebnf">Grammar</a>
+      <a href="https://github.com/nadiasvertex/kira">GitHub</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('.example-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.example-tab').forEach(function (t) { t.classList.remove('active'); });
+      document.querySelectorAll('.example-panel').forEach(function (p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.target).classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>

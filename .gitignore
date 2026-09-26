@@ -1,6 +1,7 @@
 bazel-bin
 bazel-cinder
 bazel-out
+bazel-kira
 bazel-testlogs
 cinder-out
 compile_commands.json

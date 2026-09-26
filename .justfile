@@ -255,6 +255,16 @@ format: compile-commands
 docs:
     python3 tools/docs/build_docs.py all
 
+# Render the specification (spec/specification/) to HTML via pandoc, into
+# website/spec/, for publishing alongside the marketing site (website/).
+website-spec:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -rf website/spec website/.spec-build
+    python3 tools/docs/build_docs.py site website/.spec-build
+    mv website/.spec-build/site website/spec
+    rm -rf website/.spec-build
+
 lint: compile-commands
     # Run clang-tidy
     # Auto-detect macOS SDK, then run clang-tidy with extra args.
