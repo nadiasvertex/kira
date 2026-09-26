@@ -1,0 +1,31 @@
+module codegen_stress.user_type_shadows_prelude_generic
+
+# A module's own type declaration shadows a prelude generic of the same name
+# in type position, as a local value shadows a prelude value (spec/todo.md
+# item 12). Before the fix `let b: box[int32] = box { ... }` resolved the
+# annotation to the builtin `box[T]` and the literal to the user's struct:
+# "expected `box`, found `box`". `option` stays the prelude's.
+# expect: 45
+
+type box[T] = { w: T }
+
+extend[T] box[T]:
+    def get(self) -> T:
+        return self.w
+
+type slice = { n: int32 }
+
+extend slice:
+    def make(n: int32) -> slice:
+        return slice { n: n }
+
+def take(b: box[int32]) -> int32:
+    return b.get()
+
+def main() -> int32:
+    let b: box[int32] = box { w: 40 }
+    let s: slice = slice.make(3)
+    let o: option[int32] = @some(2)
+    match o:
+        @some(v) => return take(b) + v + s.n
+        @none => return 0
