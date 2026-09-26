@@ -2,13 +2,11 @@ bazel-bin
 bazel-cinder
 bazel-out
 bazel-testlogs
-src/kira-out/module-metadata/
-src/testdata/codegen_stress/kira-out/module-metadata/
+cinder-out
 compile_commands.json
 external
 .cache
 dist
-cinder-out
 lint.log
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
