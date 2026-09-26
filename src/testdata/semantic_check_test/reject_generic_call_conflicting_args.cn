@@ -8,14 +8,14 @@ module sample
 def pick[T](a: T, b: T) -> T:
     return a
 
-type crate[T] = { a: T, b: T }
+type example_type[T] = { a: T, b: T }
 
-extend[T] crate[T]:
-    def make(a: T, b: T) -> crate[T]:
-        return crate { a: a, b: b }
+extend[T] example_type[T]:
+    def make(a: T, b: T) -> example_type[T]:
+        return example_type { a: a, b: b }
 
 def main() -> int32:
     let s = pick(1, "x")
     let t = pick[int32](2, true)
-    let c = crate.make(3, "y")
+    let c = example_type.make(3, "y")
     return 0

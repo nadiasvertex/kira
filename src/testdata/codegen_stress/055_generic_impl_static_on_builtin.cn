@@ -6,7 +6,7 @@ module codegen_stress.generic_impl_static_on_builtin
 # `054` covered `static def` reached through a generic type, but every impl in
 # it was generic on only one count — either the method declared the parameters
 # (`static def from_iter[I]` in a monomorphic `impl from_iter[int32] for
-# list[int32]`) or the impl did (`impl[T] maker[T] for crate[T]`, whose `make`
+# list[int32]`) or the impl did (`impl[T] maker[T] for example_type[T]`, whose `make`
 # declares none). The standard library's real collector is both at once:
 #
 #     impl[T] from_iter[T] for list[T]:

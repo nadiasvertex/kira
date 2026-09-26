@@ -11415,12 +11415,12 @@ private:
 
   /// The static-dispatch sibling of `check_impl_generic_method_call`: a
   /// `static def` reached through a *generic* impl block
-  /// (`impl[T] maker[T] for crate[T]`), where the parameter to be solved
+  /// (`impl[T] maker[T] for example_type[T]`), where the parameter to be solved
   /// belongs to the impl and not to the method.
   ///
   /// Such a method has no `type_params` of its own, so it used to take
   /// `resolve_type_param_static`'s non-generic path, which names the callee
-  /// `crate[int32]::make` and stops. Nothing had instantiated the impl for
+  /// `example_type[int32]::make` and stops. Nothing had instantiated the impl for
   /// `int32`, so no function ever bore that name: the call type-checked and
   /// then failed in lowering with "could not be resolved to a function in
   /// this compiled module". Type-checking a call and compiling nothing for
@@ -11428,11 +11428,11 @@ private:
   ///
   /// The instance discipline is that sibling's, unchanged. The only
   /// difference is where the type solving the impl comes from: a qualified
-  /// path (`crate[int32].make(...)`) or a solved type parameter
+  /// path (`example_type[int32].make(...)`) or a solved type parameter
   /// (`C.make(...)`), rather than a receiver expression.
   ///
   /// `bindings` receives the impl's solution so the caller can restate the
-  /// return type under it — `-> crate[T]` has to report `crate[int32]`.
+  /// return type under it — `-> example_type[T]` has to report `example_type[int32]`.
   /// Returns `nullptr` when no instance could be built, leaving the caller
   /// on its existing path.
   auto check_impl_generic_static_call(
@@ -12721,17 +12721,17 @@ private:
                     param_name, fn_name, types_.display(target), param_name));
   }
 
-  /// A static method of a generic `extend[T] crate[T]:` block called through
-  /// the *bare* type name — `crate.make(40)` rather than
-  /// `crate[int32].make(40)`. The bare name carries no type arguments, so the
+  /// A static method of a generic `extend[T] example_type[T]:` block called through
+  /// the *bare* type name — `example_type.make(40)` rather than
+  /// `example_type[int32].make(40)`. The bare name carries no type arguments, so the
   /// impl's parameters have to be solved from the call's arguments instead
   /// (`v: T` given `40` solves `T := int32`), which then names the concrete
-  /// target `crate[int32]` and goes through the same instance discipline as
+  /// target `example_type[int32]` and goes through the same instance discipline as
   /// the applied spelling.
   ///
   /// Without this, the call was typed against the uninstantiated template:
-  /// the result was a `crate[T]` with `T` abstract, and lowering failed with
-  /// "call to `crate::make` could not be resolved to a function in this
+  /// the result was a `example_type[T]` with `T` abstract, and lowering failed with
+  /// "call to `example_type::make` could not be resolved to a function in this
   /// compiled module" — nothing ever compiled that function.
   ///
   /// `nullopt` for a method this does not apply to (a non-generic block, or
@@ -12800,7 +12800,7 @@ private:
     const auto target = settle(
         substitute_solved(method.impl_target_pattern, bindings));
     // Still written in type parameters: a template body calling
-    // `crate.make(x)` with `x: T`. Nothing concrete to compile yet.
+    // `example_type.make(x)` with `x: T`. Nothing concrete to compile yet.
     if (in_const_generic_template_ || in_type_generic_template_ ||
         in_abstract_type_param_scope() || mentions_type_param(target)) {
       return return_type();
@@ -12841,7 +12841,7 @@ private:
     } else if (object.kind == ast::node_kind::index_expr ||
                object.kind == ast::node_kind::call_expr) {
       // A static call on a generic *application*: `list[int32].from_iter(it)`,
-      // `crate[int32].make(9)`. Resolved to the concrete target and then
+      // `example_type[int32].make(9)`. Resolved to the concrete target and then
       // dispatched by exactly the machinery a solved type parameter uses, so
       // `list[int32].from_iter` and a `C.from_iter` that solved `C` to
       // `list[int32]` name the same instance.

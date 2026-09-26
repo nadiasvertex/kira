@@ -1577,10 +1577,10 @@
 054_static_dispatch_on_generic_types.cn:106:30 [named_type] self
 054_static_dispatch_on_generic_types.cn:110:21 [binding_pat] T
 054_static_dispatch_on_generic_types.cn:110:21 [binding_pat] int32
-054_static_dispatch_on_generic_types.cn:110:30 [named_type] crate[T]
-054_static_dispatch_on_generic_types.cn:110:30 [named_type] crate[int32]
-054_static_dispatch_on_generic_types.cn:111:16 [struct_literal] crate[T]
-054_static_dispatch_on_generic_types.cn:111:16 [struct_literal] crate[int32]
+054_static_dispatch_on_generic_types.cn:110:30 [named_type] example_type[T]
+054_static_dispatch_on_generic_types.cn:110:30 [named_type] example_type[int32]
+054_static_dispatch_on_generic_types.cn:111:16 [struct_literal] example_type[T]
+054_static_dispatch_on_generic_types.cn:111:16 [struct_literal] example_type[int32]
 054_static_dispatch_on_generic_types.cn:111:27 [ident] T
 054_static_dispatch_on_generic_types.cn:111:27 [ident] int32
 054_static_dispatch_on_generic_types.cn:113:15 [named_type] int32
@@ -1616,9 +1616,9 @@
 054_static_dispatch_on_generic_types.cn:124:36 [struct_literal] upto
 054_static_dispatch_on_generic_types.cn:124:47 [literal] int32
 054_static_dispatch_on_generic_types.cn:124:55 [literal] int32
-054_static_dispatch_on_generic_types.cn:128:9 [binding_pat] crate[int32]
-054_static_dispatch_on_generic_types.cn:128:16 [field] fn(_) -> crate[_]
-054_static_dispatch_on_generic_types.cn:128:16 [call] crate[int32]
+054_static_dispatch_on_generic_types.cn:128:9 [binding_pat] example_type[int32]
+054_static_dispatch_on_generic_types.cn:128:16 [field] fn(_) -> example_type[_]
+054_static_dispatch_on_generic_types.cn:128:16 [call] example_type[int32]
 054_static_dispatch_on_generic_types.cn:128:34 [literal] int32
 054_static_dispatch_on_generic_types.cn:130:12 [ident] int32
 054_static_dispatch_on_generic_types.cn:130:12 [binary] int32
@@ -27879,7 +27879,7 @@ std/unicode.cn:288:29 [call] (cp=arg)
 054_static_dispatch_on_generic_types.cn:116:27 [call] codegen_stress.static_dispatch_on_generic_types::collect$upto$list_int32_
 054_static_dispatch_on_generic_types.cn:123:28 [call] codegen_stress.static_dispatch_on_generic_types::collect$upto$counter
 054_static_dispatch_on_generic_types.cn:124:28 [call] codegen_stress.static_dispatch_on_generic_types::collect$upto$doubler
-054_static_dispatch_on_generic_types.cn:128:16 [call] codegen_stress.static_dispatch_on_generic_types::crate::make$crate_int32_
+054_static_dispatch_on_generic_types.cn:128:16 [call] codegen_stress.static_dispatch_on_generic_types::example_type::make$example_type_int32_
 057_lambda_solves_under_constructor.cn:24:27 [call] main::apply$int32$int32
 078_impl_const_generic_value_param.cn:32:12 [call] codegen_stress.impl_const_generic_value_param::buf::capacity$buf_4_ trait=sized recv
 078_impl_const_generic_value_param.cn:32:28 [call] codegen_stress.impl_const_generic_value_param::buf::capacity$buf_8_ trait=sized recv
@@ -28880,7 +28880,7 @@ codegen_stress.static_dispatch_on_generic_types::collect$upto$counter
 codegen_stress.static_dispatch_on_generic_types::collect$upto$doubler
 codegen_stress.static_dispatch_on_generic_types::collect$upto$list_int32_
 codegen_stress.static_dispatch_on_generic_types::counter::from_iter$upto
-codegen_stress.static_dispatch_on_generic_types::crate::make$crate_int32_
+codegen_stress.static_dispatch_on_generic_types::example_type::make$example_type_int32_
 codegen_stress.static_dispatch_on_generic_types::doubler::from_iter$upto
 codegen_stress.static_dispatch_on_generic_types::list[int32]::from_iter$upto
 codegen_stress.ufcs::identity$int32
@@ -28990,7 +28990,7 @@ collect$upto$counter
 collect$upto$doubler
 collect$upto$list_int32_
 counter::from_iter$upto
-crate::make$crate_int32_
+example_type::make$example_type_int32_
 doubled$int32
 doubled$int64
 doubler::from_iter$upto

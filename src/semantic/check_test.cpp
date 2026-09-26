@@ -2455,11 +2455,11 @@ auto test_reports_bare_generic_static_call_unsolved() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_bare_generic_static_call_unsolved.cn");
   expect(analyzed.error_count > 0,
-         "expected `crate.empty()` with no `T`-bearing argument to be rejected");
+         "expected `example_type.empty()` with no `T`-bearing argument to be rejected");
   expect_diagnostic(analyzed,
-                    "cannot tell which `T` this call to `crate.empty` means",
+                    "cannot tell which `T` this call to `example_type.empty` means",
                     "expected the diagnostic to name the unsolved parameter");
-  expect_diagnostic(analyzed, "`crate[int32].empty(...)`",
+  expect_diagnostic(analyzed, "`example_type[int32].empty(...)`",
                     "expected the help to show the applied spelling");
 }
 
@@ -2477,7 +2477,7 @@ auto test_reports_generic_call_conflicting_args() -> void {
   expect_diagnostic(analyzed, "this is `bool`, but `T` is already `int32`",
                     "expected the explicit-bracket call to be checked too");
   expect_diagnostic(analyzed,
-                    "conflicting types for `T` in this call to `crate.make`",
+                    "conflicting types for `T` in this call to `example_type.make`",
                     "expected the bare-type static call to be checked too");
 }
 
